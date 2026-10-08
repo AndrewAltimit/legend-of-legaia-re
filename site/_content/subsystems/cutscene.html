@@ -12,7 +12,7 @@
     <dt>Dispatch table</dt><dd>Overlay data at <code>0x801D0A6C</code>, 23 &times; 32-byte slots; parser <code>legaia_asset::fmv_dispatch</code> - <a href="../formats/str-fmv-table.html">STR FMV table</a></dd>
     <dt>Bitstream</dt><dd>PSX <strong>Iki</strong> variant, not STRv2; 15 fps (10 sectors per frame); decoder <code>crates/mdec</code></dd>
     <dt>Audio</dt><dd>One XA-ADPCM track per movie at <code>(file 1, channel 0)</code>, stereo 37.8 kHz, interleaved sector by sector; decoder <code>crates/xa</code></dd>
-    <dt>In the port</dt><dd><code>crates/mdec</code>, <code>crates/xa</code>, <code>engine-shell::cutscene_av</code>; opening timeline in <code>engine-core</code></dd>
+    <dt>In the port</dt><dd><code>crates/mdec</code> (decoder, and the <code>str_av</code> demuxer both play hosts open a movie through), <code>crates/xa</code>, <code>engine-shell::cutscene_av</code>; opening timeline in <code>engine-core</code></dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of PROT 0970 plus RAM captures during playback and a cold-boot pixel capture of the opening (<a href="cutscene-internals.html#how-we-know">evidence</a>)</dd>
   </dl>
   <figure class="diagram">

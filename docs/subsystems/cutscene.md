@@ -563,9 +563,14 @@ The Form-1 extract written to `extracted/MOV/*.STR` keeps the video sectors inta
 each Form-2 audio sector from 2324 to 2048 bytes, corrupting the audio. Faithful playback therefore
 reads the raw 2352-byte sectors **straight off the disc image**:
 [`legaia_engine_shell::cutscene_av::decode_str_av_from_disc`](../../crates/engine-shell/src/cutscene_av.rs)
-makes one pass over the sectors, routing Form-2 audio to a per-`(file_no, ch_no)` buffer (à la
-[`legaia_xa::demux`]) and the rest to the [`StrFrameAssembler`], then decodes the dominant audio
-channel to PCM and the video to RGBA frames.
+makes one pass over the sectors through the shared demuxer
+[`legaia_mdec::str_av::StrAvDemuxer`](../../crates/mdec/src/str_av.rs), routing Form-2 audio to a
+per-`(file_no, ch_no)` buffer and the rest to the [`StrFrameAssembler`], then decodes the dominant
+audio channel to PCM and the video to RGBA frames. The browser play page opens a movie through the
+same demuxer (`play_fmv.rs`), so both hosts index frames by assembled frame (a frame that later
+fails to decode keeps its slot), derive the frame rate from the same sector stride and pick the
+same soundtrack channel; they differ only in when a frame's bitstream is decoded - the native
+window decodes all of them up front, the page one per request.
 
 The decoded PCM is staged into the engine's audio output ([`AudioOut::play_xa`]) and the video clock
 is driven off the audio cursor ([`AudioOut::xa_cursor_secs`]): the visible frame is
