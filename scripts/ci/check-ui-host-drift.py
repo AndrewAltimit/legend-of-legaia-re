@@ -553,6 +553,20 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "field NPC draw transform, native vs play page - the hide "
+        "(off-map box, zero render scale), the heading composition and the "
+        "tilt were spelled out natively and again in field-actors.js over two "
+        "encodings of the yaw, and neither host folded retail's non-unit "
+        "`actor+0x72` render scale in (`FUN_8001ADA4` `0x8001B240`). Both "
+        "build the model from `World::field_npc_draw_pose`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/field_actors.rs", "draw_poses"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_npc_draw_pose"],
+    },
+    {
         "what": "frame clear colour, native vs play page - both ran the "
         "shared `scene_clear` selector, but the page passed a hardcoded "
         "`false` for the screen term the native window built from its boot "

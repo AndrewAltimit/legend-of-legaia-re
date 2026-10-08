@@ -1678,6 +1678,16 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Every catalogued NPC's draw pose (`FieldActors::draw_poses`, the
+    /// engine's `World::field_npc_draw_pose` - the native window's NPC
+    /// transform), 8 floats per entry.
+    pub fn play_npc_draw_poses(&self) -> Vec<f32> {
+        self.scene_host
+            .host()
+            .map(|h| self.actors.draw_poses(h))
+            .unwrap_or_default()
+    }
+
     /// Live `(pitch, roll)` of every catalogued NPC, `[pitch, roll, ...]`
     /// (`World::field_npc_tilt`; `(0, 0)` for an untilted actor).
     pub fn play_npc_tilts(&self) -> Vec<f32> {

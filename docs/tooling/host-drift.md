@@ -2424,8 +2424,9 @@ are simulated once, in `World::script_actors`, and each host only reads.
 NPC height is the one read a host could get wrong silently: the NPC position
 map carries X / Z, so a host that samples the floor under an NPC itself draws
 an arcing NPC on the ground with every tier green. Both place NPCs through
-`World::field_npc_render_y` - the native window's field NPC pass and the play
-page's `play_npc_transforms` - and the lights ride each host's screen-prim pass
+`World::field_npc_render_y`, inside the one draw-pose kernel
+`World::field_npc_draw_pose` the native window's field NPC pass and the play
+page's `play_npc_draw_poses` both read - and the lights ride each host's screen-prim pass
 through the tier-7 rule above. The arc's follow camera (`FUN_801DB510` /
 `FUN_801DAA50` from the release watcher) is engine-side too: the shared
 `Camera` tick reads `World::script_arc_follow_camera`, so both hosts' follow
@@ -4287,6 +4288,7 @@ name so a host that re-spells the decision locally fails the gate.
 | occlusion-fade arming + strength ramp | `field_occlusion::host_fade_armed`, `FadeRamp` | the page carried the ramp's ease and snap in JS; the native window kept dissolving walls behind the pause menu and a name-entry prompt |
 | scene-light selection | `engine-screens::field_frame::field_scene_lights` | the page's gate had no screen term, so a shop's black backdrop carried the scene's candle halos |
 | screen-primitive append order | `engine-screens::screen_layers::compose_screen_prims` | the widgets sorted with the field effects natively and last on the page, the shop fade and pause wipe sat in opposite orders, and the page kept the field's effects under a blacked-out shop |
+| NPC draw transform | `World::field_npc_draw_pose` | the hide, heading composition and tilt were spelled natively and again in `field-actors.js` over two yaw encodings, and neither host applied retail's non-unit `actor+0x72` render scale |
 | frame clear colour | `engine-screens::field_frame::frame_clear_color` | the page passed `false` for the screen term, so a shop in a scene with a scripted clear colour (`teien`) sat on that colour instead of black |
 | prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |

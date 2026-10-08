@@ -150,7 +150,7 @@ mod actors;
 pub mod ambient;
 mod cutscene_elements;
 mod field_script_actors;
-pub use field_script_actors::FieldLightDraw;
+pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod fog_render;
 mod fog_volume_host;

@@ -1199,6 +1199,12 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    pub fn field_scene_npc_draw_poses(&self) -> Vec<f32> {
+        self.npc_ctx()
+            .map(|(a, h, _)| a.draw_poses(h))
+            .unwrap_or_default()
+    }
+
     pub fn field_scene_npc_tilts(&self) -> Vec<f32> {
         self.npc_ctx()
             .map(|(a, h, _)| a.tilts(h))

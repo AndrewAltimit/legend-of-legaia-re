@@ -1138,72 +1138,34 @@ impl<'m> DrawCtx<'_, 'm> {
         // the spawn tile), floor-snapped like the player.
         let w = &app.session.host.world;
         for d in app.field_npc_draws.iter().filter(|_| layer_on("npc")) {
-            let (x, z) = w.npcs.positions.get(&d.slot).copied().unwrap_or(d.spawn);
-            // Story-parked actor (spawn-prologue `MoveTo` to the
-            // off-map hide box, or a cutscene hide): not drawn -
-            // retail parks despawned actors at the far-corner
-            // sentinel tile precisely so they never render.
-            let hide = legaia_engine_core::world::FIELD_OFFMAP_HIDE_XZ;
-            if x == hide && z == hide {
+            // The NPC's whole draw pose is the engine's
+            // (`World::field_npc_draw_pose`, which the browser play page
+            // reads through `play_npc_draw_poses`): `None` for an actor
+            // parked in the off-map hide box or at zero render scale
+            // (`actor[+0x72] = 0`, the invisible interaction markers);
+            // otherwise its live position at the floor / scripted-arc
+            // height, its composed yaw, its authored tilt and its render
+            // scale. Raw retail-convention transform (no model flip): the
+            // field camera's FIELD_WORLD_FLIP provides the single net Y
+            // negation.
+            let Some(pose) = w.field_npc_draw_pose(d.slot, d.spawn) else {
                 continue;
-            }
-            // Zero render scale (`actor[+0x72] = 0`, written by
-            // the trigger records' spawn prologue): retail
-            // collapses the actor's mesh to a point - the
-            // invisible interaction markers (orange diamond +
-            // blue cone dev gizmo). Skip the draw entirely.
-            if w.field_npc_render_scale(d.slot as usize) == Some(0) {
-                continue;
-            }
-            // The floor under the NPC, or the height a
-            // scripted arc (op `0x43`) left it at - the same
-            // accessor the browser play page places NPCs with.
-            let y = w.field_npc_render_y(d.slot, x, z) as f32;
-            // Raw retail-convention transform (no model
-            // flip): the field camera's FIELD_WORLD_FLIP
-            // provides the single net Y negation. Walkers
-            // face their travel heading (12-bit, `0` =
-            // Z+, same convention + half-turn compose as
-            // the player's `render_26`); never-walked
-            // NPCs read their spawn-prologue heading
-            // seeded into `field_npc_headings` (facing-0
-            // / prologue-less records render at
-            // identity).
-            //
-            // The heading is only one of the actor's three
-            // authored angles: retail's dispatcher hands
-            // `actor+0x24` whole to the composer
-            // (`addiu a0,s0,0x24` / `jal 0x80026988` at
-            // `0x8001af04`), which reads X at `+0`, Y at `+2`,
-            // Z at `+4`. A slot whose scripted-motion channel
-            // tweened `0x15` / `0x16` therefore draws tilted,
-            // through the same `placement_rotation` kernel the
-            // placed-object pass uses - and the browser play page
-            // composes the identical triple off
-            // `World::field_npc_tilt`. A slot with no tilt keeps
-            // the yaw-only matrix bit-for-bit.
-            let heading = w.npcs.headings.get(&d.slot).copied();
-            let rot = match w.field_npc_tilt(d.slot) {
-                Some((pitch, roll)) => {
-                    let u = |v: i32| v.rem_euclid(4096) as u16;
-                    legaia_engine_render::battle_intro::placement_rotation(
-                        u(i32::from(pitch)),
-                        // No seeded heading is the identity yaw
-                        // the `None` arm below draws, i.e. zero
-                        // units - not the half-turn a seeded
-                        // heading of `0` composes to.
-                        u(heading.map_or(0, |h| i32::from(h) + 2048)),
-                        u(i32::from(roll)),
-                    )
-                }
-                None => match heading {
-                    Some(h) => Mat4::from_rotation_y(
-                        std::f32::consts::PI + (h as f32) / 4096.0 * std::f32::consts::TAU,
-                    ),
-                    None => Mat4::IDENTITY,
-                },
             };
-            let model = Mat4::from_translation(Vec3::new(x as f32, y, z as f32)) * rot;
+            // A tilted slot takes the full `Rx * Ry * Rz` composer the
+            // placed-object pass uses (`placement_rotation`); an untilted
+            // one keeps the yaw-only matrix.
+            let rot = if pose.tilted() {
+                legaia_engine_render::battle_intro::placement_rotation(
+                    pose.pitch, pose.yaw, pose.roll,
+                )
+            } else {
+                Mat4::from_rotation_y(f32::from(pose.yaw) / 4096.0 * std::f32::consts::TAU)
+            };
+            // Retail folds the render scale in after the rotation
+            // (`ScaleMatrix` on the rotation, never the translation).
+            let model = Mat4::from_translation(Vec3::from(pose.pos))
+                * rot
+                * Mat4::from_scale(Vec3::splat(pose.scale));
             // The actor's op-`4C 81` draw tint (`+0x74` /
             // `+0x78`), staged as a constant per-draw cue on
             // both mesh halves - the browser page reads the same

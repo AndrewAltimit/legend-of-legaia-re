@@ -628,6 +628,42 @@ impl FieldActors {
         out
     }
 
+    /// Stride of [`Self::draw_poses`]: `visible, x, y, z, yaw, pitch, roll,
+    /// scale`.
+    pub const DRAW_POSE_STRIDE: usize = 8;
+
+    /// Every catalogued NPC's draw pose, [`Self::DRAW_POSE_STRIDE`] floats
+    /// each, from the one engine kernel the native window draws NPCs with
+    /// (`World::field_npc_draw_pose`): `visible` (`0` = not drawn: the
+    /// off-map hide box or zero render scale), the position in the page's
+    /// **Y-up** draw frame, the composed yaw / pitch / roll in 12-bit units
+    /// and the render scale. The page builds its model from these and
+    /// decides nothing about the transform itself.
+    pub fn draw_poses(&self, host: &SceneHost) -> Vec<f32> {
+        let Some(n) = self.npcs.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(n.pack.entries.len() * Self::DRAW_POSE_STRIDE);
+        for e in &n.pack.entries {
+            let slot = e.placement.index as u8;
+            let spawn = (e.placement.world_x, e.placement.world_z);
+            match host.world.field_npc_draw_pose(slot, spawn) {
+                Some(p) => out.extend_from_slice(&[
+                    1.0,
+                    p.pos[0],
+                    -p.pos[1],
+                    p.pos[2],
+                    f32::from(p.yaw),
+                    f32::from(p.pitch),
+                    f32::from(p.roll),
+                    p.scale,
+                ]),
+                None => out.extend_from_slice(&[0.0; Self::DRAW_POSE_STRIDE]),
+            }
+        }
+        out
+    }
+
     /// `[r, g, b, ir0, ...]` per catalog entry: the actor's op-`4C 81` draw
     /// tint as a constant cue (`World::field_npc_draw_tint`), zeros for an
     /// untinted actor. Empty while no entry is tinted.
