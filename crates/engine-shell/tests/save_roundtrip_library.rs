@@ -270,14 +270,52 @@ fn blank_card() -> MountedCard {
     MountedCard::from_bytes(buf, "blank").expect("blank card")
 }
 
-fn settle(session: &mut BootSession) {
-    for _ in 0..SETTLE_FRAMES {
-        session.host.world.set_pad(0);
-        let _ = session.tick();
-        let w = &mut session.host.world;
-        let _ = w.drain_field_events();
-        let _ = w.drain_battle_events();
+/// A frame a player could save on: free field roam, nothing modal.
+fn save_ready(s: &BootSession) -> bool {
+    let w = &s.host.world;
+    matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
+        && s.field_menu.is_none()
+        && w.cutscene.timeline.is_none()
+        && w.dialog.current.is_none()
+        && w.dialog.inline.is_none()
+        && !w.name_entry_active()
+        && !w.shops.shop_open
+        && w.active_fmv().is_none()
+}
+
+fn step(session: &mut BootSession, pad: u16) {
+    session.host.world.set_pad(pad);
+    let _ = session.tick();
+    let w = &mut session.host.world;
+    let _ = w.drain_field_events();
+    let _ = w.drain_battle_events();
+}
+
+/// Run the landed scene the way a player would before saving: walk a square
+/// (so walk-on triggers, placements and their scripts run against the
+/// party), stand for [`SETTLE_FRAMES`], then tap Cross through whatever the
+/// walk opened until the field is free again. `false` when it never is.
+fn settle(session: &mut BootSession) -> bool {
+    const UP: u16 = 0x0010;
+    const RIGHT: u16 = 0x0020;
+    const DOWN: u16 = 0x0040;
+    const LEFT: u16 = 0x0080;
+    const CROSS: u16 = 0x4000;
+    for dir in [UP, RIGHT, DOWN, LEFT, DOWN, LEFT, UP, RIGHT] {
+        for _ in 0..45 {
+            step(session, dir);
+        }
     }
+    for _ in 0..SETTLE_FRAMES {
+        step(session, 0);
+    }
+    for f in 0..3000u32 {
+        if save_ready(session) {
+            return true;
+        }
+        step(session, if f % 20 == 0 { CROSS } else { 0 });
+    }
+    save_ready(session)
 }
 
 /// The save a player would write now, through a blank card and back, then
@@ -358,14 +396,10 @@ fn every_library_save_survives_load_and_a_save_load_round_trip() {
             failures.push(format!("{tag}: load {d}"));
         }
         // 2. Save / load round trip after the scene has run.
-        settle(&mut session);
-        if !matches!(
-            session.host.world.mode,
-            SceneMode::Field | SceneMode::WorldMap
-        ) {
+        if !settle(&mut session) {
             eprintln!(
-                "[note] {tag}: settled into {:?}; round trip taken there",
-                session.host.world.mode
+                "[note] {tag}: never free to save ({:?} in {}); round trip taken there",
+                session.host.world.mode, session.host.world.active_scene_label
             );
         }
         for p in card_round_trip(&mut session) {
@@ -392,7 +426,12 @@ fn every_library_save_survives_load_and_a_save_load_round_trip() {
                 failures.push(format!("{card} {name} @{scene}: enter: {e:#}"));
                 continue;
             }
-            settle(&mut session);
+            if !settle(&mut session) {
+                eprintln!(
+                    "[note] {card} {name} @{scene}: never free to save ({:?} in {})",
+                    session.host.world.mode, session.host.world.active_scene_label
+                );
+            }
             for p in card_round_trip(&mut session) {
                 failures.push(format!("{card} {name} @{scene}: {p}"));
             }
