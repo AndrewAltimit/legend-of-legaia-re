@@ -1577,6 +1577,7 @@ def signature_end(text: str, start: int) -> int:
 # builders) stays a call: those are kernels in their own right.
 NATIVE_REDRAW_STEP_FILES = (
     "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_prep.rs",
 )
 # Splice depth guard: the step tree is shallow, so a deeper chain is a cycle.
 NATIVE_STEP_SPLICE_DEPTH = 8

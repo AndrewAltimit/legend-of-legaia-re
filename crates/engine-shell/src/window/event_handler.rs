@@ -12,6 +12,8 @@ mod keyboard;
 mod redraw;
 #[path = "event_handler/redraw_passes.rs"]
 mod redraw_passes;
+#[path = "event_handler/redraw_prep.rs"]
+mod redraw_prep;
 #[path = "event_handler/redraw_tick.rs"]
 mod redraw_tick;
 
