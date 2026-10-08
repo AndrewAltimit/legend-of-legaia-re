@@ -246,7 +246,13 @@ fn the_sparring_exit_leaves_the_flag_bank_as_retail_does() {
 /// the command each lesson teaches, confirm. Item for the Items lesson (the
 /// ring's up arm, then the first item on the first target), Spirit (the down
 /// arm) for Spirit, Attack for Attacks and Hyper Arts.
+///
+/// Hyper Arts takes the attack on `Command` (the prompt's right chip) and
+/// enters the drill `[High] [Low] [High]` (Up, Down, Up), then confirms: the
+/// flow-state `90` hook rewinds an `Auto` attack in that lesson, and checks
+/// the entered arrows otherwise.
 fn lesson_pad(w: &World) -> u16 {
+    use legaia_engine_core::arts_command_input::ArtsInputPhase;
     use legaia_engine_core::battle_input::CommandPhase;
     use legaia_engine_core::battle_tutorial::TutorialLesson;
     let cross = InputState::mask_of([PadButton::Cross]);
@@ -254,12 +260,24 @@ fn lesson_pad(w: &World) -> u16 {
         return cross;
     }
     let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
+    if let Some(arts) = w.battle.arts_input.as_ref() {
+        const DRILL: [PadButton; 3] = [PadButton::Up, PadButton::Down, PadButton::Up];
+        return match arts.phase {
+            ArtsInputPhase::Entering => DRILL
+                .get(arts.buffer.len())
+                .map_or(cross, |&b| InputState::mask_of([b])),
+            _ => cross,
+        };
+    }
     match w.battle.command.as_ref().map(|c| &c.phase) {
         Some(CommandPhase::Menu { .. }) => match lesson {
             Some(TutorialLesson::Items) => InputState::mask_of([PadButton::Up]),
             Some(TutorialLesson::Spirit) => InputState::mask_of([PadButton::Down]),
             _ => InputState::mask_of([PadButton::Left]),
         },
+        Some(CommandPhase::AttackMode { .. }) if lesson == Some(TutorialLesson::HyperArts) => {
+            InputState::mask_of([PadButton::Right])
+        }
         Some(
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::AttackMode { .. }
@@ -296,6 +314,13 @@ fn play_every_lesson(w: &mut World) -> Vec<u8> {
     // `0x51` bar-drain park, `BattleActor::set_hp_synced`).
     w.actors[0].battle.max_hp = 999;
     w.actors[0].battle.set_hp_synced(499);
+    // The arts entry's AP pool is the lead's live gauge `+0x154`, which the
+    // round boundary re-derives from the base AGL (the Spirit lesson's
+    // charge leaves `base * 7/5 + 8`). The zeroed party's base of `0` leaves
+    // a pool below one press, so seat a base with room for the hyper-arts
+    // drill's three arrows, as the real spar's Vahn has.
+    w.actors[0].battle.agl_base = 120;
+    w.actors[0].battle.agl = 120;
     let mut seen = vec![0u8];
     let mut prev = 0u16;
     for _ in 0..40_000u32 {
