@@ -4533,7 +4533,13 @@ SAVE_IO_ROUTES = [
 
 SAVE_IO_FN_RE = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
 SAVE_IO_TEST_FN_RE = re.compile(r"#\[test\]\s*(?:#\[[^\]]*\]\s*)*fn\s+([A-Za-z_][A-Za-z0-9_]*)\s*[<(]")
-SAVE_IO_TEST_MOD_RE = re.compile(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{")
+# `#[cfg(test)]` and any conjunction that requires it
+# (`#[cfg(all(test, not(target_arch = "wasm32")))]`) - never `any(test, ..)`,
+# which also builds outside tests.
+SAVE_IO_TEST_MOD_RE = re.compile(
+    r"#\[cfg\((?:test|all\((?:[^()]|\([^()]*\))*?\btest\b(?:[^()]|\([^()]*\))*\))\)\]\s*"
+    r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{"
+)
 
 
 def save_io_calls(text: str, primitives: set[str]) -> list[tuple[str, str]]:
@@ -4595,6 +4601,16 @@ SELFTEST_SAVE_IO = [
         "a test module is not shipped code",
         "#[cfg(test)]\nmod tests {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
         [],
+    ),
+    (
+        "a test-only conjunction module is not shipped code",
+        "#[cfg(all(test, not(target_arch = \"wasm32\")))]\nmod cross {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
+        [],
+    ),
+    (
+        "an any(test, ..) module still ships",
+        "#[cfg(any(test, feature = \"x\"))]\nmod m {\n    fn t() { rt.write_session_into_card(0, 1); }\n}",
+        [("write_session_into_card", "t")],
     ),
     (
         "a #[test] fn is not shipped code",
