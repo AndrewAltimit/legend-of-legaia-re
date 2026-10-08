@@ -95,6 +95,25 @@ probe.run({
                 end)
             end
         end)
+        -- Every note the score asks for, before any voice is chosen:
+        -- `FUN_80066308(owner, vab, prog, note, vel, ...)` - `a0` is the
+        -- `seq | track << 8` owner key (`0x21` = an SFX cue), `a3` the key
+        -- staged at `0x801CE34A`, the fifth argument the velocity (a zero
+        -- velocity is routed to the note-off `FUN_8006688C`).
+        probe.arm_breakpoint(0x80066308, "Exec", 4, "note_on", function()
+            local r = PCSX.getRegisters()
+            local sp = n32(r.GPR.n.sp)
+            if csv then
+                pcall(function()
+                    csv:row("%d,note,%04X,%08X,vab=%d prog=%d key=%d vel=%d",
+                        vsync, bit.band(n32(r.GPR.n.a0), 0xFFFF), n32(r.GPR.n.ra),
+                        bit.band(n32(r.GPR.n.a1), 0xFFFF),
+                        bit.band(n32(r.GPR.n.a2), 0xFFFF),
+                        bit.band(n32(r.GPR.n.a3), 0xFF),
+                        bit.band(probe.read_u32(sp + 0x10), 0xFFFF))
+                end)
+            end
+        end)
         -- Voice allocator verdict: at 0x80066C84 `s0` holds the winning
         -- voice, or the voice count `_DAT_801CE344` when every voice
         -- outranks the request and the note is DROPPED (FUN_80066B00).

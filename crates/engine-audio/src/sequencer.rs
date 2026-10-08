@@ -609,6 +609,12 @@ impl Sequencer {
         // and FUN_80066308 runs the allocation scan + key-on once per tone
         // (`0x800664F0..0x8006684C`), a failed scan dropping only that layer.
         let program = self.channels[channel as usize].program as usize;
+        // The score's note stream, comparable line for line with the retail
+        // key-on census's `note` rows (`autorun_keyon_census.lua`).
+        log::trace!(
+            "sequencer: note-on t={} ch={channel} prog={program} key={key} vel={velocity}",
+            self.abs_tick
+        );
         let layers = self.bank.layer_tones(program, key);
         if layers.is_empty() {
             log::trace!("sequencer: no tone for ch{channel} prog{program} key{key}");
@@ -1572,6 +1578,7 @@ mod tests {
                     layer_tone(2, 72, 127, 60),
                     layer_tone(3, 48, 72, 72),
                 ],
+                key_tones: 3,
             }],
         };
         assert_eq!(bank.layer_tones(0, 60), vec![0, 2]);

@@ -41,6 +41,9 @@ use legaia_vab::{VabReport, VagAtr};
 /// [`VabBank::programs`]. An unused slot aliases onto the next used slot's tone
 /// page (retail's rank rule) while keeping its own `ProgAtr` mvol/mpan; only a
 /// slot past the last used page carries an empty page whose notes never resolve.
+/// A **sequencer note** on an unused slot still keys nothing: the note-on
+/// searches only the slot's own `ProgAtr.tones` rows ([`VabProgram::key_tones`]),
+/// which is zero there.
 #[derive(Debug, Clone)]
 pub struct VabProgram {
     /// Program master volume 0..=127 (`ProgAtr.mvol`). Factors into the
@@ -51,6 +54,19 @@ pub struct VabProgram {
     pub mpan: u8,
     /// The program's tone page (up to 16 `VagAtr` rows).
     pub tones: Vec<VagAtr>,
+    /// How many rows of [`Self::tones`] a sequencer note-on searches by key
+    /// range: the slot's own `ProgAtr.tones` (`+0`). `FUN_80066308` stages
+    /// that byte at `0x801CE348` (`0x80066474..0x80066484`) and
+    /// `FUN_80068568` loops over exactly that many rows, so an unused slot -
+    /// count `0` - keys no voice although its page aliases a used one.
+    pub key_tones: u8,
+}
+
+impl VabProgram {
+    /// The rows a sequencer note-on searches by key range.
+    pub fn key_range_tones(&self) -> &[VagAtr] {
+        &self.tones[..self.tones.len().min(usize::from(self.key_tones))]
+    }
 }
 
 /// Nominal sample rate used when writing a VAG body out as a standalone WAV
@@ -206,12 +222,12 @@ impl VabBank {
         // Retail stores the counter *before* the used check, so a slot's page
         // index is the count of USED slots that precede it: a used slot maps to
         // its own next page, and an UNUSED slot aliases onto the SAME page the
-        // next used slot gets. The engine reproduces this so a ProgramChange to
-        // an unused slot resolves to the aliased page rather than silence -
-        // real retail BGM does this (e.g. music banks where a channel selects a
-        // gap slot; see tests/real_seq_program_change_coverage.rs). The unused
-        // slot keeps its own ProgAtr mvol/mpan (retail reads ProgAtr[P] for the
-        // volume chain) but borrows the next used slot's tone region.
+        // next used slot gets. The engine reproduces the page alias (real
+        // retail BGM program-changes to gap slots; see
+        // tests/real_seq_program_change_coverage.rs), but a *sequencer note*
+        // on such a slot still keys nothing: the note-on searches only the
+        // slot's own `ProgAtr.tones` rows (`key_tones`, zero here), never the
+        // aliased page's. The unused slot keeps its own ProgAtr mvol/mpan.
         //
         // Only the *past-the-last-used-page* case is NOT reproduced: there
         // retail's alias index runs beyond the packed tone region and reads
@@ -225,6 +241,7 @@ impl VabBank {
                     mvol: prog.mvol,
                     mpan: prog.mpan,
                     tones: report.tones[page].clone(),
+                    key_tones: prog.tones,
                 });
                 // Only a used slot advances the page counter; an unused slot
                 // shares the page of the used slot that follows it.
@@ -236,6 +253,7 @@ impl VabBank {
                     mvol: 0x7F,
                     mpan: 0x40,
                     tones: Vec::new(),
+                    key_tones: 0,
                 });
             }
         }
@@ -265,7 +283,11 @@ impl VabBank {
         let Some(prog) = self.programs.get(program) else {
             return false;
         };
-        let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
+        let Some(tone) = prog
+            .key_range_tones()
+            .iter()
+            .find(|t| note >= t.min && note <= t.max)
+        else {
             return false;
         };
         self.fire(spu, voice, prog, tone, note, velocity, PitchPath::Sequencer)
@@ -386,7 +408,11 @@ impl VabBank {
     pub fn pitch_bend_range(&self, program: usize, note: u8) -> (u8, u8) {
         self.programs
             .get(program)
-            .and_then(|p| p.tones.iter().find(|t| note >= t.min && note <= t.max))
+            .and_then(|p| {
+                p.key_range_tones()
+                    .iter()
+                    .find(|t| note >= t.min && note <= t.max)
+            })
             .map(|t| (t.pbmin, t.pbmax))
             .unwrap_or((0, 0))
     }
@@ -405,7 +431,11 @@ impl VabBank {
     pub fn tone_prior(&self, program: usize, note: u8) -> Option<u8> {
         self.programs
             .get(program)
-            .and_then(|p| p.tones.iter().find(|t| note >= t.min && note <= t.max))
+            .and_then(|p| {
+                p.key_range_tones()
+                    .iter()
+                    .find(|t| note >= t.min && note <= t.max)
+            })
             .map(|t| t.prior)
     }
 
@@ -422,7 +452,11 @@ impl VabBank {
         let Some(prog) = self.programs.get(program) else {
             return false;
         };
-        let Some(tone) = prog.tones.iter().find(|t| note >= t.min && note <= t.max) else {
+        let Some(tone) = prog
+            .key_range_tones()
+            .iter()
+            .find(|t| note >= t.min && note <= t.max)
+        else {
             return false;
         };
         self.tone_resident(tone)
@@ -443,7 +477,7 @@ impl VabBank {
         self.programs
             .get(program)
             .map(|p| {
-                p.tones
+                p.key_range_tones()
                     .iter()
                     .enumerate()
                     .filter(|(_, t)| note >= t.min && note <= t.max)
@@ -840,11 +874,13 @@ mod tests {
                     mvol: 127,
                     mpan: 0x40,
                     tones: vec![dummy_tone(60, 1, 100, 0x40)],
+                    key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
                 },
                 VabProgram {
                     mvol: 127,
                     mpan: 0x40,
                     tones: vec![dummy_tone(60, 2, 100, 0x40)],
+                    key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
                 },
             ],
         };
@@ -878,6 +914,7 @@ mod tests {
                 mvol: 127,
                 mpan: 0x40,
                 tones: vec![wet, dry],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();

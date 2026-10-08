@@ -1209,6 +1209,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();
@@ -1271,6 +1272,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![mk(60, 50, 60), mk(30, 0, 40)],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let bank = SfxBank::from_descriptors([(0x1A, 0, 1, 67, 1)]);
@@ -1331,6 +1333,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone(60), tone(48), tone(72)],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         };
         let mut spu = Spu::new();
@@ -1399,6 +1402,7 @@ mod tests {
                 mvol: 0x7F,
                 mpan: 0x40,
                 tones: vec![tone; 4],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         }
     }

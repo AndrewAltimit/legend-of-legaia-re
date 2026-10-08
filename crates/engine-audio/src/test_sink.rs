@@ -203,6 +203,7 @@ mod tests {
                 mvol: 127,
                 mpan: 64,
                 tones: vec![tone],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         }
     }
