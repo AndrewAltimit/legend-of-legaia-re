@@ -1189,8 +1189,15 @@ pub fn engine_key_on_counts(frames: &[AudioTraceFrame]) -> Option<Vec<u32>> {
 
 /// Parse the CSV `scripts/pcsx-redux/autorun_keyon_census.lua` writes into
 /// per-vsync retail key-on counts (popcount of every `SpuSetKey` KON mask,
-/// index = post-load vsync). Allocator and clock rows, and rows before the
-/// capture loop starts (vsync `< 0`), are skipped.
+/// index = post-load vsync). Allocator, note and clock rows, and rows before
+/// the capture loop starts (vsync `< 0`), are skipped.
+///
+/// Only **score** key-ons count. A row's `records` column names each keyed
+/// voice's libsnd note owner (`voice:page/tone/vab/owner`), and owner `0021`
+/// is the SFX cue slot (`FUN_80066308`'s `0x21` arm): a field's ambient cues
+/// key voices alongside the music, and the engine trace this census is
+/// compared with plays the music alone. A row without records counts its
+/// whole mask.
 pub fn parse_keyon_census_csv(s: &str) -> Result<Vec<u32>> {
     let mut out: Vec<u32> = Vec::new();
     for (i, line) in s.lines().enumerate().skip(1) {
@@ -1198,6 +1205,7 @@ pub fn parse_keyon_census_csv(s: &str) -> Result<Vec<u32>> {
         let (Some(vs), Some(mode), Some(mask)) = (cols.next(), cols.next(), cols.next()) else {
             continue;
         };
+        let records = cols.nth(1).unwrap_or("").trim();
         if mode != "1" {
             continue;
         }
@@ -1213,7 +1221,14 @@ pub fn parse_keyon_census_csv(s: &str) -> Result<Vec<u32>> {
         if out.len() <= v {
             out.resize(v + 1, 0);
         }
-        out[v] += (mask & 0x00FF_FFFF).count_ones();
+        out[v] += if records.is_empty() {
+            (mask & 0x00FF_FFFF).count_ones()
+        } else {
+            records
+                .split_whitespace()
+                .filter(|r| !r.ends_with("/0021"))
+                .count() as u32
+        };
     }
     Ok(out)
 }
@@ -1728,10 +1743,16 @@ mod tests {
         let csv = "vsync,mode,mask,ra,records\n\
                    -1,alloc,01,80066590,win=1 vmax=24 prior=0\n\
                    1,0,000001,80065F5C,\n\
-                   1,1,0003FE,80065F7C,1:9/0/1/0002\n\
-                   3,1,000C00,80065F7C,10:8/0/1/0002\n\
+                   1,1,000006,80065F7C,1:9/0/1/0002 2:7/1/1/0002\n\
+                   1,note,0001,80061BC0,vab=1 prog=3 key=60 vel=100\n\
+                   3,1,000C00,80065F7C,10:8/0/1/0002 11:5/0/1/0002\n\
+                   4,1,C00000,80065F7C,22:1/3/3/0021 23:1/2/3/0021\n\
+                   5,1,000003,80065F7C,\n\
                    60,clock,0,0,ms=1.0\n";
-        assert_eq!(parse_keyon_census_csv(csv).unwrap(), vec![0, 9, 0, 2]);
+        // Vsync 4 keys two SFX-cue voices (owner 0x21), which the music-only
+        // engine trace never plays; vsync 5 carries no records and counts
+        // its mask.
+        assert_eq!(parse_keyon_census_csv(csv).unwrap(), vec![0, 2, 0, 2, 0, 2]);
     }
 
     /// The census aligns on key-on timing, tolerates a one-frame skew, and
