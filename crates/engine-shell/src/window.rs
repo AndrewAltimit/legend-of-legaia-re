@@ -916,11 +916,6 @@ struct PlayWindowApp {
     /// object whose motion stream swapped its model (op `0x0E`,
     /// `World::object_live_models`); textured and colour bridges.
     field_pack_meshes: Vec<Option<usize>>,
-    /// Parallel to `field_placement_records` / `_color_records`: the draw
-    /// is its record's first placement, the one a motion stream drives
-    /// (`field_env::stream_bound_draws`).
-    field_placement_stream_bound: Vec<bool>,
-    field_placement_color_stream_bound: Vec<bool>,
     field_pack_color_meshes: Vec<Option<usize>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid

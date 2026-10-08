@@ -368,32 +368,30 @@ impl<'m> DrawCtx<'_, 'm> {
         // `field_placement_models`).
         let wm_moves = app.session.host.world.object_draw_displacements();
         let wm_turns = app.session.host.world.object_draw_turn_matrices();
-        let wm_models = app.session.host.world.object_live_models().clone();
-        let wm_live = |records: &[Option<usize>], i: usize, model: &Mat4| {
-            let record = records.get(i).copied().flatten();
-            let base = match record.and_then(|r| wm_turns.get(&r)) {
-                Some(t) => Mat4::from_cols_array(
-                    &legaia_engine_core::field_env::turn_placed_model(&model.to_cols_array(), t),
-                ),
-                None => *model,
+        let wm_models = app.session.host.world.object_live_models();
+        let wm_swaps = legaia_engine_core::field_env::placed_model_swaps(
+            &app.world_map_terrain_records,
+            wm_models,
+        );
+        let wm_color_swaps = legaia_engine_core::field_env::placed_model_swaps(
+            &app.world_map_terrain_color_records,
+            wm_models,
+        );
+        let wm_live =
+            |records: &[Option<usize>], swaps: &[Option<usize>], i: usize, model: &Mat4| {
+                let record = records.get(i).copied().flatten();
+                let moved =
+                    Mat4::from_cols_array(&legaia_engine_core::field_env::live_placed_model(
+                        &model.to_cols_array(),
+                        record,
+                        &wm_turns,
+                        &wm_moves,
+                    ));
+                (moved, swaps.get(i).copied().flatten())
             };
-            let moved = match record.and_then(|r| wm_moves.get(&r)) {
-                Some(d) => {
-                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32)) * base
-                }
-                None => base,
-            };
-            let first = record.is_some() && !records[..i].contains(&record);
-            let swap = record
-                .filter(|_| first)
-                .and_then(|r| wm_models.get(&r))
-                .and_then(|&id| usize::try_from(id).ok())
-                .filter(|&id| id < 0xF0);
-            (moved, swap)
-        };
         for (i, (mesh_idx, model)) in app.world_map_terrain_draws.iter().enumerate() {
             let (model, swap) = if i < deco_start {
-                wm_live(&app.world_map_terrain_records, i, model)
+                wm_live(&app.world_map_terrain_records, &wm_swaps, i, model)
             } else {
                 (*model, None)
             };
@@ -422,7 +420,12 @@ impl<'m> DrawCtx<'_, 'm> {
         // field branch's pairing, which this branch lacked.
         for (i, (mesh_idx, model)) in app.world_map_terrain_color_draws.iter().enumerate() {
             let (model, swap) = if i < color_deco_start {
-                wm_live(&app.world_map_terrain_color_records, i, model)
+                wm_live(
+                    &app.world_map_terrain_color_records,
+                    &wm_color_swaps,
+                    i,
+                    model,
+                )
             } else {
                 (*model, None)
             };
@@ -836,21 +839,15 @@ impl<'m> DrawCtx<'_, 'm> {
         // page reads it through `field_placement_parked`.
         let object_parked = app.session.host.world.hidden_object_records();
         let parked = |record: Option<usize>| record.is_some_and(|r| object_parked.contains(&r));
+        // Turn, then move: the shared `field_env::live_placed_model` the
+        // overworld's landmarks go through too.
         let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
-            let turned = record.and_then(|r| object_turns.get(&r)).map(|t| {
-                Mat4::from_cols_array(&legaia_engine_core::field_env::turn_placed_model(
-                    &model.to_cols_array(),
-                    t,
-                ))
-            });
-            let model = &turned.unwrap_or(*model);
-            match record.and_then(|r| object_moves.get(&r)) {
-                Some(d) => {
-                    Mat4::from_translation(Vec3::new(d[0] as f32, d[1] as f32, d[2] as f32))
-                        * *model
-                }
-                None => *model,
-            }
+            Mat4::from_cols_array(&legaia_engine_core::field_env::live_placed_model(
+                &model.to_cols_array(),
+                record,
+                &object_turns,
+                &object_moves,
+            ))
         };
         // A placed object whose actor carries a draw tint
         // (op `4C 81`: `+0x74` colour, `+0x78` blend - chitei2's
@@ -860,7 +857,16 @@ impl<'m> DrawCtx<'_, 'm> {
         // table `World::object_draw_tints`; the browser play page
         // reads the same one (`field_placement_tints`).
         let object_tints = app.session.host.world.object_draw_tints();
-        let object_models = app.session.host.world.object_live_models().clone();
+        // A motion stream's model swap (op `0x0E`), per placed draw: the
+        // shared first-placement-of-the-record rule (`placed_model_swaps`).
+        let object_swaps = legaia_engine_core::field_env::placed_model_swaps(
+            &app.field_placement_records,
+            app.session.host.world.object_live_models(),
+        );
+        let object_color_swaps = legaia_engine_core::field_env::placed_model_swaps(
+            &app.field_placement_color_records,
+            app.session.host.world.object_live_models(),
+        );
         let object_cue = |record: Option<usize>| {
             let &(colour, blend) = object_tints.get(&record?)?;
             tint_draw_cue((colour, blend))
@@ -909,15 +915,10 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
                 // A motion stream's model swap (op `0x0E`) draws
                 // the record's object with the swapped-in mesh.
-                let swapped = record
-                    .filter(|_| {
-                        app.field_placement_stream_bound
-                            .get(di)
-                            .copied()
-                            .unwrap_or(false)
-                    })
-                    .and_then(|r| object_models.get(&r))
-                    .and_then(|&id| usize::try_from(id).ok())
+                let swapped = object_swaps
+                    .get(di)
+                    .copied()
+                    .flatten()
                     .and_then(|id| app.field_pack_meshes.get(id).copied().flatten())
                     .and_then(|m| store.meshes.get(m));
                 let mesh = swapped
@@ -1026,15 +1027,10 @@ impl<'m> DrawCtx<'_, 'm> {
                 if place_near_culled(&mvp) {
                     continue;
                 }
-                let color_idx = record
-                    .filter(|_| {
-                        app.field_placement_color_stream_bound
-                            .get(di)
-                            .copied()
-                            .unwrap_or(false)
-                    })
-                    .and_then(|r| object_models.get(&r))
-                    .and_then(|&id| usize::try_from(id).ok())
+                let color_idx = object_color_swaps
+                    .get(di)
+                    .copied()
+                    .flatten()
                     .and_then(|id| app.field_pack_color_meshes.get(id).copied().flatten())
                     .unwrap_or(*mesh_idx);
                 if let Some(mesh) = store.color_meshes.get(color_idx) {

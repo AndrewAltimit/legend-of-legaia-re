@@ -824,6 +824,61 @@ pub fn turn_placed_model(model: &[f32; 16], turn: &[f32; 16]) -> [f32; 16] {
     out
 }
 
+/// A placed draw's model at its actor's live state: turned about its own
+/// origin by the record's scripted turn ([`turn_placed_model`],
+/// [`World::object_draw_turn_matrices`]), then translated by its scripted
+/// displacement ([`World::object_draw_displacements`]) - retail's case-5 draw
+/// reads the actor, not the `.MAP` record. `record` is the draw's bind record
+/// ([`placed_bind_records`]); an unbound, unturned, unmoved draw keeps
+/// `model`. The field's placed objects and the overworld's landmarks both go
+/// through it on the native window, which used to spell it twice.
+///
+/// [`World::object_draw_turn_matrices`]: crate::world::World::object_draw_turn_matrices
+/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+pub fn live_placed_model(
+    model: &[f32; 16],
+    record: Option<usize>,
+    turns: &HashMap<usize, [f32; 16]>,
+    moves: &HashMap<usize, [i32; 3]>,
+) -> [f32; 16] {
+    let mut out = match record.and_then(|r| turns.get(&r)) {
+        Some(t) => turn_placed_model(model, t),
+        None => *model,
+    };
+    if let Some(d) = record.and_then(|r| moves.get(&r)) {
+        out[12] += d[0] as f32;
+        out[13] += d[1] as f32;
+        out[14] += d[2] as f32;
+    }
+    out
+}
+
+/// Per placed draw, the env-pack slot a scripted-motion stream's op `0x0E`
+/// swapped in ([`World::object_live_models`]), `None` for a draw that keeps
+/// its own mesh. Only the draw the stream drives swaps - the **first**
+/// placement of its record ([`stream_bound_draws`]) - and only a slot below
+/// `0xF0` (the stream's sentinel range). Both play hosts, field and overworld
+/// alike, ask this; the native overworld pass and the page each spelled the
+/// first-draw rule themselves.
+///
+/// [`World::object_live_models`]: crate::world::World::object_live_models
+// REF: FUN_8003A9D4
+pub fn placed_model_swaps(
+    records: &[Option<usize>],
+    models: &std::collections::BTreeMap<usize, i16>,
+) -> Vec<Option<usize>> {
+    records
+        .iter()
+        .zip(stream_bound_draws(records))
+        .map(|(r, bound)| {
+            r.filter(|_| bound)
+                .and_then(|r| models.get(&r))
+                .filter(|&&id| (0..0xF0).contains(&id))
+                .map(|&id| id as usize)
+        })
+        .collect()
+}
+
 fn mul3(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
     std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
 }
@@ -2648,5 +2703,49 @@ mod tests {
         let placements = vec![placement(Some(0), Some(6), 8)];
         let (draws, _) = resolve_env_draws(&env_tmds, &placements, None);
         assert_eq!(draws[0].world_y, 0);
+    }
+}
+
+#[cfg(test)]
+mod live_placed_tests {
+    use super::*;
+
+    /// Turn about the draw's own origin, then move: the translation picks up
+    /// the displacement, the linear part the turn, and an unbound draw keeps
+    /// its model.
+    #[test]
+    fn turn_then_move_about_the_origin() {
+        let mut model = [0.0f32; 16];
+        model[0] = 1.0;
+        model[5] = 1.0;
+        model[10] = 1.0;
+        model[15] = 1.0;
+        model[12] = 100.0;
+        model[14] = 200.0;
+        // A quarter turn about Y.
+        let mut turn = [0.0f32; 16];
+        turn[2] = -1.0;
+        turn[5] = 1.0;
+        turn[8] = 1.0;
+        turn[15] = 1.0;
+        let turns = HashMap::from([(7usize, turn)]);
+        let moves = HashMap::from([(7usize, [5, -6, 7])]);
+        let out = live_placed_model(&model, Some(7), &turns, &moves);
+        assert_eq!(&out[12..15], &[105.0, -6.0, 207.0]);
+        assert_eq!((out[0], out[2], out[8]), (0.0, -1.0, 1.0));
+        assert_eq!(live_placed_model(&model, None, &turns, &moves), model);
+        assert_eq!(live_placed_model(&model, Some(8), &turns, &moves), model);
+    }
+
+    /// Only a record's first placement swaps, and only to a slot below the
+    /// stream's `0xF0` sentinel range.
+    #[test]
+    fn model_swaps_take_the_first_placement_below_the_sentinel() {
+        let records = [Some(3), None, Some(3), Some(4), Some(5)];
+        let models = std::collections::BTreeMap::from([(3usize, 9i16), (4, 0xF0), (5, -1)]);
+        assert_eq!(
+            placed_model_swaps(&records, &models),
+            vec![Some(9), None, None, None, None]
+        );
     }
 }

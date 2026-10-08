@@ -1460,8 +1460,6 @@ pub(super) fn cmd_play_window_with_record(
         field_placement_records: Vec::new(),
         field_placement_color_records: Vec::new(),
         field_pack_meshes: Vec::new(),
-        field_placement_stream_bound: Vec::new(),
-        field_placement_color_stream_bound: Vec::new(),
         field_pack_color_meshes: Vec::new(),
         field_placement_color_window_keys: Vec::new(),
         field_placement_cell_keys: Vec::new(),

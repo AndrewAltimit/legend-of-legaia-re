@@ -553,6 +553,23 @@ NATIVE_TITLE_SAVE = (
 
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "placed-object / overworld-landmark live model, native vs "
+        "play page - a scripted model swap (op `0x0E`) re-skins only the "
+        "record's first placement, and the rule was spelled three times: the "
+        "native field pass through a cached bound mask, the native overworld "
+        "pass inline over the records slice, the page with a `0xF0` sentinel "
+        "filter the native passes lacked; the native turn-then-move "
+        "composition was spelled twice inside the window. Both hosts' swaps "
+        "come out of `field_env::placed_model_swaps`, and the native passes "
+        "compose through `field_env::live_placed_model`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play.rs", "field_placement_models"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["placed_model_swaps"],
+    },
+    {
         "what": "NPC posed-mesh cache key, native vs play page - a script's "
         "look rotation (`4C 45`) turns the head on top of the keyframe, so it "
         "is part of the pose each host memoises. The native window packed it "

@@ -973,16 +973,9 @@ impl LegaiaRuntime {
         if models.is_empty() {
             return Vec::new();
         }
-        let bound = field_env::stream_bound_draws(&f.placement_records);
-        f.placement_records
-            .iter()
-            .zip(bound)
-            .map(|(r, bound)| {
-                r.filter(|_| bound)
-                    .and_then(|r| models.get(&r))
-                    .filter(|&&id| (0..0xF0).contains(&id))
-                    .map_or(-1, |&id| i32::from(id))
-            })
+        field_env::placed_model_swaps(&f.placement_records, models)
+            .into_iter()
+            .map(|id| id.map_or(-1, |id| id as i32))
             .collect()
     }
 
