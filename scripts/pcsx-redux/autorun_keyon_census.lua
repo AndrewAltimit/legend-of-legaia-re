@@ -32,6 +32,16 @@
 --            priority; `DROP` when every voice outranks the note)
 --   clock    every 60 vsyncs: wall-clock ms, the open sequences' channel
 --            mute masks, the resolved PROT index, pool base and BGM id
+-- and the SFX side, which the engine trace's `sfx_ring` ids answer:
+--   cuekey   FUN_80065034, the cue key-on (`mask` = voice, records =
+--            VAB slot / program / tone); `ra` 0x80016D9C = the ring drainer
+--   cue / cuerepl   FUN_80035B50 / FUN_80035BD0 ring push / replace (id)
+--   ringw    any store into the ring ids `DAT_8007B6D8[4]` (`mask` = pc);
+--            pc 0x80016B28 is the ager clearing a played slot, 0x80023688
+--            the move VM's op 0x1D
+--   motioncue  motion-VM op 0x09 pushes, with the actor and bytecode pc
+--   xa       FUN_8003D53C CD-XA one-shot clips (slot, channel, duration)
+--   spawn    FUN_80021B04 effect-part spawns (LEGAIA_CENSUS_SPAWNS=1)
 --
 -- Run (no save-state dumps per frame, so the emulator stays near real time):
 --   LEGAIA_FRAMES=4000 bash scripts/pcsx-redux/run_probe.sh \
@@ -147,6 +157,50 @@ probe.run({
                         n32(r.pc), n32(r.GPR.n.ra),
                         probe.read_u16(0x8007B6D8), probe.read_u16(0x8007B6DA),
                         probe.read_u16(0x8007B6DC), probe.read_u16(0x8007B6DE))
+                end)
+            end
+        end)
+        -- Effect-part spawns (`FUN_80021B04`), opt-in: names who seats the
+        -- ambient parts whose op-0x1D stores sound a scene.
+        if os.getenv("LEGAIA_CENSUS_SPAWNS") then
+            probe.arm_breakpoint(0x80021B04, "Exec", 4, "spawn", function()
+                local r = PCSX.getRegisters()
+                if csv then
+                    pcall(function()
+                        csv:row("%d,spawn,%08X,%08X,a1=%X a2=%X a3=%X", vsync,
+                            n32(r.GPR.n.a0), n32(r.GPR.n.ra), n32(r.GPR.n.a1),
+                            n32(r.GPR.n.a2), n32(r.GPR.n.a3))
+                    end)
+                end
+            end)
+        end
+        -- Motion-VM cue pushes (`FUN_80038158` op 0x09, `jal 0x80035B50` at
+        -- 0x80039178): `s3` is the actor, `s1` the op's bytecode; the row
+        -- carries the actor's world position (+0x14/+0x18/+0x1C).
+        probe.arm_breakpoint(0x80039178, "Exec", 4, "motion_cue", function()
+            local r = PCSX.getRegisters()
+            local a = n32(r.GPR.n.s3)
+            if csv then
+                pcall(function()
+                    local function s16(x)
+                        local v = probe.read_u16(x)
+                        return v >= 0x8000 and v - 0x10000 or v
+                    end
+                    csv:row("%d,motioncue,%08X,%08X,pos=%d/%d/%d pc=%08X", vsync, a,
+                        n32(r.GPR.n.ra), s16(a + 0x14), s16(a + 0x18), s16(a + 0x1C),
+                        n32(r.GPR.n.s1))
+                end)
+            end
+        end)
+        -- CD-XA one-shot clips: `FUN_8003D53C(clip_slot, chan, dur)`.
+        probe.arm_breakpoint(0x8003D53C, "Exec", 4, "xa_clip", function()
+            local r = PCSX.getRegisters()
+            if csv then
+                pcall(function()
+                    csv:row("%d,xa,%02X,%08X,chan=%d dur=%d", vsync,
+                        bit.band(n32(r.GPR.n.a0), 0xFF), n32(r.GPR.n.ra),
+                        bit.band(n32(r.GPR.n.a1), 0xFF),
+                        bit.band(n32(r.GPR.n.a2), 0xFFFF))
                 end)
             end
         end)

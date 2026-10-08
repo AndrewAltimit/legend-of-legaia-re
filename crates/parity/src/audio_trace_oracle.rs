@@ -165,6 +165,12 @@ pub struct AudioTraceFrame {
     pub active_voice_mask: u32,
     /// Per-voice state. Indexed 0..[`NUM_VOICES`].
     pub voices: Vec<VoiceTraceFrame>,
+    /// Engine only: the SFX cue ids the frame's producers wrote into the
+    /// ring (`World::take_sfx_ring_ops` - pushes, replaces and direct slot
+    /// stores, in order). The census side is the retail drainer's cue
+    /// key-ons (`autorun_keyon_census.lua`, `cuekey` rows).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub sfx_ring: Vec<i16>,
 }
 
 impl AudioTraceFrame {
@@ -181,6 +187,7 @@ impl AudioTraceFrame {
             reverb_depth: None,
             reverb_work_area: None,
             spu_control: None,
+            sfx_ring: Vec::new(),
             active_voice_mask: 0,
             voices: vec![VoiceTraceFrame::default(); NUM_VOICES],
         }
@@ -500,11 +507,24 @@ pub fn build_engine_audio_trace(
         // global-pool entries through `SceneHost::music_bank_entry_bytes`.
         let _ = session.host.route_bgm_events(&mut director)?;
         director.advance_frame(opts.us_per_frame, &mut sink);
-        out.push(sample_engine_frame(
-            &session,
-            director.spu(),
-            director.sequencer(),
-        ));
+        let mut frame = sample_engine_frame(&session, director.spu(), director.sequencer());
+        // Drain the SFX ring the hosts drain every tick; left alone, a long
+        // trace grows the queue without bound.
+        frame.sfx_ring = session
+            .host
+            .world
+            .take_sfx_ring_ops()
+            .into_iter()
+            .filter_map(|op| {
+                use legaia_engine_core::world::SfxRingOp;
+                match op {
+                    SfxRingOp::Push(id) | SfxRingOp::ReplaceLast(id) => Some(id),
+                    SfxRingOp::WriteSlot(_, id) | SfxRingOp::ArmSlot(_, id, _) => Some(id),
+                    SfxRingOp::SetLastDelay(_) => None,
+                }
+            })
+            .collect();
+        out.push(frame);
     }
     Ok(out)
 }
@@ -623,6 +643,7 @@ fn sample_engine_frame(
         // The engine models no SPU control register - reverb master enable
         // is implicit in the active `ReverbMode`.
         spu_control: None,
+        sfx_ring: Vec::new(),
         active_voice_mask: mask,
         voices,
     }
@@ -699,6 +720,7 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
         reverb_depth: spu.reverb_output_volume(),
         reverb_work_area: spu.reverb_work_area().map(|wa| wa.wrapping_mul(2)),
         spu_control: spu.spu_control(),
+        sfx_ring: Vec::new(),
         active_voice_mask: mask,
         voices,
     })
