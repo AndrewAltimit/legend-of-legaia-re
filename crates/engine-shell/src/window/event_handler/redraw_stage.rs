@@ -70,87 +70,7 @@ impl PlayWindowApp {
         {
             self.caption_atlas = None;
         }
-        // Full-scene colour grade: the opening prologue cutscene
-        // (`opdeene`, "It was the Seru.") renders its whole 3D scene in
-        // warm gold sepia (dim ambient + gold far-colour depth cue in
-        // retail); every other scene, incl. the Rim Elm hand-off, is
-        // natural colour. Staged every frame so it clears on transition.
-        //
-        // The op `0x4C 0x12` word (`_DAT_8007BCB8..BA`) is NOT a frame
-        // multiply: its one reader disc-wide is the fog particle update
-        // `FUN_8003F3FC` (see `docs/subsystems/field-ambient-fx.md`), so
-        // the scene's own pixels never take it - `retona_field_card_boot`
-        // holds the word at 27 over a full-brightness frame. The fog
-        // sheets take it through `World::fog_render_step`.
-        match self.session.host.world.scene_color_grade() {
-            // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
-            // mode - the retail mechanism's true altitude (the scene's
-            // uploaded CLUTs are rewritten to the gold law and the
-            // resident TMD colour words by the two `4C E6` HSV ops; the
-            // engine's shaders apply the identical laws per texel /
-            // packet colour, `prologue_sepia_word`). The view-depth cue
-            // ramp is inert in this mode (retail's prologue nodes hold
-            // `IR0 = 0`).
-            Some(g) => {
-                r.set_color_grade(g.gold, g.strength);
-                r.set_palette_grade([1.0; 3], true);
-            }
-            None => {
-                r.set_color_grade([1.0, 1.0, 1.0], 0.0);
-                r.set_palette_grade([1.0; 3], false);
-            }
-        }
-        // The grade's second half: the per-render-node DPCS far-colour
-        // pull (gold far colour + depth-graded IR0 in retail), staged as
-        // a view-depth IR0 ramp. Cleared every non-prologue frame, so
-        // interactive scenes render the identity (ramp-off) path.
-        match self.session.host.world.scene_depth_cue() {
-            Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
-            None => r.clear_depth_cue_ramp(),
-        }
-        // Retail GTE NCLIP winding rejection over the whole field pass
-        // (`camera_view::nclip_cull_mode`): retail culls the back faces
-        // of every field mesh, which is what hides a sky dome's outer
-        // shell (korout, retona) and the opdeene prologue shot's near
-        // cave wall. The field frame draws raw retail vertices under a
-        // camera-side Y-flip, which mirrors the projected winding, so
-        // retail's front faces arrive CW - mode 2 (discard front-facing
-        // = discard CCW under the pipelines' default Ccw front-face)
-        // keeps them. The world map, battle and the minigame venues keep
-        // both-sided draws (their per-pass winding parities differ).
-        let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
-            cutscene_cam.is_some(),
-            self.session.host.world.mode,
-        );
-        r.set_backface_cull(nclip_mode);
-        // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
-        // table, applied by retail's overworld prim leaves), scaled for
-        // this frame's camera - the same kernel the browser play page
-        // stages `u_curve` from.
-        r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
-        // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
-        // a primitive whose mean corner depth sits near or behind the eye
-        // is not drawn, where a per-pixel clip would paint it across the
-        // frame. Only under a retail camera - the field debug orbit and
-        // the stage-less battle framing are vantages retail never had.
-        let retail_camera = match self.session.host.world.mode {
-            SceneMode::Battle => self.battle_stage_mesh.is_some(),
-            _ => !self.field_debug_camera,
-        } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
-        r.set_prim_near_reject(
-            legaia_engine_core::camera_view::prim_near_cut(
-                self.session.host.world.mode,
-                retail_camera,
-            ),
-            legaia_engine_core::camera_view::prim_gpu_span_h(
-                self.session.host.world.mode,
-                retail_camera,
-                self.session.camera.globals.0[9] as f32,
-            ),
-        );
-        if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
-            r.set_semi_blend(false);
-        }
+        self.stage_grade_and_cull(r, cutscene_cam);
         // World-map mode frames the loaded map with the
         // controller-driven camera (azimuth / zoom / pan); an active
         // in-engine cutscene (opdeene opening prologue) frames the
@@ -165,165 +85,8 @@ impl PlayWindowApp {
         // frame's Y negation) or the raw battle stage (the stage model's
         // scale + Y-flip). Staged every frame; `None` stages nothing.
         self.stage_fog_volume(r, cam, in_world_map);
-        // Enhanced lighting's mood: the persisted time of day over the
-        // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
-        // the browser play page makes). Cheap; staged every frame so a
-        // scene change or an `F8` cycle lands on the next frame.
-        let mood = self.lighting_mood();
-        r.set_lighting_mood(mood);
-        // Stage the derived scene point lights (the dynamic-lighting
-        // enhancement's candle / wall-light layer) with this frame's
-        // camera so the renderer can recover world space from the
-        // per-draw MVPs. Field free-roam only - battle / world map /
-        // boot UI clear them so the layer never lights the wrong
-        // coordinate space. Inert (zero staged count, no shadow pass)
-        // while dynamic lighting or the shadow sub-toggle is off.
-        // A menu-overlay screen that owns the frame (a shop, the casino
-        // prize counter) draws no field, so it stages no field light
-        // either: the halos are screen sprites and would otherwise glow
-        // through the black behind the windows.
-        if !self.boot_ui.is_active()
-            && !self.menu_runtime.covers_field()
-            && !in_world_map
-            && self.session.host.world.mode == SceneMode::Field
-            && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
-        {
-            // Per-frame selection: a scene can carry dozens of candle
-            // props but only 8 lights shade at once, so pick the ones
-            // nearest the player (falling back to the origin when no
-            // player actor is seated).
-            let w = &self.session.host.world;
-            let focus = w
-                .player_actor_slot
-                .and_then(|s| w.actors.get(s as usize))
-                .map(|a| {
-                    [
-                        a.move_state.world_x as f32,
-                        a.move_state.world_y as f32,
-                        a.move_state.world_z as f32,
-                    ]
-                })
-                .unwrap_or([0.0; 3]);
-            // The static lights plus every prop's set at the actor's
-            // live position (the same anchor the NPC draw uses).
-            let mut all = self.scene_point_lights.clone();
-            all.extend(legaia_engine_render::scene_lighting::place_prop_lights(
-                &self.scene_prop_lights,
-                |slot, spawn| w.field_npc_live_anchor(slot, spawn),
-            ));
-            let picked = legaia_engine_render::scene_lights::nearest_lights(&all, focus);
-            r.set_scene_lights(&picked, cam);
-            // Halos + soft light shafts around the picked lights (the
-            // bloom stand-in), scaled by the mood's glow.
-            r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
-                &picked, &mood,
-            ));
-        } else {
-            r.clear_scene_lights();
-            r.set_glow_sprites(&[]);
-        }
-        // Camera-occlusion fade (the see-through-walls enhancement),
-        // two per-frame halves:
-        //
-        // 1. The **visibility gate**: ray-cast a 5-point eye->player
-        //    cross against the static scene triangles
-        //    (`field_occluders`) and arm the fade ONLY when every
-        //    sample is blocked - a partially visible character gets
-        //    no fade at all (geometry merely near the corridor, e.g.
-        //    an upper-tier floor beside a pit, must not dither while
-        //    the player is plainly on screen). The eye is the follow
-        //    camera's analytic position (`field_follow_camera_eye`),
-        //    so the gate runs in field free-roam under the follow
-        //    camera only - cutscene framing is authored, the debug
-        //    orbit is a dev vantage, and battle / world map / boot UI
-        //    frame their own subjects.
-        // 2. The **strength ramp**: ease toward the gate verdict a
-        //    quarter of the gap per frame (`OCCL_STRENGTH_EASE`,
-        //    mirrored by the browser play page's ramp) so the
-        //    screen-door dissolves in/out instead of popping while
-        //    the gate flips at cover edges.
-        //
-        // The staged focus is the player's body centre: the floor
-        // tier under the actor (the same sampler the follow camera
-        // anchors to) lifted half a character height (~130-unit mesh;
-        // field world is retail Y-down, so up is negative).
-        const OCCL_STRENGTH_EASE: f32 = 0.25;
-        // The world half of the gate is the shared kernel
-        // (`field_occlusion::fade_armed`: field mode, no scripted shot);
-        // what stays here is genuinely this host's - its master toggle,
-        // a boot / pause panel owning the screen, and the `F3` debug
-        // vantage. The browser play page reads the same split.
-        let occl_focus = (self.occlusion_fade
-            && !self.boot_ui.is_active()
-            && !self.field_debug_camera
-            && legaia_engine_core::field_occlusion::fade_armed(
-                &self.session.host.world,
-                cutscene_cam.is_some(),
-            ))
-        .then(|| legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world))
-        .flatten();
-        let mut occl_staged = false;
-        if let Some(centre) = occl_focus {
-            let fully_hidden = self
-                .field_follow_camera_eye()
-                .map(|eye| {
-                    if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
-                        let hits = self.field_occluders.sample_hits(eye.to_array(), centre);
-                        // A correct eye is the centre of projection: its
-                        // clip w under the very camera matrix the draws
-                        // use must be ~0.
-                        let eye_w = (cam * Vec4::new(eye.x, eye.y, eye.z, 1.0)).w;
-                        log::info!(
-                            "occl-gate: hits {:?} eye {:?} (clip w {:.2}) centre {:?}",
-                            hits,
-                            eye.to_array(),
-                            eye_w,
-                            centre
-                        );
-                        if hits.iter().all(|h| *h)
-                            && let Some((tri, res_tmd)) =
-                                self.field_occluders.first_hit(eye.to_array(), centre)
-                        {
-                            log::info!(
-                                "occl-gate: centre blocked by tri {tri:?} res_tmd {res_tmd}"
-                            );
-                        }
-                    }
-                    self.field_occluders.fully_occluded(eye.to_array(), centre)
-                })
-                .unwrap_or(false);
-            let target = if fully_hidden { 1.0 } else { 0.0 };
-            let mut s = self.occl_fade_strength.get();
-            s += (target - s) * OCCL_STRENGTH_EASE;
-            if (s - target).abs() < 0.01 {
-                s = target;
-            }
-            self.occl_fade_strength.set(s);
-            if s > 0.01 {
-                let clip = cam * Vec4::new(centre[0], centre[1], centre[2], 1.0);
-                if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
-                    log::info!("occl-gate: staging focus clip {:?} strength {s:.2}", clip);
-                }
-                // The fade circle is authored in world units, so the
-                // renderer needs this camera's vertical projection
-                // scale to size it in pixels at the focus depth.
-                let scale_y =
-                    legaia_engine_render::occlusion_fade::view_proj_scale_y(&cam.to_cols_array());
-                // The floor point under the character anchors the
-                // feet-line rule: nothing below it on screen fades.
-                let feet =
-                    legaia_engine_core::field_occlusion::player_feet(&self.session.host.world)
-                        .unwrap_or(centre);
-                let feet_clip = cam * Vec4::new(feet[0], feet[1], feet[2], 1.0);
-                r.set_occlusion_focus(clip.to_array(), feet_clip.to_array(), s, scale_y);
-                occl_staged = true;
-            }
-        } else {
-            self.occl_fade_strength.set(0.0);
-        }
-        if !occl_staged {
-            r.clear_occlusion_focus();
-        }
+        self.stage_scene_lights(r, cam, in_world_map);
+        self.stage_occlusion_fade(r, cam, cutscene_cam);
         FrameView {
             w,
             h,
@@ -555,6 +318,299 @@ impl PlayWindowApp {
             self.npc_morph_static.insert(slot, (vm, cm));
         }
 
+        let npc_frames = self.pose_npc_clips(field_tail_ticks);
+        PosedFrame {
+            posed_overrides,
+            player_color_posed,
+            battle_ghost_uploads,
+            posed_prop_baked_v,
+            posed_prop_baked_c,
+            posed_prop_live_v,
+            posed_prop_live_c,
+            npc_frames,
+        }
+    }
+}
+
+impl PlayWindowApp {
+    /// The frame-wide renderer knobs: the colour grade and depth cue, the
+    /// NCLIP cull mode, the overworld curvature and the near reject.
+    fn stage_grade_and_cull(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cutscene_cam: Option<CutsceneCam>,
+    ) {
+        // Full-scene colour grade: the opening prologue cutscene
+        // (`opdeene`, "It was the Seru.") renders its whole 3D scene in
+        // warm gold sepia (dim ambient + gold far-colour depth cue in
+        // retail); every other scene, incl. the Rim Elm hand-off, is
+        // natural colour. Staged every frame so it clears on transition.
+        //
+        // The op `0x4C 0x12` word (`_DAT_8007BCB8..BA`) is NOT a frame
+        // multiply: its one reader disc-wide is the fog particle update
+        // `FUN_8003F3FC` (see `docs/subsystems/field-ambient-fx.md`), so
+        // the scene's own pixels never take it - `retona_field_card_boot`
+        // holds the word at 27 over a full-brightness frame. The fog
+        // sheets take it through `World::fog_render_step`.
+        match self.session.host.world.scene_color_grade() {
+            // Prologue grade: staged as the renderer's PALETTE-COLLAPSE
+            // mode - the retail mechanism's true altitude (the scene's
+            // uploaded CLUTs are rewritten to the gold law and the
+            // resident TMD colour words by the two `4C E6` HSV ops; the
+            // engine's shaders apply the identical laws per texel /
+            // packet colour, `prologue_sepia_word`). The view-depth cue
+            // ramp is inert in this mode (retail's prologue nodes hold
+            // `IR0 = 0`).
+            Some(g) => {
+                r.set_color_grade(g.gold, g.strength);
+                r.set_palette_grade([1.0; 3], true);
+            }
+            None => {
+                r.set_color_grade([1.0, 1.0, 1.0], 0.0);
+                r.set_palette_grade([1.0; 3], false);
+            }
+        }
+        // The grade's second half: the per-render-node DPCS far-colour
+        // pull (gold far colour + depth-graded IR0 in retail), staged as
+        // a view-depth IR0 ramp. Cleared every non-prologue frame, so
+        // interactive scenes render the identity (ramp-off) path.
+        match self.session.host.world.scene_depth_cue() {
+            Some(c) => r.set_depth_cue_ramp(c.far, c.near_z, c.far_z, c.max_ir0),
+            None => r.clear_depth_cue_ramp(),
+        }
+        // Retail GTE NCLIP winding rejection over the whole field pass
+        // (`camera_view::nclip_cull_mode`): retail culls the back faces
+        // of every field mesh, which is what hides a sky dome's outer
+        // shell (korout, retona) and the opdeene prologue shot's near
+        // cave wall. The field frame draws raw retail vertices under a
+        // camera-side Y-flip, which mirrors the projected winding, so
+        // retail's front faces arrive CW - mode 2 (discard front-facing
+        // = discard CCW under the pipelines' default Ccw front-face)
+        // keeps them. The world map, battle and the minigame venues keep
+        // both-sided draws (their per-pass winding parities differ).
+        let nclip_mode = legaia_engine_core::camera_view::nclip_cull_mode(
+            cutscene_cam.is_some(),
+            self.session.host.world.mode,
+        );
+        r.set_backface_cull(nclip_mode);
+        // The overworld's per-vertex screen-Y bend (`FUN_800271A8`'s
+        // table, applied by retail's overworld prim leaves), scaled for
+        // this frame's camera - the same kernel the browser play page
+        // stages `u_curve` from.
+        r.set_overworld_curvature(self.overworld_curve_scale(cutscene_cam));
+        // Retail's per-primitive near reject (`camera_view::prim_near_cut`):
+        // a primitive whose mean corner depth sits near or behind the eye
+        // is not drawn, where a per-pixel clip would paint it across the
+        // frame. Only under a retail camera - the field debug orbit and
+        // the stage-less battle framing are vantages retail never had.
+        let retail_camera = match self.session.host.world.mode {
+            SceneMode::Battle => self.battle_stage_mesh.is_some(),
+            _ => !self.field_debug_camera,
+        } && std::env::var_os("LEGAIA_DIAG_NO_PRIM_NEAR").is_none();
+        r.set_prim_near_reject(
+            legaia_engine_core::camera_view::prim_near_cut(
+                self.session.host.world.mode,
+                retail_camera,
+            ),
+            legaia_engine_core::camera_view::prim_gpu_span_h(
+                self.session.host.world.mode,
+                retail_camera,
+                self.session.camera.globals.0[9] as f32,
+            ),
+        );
+        if std::env::var_os("LEGAIA_DIAG_NOSEMI").is_some() {
+            r.set_semi_blend(false);
+        }
+    }
+
+    /// Enhanced lighting's mood and the derived scene point lights with
+    /// their glow sprites (cleared off the field).
+    fn stage_scene_lights(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cam: Mat4,
+        in_world_map: bool,
+    ) {
+        // Enhanced lighting's mood: the persisted time of day over the
+        // loaded scene (`scene_lighting::TimeOfDay::mood` - the same call
+        // the browser play page makes). Cheap; staged every frame so a
+        // scene change or an `F8` cycle lands on the next frame.
+        let mood = self.lighting_mood();
+        r.set_lighting_mood(mood);
+        // Stage the derived scene point lights (the dynamic-lighting
+        // enhancement's candle / wall-light layer) with this frame's
+        // camera so the renderer can recover world space from the
+        // per-draw MVPs. Field free-roam only - battle / world map /
+        // boot UI clear them so the layer never lights the wrong
+        // coordinate space. Inert (zero staged count, no shadow pass)
+        // while dynamic lighting or the shadow sub-toggle is off.
+        // A menu-overlay screen that owns the frame (a shop, the casino
+        // prize counter) draws no field, so it stages no field light
+        // either: the halos are screen sprites and would otherwise glow
+        // through the black behind the windows.
+        if !self.boot_ui.is_active()
+            && !self.menu_runtime.covers_field()
+            && !in_world_map
+            && self.session.host.world.mode == SceneMode::Field
+            && !(self.scene_point_lights.is_empty() && self.scene_prop_lights.is_empty())
+        {
+            // Per-frame selection: a scene can carry dozens of candle
+            // props but only 8 lights shade at once, so pick the ones
+            // nearest the player (falling back to the origin when no
+            // player actor is seated).
+            let w = &self.session.host.world;
+            let focus = w
+                .player_actor_slot
+                .and_then(|s| w.actors.get(s as usize))
+                .map(|a| {
+                    [
+                        a.move_state.world_x as f32,
+                        a.move_state.world_y as f32,
+                        a.move_state.world_z as f32,
+                    ]
+                })
+                .unwrap_or([0.0; 3]);
+            // The static lights plus every prop's set at the actor's
+            // live position (the same anchor the NPC draw uses).
+            let mut all = self.scene_point_lights.clone();
+            all.extend(legaia_engine_render::scene_lighting::place_prop_lights(
+                &self.scene_prop_lights,
+                |slot, spawn| w.field_npc_live_anchor(slot, spawn),
+            ));
+            let picked = legaia_engine_render::scene_lights::nearest_lights(&all, focus);
+            r.set_scene_lights(&picked, cam);
+            // Halos + soft light shafts around the picked lights (the
+            // bloom stand-in), scaled by the mood's glow.
+            r.set_glow_sprites(&legaia_engine_render::scene_lighting::glow_sprites(
+                &picked, &mood,
+            ));
+        } else {
+            r.clear_scene_lights();
+            r.set_glow_sprites(&[]);
+        }
+    }
+
+    /// The camera-occlusion fade: the visibility gate, the strength ramp
+    /// and the staged focus (cleared when it does not arm).
+    fn stage_occlusion_fade(
+        &self,
+        r: &legaia_engine_render::Renderer,
+        cam: Mat4,
+        cutscene_cam: Option<CutsceneCam>,
+    ) {
+        // Camera-occlusion fade (the see-through-walls enhancement),
+        // two per-frame halves:
+        //
+        // 1. The **visibility gate**: ray-cast a 5-point eye->player
+        //    cross against the static scene triangles
+        //    (`field_occluders`) and arm the fade ONLY when every
+        //    sample is blocked - a partially visible character gets
+        //    no fade at all (geometry merely near the corridor, e.g.
+        //    an upper-tier floor beside a pit, must not dither while
+        //    the player is plainly on screen). The eye is the follow
+        //    camera's analytic position (`field_follow_camera_eye`),
+        //    so the gate runs in field free-roam under the follow
+        //    camera only - cutscene framing is authored, the debug
+        //    orbit is a dev vantage, and battle / world map / boot UI
+        //    frame their own subjects.
+        // 2. The **strength ramp**: ease toward the gate verdict a
+        //    quarter of the gap per frame (`OCCL_STRENGTH_EASE`,
+        //    mirrored by the browser play page's ramp) so the
+        //    screen-door dissolves in/out instead of popping while
+        //    the gate flips at cover edges.
+        //
+        // The staged focus is the player's body centre: the floor
+        // tier under the actor (the same sampler the follow camera
+        // anchors to) lifted half a character height (~130-unit mesh;
+        // field world is retail Y-down, so up is negative).
+        const OCCL_STRENGTH_EASE: f32 = 0.25;
+        // The world half of the gate is the shared kernel
+        // (`field_occlusion::fade_armed`: field mode, no scripted shot);
+        // what stays here is genuinely this host's - its master toggle,
+        // a boot / pause panel owning the screen, and the `F3` debug
+        // vantage. The browser play page reads the same split.
+        let occl_focus = (self.occlusion_fade
+            && !self.boot_ui.is_active()
+            && !self.field_debug_camera
+            && legaia_engine_core::field_occlusion::fade_armed(
+                &self.session.host.world,
+                cutscene_cam.is_some(),
+            ))
+        .then(|| legaia_engine_core::field_occlusion::player_body_centre(&self.session.host.world))
+        .flatten();
+        let mut occl_staged = false;
+        if let Some(centre) = occl_focus {
+            let fully_hidden = self
+                .field_follow_camera_eye()
+                .map(|eye| {
+                    if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
+                        let hits = self.field_occluders.sample_hits(eye.to_array(), centre);
+                        // A correct eye is the centre of projection: its
+                        // clip w under the very camera matrix the draws
+                        // use must be ~0.
+                        let eye_w = (cam * Vec4::new(eye.x, eye.y, eye.z, 1.0)).w;
+                        log::info!(
+                            "occl-gate: hits {:?} eye {:?} (clip w {:.2}) centre {:?}",
+                            hits,
+                            eye.to_array(),
+                            eye_w,
+                            centre
+                        );
+                        if hits.iter().all(|h| *h)
+                            && let Some((tri, res_tmd)) =
+                                self.field_occluders.first_hit(eye.to_array(), centre)
+                        {
+                            log::info!(
+                                "occl-gate: centre blocked by tri {tri:?} res_tmd {res_tmd}"
+                            );
+                        }
+                    }
+                    self.field_occluders.fully_occluded(eye.to_array(), centre)
+                })
+                .unwrap_or(false);
+            let target = if fully_hidden { 1.0 } else { 0.0 };
+            let mut s = self.occl_fade_strength.get();
+            s += (target - s) * OCCL_STRENGTH_EASE;
+            if (s - target).abs() < 0.01 {
+                s = target;
+            }
+            self.occl_fade_strength.set(s);
+            if s > 0.01 {
+                let clip = cam * Vec4::new(centre[0], centre[1], centre[2], 1.0);
+                if std::env::var_os("LEGAIA_OCCL_DEBUG").is_some() {
+                    log::info!("occl-gate: staging focus clip {:?} strength {s:.2}", clip);
+                }
+                // The fade circle is authored in world units, so the
+                // renderer needs this camera's vertical projection
+                // scale to size it in pixels at the focus depth.
+                let scale_y =
+                    legaia_engine_render::occlusion_fade::view_proj_scale_y(&cam.to_cols_array());
+                // The floor point under the character anchors the
+                // feet-line rule: nothing below it on screen fades.
+                let feet =
+                    legaia_engine_core::field_occlusion::player_feet(&self.session.host.world)
+                        .unwrap_or(centre);
+                let feet_clip = cam * Vec4::new(feet[0], feet[1], feet[2], 1.0);
+                r.set_occlusion_focus(clip.to_array(), feet_clip.to_array(), s, scale_y);
+                occl_staged = true;
+            }
+        } else {
+            self.occl_fade_strength.set(0.0);
+        }
+        if !occl_staged {
+            r.clear_occlusion_focus();
+        }
+    }
+
+    /// Pose each placed NPC's clip frame for this redraw (memoised in
+    /// `npc_pose_cache`) and advance its playhead by the ticks that ran the
+    /// field's tail. Returns the `(slot, pose key)` each slot shows.
+    fn pose_npc_clips(&mut self, field_tail_ticks: u32) -> Vec<(u8, usize)> {
+        let r = self
+            .win
+            .renderer
+            .as_ref()
+            .expect("render gate: renderer present");
         // Field-NPC clip playback: advance each placed NPC's looping ANM
         // clip and draw its posed mesh halves.
         //
@@ -709,15 +765,6 @@ impl PlayWindowApp {
                 }
             }
         }
-        PosedFrame {
-            posed_overrides,
-            player_color_posed,
-            battle_ghost_uploads,
-            posed_prop_baked_v,
-            posed_prop_baked_c,
-            posed_prop_live_v,
-            posed_prop_live_c,
-            npc_frames,
-        }
+        npc_frames
     }
 }
