@@ -1177,40 +1177,7 @@ pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
 /// keeps them out of the dispatcher.
 pub const OP49_DEDICATED_SUB_OPS: [u8; 4] = [0, 3, 5, 7];
 
-/// Op-`0x49` sub-ops whose park is a **scripted menu-button press**: the
-/// table row is `-1` *and* the port has no dedicated path for it, so no
-/// submode screen is opened and the park stands until the pause menu the
-/// press opens has closed.
-///
-/// A `-1` row does not leave the subsystem actor alone. The enter half
-/// `FUN_801F1278` writes handler `7` and a zero phase before it reads the
-/// table, and the `-1` test only skips the overwrite:
-///
-/// ```text
-/// 801f1404  li    v0,0x7
-/// 801f140c  sh    v0,0x50(s4)         ; +0x50 = 7, the state pick
-/// 801f141c  sh    zero,0x54(s4)       ; +0x54 = 0
-/// 801f1454  lw    a1,-0x4bb0(v0)      ; the parked operand pointer
-/// 801f145c  lbu   v0,0x0(a1)          ; its first byte = the sub-op
-/// 801f1468  lb    v0,0x0(v0)          ; OP49_SUBOP_SLOTS[sub_op], SIGNED
-/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> keep +0x50 = 7
-/// ```
-///
-/// (`overlay_baka_fighter_801f1278.txt`, `FUN_801F1278`.) Handler `7` picks
-/// `0x30`, the pause-menu session, so the menu opens by itself - see
-/// [`World::scripted_menu_open_pending`]. Its close is the release
-/// ([`World::release_menu_entry_context_park`]): the session's last phase
-/// clears the cursor context's `+0x3E` (`0x801ED52C`), and the dispatcher's
-/// retire arm then writes the Done sentinel because the park is still live
-/// (`0x801F1678..0x801F16AC`: `bne v1,zero` -> `sw 1,-0x4bb0`).
-///
-/// Sub-op `1` is a field save point - the menu's entry decode opens it on the
-/// save-card driver `0x19` - and sub-op `0x0D` the context that opens on the
-/// notice panel, blocks the root Load row and turns its cancel into the ready
-/// check. The other `-1` rows run through the same press in retail (`0` the
-/// inline gold shop, `7` the casino prize exchange), and the port reaches
-/// both through [`OP49_DEDICATED_SUB_OPS`] instead.
-pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 2] = [1, 0x0D];
+pub use crate::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
 
 /// The handler slot an op-`0x49` sub-op opens.
 ///

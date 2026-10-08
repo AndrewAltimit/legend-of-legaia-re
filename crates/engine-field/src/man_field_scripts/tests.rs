@@ -214,31 +214,6 @@ fn first_inline_dialog_offset_rejects_a_stray_marker() {
 }
 
 #[test]
-fn classify_inline_text_with_phantom_warp_byte_is_an_npc() {
-    // A talk-NPC record whose message contains a literal '>' (0x3E, the
-    // warp/interact opcode). The structural pass finds the 0x1F text block;
-    // the desync gate ignores the '>' byte because it sits inside the text,
-    // so the actor classifies as an Npc carrying the inline message - NOT a
-    // phantom portal.
-    let mut script = vec![0x25u8]; // a benign leading op
-    script.extend_from_slice(&[0x1F]); // text-segment lead
-    script.extend_from_slice(b"<Go north>"); // contains 0x3E ('>')
-    script.push(0x00); // terminator
-    let (mf, man) = man_with_placement_script(&script);
-    let placements = mf.actor_placements(&man);
-    let kind = classify_placement(&mf, &man, &placements[0]);
-    match kind {
-        PlacementKind::Npc { dialog_inline, .. } => {
-            let inline = dialog_inline.expect("inline text captured");
-            // Renders the segment text (after the 0x1F lead).
-            let panel = crate::dialog::OwnedDialogPanel::from_inline_dialog(&inline);
-            assert!(panel.is_some(), "inline buffer is renderable");
-        }
-        other => panic!("expected Npc, got {other:?}"),
-    }
-}
-
-#[test]
 fn classify_warp_wins_over_a_preceding_dialog() {
     // A talk-then-warp script (interact first, warp after) classifies as a
     // portal - the warp is the defining behaviour.

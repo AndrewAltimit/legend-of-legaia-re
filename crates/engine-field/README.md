@@ -4,7 +4,8 @@ The field runtime's kernels that never touch `World`: the field overlay's
 actor programs and per-actor kernels, the follow camera's per-scene
 parameters and eases, player clip playback, the scene-transition and in-field
 save-screen actors, the op-`0x49` submode, the field VM's event queue, CLUT
-effects, the overworld draw-order and ground-cue policies, the overworld
+effects, the scene MAN's field-script decoders, the overworld draw-order and
+ground-cue policies, the overworld
 controller and its panel screen, and the battle animation / SFX cue
 routers. Free of wgpu, winit and cpal, so it builds for
 native and `wasm32` alike.
@@ -59,6 +60,15 @@ a dependent crate.
   arts-voice XA requests and SPU ring cues) and `sfx_cue` (cue id to the
   4-slot pending ring / XA clip, `FUN_8004FE5C`); the battle actor tick in
   `engine-core` drains them.
+- **MAN field scripts** - `man_field_scripts`: the opcode-aware walk of a
+  scene MAN's partition scripts (record spans, the scratchpad / system
+  flag sites, inline encounter records, BGM starts, stager installs),
+  placement classification and carrier derivation (`FieldCarrierConfig`),
+  NPC motion legs and the walk-step speed ladder, scene-change triggers,
+  and the system-flag / op-`0x49` window / motion-flag censuses over a set
+  of MAN carriers. Engine-core's `man_field_scripts` re-exports it by glob
+  and adds the carrier resolution off a loaded `Scene` and the censuses'
+  scene-name entry points.
 - **Overworld** - `world_map` (`WorldMapController`, which drives
   `SceneMode::WorldMap`, and the entry fade) and `world_map_panel_host` (the
   world-map band's panel screen: the `0x801F2B98` window system, the six

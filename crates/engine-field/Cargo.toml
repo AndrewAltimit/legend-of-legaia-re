@@ -11,7 +11,9 @@ path = "src/lib.rs"
 [dependencies]
 legaia-anm.workspace = true
 legaia-asset.workspace = true
+legaia-engine-battle.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
+legaia-mes.workspace = true
 legaia-tmd.workspace = true

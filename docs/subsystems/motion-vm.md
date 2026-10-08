@@ -30,7 +30,7 @@ which runs the whole op table (bodies split for length into
 [`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs)).
 Because its bytecode arrives as MAN tail-section data rather than through the
 actor tick's own buffer, a *static* decode of the same bytes exists too -
-[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs),
+[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs),
 which answers which stream binds to which placement, at what wander pace, with
 what default-move harvest, without running anything.
 

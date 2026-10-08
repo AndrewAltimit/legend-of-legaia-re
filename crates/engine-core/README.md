@@ -364,7 +364,11 @@ composes them.
   inline `[count][ids]` arm at a decoded opcode boundary instead of the
   byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
   town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
-  indexed formation-table install path (see `encounter_record`).
+  indexed formation-table install path (see `encounter_record`). The
+  decoders live in `legaia-engine-field`, where every census takes the MAN
+  carriers it walks; this module re-exports them and adds what needs a
+  loaded `Scene` - `scene_man_carriers` and the scene-name entry points of
+  the system-flag, op-`0x49` window and motion-flag censuses.
 - **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
   entity SM (`legaia_engine_vm::world_map`) in `SceneMode::Field` as well as
   on the overworld. `install_field_carriers([FieldCarrierConfig])` places the

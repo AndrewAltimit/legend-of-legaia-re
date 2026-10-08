@@ -85,3 +85,19 @@ pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedField
         })
         .collect()
 }
+
+/// Per-field-carrier role. The retail engine builds one record per MAN-placed
+/// scene entity; this is the port's slice the field entity SM acts on.
+/// Paired by index with `legaia_engine_core::world::FieldCarrierState::entities`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldCarrierConfig {
+    /// A **scripted-encounter carrier**: engaging it (the dialogue-accept)
+    /// advances its `FUN_801DA51C` SM to its scene-transition, which selects
+    /// MAN formation `formation_id` (by index, so the scene's merged monster
+    /// stats stand) and launches the battle. The Rim Elm Tetsu tutorial fight
+    /// is `formation_id` [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`].
+    ScriptedEncounter { formation_id: u16 },
+    /// A plain interactable NPC. Surfaces a
+    /// [`crate::field_events::FieldEvent::FieldInteract`] with `interact_id`.
+    Npc { interact_id: u8 },
+}

@@ -617,7 +617,7 @@ Some questions - "which story flag/item/party change happens in which scene" acr
   touches, answering questions not yet asked. (The static census cannot
   backstop runtime reads: its bytecode walker desyncs in dialogue-heavy MANs,
   so "zero TEST sites" is not proof of no reader - see
-  `flag_test_bytescan` in `crates/engine-core/src/man_field_scripts/`.)
+  `flag_test_bytescan` in `crates/engine-field/src/man_field_scripts/`.)
   `LEGAIA_FLAG` takes a **comma list** of target flags; targets additionally
   get a per-byte read-watch (inlined readers that bypass the helper),
   prioritized call-context detail, and a **first-hit auto-snapshot**. Every

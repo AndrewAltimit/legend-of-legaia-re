@@ -2392,7 +2392,7 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
 
 That static leg is only the guess for a record the load slice does not run.
 `World::pre_run_field_channel_prologues` executes every `0x24`/`0x25`
@@ -2556,7 +2556,7 @@ An NPC's per-frame glide is NOT the player's `+0x72` walk step (that premise is 
 There is **no synthesised motion bytecode** for the yield ops: 0x37/0x41/0x47 are the field VM's own yield-class opcodes. The dispatcher parks the op's instruction pointer at actor `+0x94` (progress cursor `+0x54`, HALT flag `0x400`) and `FUN_8003774C` interprets the record bytes in place each frame, resolving the same `0x80` extended-target convention as the field VM ([script-vm.md](script-vm.md) § 0x37-0x42).
 
 The engine decodes each placement's glide speed from those real operands off the disc:
-[`man_field_scripts::placement_glide_speed`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs)
+[`man_field_scripts::placement_glide_speed`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs)
 tries the placement's bound tail-section-1 stream first (`placement_wander_step` - binding id = `N0 + placement_index`, default variant first),
 then the record's own pre-text field-VM yield ops (`placement_yield_step` - own-context only, with the park-sentinel/locality filters on a 0x47's target),
 maps the selector through [`World::field_npc_walk_step_speed`](../../crates/engine-core/src/world/config.rs),

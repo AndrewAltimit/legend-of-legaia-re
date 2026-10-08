@@ -40,7 +40,7 @@ pub enum PlacementKind {
     ///
     /// **`target_map` is a misnomer kept for compile compatibility.** The value
     /// is `op0 - 100`, the mode-24 `sub_id`
-    /// ([`crate::minigame_entry::MinigameSubId`]), and it selects a *code
+    /// (`legaia_engine_core::minigame_entry::MinigameSubId`), and it selects a *code
     /// overlay*, not a scene - the arm calls no scene-change packet and the op
     /// carries no destination name. Routing it through a `MapIdResolver`
     /// resolves a code-overlay selector against a CDNAME ordinal and warps the
@@ -58,7 +58,7 @@ pub enum PlacementKind {
         interact_id: Option<u8>,
         /// Record bytes from the start of the first inline `0x1F`-lead text
         /// segment through the record's bounded end - the actual message text;
-        /// [`crate::dialog::OwnedDialogPanel::from_inline_dialog`] renders it
+        /// `legaia_engine_core::dialog::OwnedDialogPanel::from_inline_dialog` renders it
         /// (it re-finds the `0x1F` lead and types the first segment).
         dialog_inline: Option<Vec<u8>>,
     },
@@ -348,7 +348,7 @@ pub fn placement_interaction_record(
 ///
 /// A save point's record is `31 02 21` (its spawn section) then `49 01 00 21`:
 /// the interaction is a single op-`0x49` park on a `-1` table row, which
-/// presses the menu button ([`crate::world::World::scripted_menu_open_pending`]),
+/// presses the menu button (`legaia_engine_core::world::World::scripted_menu_open_pending`),
 /// and the `0x21` after it is where retail's dialog SM stops once the park
 /// resumes. It carries no text, so [`placement_interaction_record`] (keyed on
 /// the first text segment) never sees it, and the placement had no
@@ -358,7 +358,7 @@ pub fn placement_interaction_record(
 /// The record qualifies when its interaction section - from the spawn
 /// terminator to the next raw `0x21` - decodes cleanly and holds an op `0x49`
 /// whose sub-op is a scripted press
-/// ([`crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS`]), or an op
+/// ([`OP49_PARK_PRESERVING_SUB_OPS`]), or an op
 /// `0x44` record spawn. The returned `first_segment` is the body length:
 /// there is no text to page.
 ///
@@ -401,7 +401,7 @@ pub fn placement_scripted_menu_record(
         }
         match insn.info {
             InsnInfo::StateResume { sub_op, .. }
-                if crate::field_submode_screen::OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) =>
+                if OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) =>
             {
                 presses = true;
             }
@@ -475,3 +475,38 @@ pub fn placement_talk_proxy_target(
     }
     None
 }
+
+/// Op-`0x49` sub-ops whose park is a **scripted menu-button press**: the
+/// table row is `-1` *and* the port has no dedicated path for it, so no
+/// submode screen is opened and the park stands until the pause menu the
+/// press opens has closed.
+///
+/// A `-1` row does not leave the subsystem actor alone. The enter half
+/// `FUN_801F1278` writes handler `7` and a zero phase before it reads the
+/// table, and the `-1` test only skips the overwrite:
+///
+/// ```text
+/// 801f1404  li    v0,0x7
+/// 801f140c  sh    v0,0x50(s4)         ; +0x50 = 7, the state pick
+/// 801f141c  sh    zero,0x54(s4)       ; +0x54 = 0
+/// 801f1454  lw    a1,-0x4bb0(v0)      ; the parked operand pointer
+/// 801f145c  lbu   v0,0x0(a1)          ; its first byte = the sub-op
+/// 801f1468  lb    v0,0x0(v0)          ; OP49_SUBOP_SLOTS[sub_op], SIGNED
+/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> keep +0x50 = 7
+/// ```
+///
+/// (`overlay_baka_fighter_801f1278.txt`, `FUN_801F1278`.) Handler `7` picks
+/// `0x30`, the pause-menu session, so the menu opens by itself - see
+/// `World::scripted_menu_open_pending`. Its close is the release
+/// (`World::release_menu_entry_context_park`): the session's last phase
+/// clears the cursor context's `+0x3E` (`0x801ED52C`), and the dispatcher's
+/// retire arm then writes the Done sentinel because the park is still live
+/// (`0x801F1678..0x801F16AC`: `bne v1,zero` -> `sw 1,-0x4bb0`).
+///
+/// Sub-op `1` is a field save point - the menu's entry decode opens it on the
+/// save-card driver `0x19` - and sub-op `0x0D` the context that opens on the
+/// notice panel, blocks the root Load row and turns its cancel into the ready
+/// check. The other `-1` rows run through the same press in retail (`0` the
+/// inline gold shop, `7` the casino prize exchange), and the port reaches
+/// both through `field_submode_screen::OP49_DEDICATED_SUB_OPS` instead.
+pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 2] = [1, 0x0D];

@@ -101,7 +101,7 @@ pub fn placement_motion_route(
 /// One decoded walk-kernel step: the opcode that carries the base-step
 /// selector, the selector itself, and the per-frame speed it derives to
 /// (`numerator >> (2 + bits)`, floored at 1 -
-/// [`crate::world::field_npc_walk_step_speed`]).
+/// [`field_npc_walk_step_speed`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlacementWalkStep {
     /// The carrying opcode. Tail-section-1 motion ops `0x03`/`0x19`/`0x20`
@@ -186,7 +186,7 @@ pub fn placement_wander_step(
                 return Some(PlacementWalkStep {
                     op,
                     bits,
-                    speed: crate::world::field_npc_walk_step_speed(0x80, bits),
+                    speed: field_npc_walk_step_speed(0x80, bits),
                 });
             }
             pc += width;
@@ -251,7 +251,7 @@ pub fn placement_yield_step(
                 return Some(PlacementWalkStep {
                     op,
                     bits,
-                    speed: crate::world::field_npc_walk_step_speed(0x80, bits),
+                    speed: field_npc_walk_step_speed(0x80, bits),
                 });
             }
             YieldKind::Standard => {
@@ -262,7 +262,7 @@ pub fn placement_yield_step(
                 return Some(PlacementWalkStep {
                     op,
                     bits,
-                    speed: crate::world::field_npc_walk_step_speed(numerator, bits),
+                    speed: field_npc_walk_step_speed(numerator, bits),
                 });
             }
         }
@@ -283,7 +283,7 @@ pub fn placement_yield_step(
 ///
 /// Returns `None` when even the heuristic finds no decodable local motion
 /// leg, so the caller falls back to the stand-in
-/// [`crate::world::FIELD_NPC_MOTION_SPEED`]. See
+/// `legaia_engine_core::world::FIELD_NPC_MOTION_SPEED`. See
 /// `docs/subsystems/field-locomotion.md`.
 // PORT: FUN_80038158, FUN_8003774C (base-step operand decode - see the
 //       per-arm functions)
@@ -300,7 +300,7 @@ pub fn placement_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
 /// The retired pacing **heuristic**, kept only as [`placement_glide_speed`]'s
 /// last-resort arm: the byte-+3 (`depth`) operand of the placement's first
 /// local `0x4C 0x51` leg, mapped through
-/// [`crate::world::field_npc_glide_speed`] (`0x80 >> (2 + (depth & 7))`).
+/// [`field_npc_glide_speed`] (`0x80 >> (2 + (depth & 7))`).
 ///
 /// Modelling note (reconcile outcome): the raw `4C 51` case-1 handler pins
 /// byte +3 as `[bit7 special-model | facing-LUT nibble]` with **no speed
@@ -340,7 +340,7 @@ fn facing_nibble_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
         if dx.max(dz) > NPC_ROUTE_LOCALITY {
             continue; // story-gated relocation, not a local patrol leg
         }
-        return Some(crate::world::field_npc_glide_speed(depth));
+        return Some(field_npc_glide_speed(depth));
     }
     None
 }
@@ -490,7 +490,7 @@ pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlaceme
 }
 
 /// Convert a spawn-prologue facing-LUT index (0..=7) to the engine's 12-bit
-/// render heading (`0` = Z+, the [`crate::world::FieldNpcState::headings`]
+/// render heading (`0` = Z+, the `legaia_engine_core::world::FieldNpcState::headings`
 /// convention). `None` for indices 8..=15 - the SCUS LUT at `0x80073F04` has
 /// 16 addressable slots but only the first 8 are direction entries
 /// (`i * 0x200`); no authored prologue uses the upper half.
@@ -615,12 +615,12 @@ pub enum WalkTouchEvent {
     /// code overlay `sub_id = op0 - 100` selects.
     ///
     /// `sub_id` is **not** a map id, and reading it as one is the trap
-    /// [`crate::minigame_entry`] documents: the arm calls no scene-change
+    /// `legaia_engine_core::minigame_entry` documents: the arm calls no scene-change
     /// packet, and resolving the small dense integer through a CDNAME
     /// ordinal warps the player to an unrelated scene instead of into the
     /// venue. The field-VM arm and this walk-on arm are the same opcode
     /// reached two ways, so both post
-    /// [`crate::world::MinigameState::pending_warp`].
+    /// `legaia_engine_core::world::MinigameState::pending_warp`.
     Warp { sub_id: u8 },
     /// The script teleports the **player** (cross-context `0x23 | 0x80` into
     /// the [`PLAYER_CHANNEL`]): walking into the placement snaps the player to
@@ -643,7 +643,7 @@ pub enum WalkTouchEvent {
     /// A boss-stager placement ([`super::BossStagerPlacement`]): contact runs
     /// the placement's own partition-1 record through the field VM (retail
     /// resumes the parked stager script on touch - `FUN_801d5b5c`). The touch
-    /// dispatch's [`crate::world::World::trigger_field_interact`] call does
+    /// dispatch's `legaia_engine_core::world::World::trigger_field_interact` call does
     /// the work; the event itself carries no extra effect.
     StagerBeat,
     /// The record's taken arm runs op-`0x44` SPAWN_RECORD rather than a
@@ -992,7 +992,7 @@ pub fn object_walk_touch_binds(
 ///
 /// [`object_walk_touch_binds`] is the door-classified subset (records
 /// carrying a player teleport); this one feeds
-/// [`crate::field_channels::spawn_object_channels`]. Duplicate
+/// `legaia_engine_core::field_channels::spawn_object_channels`. Duplicate
 /// `(record, contact)` pairs collapse to one bind.
 // REF: FUN_8003A55C
 pub fn object_script_binds(
@@ -1026,7 +1026,7 @@ pub fn object_script_binds(
 /// landmark (record 8) is keyed two tiles north of where it stands, and the
 /// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
 /// as a 256-unit move. This is what the object-bind script contexts are
-/// seated on ([`crate::field_channels::spawn_object_channels`]); the portal
+/// seated on (`legaia_engine_core::field_channels::spawn_object_channels`); the portal
 /// and walk-touch layers keep the contact centre.
 // REF: FUN_8003A55C
 pub fn object_script_bind_seats(
@@ -1309,4 +1309,53 @@ pub fn placement_walk_touch_event(
     }
     let (region, pc0) = placement_pretext_region(man_file, man, p)?;
     player_teleport_in_region(region, pc0)
+}
+
+/// The shared retail walk-step formula: `numerator >> (2 + bits)` world units
+/// per frame, floored at 1 so a leg always makes progress (the engine choice;
+/// retail's integer division reaches 0 for `bits >= 6`, which no authored
+/// stream uses). Both walk kernels step on this ladder:
+///
+/// - `FUN_8003774C` (field-VM yield ops, interpreted in place from the
+///   pointer parked at actor `+0x94`): per-frame magnitude
+///   `numerator * dt / (4 << bits)` - `numerator = 0x80` for ops
+///   `0x37`/`0x47`, **`0x40` for op `0x41`** (the `li a1,0x40` / `li a1,0x80`
+///   split at `0x80037908`), `dt = _DAT_1f800393` taken at 1 (one engine tick
+///   = one retail update; the frame-step scalar is modelled by tick cadence,
+///   not by scaling the step).
+/// - `FUN_80038158` (MAN tail-section-1 motion streams): the directional
+///   steps `0x03`/`0x19`/`0x20`, the home-relative step `0x06`, and the AABB
+///   wander `0x18` all move `0x80 >> (2 + bits)` per frame.
+// PORT: FUN_8003774C (ops 0x37/0x41/0x47 step magnitude)
+// REF: FUN_80038158 (ops 0x03/0x06/0x18/0x19/0x20 step magnitude)
+pub fn field_npc_walk_step_speed(numerator: u16, bits: u8) -> u16 {
+    (u32::from(numerator) >> (2 + u32::from(bits & 0xF))).max(1) as u16
+}
+
+/// Derive a field-NPC per-frame glide speed from a base-step selector - the
+/// retail encoding of the walk-kernel ops' own operands (`b2 & 7` for 0x47,
+/// `(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b1 & 0xF` for the tail-section-1
+/// steps 0x03/0x19/0x20, the scattered AABB-byte high bits for 0x06/0x18).
+/// The `0x80`-numerator arm of [`field_npc_walk_step_speed`].
+///
+/// Retail `FUN_8003774C` (ops 0x37/0x47) glides at
+/// `_DAT_1f800393 × 0x80 / (4 << bits)` units per frame, i.e. per-frame
+/// magnitude `0x80 >> (2 + bits)` with the per-frame delta scalar
+/// `_DAT_1f800393 = 1` (its cold-field value). The `+0x72` player speed
+/// multiplier does NOT participate - `FUN_8003774C` never reads it - so this is
+/// purely operand-derived, unlike the player's `FUN_801d01b0` walk step:
+///
+/// | `bits` | `4 << bits` | glide speed (`0x80 >> (2+bits)`) |
+/// |--------|-------------|----------------------------------|
+/// | 0 | 4 | 32 |
+/// | 1 | 8 | 16 |
+/// | 2 | 16 | 8 (= `FIELD_NPC_MOTION_SPEED`) |
+/// | 3 | 32 | 4 |
+/// | 4 | 64 | 2 |
+/// | 5..=7 | 128..512 | 1 (floored) |
+///
+/// Clamped to a minimum of 1 so a leg always makes progress (retail never
+/// stalls a glide at 0).
+pub fn field_npc_glide_speed(base_step_bits: u8) -> u16 {
+    field_npc_walk_step_speed(0x80, base_step_bits & 0x7)
 }

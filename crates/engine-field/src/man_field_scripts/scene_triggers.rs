@@ -9,7 +9,7 @@ use super::*;
 /// A field/overworld scene's controller script lists every place it can warp to
 /// as a `0x3F` op that carries the destination scene **name** directly in the
 /// bytecode (plus an `index` id and an entry tile). This is the disc-sourced
-/// counterpart to [`crate::scene::DefaultMapIdResolver`]'s positional guess: the
+/// counterpart to `legaia_engine_core::scene::DefaultMapIdResolver`'s positional guess: the
 /// destination names are *in the data*, not in an uncaptured overlay. (The
 /// separate `0x3E` door-warp carries only a 7-id scene-*type* selector, whose
 /// name resolution does still live in an uncaptured handler.)
@@ -70,9 +70,9 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 /// referenced partition-2 record supplies the **destination**. Both are
 /// byte-exact disc data (verified against `map01`'s trailing `0x3F` table).
 ///
-/// See [`crate::world::WorldMapEntityConfig::OverworldPortal`] (the runtime
+/// See `legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal` (the runtime
 /// entity this seeds) and the drain in
-/// [`crate::scene::SceneHost::tick`].
+/// `legaia_engine_core::scene::SceneHost::tick`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverworldPortalSite {
     /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1
@@ -96,7 +96,7 @@ pub struct OverworldPortalSite {
     /// by an op-`0x70` story-flag branch (an overworld entrance whose scene
     /// changes after a story beat). The primary fields above hold the flag-CLEAR
     /// (fall-through) destination; the seeder swaps to this alternative when
-    /// [`crate::world::World::system_flag_test`] of [`ConditionalDest::flag`] is
+    /// `legaia_engine_core::world::World::system_flag_test` of [`ConditionalDest::flag`] is
     /// true. `None` for the common unconditional single-`0x3F` entrance.
     ///
     /// The chapter-1 case is `map01`'s dungeon entrance: flag `0x142` clear ->
@@ -706,7 +706,7 @@ pub fn scene_clut_cell_fx(man_file: &ManFile, man: &[u8]) -> Vec<SceneClutCellFx
 /// literal byte operand (`[34, 3x, id]` - retail chains through the
 /// installer `FUN_800252EC(id) = prescript_base + offsets[id]` into the
 /// move-VM part stager `FUN_80021B04`; engine
-/// `crate::world::World::spawn_field_stager`). So which prescript records
+/// `legaia_engine_core::world::World::spawn_field_stager`). So which prescript records
 /// are **move-VM stagers** is disc-sourced script data - the operand census
 /// that resolves the prescript bundle's dual-consumer split (see
 /// `docs/reference/open-rev-eng-threads.md`).
@@ -787,7 +787,7 @@ pub fn scene_stager_installs(man_file: &ManFile, man: &[u8]) -> Vec<SceneStagerI
 /// scene-entry system script) runs live through the field VM and is skipped.
 ///
 /// REF: FUN_800252EC (the installer the op chains into; engine consumer
-/// `crate::world::World::spawn_ambient_record`)
+/// `legaia_engine_core::world::World::spawn_ambient_record`)
 pub fn ambient_effect_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let count = man_file

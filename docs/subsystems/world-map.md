@@ -1599,7 +1599,7 @@ deliberate dead end: `suimon` is a sluice-gate puzzle, and its own scene-entry
 script `P1[0]` is what sets the flag.
 
 Recovering that second arm is what
-[`man_field_scripts::partition2_scene_changes`](../../crates/engine-core/src/man_field_scripts/scene_triggers.rs)
+[`man_field_scripts::partition2_scene_changes`](../../crates/engine-field/src/man_field_scripts/scene_triggers.rs)
 does, and the trap is that "the arms differ" has to mean the whole
 destination, not the scene name. A post-beat dungeon variant differs by name
 (`map01`'s `dolk` -> `dolk2` on flag `0x142`); a two-ended pass names one
@@ -1872,7 +1872,7 @@ model + script pointer** for every entity.
 #### Classifying the entity kind from its script
 
 Retail has no static "entity kind" field - a placed actor *is* what its script
-does. [`classify_placements`](../../crates/engine-core/src/man_field_scripts.rs)
+does. [`classify_placements`](../../crates/engine-field/src/man_field_scripts.rs)
 linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
 distinguishing opcodes:
@@ -1897,7 +1897,7 @@ so it **desyncs inside embedded message / SJIS text** and can land on a `0x3E`
 whose next byte is `>= 100`. Every such phantom in the corpus rides the `0x80`
 cross-context prefix and carries an out-of-range `op0` (175 / 179 / 200, i.e.
 text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
-[`man_field_scripts::classify_placement`](../../crates/engine-core/src/man_field_scripts.rs))
+[`man_field_scripts::classify_placement`](../../crates/engine-field/src/man_field_scripts.rs))
 rejects it - `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
 (`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
 / 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
@@ -1928,7 +1928,7 @@ in an uncaptured overlay" note assumed unreachable (that note is about the
 *separate* `0x3E` door-warp, whose 7-id selector still resolves its name in an
 uncaptured handler).
 
-[`man_field_scripts::scene_destinations`](../../crates/engine-core/src/man_field_scripts.rs)
+[`man_field_scripts::scene_destinations`](../../crates/engine-field/src/man_field_scripts.rs)
 walks the partition-1 records, decodes the `0x3F` ops, and keeps each whose
 inline name passes a clean-CDNAME-label gate (rejecting the text-desync phantoms
 a literal `?` = `0x3F` inside a message produces). On `map01` (Drake overworld)

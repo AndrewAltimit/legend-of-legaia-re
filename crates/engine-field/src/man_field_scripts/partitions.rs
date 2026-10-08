@@ -4,8 +4,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::scene::{ProtIndex, Scene};
-
 use super::*;
 
 /// Which flag bank a [`GFlagSite`] touches.
@@ -15,14 +13,14 @@ use super::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlagBank {
     /// The 32-bit scratchpad story-flag word `_DAT_1F800394` (the engine's
-    /// [`crate::world::StoryFlagState::story_flags`]); reached by opcodes `0x2E`
+    /// `legaia_engine_core::world::StoryFlagState::story_flags`); reached by opcodes `0x2E`
     /// (`SET`) / `0x2F` (`CLEAR`). Flag numbers are bit indices `0..31`.
     Scratchpad,
     /// The wide SYSTEM-flag bitmap reached by the `0x50..=0x7F` op family
     /// (`0x5x` SET, `0x6x` CLEAR, `0x7x` TEST). The flag number is a `u16`
     /// (`(lead & 0x8F) << 8 | operand`); the engine's bit helpers live at
-    /// [`crate::world::World::system_flag_set`] /
-    /// [`crate::world::World::system_flag_test`]. This is the id space of the
+    /// `legaia_engine_core::world::World::system_flag_set` /
+    /// `legaia_engine_core::world::World::system_flag_test`. This is the id space of the
     /// overworld progress gates (e.g. `0x193` / `0x482` / `0x2FC`).
     System,
 }
@@ -34,7 +32,7 @@ pub enum FlagBank {
 ///
 /// The opening prologue's `opdeene` cutscene-timeline record ends with a
 /// scratchpad `GFLAG_SET 26`, the write the `town01` hand-off gate
-/// (`FUN_801D1344`) waits on - see [`crate::world::PROLOGUE_HANDOFF_FLAG`].
+/// (`FUN_801D1344`) waits on - see `legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG`.
 /// SYSTEM-flag setters (the overworld progress gates) typically live in a
 /// *different* scene's MAN than the one that gates on them, which is what the
 /// disc-wide [`system_flag_census`] surfaces.
@@ -937,36 +935,6 @@ impl ManCarrier {
     }
 }
 
-/// Every walkable MAN payload in `scene`'s CDNAME block: the asset-table
-/// bundle MAN first (when present), then each **variant** MAN found as a
-/// type-3 chunk of a `DataFieldStreaming` / `DataFieldTruncated` entry whose
-/// chunk payload parses as a MAN. Payload-identical duplicates are dropped,
-/// so a variant that merely re-ships the bundle MAN's bytes appears once.
-pub fn scene_man_carriers(index: &ProtIndex, scene: &Scene) -> Vec<ManCarrier> {
-    let mut out: Vec<ManCarrier> = Vec::new();
-    if let Some(bundle) = crate::scene_bundle::find_bundle(scene)
-        && let Ok(entry_bytes) = index.entry_bytes_extended(bundle.entry_idx())
-        && let Ok(Some(payload)) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)
-    {
-        out.push(ManCarrier {
-            entry_idx: bundle.entry_idx(),
-            chunk_offset: None,
-            payload,
-        });
-    }
-    for (entry_idx, chunk_offset, payload) in crate::scene_bundle::streaming_man_payloads(scene) {
-        if out.iter().any(|c| c.payload == payload) {
-            continue;
-        }
-        out.push(ManCarrier {
-            entry_idx,
-            chunk_offset: Some(chunk_offset),
-            payload,
-        });
-    }
-    out
-}
-
 /// One SYSTEM-flag site recovered by [`system_flag_census`], carrying the
 /// scene it lives in plus the partition/record/op that touches the flag.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1020,18 +988,15 @@ pub struct FlagCensusSite {
 /// bundle MAN plus the standalone story-state variant MANs - so writers that
 /// live only in a variant (e.g. the `rikuroa` post-Caruban `0x142` SET in
 /// PROT `0157`) are surfaced.
-pub fn system_flag_census<I, S>(index: &ProtIndex, scenes: I) -> BTreeMap<u16, Vec<FlagCensusSite>>
+pub fn system_flag_census_of<I, S>(scenes: I) -> BTreeMap<u16, Vec<FlagCensusSite>>
 where
-    I: IntoIterator<Item = S>,
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
     S: AsRef<str>,
 {
     let mut out: BTreeMap<u16, Vec<FlagCensusSite>> = BTreeMap::new();
-    for name in scenes {
+    for (name, carriers) in scenes {
         let name = name.as_ref();
-        let Ok(scene) = Scene::load(index, name) else {
-            continue;
-        };
-        for carrier in scene_man_carriers(index, &scene) {
+        for carrier in carriers {
             let man = &carrier.payload;
             let Ok(man_file) = legaia_asset::man_section::parse(man) else {
                 continue;
@@ -1215,24 +1180,21 @@ impl Op49WindowSite {
 /// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
 /// without a resolvable MAN are skipped (best-effort over the CDNAME scene
 /// set, all bundle forms incl. scripted-table + v12-embedded via
-/// [`crate::scene::Scene::field_man_payload`]); site order preserves scene /
+/// `legaia_engine_core::scene::Scene::field_man_payload`); site order preserves scene /
 /// partition / record discovery order. Descriptor bytes are read from the
 /// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
 /// resident MAN, not the instruction footprint); sites whose descriptor
 /// window would run past the MAN end are skipped (nothing resident to read).
 // REF: FUN_801EF014
-pub fn op49_window_census<I, S>(index: &ProtIndex, scenes: I) -> Vec<Op49WindowSite>
+pub fn op49_window_census_of<I, S>(scenes: I) -> Vec<Op49WindowSite>
 where
-    I: IntoIterator<Item = S>,
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
     S: AsRef<str>,
 {
     let mut out = Vec::new();
-    for name in scenes {
+    for (name, carriers) in scenes {
         let name = name.as_ref();
-        let Ok(scene) = Scene::load(index, name) else {
-            continue;
-        };
-        for carrier in scene_man_carriers(index, &scene) {
+        for carrier in carriers {
             let man = &carrier.payload;
             let Ok(man_file) = legaia_asset::man_section::parse(man) else {
                 continue;
@@ -1332,22 +1294,16 @@ pub struct MotionCensusSite {
 /// Same contract as [`system_flag_census`]: scenes without a resolvable MAN
 /// (or with a terminator section 1) are skipped, the map is sorted by flag
 /// id, and site order preserves scene / record discovery order.
-pub fn motion_flag_census<I, S>(
-    index: &ProtIndex,
-    scenes: I,
-) -> BTreeMap<u16, Vec<MotionCensusSite>>
+pub fn motion_flag_census_of<I, S>(scenes: I) -> BTreeMap<u16, Vec<MotionCensusSite>>
 where
-    I: IntoIterator<Item = S>,
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
     S: AsRef<str>,
 {
     use legaia_asset::man_motion;
     let mut out: BTreeMap<u16, Vec<MotionCensusSite>> = BTreeMap::new();
-    for name in scenes {
+    for (name, carriers) in scenes {
         let name = name.as_ref();
-        let Ok(scene) = Scene::load(index, name) else {
-            continue;
-        };
-        for carrier in scene_man_carriers(index, &scene) {
+        for carrier in carriers {
             let man = &carrier.payload;
             let Ok(man_file) = legaia_asset::man_section::parse(man) else {
                 continue;

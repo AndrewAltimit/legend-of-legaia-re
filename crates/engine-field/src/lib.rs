@@ -4,7 +4,7 @@
 //! pass, the opening narration roller, the per-actor handler and its
 //! kernels, actor clone, look rotation and screen tween, the scene
 //! transition and in-field save-screen actors, the op-`0x49` submode,
-//! the field event queue, CLUT effects, the overworld draw order and
+//! the field event queue, the scene MAN field-script decoders, CLUT effects, the overworld draw order and
 //! ground cue, the overworld controller and its panel screen, walk regen, light-source row shading, the slot-6 audio
 //! release, packet colours and the animation / SFX cue routers: the
 //! `World`-free half of the field runtime.
@@ -28,6 +28,8 @@ use legaia_engine_vm::field_regions;
 use legaia_engine_system::input;
 use legaia_engine_system::sound_state;
 
+use legaia_engine_battle::encounter_record;
+
 pub mod actor_handler;
 pub mod actor_look;
 pub mod anim_cue;
@@ -47,6 +49,7 @@ pub mod field_lit_mesh;
 pub mod field_save_screen_actor;
 pub mod field_submode;
 pub mod float_tween;
+pub mod man_field_scripts;
 pub mod morph_weight_apply;
 pub mod overworld_draw_order;
 pub mod overworld_ground_cue;
