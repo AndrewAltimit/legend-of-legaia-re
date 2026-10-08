@@ -1135,12 +1135,22 @@ fn overworld_flat_depth(clip: vec4<f32>, fa: vec4<f32>, fb: vec4<f32>, sz_scale:
 // while keeping the cell's own per-pixel order inside the slice. Off the
 // field (`sz_scale > 0`, the overworld's key) and on every unmarked vertex
 // nothing moves.
+// A flat far-bucket cell (`fa.y > fa.w`, its z pair swapped) keeps its real
+// depth to within `FIELD_FLAT_FAR_BUCKET_PUSH` of it, pushed back so a decal
+// on the floor plane paints over it (`field_ground::FLAT_FAR_BUCKET_PUSH`).
 const FIELD_FAR_BUCKET_DEPTH_SCALE: f32 = 0.001;
+const FIELD_FLAT_FAR_BUCKET_PUSH: f32 = 0.005;
 fn field_far_bucket_depth(clip: vec4<f32>, fa: vec4<f32>, sz_scale: f32) -> vec4<f32> {
-    if (sz_scale > 0.0 || fa.x <= fa.z || clip.w <= 0.0) {
+    if (sz_scale > 0.0 || clip.w <= 0.0) {
         return clip;
     }
-    return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
+    if (fa.x > fa.z) {
+        return vec4<f32>(clip.x, clip.y, clip.z * FIELD_FAR_BUCKET_DEPTH_SCALE, clip.w);
+    }
+    if (fa.y > fa.w) {
+        return vec4<f32>(clip.x, clip.y, clip.z * (1.0 - FIELD_FLAT_FAR_BUCKET_PUSH), clip.w);
+    }
+    return clip;
 }
 
 // The overworld continent's depth cue

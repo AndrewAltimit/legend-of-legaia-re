@@ -546,9 +546,15 @@ the ground (its `x0` / `x1` pair swapped), and the ground shaders -
 `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
 `site/js/webgl-shaders.js` - scale the marked cell's depth into the thin slice
 at the far end of the range, keeping its own per-pixel order inside it. Flat
-far-bucket cells keep their real depth, so the post passes that read the depth
-buffer (the volumetric fog's soft edge, the lamp halos) see the floor where it
-is. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
+far-bucket cells keep their real depth to within half a percent: they are
+marked by a swapped `z0` / `z1` pair and pushed back by
+`field_ground::FLAT_FAR_BUCKET_PUSH` of their depth, so the post passes that
+read the depth buffer (the volumetric fog's soft edge, the lamp halos) still
+see the floor where it is, while a decal authored on the floor plane paints
+over it as retail's far bucket lets it. Without the push the two surfaces tie
+to the float rounding of the depth row: `doman`'s subtractive shadow strips
+(CLUT `0x7F84`, tpage `0x5F`), a tenth of a unit above the sunk ground at a
+view depth near 1700, lost every pixel and left the pub's corners lit. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 
@@ -2050,7 +2056,7 @@ What removes geometry is retail's own rules, plus the projection's clip volume:
   ([below](#the-placed-object-near-reject)).
 - **The per-primitive rejects**: the near reject
   ([below](#the-per-primitive-near-reject)) and, in battle, the GPU
-  polygon-size limit ([below](#the-gpu-polygon-size-limit-in-battle)).
+  polygon-size limit ([below](#the-gpu-polygon-size-limit)).
 - **The projection's clip volume**, whose planes are sized to hold an entire
   scene from any vantage rather than to frame the current view:
 
@@ -2189,7 +2195,7 @@ field and battle only, and never under the debug orbit; the native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
 
-### The GPU polygon-size limit in battle
+### The GPU polygon-size limit
 
 The prim leaves hand the GPU the GTE's `SXY` with no clip of their own, and
 the GPU skips any polygon whose corners lie more than `1023` pixels apart
@@ -2202,8 +2208,12 @@ the eye and the caster - where a per-pixel clip paints them as long shards.
 
 Both hosts run the span test in the same vertex stage as the near reject
 (`prim_near_reject::gpu_span_rejected`, the WGSL `prim_sxy` and the GLSL
-`primSxy`), armed in battle only (`camera_view::prim_gpu_span_h`, the battle
-camera's `H = 256` riding the parameters' enable lane). A split quad is
+`primSxy`), armed in battle and on the field (`camera_view::prim_gpu_span_h`:
+the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`,
+riding the parameters' enable lane). On the field it is what keeps
+`rim_elm_queen_bee_battle`'s frame clear: its camera stands beside a
+decoration rock whose near face projects past the span, and the port drew it
+as a textured wall down the right edge where retail shows the sky. A split quad is
 dropped only when both of its halves exceed the limit. The dance hall applies
 the same rule to its baked hall on the CPU
 ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).

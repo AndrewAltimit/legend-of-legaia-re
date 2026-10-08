@@ -154,7 +154,13 @@ pub fn render_indices(hf: &WalkHeightfield) -> Vec<u32> {
 /// push the marked cell's depth into a thin slice behind every other draw
 /// (`FIELD_FAR_BUCKET_DEPTH_SCALE` in `engine-render`, the GLSL twin in
 /// `site/js/webgl-shaders.js`), keeping its own per-pixel order inside the
-/// slice. Flat far-bucket cells keep their real depth.
+/// slice. A **flat** far-bucket cell keeps its real depth to within half a
+/// percent: its `z0` / `z1` pair is swapped instead, and the shaders push it
+/// back by [`FLAT_FAR_BUCKET_PUSH`] of its own depth - far enough that a
+/// decal authored on the floor plane (`doman`'s subtractive shadow strips,
+/// a tenth of a unit above the sunk ground) beats it, as it does in retail's
+/// far bucket, near enough that the passes reading the depth buffer (the
+/// fog's soft edge, the lamp halos) still see the floor where it is.
 ///
 /// REF: FUN_801F6D48
 pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> {
@@ -169,11 +175,20 @@ pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> 
         .zip(hf.far_bucket.as_chunks::<4>().0)
         .zip(refs.as_chunks_mut::<4>().0)
     {
-        if !far[0] || cell.iter().all(|p| p[1] == cell[0][1]) {
+        if !far[0] {
             continue;
         }
+        // Sloped: the x pair swaps (the slice behind every draw). Flat: the
+        // z pair swaps (a slight push back, so a decal lying on the floor -
+        // `doman`'s baked shadow strips - paints over it as retail's far
+        // bucket lets it, instead of tying it to the float rounding).
+        let flat = cell.iter().all(|p| p[1] == cell[0][1]);
         for r in out.iter_mut() {
-            r.swap(0, 2);
+            if flat {
+                r.swap(1, 3);
+            } else {
+                r.swap(0, 2);
+            }
         }
     }
     refs
@@ -184,6 +199,17 @@ pub fn flat_refs(hf: &WalkHeightfield, positions: &[[f32; 3]]) -> Vec<[f32; 8]> 
 pub fn is_far_bucket_ref(r: &[f32; 8]) -> bool {
     r[0] > r[2]
 }
+
+/// Whether [`flat_refs`] marked this vertex's cell as a **flat** far-bucket
+/// cell (its `z0` / `z1` pair swapped).
+pub fn is_flat_far_bucket_ref(r: &[f32; 8]) -> bool {
+    r[1] > r[3]
+}
+
+/// The fraction of its own depth a flat far-bucket cell is pushed back
+/// (`FIELD_FLAT_FAR_BUCKET_PUSH` in `engine-render`, the GLSL twin in
+/// `site/js/webgl-shaders.js`).
+pub const FLAT_FAR_BUCKET_PUSH: f32 = 0.005;
 
 /// Crop an already-built ground index list to this frame's visible cells: keep
 /// each quad (six indices, as [`render_indices`] or the builder emits them)
@@ -312,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn only_sloped_far_bucket_cells_carry_the_marker() {
+    fn far_bucket_cells_carry_the_slope_or_the_flat_marker() {
         // `grid()` is one sloped cell (two corners 32 up).
         let mut hf = grid();
         let pos = render_positions(&hf);
@@ -330,11 +356,22 @@ mod tests {
         assert_eq!(refs[0][2], overworld[0][0]);
         assert_eq!(refs[0][1..2], overworld[0][1..2]);
         assert_eq!(refs[0][3..], overworld[0][3..]);
-        // Far-bucket but flat: a depth buffer already orders it - unmarked.
+        assert!(refs.iter().all(|r| !is_flat_far_bucket_ref(r)));
+        // Far-bucket but flat: not the slice, the slight push - z pair
+        // swapped, x pair kept.
         for p in &mut hf.positions {
             p[1] = 0.0;
         }
         let pos = render_positions(&hf);
-        assert!(flat_refs(&hf, &pos).iter().all(|r| !is_far_bucket_ref(r)));
+        let refs = flat_refs(&hf, &pos);
+        assert!(refs.iter().all(|r| !is_far_bucket_ref(r)));
+        assert!(refs.iter().all(is_flat_far_bucket_ref));
+        // Depth-sorted and flat: neither.
+        hf.far_bucket = vec![false; 4];
+        assert!(
+            flat_refs(&hf, &pos)
+                .iter()
+                .all(|r| !is_flat_far_bucket_ref(r))
+        );
     }
 }
