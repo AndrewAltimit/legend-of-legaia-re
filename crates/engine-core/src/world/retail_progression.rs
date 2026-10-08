@@ -81,6 +81,9 @@ impl World {
         got.xa_cue_durations = self.audio.xa_cue_durations.is_some();
 
         got.magic_xp = self.install_magic_xp_thresholds(scus);
+        // Not a progression table, but the same boot-time SCUS read both
+        // hosts make: the dialog's `0xC7` names.
+        self.tables.inline_names = inline_names_from_scus(scus);
 
         if let Some(table) = legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus(scus)
         {
@@ -93,9 +96,64 @@ impl World {
     }
 }
 
+/// The dialog's `0xC7 XX` name table: `XX * 8` bytes from `0x80073F24`,
+/// each entry a NUL-terminated name inside its 8 bytes. Retail bounds the
+/// index nowhere; the entries that hold a name are the leading run whose
+/// bytes are printable up to the terminator (the three Ra-Seru names), and
+/// the reader stops at the first that is not.
+// REF: FUN_80036044 (the `0xC7` substitution arm)
+pub fn inline_names_from_scus(scus: &[u8]) -> Vec<Vec<u8>> {
+    const TABLE_VA: u32 = 0x8007_3F24;
+    let mut out = Vec::new();
+    for i in 0..32u32 {
+        let Some(off) = legaia_asset::item_names::file_offset_for_va(scus, TABLE_VA + i * 8) else {
+            break;
+        };
+        let Some(entry) = scus.get(off..off + 8) else {
+            break;
+        };
+        let len = entry.iter().position(|&b| b == 0).unwrap_or(8);
+        let name = &entry[..len];
+        if name.is_empty() || !name.iter().all(|b| (0x20..0x7F).contains(b)) {
+            break;
+        }
+        out.push(name.to_vec());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `0xC7` table reads the leading printable names and stops at the
+    /// first entry that is not one; the dialog substitution resolves them.
+    #[test]
+    fn inline_names_read_the_leading_printable_run() {
+        const T_ADDR: u32 = 0x8001_0000;
+        let table = (0x8007_3F24 - T_ADDR) as usize + 0x800;
+        let mut exe = vec![0u8; table + 0x40];
+        exe[0..8].copy_from_slice(b"PS-X EXE");
+        exe[0x18..0x1C].copy_from_slice(&T_ADDR.to_le_bytes());
+        let t_size = (exe.len() - 0x800) as u32;
+        exe[0x1C..0x20].copy_from_slice(&t_size.to_le_bytes());
+        for (i, n) in [&b"Abc"[..], b"Defgh", b"Ij"].iter().enumerate() {
+            exe[table + i * 8..table + i * 8 + n.len()].copy_from_slice(n);
+        }
+        exe[table + 24..table + 32].copy_from_slice(&[4, 4, 5, 7, 9, 8, 7, 3]);
+        let names = inline_names_from_scus(&exe);
+        assert_eq!(
+            names,
+            vec![b"Abc".to_vec(), b"Defgh".to_vec(), b"Ij".to_vec()]
+        );
+
+        let mut w = World::default();
+        w.tables.inline_names = names;
+        let subs = w
+            .dialog_substitutions(&[0x1F, 0xC7, 0x01, b':', 0x00])
+            .expect("the escape resolves");
+        assert_eq!(subs.get(&(7, 1)), Some(&b"Defgh".to_vec()));
+    }
 
     #[test]
     fn a_non_executable_installs_nothing_and_keeps_defaults() {

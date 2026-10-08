@@ -18,6 +18,11 @@ pub struct DiscTables {
     /// shell (`legaia_asset::victory_pose`); `None` on a disc-free build,
     /// where the pose actor simply keeps its idle.
     pub victory_pose_table: Option<legaia_asset::victory_pose::VictoryPoseTable>,
+    /// The inline 8-byte names the dialog's `0xC7 XX` escape splices
+    /// (`0x80073F24 + XX * 8`, `FUN_80036044`): the Ra-Seru names Meta /
+    /// Terra / Ozma. Indexed by `XX`; read from the disc's executable at
+    /// boot ([`crate::world::World::install_retail_progression_tables`]).
+    pub inline_names: Vec<Vec<u8>>,
     /// Item catalog used by item-action resolution. Populated at battle
     /// init from [`crate::items::ItemCatalog::vanilla`] (or a custom
     /// catalog set by [`crate::world::World::set_item_catalog`]); empty by default so
@@ -245,6 +250,7 @@ impl DiscTables {
             accessory_passives: Default::default(),
             scene_toc_names: legaia_prot::cdname::IndexMap::new(),
             victory_pose_table: None,
+            inline_names: Vec::new(),
             rot_limb_table: None,
         }
     }
