@@ -1613,11 +1613,15 @@ a compose the port gets wrong:
   runner `FUN_80039B7C` raises the player's `+0x10 & 0x80000` on every frame
   it steps the context (`0x80039DB8..0x80039DD4`), and `FUN_801D0D38` takes
   its rearm arm on that bit (`0x801D0DCC..0x801D0DD8`), which reloads the
-  countdown and leaves through `0x801D1314` without drawing. That the
-  state's own RAM holds the bit clear is inferred to be the snapshot landing
-  partway through a three-vsync logic frame, before the chest's tick runs
-  (no capture pins it); the countdown `_DAT_801F348C = 0` is the readout the
-  displayed frame drew.
+  countdown and leaves through `0x801D1314` without drawing. The state's
+  RAM pins the order: the player object (`*0x8007C364`) holds `+0x10 =
+  0x090A0880`, the bit **set** (the `keikoku_chest_pre` state holds
+  `0x09020880`, clear), while the countdown `_DAT_801F348C` still reads `0`.
+  Under Field HP Display Immediate (`_DAT_800845C4 = 0`) and
+  `_DAT_8007B5F4 = 0` the rearm arm stores `0x28` there
+  (`0x801D0E24..0x801D0E2C`), so the HUD routine has not run since the bit
+  went up, and the displayed frame is the one drawn before it. The port's
+  frame, past the settle, is the one after - no readout - on both hosts.
 
 ### A poked player keeps the arrival focus
 
