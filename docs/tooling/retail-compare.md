@@ -250,6 +250,15 @@ engine verdict:
   and is written over the matching morph the engine armed itself on the frame
   it captures (`World::seed_field_morph`, matched by flat index).
 
+  So are the ambient walkers - every placement the facing channel counts as
+  `ambient` ([below](#the-facing-channel)). Where a wanderer stands and which
+  way it faces is its `rand()` picks since the entry, so the state's live
+  seat (`+0x14` / `+0x18`, heading `+0x26`, `retail_walkers`) goes to the
+  child as `LEGAIA_SEAT_WALKERS` and stands the walker there on the frame it
+  captures, motion channel included (`World::seed_ambient_walker`). The
+  displayed frame is two game frames older, so a walker caught mid-step can
+  still sit a few units off its drawn place.
+
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
   panel (`43 13`, shrunk to a corner by `43 14`), and a capture is usually

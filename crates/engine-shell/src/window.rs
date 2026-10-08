@@ -120,6 +120,10 @@ pub struct ScreenshotConfig {
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
     /// over the engine's on the capture frame (`World::seed_field_morph`).
     pub seat_morphs: Vec<legaia_parity::retail_compare::MorphSeed>,
+    /// `LEGAIA_SEAT_WALKERS=<fields>`: a retail state's ambient walkers'
+    /// live seats (`legaia_parity::retail_compare::retail_walkers`), stood
+    /// on the capture frame (`World::seed_ambient_walker`).
+    pub seat_walkers: Vec<legaia_parity::retail_compare::WalkerSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
     /// the capture frame - the vignette record that spawned it ran before
@@ -427,6 +431,9 @@ impl ScreenshotConfig {
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare::panel_from_env(&v)),
+            seat_walkers: std::env::var("LEGAIA_SEAT_WALKERS")
+                .map(|v| legaia_parity::retail_compare::walkers_from_env(&v))
+                .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
                 .map(|v| legaia_parity::retail_compare::morphs_from_env(&v))
                 .unwrap_or_default(),

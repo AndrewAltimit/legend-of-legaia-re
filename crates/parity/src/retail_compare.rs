@@ -307,6 +307,9 @@ pub struct RetailObs {
     /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
     /// the image child as `LEGAIA_SEAT_MORPHS`.
     pub morphs: Vec<MorphSeed>,
+    /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
+    /// child as `LEGAIA_SEAT_WALKERS`.
+    pub walkers: Vec<WalkerSeed>,
     /// The live image-panel widget ([`retail_panel`]), handed to the image
     /// child as `LEGAIA_SEAT_PANEL`; the texels it shows ride the
     /// `LEGAIA_SEAT_VRAM_RECTS` file beside the scroller rects.
@@ -735,6 +738,63 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
         .collect()
 }
 
+/// One ambient walker's live seat: flat MAN index `+0x50`, `+0x14` /
+/// `+0x18`, and the retail-space heading `+0x26`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WalkerSeed {
+    pub flat: u16,
+    pub x: i16,
+    pub z: i16,
+    pub heading: u16,
+}
+
+/// Every placement the ambient motion VM is walking or turning
+/// ([`retail_ambient_heading`]), at its live seat - the `rand()` history
+/// the facing channel does not score, which the image child stands where
+/// retail's frame shows it (`World::seed_ambient_walker`).
+pub fn retail_walkers(ram: &[u8]) -> Vec<WalkerSeed> {
+    let player = game_anchors::player_ptr(ram);
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| Some(n) != player && game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter(|&n| retail_ambient_heading(ram, n))
+        .filter_map(|n| {
+            let flat = game_anchors::u16_at(ram, n + 0x50);
+            seen.insert(flat).then(|| WalkerSeed {
+                flat,
+                x: game_anchors::i16_at(ram, n + 0x14),
+                z: game_anchors::i16_at(ram, n + 0x18),
+                heading: game_anchors::u16_at(ram, n + 0x26) & 0x0FFF,
+            })
+        })
+        .collect()
+}
+
+/// [`retail_walkers`] as `LEGAIA_SEAT_WALKERS`: `flat:x:z:heading` per
+/// walker, `;`-joined, decimal.
+pub fn walkers_env(w: &[WalkerSeed]) -> String {
+    w.iter()
+        .map(|s| format!("{}:{}:{}:{}", s.flat, s.x, s.z, s.heading))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`walkers_env`].
+pub fn walkers_from_env(v: &str) -> Vec<WalkerSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some(WalkerSeed {
+                flat: f.next()?.parse().ok()?,
+                x: f.next()?.parse().ok()?,
+                z: f.next()?.parse().ok()?,
+                heading: f.next()?.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
 /// One field actor's live VDF morph envelope (op `0x4B`,
 /// `legaia_engine_core::world::npc_morph`): its flat MAN index `+0x50`, the
 /// lane weights `+0xA0 + i*2` over its `+0x6C` lanes, the lane-done mask
@@ -1143,6 +1203,11 @@ impl RetailObs {
             },
             scroll_rects: Vec::new(),
             panel: None,
+            walkers: if matches!(class, StateClass::Field) {
+                retail_walkers(ram)
+            } else {
+                Vec::new()
+            },
             morphs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_morphs(ram)
             } else {
@@ -1275,6 +1340,9 @@ impl RetailObs {
         }
         if !self.morphs.is_empty() {
             env.push(("LEGAIA_SEAT_MORPHS", morphs_env(&self.morphs)));
+        }
+        if !self.walkers.is_empty() {
+            env.push(("LEGAIA_SEAT_WALKERS", walkers_env(&self.walkers)));
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
@@ -3145,6 +3213,26 @@ mod tests {
         let mut ram = vec![0u8; 0x20_0000];
         ram[(MENU_SUBSCREEN & 0x1F_FFFF) as usize] = sub;
         ram
+    }
+
+    /// The walker seed survives its env form.
+    #[test]
+    fn walker_seeds_round_trip_through_their_env_form() {
+        let w = vec![
+            WalkerSeed {
+                flat: 41,
+                x: 3456,
+                z: -12,
+                heading: 0xC00,
+            },
+            WalkerSeed {
+                flat: 7,
+                x: 0,
+                z: 16320,
+                heading: 0,
+            },
+        ];
+        assert_eq!(walkers_from_env(&walkers_env(&w)), w);
     }
 
     /// The morph-envelope seed survives its env form.

@@ -269,6 +269,37 @@ impl World {
     /// wander on the first tick and the villager never moves.
     ///
     /// Call after [`Self::pre_run_field_channel_prologues`].
+    /// Capture alignment for the retail comparison's `play-window` child
+    /// (`LEGAIA_SEAT_WALKERS`): stand the ambient walker whose flat MAN index
+    /// (`+0x50`) is `flat` where a retail state holds it - `(x, z)` and the
+    /// retail-space heading - on the frame it captures. Where a wanderer
+    /// stands and which way it faces is its `rand()` picks and time since the
+    /// entry, which no seed replays. The walker's motion channel is moved
+    /// with it, so its next step starts from the seat.
+    pub fn seed_ambient_walker(&mut self, flat: u16, x: i16, z: i16, heading: u16) {
+        let Some(slot) = self
+            .channel_view()
+            .iter()
+            .find(|c| !c.object_bind && c.ctx.script_id == flat)
+            .and_then(|c| u8::try_from(c.placement_index).ok())
+        else {
+            return;
+        };
+        if !self.npcs.positions.contains_key(&slot) {
+            return;
+        }
+        self.npcs.positions.insert(slot, (x, z));
+        self.npcs.motions.remove(&slot);
+        self.npcs
+            .headings
+            .insert(slot, (heading as i16).wrapping_add(0x800));
+        if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
+            chan.vm.x = x;
+            chan.vm.z = z;
+            chan.vm.heading = heading;
+        }
+    }
+
     pub(crate) fn resync_ambient_start_positions(&mut self) {
         for (slot, chan) in self.npcs.ambient.iter_mut() {
             if chan.live.is_some() {
