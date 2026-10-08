@@ -12,8 +12,8 @@
 //! This is exercised by real data: a handful of retail tracks program-change to
 //! an unused slot. They split three ways:
 //!   - a used slot follows, so retail aliases to a *valid different page*
-//!     (PROT 868 prog 5 -> page of slot 10; PROT 996 prog 19 -> page of slot 23)
-//!     - but the notes still key nothing, because the note-on searches only the
+//!     (PROT 868 prog 5 -> page of slot 10; PROT 996 prog 19 -> page of slot 23),
+//!     but the notes still key nothing, because the note-on searches only the
 //!     slot's own `ProgAtr.tones` rows (zero), not the aliased page's;
 //!   - no used slot follows, so retail's alias runs past the tone region and
 //!     reads garbage (PROT 994 prog 42) -> the port leaves it empty (silent),
