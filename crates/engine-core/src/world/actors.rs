@@ -1481,6 +1481,23 @@ impl World {
     /// player in place. Either way the stage latch `+0x1DC` bit 1
     /// (`ADVANCE_DONE`) clears, which is what lets the strike loop read its
     /// next byte.
+    /// Retail's acting slot `ctx[+0x13]` as the port holds it. Through the
+    /// end-of-battle sequence it is the pose actor - the one field the
+    /// sequencer's framing, the camera-ghost pass and the commit's camera
+    /// reset all read (`noa_levelup_banner`: `ctx[+0x13] == 0`, the posing
+    /// leader). The engine's acting mirror keeps the fight's last actor, so
+    /// a win landed by another seat would otherwise hand that seat's idle
+    /// loop the accumulator the battle-over script rides. An escape skips
+    /// the framing (`0x8004E720`) and keeps the mirror.
+    pub(in crate::world) fn retail_acting_slot(&self) -> u8 {
+        match self.battle.victory {
+            Some(seq) if seq.cause != vm::battle_action::BattleEndCause::Escaped => {
+                seq.pose_actor as u8
+            }
+            _ => self.battle_ctx.active_actor,
+        }
+    }
+
     /// The commit's battle-camera reset: when the committing actor is the
     /// active one (`lbu v0,0x13(v1); bne s3,v0` then `sb zero,0x26e` /
     /// `sw zero,0x87c` / `sb zero,0x26f` at `0x8004BF50..0x8004BF78`), the
@@ -1488,7 +1505,7 @@ impl World {
     /// clip's own start. The port bumps a counter the camera watches.
     // REF: FUN_8004AD80
     pub(in crate::world) fn note_active_clip_commit(&mut self, i: usize) {
-        if i == usize::from(self.battle_ctx.active_actor) {
+        if i == usize::from(self.retail_acting_slot()) {
             self.battle_ctx.active_clip_commits =
                 self.battle_ctx.active_clip_commits.wrapping_add(1);
             self.battle_ctx.active_clip_commit_frame = self.clock.display_frames;
@@ -1560,6 +1577,10 @@ impl World {
         // runs from the clip's own start rather than from the action's.
         // REF: FUN_8004AD80
         self.note_active_clip_commit(i);
+        if i == usize::from(self.retail_acting_slot()) {
+            self.battle_ctx.active_clip_installs =
+                self.battle_ctx.active_clip_installs.wrapping_add(1);
+        }
         // `+0x1DB = +0x1DA` (`FUN_8004AD80` `0x8004AEB0..0x8004AEB8`), taken
         // BEFORE the art-bank rewrite below turns an id >= 0x10 into its
         // dynamic slot number - so the latch keeps the RAW staged id, which

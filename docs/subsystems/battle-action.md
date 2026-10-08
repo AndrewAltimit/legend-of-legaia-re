@@ -4376,6 +4376,21 @@ the scratchpad speed scalar `0x1F80037D`. The strike loop multiplies the same
 byte into its per-frame impact drift, which is where the earlier "impact-step
 magnitude" name came from - that is one consumer, not the field.
 
+The same tick decides when a staged clip replaces the playing one, and an
+idle or walk loop is no exception. Mid-clip, `+0x1DC` bit 0 commits at once
+and bit 1 once the cursor frame is past the entry's gate frame by more than
+two (`0x800478EC..0x80047948`), both refused by the entry's `+0x76` lock;
+otherwise the staged byte waits for the natural end (`0x80047B54`), which
+calls `FUN_8004AD80` whatever is staged - a clip left staged behind itself
+re-commits from its first frame, which is how a loop loops. So the strike
+loop's first swing, staged under bit 1 over the idle `0x19`'s arrival
+committed under bit 0 (`0x801E35C0`), waits for idle frame 3
+(`player_steal_skeleton_pre`: idle cursor `0x20`, `0x0F` staged), and every
+loop cycle of the acting actor re-zeroes the camera's ramp / accumulator /
+latch like any other commit (`0x8004BF50..0x8004BF78`). Port:
+`World::commit_staged_battle_anim` (the looping-clip gate) and the
+natural-end re-commit in `World::tick_battle_animations`.
+
 The writers are the anim-commit `FUN_8004AD80`'s arms, all on the **party**
 ladder (the monster path branches clear at `0x8004B6F4`):
 

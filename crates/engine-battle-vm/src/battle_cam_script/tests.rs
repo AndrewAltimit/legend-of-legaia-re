@@ -2085,6 +2085,7 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
                     attack: None,
                     action_state: state,
                     active_commits: 0,
+                    active_installs: 0,
                     swing_reseed: (0, 0),
                     camera_option: 0,
                     acting_body: None,

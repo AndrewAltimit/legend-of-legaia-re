@@ -313,6 +313,23 @@ pub(super) fn capture_ramp_left(world: &legaia_engine_core::world::World, height
     ((world.battle.camera_frame_height as u16).wrapping_sub(height) as i16).max(0) as u16
 }
 
+/// How old the active actor's clip is, in the close-up accumulator's units
+/// ([`BattleCamera::clip_age`](legaia_engine_vm::battle_cam_script::BattleCamera::clip_age)):
+/// the engine's `ctx[+0x87C]` with the natural-end re-commits of a looping
+/// clip left out. Retail's
+/// accumulator restarts on those (`player_steal_skeleton_banner` reads `176`
+/// 22 vsyncs after Vahn's idle wrapped), so the age is an upper bound on it
+/// whenever the engine plays retail's clip - the gates read it with `>=` -
+/// and it keeps placing a phase whose engine clip loops where retail's did
+/// not (a parked Gaza on idle against the engine's Gaza still walking).
+pub(super) fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
+    world
+        .battle
+        .camera
+        .as_ref()
+        .map_or(u32::MAX, |c| c.clip_age())
+}
+
 /// Whether the engine's close-up accumulator has run as far through `0x6E`
 /// as retail's `accum` (`ctx[+0x87C]`) says retail's did: the capture's
 /// value less what the `0x6F` frames still to come will add (half the depth
@@ -837,11 +854,7 @@ impl BattleDrive {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
                         SpanGate::Age { accum } => {
-                            world
-                                .battle
-                                .camera
-                                .as_ref()
-                                .is_none_or(|c| c.close_up_accum() >= u32::from(accum))
+                            active_clip_age(world) >= u32::from(accum)
                                 && steer.clip.is_none_or(|k| {
                                     world.battle_current_anim(usize::from(engine_seat(seat, pc)))
                                         == k

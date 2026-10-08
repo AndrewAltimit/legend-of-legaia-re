@@ -2282,7 +2282,7 @@ fn run_drive(
         let world = &session.host.world;
         if reached.is_none() {
             if drive.in_aged_state(world) {
-                aged = world.battle.camera.as_ref().map(|c| c.close_up_accum());
+                aged = Some(drive::active_clip_age(world));
             } else if let Some(a) = aged.take() {
                 // The state ended before it was as old as retail's: the
                 // re-run samples its last tick.

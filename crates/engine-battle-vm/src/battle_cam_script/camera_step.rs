@@ -51,6 +51,8 @@ impl BattleCamera {
             acting_body: None,
             spell_cam: None,
             last_active_commits: None,
+            last_active_installs: None,
+            clip_age: 0,
             last_swing_seeds: None,
             option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
@@ -153,6 +155,14 @@ impl BattleCamera {
             c.ramp = 0;
             c.accum = 0;
             c.latch = 0;
+        }
+    }
+
+    /// Zero [`Self::clip_age`] when the active actor installs a clip.
+    pub fn observe_active_installs(&mut self, installs: u32) {
+        let prev = self.last_active_installs.replace(installs);
+        if prev.is_some_and(|p| p != installs) {
+            self.clip_age = 0;
         }
     }
 
@@ -506,6 +516,18 @@ impl BattleCamera {
         self.attack.ctx.accum
     }
 
+    /// [`Self::close_up_accum`] as it runs without the natural-end
+    /// re-commits of a looping clip: zeroed by the action's start and by
+    /// each clip the active actor installs, advanced `8` a display frame
+    /// beside the accumulator. Port-only - retail's accumulator restarts on
+    /// those re-commits too, so this is an upper bound on it while the
+    /// engine plays retail's clip, and it keeps counting through a loop the
+    /// engine plays where retail held another (the retail comparison
+    /// corpus dates its action phases by it).
+    pub fn clip_age(&self) -> u32 {
+        self.clip_age
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
@@ -589,6 +611,7 @@ impl BattleCamera {
                 // table's two columns.
                 let coin = crate::battle_formulas::world_rand(&mut self.rand_state) & 1 != 0;
                 self.attack.ctx.begin_action(coin);
+                self.clip_age = 0;
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(
@@ -741,6 +764,9 @@ impl BattleCamera {
         // for as long as any framing case is being re-armed - not per camera
         // step.
         self.attack.ctx.advance(elapsed as u32);
+        self.clip_age = self.clip_age.wrapping_add(
+            (elapsed as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
+        );
         self.frame_accum += elapsed;
         while self.frame_accum >= 2 {
             self.frame_accum -= 2;

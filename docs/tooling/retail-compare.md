@@ -1956,18 +1956,25 @@ is checkable even where the pose is not. Two seeding limits follow.
   camera reads exact on both sides; what moves the frame is Tetsu's idle
   clip, sampled at whatever phase of its loop that elapsed time lands on.
   The capture holds no word that pins the idle phase.
-- **A capture after the action replays it from its end.**
+- **An idle loop restarts the accumulator.**
   `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
-  idle clip, the skeleton dead and the steal caption up. The seed drives the
-  whole art again, and the replayed round draws its own initiative and steal
-  roll: with Vahn seeded at his captured `17` HP the skeletons kill him first
-  under most of the seeds, and the one seed that reaches the state does not
-  roll the steal. The art's own drift and knockback are taken back
-  ([above](#battle-states), a push the capture already holds), but the
-  replayed history is not retail's: the framing's focus still lands some
-  `270` units off retail's. The engine's caption and the frame's timing
-  are not what this state measures; nothing in the capture recovers the
-  round's draws.
+  idle clip, the skeleton dead and the steal caption up. A looping clip's
+  natural end re-commits it, and the commit zeroes `ctx[+0x87C]` for the
+  acting actor ([battle-action](../subsystems/battle-action.md#the-animation-rate-byte-actor0x21d)),
+  so the capture's `176` counts from the idle's last **wrap**, not from its
+  first commit: the history ring (`actor[+0x17A]` cursors, one a frame)
+  holds Vahn's idle wrapping 22 vsyncs before the save and the idle's
+  first commit 58 back, and the skeleton's knockdown ending between them.
+  The age alone matches the first cycle, before the knockdown has ended,
+  so the drive also waits for the victim's defeat-fade lane (`+0x04`,
+  `0xF0` here - 34 vsyncs of fade) and, since the caption is the steal
+  roll's outcome, for the caption on a stream whose kill rolled it. The
+  death commit itself lands where retail's does. The drive's ages are the
+  camera's **clip age** (`BattleCamera::clip_age`): the accumulator with
+  those loop re-commits left out, which keeps placing a phase whose
+  engine clip loops where retail's held another clip - the parked Gaza of
+  `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
+  69 vsyncs before the save, `552` exactly) while the engine's still walks.
 
 ## See also
 

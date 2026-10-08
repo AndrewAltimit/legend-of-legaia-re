@@ -244,6 +244,10 @@ pub struct BattleCamera {
     /// first drive, so a camera created mid-action does not reset on its
     /// first frame.
     pub(super) last_active_commits: Option<u32>,
+    /// The last [`BattleCamInputs::active_installs`] seen.
+    pub(super) last_active_installs: Option<u32>,
+    /// [`BattleCamera::clip_age`]'s counter.
+    pub(super) clip_age: u32,
     /// The camera's copy of the `rand()` stream. Retail draws the shake pair
     /// (`FUN_801D9D30`), the strike-loop yaw coin (`FUN_8004E13C`'s party arm)
     /// and the per-art track column (`ctx[+0x26D] = rand() % 2`) from the one
@@ -408,6 +412,11 @@ pub struct BattleCamInputs {
     /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
     /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
     pub active_commits: u32,
+    /// The active actor's clip-**install** count
+    /// (`BattleActionCtx::active_clip_installs`): the commits that change the
+    /// committed id, without the natural-end re-commits of a looping clip.
+    /// Port-only; it zeroes [`BattleCamera::clip_age`].
+    pub active_installs: u32,
     /// `(count, coin)` of `FUN_8004E13C`'s value-2 re-seeds
     /// (`BattleActionCtx::swing_yaw_seeds` / `swing_yaw_coin`): a change in
     /// the count sets the yaw counter `ctx[+0x6DA]` to
@@ -513,6 +522,7 @@ pub fn drive_on_stream(
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
     cam.observe_active_commits(inputs.active_commits);
+    cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);
     cam.set_camera_option(inputs.camera_option);
     cam.set_shake_amplitude(inputs.shake_amplitude);
