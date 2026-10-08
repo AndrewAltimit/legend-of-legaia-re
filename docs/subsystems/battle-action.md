@@ -3548,7 +3548,7 @@ The same three things, in the same seats:
   `attack_recovery` waits for the last clip's commit, stages idle over it and
   parks the cursor at `0xFF` (`STRIKE_CURSOR_PARKED`).
 - **Damage is the anim tick's.** `World::tick_battle_hit_events`
-  (`world/battle/loop_driver.rs`) is the engine seat of the per-frame
+  (`world/battle/loop_driver/hits.rs`) is the engine seat of the per-frame
   `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
   runs the kernel's head guard chain
   (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,

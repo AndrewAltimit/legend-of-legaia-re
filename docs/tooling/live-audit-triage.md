@@ -489,7 +489,7 @@ why the obvious placement was wrong. Where each one lives now:
 - `tick_walk_regen` - `World::tick_field_walk_regen` runs it from the field
   frame tick in `frame_tick.rs`, gated on the retail `0x20` step cost.
 - `advance_battle_mode` - called from the battle loop driver
-  (`crates/engine-core/src/world/battle/loop_driver.rs`).
+  (`crates/engine-core/src/world/battle/loop_driver/round.rs`).
 - `validate_action` / `item_count_gate` - `WorldActionValidator` in
   `crates/engine-core/src/world/battle/validator_host.rs` implements
   `ActionValidatorHost`; `World::action_validity_mask` accumulates the

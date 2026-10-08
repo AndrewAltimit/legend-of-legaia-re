@@ -5467,7 +5467,7 @@ the monsters dispatch.
 
 The engine runs the same two bands (`battle_round::RoundFlow`,
 `RoundPhase::{Command, Execute}`; `World::begin_battle_round` /
-`begin_round_execution` / `end_battle_round` in `world/battle/loop_driver.rs`):
+`begin_round_execution` / `end_battle_round` in `world/battle/loop_driver/round.rs`):
 
 - **Command band.** `begin_battle_round` is retail's `0x14`: the actor sweep
   (`BattleRound::boundary`), the initiative re-seed when no key is live, the
