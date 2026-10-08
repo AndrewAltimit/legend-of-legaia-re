@@ -78,6 +78,11 @@ fn the_dance_keys_its_own_cues_out_of_its_own_bank() {
     assert!(s.host.world.minigames.dance_status_visible());
     let bgm = s.bgm.as_ref().expect("audio");
     assert_eq!(
+        bgm.last_started,
+        Some(legaia_engine_core::minigame_entry::DANCE_SHORT_SONG_BGM_ID),
+        "the song starts as the count-in clears"
+    );
+    assert_eq!(
         bgm.prot_for_slot(2),
         Some(legaia_asset::dance_art::DANCE_SFX_VAB_PROT_INDEX as u32),
         "the dance's class-2 bank is resident"
