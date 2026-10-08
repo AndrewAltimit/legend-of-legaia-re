@@ -2180,9 +2180,9 @@ that retail drops the near monster's gouraud prims is wrong. Monster `0xA1`
 (`0x27`) - and the near body (pool slot 5, ghosted `B + F/4` by
 `FUN_8004DC68`, Venom in its status word) is the `POLY_FT4` run with tpage
 `0x75` (ABR `3`) in the packet stream, beside the unghosted Giliums' `GT4`
-run on tpage `0x15` through the same CLUTs. Its colour word carries bit 26
-(the tint pass sets it on every body but a near one with no mode bits), so
-`FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4` leaves
+run on tpage `0x15` through the same CLUTs. Its render node's colour word reads
+`0x87FF2020` - Venom's `0xFF2020`, the ghost's `0x83` and bit 26 - where the
+far Giliums' read `0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4` leaves
 (`0x800457C4`, `0x80045988`) emit a flat-textured packet: code forced to
 `0x2C` (`lui s0,0x2c00`), one colour - the first corner's, depth-cued
 toward the tint colour by `DPCS` - and `0x20` / `0x28`-byte packets. So
