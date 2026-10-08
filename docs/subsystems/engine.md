@@ -99,11 +99,11 @@ extract      → iso, prot, lzs, asset, tim, tmd, xa, font
 
 engine-battle-vm → asset, art               (battle action SM, formulas, battle camera, cast ticks; below engine-vm)
 engine-vm     → engine-battle-vm, asset, prot, art, anm  (VM layer; no GPU / audio deps)
-engine-battle → engine-vm, asset, art, anm, save, tim, tmd  (World-free battle kernels; no GPU / audio deps)
+engine-battle → engine-vm, asset, art, anm, save, tim, tmd, bytes  (World-free battle kernels; no GPU / audio deps)
 engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no World)
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
 engine-core   → engine-battle, engine-effects, engine-minigames, engine-vm + the parser crates
-engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
+engine-ui     → engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)

@@ -106,14 +106,15 @@ pub use retail_inventory::{
 /// `legaia_asset::level_up_tables` + `engine_core::levelup::LevelUpTracker`.
 ///
 /// Engines that don't already pull this from
-/// `engine_core::levelup::retail_xp_table` can use this constant directly.
+/// `legaia_engine_battle::levelup::retail_xp_table` (re-exported under
+/// `engine_core::levelup`) can use this constant directly.
 // PORT: FUN_801E9504 (XP-threshold derivation, base curve)
 pub const RETAIL_XP_CUMULATIVE: [u32; 98] = build_retail_cumulative();
 
 const fn build_retail_cumulative() -> [u32; 98] {
     // The literal FUN_801E9504 arithmetic over the DAT_80076AF4 closed form
     // (delta(n) = n²/4 + 1). Single source of truth for the workspace -
-    // engine_core::levelup::retail_xp_table re-exposes this constant.
+    // legaia_engine_battle::levelup::retail_xp_table re-exposes this constant.
     let mut out = [0u32; 98];
     let mut cum: u64 = 0;
     let mut i = 0;

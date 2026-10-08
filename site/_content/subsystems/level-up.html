@@ -65,7 +65,7 @@
       <tr><td>Loop</td><td><code>do { level++; grow stats } while (threshold &le; XP)</code> - several levels per award are possible.</td></tr>
     </tbody>
   </table>
-  <p>Worked example - the level-2 thresholds a New Game Status screen shows: Vahn and Terra 121, Noa 102, Gala 140. The base curve continues 365, 730, 1338, 2190, &hellip; 9,646,483 at level 99. The engine carries the closed-form curve in <code>legaia_save::retail_xp_table()</code> and re-reads the same values from the user's executable at boot, so the two cross-check each other.</p>
+  <p>Worked example - the level-2 thresholds a New Game Status screen shows: Vahn and Terra 121, Noa 102, Gala 140. The base curve continues 365, 730, 1338, 2190, &hellip; 9,646,483 at level 99. The engine carries the closed-form curve as <code>legaia_save::RETAIL_XP_CUMULATIVE</code> (exposed as <code>engine-battle::levelup::retail_xp_table</code>) and re-reads the same values from the user's executable at boot, so the two cross-check each other.</p>
 </section>
 
 <section class="doc-section" id="stat-gains">

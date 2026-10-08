@@ -1,40 +1,41 @@
-//! Opening-cutscene timeline executor.
+//! Spawned field-VM record context (the modal cutscene timeline).
 //!
-//! The opening prologue scene (`opdeene`) carries a scripted cutscene timeline
-//! in its scene MAN's third record partition (partition 2) - a field-VM record
-//! (retail "Opening", dispatched by `FUN_8003BDE0`) that stages the closing
-//! camera path + actor `MoveTo`s and ends with `GFLAG_SET 26`, the write the
-//! `town01` hand-off gate (`FUN_801D1344`) waits on.
+//! Retail runs a scene's scripted beats as **spawned** field-VM contexts: a
+//! partition-2 record of the scene MAN dispatched by `FUN_8003BDE0` (the walk-on
+//! trigger path) beside the scene-entry system script. The opening prologue
+//! (`opdeene`) is the first one a game meets - its record stages the closing
+//! camera path and actor `MoveTo`s and ends with `GFLAG_SET 26`, the write the
+//! `town01` hand-off gate (`FUN_801D1344`) waits on - but the same context type
+//! carries every walk-on vignette, `town01`'s opening and the inline-dialog
+//! beats.
 //!
-//! [`CutsceneTimeline`] is a *spawned* field-VM context that runs that record
-//! frame-by-frame, separate from the scene-entry system script on
-//! [`crate::world::World::field_ctx`]. Running it through the same field VM
-//! ([`legaia_engine_vm::field::step`]) makes the camera Configure ops (`0x45`)
-//! and actor MoveTo ops (`0x23`) fire by execution - emitting the same camera /
-//! move [`crate::field_events::FieldEvent`]s the runtime camera
-//! ([`crate::camera::Camera`]) already folds in - and lets `GFLAG_SET 26` fire
-//! by execution instead of a static MAN-walk derivation. The driver lives in
-//! [`crate::world::World::step_cutscene_timeline`]; this type is just the
-//! cursor + halt bookkeeping around the VM step.
+//! [`CutsceneTimeline`] is that context's state: cursor, halt and park
+//! bookkeeping (narration blocks, an owned inline dialog panel, channel
+//! handshakes, player / NPC walk, glide, facing and clip waits). The driver is
+//! [`crate::world::World::step_cutscene_timeline`], which runs one frame slice
+//! through the shared field VM ([`legaia_engine_vm::field::step`]): camera ops
+//! (`0x45`) and `MoveTo`s (`0x23`) fire by execution and emit the
+//! [`crate::field_events::FieldEvent`]s the runtime camera folds in, and flag
+//! writes such as `GFLAG_SET 26` land by execution rather than by a static MAN
+//! walk. Installation is
+//! [`crate::world::World::install_cutscene_timeline_record`].
 //!
 //! ## Port boundary
 //!
 //! No Sony bytes live here. The record body is sliced from the user's disc MAN
-//! at runtime and handed in; this module only holds the per-context cursor.
+//! at runtime and handed in; this module only holds the per-context state.
 //!
-//! ## Approximate by design
+//! ## Context semantics
 //!
-//! The spawned context targets the camera / lead-actor anchor (retail
-//! cross-context target `0xF8`, `_DAT_8007C364`). Because the engine runs a
-//! single shared field VM, cross-context (`0x80`-bit) ops operate on this
-//! context rather than resolving a distinct per-target context, and the inline
+//! Cross-context (`0x80`-bit) ops resolve onto the spawned per-actor channels
+//! (one per partition-1 placement, retail `FUN_8003AEB0`'s spawn loop), so a
+//! vignette's pokes land on real per-actor contexts, and a `B3 <id> <bit>`
+//! handshake parks the timeline until the channel answers. The inline
 //! narration op (`0xCC 0xF8 0x80 N`, which retail routes to the `FUN_8003C764`
-//! text-balloon path) is presented separately by
-//! [`crate::cutscene_narration::CutsceneNarration`] - so its actor-allocator
-//! host hook is suppressed while the timeline steps (see
-//! [`crate::world::World::step_cutscene_timeline`]). The result is a faithful
-//! GFLAG-by-execution + camera-event stream, with an approximate camera path
-//! until the remaining op-`0x45` eye/distance params are pinned.
+//! text-balloon path) is presented by
+//! [`crate::cutscene_narration::CutsceneNarration`]; the timeline suspends at
+//! each block while its pages play, and the actor-allocator host hook is
+//! scoped off while a modal timeline steps.
 
 use legaia_engine_vm::field::FieldCtx;
 

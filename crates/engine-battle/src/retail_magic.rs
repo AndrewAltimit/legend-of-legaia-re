@@ -53,13 +53,14 @@
 //! pieces of that chain are ported as pure kernels in
 //! [`legaia_engine_vm::battle_formulas`] (`summon_attacker_roll` /
 //! `summon_defender_roll` / `summon_predamage` / `heal_summon_amount` and the
-//! `apply_*` scale helpers). They are **not yet wired** into a live battle here:
-//! the engine's spell path still uses [`SpellEffect`]'s MP-scaled `base_power`,
-//! and the faithful roll needs a live battle-actor context (both actors' AGL/HP/
-//! defense/status, the affinity matrix, and the caster magic-power byte) plus
-//! the `FUN_801ddb30` finisher, which mutates ~20 battle globals. When a
-//! player-driven summon consumer needs real numbers, feed those stats into the
-//! `battle_formulas` kernels rather than the placeholder below.
+//! `apply_*` scale helpers), and the live battle rolls a damaging player cast
+//! through them: `engine-core`'s `World::player_summon_predamage` feeds the
+//! summon creature's record, both actors' stats, the affinity matrix and the
+//! caster's magic-power byte into `summon_predamage_lazy` plus the
+//! `FUN_801ddb30` finisher. The MP-scaled `base_power` below is only the
+//! fallback for a battle whose monster catalog cannot resolve the summon
+//! creature (disc-free fixtures); the ally-side casts take their restore from
+//! the cast module's tick kernel instead.
 
 use crate::spells::{SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget};
 

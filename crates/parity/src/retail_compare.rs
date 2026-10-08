@@ -1599,14 +1599,16 @@ impl BgmDirector for RecordingDirector {
 /// How the retail save is applied around the scene entry.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SeedOrder {
-    /// The engine's own card-load path ([`BootSession::resume_save`]): enter
-    /// the scene, then hydrate. The scene's entry scripts run before the
-    /// save's story flags exist.
+    /// The engine's own card-load path ([`BootSession::resume_save`]): seed
+    /// the story flags, land the scene, then hydrate the whole save. The
+    /// entry scripts see the saved flags but not the saved party, bag or
+    /// gold.
     #[default]
     Resume,
-    /// Hydrate, enter, hydrate again: the entry scripts see the retail
-    /// flags. A diagnostic arm - the difference between the two orders is
-    /// how much of a channel's divergence the entry ordering explains.
+    /// Hydrate the whole save, enter through `enter_scene_live` (no resume
+    /// landing, no saved seat), hydrate again. A diagnostic arm - the
+    /// difference between the two orders is what the landing and the rest
+    /// of the save (party, bag, gold) contribute ahead of the entry.
     FlagsFirst,
 }
 
@@ -1638,7 +1640,7 @@ pub fn run_engine_with(
         .seed_save()
         .context("retail state has no liftable save window")?;
     match order {
-        // The engine's own card-load path: land the save's scene, then hydrate.
+        // The engine's own card-load path: flags, landing, whole save.
         SeedOrder::Resume => {
             let _landing = session.resume_save(save, &retail.scene, &opts);
         }

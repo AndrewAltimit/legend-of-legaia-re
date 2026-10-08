@@ -21,7 +21,7 @@
   <h2>How the crates stack</h2>
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 470" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Leaves: engine-ui (draw lists, no wgpu), engine-vm (the VMs), engine-minigames (the minigame rules engines) and engine-battle (the World-free battle kernels), both linked by engine-core. Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
+    <svg viewBox="0 0 880 570" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Kernels with no World: engine-ui (draw lists, no wgpu), engine-minigames (the minigame rules engines), engine-effects (the effect kernels) and engine-battle (the battle kernels), all but engine-ui linked by engine-core. VMs: engine-vm (the VMs) over engine-battle-vm (the battle action state machine and formulas). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="868" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
@@ -47,19 +47,25 @@
       <rect class="dg-node" x="660" y="230" width="200" height="56" rx="5"/>
       <text class="dg-label" x="760" y="254">engine-audio</text><text class="dg-sub" x="760" y="272">SPU model + sequencer</text>
 
-      <text class="dg-edge-label" x="868" y="322" text-anchor="end">leaves</text>
+      <text class="dg-edge-label" x="868" y="322" text-anchor="end">no World</text>
       <rect class="dg-node" x="20" y="330" width="180" height="56" rx="5"/>
       <text class="dg-label" x="110" y="354">engine-ui</text><text class="dg-sub" x="110" y="372">draw lists, no wgpu</text>
-      <rect class="dg-node" x="420" y="330" width="200" height="56" rx="5"/>
-      <text class="dg-label" x="520" y="354">engine-vm</text><text class="dg-sub" x="520" y="372">VMs + battle action SM</text>
-      <rect class="dg-node" x="215" y="330" width="190" height="56" rx="5"/>
-      <text class="dg-label" x="310" y="354">engine-minigames</text><text class="dg-sub" x="310" y="372">rules, no World</text>
-      <rect class="dg-node" x="640" y="330" width="190" height="56" rx="5"/>
-      <text class="dg-label" x="735" y="354">engine-battle</text><text class="dg-sub" x="735" y="372">battle kernels</text>
+      <rect class="dg-node" x="230" y="330" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="354">engine-minigames</text><text class="dg-sub" x="320" y="372">minigame rules</text>
+      <rect class="dg-node" x="440" y="330" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="535" y="354">engine-effects</text><text class="dg-sub" x="535" y="372">effect kernels</text>
+      <rect class="dg-node" x="650" y="330" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="745" y="354">engine-battle</text><text class="dg-sub" x="745" y="372">battle kernels</text>
 
-      <rect class="dg-group" x="20" y="410" width="840" height="48" rx="6"/>
-      <text class="dg-label" x="440" y="432">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
-      <text class="dg-sub" x="440" y="449">engine-agnostic: typed data in memory, never wgpu, winit or cpal</text>
+      <text class="dg-edge-label" x="868" y="422" text-anchor="end">VMs</text>
+      <rect class="dg-node" x="330" y="430" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="430" y="454">engine-vm</text><text class="dg-sub" x="430" y="472">field, move, motion, effect VMs</text>
+      <rect class="dg-node" x="590" y="430" width="220" height="56" rx="5"/>
+      <text class="dg-label" x="700" y="454">engine-battle-vm</text><text class="dg-sub" x="700" y="472">battle action SM + formulas</text>
+
+      <rect class="dg-group" x="20" y="510" width="840" height="48" rx="6"/>
+      <text class="dg-label" x="440" y="532">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
+      <text class="dg-sub" x="440" y="549">engine-agnostic: typed data in memory, never wgpu, winit or cpal</text>
 
       <path class="dg-edge" d="M120 86 L120 128" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M200 86 L320 128" marker-end="url(#en-arrow)"/>
@@ -69,20 +75,25 @@
       <path class="dg-edge-dim" d="M60 86 L60 108 L10 108 L10 258 L18 258" marker-end="url(#en-arrow)"/>
       <path class="dg-edge-dim" d="M120 186 L120 228" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M340 186 L420 228" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M260 186 L130 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M260 186 L150 328" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M540 186 L460 228" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M600 186 L720 228" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M100 286 L100 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M470 286 L520 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M110 386 L110 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M520 386 L520 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M850 286 L850 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M520 286 L700 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M640 358 L622 358" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M735 386 L735 408" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M380 286 L330 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M405 358 L418 358" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M310 386 L310 408" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M370 286 L330 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M480 286 L520 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M530 286 L720 328" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M425 286 L425 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M440 358 L412 358" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M630 358 L648 358" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M200 372 L328 445" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M340 386 L380 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M500 386 L470 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M680 386 L532 440" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M530 458 L588 458" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M110 386 L110 508" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M430 486 L430 508" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M700 486 L700 508" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M852 286 L852 508" marker-end="url(#en-arrow)"/>
       <text class="dg-edge-label" x="480" y="110">both play hosts</text>
       <text class="dg-edge-label" x="130" y="212">native only</text>
     </svg>
@@ -92,10 +103,12 @@
   <table class="data-table">
     <thead><tr><th>Crate</th><th>Role</th></tr></thead>
     <tbody>
-      <tr><td><code>engine-vm</code></td><td>The VMs and the battle-action state machine. Each talks to the game through a <code>Host</code> trait, so the crate has no GPU or audio dependency</td></tr>
+      <tr><td><code>engine-battle-vm</code></td><td>The battle-side VM kernels below <code>engine-vm</code>: the battle-action state machine, the damage / accuracy / escape formulas, the battle camera script and the cast-module ticks. <code>engine-vm</code> re-exports each module at its old path</td></tr>
+      <tr><td><code>engine-vm</code></td><td>The field / event, move, motion and effect VMs, the window-widget VM and the world-map entity state machine. Each talks to the game through a <code>Host</code> trait, so the crate has no GPU or audio dependency</td></tr>
       <tr><td><code>engine-battle</code></td><td>The battle kernels that never touch <code>World</code>: monster AI script, death spoils, AP gauge, stat aggregator, spell / monster / move-power catalogs, encounters, level-up, Seru learning. <code>engine-core</code> re-exports each module at its old path and keeps the stateful battle loop</td></tr>
       <tr><td><code>engine-core</code></td><td>The simulation: <code>World</code> (which implements every VM&rsquo;s <code>Host</code>), the scene host and scene resources, the mode seat, menus, shop / inn / level-up sessions, saves, the minigames&rsquo; <code>World</code> glue. Draws nothing</td></tr>
       <tr><td><code>engine-minigames</code></td><td>The minigame rules engines that need no <code>World</code> - slot machine, Baka Fighter, dance, fishing, the prize exchange, the Muscle Dome contest ladder. <code>engine-core</code> re-exports each at its old path</td></tr>
+      <tr><td><code>engine-effects</code></td><td>The effect kernels that need no <code>World</code>: the action effect scripts, the ribbon and render-mode-4 emitters, the summon scene-graph driver, the screen effects and object effects. <code>engine-core</code> re-exports each at its old path</td></tr>
       <tr><td><code>engine-ui</code></td><td>Renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>) and the shared render kernels - the wgpu-free leaf both hosts can link</td></tr>
       <tr><td><code>engine-render</code></td><td>The wgpu renderer with a software PSX VRAM (1024&times;512, palette decode in the fragment shader)</td></tr>
       <tr><td><code>engine-audio</code></td><td>From-scratch 24-voice SPU, SsAPI-shaped sequencer, SFX bank; cpal output natively, WebAudio in the browser</td></tr>
@@ -221,7 +234,7 @@
       <tr><td><a href="move-vm.html">Move VM</a></td><td><code>engine-vm::move_vm</code></td><td>71 opcodes + the 61-sub-opcode overlay extension</td></tr>
       <tr><td><a href="motion-vm.html">Motion VMs</a></td><td><code>engine-vm::motion_vm</code></td><td>pursue / patrol / face-target; scripted motion and story-flag writes</td></tr>
       <tr><td><a href="effect-vm.html">Effect VM</a></td><td><code>engine-vm::effect_vm</code></td><td>slot pool, init / spawn / tick</td></tr>
-      <tr><td><a href="battle-action.html">Battle action SM</a></td><td><code>engine-vm::battle_action</code></td><td>47 states in 7 bands; art strikes read from the actor&rsquo;s chosen art</td></tr>
+      <tr><td><a href="battle-action.html">Battle action SM</a></td><td><code>engine-battle-vm::battle_action</code></td><td>47 states in 7 bands; art strikes read from the actor&rsquo;s chosen art</td></tr>
       <tr><td><a href="actor-vm.html">Window-widget VM</a></td><td><code>engine-vm</code> crate root</td><td>13 opcodes; the menu overlay&rsquo;s window choreography</td></tr>
       <tr><td><a href="boot.html#title-overlay-state">Title sub-mode dispatcher</a></td><td><code>engine-vm::title_overlay</code></td><td>25-entry jump table; the title &rarr; field launch write</td></tr>
     </tbody>
