@@ -906,15 +906,42 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`layer` is an ordering-table bucket and `blend` an ABR equation "
         "(two `i16`s a call site can swap), and `packed` is a GP0 colour word "
         "with red LOW, the opposite of every other kernel here. Both sites "
-        "must emit through `screen_effect_push_prims_split`, which also "
-        "decides which pushes wash the text layer (OT bucket 0, in front of "
-        "the glyphs at bucket 1)",
+        "emit through `screen_effect_push_prims_split`, which also decides "
+        "which pushes wash the text layer (OT bucket 0, in front of the "
+        "glyphs at bucket 1); that call now sits inside the one composer "
+        "both hosts run (`screen_layers::compose_screen_prims`), so the "
+        "assertion is on the composer",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_BATTLE, "rebuild_screen_geom"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["compose_screen_prims"],
+    },
+    {
+        "what": "screen-primitive append order, native vs play page - the "
+        "ordering-table walk breaks every bucket tie by append order (LIFO), "
+        "and the two hosts appended in different orders: the PROT-0900 "
+        "screen-effect widgets with the field's ordering-table effects "
+        "natively and last on the page, the shop's opening fade and the "
+        "pause wipe in opposite orders, and the page kept the field's "
+        "effects under a shop that blacks the field out. Both fill "
+        "`HostScreenPrims` and compose through `compose_screen_prims`; "
+        "neither host may append a world-decided layer itself",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
         },
-        "mode": "symbols_all",
-        "symbols": ["screen_effect_push_prims_split"],
+        "mode": "symbols_same",
+        "symbols": [
+            "HostScreenPrims",
+            "screen_fade_draws",
+            "cross_beam_draw",
+            "shop_fade_level",
+            "cinematic_bar_prims",
+            "arts_banner_prims",
+            "draw_quads",
+        ],
     },
     {
         "what": "battle-intro style inputs, native vs play page - the style "

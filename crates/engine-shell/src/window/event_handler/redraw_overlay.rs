@@ -380,7 +380,7 @@ impl PlayWindowApp {
         // The move-FX afterimage streak, under an orthographic
         // screen-space MVP (PSX 320x240 frame). The PROT-0900
         // screen-effect widgets (mask / sprite / panel / letterbox) are
-        // screen primitives instead - see `screen_fx_screen_prims` below.
+        // screen primitives instead - see `screen_layers::screen_fx_prims`.
         let screen_fx_tex = self.build_screen_fx_meshes(r);
         let screen_fx_mvp = Mat4::orthographic_rh(0.0, 320.0, 240.0, 0.0, 0.0, 1.0);
         FxFrame {
@@ -420,181 +420,41 @@ impl PlayWindowApp {
         // sees the frame that is presented. Capturing `Scene(&scene)` here
         // instead would silently drop every transition style from the PNGs
         // - the harness's own blind spot, not the emitter's.
-        // Screen-space primitives composited over the scene this
-        // frame: the field-to-battle intro's styles, plus the in-battle
-        // weapon-trail bands (mutually exclusive in practice - the
-        // trail only draws once a swing clip plays inside the battle).
-        let mut screen_prims = battle_intro_prims;
-        // The field scene's own ordering-table effects, drawn UNDER the
-        // 2D overlays and sorted as one list: the fog sheets
-        // (`fog_particles`, `fog_puff_prim`), the move strips, and the
-        // field VM's attached lights (op `0x34` sub-1,
-        // `light_pool_prims`). Retail's darkness mask leaves the party
-        // HUD bright (the `dolk` capture); the browser play page draws
-        // the same three through one sorted pass with its HUD a layer
-        // above the canvas.
-        let mut light_prims = field_fog_prims;
-        // The actor drop shadows (`FUN_8001C394`), depth-tested against
-        // the scene just drawn - the play page's `tick_field_drop_shadow_prims`
-        // twin, through the same `World::field_drop_shadows` kernel.
-        light_prims.extend(self.field_drop_shadow_prims());
-        light_prims.extend(move_strip_prims);
-        light_prims.extend(self.field_light_screen_prims());
-        // The PROT-0900 screen-effect widgets sort in the same pass, by
-        // their retail OT slots - the play page's single-list order.
-        light_prims.extend(self.screen_fx_screen_prims());
-        // Under a shop the field is not drawn at all (the 3D pass above
-        // is skipped), so none of its screen-space effects may survive
-        // onto the black backdrop either.
-        if self.menu_runtime.covers_field() {
-            light_prims.clear();
-        }
-        screen_prims.extend(self.weapon_trail_screen_prims());
-        // PROT 0948's Cross Beam, while its arm 3 runs. Its two OT
-        // entries (`2`, `0x400`) are both behind the text's bucket, so it
-        // draws under the HUD - the browser play page's GL pass sits
-        // under its text canvas the same way.
-        light_prims.extend(self.cross_beam_screen_prims());
-        // PROT 0904's (Theeder) beam: prongs, charge, sweep and trail.
-        light_prims.extend(self.theeder_screen_prims());
-        // The world's one live full-screen fade (the summon band's two
-        // flashes, the escape white-out), drawn through the same kernel
-        // the intro fades use so the ABR mode is honoured, and split at
-        // the text layer by its ordering-table id exactly as the
-        // screen-effect pushes below are: the summon band's flashes
-        // (id `1`, the text's own bucket) draw under the battle HUD, a
-        // field warp's fade (id `0`) over it. The browser play page
-        // makes the same split (`play_text_layer_washes_json`).
-        for p in self.screen_fade_screen_prims() {
-            let ot = i16::try_from(p.ot_index()).unwrap_or(i16::MAX);
-            if legaia_engine_render::screen_prim::push_covers_text(ot) {
-                screen_prims.push(p);
-            } else {
-                light_prims.push(p);
-            }
-        }
-        // A shop opening: the field fades to black under the menu's
-        // subtractive full-screen quad before its windows slide in
-        // (`MenuRuntime::shop_fade_level`; the browser page draws the
-        // same quad).
-        if let Some(level) = self.menu_runtime.shop_fade_level() {
-            screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
-                u32::from(level) * 0x01_01_01,
-                2,
-                0,
-            ));
-        }
-        // The pause menu's wipe: the field darkening before the menu
-        // spawns and brightening after it closes (`FUN_801ED308`'s
-        // `_DAT_8007B440` through the wipe emitter) - the same
-        // subtractive quad as the shop's opening fade.
-        if let Some(level) = self.session.pause_wipe().fade_level() {
-            screen_prims.push(legaia_engine_render::screen_overlay::fade_prim(
-                u32::from(level) * 0x01_01_01,
-                2,
-                0,
-            ));
-        }
-        // The field overlay's **screen-effect** washes: the colour-tween
-        // actors the field VM's op `0x34` sub-0 arm spawns, each emitting
-        // one `FUN_80024EE4(layer, blend, packed)` push per frame. This is
-        // the scene-entry fade-from-black and the door prologue's
-        // fade-to-black - simulated on both hosts for as long as neither
-        // drew it. Through the same shared emitter the browser play page
-        // composites them with, so the ordering-table bucket, the ABR
-        // equation and the GP0 channel order are decided once.
         //
-        // Split at the text layer: retail links every glyph at OT bucket
-        // `1` (`TEXT_OT_BUCKET`), so a push at bucket `0` washes the
-        // text with the scene and a deeper one draws under it. The
-        // overlay text sits between this host's two lists, so the
-        // under-text pushes join `light_prims`. The browser play page
-        // makes the same split through the same kernel.
-        let (pushes_under, pushes_over) =
-            legaia_engine_render::screen_overlay::screen_effect_push_prims_split(
-                &self.session.host.world.screen_tint_push_args(),
-            );
-        light_prims.extend(pushes_under);
-        screen_prims.extend(pushes_over);
-        // The field overlay's cinematic wipe (`0x43 0C` -> `FUN_801DD784`),
-        // through the same shared emitter the browser play page uses so
-        // the two bars cannot drift between hosts.
-        screen_prims.extend(legaia_engine_render::screen_overlay::cinematic_bar_prims(
-            self.session.host.world.presentation.cinematic_bar,
-            legaia_engine_render::screen_overlay::PSX_DISPLAY_H,
-        ));
-        // Floating value readout: the numeral a landed hit throws, plus
-        // the `N HIT` / `TOTAL` counter cluster. Retail's own art and
-        // geometry - 24x24 cells off the battle effect atlas (texture page
-        // `0x27`, CLUT `0x7703`), thrown over the STRUCK actor, growing
-        // about a fixed horizontal centre and rising to screen row 32.
-        // The quads come out of `legaia_engine_ui::battle_numerals`, which
-        // the browser play page emits through too, so the two hosts draw
-        // the same pixels off the same VRAM page instead of one sampling
-        // the sheet and the other restyling the number in the dialog font.
-        // Only the seat is per-host: it needs the struck actor's projected
-        // screen position, which only a host holding the camera has.
-        screen_prims.extend(self.battle_value_readout_prims(fx_cam));
-        // The Arts announcement banner (`<word> ARTS!!`), off the same
-        // page through the same shared builder the browser play page
-        // emits it with. The whole banner - stage machine, slide clock,
-        // ghost-trail layers, quad geometry - is engine state stepped in
-        // `World::tick`, so this host contributes nothing but the append.
-        screen_prims.extend(legaia_engine_render::battle_numerals::arts_banner_prims(
-            &self.session.host.world.battle_arts_banner_quads(),
-            legaia_engine_render::battle_numerals::VALUE_READOUT_OT,
-        ));
-        // The dance count-in banner, as retail's own 160x32 sprite off the
-        // hall's HUD page rather than placeholder text. Same shared
-        // builder the browser play page emits through
-        // (`legaia_engine_ui::ui_dance::dance_countin_prims`), and the
-        // same residency predicate decides for both hosts whether the
-        // sprite or the letterforms draw.
-        screen_prims.extend(self.dance_countin_prims());
-        // The dance HUD frame (score boxes, digits, `Lv.` gauges) as
-        // retail's own quads on the same page, through the shared
-        // `ui_dance::dance_hud_prims` the browser play page emits with.
-        screen_prims.extend(self.dance_hud_prims());
-        // The Baka cabinet's and round chrome's widgets on the duel
-        // VRAM's PROT 1203 pages (`baka_hud_prims`), the browser play
-        // page's twin.
-        screen_prims.extend(self.baka_hud_prims());
-        // The slot machine's paylines, off the machine's own ported pass
-        // and projection - the segments both browser pages stroke.
-        // The machine itself - cabinet, reels, furniture, dot matrix and
-        // coin HUD - under the paylines (`ui_slot_cabinet`).
-        // A rules page is a full-screen panel its text prints on, so it
-        // rides the under-overlay slot: the composited tail draws over
-        // the glyph layer, which would bury the page's text.
-        let rules_page = self
-            .session
-            .host
-            .world
-            .minigames
-            .slot_machine
-            .as_ref()
-            .is_some_and(|m| {
-                matches!(
-                    m.screen(),
-                    legaia_engine_core::slot_machine::SlotScreen::Instructions { .. }
-                )
-            });
-        if rules_page {
-            light_prims.extend(slot_prims);
-        } else {
-            screen_prims.extend(slot_prims);
-        }
-        screen_prims.extend(self.slot_payline_screen_prims());
-        // The fishing line, latched above: the same kernel and builder
-        // the browser play page uses.
-        screen_prims.extend(fishing_line_prims);
-        // The overworld's entity + player markers: the shared
-        // `world_map_markers` kernel's quads, the browser play page's
-        // twin (`crate::play_world_map_markers` there).
-        screen_prims.extend(self.world_map_marker_prims());
-        // The overworld sky band (`FUN_801F73E4`): the shared gate and
-        // wrapper the browser play page draws it with.
-        screen_prims.extend(self.world_map_sky_prims());
-        (screen_prims, light_prims)
+        // The ORDER of the two lists - which layer appends where, and so
+        // how every ordering-table tie breaks - is the shared
+        // `screen_layers::compose_screen_prims` the browser play page
+        // composes with; this host contributes only what needs its camera
+        // or its VRAM residency.
+        let host = legaia_engine_screens::screen_layers::HostScreenPrims {
+            transition: battle_intro_prims,
+            battle_fx: self.weapon_trail_screen_prims(),
+            field_fog: field_fog_prims,
+            // The actor drop shadows (`FUN_8001C394`), through the same
+            // `World::field_drop_shadows` kernel as the page.
+            drop_shadows: self.field_drop_shadow_prims(),
+            move_strips: move_strip_prims,
+            field_lights: self.field_light_screen_prims(),
+            theeder: self.theeder_screen_prims(),
+            // The floating value readout needs the struck actor's projected
+            // screen position, which only a host holding the camera has.
+            value_readout: self.battle_value_readout_prims(fx_cam),
+            dance_countin: self.dance_countin_prims(),
+            dance_hud: self.dance_hud_prims(),
+            baka_hud: self.baka_hud_prims(),
+            slot_cabinet: slot_prims,
+            slot_paylines: self.slot_payline_screen_prims(),
+            fishing_line: fishing_line_prims,
+            fishing_hud: Vec::new(),
+            world_map_markers: self.world_map_marker_prims(),
+            world_map_sky: self.world_map_sky_prims(),
+        };
+        let (under, over) = legaia_engine_screens::screen_layers::compose_screen_prims(
+            &self.session.host.world,
+            &self.menu_runtime,
+            self.session.pause_wipe().fade_level(),
+            host,
+        );
+        (over, under)
     }
 }

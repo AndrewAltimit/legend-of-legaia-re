@@ -3215,6 +3215,15 @@ there as one list - the fog sheets, the move strips and the light pools - so
 they order against each other exactly as the page's single pass orders them.
 Transitions, fades and battle readouts stay in the tail.
 
+Both lists come out of one composer, `engine-screens::screen_layers::compose_screen_prims`:
+a host fills `HostScreenPrims` with the layers that need its own camera or
+VRAM, and the composer appends them together with every layer the world
+decides alone, in one order. That order matters even though the walk sorts by
+bucket, because a tie inside a bucket breaks by append order. The page
+concatenates `under` and `over` into its one sort; the native window draws its
+text between them. That layering is the one difference left, and it is about
+the text, not about the order.
+
 ## A side-by-side pass over one set of both-host features
 
 The drift tiers are green over every feature below, and each one was then shot
@@ -4277,6 +4286,7 @@ name so a host that re-spells the decision locally fails the gate.
 |---|---|---|
 | occlusion-fade arming + strength ramp | `field_occlusion::host_fade_armed`, `FadeRamp` | the page carried the ramp's ease and snap in JS; the native window kept dissolving walls behind the pause menu and a name-entry prompt |
 | scene-light selection | `engine-screens::field_frame::field_scene_lights` | the page's gate had no screen term, so a shop's black backdrop carried the scene's candle halos |
+| screen-primitive append order | `engine-screens::screen_layers::compose_screen_prims` | the widgets sorted with the field effects natively and last on the page, the shop fade and pause wipe sat in opposite orders, and the page kept the field's effects under a blacked-out shop |
 | frame clear colour | `engine-screens::field_frame::frame_clear_color` | the page passed `false` for the screen term, so a shop in a scene with a scripted clear colour (`teien`) sat on that colour instead of black |
 | prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |
