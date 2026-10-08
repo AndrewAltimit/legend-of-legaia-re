@@ -627,30 +627,7 @@ impl<'m> DrawCtx<'_, 'm> {
     /// posed props, their colour halves), the player's colour half, the
     /// placed NPCs and the tile-board actors.
     fn push_field_env(&self, out: &mut DrawLists<'m>, cues: &FrameCues) {
-        let app = self.app;
-        let store = &self.store;
         let r = self.r;
-        let cam = self.cam;
-        let cutscene_cam = self.cutscene_cam;
-        let view_cells = self.view_cells;
-        let in_world_map = self.in_world_map;
-        let player_tint_cue = cues.player_tint_cue;
-        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
-            cues.effect_clip(key, model)
-        };
-        let player_color_posed = &store.posed.player_color_posed;
-        let posed_prop_baked_v = &store.posed.posed_prop_baked_v;
-        let posed_prop_baked_c = &store.posed.posed_prop_baked_c;
-        let posed_prop_live_v = &store.posed.posed_prop_live_v;
-        let posed_prop_live_c = &store.posed.posed_prop_live_c;
-        let npc_posed = store.npc_posed;
-        let DrawLists {
-            draws,
-            color_draws,
-            clip_marks,
-            color_clip_marks,
-            ..
-        } = out;
         // Debug layer filter (`LEGAIA_DIAG_LAYERS=hf,tiles,
         // ctiles,place,cplace,npc`): when set, only the
         // named field layers draw - the render-side sibling
@@ -662,6 +639,32 @@ impl<'m> DrawCtx<'_, 'm> {
                 .as_deref()
                 .is_none_or(|f| f.split(',').any(|s| s == name))
         };
+        self.push_field_terrain(out, &layer_on);
+        self.push_field_placements(out, cues, &layer_on);
+        // Occlusion-fade draw watermark: every draw pushed so
+        // far is scene ENVIRONMENT (terrain, placements, posed
+        // props, their colour halves) - fadeable. Everything
+        // after this point is an ACTOR (the player's two
+        // halves, NPCs, tile actors, spawned meshes), which the
+        // fade must never dissolve - the depth margin only has
+        // to guard geometry AT the focus depth now, so
+        // occluders hugging the character still open up.
+        r.set_occlusion_env_draws(out.draws.len(), out.color_draws.len());
+        self.push_field_npcs(out, cues, &layer_on);
+    }
+
+    /// The field ground (or its visible-tile crop) and the terrain tiles,
+    /// textured and untextured, with camera-facing decoration cells.
+    fn push_field_terrain(&self, out: &mut DrawLists<'m>, layer_on: &dyn Fn(&str) -> bool) {
+        let app = self.app;
+        let store = &self.store;
+        let cam = self.cam;
+        let cutscene_cam = self.cutscene_cam;
+        let view_cells = self.view_cells;
+        let in_world_map = self.in_world_map;
+        let DrawLists {
+            draws, color_draws, ..
+        } = out;
         // Bulk ground FIRST: the `.MAP` floor-grid
         // heightfield (the `0x1000` ground layer - most
         // town floor cells have NO pack mesh, so without
@@ -772,6 +775,34 @@ impl<'m> DrawCtx<'_, 'm> {
                 }
             }
         }
+    }
+
+    /// The placed static objects and posed props, textured and untextured,
+    /// at their live transforms, parked / culled / tinted / clipped.
+    fn push_field_placements(
+        &self,
+        out: &mut DrawLists<'m>,
+        cues: &FrameCues,
+        layer_on: &dyn Fn(&str) -> bool,
+    ) {
+        let app = self.app;
+        let store = &self.store;
+        let cam = self.cam;
+        let view_cells = self.view_cells;
+        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+            cues.effect_clip(key, model)
+        };
+        let posed_prop_baked_v = &store.posed.posed_prop_baked_v;
+        let posed_prop_baked_c = &store.posed.posed_prop_baked_c;
+        let posed_prop_live_v = &store.posed.posed_prop_live_v;
+        let posed_prop_live_c = &store.posed.posed_prop_live_c;
+        let DrawLists {
+            draws,
+            color_draws,
+            clip_marks,
+            color_clip_marks,
+            ..
+        } = out;
         // Static environment geometry: draw each placed
         // building / terrain mesh at its world transform
         // (resolved at scene load in
@@ -1054,15 +1085,32 @@ impl<'m> DrawCtx<'_, 'm> {
                 });
             }
         }
-        // Occlusion-fade draw watermark: every draw pushed so
-        // far is scene ENVIRONMENT (terrain, placements, posed
-        // props, their colour halves) - fadeable. Everything
-        // after this point is an ACTOR (the player's two
-        // halves, NPCs, tile actors, spawned meshes), which the
-        // fade must never dissolve - the depth margin only has
-        // to guard geometry AT the focus depth now, so
-        // occluders hugging the character still open up.
-        r.set_occlusion_env_draws(draws.len(), color_draws.len());
+    }
+
+    /// The field actors: the player's colour half, the placed NPCs and the
+    /// tile-board actors.
+    fn push_field_npcs(
+        &self,
+        out: &mut DrawLists<'m>,
+        cues: &FrameCues,
+        layer_on: &dyn Fn(&str) -> bool,
+    ) {
+        let app = self.app;
+        let store = &self.store;
+        let cam = self.cam;
+        let player_tint_cue = cues.player_tint_cue;
+        let effect_clip = |key: legaia_engine_core::world::ActorTintKey, model: &Mat4| {
+            cues.effect_clip(key, model)
+        };
+        let player_color_posed = &store.posed.player_color_posed;
+        let npc_posed = store.npc_posed;
+        let DrawLists {
+            draws,
+            color_draws,
+            clip_marks,
+            color_clip_marks,
+            ..
+        } = out;
         // The player's untextured mesh half (pants /
         // sleeves), following the actor's live transform.
         // Prefer this frame's posed rebuild (idle/walk
