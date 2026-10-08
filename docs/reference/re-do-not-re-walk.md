@@ -770,6 +770,18 @@ spawned as an ordinary actor by the slot init and drawn by the shared TMD
 renderer - which is exactly why no slot function emits a large untextured quad.
 See [`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md).
 
+### The slot's `DAT_801d4134 * 0x10` is a sub-row landing nudge
+
+*Falsified by disassembly.*
+
+Plausible: `rand % 5` scaled by `0x10` reads like a fraction of a reel row
+(rows are `0x100` apart), added so a stop does not look mechanical. It is a
+row index into the 16-byte-stride table at `0x801D3630`, whose words choose
+which of the five paylines a forced stop lands its target on. The port had
+kept every forced target on the middle row and the VRChat translation drew
+the "nudge" as a visual offset; both follow the table now. See
+[`minigame-slot-machine.md`](../subsystems/minigame-slot-machine.md#reel-landing---fun_801d2114--fun_801d2440).
+
 ### A phase-gated effect draw is the candidate for the arena's object-1 dust decal
 
 *Falsified by disassembly.*

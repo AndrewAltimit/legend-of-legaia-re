@@ -44,3 +44,27 @@ fn the_cabinet_mesh_decodes_and_encloses_the_machine() {
     assert!(lo < -640 && hi > 640, "x span {lo}..{hi}");
     eprintln!("[ran] cabinet: {} triangles, x {lo}..{hi}", mesh.tris.len());
 }
+
+/// The landing-line table `FUN_801d2440` indexes by the per-spin `rand % 5`
+/// decodes to the five paylines, in the order the engine's constant carries.
+/// Also pins the dead developer-label run the byte accounting claims: seven
+/// NUL-padded ASCII cells directly below the table.
+#[test]
+fn slot_landing_lines_match_the_retail_table() {
+    let Some(raw) = entry(legaia_asset::slot_payout::SLOT_OVERLAY_PROT_INDEX) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    assert_eq!(
+        sc::parse_landing_lines(&raw),
+        Some(sc::LANDING_LINE_BY_JITTER),
+        "landing-line table decodes to the pinned payline order"
+    );
+    let labels = &raw[sc::DEV_LABELS_OFFSET..][..sc::DEV_LABEL_COUNT * sc::DEV_LABEL_STRIDE];
+    for cell in labels.chunks(sc::DEV_LABEL_STRIDE) {
+        let n = cell.iter().position(|&b| b == 0).expect("NUL-terminated");
+        assert!(n > 0 && cell[..n].iter().all(|b| b.is_ascii_graphic()));
+        assert!(cell[n..].iter().all(|&b| b == 0));
+    }
+    eprintln!("[ran] slot landing lines {:?}", sc::LANDING_LINE_BY_JITTER);
+}

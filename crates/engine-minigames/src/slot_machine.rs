@@ -73,7 +73,10 @@
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d0554` (snap + claim) ->
 //! `FUN_801d13e8` (win eval).
 
-use legaia_asset::minigame_slot_scene::{MarqueeFrame, MarqueePlacement, compose_marquee_frame};
+use legaia_asset::minigame_slot_scene::{
+    LANDING_LINE_BY_JITTER, MarqueeFrame, MarqueePlacement, PAYLINE_CENTRE_ROW_BIAS,
+    PAYLINE_ROW_OFFSETS, compose_marquee_frame,
+};
 use legaia_asset::slot_payout::{self, SlotPayoutTable};
 use legaia_engine_vm::bios_rand::BiosRand;
 
@@ -202,7 +205,7 @@ pub fn build_reel(rng: &mut SlotRng) -> ([u8; STRIP_LEN], [u8; STRIP_LEN]) {
 /// feature mode was entered this spin.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpinRoll {
-    /// Per-spin landing jitter (`DAT_801d4134 = rand%5`).
+    /// Per-spin landing-line row (`DAT_801d4134 = rand%5`).
     pub jitter: i32,
     /// Normal-mode target symbol (`DAT_801d3cb8 = rand%6 + 2`).
     pub normal_target: u8,
@@ -312,26 +315,33 @@ pub fn stop_plan(
     }
 }
 
-/// The reel landing search (`FUN_801d2440`): starting from `from_row`, walk
-/// up to `depth` rows forward looking for `target` on the display strip; if
-/// found, return that row (the symbol lands on the payline), otherwise
-/// return the next natural row - no forced result. A `None` target (or a
-/// `depth` of 0, its retail companion) never matches, so the reel takes the
-/// next row: the bonus round's free stop.
-// PORT: FUN_801d2440 (landing search: find target within depth, else next row)
+/// The reel landing search (`FUN_801d2440`), in the engine's payline-row frame
+/// (retail's raw reel row plus [`PAYLINE_CENTRE_ROW_BIAS`]).
+///
+/// Retail walks `depth` raw rows `cur + 1 ..= cur + depth` (`0x801D2494..
+/// 0x801D2528`) - five to `4 + depth` rows past the current payline row - for
+/// `target`. On a hit at row `R` it stops the reel at raw `R + 3 + word`, where
+/// `word` is this spin's landing-line table entry for the reel, which puts the
+/// target on the payline `line_offset` names rather than always on the middle
+/// row ([`legaia_asset::minigame_slot_scene::LANDING_LINE_BY_JITTER`]). With no
+/// hit it takes the next row. A `None` target (or a `depth` of 0, its retail
+/// companion: the `blez` at `0x801D2468`) searches nothing - the bonus round's
+/// free stop.
+// PORT: FUN_801d2440 (landing search: find target within depth, land it on the jitter's payline, else next row)
 pub fn land_row(
     strip: &[u8; STRIP_LEN],
     from_row: usize,
     depth: usize,
     target: Option<u8>,
+    line_offset: i32,
 ) -> usize {
-    // Retail guards the search with `0 < depth`, so a zero depth searches
-    // nothing at all - which is how the bonus round's free stop is expressed.
-    if let (Some(target), true) = (target, depth > 0) {
-        for d in 0..=depth.min(STRIP_LEN) {
-            let row = (from_row + d) % STRIP_LEN;
+    if let Some(target) = target {
+        // Raw `cur + 1 + t1` is payline row `from_row + 1 + t1 - 0x10`.
+        let ahead = STRIP_LEN + 1 - PAYLINE_CENTRE_ROW_BIAS as usize % STRIP_LEN;
+        for t1 in 0..depth.min(STRIP_LEN) {
+            let row = (from_row + ahead + t1) % STRIP_LEN;
             if strip[row] == target {
-                return row;
+                return (row as i32 - line_offset).rem_euclid(STRIP_LEN as i32) as usize;
             }
         }
     }
@@ -430,9 +440,10 @@ pub struct SlotMachine {
     net_take: i32,
     /// Normal-mode target symbol for this spin (`DAT_801d3cb8`).
     normal_target: u8,
-    /// Per-spin landing jitter (`DAT_801d4134`). Carried for fidelity of the
-    /// roll stream; the engine's landing keeps rows exact (the retail `*0x10`
-    /// nudge is sub-row presentation).
+    /// Per-spin landing-line row (`DAT_801d4134`, `rand % 5`): the row of the
+    /// `0x801d3630` table that picks which payline a forced stop lands its
+    /// target on ([`LANDING_LINE_BY_JITTER`]). Its `* 0x10` in
+    /// `FUN_801d2440` is the table's row stride, not a sub-row nudge.
     jitter: i32,
     /// Overlay-local playing balance (`DAT_801d4114`).
     balance: i32,
@@ -859,8 +870,8 @@ impl SlotMachine {
         self.phase == SlotPhase::Idle && self.balance >= MIN_SPIN_BALANCE
     }
 
-    /// This spin's landing jitter (`DAT_801d4134`; sub-row presentation
-    /// nudge - carried for roll-stream fidelity).
+    /// This spin's landing-line row (`DAT_801d4134`): which payline a forced
+    /// stop lands its target on.
     pub fn jitter(&self) -> i32 {
         self.jitter
     }
@@ -1063,12 +1074,16 @@ impl SlotMachine {
         // The guaranteed-hit mode drives later reels to the first reel's landed
         // symbol so the line connects. (The bonus round does NOT: its stop plan
         // has no target at all - the reel lands where you stopped it.)
-        let guarantee = self
-            .stopped
-            .iter()
-            .flatten()
-            .next()
-            .map(|&row| self.strips[0][row]);
+        // This spin's landing line (`DAT_801d4134` row of the `0x801d3630`
+        // table): a forced target lands on that payline, not on the middle row.
+        let line = LANDING_LINE_BY_JITTER[self.jitter.rem_euclid(5) as usize];
+        let line_offset = |r: usize| PAYLINE_ROW_OFFSETS[line][r];
+        let guarantee = self.stopped.iter().enumerate().find_map(|(r, s)| {
+            s.map(|row| {
+                let at = (row as i32 + line_offset(r)).rem_euclid(STRIP_LEN as i32);
+                self.strips[r][at as usize]
+            })
+        });
         let (depth, target) = stop_plan(
             &mut self.rng,
             self.feature_mode,
@@ -1076,7 +1091,13 @@ impl SlotMachine {
             guarantee,
         );
         let from_row = self.payline_row(reel);
-        let row = land_row(&self.strips[reel], from_row, depth, target);
+        let row = land_row(
+            &self.strips[reel],
+            from_row,
+            depth,
+            target,
+            line_offset(reel),
+        );
         self.reel_pos[reel] = (row as i32) << 8;
         self.reel_vel[reel] = 0;
         self.stopped[reel] = Some(row);
@@ -2211,18 +2232,46 @@ mod tests {
     #[test]
     fn land_row_finds_target_within_depth_else_next_row() {
         let mut strip = [0u8; STRIP_LEN];
-        strip[5] = 7;
-        // Target within depth from row 2 -> lands on row 5.
-        assert_eq!(land_row(&strip, 2, 4, Some(7)), 5);
-        // Depth too shallow -> next natural row.
-        assert_eq!(land_row(&strip, 2, 2, Some(7)), 3);
-        // Wraps around the strip end.
+        strip[9] = 7;
+        // From payline row 2 retail searches rows 7.. (raw cur+1..): depth 4
+        // reaches row 9, and the middle line puts the target on the payline.
+        assert_eq!(land_row(&strip, 2, 4, Some(7), 0), 9);
+        // The top line stops one row short, so the target shows one row up
+        // (`centre + 1`), which is what line 0's `+1` offset reads.
+        assert_eq!(land_row(&strip, 2, 4, Some(7), 1), 8);
+        // The bottom line stops one row past it.
+        assert_eq!(land_row(&strip, 2, 4, Some(7), -1), 10);
+        // Depth too shallow (rows 7, 8) -> next natural row.
+        assert_eq!(land_row(&strip, 2, 2, Some(7), 0), 3);
+        // The current payline row is never a candidate.
+        strip[2] = 7;
+        assert_eq!(land_row(&strip, 2, 2, Some(7), 0), 3);
+        // Wraps around the strip end: from 14 the window is 19, 0, 1.
         strip[1] = 9;
-        assert_eq!(land_row(&strip, 18, 4, Some(9)), 1);
+        assert_eq!(land_row(&strip, 14, 3, Some(9), -1), 2);
         // The bonus round's plan (depth 0 / no target) never searches: the reel
         // lands on the next row, wherever that is.
-        assert_eq!(land_row(&strip, 5, 0, None), 6);
-        assert_eq!(land_row(&strip, 19, 0, None), 0);
+        assert_eq!(land_row(&strip, 5, 0, None, 0), 6);
+        assert_eq!(land_row(&strip, 19, 0, None, 0), 0);
+    }
+
+    /// The landing line follows the spin's jitter: with the same strip and the
+    /// same search, each `rand % 5` row lands the target on its own payline,
+    /// and the win the evaluator finds is on that line.
+    #[test]
+    fn landing_line_follows_the_jitter_row() {
+        for (jitter, &line) in LANDING_LINE_BY_JITTER.iter().enumerate() {
+            let mut strip = [0u8; STRIP_LEN];
+            strip[9] = 7;
+            let rows: Vec<usize> = (0..REEL_COUNT)
+                .map(|r| land_row(&strip, 2, 4, Some(7), PAYLINE_ROW_OFFSETS[line][r]))
+                .collect();
+            for (r, &row) in rows.iter().enumerate() {
+                let shown =
+                    (row as i32 + PAYLINE_ROW_OFFSETS[line][r]).rem_euclid(STRIP_LEN as i32);
+                assert_eq!(strip[shown as usize], 7, "jitter {jitter} reel {r}");
+            }
+        }
     }
 
     #[test]

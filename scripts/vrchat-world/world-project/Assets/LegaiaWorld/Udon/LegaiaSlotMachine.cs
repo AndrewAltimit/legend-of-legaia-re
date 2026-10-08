@@ -215,6 +215,9 @@ namespace LegaiaWorld
         // (top / middle / bottom / two diagonals). Not `readonly` - UdonSharp
         // does not support the modifier on array fields.
         int[] PAYLINE_OFFSETS = { 1, 1, 1, 0, 0, 0, -1, -1, -1, -1, 0, 1, 1, 0, -1 };
+        // FUN_801d2440's landing-line table (0x801d3630), decoded: the payline
+        // a forced target lands on for each rand%5 jitter row.
+        int[] LANDING_LINE_BY_JITTER = { 0, 1, 2, 4, 3 };
 
         // --- synced state (owner-authoritative) ------------------------------
 
@@ -229,7 +232,7 @@ namespace LegaiaWorld
         [UdonSynced] int syncBalance = ENTRY_BALANCE;
         [UdonSynced] int syncNetTake;
         [UdonSynced] int syncNormalTarget = 2;
-        [UdonSynced] int syncJitter;     // rand%5 sub-row landing nudge (visual)
+        [UdonSynced] int syncJitter;     // rand%5 landing-line row: which payline a forced stop uses
         [UdonSynced] int syncStopRow0 = -1;
         [UdonSynced] int syncStopRow1 = -1;
         [UdonSynced] int syncStopRow2 = -1;
@@ -549,7 +552,7 @@ namespace LegaiaWorld
             Serialize();
         }
 
-        // Per-spin roll: jitter (the sub-row landing nudge), the normal-mode
+        // Per-spin roll: jitter (the landing-line row), the normal-mode
         // target symbol, and the net-take-bracketed feature entry.
         void FeatureRoll()
         {
@@ -599,13 +602,17 @@ namespace LegaiaWorld
             if (reel < 0 || reel >= REEL_COUNT || localStopRow[reel] != -1)
                 return;
 
+            // This spin's landing line (the 0x801d3630 row the rand%5 jitter
+            // picks): a forced target lands on that payline, not the middle.
+            int line = LANDING_LINE_BY_JITTER[((syncJitter % 5) + 5) % 5];
+
             // Guaranteed-hit mode drives later reels to the first landed
-            // symbol; the bonus round does NOT (no target at all).
+            // symbol on that line; the bonus round does NOT (no target at all).
             int guarantee = -1;
             for (int r = 0; r < REEL_COUNT; r++)
                 if (localStopRow[r] != -1)
                 {
-                    guarantee = displayStrip[localStopRow[r]]; // strips[0][row], as the engine port
+                    guarantee = LineSymbol(r, line);
                     break;
                 }
 
@@ -619,7 +626,7 @@ namespace LegaiaWorld
             else { depth = NextRngMod(3) + 2; target = syncNormalTarget; }
 
             int fromRow = (reelPos[reel] >> 8) % STRIP_LEN;
-            int row = LandRow(reel, fromRow, depth, target);
+            int row = LandRow(reel, fromRow, depth, target, PAYLINE_OFFSETS[line * REEL_COUNT + reel]);
             SnapReel(reel, row);
 
             if (reel == 0) syncStopRow0 = row;
@@ -639,18 +646,20 @@ namespace LegaiaWorld
             Serialize();
         }
 
-        int LandRow(int reel, int fromRow, int depth, int target)
+        int LandRow(int reel, int fromRow, int depth, int target, int lineOffset)
         {
-            // Retail guards the search with `0 < depth`: a zero depth searches
-            // nothing at all - the bonus round's free stop.
-            if (target >= 0 && depth > 0)
+            // FUN_801d2440: search raw rows cur+1..cur+depth - five to 4+depth
+            // rows past the payline row - and stop so the target sits on the
+            // jitter's payline. A zero depth searches nothing at all - the
+            // bonus round's free stop.
+            if (target >= 0)
             {
                 int limit = depth < STRIP_LEN ? depth : STRIP_LEN;
-                for (int d = 0; d <= limit; d++)
+                for (int t1 = 0; t1 < limit; t1++)
                 {
-                    int row = (fromRow + d) % STRIP_LEN;
+                    int row = (fromRow + 5 + t1) % STRIP_LEN;
                     if (displayStrip[reel * STRIP_LEN + row] == target)
-                        return row;
+                        return ((row - lineOffset) % STRIP_LEN + STRIP_LEN) % STRIP_LEN;
                 }
             }
             return (fromRow + 1) % STRIP_LEN;
@@ -661,7 +670,7 @@ namespace LegaiaWorld
             reelPos[reel] = row << 8;
             reelVel[reel] = 0;
             localStopRow[reel] = row;
-            lastDrawnPos[reel] = -1; // one final draw with the landing nudge
+            lastDrawnPos[reel] = -1; // one final draw at the stop row
             // The claimed latch: payline value + 1 the frame the reel locks -
             // what the marquee's bonus tally prints (FUN_801d0554).
             claimed[reel] = displayStrip[reel * STRIP_LEN + row] + 1;
@@ -937,11 +946,7 @@ namespace LegaiaWorld
                 return;
             for (int r = 0; r < REEL_COUNT && r < reelPivots.Length; r++)
             {
-                // Stopped reels draw once more with the landing nudge - the
-                // rand%5 sub-row offset retail leaves the reel sitting on.
                 int drawPos = reelPos[r];
-                if (localStopRow[r] != -1)
-                    drawPos += syncJitter * 0x10;
                 if (drawPos == lastDrawnPos[r])
                     continue;
                 lastDrawnPos[r] = drawPos;

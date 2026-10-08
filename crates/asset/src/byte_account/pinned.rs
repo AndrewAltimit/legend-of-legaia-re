@@ -73,6 +73,9 @@ pub(super) fn claim_pinned_overlay_assets(buf: &[u8], sink: &mut Sink, prot_inde
     if prot_index == DEBUG_MENU_PROT_INDEX {
         claim_value_monitor_name_tables(buf, sink);
     }
+    if prot_index == crate::slot_payout::SLOT_OVERLAY_PROT_INDEX as u32 {
+        claim_slot_dev_labels(buf, sink);
+    }
     claim_consumer_pinned_tables(buf, sink, prot_index);
     if prot_index == ARENA_PROT_INDEX {
         claim_arena_course_ladder(buf, sink);
@@ -1220,6 +1223,37 @@ pub(super) fn claim_world_map_prim_dispatch(buf: &[u8], sink: &mut Sink) {
 /// overlay's unreferenced table, and only after a shape check: it must end
 /// exactly where the summon power-percent table begins and every byte must be
 /// a plausible percentage (`1..=200`).
+/// The slot overlay's seven dead developer labels
+/// ([`crate::minigame_slot_scene::DEV_LABELS_OFFSET`]): no instruction in any
+/// image forms an address in them, so the claim is shape-checked - each cell a
+/// non-empty run of printable ASCII closed by NUL fill - rather than sized off
+/// a consumer.
+fn claim_slot_dev_labels(buf: &[u8], sink: &mut Sink) {
+    use crate::minigame_slot_scene as slot;
+    let start = slot::DEV_LABELS_OFFSET;
+    let len = slot::DEV_LABEL_COUNT * slot::DEV_LABEL_STRIDE;
+    let Some(run) = buf.get(start..start + len) else {
+        return;
+    };
+    let shaped = run.chunks(slot::DEV_LABEL_STRIDE).all(|cell| {
+        let n = cell.iter().position(|&b| b == 0).unwrap_or(cell.len());
+        n > 0
+            && n < cell.len()
+            && cell[..n].iter().all(u8::is_ascii_graphic)
+            && cell[n..].iter().all(|&b| b == 0)
+    });
+    if !shaped {
+        sink.note("no developer-label run at the pinned slot-overlay offset");
+        return;
+    }
+    sink.claim(
+        start,
+        start + len,
+        OWNER_STRING,
+        "slot developer labels, unreferenced dead data (minigame_slot_scene)",
+    );
+}
+
 pub(super) fn claim_unread_affinity_block(buf: &[u8], sink: &mut Sink) {
     use crate::element_affinity as elem;
     let start = elem::UNREAD_AFFINITY_BLOCK_FILE_OFFSET;
@@ -1432,6 +1466,12 @@ pub fn pinned_overlay_tables(prot_index: u32) -> Vec<(usize, usize, &'static str
                 payout::SLOT_SYMBOL_COUNT,
                 OWNER_RECORD,
                 "per-symbol payout ladder (slot_payout)",
+            ),
+            (
+                slot::LANDING_LINE_TABLE_OFFSET,
+                slot::LANDING_LINE_ROWS * slot::LANDING_LINE_STRIDE,
+                OWNER_RECORD,
+                "landing-line table, rand%5 rows (minigame_slot_scene)",
             ),
             (
                 slot::PAYLINE_TABLE_OFFSET,
