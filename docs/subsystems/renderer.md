@@ -1275,6 +1275,21 @@ the curvature table bends their `SY` after projection. Test
   `flags 0x10..=0x17` group, so no overworld draw ever reaches lit rows
   `8..11`. See
   `ghidra/scripts/funcs/800271a8.txt`.
+
+  **The table carries the `OFY` of the frame that built it.** The builder sets
+  `H` and the matrix but not the screen offset, and stores `SY - 0x78`, so
+  every entry - entries `0` and `1` included - is offset by whatever `OFY`
+  the GTE held when the installer ran, less `120`. The frame-begin pass
+  `FUN_8001698C` sets `OFY` to half the draw height (`0x1F80038E >> 1`,
+  `0x80016A3C..0x80016A50`), which is `114` on the field's `228`-row area.
+  Every overworld state in the retail comparison corpus holds an unbiased table
+  (entry `0` is `0`: built at `OFY = 120`) except `sebucus_overworld_resident`,
+  whose entry `0` is `-6`: built at `OFY = 114`, it lifts every overworld
+  vertex six rows over the port's closed form, and that state's engine frame
+  lands about seven rows low with a camera identical to retail's word for
+  word. Which transition installs the overworld under the field's draw area
+  is not pinned (that state's party is level 99, so a debug warp is a
+  candidate); the port builds the common, unbiased table.
 - **`FUN_8003DAA8`** is **not** a present driver, despite the counters it
   advances. It is the CD load-kick / completion driver the asset queue drains
   through - the four routines it calls are the **libcd** family, not libgpu:
