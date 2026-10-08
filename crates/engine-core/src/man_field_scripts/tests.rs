@@ -453,6 +453,8 @@ fn derive_field_carriers_maps_sparring_carrier_and_npcs() {
     let controller = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x21];
     let mut sparring = vec![0x00, RIM_ELM_SPARRING_CARRIER_MODEL, 0x00, tx, tz];
     sparring.extend_from_slice(&[0x1F, b's', b'p', b'a', b'r', 0x00]);
+    // The record's own fight: retail's town01 Tetsu runs `3E FF <row>`.
+    sparring.extend_from_slice(&[0x3E, 0xFF, RIM_ELM_TRAINING_FORMATION_ID as u8, 0, 0, 0]);
     let mut npc = vec![0x00, 0x10, 0x00, 10, 12];
     npc.extend_from_slice(&[0x1F, b'h', b'i', b'!', 0x00]);
     let portal = vec![0x00, 0x11, 0x00, 5, 5, 0x3E, 103, 0, 0, 0, 0];

@@ -686,9 +686,6 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
     out
 }
 
-/// The row operand of a scripted-battle `3E FF <row>` reached within
-/// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
-/// `None` when the run ends (a decode error, the body end) first.
 /// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
 /// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
 /// entry) in record `index` of `partition` names, in linear decode order.
@@ -721,6 +718,9 @@ pub fn record_battle_entry_rows(
         .collect()
 }
 
+/// The row operand of a scripted-battle `3E FF <row>` reached within
+/// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
+/// `None` when the run ends (a decode error, the body end) first.
 fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
     LinearWalker::new(body, pc)
         .take(BATTLE_ENTRY_ARM_WINDOW)
