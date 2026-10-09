@@ -98,7 +98,7 @@ fn dead_monster_world(seru: u8) -> World {
     // Entry order is the archive's: knockdown at 2, get-up at 3.
     let clips = vec![Some(clip(0)), Some(clip(2)), Some(clip(4)), Some(clip(5))];
     world.set_actor_battle_action_clips(1, std::sync::Arc::new(clips));
-    world.battle_ctx.multi_cast_gate = seru;
+    world.battle_ctx.absorbed_seru = seru;
     world
 }
 

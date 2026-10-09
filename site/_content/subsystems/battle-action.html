@@ -112,7 +112,7 @@
     <li><b>0x1E Strike loop</b><span>one queue byte per swing clip: direction, art starter or art; a counterattack can redirect here</span></li>
     <li><b>0x1F Recover</b><span>recover pose; wait for the advance-done flag to clear</span></li>
     <li><b>0x20 Return</b><span>hold for the last swing&rsquo;s clip, then the target&rsquo;s reaction; the pass the last art clip ends, every slot&rsquo;s animation rate returns to normal (<code>FUN_801E93C8</code>)</span></li>
-    <li><b>0x50&ndash;0x52 Done</b><span>auto-revive, Spirit +8, HUD teardown, multi-cast tail</span></li>
+    <li><b>0x50&ndash;0x52 Done</b><span>auto-revive, Spirit +8, HUD teardown, Seru-absorb banner hold</span></li>
     <li><b>0x5A Gate</b><span>wipe check, then the next actor or the round end</span></li>
   </ol>
   <p><strong>Every reaction turns the defender.</strong> When a melee strike commits its reaction (<code>0x801EEC34..0x801EECBC</code>), the defender&rsquo;s heading is set to the bearing of the attacker, block included, and nothing turns it back: a struck monster keeps that heading until its own action recomputes it, and its knockback steps along it. The port does the same in <code>World::commit_melee_reaction</code>.</p>

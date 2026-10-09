@@ -153,8 +153,10 @@ pub enum ActionState {
     DoneCleanup = 0x50,
     /// Done - fade-down.
     DoneFadeDown = 0x51,
-    /// Done - multi-cast continuation.
-    DoneMultiCast = 0x52,
+    /// Done - Seru-absorb banner hold: entered only when the killing blow
+    /// absorbed a Seru (`ctx[+0x269]`), it holds the "acquired the power of"
+    /// banner for `0xB4` frames (a newly-pressed button cuts it to `0x13`).
+    DoneSeruAbsorb = 0x52,
     /// End-of-action gate.
     EndOfAction = 0x5A,
 
@@ -254,7 +256,7 @@ impl ActionState {
 
             0x50 => Self::DoneCleanup,
             0x51 => Self::DoneFadeDown,
-            0x52 => Self::DoneMultiCast,
+            0x52 => Self::DoneSeruAbsorb,
             0x5A => Self::EndOfAction,
 
             0x64 => Self::RunBegin,
@@ -1055,13 +1057,13 @@ pub struct BattleActionCtx {
     /// `[+0x269]` - the Seru a killing blow absorbed this action (the
     /// player-magic index, spell `id - 0x80`), staged by the arts resolver
     /// `FUN_801EC3E4` at `0x801EE2E8`. Non-zero routes `DoneFadeDown` to
-    /// `DoneMultiCast` - the `0xB4`-frame hold behind the learn banner - and
+    /// `DoneSeruAbsorb` - the `0xB4`-frame hold behind the learn banner - and
     /// the Done teardown grants the spell through
     /// [`BattleActionHost::learn_absorbed_seru`]; zero routes to
     /// `EndOfAction`. The run band also carries its escape outcome here (a
     /// port choice; retail tests a pointer), which never meets a staged Seru
     /// because an escape leaves the battle.
-    pub multi_cast_gate: u8,
+    pub absorbed_seru: u8,
     /// `[+0x243]` - the byte the gauge re-arm clears once it has run
     /// (`FUN_801E93C8`'s tail store at `0x801E94F8`, reached only on the arm
     /// whose gate passed). Cleared by [`crate::battle_action::done_cleanup`]

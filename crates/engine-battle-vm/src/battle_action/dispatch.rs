@@ -263,7 +263,7 @@ pub fn step<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut BattleActionCt
 
         ActionState::DoneCleanup => done_cleanup(host, ctx),
         ActionState::DoneFadeDown => done_fade_down(host, ctx),
-        ActionState::DoneMultiCast => done_multi_cast(host, ctx),
+        ActionState::DoneSeruAbsorb => done_seru_absorb(host, ctx),
         ActionState::EndOfAction => end_of_action(host, ctx),
 
         ActionState::RunBegin => run_begin(host, ctx),

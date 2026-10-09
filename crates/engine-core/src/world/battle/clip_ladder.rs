@@ -277,7 +277,7 @@ impl World {
     pub(in crate::world) fn finish_battle_reaction(&mut self, slot: usize, playing: u8) {
         let party = usize::from(self.party.party_count);
         let first_monster = self.battle_first_monster_byte();
-        let seru_staged = self.battle_ctx.multi_cast_gate != 0;
+        let seru_staged = self.battle_ctx.absorbed_seru != 0;
         let Some(map) = self.battle_reaction_map(slot) else {
             Self::end_battle_reaction(&mut self.actors[slot]);
             return;

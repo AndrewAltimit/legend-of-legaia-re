@@ -626,7 +626,7 @@ impl BattleHud {
     pub fn close_combo_on_fade_down(&mut self, action_state: u8, torn_down: bool) {
         use legaia_engine_vm::battle_action::ActionState as S;
         let closed = (action_state == S::DoneFadeDown.as_byte() && torn_down)
-            || action_state == S::DoneMultiCast.as_byte();
+            || action_state == S::DoneSeruAbsorb.as_byte();
         if closed && let Some(c) = self.combo.as_mut().filter(|c| !c.closing) {
             c.closing = true;
             c.age = 0;

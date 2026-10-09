@@ -197,8 +197,8 @@ pub const fn post_strike_phase(action_state: u8, done: DoneBandInputs) -> Option
 }
 
 /// `ctx[7]` values whose arm hands `FUN_801D5854` mode **`8`**
-/// unconditionally ([`action_end_framing`](super::action_end_framing)): `0x52` (multi-cast
-/// continuation) and `0xFD` (idle hold), both `li a1,0x8` at `0x801E5F74`.
+/// unconditionally ([`action_end_framing`](super::action_end_framing)): `0x52`
+/// (Seru-absorb banner hold) and `0xFD` (idle hold), both `li a1,0x8` at `0x801E5F74`.
 /// The Done-cleanup pair forks per category instead - [`DONE_STATES`] and
 /// [`done_band_phase`].
 pub const ACTION_END_STATES: [u8; 2] = [0x52, 0xFD];

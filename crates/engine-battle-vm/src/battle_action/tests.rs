@@ -1624,18 +1624,18 @@ fn done_fade_down_holds_then_routes_to_end_of_action() {
 }
 
 #[test]
-fn done_fade_down_with_multi_cast_routes_to_multi_cast() {
+fn done_fade_down_with_absorbed_seru_routes_to_seru_absorb() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 0;
-    ctx.multi_cast_gate = 1;
+    ctx.absorbed_seru = 1;
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
         StepOutcome::Transition {
             to,
             ..
-        } if to == ActionState::DoneMultiCast.as_byte()
+        } if to == ActionState::DoneSeruAbsorb.as_byte()
     ));
 }
 
@@ -1682,28 +1682,28 @@ fn the_done_band_still_leaves_after_the_menu_flag_clears_on_the_crossing_frame()
     );
 }
 
-/// The multi-cast branch re-seeds the countdown (`li v0,0xb4` at
+/// The Seru-absorb branch re-seeds the countdown (`li v0,0xb4` at
 /// `0x801E6134`). Without it the state inherits an expired timer and the
 /// action never ends.
 #[test]
-fn the_multi_cast_branch_reseeds_its_own_timer_and_then_ends_the_action() {
+fn the_seru_absorb_branch_reseeds_its_own_timer_and_then_ends_the_action() {
     let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 0;
-    ctx.multi_cast_gate = 1;
+    ctx.absorbed_seru = 1;
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
-        StepOutcome::Transition { to, .. } if to == ActionState::DoneMultiCast.as_byte()
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneSeruAbsorb.as_byte()
     ));
-    assert_eq!(ctx.frame_timer, super::done::DONE_MULTI_CAST_FRAMES);
+    assert_eq!(ctx.frame_timer, super::done::DONE_SERU_ABSORB_FRAMES);
 
     let mut passes = 0;
     loop {
         match step(&mut host, &mut ctx) {
             StepOutcome::Stay => {
                 passes += 1;
-                assert!(passes < 256, "DoneMultiCast parked on an expired timer");
+                assert!(passes < 256, "DoneSeruAbsorb parked on an expired timer");
             }
             StepOutcome::Transition { to, .. } => {
                 assert_eq!(to, ActionState::EndOfAction.as_byte());
@@ -1712,8 +1712,8 @@ fn the_multi_cast_branch_reseeds_its_own_timer_and_then_ends_the_action() {
             other => panic!("unexpected {other:?}"),
         }
     }
-    assert_eq!(passes, super::done::DONE_MULTI_CAST_FRAMES as usize);
-    assert_eq!(ctx.multi_cast_gate, 0, "the gate is consumed");
+    assert_eq!(passes, super::done::DONE_SERU_ABSORB_FRAMES as usize);
+    assert_eq!(ctx.absorbed_seru, 0, "the gate is consumed");
 }
 
 /// The whole Done band is bounded by `ctx[+0x6D8]`, and a settling HP bar
@@ -2044,7 +2044,7 @@ fn run_begin_successful_escape_floors_downed_party_at_1() {
     // the party count ctx[+0]).
     let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
     ctx.action_state = ActionState::RunBegin.as_byte();
-    ctx.multi_cast_gate = 1; // run roll succeeded
+    ctx.absorbed_seru = 1; // run roll succeeded
     host.actors[0].liveness = 0;
     host.actors[0].hp = 0;
     host.actors[2].liveness = 0;
@@ -2058,7 +2058,7 @@ fn run_begin_successful_escape_floors_downed_party_at_1() {
     assert_eq!(host.actors[0].hp, 1, "the +0x14C floor covers live HP too");
     assert_eq!(host.actors[2].liveness, 1);
     assert_eq!(host.actors[4].liveness, 0, "monsters are not revived");
-    assert_eq!(ctx.multi_cast_gate, 1, "outcome gate left for RunWait");
+    assert_eq!(ctx.absorbed_seru, 1, "outcome gate left for RunWait");
 }
 
 #[test]
@@ -2067,7 +2067,7 @@ fn run_begin_failed_run_leaves_downed_party_down() {
     // 0x64; a failed run changes no HP.
     let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
     ctx.action_state = ActionState::RunBegin.as_byte();
-    ctx.multi_cast_gate = 0; // run roll failed
+    ctx.absorbed_seru = 0; // run roll failed
     host.actors[0].liveness = 0;
     step(&mut host, &mut ctx);
     assert_eq!(host.actors[0].liveness, 0);
@@ -2080,7 +2080,7 @@ fn run_wait_failed_run_routes_to_done_cleanup_and_battle_continues() {
     let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
     ctx.action_state = ActionState::RunWait.as_byte();
     ctx.frame_timer = 0;
-    ctx.multi_cast_gate = 0; // run roll failed
+    ctx.absorbed_seru = 0; // run roll failed
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -2099,7 +2099,7 @@ fn run_wait_escape_routes_to_run_escape_teardown() {
     let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
     ctx.action_state = ActionState::RunWait.as_byte();
     ctx.frame_timer = 0;
-    ctx.multi_cast_gate = 1; // run roll succeeded
+    ctx.absorbed_seru = 1; // run roll succeeded
     let out = step(&mut host, &mut ctx);
     assert!(matches!(
         out,
@@ -3548,7 +3548,7 @@ fn the_done_band_sweep_raises_the_capture_banner_and_closes_the_target_one() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 5;
-    ctx.multi_cast_gate = 0x8B;
+    ctx.absorbed_seru = 0x8B;
     host.actors[1].active_target = 3;
     assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
     let events = host.take();
@@ -3567,7 +3567,7 @@ fn the_done_band_sweep_raises_the_capture_banner_and_closes_the_target_one() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 5;
-    ctx.multi_cast_gate = 0;
+    ctx.absorbed_seru = 0;
     host.actors[1].active_target = 8;
     step(&mut host, &mut ctx);
     let events = host.take();
@@ -3583,7 +3583,7 @@ fn the_done_band_sweep_raises_the_capture_banner_and_closes_the_target_one() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
     ctx.action_state = ActionState::DoneFadeDown.as_byte();
     ctx.frame_timer = 5;
-    ctx.multi_cast_gate = 0x8B;
+    ctx.absorbed_seru = 0x8B;
     host.actors[1].active_target = 3;
     step(&mut host, &mut ctx);
     let _ = host.take();
@@ -3601,9 +3601,9 @@ fn the_done_band_sweep_raises_the_capture_banner_and_closes_the_target_one() {
 /// latch the `0x51` block set, and clears it - so a capture that raised the
 /// banner in the fade-down cannot leave it standing.
 #[test]
-fn the_multi_cast_band_closes_the_capture_banner_and_clears_the_latch() {
+fn the_seru_absorb_band_closes_the_capture_banner_and_clears_the_latch() {
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
-    ctx.action_state = ActionState::DoneMultiCast.as_byte();
+    ctx.action_state = ActionState::DoneSeruAbsorb.as_byte();
     ctx.frame_timer = 4;
     ctx.done_ui_torn_down = 1;
     step(&mut host, &mut ctx);
@@ -3621,7 +3621,7 @@ fn the_multi_cast_band_closes_the_capture_banner_and_clears_the_latch() {
 
     // Above the window the tail does not run at all, even with the latch set.
     let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
-    ctx.action_state = ActionState::DoneMultiCast.as_byte();
+    ctx.action_state = ActionState::DoneSeruAbsorb.as_byte();
     ctx.frame_timer = 0x40;
     ctx.done_ui_torn_down = 1;
     step(&mut host, &mut ctx);

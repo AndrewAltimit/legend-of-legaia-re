@@ -273,16 +273,16 @@ pub const DONE_MENU_HOLD_FRAMES: i16 = 0xC;
 /// Countdown value the `0x52` band's teardown arm opens below (`slti
 /// v0,v0,0x14` at `0x801E63F0`); the pad clamp in that band pins the
 /// countdown one below it (`li v0,0x13` at `0x801E63B4`).
-pub const DONE_MULTI_CAST_TEARDOWN_BELOW: i16 = 0x14;
+pub const DONE_SERU_ABSORB_TEARDOWN_BELOW: i16 = 0x14;
 
 /// The timer retail re-seeds when the Done band routes to
-/// [`ActionState::DoneMultiCast`] instead of ending the action
+/// [`ActionState::DoneSeruAbsorb`] instead of ending the action
 /// (`li v0,0xb4` / `sh v0,0x2(s7)` at `0x801E6134`/`0x801E6138`, the arm
 /// `ctx[+0x269] != 0` selects).
 ///
-/// Without it the multi-cast state inherits an already-negative timer and can
+/// Without it the Seru-absorb state inherits an already-negative timer and can
 /// never satisfy a countdown, which is a park rather than a wait.
-pub const DONE_MULTI_CAST_FRAMES: i16 = 0xB4;
+pub const DONE_SERU_ABSORB_FRAMES: i16 = 0xB4;
 
 /// The `0x50` seed on every ordinary path: `li v0,0x3c` at `0x801E5EE8` /
 /// `0x801E5EFC` / `0x801E5F24`, stored at `0x801E5F28`.
@@ -395,11 +395,11 @@ pub(super) fn done_fade_down<H: BattleActionHost + ?Sized>(
         // latch is cleared on the way out (the fade arm re-raises it every
         // frame the body still draws).
         ctx.lone_defeat_latch = 0;
-        if ctx.multi_cast_gate == 0 {
+        if ctx.absorbed_seru == 0 {
             transition(ctx, ActionState::EndOfAction)
         } else {
-            ctx.frame_timer = DONE_MULTI_CAST_FRAMES;
-            transition(ctx, ActionState::DoneMultiCast)
+            ctx.frame_timer = DONE_SERU_ABSORB_FRAMES;
+            transition(ctx, ActionState::DoneSeruAbsorb)
         }
     };
     // The band's UI teardown runs on the way out of *every* pass, after the
@@ -549,8 +549,8 @@ fn done_band_capture_and_banner_sweep<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) {
-    if ctx.multi_cast_gate != 0 {
-        host.learn_absorbed_seru(ctx.active_actor, ctx.multi_cast_gate);
+    if ctx.absorbed_seru != 0 {
+        host.learn_absorbed_seru(ctx.active_actor, ctx.absorbed_seru);
         host.ui_element(DONE_CAPTURE_BANNER_ELEMENT, UI_RAISE);
     }
     let Some(actor) = host.actor(ctx.active_actor) else {
@@ -564,14 +564,14 @@ fn done_band_capture_and_banner_sweep<H: BattleActionHost + ?Sized>(
     }
 }
 
-pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
+pub(super) fn done_seru_absorb<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
     // Same countdown shape as the band above: the entry seeded
-    // [`DONE_MULTI_CAST_FRAMES`], the decrement stops at the sign change, and
+    // [`DONE_SERU_ABSORB_FRAMES`], the decrement stops at the sign change, and
     // the exit is a test on the value rather than on the crossing.
     if ctx.frame_timer >= 0 {
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
@@ -579,7 +579,7 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
     let outcome = if ctx.frame_timer >= 0 {
         stay(ctx)
     } else {
-        ctx.multi_cast_gate = 0;
+        ctx.absorbed_seru = 0;
         transition(ctx, ActionState::EndOfAction)
     };
     // The band's own teardown tail (`0x801E63F4..0x801E6424`), which runs on
@@ -592,7 +592,7 @@ pub(super) fn done_multi_cast<H: BattleActionHost + ?Sized>(
     // `FUN_801D99BC` at `0x801E640C` is the same per-actor UI-element array
     // wipe the `0x51` block calls, and carries the same scope row: the
     // engine's HUD is rebuilt from state each frame.
-    if ctx.frame_timer < DONE_MULTI_CAST_TEARDOWN_BELOW && ctx.done_ui_torn_down != 0 {
+    if ctx.frame_timer < DONE_SERU_ABSORB_TEARDOWN_BELOW && ctx.done_ui_torn_down != 0 {
         host.ui_element(DONE_CAPTURE_BANNER_ELEMENT, UI_UNLOAD);
         ctx.done_ui_torn_down = 0;
     }
