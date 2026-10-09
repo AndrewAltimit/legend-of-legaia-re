@@ -118,6 +118,30 @@ impl World {
         }
     }
 
+    /// The battle frame driver's discarded `rand()` draw: `FUN_80046A20`
+    /// calls the generator on every pass (`jal 0x80056798` at `0x80046D2C`,
+    /// after the four-slot loop that every path of falls through to
+    /// `0x80046D10`) and overwrites `v0` at `0x80046D34` without reading it.
+    /// A pass is one battle frame, so the engine, which ticks once a vsync,
+    /// draws on the first tick of each [`BattleFrameClock`] frame. The
+    /// call sits ahead of the side-band pass (`jal 0x80056208` at
+    /// `0x80046D60`) and both state machines, and nothing on the pass gates
+    /// it: the Begin prompt, a dialogue box and the results sequencer all
+    /// draw. Gated by [`crate::world::WorldToggles::battle_pass_rand_draw`].
+    ///
+    // PORT: FUN_80046A20 (the discarded rand() draw, 0x80046D2C)
+    pub(in crate::world) fn tick_battle_pass_draw(&mut self) {
+        if !self.toggles.battle_pass_rand_draw || self.game_over_hold {
+            return;
+        }
+        let frame = self.battle_frame_id();
+        if self.battle.pass_draw_frame == Some(frame) {
+            return;
+        }
+        self.battle.pass_draw_frame = Some(frame);
+        let _discarded = self.next_rand();
+    }
+
     /// The battle frame step in vsyncs ([`Self::set_battle_frame_step`]).
     pub fn battle_frame_step(&self) -> u8 {
         self.battle.frame_clock.step
