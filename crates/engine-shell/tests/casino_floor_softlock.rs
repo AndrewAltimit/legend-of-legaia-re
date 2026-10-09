@@ -23,10 +23,10 @@
 //!    directional probe offsets - and koin1's NPCs stand *inside* their
 //!    neighbouring cabinets' boxes. So "walk up to an NPC to talk" and "use a
 //!    cabinet" were the same input. That is why the bug report named both.
-//! 3. **There was no way out.** No shipped host has a player-reachable exit
-//!    from an entered minigame: the native window has developer hotkeys
-//!    (`O` / `B` / `M`) and the browser play page does not draw four of the
-//!    five modes at all. An entry was therefore terminal.
+//! 3. **There was no way out.** No shipped host had a player-reachable exit
+//!    from an entered minigame: the native window had developer hotkeys
+//!    (`O` / `B` / `M`) and the browser play page did not yet draw four of
+//!    the five modes. An entry was therefore terminal.
 //!
 //! ## What each test would catch
 //!

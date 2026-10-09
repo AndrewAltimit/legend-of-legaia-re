@@ -102,6 +102,7 @@ impl LegaiaViewer {
                 mesh: mesh as usize,
                 translation: [tx, ty, tz],
                 rot_y,
+                rotation: None,
                 scale,
             });
         }

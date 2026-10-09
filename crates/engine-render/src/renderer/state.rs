@@ -147,6 +147,11 @@ pub struct Renderer {
     /// Held until the next [`Renderer::set_draw_clips`]; a host that stages
     /// clips restages them (possibly empty) on every scene frame.
     pub(super) draw_clips: std::cell::RefCell<DrawClipLists>,
+    /// Per-draw NCLIP overrides for the next scene render, parallel to the
+    /// scene's textured `draws` ([`Renderer::set_draw_nclip`]). A `Some`
+    /// entry replaces the frame's [`Renderer::set_backface_cull`] word for
+    /// that draw; held until the next call.
+    pub(super) draw_nclip: std::cell::RefCell<Vec<Option<u32>>>,
     /// Full-scene colour grade `(gold_r, gold_g, gold_b, strength)` staged
     /// into every field `MeshUniforms` (see [`super::uploaded::MeshUniforms`]).
     /// Defaults to `(1, 1, 1, 0)` = identity (no grade). Set with
@@ -572,6 +577,16 @@ impl Renderer {
     /// Held until the next call.
     pub fn set_draw_clips(&self, textured: Vec<Option<DrawClip>>, color: Vec<Option<DrawClip>>) {
         *self.draw_clips.borrow_mut() = (textured, color);
+    }
+
+    /// Stage a per-draw NCLIP word for the next scene render: `textured[i]`
+    /// for `Scene::draws[i]`, in [`Renderer::set_backface_cull`]'s encoding.
+    /// A missing or `None` entry keeps the frame's word. Battle bodies use
+    /// it: retail's prim dispatcher culls a body's back faces unless its
+    /// colour word carries the double-sided bit, while the battle pass as a
+    /// whole stays both-sided. Held until the next call.
+    pub fn set_draw_nclip(&self, textured: Vec<Option<u32>>) {
+        *self.draw_nclip.borrow_mut() = textured;
     }
 
     /// Read the current `(mask_x, mask_y, off_x, off_y)` texture window

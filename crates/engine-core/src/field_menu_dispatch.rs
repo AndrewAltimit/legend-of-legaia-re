@@ -21,7 +21,7 @@
 //! engine - see [`apply_equip_outcome`] / [`apply_inventory_outcome`] /
 //! [`apply_spell_outcome`] / [`apply_arts_outcome`] for the typed helpers.
 
-use crate::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
+use crate::battle_stats::{EquipmentTable, StatusModifiers};
 use crate::equip_session::{EquipInput, EquipOutcome, EquipSession};
 use crate::field_menu::FieldMenuRow;
 use crate::input::{Mapping, PadButton};
@@ -29,6 +29,8 @@ use crate::inventory_use::{InventoryContext, InventoryUseSession, TargetRow as I
 use crate::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
 use crate::magic_xp::SpellLevelNotice;
 use crate::options::{OptionsInput, OptionsSession, OptionsState};
+pub use crate::pause_screens::ItemDisplayText;
+use crate::pause_screens::stat_record_from_character;
 use crate::pause_screens::{PauseItemRow, PauseItemsSession};
 use crate::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
 use crate::spell_menu::{
@@ -153,7 +155,7 @@ impl FieldMenuSubsession {
         }
     }
 
-    /// Arm the Options sub-session's engine-only **Key Config** row against
+    /// Arm the Options sub-session's engine-only **Key Config** screen (Select) against
     /// the host's live keyboard binding table. No-op on every other variant.
     ///
     /// A post-construction hook rather than a [`Self::build`] argument: the
@@ -170,7 +172,7 @@ impl FieldMenuSubsession {
 
     /// The Options sub-session's live binding table once a rebind committed,
     /// paired with "it changed since you last asked". `None` on every other
-    /// variant, and on an Options session whose Key Config row was never
+    /// variant, and on an Options session whose Key Config screen was never
     /// armed.
     ///
     /// The host's persist cue: native writes `legaia-input.toml`, the page
@@ -343,7 +345,7 @@ pub fn apply_equip_outcome(
                 }
             }
             if removed != 0 {
-                *world.party.inventory.entry(removed).or_insert(0) += 1;
+                let _ = world.party.inventory.add(removed, 1);
             }
         }
         // An equipment change can add / remove an accessory passive; rebuild
@@ -648,7 +650,7 @@ pub fn tick_root_list(
 }
 
 /// Step an open sub-session one frame on a raw pad edge (and the host's
-/// latest key name, for the Options screen's Key Config row). Returns the
+/// latest key name, for the Options screen's Key Config screen). Returns the
 /// rebound binding table when a rebind committed this frame, for the host
 /// to adopt and persist.
 ///
@@ -1277,18 +1279,6 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
     .with_bag_slots(bag_slots)
 }
 
-/// One item id's display text, as every screen that shows an item needs it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ItemDisplayText {
-    /// Display name. Falls back to the curated catalog, then to a raw id,
-    /// so a screen never shows nothing.
-    pub name: String,
-    /// Info-panel description. Empty when the disc text is unavailable.
-    pub desc: String,
-    /// An accessory's two passive lines (`(name, description)`).
-    pub passive: Option<(String, String)>,
-}
-
 /// Resolve one item id's name / description / passive lines through the
 /// world's disc text tables, with the curated catalog and a raw-id spelling
 /// as fallbacks.
@@ -1458,22 +1448,6 @@ fn build_equip_session(world: &World, char_slot: u8, equipment: &EquipmentTable)
             session.with_restrictions(info, char_slot)
         }
         None => session,
-    }
-}
-
-pub(crate) fn stat_record_from_character(c: &legaia_save::CharacterRecord) -> StatRecord {
-    let eq_bytes = c.equipment().slots;
-    let live = c.live_stats();
-    StatRecord {
-        base_attack: live.atk,
-        base_udf: live.udf,
-        base_ldf: live.ldf,
-        // Accuracy / evasion derive from AGL (not equipment-fed).
-        base_accuracy: live.agl,
-        base_evasion: live.agl,
-        base_spd: live.spd,
-        base_int: live.int,
-        equip: eq_bytes,
     }
 }
 

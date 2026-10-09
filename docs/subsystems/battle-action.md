@@ -463,13 +463,21 @@ A monster's cast is picked before the band is armed: `pick_monster_action`
 rolls the record's `+0x21..=+0x23` magic ids (retail's generic core of
 `FUN_801E9FD4`) and `take_monster_turn` keeps the pick only when
 `World::tables.spell_catalog` resolves the id at an affordable cost - otherwise the
-turn is a physical strike, silently. The boot catalog
-(`retail_magic::seru_magic_catalog_from_scus`) therefore carries every named,
-non-capture id below the player block as the SCUS table names it (Gimard's
-`+0x21` is `0x27` = Tail Fire, 16 MP, one enemy), with the disc as the single
-source: a vanilla placeholder on a real id under another name is replaced, a
-vanilla record on its real id under the same name keeps its effect class and
-takes the disc's cost. The magnitude and impact status of the fold are the
+turn is a physical strike, silently. Retail has no catalog of its own: every
+cast reads its record by id off the SCUS table (`DAT_800754C8`; state `0x28`
+takes the `+3` MP byte at `0x801E4500`, capture route included), and a record
+without a name casts like a named one - the name only feeds the label. So the
+boot catalog (`retail_magic::seru_magic_catalog_from_scus`) is that table and
+nothing else: the player Seru band, and every non-capture record outside it,
+named or not, under the disc's name and cost (Gimard's `+0x21` is `0x27` =
+Tail Fire, 16 MP, one enemy; Koru's `+0x21` is the unnamed class-1 `0x10`).
+Capture-class records stay out; `World::monster_cast_def` builds them off the
+disc for the module route. `SpellCatalog::vanilla` is a disc-free test fixture
+and no boot catalog carries it: its fabricated ids are real monster ids
+(`0x26` Thunderbolt, `0x40` Curse, `0xA2..=0xA5` Koru's phase casts), and
+with them in, Koru's opening casts folded as harmless demo buffs and a
+monster's Curse as the demo "Reseal" capture on a party seat. A capture roll
+still downs only a monster seat (`World::resolve_capture`). The magnitude and impact status of the fold are the
 move-power record's (`World::enemy_move_power`, installed at scene entry).
 Disc-gated oracle: `spell_model_single_source_disc::the_boot_catalog_resolves_every_monster_special_the_archive_casts`.
 
@@ -1075,6 +1083,15 @@ which is the accumulating convention (`FUN_801EC3E4`). Regression:
 `battle_depth_replay`, which runs in the same fight as the rungs after it so a
 park costs rungs instead of being restarted around.
 
+`apply_final_heal_revives` runs earlier than retail's state `0x50`: the
+port also sweeps right after a tick's damage lands, on the killing hit's own
+tick, when that hit's ramp has not moved at all. Seeding the revive there
+discarded the whole drop and left the readout above max HP by the member's
+pre-hit HP (soak: `jouina`, a member downed and Final-Healed by one enemy
+hit). The sweep therefore re-syncs the readout to the live zero before it
+seeds, which is where the measured 90-vsync-or-more tail leaves retail's
+readout; the high-HP fast-tail crack above is not reproduced.
+
 #### The `(class, tier)` seed at state `0x3C`
 
 State `0x3C` is the only writer of `actor[+0x1E8]` / `+0x1E9`, and the branch it
@@ -1623,7 +1640,15 @@ Three of its properties, read from the SCUS disassembly
   gated on `+0x1DC & 8` clear and the range poll still failing. Gaza's Move
   entry has `+0xC = +20` and his speed scale `+0x21D = 8` - the measured
   ~19-20 units/vsync. The idle entry's `+0xC` is `0`, which is why a
-  clip death freezes him.
+  clip death freezes him. The shift floors once a battle frame, so a
+  heading's small axis keeps a frame's worth of it; the port ticks once a
+  vsync and spreads each frame's total over its ticks
+  (`motion::RootMotionCarry`, over the battle frames
+  `World::battle_frame_id` names - two vsyncs unless a replay installs
+  another step, [`battle.md`](battle.md#the-battle-frame-step-is-the-frames-own-cost) - the strike loop's
+  swing drift `0x801E386C..0x801E3994` takes the same carry). A per-tick
+  shift had floored any axis under a unit a vsync to nothing: Vahn's
+  strikes at heading `142` drifted straight up the `z` axis.
 - **A looping clip has no loop counter - it loops by re-committing at every
   natural end.** When the cursor `node+0x68` passes the stream's frame
   count, the tick calls the commit, which re-installs the still-queued
@@ -3171,7 +3196,15 @@ they are documented here rather than lifted whole into `engine-vm`.
   The spawns are the move's own list bytes: for a cast, whose fold would
   otherwise stage both lists at the target at once
   (`World::request_move_fx_spawn`), the flight takes them over when the
-  caster's script still has its terminator ahead. The hit stays with the cast
+  caster's script still has its terminator ahead - and also when the
+  terminator runs first. Retail has no fold to order against: a monster's
+  Tail Fire (move `0x27`, record `map[0x27] = 0x12`, both lists `[0x1B]`)
+  seeds its flight from Gimard's script before the engine's fold, and
+  `battle_gimard_tail_fire_b` holds two `0x1B` prototype nodes (record
+  `0x801F5A3C`) and nine live children of the `0x17` burst they run (record
+  `0x801F5DA4`, the wide arm's stager). So a flight seeded
+  ahead of a pending Magic-category fold emits, and the fold then stages
+  nothing (`CastFxState::homing_holds_lists`). The hit stays with the cast
   fold, and the census is not fed from the slots.
 
   Two details of that arm a decompiled reading loses. The `+0x1DC` writes are
@@ -3517,7 +3550,7 @@ The same three things, in the same seats:
   `attack_recovery` waits for the last clip's commit, stages idle over it and
   parks the cursor at `0xFF` (`STRIKE_CURSOR_PARKED`).
 - **Damage is the anim tick's.** `World::tick_battle_hit_events`
-  (`world/battle/loop_driver.rs`) is the engine seat of the per-frame
+  (`world/battle/loop_driver/hits.rs`) is the engine seat of the per-frame
   `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
   runs the kernel's head guard chain
   (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
@@ -4366,13 +4399,30 @@ dash - are one per-actor byte and one per-actor draw walk, both SCUS-resident.
 `+0x21D` is the per-actor **animation-rate scalar**, normal `8`. The anim
 tick `FUN_80047430` advances each render node's 12.4 anim cursor by
 `(DAT_1F800393 * actor[+0x21D] * clip[+0x78]) >> 1` per game frame - `>> 2`
-on the idle branch (anim id `0`; `0x800476EC..0x80047764`) - so `4` is half
+only for a **Slowed** actor on idle (status `+0x16E & 0x1000` at
+`0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`; `0x800476D8..0x80047764`),
+so an ordinary idle loop advances as fast as any clip - and `4` is half
 speed, `2` quarter speed and `0` a freeze, and every animation-driven edge
 (swing pacing, root motion, the strike loop's per-clip gate) stretches with
 it. Battle seating (`FUN_800513F0`, `0x80051608`/`0x80051888`) seeds it from
 the scratchpad speed scalar `0x1F80037D`. The strike loop multiplies the same
 byte into its per-frame impact drift, which is where the earlier "impact-step
 magnitude" name came from - that is one consumer, not the field.
+
+The same tick decides when a staged clip replaces the playing one, and an
+idle or walk loop is no exception. Mid-clip, `+0x1DC` bit 0 commits at once
+and bit 1 once the cursor frame is past the entry's gate frame by more than
+two (`0x800478EC..0x80047948`), both refused by the entry's `+0x76` lock;
+otherwise the staged byte waits for the natural end (`0x80047B54`), which
+calls `FUN_8004AD80` whatever is staged - a clip left staged behind itself
+re-commits from its first frame, which is how a loop loops. So the strike
+loop's first swing, staged under bit 1 over the idle `0x19`'s arrival
+committed under bit 0 (`0x801E35C0`), waits for idle frame 3
+(`player_steal_skeleton_pre`: idle cursor `0x20`, `0x0F` staged), and every
+loop cycle of the acting actor re-zeroes the camera's ramp / accumulator /
+latch like any other commit (`0x8004BF50..0x8004BF78`). Port:
+`World::commit_staged_battle_anim` (the looping-clip gate) and the
+natural-end re-commit in `World::tick_battle_animations`.
 
 The writers are the anim-commit `FUN_8004AD80`'s arms, all on the **party**
 ladder (the monster path branches clear at `0x8004B6F4`):

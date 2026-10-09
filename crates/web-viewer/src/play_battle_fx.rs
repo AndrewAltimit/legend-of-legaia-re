@@ -1164,7 +1164,6 @@ impl LegaiaRuntime {
     ///
     /// REF: FUN_801DA6B4
     pub fn play_battle_actor_cursor(&self) -> Vec<f32> {
-        use legaia_engine_vm::battle_action as ba;
         let (Some(br), Some(host)) = (self.battle_render.as_ref(), self.scene_host.host()) else {
             return Vec::new();
         };
@@ -1186,17 +1185,17 @@ impl LegaiaRuntime {
             // while that word raises ABE - un-cued it is never an opaque
             // black silhouette; its zero-lanes end is the draw gate in
             // `play_battle_actor_transforms`.
-            if let Some(b) = b
-                && let Some(p) = self.battle_draw_plan(actor_idx)
-                && p.tint_cue_applies(b.render_flag)
-            {
-                let far = p.cue_far();
-                out.extend_from_slice(&[1.0, far[0], far[1], far[2], p.cue_ir0(), 1.0]);
-                continue;
-            }
-            // The cursor's cue is the engine's (`battle_action::cursor_cue`),
-            // shared with the native draw pass.
-            match b.and_then(|b| ba::cursor_cue(b.render_flag, frame)) {
+            //
+            // Tint word first, else the cursor's pulse: the one precedence
+            // (`BattleActorDrawPlan::body_cue`) the native draw pass stages.
+            let plan = self.battle_draw_plan(actor_idx);
+            match b.and_then(|b| {
+                legaia_engine_core::world::BattleActorDrawPlan::body_cue(
+                    plan.as_ref(),
+                    b.render_flag,
+                    frame,
+                )
+            }) {
                 Some((far, max_ir0)) => {
                     out.extend_from_slice(&[1.0, far[0], far[1], far[2], max_ir0, 1.0]);
                 }
@@ -1204,6 +1203,27 @@ impl LegaiaRuntime {
             }
         }
         out
+    }
+
+    /// Per-battle-actor NCLIP word **in mesh order** (index-parallel with
+    /// `play_battle_actor_transforms`), in `TmdRenderer.setNclipCull`'s
+    /// encoding: the page's placement `nclip`, which overrides the frame's
+    /// both-sided battle word for that body. Retail draws a battle body
+    /// single-sided unless its colour word carries the double-sided bit
+    /// (`BattleActorDrawPlan::nclip_mode`); the native window stages the
+    /// same word per draw (`Renderer::set_draw_nclip`). `0` for a slot with
+    /// no draw plan.
+    pub fn play_battle_actor_nclip(&self) -> Vec<u32> {
+        let Some(br) = self.battle_render.as_ref() else {
+            return Vec::new();
+        };
+        br.actor_slots()
+            .into_iter()
+            .map(|actor_idx| {
+                self.battle_draw_plan(actor_idx)
+                    .map_or(0, |p| p.nclip_mode())
+            })
+            .collect()
     }
 }
 

@@ -1162,6 +1162,26 @@ runs at. PROT 0903 is one such module:
 | 6 | `0x801F7724`, `0x801F7794`, `0x801F7804` on the shot | the camera-relative fire tunnel |
 | 8 | `*(0x801F63A8)` (PROT 0898 record `0x801F5B28`, library mesh `0x18`) on the creature, after a 16x1 `MoveImage` of the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)` | the breath |
 
+Nothing in PROT 0903 kills the tunnel: its three programs halt on their own
+(`0x09` waits, a `0x0D` depth-cue fade-out, then `0x08`). What keeps them off
+the Done band is arm 12, which first drains the `scalar * 192` arm 11 added
+to the countdown (`0x801F7628..0x801F7654`) and then waits for a dead
+victim's render word `+0x04` to fade to zero, or a living one to return to
+idle (`0x801F765C..0x801F768C`). Every pass of it, held or not, also frames
+the caster through the action SM's case 8 (`jal 0x801D5854` with `a1 = 8` at
+`0x801F761C`) - whose dead-target arm zeroes the yaw ladder `ctx[+0x6DA]` the
+walk swung, so the Done band's case 6 starts from the drift since the arm
+ended - and halves the victim's animation rate (`+0x21D = scalar >> 1` at
+`0x801F76D8`), which slows the dead victim's knock-back clip and so the fade
+the arm waits on. Arm 11 stamps the victim's burn
+presentation (`+0x04 = 0x3FF`, `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`)
+inside its targetable branch whether or not the host folds the damage there.
+PROT 0909, 0911, 0912 and 0913 close the same way: each hit arm re-arms its
+module countdown (`scalar << 7`, `scalar << 8` for Orb, plus a `scalar << 5`
+second hold in Freed's arm `0x12`) and the settle arm drains it before its
+row or victim poll, so the Done band opens 128 to 256 vsyncs after the hit.
+PROT 0910 paces its slashes and settle on its own two timers.
+
 PROT 0905 (Vera) reports its calls the same way. Its anchors are points the
 arm builds on its stack rather than seats - the framed point, or a step along
 the target's heading - so `SpawnAnchor` carries those shapes too
@@ -1342,6 +1362,35 @@ and the `bne` at `0x801F8288` land on the same `jal`), and PROT 0964's second
 body is reached by a **range** test rather than a compare - `slti v1, 0xaf`
 then `slti v1, 0xb3` at `0x801F8E88`/`0x801F8E90` - so ids `0xB0`, `0xB1` and
 `0xB2` share it.
+
+The `0x50` / `0xAE` split seats its clone at `3 + ctx[+1]`, a retail pool
+slot: retail seats monster `k` at `3 + k` whatever the party size. The engine
+compacts the monster row to `party_count + k`, so `World::apply_glare_divide_split`
+seats the clone right after the engine's seated monsters, bounded by the same
+five monster seats (`ctx[+1] < 5`). At the retail index a lone member's clones
+landed past the five-seat enemy row the target picker walks, and a fight
+against an untargetable clone never ended.
+
+The fixed base `3` is right in retail for every party size: the battle
+loader seats monster `k` at pool slot `3 + k` and leaves a small party's
+seats `1..2` empty (`FUN_800513F0`, `addiu s0,s2,0x3` at `0x8005185C`). In
+the Tetsu tutorial's solo capture those two slots are zeroed structs: HP
+`0`, `+0x16E` flags `0`, prim word `+0x04` `0`. The kernels are ported
+against that pool - row sweeps `3..7`, `target_code < 3` party tests,
+`3 + ctx[+1]` seat arithmetic - and the engine compacts its monster row to
+`party_count + k`.
+
+So the `run_cast_module_code` seam hands the kernels a retail-shaped seat
+row (`world::battle::cast_band::seat_map`): the party in `0..party_count`,
+zeroed empty seats up to `3`, the engine's monster row from `3` on. The
+caster, victim and summon seats, the `+0x1DD` target codes, `ctx[+0x13]`,
+Theeder's cone seats and Orb's max-HP lookup are mapped into that row;
+writes, hit seats and target codes are mapped back, and a write to an empty
+seat is dropped (retail's lands in a struct nothing reads). `ctx[+1]`
+counts the live seats of retail's `3..8` through the same map. For a party
+of three the map is the identity. Engine-side seat expressions outside the
+kernels (Element Change's first-monster record, the Mystic Shield seat,
+Steal's monster test) go through `World::engine_slot_for_retail_pool`.
 
 #### PROT 0955 is a six-spell cell
 
@@ -2226,7 +2275,7 @@ What this section adds is the consumer side: which three ticks read the latch,
 what each tier does to `+0x16E`, and that the element gate is the latch's
 value rather than a test.
 
-Parser: [`legaia_asset::seru_side_effect`](../../crates/asset/src/seru_side_effect.rs);
+Parser: [`legaia_asset::seru_side_effect`](../../crates/game-tables/src/seru_side_effect.rs);
 masks and constants at `legaia_engine_vm::cast_seru_ticks_a`; the latch is
 `BattleActionCtx::follow_up_pending` and `World::cure_selector` is what feeds
 the two ported ticks.

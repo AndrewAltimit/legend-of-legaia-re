@@ -399,6 +399,12 @@ float overworldFlatW(mat4 m, vec4 fa, vec4 fb) {
 bool fieldFarBucket(vec4 fa) {
   return u_curve <= 0.0 && fa.x > fa.z;
 }
+/* A flat far-bucket cell carries a swapped z pair (fa.y > fa.w): pushed back
+ * by FIELD_FLAT_FAR_BUCKET_PUSH of its depth so a decal on the floor plane
+ * paints over it (engine-core field_ground::FLAT_FAR_BUCKET_PUSH). */
+bool fieldFlatFarBucket(vec4 fa) {
+  return u_curve <= 0.0 && fa.y > fa.w && fa.x <= fa.z;
+}
 
 vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
   if (u_curve <= 0.0 || fa.z <= fa.x || clip.w <= 0.0) return clip;
@@ -476,7 +482,8 @@ flat out uvec2 v_cba_tsb;
 out float v_fog_t;     /* 0..1, fraction of u_fog_far_ref */
 out float v_view_z;    /* perspective view depth (clip w) for the depth cue */
 out float v_depth_w;   /* the w the log-depth write keys on */
-/* 1 on a sloped far-bucket field ground cell (fieldFarBucket), else 0. */
+/* 1 on a sloped far-bucket field ground cell (fieldFarBucket), 2 on a flat
+ * one (fieldFlatFarBucket), else 0. */
 flat out float v_far_bucket;
 out vec3 v_normal;     /* object-space smoothed normal (dynamic light only) */
 out vec3 v_obj_pos;    /* object-space position: the facet-normal fallback */
@@ -523,7 +530,8 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
-  v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0 : 0.0;
+  v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
+    : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
   v_normal = a_normal;
   v_obj_pos = a_position;
 }
@@ -992,7 +1000,8 @@ void main() {
    * the clear value, keeping its own per-pixel order inside the slice
    * (FIELD_FAR_BUCKET_DEPTH_SCALE in engine-render - same scale, mirrored for
    * this page's forward depth). */
-  if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
+  if (v_far_bucket > 1.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * (1.0 - 0.005);
+  else if (v_far_bucket > 0.5) far_bucket_depth = 1.0 - (1.0 - far_bucket_depth) * 0.001;
   gl_FragDepth = far_bucket_depth;
   /* Facet normal for the dynamic light, taken before any discard so the
    * derivatives sit in uniform control flow. Its sign follows the

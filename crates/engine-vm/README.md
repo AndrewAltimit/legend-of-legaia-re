@@ -285,8 +285,8 @@ The crate's remaining modules are leaf kernels; by family:
   `cutscene_trigger` (every retail FMV trigger site), `dance_marker`.
 - **World map** - `world_map_overlay` and `world_map_panel` /
   `world_map_panel_actors` / `world_map_dev_menu` / `world_map_clut_fade` /
-  `world_map_dim` / `world_map_horizon`, plus `travel_art_actor` (Riremito
-  and Rula).
+  `world_map_dim` / `world_map_horizon` / `world_map_sky` (the overworld sky
+  band, `FUN_801F73E4`), plus `travel_art_actor` (Riremito and Rula).
 
 ## Battle VM kernels
 

@@ -350,7 +350,7 @@ they rotate as the corpus is re-captured for new investigations.
 
 The phase split + per-character record bases (Vahn `0x80084708`,
 Noa `0x80084B1C`, Gala `0x80084F30`, slot 3 `0x80085344`, stride `0x414`)
-are documented in [`engine_core::capture_observations::char_level_up`](../../crates/engine-core/src/capture_observations.rs)
+are documented in [`engine_core::capture_observations::char_level_up`](../../crates/engine-system/src/capture_observations.rs)
 with helpers `read_record_stats` / `read_rank_counter` / `read_xp_u16`.
 
 ### Per-character semantic findings

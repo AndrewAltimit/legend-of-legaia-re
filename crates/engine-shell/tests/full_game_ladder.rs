@@ -1598,7 +1598,10 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
         return false;
     };
     let max = u32::from(a.battle.max_hp);
-    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    let learned = learned_round_due(w);
+    let threat = BIGGEST_HIT
+        .with(std::cell::Cell::get)
+        .max(learned.unwrap_or(0));
     // A foe winding up shows it: a capture-class charge body (Xain's Bull
     // Charge, PROT 0953 arm 0) sets its caster's ability latch
     // (`0x801C8FE0 + (seat - 3 + 1) * 4`) and deals nothing, and the next
@@ -1614,7 +1617,104 @@ fn wants_guard(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     if hp > 0 && charged && quiet_last && u32::from(a.battle.hp) * 4 >= max {
         return true;
     }
-    hp > 0 && threat * 5 >= max * 2 && hp > threat / 2 + threat / 8 && big_round_due()
+    hp > 0
+        && threat * 5 >= max * 2
+        && hp > threat / 2 + threat / 8
+        && (big_round_due() || learned.is_some())
+}
+
+/// Koru (`nilboa` P2[20], monster `0xB6`): its pick arm casts by the
+/// battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`,
+/// then Dead End Crisis (`0xA1`) on every mode after (`0x801EB568..`,
+/// `monster_ai::decide`), and in this fight that body writes a flat 9999 to
+/// every party seat (PROT 0961 arm 3, `0x801F7398`). The fight is a race:
+/// a heal spent before the fourth round is damage the party never deals,
+/// and nothing a member could be healed to survives the finisher.
+const KORU_MONSTER_ID: u16 = 0xB6;
+
+/// Whether this fight is a race against a timed finisher
+/// ([`KORU_MONSTER_ID`]): every turn goes to damage.
+fn racing_a_finisher(w: &legaia_engine_core::world::World) -> bool {
+    boss_monster_id(w) == Some(KORU_MONSTER_ID)
+}
+
+/// The race's last round: the battle-mode counter has reached the value
+/// Koru's pick arm answers with the finisher, so whatever the party does not
+/// deal before it acts is never dealt - no heal, no buff, only damage.
+fn finisher_round(w: &legaia_engine_core::world::World) -> bool {
+    racing_a_finisher(w) && w.battle.monster_ai_state.mode_flags >= 4
+}
+
+/// In a race, the one heal worth a turn: `actor` cannot throw a Miracle Art
+/// (its turn is the party's smallest damage) and a member that can would not
+/// live through the foe's biggest single-round loss so far. A member lost before
+/// the finisher costs every round it would have hit for; a heal from the
+/// summoner costs one cast.
+fn race_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    if miracle_ready(w, actor) || finisher_round(w) {
+        return false;
+    }
+    let threat = BIGGEST_HIT.with(std::cell::Cell::get);
+    threat > 0
+        && projected_hp(w)
+            .iter()
+            .enumerate()
+            .any(|(i, &h)| h > 0 && h <= threat && miracle_ready(w, i as u8))
+}
+
+thread_local! {
+    /// What a lost attempt taught about the boss that wiped it: its monster
+    /// id, the parity of the battle's stretch index its party-wide hits came
+    /// on, and the per-member size of that hit. A player who reloads after
+    /// Rogue (`rugi` P2[38]) wiped the party knows its Wind / Thunder /
+    /// Flame comes every other round from the second, and guards the first
+    /// one too - the cadence arm ([`big_round_due`]) needs four rounds of
+    /// history, and a first hit that drops two members leaves a party that
+    /// revives one at a quarter HP per quiet round into the next hit.
+    /// Kept across the attempts of one segment; cleared when it starts.
+    static LEARNED_CADENCE: std::cell::Cell<Option<(u16, usize, u32)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The boss in this fight, if any: the first monster seat's id in a fight
+/// that forbids running.
+fn boss_monster_id(w: &legaia_engine_core::world::World) -> Option<u16> {
+    if !w.battle.no_escape {
+        return None;
+    }
+    w.actors.iter().find_map(|a| a.battle_monster_id)
+}
+
+/// The learned party-wide hit ([`LEARNED_CADENCE`]) when this fight is the
+/// boss it was learned on and the coming stretch is one of its heavy ones.
+fn learned_round_due(w: &legaia_engine_core::world::World) -> Option<u32> {
+    let (id, parity, aoe) = LEARNED_CADENCE.with(std::cell::Cell::get)?;
+    if boss_monster_id(w) != Some(id) {
+        return None;
+    }
+    let next = ROUND_HISTORY.with(|h| h.borrow().len());
+    (next % 2 == parity).then_some(aoe)
+}
+
+/// Read a lost battle's round history for a strict every-other-round
+/// party-wide hitter: two heavy stretches or more, all on one parity, never
+/// two in a row. Returns the parity.
+fn alternating_heavy_parity(history: &[u32]) -> Option<usize> {
+    let peak = history.iter().copied().max().unwrap_or(0);
+    if peak == 0 {
+        return None;
+    }
+    let heavy: Vec<usize> = history
+        .iter()
+        .enumerate()
+        .filter(|&(_, &x)| x * 3 >= peak)
+        .map(|(i, _)| i)
+        .collect();
+    let parity = *heavy.first()? % 2;
+    (heavy.len() >= 2
+        && heavy.iter().all(|i| i % 2 == parity)
+        && heavy.windows(2).all(|p| p[1] - p[0] == 2))
+    .then_some(parity)
 }
 
 /// Whether `actor` should take the Spirit stance against a party-wide hitter
@@ -2538,13 +2638,28 @@ fn fight_pad(session: &BootSession) -> u16 {
             .command
             .as_ref()
             .map_or(w.battle_ctx.active_actor, |c| c.actor);
-        let want = wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+        // A race against a timed finisher spends no turn on a heal, here as
+        // at the command menu.
+        let heal_want = if racing_a_finisher(w) && !race_heal(w, actor) {
+            None
+        } else {
+            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+        };
+        let want = heal_want
             .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
             .or_else(|| {
                 wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
             })
             .or_else(|| {
-                wanted_power_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+                (!finisher_round(w))
+                    .then(|| {
+                        wanted_power_item(
+                            w,
+                            (0..menu.filtered_items.len()).filter_map(listed),
+                            actor,
+                        )
+                    })
+                    .flatten()
             });
         return match &menu.state {
             InventoryUseState::Browsing { cursor } => match want {
@@ -2616,6 +2731,9 @@ fn fight_pad(session: &BootSession) -> u16 {
     }
     if let Some(cmd) = w.battle.command.as_ref() {
         let heal = || {
+            if racing_a_finisher(w) && !race_heal(w, cmd.actor) {
+                return false;
+            }
             let bag: Vec<u8> = w
                 .party
                 .inventory
@@ -2650,7 +2768,8 @@ fn fight_pad(session: &BootSession) -> u16 {
                 .map(|(id, _)| *id)
                 .collect();
             (wanted_fury_item(w, bag.clone().into_iter(), cmd.actor).is_some()
-                || wanted_power_item(w, bag.into_iter(), cmd.actor).is_some())
+                || (!finisher_round(w)
+                    && wanted_power_item(w, bag.into_iter(), cmd.actor).is_some()))
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
         return match &cmd.phase {
@@ -2897,6 +3016,7 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             })
             .flatten()
     };
+    let boss = boss_monster_id(&session.host.world);
     let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
@@ -3063,6 +3183,24 @@ fn fight_battle(session: &mut BootSession) -> Option<Run> {
             }
             if boss_element.is_some() {
                 LOST_TO_ELEMENT.with(|l| l.set(boss_element));
+            }
+            let aoe = AOE_HIT.with(std::cell::Cell::get);
+            if let Some(id) = boss
+                && aoe > 0
+                && let Some(parity) = ROUND_HISTORY.with(|h| {
+                    // The stretch the wipe ended is a round too: the hit
+                    // that finished the party lands in it.
+                    let mut h = h.borrow().clone();
+                    h.push(ROUND_LOSS.with(std::cell::Cell::get).iter().sum());
+                    alternating_heavy_parity(&h)
+                })
+            {
+                if trace {
+                    eprintln!(
+                        "    [battle] learned: boss {id} hits party-wide ({aoe}) on stretch parity {parity}"
+                    );
+                }
+                LEARNED_CADENCE.with(|l| l.set(Some((id, parity, aoe))));
             }
             return Some(Run::Battle(format!(
                 "party wiped: {}",
@@ -6460,6 +6598,27 @@ fn pad_walk(
             Some(&c) => cell_center(c),
             None => tile_center(goal),
         };
+        // A route that ran out short of the goal heads straight for it - but
+        // not through a band the plan kept clear: a walk-on that leaves the
+        // scene (`deene` P2[13] at (16..18, 23), the cutscene out to `map03`)
+        // fires on the step, and the goal behind it is the next visit's, as a
+        // player who walks into the cutscene finds.
+        if path.is_empty() && walking_mode == SceneMode::Field {
+            let t = dispatch_tile(wx, wz);
+            let (dx, dz) = (tx - wx, tz - wz);
+            let ahead = [
+                (t.0 + i32::from(dx.signum()), t.1),
+                (t.0, t.1 + i32::from(dz.signum())),
+            ];
+            if ahead
+                .iter()
+                .any(|a| *a != t && (avoid.contains(a) || doors.contains(a)))
+            {
+                return Err(format!(
+                    "no walkable path: the way to {goal:?} from {t:?} crosses a band that leaves the scene"
+                ));
+            }
+        }
         // A cross-axis offset of a few units is the walk's own overshoot,
         // not a step to take: chasing it flips the diagonal every frame, and
         // along a terrace edge the side-step toward the drop is a ledge hop
@@ -6570,6 +6729,7 @@ fn pad_walk(
             let site = format!("{} at {}", holder(session), park_site(session));
             let fired_record = timeline_p2_record(session);
             let rec_label = fired_record.map_or("-".to_string(), |r| format!("P2[{r}]"));
+            let fired_at = here(session);
             // A script that changes nothing - an examined prop with nothing
             // to say (`ropeway`'s `21 26 FE FF` bind, which the stalled
             // follower's action tap keeps opening) - leaves the route as it
@@ -6599,7 +6759,7 @@ fn pad_walk(
             };
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
-                    "    [walk-script] tile {:?}: {site} [{}] -> {r:?}; game_over {}",
+                    "    [walk-script] tile {fired_at:?} (after: {:?}): {site} [{}] -> {r:?}; game_over {}",
                     here(session),
                     rec_label,
                     session.host.world.game_over
@@ -7976,6 +8136,16 @@ fn play_beats(session: &mut BootSession, log: &mut Vec<String>) -> Result<Option
                 }
                 r
             } else {
+                // A band that stages a fight is a boss's door: the seated
+                // run tops a party not near full up first, as the pad walk
+                // does before such a band. Koru (`nilboa` P2[20], see
+                // [`KORU_MONSTER_ID`]) is met straight off the tunnel beats
+                // at 50..80% and is a race no heal turn can be spared in.
+                if party_hp_permille(session) < 900
+                    && fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1)))
+                {
+                    pad_field_heal(session, 1000);
+                }
                 step_onto(session, tile);
                 run_while_moving(session, DEEP_EXIT_TICKS)
             };
@@ -9605,72 +9775,116 @@ fn run_segment(
 
     NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = to_anchor.map(|a| a.flags.clone()));
     // -- seated pass: loads, enters, progresses -----------------------------
-    let seated = catch_unwind(AssertUnwindSafe(|| {
-        let mut session = open_session(&inp.extracted);
-        let opts = live_opts(false);
-        let mut tier = Tier::None;
-        let landed = match seed(&mut session, from, from_anchor, &opts) {
-            Ok(s) => s,
-            Err(e) => return (tier, Some(format!("seed: {e}")), None),
-        };
-        if landed != from.scene || !walking(&session) {
-            return (
-                tier,
-                Some(format!(
-                    "seed landed {landed} in {:?}, milestone scene is {}",
-                    session.host.world.mode, from.scene
-                )),
-                None,
-            );
-        }
-        tier = Tier::Loads;
-        // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
-        // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
-        // fight (`chitei2` P2[13], Jette) is checked across streams with it.
-        if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
-            .ok()
-            .and_then(|s| s.trim().parse().ok())
-        {
-            session.host.world.rng_state = s;
-        }
-        let mut trail = vec![landed];
-        match run_while_moving(&mut session, SCRIPT_CEILING) {
-            Run::Released => tier = Tier::Enters,
-            Run::Entered(s) => {
-                trail.push(format!("{s}(scripted)"));
-                tier = Tier::Enters;
-            }
-            Run::Parked(p) => {
-                // A parked entry script can still be the segment's success
-                // (a milestone reached mid-cutscene), but the tier stops here.
-                let flags = session.host.world.flags.system_flags.clone();
+    // A seated pass that a boss wipes is played once more from the same seed
+    // with the bag's guard against that boss's element equipped, the pad
+    // pass's guard retry: the player's reload after a game over. Without it
+    // a seated boss the unguarded hand wins about half the time (`chitei2`
+    // P2[13], Jette) decided both the `progresses` and the `pad` tier on one
+    // hand of the rand stream, so any change to how long a battle action
+    // runs moved the segment.
+    // A wipe after the guard retry (or with no element to guard) is reloaded
+    // with a fresh hand, as the pad pass does, up to `PAD_WIPE_ATTEMPTS`
+    // attempts in all: Koru (`nilboa` P2[20]) is a race the party wins or
+    // loses by a few dozen HP on a given stream.
+    let mut seated_prepare: Option<u8> = None;
+    let mut seated_attempt = 0u32;
+    LEARNED_CADENCE.with(|l| l.set(None));
+    let seated = loop {
+        seated_attempt += 1;
+        let attempt = seated_attempt;
+        LOST_TO_ELEMENT.with(|l| l.set(None));
+        let prepare = seated_prepare;
+        let seated = catch_unwind(AssertUnwindSafe(|| {
+            let mut session = open_session(&inp.extracted);
+            let opts = live_opts(false);
+            let mut tier = Tier::None;
+            let landed = match seed(&mut session, from, from_anchor, &opts) {
+                Ok(s) => s,
+                Err(e) => return (tier, Some(format!("seed: {e}")), None),
+            };
+            if landed != from.scene || !walking(&session) {
                 return (
                     tier,
-                    Some(format!("entry script never released: {p}")),
-                    Some(flags),
+                    Some(format!(
+                        "seed landed {landed} in {:?}, milestone scene is {}",
+                        session.host.world.mode, from.scene
+                    )),
+                    None,
                 );
             }
-            other => {
-                let flags = session.host.world.flags.system_flags.clone();
-                return (tier, Some(format!("entry: {other:?}")), Some(flags));
+            tier = Tier::Loads;
+            // `LEGAIA_FGL_SEATED_RNG_SEED=<u32>`: deal the seated pass another
+            // hand, as `LEGAIA_FGL_RNG_SEED` does the pad pass - a seated boss
+            // fight (`chitei2` P2[13], Jette) is checked across streams with it.
+            if let Some(s) = std::env::var("LEGAIA_FGL_SEATED_RNG_SEED")
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
+                session.host.world.rng_state = s;
             }
-        }
-        let res = traverse(&mut session, graph, to, false, &mut trail);
-        let flags = session.host.world.flags.system_flags.clone();
-        match res {
-            Ok(()) => {
-                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
-                    eprintln!("    [seated] trail {}", trail.join(">"));
+            // A reload other than the guard retry plays another hand (see
+            // the pad pass's reload).
+            if attempt > 1 && !(attempt == 2 && prepare.is_some()) {
+                let w = &mut session.host.world;
+                w.rng_state = w.rng_state.wrapping_add(attempt.wrapping_mul(0x9E37_79B9));
+            }
+            let mut trail = vec![landed];
+            match run_while_moving(&mut session, SCRIPT_CEILING) {
+                Run::Released => tier = Tier::Enters,
+                Run::Entered(s) => {
+                    trail.push(format!("{s}(scripted)"));
+                    tier = Tier::Enters;
                 }
-                (Tier::Progresses, None, Some(flags))
+                Run::Parked(p) => {
+                    // A parked entry script can still be the segment's success
+                    // (a milestone reached mid-cutscene), but the tier stops here.
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (
+                        tier,
+                        Some(format!("entry script never released: {p}")),
+                        Some(flags),
+                    );
+                }
+                other => {
+                    let flags = session.host.world.flags.system_flags.clone();
+                    return (tier, Some(format!("entry: {other:?}")), Some(flags));
+                }
             }
-            Err(e) => (
-                tier,
-                Some(format!("{e} [trail {}]", trail.join(">"))),
-                Some(flags),
-            ),
+            if let Some(element) = prepare {
+                let n = pad_equip_guard(&mut session, element);
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!("    [seated] retry: equipped {n} element-{element} guard(s)");
+                }
+            }
+            let res = traverse(&mut session, graph, to, false, &mut trail);
+            let flags = session.host.world.flags.system_flags.clone();
+            match res {
+                Ok(()) => {
+                    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                        eprintln!("    [seated] trail {}", trail.join(">"));
+                    }
+                    (Tier::Progresses, None, Some(flags))
+                }
+                Err(e) => (
+                    tier,
+                    Some(match prepare {
+                        Some(el) => format!(
+                            "seated (element-{el} guards): {e} [trail {}]",
+                            trail.join(">")
+                        ),
+                        None => format!("{e} [trail {}]", trail.join(">")),
+                    }),
+                    Some(flags),
+                ),
+            }
+        }));
+        let wiped = matches!(&seated, Ok((_, Some(e), _)) if e.contains("party wiped"));
+        match LOST_TO_ELEMENT.with(std::cell::Cell::get) {
+            Some(el) if wiped && seated_prepare.is_none() => seated_prepare = Some(el),
+            _ if wiped && seated_attempt < PAD_WIPE_ATTEMPTS => {}
+            _ => break seated,
         }
-    }));
+    };
     let (tier, stall, flags_after) = match seated {
         Ok(r) => r,
         Err(p) => (
@@ -9708,6 +9922,7 @@ fn run_segment(
     if with_pad && rep.tier >= Tier::Progresses {
         let mut prepare: Option<u8> = None;
         let mut attempt = 0u32;
+        LEARNED_CADENCE.with(|l| l.set(None));
         loop {
             attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));

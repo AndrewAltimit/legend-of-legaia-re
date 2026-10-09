@@ -348,6 +348,8 @@ impl LegaiaAudio {
             )
         });
         let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        // The sequence volume every live BGM director gives a track.
+        sequencer.set_master_vol(legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL);
         // Loop to the start at end-of-track so BGM repeats instead of playing
         // once and stopping (matches the native BGM director's default).
         sequencer.set_loop_to(0);
@@ -439,7 +441,9 @@ impl LegaiaAudio {
         let Ok(seq) = legaia_seq::Seq::parse(&buf[seq_offset as usize..]) else {
             return Vec::new();
         };
+        // Wet, as every live host's mixer runs it (`StreamResampler`).
         let mut spu = legaia_engine_audio::Spu::new();
+        spu.set_retail_reverb();
         let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(
             0x1000,
             legaia_engine_audio::spu::ram::SPU_RAM_BYTES as u32 - 0x1000,
@@ -451,6 +455,8 @@ impl LegaiaAudio {
             &buf[vab_offset as usize..],
         );
         let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+        // The sequence volume every live BGM director gives a track.
+        sequencer.set_master_vol(legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL);
         // Loop at end-of-track so a pre-rendered chunk fills its full duration
         // for a track shorter than the request, rather than ending in silence.
         sequencer.set_loop_to(0);

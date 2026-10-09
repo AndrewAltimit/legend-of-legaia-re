@@ -321,54 +321,9 @@ pub(crate) const FIELD_SLIDE_LATERAL: i32 = 0x21;
 /// selector paces exactly as this stand-in did.
 pub(crate) const FIELD_NPC_MOTION_SPEED: u16 = 8;
 
-/// The shared retail walk-step formula: `numerator >> (2 + bits)` world units
-/// per frame, floored at 1 so a leg always makes progress (the engine choice;
-/// retail's integer division reaches 0 for `bits >= 6`, which no authored
-/// stream uses). Both walk kernels step on this ladder:
-///
-/// - `FUN_8003774C` (field-VM yield ops, interpreted in place from the
-///   pointer parked at actor `+0x94`): per-frame magnitude
-///   `numerator * dt / (4 << bits)` - `numerator = 0x80` for ops
-///   `0x37`/`0x47`, **`0x40` for op `0x41`** (the `li a1,0x40` / `li a1,0x80`
-///   split at `0x80037908`), `dt = _DAT_1f800393` taken at 1 (one engine tick
-///   = one retail update; the frame-step scalar is modelled by tick cadence,
-///   not by scaling the step).
-/// - `FUN_80038158` (MAN tail-section-1 motion streams): the directional
-///   steps `0x03`/`0x19`/`0x20`, the home-relative step `0x06`, and the AABB
-///   wander `0x18` all move `0x80 >> (2 + bits)` per frame.
-// PORT: FUN_8003774C (ops 0x37/0x41/0x47 step magnitude)
-// REF: FUN_80038158 (ops 0x03/0x06/0x18/0x19/0x20 step magnitude)
-pub(crate) fn field_npc_walk_step_speed(numerator: u16, bits: u8) -> u16 {
-    (u32::from(numerator) >> (2 + u32::from(bits & 0xF))).max(1) as u16
-}
-
-/// Derive a field-NPC per-frame glide speed from a base-step selector - the
-/// retail encoding of the walk-kernel ops' own operands (`b2 & 7` for 0x47,
-/// `(op0>>5 & 4)|(op1>>6)` for 0x37/0x41, `b1 & 0xF` for the tail-section-1
-/// steps 0x03/0x19/0x20, the scattered AABB-byte high bits for 0x06/0x18).
-/// The `0x80`-numerator arm of [`field_npc_walk_step_speed`].
-///
-/// Retail `FUN_8003774C` (ops 0x37/0x47) glides at
-/// `_DAT_1f800393 × 0x80 / (4 << bits)` units per frame, i.e. per-frame
-/// magnitude `0x80 >> (2 + bits)` with the per-frame delta scalar
-/// `_DAT_1f800393 = 1` (its cold-field value). The `+0x72` player speed
-/// multiplier does NOT participate - `FUN_8003774C` never reads it - so this is
-/// purely operand-derived, unlike the player's `FUN_801d01b0` walk step:
-///
-/// | `bits` | `4 << bits` | glide speed (`0x80 >> (2+bits)`) |
-/// |--------|-------------|----------------------------------|
-/// | 0 | 4 | 32 |
-/// | 1 | 8 | 16 |
-/// | 2 | 16 | 8 (= [`FIELD_NPC_MOTION_SPEED`]) |
-/// | 3 | 32 | 4 |
-/// | 4 | 64 | 2 |
-/// | 5..=7 | 128..512 | 1 (floored) |
-///
-/// Clamped to a minimum of 1 so a leg always makes progress (retail never
-/// stalls a glide at 0).
-pub(crate) fn field_npc_glide_speed(base_step_bits: u8) -> u16 {
-    field_npc_walk_step_speed(0x80, base_step_bits & 0x7)
-}
+#[cfg(test)]
+use crate::man_field_scripts::field_npc_glide_speed;
+pub(crate) use crate::man_field_scripts::field_npc_walk_step_speed;
 
 /// Motion-VM bytecode for one field-NPC walk leg: a single `0x47`
 /// `MoveTowardTarget` op (the pursue/glide opcode of `FUN_8003774C`). The
@@ -737,28 +692,7 @@ pub(crate) fn tile_board_held_mask(input: &input::InputState) -> u16 {
 /// `2F 13` its script clear.
 pub const WALK_ON_REPOLL_FLAG: u32 = 0x0008_0000;
 
-/// Bit 10 of the scratchpad word `0x1F800394` (`World::flags.story_flags`):
-/// the follow ease `FUN_801DB510` takes its pin leg (`0x801DB564`), the
-/// settle skips its clip bind (`0x801D1E30`) and hop, and the player tick
-/// skips the pad step (`0x801D16A8`). Retail's only setter is the world-map
-/// top-view debug toggle (`0x801E7748`, gated on the debug word), and every
-/// mode entry clears it.
-pub const CAMERA_HOLD_FLAG: u32 = 0x0000_0400;
-
-/// Bit 16 of the scratchpad word `0x1F800394`: the player tick `FUN_801D1344`
-/// runs the follow ease even while the player is movement-locked. The tick
-/// calls the ease (`jal 0x801DB510` at `0x801D1834`) only when its local
-/// gate is up, and it raises the gate on this bit (`0x801D1634..0x801D1648`)
-/// or on a player with `+0x10 & 0x80000` clear and this word's `0x400` clear
-/// (`0x801D1694..0x801D16C0`); otherwise the frame runs only the shake
-/// (`FUN_801D9D30`, `0x801D184C`) and the camera holds.
-pub const CAMERA_LOCKED_EASE_FLAG: u32 = 0x0001_0000;
-
-/// Bit 18 of the scratchpad word `0x1F800394`: the follow ease composes and
-/// eases even on a frame the player did not move (`0x801DB578..0x801DB5A4`).
-/// Field-VM `2E 12` sets it and `2F 12` clears it (`conc`, `opurud`,
-/// `rikuroa`, `urudre2`, `bubu1` and their twins).
-pub const CAMERA_FORCE_EASE_FLAG: u32 = 0x0004_0000;
+pub use crate::camera::{CAMERA_FORCE_EASE_FLAG, CAMERA_HOLD_FLAG, CAMERA_LOCKED_EASE_FLAG};
 
 #[cfg(test)]
 mod tests {

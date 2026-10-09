@@ -1,0 +1,783 @@
+//! Screen-fade primitive state - port of the retail fade-state
+//! loader (`FUN_80020B00`, `see ghidra/scripts/funcs/80020b00.txt`).
+//!
+//! Retail stages full-screen fades as pool actors: `FUN_80024E80` allocates an
+//! actor and calls the loader with a 13-`i16` template describing the ramp.
+//! The loader converts the template into a 10.6 fixed-point state:
+//!
+//! ```text
+//! state[0..2]  = start RGB << 6          ; current colour (10.6 fixed)
+//! state[4..6]  = end RGB << 6
+//! state[8..10] = ((end - start) * 0x40) / duration   ; per-frame delta
+//! state[0x10]  = duration (frames)
+//! ```
+//!
+//! so the displayed colour each frame is `current >> 6`, advancing linearly
+//! and landing exactly on `end` after `duration` frames. The battle-action SM
+//! stages the summon backdrop fade (state `0x33`) and the successful-escape
+//! fade to black (state `0x66`, template at `DAT_801C9070`) through this.
+//! A template's **kind** word is also the quad's blend: the fade actor's tick
+//! hands it to `FUN_80024EE4` as the second argument, which folds it into the
+//! draw-mode packet's ABR bits (`sll a3,a1,0x5` at `0x80024FB0`), so kind `2`
+//! draws `B - F` and a black -> white ramp darkens the scene to black.
+
+// REF: FUN_80020C14 - the per-frame ramp step over the block this loader
+// fills; ported in `crate::fade_ramp`.
+// REF: FUN_80025000 - the fade actor's tick, which drives that step.
+// REF: FUN_80024EE4 - the GP0 quad emitter the tick's packed colour goes to.
+
+/// The 13-`i16` fade template `FUN_80020B00` consumes (`param_2` field
+/// indices in brackets).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FadeTemplate {
+    /// `[0]` - fade kind/id, copied verbatim onto the state.
+    pub kind: i16,
+    /// `[1]` - ramp duration in frames (the per-frame delta divisor).
+    pub duration: i16,
+    /// `[3..=5]` - start RGB.
+    pub start_rgb: [i16; 3],
+    /// `[7..=9]` - end RGB.
+    pub end_rgb: [i16; 3],
+    /// `[10]` / `[11]` / `[12]` - copied verbatim onto the state at `+0x1C`,
+    /// `+0x1E` and `+0x22`. The per-frame tick `FUN_80020C14` reads them as
+    /// **start delay**, **hold after the ramp** (`-1` = hold until the actor is
+    /// killed - the tick never raises its finished bit) and the **id**
+    /// `FUN_80024E80` stamps and `FUN_80024EE4` receives - see
+    /// [`crate::fade_ramp`].
+    pub mode: [i16; 3],
+}
+
+/// The successful-escape fade template the battle-action SM writes at
+/// `DAT_801C9070` before spawning the fade (state `0x66`): kind `2`, a
+/// `0x40`-frame ramp from black `(0,0,0)` to white `(0xFF,0xFF,0xFF)`, and
+/// trailing words `(0, -1, 0)` - no start delay, a `-1` hold (the landed
+/// frame persists until the battle unloads), id `0`. Kind `2` is the
+/// `B - F` blend, so the rising ramp fades the scene **to black**; the
+/// battle results sequencer spawns the same template at its exit
+/// (`world::battle::victory`).
+///
+/// REF: FUN_801E295C (case 0x66 template write)
+pub fn escape_fade_template() -> FadeTemplate {
+    FadeTemplate {
+        kind: 2,
+        duration: 0x40,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        mode: [0, -1i16, 0],
+    }
+}
+
+/// Live fade state, the engine mapping of the retail actor's `+0x7C` block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FadeState {
+    /// Fade kind (`state[0xc..]` as i32 in retail; template `[0]`).
+    pub kind: i32,
+    /// Current RGB, 10.6 fixed point.
+    current_q6: [i16; 3],
+    /// Target RGB, 10.6 fixed point.
+    end_q6: [i16; 3],
+    /// Per-frame delta, 10.6 fixed point.
+    delta_q6: [i16; 3],
+    /// Ramp duration in frames.
+    pub duration: i16,
+    /// Frames stepped so far.
+    elapsed: i16,
+    /// Mode words (template `[10..=12]`).
+    pub mode: [i16; 3],
+    /// Start delay still to run (block `+0x1C`, template `[10]`): nothing is
+    /// drawn and the ramp does not advance while it is positive.
+    delay_left: i16,
+    /// Post-ramp hold still to run (block `+0x1E`, template `[11]`): `-1`
+    /// holds the landed colour until the fade is replaced or torn down, `0`
+    /// drops the fade the frame the ramp lands, `n > 0` holds `n` frames.
+    hold_left: i16,
+    /// Vsyncs stepped since the load, delay and hold included - the clock a
+    /// retail capture's block reads back as `delay0 - delay + duration0 -
+    /// duration` ([`Self::age_vsyncs`]).
+    age: u16,
+}
+
+impl FadeState {
+    /// Load a template into a live fade state, mirroring `FUN_80020B00`'s
+    /// arithmetic exactly: start/end RGB promoted to 10.6 fixed point and the
+    /// per-frame delta `((end - start) * 0x40) / duration` (i32 divide
+    /// truncated to i16, as the retail store does).
+    ///
+    /// PORT: FUN_80020B00
+    pub fn load(t: &FadeTemplate) -> FadeState {
+        let duration = t.duration.max(1); // retail templates are never 0
+        let mut current_q6 = [0i16; 3];
+        let mut end_q6 = [0i16; 3];
+        let mut delta_q6 = [0i16; 3];
+        for c in 0..3 {
+            current_q6[c] = t.start_rgb[c] << 6;
+            end_q6[c] = t.end_rgb[c] << 6;
+            delta_q6[c] =
+                (((t.end_rgb[c] as i32 - t.start_rgb[c] as i32) * 0x40) / duration as i32) as i16;
+        }
+        FadeState {
+            kind: t.kind as i32,
+            current_q6,
+            end_q6,
+            delta_q6,
+            duration,
+            elapsed: 0,
+            mode: t.mode,
+            delay_left: t.mode[0],
+            hold_left: t.mode[1],
+            age: 0,
+        }
+    }
+
+    /// Advance the fade one frame. Returns `true` while the fade is still
+    /// alive (delaying, ramping or holding), `false` once it is done and the
+    /// host should stop drawing it.
+    ///
+    /// The three template words retail's tick (`FUN_80020C14`) counts down
+    /// are honoured in the same order: the start delay first (nothing drawn,
+    /// see [`Self::visible`]), then the linear ramp (`current += delta`,
+    /// latching exactly on the target after `duration` frames), then the
+    /// hold - `-1` holds the landed colour **until the fade is replaced or
+    /// torn down** (the escape white-out and the summon flash-in both use it,
+    /// which is why they persist past their ramp), `0` ends the fade on the
+    /// landing frame, `n > 0` holds `n` more frames.
+    ///
+    /// One retail vsync - the step every host takes, and the whole of
+    /// [`Self::step_vsyncs`] at `dt = 1`.
+    pub fn step(&mut self) -> bool {
+        self.step_vsyncs(1)
+    }
+
+    /// Advance by `dt` vsyncs through the **retail** ramp kernel
+    /// ([`crate::fade_ramp::tick_fade_ramp`]), which is what this state's
+    /// block is: the arithmetic is `FUN_80020C14`'s, and this method is only
+    /// the representation shim - retail counts the duration *down* inside the
+    /// block, the engine keeps `elapsed` / `duration` so `progress()` and
+    /// `finished()` read naturally, so the two views are converted around the
+    /// call.
+    ///
+    /// This replaced a linear integrator that latched `current = end` the
+    /// frame `elapsed` reached `duration`. Retail does not latch: it keeps
+    /// accumulating every frame - through the hold as well - and each channel
+    /// clamps onto the target when the **delta's sign** says it overshot
+    /// (`0x80020CE8..0x80020D90`). Both end on the target; retail arrives a
+    /// frame or two later on a truncated delta, and that trajectory is the
+    /// one the port now takes.
+    pub fn step_vsyncs(&mut self, dt: u8) -> bool {
+        use crate::fade_ramp::{FadeRamp, tick_fade_ramp};
+        let mut ramp = FadeRamp::new(
+            self.current_q6,
+            self.end_q6,
+            self.delta_q6,
+            self.kind,
+            self.delay_left,
+            self.hold_left,
+            self.duration.saturating_sub(self.elapsed),
+            self.mode[2],
+        );
+        let alive = tick_fade_ramp(&mut ramp, dt).is_some() || !ramp.flags.finished;
+        self.age = self.age.saturating_add(u16::from(dt));
+        // Retail leaves the delay negative once it lands; the engine's
+        // `visible()` reads `<= 0`, so either sign works, but keeping it at
+        // the floor keeps the field's range as documented.
+        self.delay_left = ramp.delay.max(0);
+        self.hold_left = ramp.hold;
+        self.current_q6 = ramp.current_q6;
+        self.elapsed = (i32::from(self.duration) - i32::from(ramp.duration))
+            .clamp(0, i32::from(self.duration)) as i16;
+        alive
+    }
+
+    /// `true` once the start delay has run - retail's tick returns `-1`
+    /// (draw nothing) while `+0x1C` is still positive.
+    pub fn visible(&self) -> bool {
+        self.delay_left <= 0
+    }
+
+    /// `true` while the landed colour is being held (hold word `-1`, or a
+    /// positive hold still counting).
+    pub fn held(&self) -> bool {
+        self.finished() && (self.hold_left != 0)
+    }
+
+    /// The current display colour (`current >> 6`, clamped to a byte).
+    pub fn rgb(&self) -> [u8; 3] {
+        [
+            (self.current_q6[0] >> 6).clamp(0, 255) as u8,
+            (self.current_q6[1] >> 6).clamp(0, 255) as u8,
+            (self.current_q6[2] >> 6).clamp(0, 255) as u8,
+        ]
+    }
+
+    /// Vsyncs this fade has been stepped since it was loaded - the start
+    /// delay and the hold included. The phase clock the retail comparison
+    /// corpus aligns a capture on: a retail block's own countdowns give the
+    /// same figure, so an engine frame can be taken the same number of
+    /// vsyncs into the same fade.
+    pub fn age_vsyncs(&self) -> u16 {
+        self.age
+    }
+
+    /// The colour the ramp lands on (`+0x08/0A/0C >> 6`).
+    pub fn target_rgb(&self) -> [u8; 3] {
+        [
+            (self.end_q6[0] >> 6).clamp(0, 255) as u8,
+            (self.end_q6[1] >> 6).clamp(0, 255) as u8,
+            (self.end_q6[2] >> 6).clamp(0, 255) as u8,
+        ]
+    }
+
+    /// `true` once the ramp has run its full duration.
+    pub fn finished(&self) -> bool {
+        self.elapsed >= self.duration
+    }
+
+    /// Ramp progress in `0.0..=1.0` (for hosts that drive an overlay alpha).
+    pub fn progress(&self) -> f32 {
+        self.elapsed as f32 / self.duration.max(1) as f32
+    }
+
+    /// The GPU semi-transparency (ABR) mode the fade quad draws with: the
+    /// template's kind word, which the fade actor's tick `FUN_80025000`
+    /// passes as `FUN_80024EE4`'s second argument and the emitter folds
+    /// into the draw-mode packet (`sll a3,a1,0x5; ori a3,a3,0xe` at
+    /// `0x80024FB0`). Kind `1` is `B + F` (a ramp to white brightens to a
+    /// white-out), kind `2` is `B - F` (the same ramp darkens to black).
+    /// Hosts draw the quad through
+    /// `legaia_engine_ui::screen_prim::screen_fade_prim`.
+    // REF: FUN_80024EE4, FUN_80025000
+    pub fn abr(&self) -> u8 {
+        (self.kind & 3) as u8
+    }
+
+    /// Whether the fade actor keeps drawing its end colour once the ramp
+    /// lands: the template's hold word (`[11]`, block `+0x1E`) is `-1`,
+    /// which `FUN_80020C14` treats as "no hold countdown" - the finished
+    /// latch never rises and the quad stays up until the owning scene
+    /// unloads (`crate::fade_ramp`). The battle-end / escape template is
+    /// `-1`: the black stays until `finish_battle` tears the battle down.
+    /// A non-negative word counts down and the fade is dropped when it
+    /// expires (the leader-swap templates carry `0`).
+    pub fn holds_at_end(&self) -> bool {
+        self.mode[1] < 0
+    }
+
+    /// The OT layer the fade quad is linked at: the template's trailing id
+    /// word (`[12]`, block `+0x22`), the emitter's first argument. The
+    /// spawn wrapper's own id override (`spawn_fade`'s `id`) is not folded
+    /// in here; every battle template carries `0`.
+    pub fn ot_layer(&self) -> u8 {
+        self.mode[2].clamp(0, 255) as u8
+    }
+}
+
+/// Fade-actor spawn wrapper - port of `FUN_80024E80` (`see
+/// ghidra/scripts/funcs/80024e80.txt`), the most-cited helper in the dump
+/// corpus: every subsystem that stages a full-screen fade goes through it.
+///
+/// Retail body (eighteen instructions): allocate a slot from the system-actor
+/// pool (`jal 0x80020DE0` with `a0 = 0x80070674`, `a1 = _DAT_8007C34C` - the
+/// generic effect-actor list), and only on success stamp the caller's id into
+/// the template's last word (`sh s2,0x18(s1)`: byte `+0x18`, i.e. i16 index
+/// 12 = [`FadeTemplate::mode`]`[2]`) and run the loader
+/// ([`FadeState::load`] = `FUN_80020B00`) on the actor's `+0x7C` block.
+///
+/// The engine's fade pool is the world's seat `World::presentation.fade`
+/// plus the module fades beside it (`presentation.module_fades`, PROT 0905's
+/// own ramps), both composited through `World::screen_fade_draws`. A spawn
+/// into the seat replaces whatever fade holds it, so the allocation arm
+/// always succeeds; retail's pool-exhausted return (no stamp, no load) has no engine
+/// counterpart and is not modelled. The template is copied rather than
+/// mutated in place - retail stamps a scratch buffer (a stack frame in the
+/// field overlay's `FUN_801D58F0`, `DAT_801C9070` for the battle escape) that
+/// callers rebuild before every spawn, so the copy is semantics-preserving.
+///
+/// PORT: FUN_80024E80
+///
+/// Live: the field walk-on warp's two fades (`World::arm_field_warp` and
+/// its held-back fade-in, retail `FUN_801D58F0`, which passes `id = 0` -
+/// `move a1,zero` at `0x801D593C`) and the summon band's flash-in / -out
+/// (`World`'s battle-action host).
+pub fn spawn_fade(seat: &mut Option<FadeState>, template: &FadeTemplate, id: i16) {
+    let mut t = *template;
+    t.mode[2] = id;
+    *seat = Some(FadeState::load(&t));
+}
+
+/// [`FadeTemplate`] off the summon band's 13-word template layout
+/// (`DAT_801C9070`).
+pub fn summon_template(t: &legaia_engine_vm::battle_action::SummonFadeTemplate) -> FadeTemplate {
+    FadeTemplate {
+        kind: t.kind,
+        duration: t.duration,
+        start_rgb: t.start_rgb,
+        end_rgb: t.end_rgb,
+        mode: [t.delay, t.hold, 0],
+    }
+}
+
+/// A persistent full-scene colour grade - the warm gold/sepia the opening
+/// prologue cutscene (`opdeene`, "It was the Seru.") renders its whole 3D
+/// scene through, distinct from the transient [`SceneTintRamp`] fades.
+///
+/// ## Retail mechanism
+///
+/// The grade is **asset rewrites**, not a pixel multiply or a GTE colour:
+/// - the packet half is the prologue scripts' two field-VM `4C E6` ops
+///   (partition 1 record 0 of `opdeene`, `opstati`, `opurud`), which walk
+///   every resident TMD (`FUN_801D8280` over `DAT_8007C018`) and rewrite
+///   each baked colour word through the SCUS HSV pair (`FUN_801D5E20`):
+///   saturation `-0x100`, then hue `+0x38` / saturation `+0x90` / value
+///   `-0x1E`. A word ends as a function of its `max` alone,
+///   `(V, V*246 >> 8, V*112 >> 8)` with `V = min(max, 0xF8) - 30` -
+///   capture-pinned, every resident colour word of the retail `opdeene`
+///   state (`s1_newgame_field`) lies on that curve, an authored `0x80` word
+///   at `(98, 94, 42)`. Only the baked-colour rows are touched (the
+///   per-mode colour counts at `0x801F26F0` are non-zero for flags
+///   `0x18..=0x27` alone), so the light-source rows keep their GTE colour;
+/// - the texel half is the scene's CLUT rows rewritten to
+///   `(L, L-1, L>>1)`, `L = max(r, g, b)` (a recomp VRAM capture).
+///
+/// The hosts reproduce both in the renderer's palette mode
+/// (`engine-render` `palette_law_word` / `prologue_sepia_word`, and the
+/// page's twins), keyed on `legaia_engine_core::World::scene_color_grade`. The ratio
+/// the older GP0 measurement read off the draw list (`255:240:110`) is the
+/// same curve's `G/R` and `B/R`; the multiply below is what a host without
+/// palette mode draws.
+///
+/// An earlier reading credited the packet colour to a gold DPCS far colour
+/// per render node; it never reaches a pixel, since every render node holds
+/// `IR0 = 0` across the prologue (the palette-mode capture). The dim GTE
+/// ambient `0x8007B788 = 0x00202020` is real but reaches only the
+/// light-source rows, which carry no baked word.
+///
+/// REF: FUN_801D5E20 (the colour-word rewrite)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ColorGrade {
+    /// Per-channel multiply tint applied to the shaded pixel, `0.0..=1.0`
+    /// per channel, in the same display-referred space as every other colour
+    /// the engine handles (PSX framebuffer values; nothing re-encodes them).
+    pub gold: [f32; 3],
+    /// Cross-fade strength `0.0..=1.0` (`0` = untouched, `1` = full tint).
+    pub strength: f32,
+}
+
+impl ColorGrade {
+    /// The `opdeene` opening-prologue grade: the multiply tint is the retail
+    /// draw-list *modulation* ratio `255:240:110` → `(1.0, 0.94, 0.43)` -
+    /// the depth-blended amber actually baked into drawn geometry, not the
+    /// GTE far-colour extreme `255:230:62` only the farthest verts reach.
+    ///
+    /// Colour-space derivation: retail multiplies this tint in PSX integer
+    /// space, i.e. on display-referred framebuffer values. The engine's
+    /// shaded pixel is the same display-referred value and the render
+    /// attachment is always viewed UNORM (never sRGB - pinned by
+    /// `engine-render` `tests::color_space`), so nothing re-encodes the
+    /// product: the stored coefficients are retail's measured display
+    /// ratios verbatim, no gamma adjustment. Full strength (`1.0`).
+    ///
+    /// Pixel check against the retail `opdeene` tableau framebuffer: on the
+    /// matched gold-geometry regions (Seru spires / rock spires / sky) the
+    /// tinted engine output lands G/R 0.91..0.93 vs retail's ~0.89, and the
+    /// near-field surface B/R ~0.37 sits against retail's near-ground 0.44
+    /// (the beat where the modulation ratio shows almost unblended). The
+    /// far-field crush (retail sky/spire B/R down to 0.12..0.18) is the
+    /// per-render-node DPCS depth-cue pull toward the gold far colour
+    /// (`+0x74`/`+0x78`, GTE cr21-23), which a uniform multiply cannot
+    /// reproduce - the engine stages it separately as
+    /// [`DepthCueRamp::PROLOGUE_GOLD`], layered over this tint.
+    pub const PROLOGUE_SEPIA: ColorGrade = ColorGrade {
+        gold: [1.0, 0.94, 0.43],
+        strength: 1.0,
+    };
+}
+
+/// The prologue's **per-render-node depth-cue pull** - the second half of the
+/// retail grade, layered over [`ColorGrade::PROLOGUE_SEPIA`]'s multiply tint.
+///
+/// ## Retail mechanism
+///
+/// The TMD renderer `FUN_8002735C` runs the GTE **DPCS** depth cue per prim:
+/// `out = base + IR0 * (far - base)`, with the far colour and `IR0` staged
+/// **per render node** (`+0x74` → GTE cr21-23, `+0x78` → `IR0`). Across the
+/// opening's narration beats the cutscene host stages a gold far colour with
+/// depth-graded `IR0`s, so far scenery (sky planes, distant spires) crushes
+/// hard toward gold (retail far-field `B/R ≈ 0.12..0.18`) while near ground
+/// keeps the modulation tint almost unblended (`B/R ≈ 0.44`). DPCS runs on
+/// the *packet colour* before the GPU's texel multiply, so on textured prims
+/// the far term reaches the pixel as `texel * far / 128` - texture detail
+/// survives the crush, as the retail framebuffer shows.
+///
+/// The engine reproduces the depth dependence as a linear view-depth ramp:
+/// `ir0(z) = clamp((z - near_z) / (far_z - near_z), 0, 1) * max_ir0` per
+/// fragment (`engine-render` `cue_ramp_ir0`), staged with
+/// `Renderer::set_depth_cue_ramp` while this ramp is active and cleared
+/// otherwise - interactive scenes (`town01` onward) render with the ramp off,
+/// which is the bit-identical pre-ramp path.
+///
+/// REF: FUN_8002735C (far colour / IR0 → GTE cr21-23 / IR0)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DepthCueRamp {
+    /// DPCS far colour (GTE cr21-23) in display `0..1` per channel.
+    pub far: [f32; 3],
+    /// View depth (camera units) where the pull begins (`ir0 = 0`).
+    pub near_z: f32,
+    /// View depth of the full pull (`ir0 = max_ir0`).
+    pub far_z: f32,
+    /// `IR0` ceiling, `0.0..=1.0` (hardware `0..0x1000`).
+    pub max_ir0: f32,
+}
+
+impl DepthCueRamp {
+    /// The opening-prologue gold pull, calibrated pixel-for-pixel against the
+    /// retail tableau framebuffer on matched regions: the far cave wall lands
+    /// within a few percent of retail per channel with `B/R` inside retail's
+    /// `0.12..0.18` far-field band, the gold spires hold `G/R ≈ 0.87..0.90`
+    /// (retail `~0.89`), and the near ground stays on the unpulled multiply
+    /// tint. The `near_z`/`far_z` window sits just past the cutscene camera's
+    /// telephoto ground plane (the eye is ~3.5k view units out of the
+    /// tableau, so the whole depth spread is only a few hundred units); the
+    /// far colour keeps the modulation ratio's gold hue at roughly an eighth
+    /// of full brightness - the retail wall's effective post-pull modulation.
+    /// Retail's true staging is per node, which a shared ramp cannot fully
+    /// reproduce: the spire nodes combine a strong pull with a brighter far
+    /// colour, so their `B/R` keeps a documented residual (see
+    /// `docs/subsystems/cutscene.md`).
+    pub const PROLOGUE_GOLD: DepthCueRamp = DepthCueRamp {
+        far: [0.121, 0.111, 0.0095],
+        near_z: 3250.0,
+        far_z: 3550.0,
+        max_ir0: 0.92,
+    };
+}
+
+/// Scripted colour **ramp toward a target over an authored frame count** -
+/// the shared value model behind two script-driven globals:
+///
+/// - **Op `0x4C 0x12`** (7-byte `[4C, 12, r, g, b, ramp_lo, ramp_hi]`): the
+///   global multiply screen tint `DAT_8007BCB8/B9/BA = r/g/b`, optionally
+///   ramped there over `LE_u16(ramp)` frames by the slot-job spawner
+///   `FUN_8003C5F0`. Neutral is `0x80`. Every field scene's `P1[0]` entry
+///   script carries the arrival arm of the `0x52F`/`0x530`/`0x531`
+///   handshake - `4C 12 00 00 00 00 00` (instant) then
+///   `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - but the word
+///   is **not** a frame fade: its one reader disc-wide is the fog particle
+///   update `FUN_8003F3FC`, so it fades the fog sheets in and nothing else
+///   (`legaia_engine_core::World::scene_screen_tint`).
+/// - **Op `0x34` sub-0** (7-byte `[34, op0, r, g, b, ramp_lo, ramp_hi]`,
+///   `FUN_801E1FB0`): the effect-layer global colour, neutral `0xFF`. The
+///   opening timeline ramps it in the crawl gaps (`34 05 00 00 00 D2 00` =
+///   to black over 210 frames, `34 01 FF FF FF 00 00` = instant neutral).
+///   **Not a screen fade** - the retail cold-boot capture holds the lit
+///   villager tableau across the span where the black ramp would blank a
+///   full-screen fade; the value feeds the effect layer (creation-glow
+///   planes, consumer an open thread) and stays out of the screen tint.
+///
+/// Both store normalized factors (`1.0` = neutral).
+///
+/// REF: FUN_801E1FB0
+/// REF: FUN_8003C5F0
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SceneTintRamp {
+    /// Factor at ramp start (`1.0` = neutral).
+    from: [f32; 3],
+    /// Ramp target factor.
+    to: [f32; 3],
+    /// Ramp length in frames (`0` = instant).
+    frames: u16,
+    /// Frames stepped so far.
+    elapsed: u16,
+}
+
+impl SceneTintRamp {
+    /// Start a ramp from `current` (or neutral when `None` - no tint active)
+    /// toward `to`, over `frames` frames. `frames == 0` lands instantly.
+    pub fn to_target(current: Option<[f32; 3]>, to: [f32; 3], frames: u16) -> SceneTintRamp {
+        SceneTintRamp {
+            from: current.unwrap_or([1.0; 3]),
+            to,
+            frames,
+            elapsed: 0,
+        }
+    }
+
+    /// Advance one frame (no-op once the ramp has landed - the tint then
+    /// *holds* its target until a new op replaces it; a screen faded to black
+    /// stays black).
+    pub fn step(&mut self) {
+        if self.elapsed < self.frames {
+            self.elapsed += 1;
+        }
+    }
+
+    /// Current tint factor per channel (`1.0` = neutral).
+    pub fn factor(&self) -> [f32; 3] {
+        if self.frames == 0 || self.elapsed >= self.frames {
+            return self.to;
+        }
+        let p = self.elapsed as f32 / self.frames as f32;
+        [
+            self.from[0] + (self.to[0] - self.from[0]) * p,
+            self.from[1] + (self.to[1] - self.from[1]) * p,
+            self.from[2] + (self.to[2] - self.from[2]) * p,
+        ]
+    }
+
+    /// `true` once the ramp has landed on its target.
+    pub fn finished(&self) -> bool {
+        self.elapsed >= self.frames
+    }
+
+    /// `true` when the ramp has landed on the neutral identity - the host can
+    /// drop the tint and return to the untouched render path.
+    pub fn is_identity(&self) -> bool {
+        self.finished() && self.to.iter().all(|&c| (c - 1.0).abs() < 1e-6)
+    }
+}
+
+/// The GTE back/ambient colour the prologue legs stage, `DAT_8007B788`'s low
+/// byte (`0x00202020` in `opdeene` vs `0x00FFFFFF` in `town01`, staged into
+/// GTE cr13-15 by `FUN_80043390`).
+pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
+
+/// Give a prologue mesh's **light-source-row** vertices the dim prologue
+/// ambient as their modulation colour, leaving every baked colour word alone.
+///
+/// The lit rows (descriptor rows 0 / 1) carry no colour word; retail colours
+/// them through the GTE lighting sum, whose floor in the prologue is
+/// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
+/// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
+/// per-vertex mask from
+/// `legaia_engine_core::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
+/// parallel to `colors`.
+///
+/// The mask is the point: a lit row and a baked word authored at exactly
+/// `0x80` read the same colour out of the mesh builder, and keying the
+/// restage on the colour instead darkened every such baked prim - on
+/// `opdeene`, the one-quad jungle billboards (the scene pack's bushes and
+/// branch sprites) drew black natively where retail draws them at
+/// `(98, 94, 42)`.
+pub fn apply_prologue_lit_ambient(colors: &mut [[u8; 3]], lit: &[bool]) {
+    for (c, &is_lit) in colors.iter_mut().zip(lit) {
+        if is_lit {
+            *c = [PROLOGUE_LIT_AMBIENT; 3];
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prologue_sepia_is_a_warm_gold_multiply_tint() {
+        let g = ColorGrade::PROLOGUE_SEPIA;
+        assert_eq!(g.strength, 1.0, "full tint");
+        assert_eq!(g.gold[0], 1.0, "red is the anchor channel");
+        assert!(g.gold[1] < g.gold[0], "green below red");
+        assert!(g.gold[2] < g.gold[1], "blue crushed below green");
+        // Display-referred, like every colour the engine handles: nothing on
+        // the path re-encodes the shaded pixel (the attachment is UNORM), so
+        // the stored coefficients are retail's measured on-geometry
+        // modulation ratio as-is - 255:240:110, G/R ~= 0.94, B/R ~= 0.43.
+        let disp_g = g.gold[1] / g.gold[0];
+        let disp_b = g.gold[2] / g.gold[0];
+        assert!(
+            (disp_g - 0.94).abs() < 0.02,
+            "display G/R ~= 0.94, got {disp_g:.3}"
+        );
+        assert!(
+            (disp_b - 0.43).abs() < 0.02,
+            "display B/R ~= 0.43, got {disp_b:.3}"
+        );
+    }
+
+    #[test]
+    fn scene_tint_ramps_linearly_to_black_and_holds() {
+        // `34 01 00 00 00 F0 00` - ramp to black over 240 frames from
+        // neutral. Mid-ramp is the linear midpoint; the landed value HOLDS
+        // black (until a new op replaces it).
+        let mut t = SceneTintRamp::to_target(None, [0.0; 3], 240);
+        assert_eq!(t.factor(), [1.0; 3], "starts on the neutral identity");
+        for _ in 0..120 {
+            t.step();
+        }
+        assert!((t.factor()[0] - 0.5).abs() < 1e-4, "linear midpoint");
+        for _ in 0..200 {
+            t.step();
+        }
+        assert!(t.finished());
+        assert_eq!(t.factor(), [0.0; 3], "holds black after landing");
+        assert!(!t.is_identity(), "a black hold is not droppable");
+    }
+
+    #[test]
+    fn scene_tint_instant_and_identity_drop() {
+        // `34 01 FF FF FF 00 00` - instant cut back to neutral: lands at
+        // once and reports identity so the host drops it.
+        let t = SceneTintRamp::to_target(Some([0.0; 3]), [1.0; 3], 0);
+        assert_eq!(t.factor(), [1.0; 3]);
+        assert!(t.finished());
+        assert!(t.is_identity());
+    }
+
+    #[test]
+    fn scene_tint_fade_in_from_black_ramps_up() {
+        // The `P1[0]` arrival arm: `4C 12 00 00 00 00 00` (instant black)
+        // then `4C 12 80 80 80 44 00` (ramp to neutral over 68 frames) - the
+        // retail fade-in from black at scene entry.
+        let black = SceneTintRamp::to_target(None, [0.0; 3], 0);
+        let mut t = SceneTintRamp::to_target(Some(black.factor()), [1.0; 3], 68);
+        assert_eq!(t.factor(), [0.0; 3], "opens black");
+        for _ in 0..34 {
+            t.step();
+        }
+        assert!((t.factor()[1] - 0.5).abs() < 1e-4, "half way up");
+        for _ in 0..34 {
+            t.step();
+        }
+        assert!(t.is_identity(), "lands neutral and droppable");
+    }
+
+    #[test]
+    fn loader_matches_the_retail_fixed_point_layout() {
+        // start 0x20, end 0xFF over 0x40 frames: delta = (0xDF * 0x40)/0x40
+        // = 0xDF in 10.6 - i.e. (end-start)/duration per displayed unit.
+        let t = FadeTemplate {
+            kind: 2,
+            duration: 0x40,
+            start_rgb: [0x20, 0x20, 0x20],
+            end_rgb: [0xFF, 0xFF, 0xFF],
+            mode: [0, 0, 0],
+        };
+        let f = FadeState::load(&t);
+        assert_eq!(f.kind, 2);
+        assert_eq!(f.rgb(), [0x20, 0x20, 0x20]);
+        assert_eq!(f.delta_q6[0], ((0xFF - 0x20) * 0x40) / 0x40);
+    }
+
+    #[test]
+    fn escape_fade_ramps_black_to_white_over_0x40_frames_then_holds() {
+        let mut f = FadeState::load(&escape_fade_template());
+        assert_eq!(f.rgb(), [0, 0, 0]);
+        assert_eq!(f.duration, 0x40);
+        assert!(f.visible(), "no start delay on the escape template");
+        // The ramp runs the template duration and lands exactly on white.
+        for _ in 0..0x40 {
+            assert!(f.step(), "the fade stays alive through its ramp");
+        }
+        assert!(f.finished());
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF], "lands exactly on white");
+        // Hold word -1: the landed colour holds until the fade is replaced
+        // (retail's `+0x1E == -1` never raises the actor's finished bit).
+        for _ in 0..1000 {
+            assert!(f.step(), "a -1 hold never ends on its own");
+        }
+        assert!(f.held());
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+    }
+
+    /// The delay and hold counters, on retail's own frame boundaries.
+    ///
+    /// Both are off by one from the obvious reading, and in opposite
+    /// directions - which is why they are asserted frame by frame rather than
+    /// by a loop count:
+    ///
+    /// * a delay of `3` suppresses **two** frames, not three. Retail's guard
+    ///   is `if (delay > 0) { delay -= dt; if (delay > 0) return; }`, so the
+    ///   frame that drops the counter to `0` falls through and ramps
+    ///   (`0x80020C20..0x80020C54`).
+    /// * a hold of `0` does **not** end on the landing frame. The `ramped`
+    ///   test is `duration < 0`, so the frame that brings the countdown to
+    ///   exactly `0` is still a live ramp frame and the hold starts the frame
+    ///   after (`0x80020C5C..0x80020CD0`).
+    #[test]
+    fn a_zero_hold_drops_a_frame_after_the_landing_and_a_delay_defers_the_ramp() {
+        let mut t = escape_fade_template();
+        t.duration = 4;
+        t.mode = [3, 0, 0];
+        let mut f = FadeState::load(&t);
+        // Two suppressed frames: alive, invisible, colour untouched.
+        for _ in 0..2 {
+            assert!(!f.visible());
+            assert!(f.step());
+            assert_eq!(f.rgb(), [0, 0, 0]);
+        }
+        // The third frame clears the delay and ramps in the same call.
+        assert!(!f.visible());
+        assert!(f.step());
+        assert!(f.visible());
+        assert_eq!(f.rgb(), [0x3F, 0x3F, 0x3F], "one step of a four-frame ramp");
+        // Three more ramp frames land it, and the frame after that retires a
+        // zero hold.
+        assert!(f.step());
+        assert!(f.step());
+        assert!(f.step());
+        assert_eq!(f.rgb(), [0xFF, 0xFF, 0xFF]);
+        assert!(f.finished());
+        assert!(!f.step(), "hold 0 retires the frame after the ramp lands");
+        // A positive hold keeps it alive that many frames more.
+        t.mode = [0, 2, 0];
+        let mut f = FadeState::load(&t);
+        for _ in 0..4 {
+            assert!(f.step(), "the four ramp frames");
+        }
+        assert!(f.step(), "the first post-ramp frame, hold 2 -> 1");
+        assert!(!f.step(), "hold 1 -> 0 retires it");
+    }
+
+    #[test]
+    fn spawn_fade_stamps_id_into_the_last_template_word() {
+        // FUN_80024E80: `*(u16*)(template + 0x18) = id` before the loader
+        // runs - byte offset 0x18 = i16 index 12 = mode[2]. The loader
+        // copies template[12] onto the state (retail state word 0x11).
+        let t = escape_fade_template();
+        let mut seat = None;
+        spawn_fade(&mut seat, &t, 0x1234);
+        let f = seat.expect("the seat always takes the spawn");
+        assert_eq!(f.mode, [0, -1i16, 0x1234], "id lands in mode[2] only");
+        // Everything else matches a plain load of the same template.
+        let plain = FadeState::load(&t);
+        assert_eq!(f.kind, plain.kind);
+        assert_eq!(f.duration, plain.duration);
+        assert_eq!(f.rgb(), plain.rgb());
+    }
+
+    #[test]
+    fn spawn_fade_replaces_the_fade_in_the_seat() {
+        // The engine's pool is one seat: a second spawn supersedes the first.
+        let mut seat = None;
+        spawn_fade(&mut seat, &escape_fade_template(), 1);
+        spawn_fade(&mut seat, &escape_fade_template(), 7);
+        assert_eq!(seat.map(|f| f.mode[2]), Some(7));
+    }
+
+    #[test]
+    fn spawn_fade_does_not_mutate_the_caller_template() {
+        let t = escape_fade_template();
+        spawn_fade(&mut None, &t, 0x7FFF);
+        assert_eq!(t.mode, [0, -1i16, 0], "caller copy untouched");
+    }
+
+    #[test]
+    fn midpoint_is_linear() {
+        let mut f = FadeState::load(&escape_fade_template());
+        for _ in 0..0x20 {
+            f.step();
+        }
+        let [r, ..] = f.rgb();
+        // 0xFF*0x40/0x40 per frame in q6: after 32 frames ≈ 127.
+        assert!((126..=128).contains(&r), "halfway ≈ mid grey, got {r}");
+    }
+
+    #[test]
+    fn prologue_ambient_restages_lit_rows_only() {
+        // A lit-row vertex and a baked vertex authored at exactly 0x80 carry
+        // the same colour; only the mask tells them apart.
+        let mut colors = [[0x80; 3], [0x80; 3], [0x30, 0x28, 0x00]];
+        apply_prologue_lit_ambient(&mut colors, &[true, false, false]);
+        assert_eq!(colors[0], [PROLOGUE_LIT_AMBIENT; 3]);
+        assert_eq!(colors[1], [0x80; 3], "a baked 0x80 word keeps its colour");
+        assert_eq!(colors[2], [0x30, 0x28, 0x00]);
+    }
+}

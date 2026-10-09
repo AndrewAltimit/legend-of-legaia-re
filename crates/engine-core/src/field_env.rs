@@ -134,6 +134,48 @@ pub struct EnvDraw {
     pub view_skip: u16,
 }
 
+impl EnvDraw {
+    /// Place one object-local vertex in the Y-down world frame: the record's
+    /// three authored angles composed `Rx * Ry * Rz` (retail's
+    /// `FUN_80026988`, the order [`Self::rot_x`] documents), then the draw's
+    /// world position plus a coplanar `lift`.
+    ///
+    /// This is the composition the native window's placement passes build
+    /// with `legaia_engine_ui::battle_intro::placement_rotation`, as one
+    /// kernel for the bakes that write world-space vertices themselves (the
+    /// dance hall and the fishing venue, on every host). A bake that reads
+    /// [`Self::rot_y`] alone stands every tilted placement upright - the
+    /// dance hall's 21 tilted draws include its three video walls, which a
+    /// yaw-only bake buried inside the back wall.
+    ///
+    // REF: FUN_80026988
+    pub fn place_point(&self, p: [f32; 3], lift: [f32; 3]) -> [f32; 3] {
+        let [x, y, z] = self.rotate(p);
+        [
+            x + self.world_x as f32 + lift[0],
+            y + self.world_y as f32 + lift[1],
+            z + self.world_z as f32 + lift[2],
+        ]
+    }
+
+    /// The rotation half of [`Self::place_point`]: `Rx * Ry * Rz` applied to
+    /// a direction (a normal, an extent corner), no translation.
+    ///
+    // REF: FUN_80026988
+    pub fn rotate(&self, v: [f32; 3]) -> [f32; 3] {
+        let a = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+        let (sx, cx) = a(self.rot_x).sin_cos();
+        let (sy, cy) = a(self.rot_y).sin_cos();
+        let (sz, cz) = a(self.rot_z).sin_cos();
+        let [x, y, z] = v;
+        // Rz, then Ry, then Rx: the product `Rx * Ry * Rz` applied to `v`.
+        let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+        let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
+        let (y, z) = (y * cx - z * sx, y * sx + z * cx);
+        [x, y, z]
+    }
+}
+
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
 /// resolved from.
 ///
@@ -732,6 +774,115 @@ pub fn placed_draw_displacements(
         .collect()
 }
 
+/// The rotation that takes an object drawn at its bind-time angles `seed` to
+/// the angles its actor holds now, `live` (both PSX `(pitch, yaw, roll)`, see
+/// [`crate::world::World::object_draw_turns`]): `R(live) * R(seed)^-1`, with
+/// `R = Rx * Ry * Rz` in the retail field frame - the composition
+/// `FUN_80026988` builds for the case-5 draw. Column-major 4x4, rotation
+/// only.
+///
+/// A host turns a placed draw about its own origin `o` (the model's
+/// translation) as `T(o) * M * T(-o) * model`, before the
+/// [`crate::world::World::object_draw_displacements`] translation.
+// REF: FUN_80026988, FUN_8001ADA4
+pub fn object_turn_matrix(seed: [u16; 3], live: [u16; 3]) -> [f32; 16] {
+    let r = |a: [u16; 3]| -> [[f32; 3]; 3] {
+        let ang = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+        let (sx, cx) = ang(a[0]).sin_cos();
+        let (sy, cy) = ang(a[1]).sin_cos();
+        let (sz, cz) = ang(a[2]).sin_cos();
+        let rx = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+        let ry = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+        let rz = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+        mul3(&mul3(&rx, &ry), &rz)
+    };
+    let (a, b) = (r(live), r(seed));
+    // R(seed) is orthonormal: its inverse is its transpose.
+    let bt: [[f32; 3]; 3] = std::array::from_fn(|i| std::array::from_fn(|j| b[j][i]));
+    let m = mul3(&a, &bt);
+    let mut out = [0.0f32; 16];
+    for c in 0..3 {
+        for row in 0..3 {
+            out[c * 4 + row] = m[row][c];
+        }
+    }
+    out[15] = 1.0;
+    out
+}
+
+/// Turn a placed draw's column-major `model` about its own origin (its
+/// translation column) by `turn` ([`object_turn_matrix`]):
+/// `T(o) * turn * T(-o) * model`. The translation is kept; only the linear
+/// part is left-multiplied.
+pub fn turn_placed_model(model: &[f32; 16], turn: &[f32; 16]) -> [f32; 16] {
+    let mut out = *model;
+    for c in 0..3 {
+        for row in 0..3 {
+            out[c * 4 + row] = (0..3).map(|k| turn[k * 4 + row] * model[c * 4 + k]).sum();
+        }
+    }
+    out
+}
+
+/// A placed draw's model at its actor's live state: turned about its own
+/// origin by the record's scripted turn ([`turn_placed_model`],
+/// [`World::object_draw_turn_matrices`]), then translated by its scripted
+/// displacement ([`World::object_draw_displacements`]) - retail's case-5 draw
+/// reads the actor, not the `.MAP` record. `record` is the draw's bind record
+/// ([`placed_bind_records`]); an unbound, unturned, unmoved draw keeps
+/// `model`. The field's placed objects and the overworld's landmarks both go
+/// through it on the native window, which used to spell it twice.
+///
+/// [`World::object_draw_turn_matrices`]: crate::world::World::object_draw_turn_matrices
+/// [`World::object_draw_displacements`]: crate::world::World::object_draw_displacements
+pub fn live_placed_model(
+    model: &[f32; 16],
+    record: Option<usize>,
+    turns: &HashMap<usize, [f32; 16]>,
+    moves: &HashMap<usize, [i32; 3]>,
+) -> [f32; 16] {
+    let mut out = match record.and_then(|r| turns.get(&r)) {
+        Some(t) => turn_placed_model(model, t),
+        None => *model,
+    };
+    if let Some(d) = record.and_then(|r| moves.get(&r)) {
+        out[12] += d[0] as f32;
+        out[13] += d[1] as f32;
+        out[14] += d[2] as f32;
+    }
+    out
+}
+
+/// Per placed draw, the env-pack slot a scripted-motion stream's op `0x0E`
+/// swapped in ([`World::object_live_models`]), `None` for a draw that keeps
+/// its own mesh. Only the draw the stream drives swaps - the **first**
+/// placement of its record ([`stream_bound_draws`]) - and only a slot below
+/// `0xF0` (the stream's sentinel range). Both play hosts, field and overworld
+/// alike, ask this; the native overworld pass and the page each spelled the
+/// first-draw rule themselves.
+///
+/// [`World::object_live_models`]: crate::world::World::object_live_models
+// REF: FUN_8003A9D4
+pub fn placed_model_swaps(
+    records: &[Option<usize>],
+    models: &std::collections::BTreeMap<usize, i16>,
+) -> Vec<Option<usize>> {
+    records
+        .iter()
+        .zip(stream_bound_draws(records))
+        .map(|(r, bound)| {
+            r.filter(|_| bound)
+                .and_then(|r| models.get(&r))
+                .filter(|&&id| (0..0xF0).contains(&id))
+                .map(|&id| id as usize)
+        })
+        .collect()
+}
+
+fn mul3(a: &[[f32; 3]; 3], b: &[[f32; 3]; 3]) -> [[f32; 3]; 3] {
+    std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|k| a[i][k] * b[k][j]).sum()))
+}
+
 /// The identity a window-owned placed draw shares with the actor the sub-area
 /// window sweep spawns for it: the footprint-anchor tile plus the X/Z the
 /// sweep computes (`tile * 0x80 + 0x40 + desc[+0]`, `tile * 0x80 - (desc[+4] -
@@ -880,6 +1031,12 @@ pub fn story_hidden_records_for_scene(
     let mut w = crate::world::World::new();
     w.seed_free_roam_story_baseline(&scene.name);
     w.seed_field_channels(&man_file, &man_bytes);
+    w.set_object_bind_rots(
+        map_bytes
+            .as_deref()
+            .map(|map| crate::man_field_scripts::object_script_bind_rots(map, &triggers))
+            .unwrap_or_default(),
+    );
     w.seed_object_channels(&man_file, &man_bytes, &object_binds);
     w.hidden_object_records()
 }
@@ -1933,17 +2090,10 @@ pub fn env_draws_world_aabb(
             // the box rather than the vertices is conservative by at most the
             // box's own slack and costs one pass per placement instead of one
             // per vertex.
-            let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-            let (sn, cs) = ang.sin_cos();
-            let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
             for cx in [ext.0[0], ext.1[0]] {
                 for cy in [ext.0[1], ext.1[1]] {
                     for cz in [ext.0[2], ext.1[2]] {
-                        let w = [
-                            cs * cx + sn * cz + t[0],
-                            cy + t[1],
-                            -sn * cx + cs * cz + t[2],
-                        ];
+                        let w = d.place_point([cx, cy, cz], [0.0; 3]);
                         for ax in 0..3 {
                             lo[ax] = lo[ax].min(w[ax]);
                             hi[ax] = hi[ax].max(w[ax]);
@@ -2141,6 +2291,69 @@ mod anim_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
+        EnvDraw {
+            env_slot: 0,
+            res_tmd: 0,
+            world_x: 100,
+            world_y: -50,
+            world_z: 7,
+            rot_y,
+            rot_x,
+            rot_z,
+            anim_id: 0,
+            anchor: (0, 0),
+            floor: FloorAnchor {
+                corners: None,
+                nibble: None,
+            },
+            cell: (0, 0),
+            cull_radius: 0,
+            view_skip: 0,
+        }
+    }
+
+    /// `place_point` is `Rx * Ry * Rz` (the right-handed per-axis matrices
+    /// the native window's `placement_rotation` builds with glam) applied to
+    /// the vertex, then the translation - checked against the explicit
+    /// matrix product, with all three axes non-zero so a reversed order or
+    /// a negated angle cannot pass.
+    #[test]
+    fn place_point_composes_rx_ry_rz_then_translates() {
+        type M = [[f32; 3]; 3];
+        let mul = |a: M, b: M| -> M {
+            std::array::from_fn(|r| {
+                std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum())
+            })
+        };
+        let ang = |v: u16| f32::from(v) * std::f32::consts::TAU / 4096.0;
+        let (rx, ry, rz) = (0x0123u16, 0x0456u16, 0x0789u16);
+        let (sx, cx) = ang(rx).sin_cos();
+        let (sy, cy) = ang(ry).sin_cos();
+        let (sz, cz) = ang(rz).sin_cos();
+        let mx: M = [[1.0, 0.0, 0.0], [0.0, cx, -sx], [0.0, sx, cx]];
+        let my: M = [[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]];
+        let mz: M = [[cz, -sz, 0.0], [sz, cz, 0.0], [0.0, 0.0, 1.0]];
+        let m = mul(mul(mx, my), mz);
+        let v = [13.0f32, -29.0, 41.0];
+        let lift = [0.5, -0.25, 1.0];
+        let want: [f32; 3] = std::array::from_fn(|r| {
+            (0..3).map(|k| m[r][k] * v[k]).sum::<f32>() + [100.0, -50.0, 7.0][r] + lift[r]
+        });
+        let got = tilted_draw(rx, ry, rz).place_point(v, lift);
+        for i in 0..3 {
+            assert!(
+                (got[i] - want[i]).abs() < 1e-3,
+                "axis {i}: {got:?} vs {want:?}"
+            );
+        }
+        // Pure yaw reduces to the yaw-only bake the venues used to run.
+        let (s, c) = ang(0x400).sin_cos();
+        let y = tilted_draw(0, 0x400, 0).place_point(v, [0.0; 3]);
+        assert!((y[0] - (v[0] * c + v[2] * s + 100.0)).abs() < 1e-3);
+        assert!((y[2] - (-v[0] * s + v[2] * c + 7.0)).abs() < 1e-3);
+    }
 
     /// `slti v0,v0,0xa0` at `0x8001B1C0`: a view depth of `0xA0` draws, one
     /// below it does not, and an origin behind the eye never does.
@@ -2490,5 +2703,49 @@ mod tests {
         let placements = vec![placement(Some(0), Some(6), 8)];
         let (draws, _) = resolve_env_draws(&env_tmds, &placements, None);
         assert_eq!(draws[0].world_y, 0);
+    }
+}
+
+#[cfg(test)]
+mod live_placed_tests {
+    use super::*;
+
+    /// Turn about the draw's own origin, then move: the translation picks up
+    /// the displacement, the linear part the turn, and an unbound draw keeps
+    /// its model.
+    #[test]
+    fn turn_then_move_about_the_origin() {
+        let mut model = [0.0f32; 16];
+        model[0] = 1.0;
+        model[5] = 1.0;
+        model[10] = 1.0;
+        model[15] = 1.0;
+        model[12] = 100.0;
+        model[14] = 200.0;
+        // A quarter turn about Y.
+        let mut turn = [0.0f32; 16];
+        turn[2] = -1.0;
+        turn[5] = 1.0;
+        turn[8] = 1.0;
+        turn[15] = 1.0;
+        let turns = HashMap::from([(7usize, turn)]);
+        let moves = HashMap::from([(7usize, [5, -6, 7])]);
+        let out = live_placed_model(&model, Some(7), &turns, &moves);
+        assert_eq!(&out[12..15], &[105.0, -6.0, 207.0]);
+        assert_eq!((out[0], out[2], out[8]), (0.0, -1.0, 1.0));
+        assert_eq!(live_placed_model(&model, None, &turns, &moves), model);
+        assert_eq!(live_placed_model(&model, Some(8), &turns, &moves), model);
+    }
+
+    /// Only a record's first placement swaps, and only to a slot below the
+    /// stream's `0xF0` sentinel range.
+    #[test]
+    fn model_swaps_take_the_first_placement_below_the_sentinel() {
+        let records = [Some(3), None, Some(3), Some(4), Some(5)];
+        let models = std::collections::BTreeMap::from([(3usize, 9i16), (4, 0xF0), (5, -1)]);
+        assert_eq!(
+            placed_model_swaps(&records, &models),
+            vec![Some(9), None, None, None, None]
+        );
     }
 }

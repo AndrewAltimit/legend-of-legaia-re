@@ -23,10 +23,15 @@ pub trait AudioSink {
     /// output shares with its device callback.
     fn with_core<R>(&self, f: impl FnOnce(&mut StreamResampler) -> R) -> R;
 
-    /// Toggle the monaural downmix (the retail options screen's
-    /// "Sound: Stereo / Monaural" row): L/R are averaged into both channels.
+    /// Toggle monaural output (the retail options screen's "Sound: Stereo /
+    /// Monaural" row): each SPU voice sounds at the larger of its two
+    /// volumes on both sides, as libsnd's `SsSetMono` does ([`crate::Spu::mono`]),
+    /// and the final mix (XA included) is averaged into both channels.
     fn set_mono(&self, mono: bool) {
-        self.with_core(|s| s.mono = mono);
+        self.with_core(|s| {
+            s.mono = mono;
+            s.spu.mono = mono;
+        });
     }
 
     /// Master mute gate. Every producer (sequencer, SPU voices, XA stream,

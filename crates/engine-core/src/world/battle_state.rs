@@ -490,6 +490,17 @@ pub struct BattleState {
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
     /// entry.
     pub vram_moves: Vec<crate::world::ScriptVramMove>,
+    /// Battle VRAM strip rotations the live effect parts' mode-4 render tail
+    /// fired this frame - the cyclic texel scroll `FUN_80021DF4` runs on a
+    /// part with `+0x5A == 4` (PROT 0903's fire tunnel animates its flame
+    /// band this way). Applied with [`Self::vram_moves`] by
+    /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
+    /// entry.
+    pub vram_scrolls: Vec<crate::world::ambient::vram_scroll::VramScrollFx>,
+    /// How the engine's one-vsync ticks group into battle frames - the unit
+    /// the root-motion carry truncates over and the camera steps on
+    /// ([`crate::world::World::set_battle_frame_step`]).
+    pub frame_clock: crate::world::battle::BattleFrameClock,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -781,6 +792,8 @@ impl BattleState {
             arrival: Default::default(),
             backdrop_rebound: false,
             vram_moves: Vec::new(),
+            vram_scrolls: Vec::new(),
+            frame_clock: Default::default(),
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

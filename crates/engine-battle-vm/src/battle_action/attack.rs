@@ -463,12 +463,19 @@ fn swing_drift<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleActionCtx
         return;
     }
     let dt = host.frame_dt().clamp(0, 0xFF) as u8;
+    let frame = host.battle_frame();
     let nudge = |host: &mut H, who: u8, angle: u16, speed: i16| {
         let Some((x, z)) = host.actor_position(who) else {
             return;
         };
         let (sin, cos) = motion::trig12(angle);
-        let (dx, dz) = motion::root_motion_step(sin, cos, speed, dt, rate);
+        // Retail truncates once a battle frame; the carry spreads that
+        // frame's total over the engine's ticks (`RootMotionCarry`).
+        let raw = motion::root_motion_raw(sin, cos, speed, dt, rate);
+        let (dx, dz) = match host.actor_mut(who) {
+            Some(a) => a.drift_carry.step_in_frame(frame, raw),
+            None => (raw.0 >> 15, raw.1 >> 15),
+        };
         host.set_actor_position(who, x.wrapping_add(dx as i16), z.wrapping_add(dz as i16));
     };
     nudge(host, slot, facing, -SWING_DRIFT_SPEED);

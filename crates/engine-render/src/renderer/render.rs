@@ -1078,6 +1078,7 @@ impl Renderer {
         ];
         let tex_window_packed = pack_tex_window(self.tex_window.get());
         let (clips_textured, clips_color) = self.draw_clips.borrow().clone();
+        let nclip_textured = self.draw_nclip.borrow().clone();
         let grade = self.color_grade.get();
         // flags[2] is set per draw below: 1.0 = environment geometry the
         // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
@@ -1109,11 +1110,15 @@ impl Renderer {
                     mvp: Mat4,
                     cue: Option<crate::DrawCue>,
                     occl_allowed: bool,
-                    clip: Option<DrawClip>| {
+                    clip: Option<DrawClip>,
+                    nclip: Option<u32>| {
             let [c0, c1, c2] = pack_draw_clip(clip);
             let tex_window = [tex_window_packed, c0, c1, c2];
             let mut flags = flags_base;
             flags[2] = if occl_allowed { 1.0 } else { 0.0 };
+            if let Some(mode) = nclip {
+                flags[0] = mode.min(2) as f32;
+            }
             let model = match inv_vp {
                 Some(inv) => model_rows(&(inv * mvp)),
                 None => MODEL_ROWS_IDENTITY,
@@ -1172,10 +1177,11 @@ impl Renderer {
                 draw.cue,
                 i < occl_env_textured,
                 clip,
+                nclip_textured.get(i).copied().flatten(),
             );
         }
         if let Some((_, mvp)) = scene.overlay_lines {
-            push(&mut bytes, scene.draws.len(), mvp, None, false, None);
+            push(&mut bytes, scene.draws.len(), mvp, None, false, None, None);
         }
         // Colour-mesh slots follow the draws + the optional overlay-lines slot.
         let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
@@ -1187,6 +1193,7 @@ impl Renderer {
                 draw.cue,
                 i < occl_env_color,
                 clips_color.get(i).copied().flatten(),
+                None,
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

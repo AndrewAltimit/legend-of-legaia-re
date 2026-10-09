@@ -507,6 +507,40 @@ Spirit, ahead of healing itself when no ally is worse off; not on the round
 after a heavy one from a foe that has never hit hard twice running, and never
 against a foe that telegraphs its hit with a charge latch.
 
+The cadence read needs four rounds, and Rogue (`rugi` P2[38], 28200 HP) does
+not always leave them: its first party-wide hit, on the second stretch, takes
+about 1700 from members holding 1560..1802, and when it drops two of the three
+the party revives one at a quarter of its HP per quiet round into the next
+hit, which drops it again. A lost attempt is therefore remembered: when a boss
+wipes the party and its round history (the stretch the wipe ended included)
+shows party-wide hits on every other stretch, on one parity, never two in a
+row, the reload guards that boss's heavy stretches from the first one, sizing
+the threat by the hit it learned. Only a reload of the same segment against
+the same boss uses it; a fight the hand wins first time is played exactly as
+before.
+
+Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
+battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
+Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
+party seat - and the scene runs it with no scripted-loss latch, so the party
+must deal 20000 inside four rounds while each round's cast takes 600..700 off
+one member. The hand fights it without heal turns (`racing_a_finisher`):
+Vahn and Noa type their Fury-boosted Miracle Arts every round, Gala casts or
+hands out the attack Elixir, and spends a turn on a heal only when an Arts
+member would not live through Koru's biggest hit so far, never on the
+finisher's own round. A seated beat whose band stages a fight tops a party
+not near full up first, as the pad walk does, and the seated pass reloads a
+boss wipe with a fresh hand up to `PAD_WIPE_ATTEMPTS` times, as the pad pass
+does: on one stream the race is won or lost by a few dozen HP.
+
+A pad walk whose route runs out short of its goal heads straight for the
+goal, except into a walk-on band that leaves the scene: the plan keeps those
+clear, and once a live one closes the only corridor the goal is behind it
+(`deene` P2[13] at (16..18, 23), the cutscene out to `map03`, live on some
+streams by the time the hand walks to P1[12]). The walk reports no path
+instead of stepping onto it, and the beat pass moves on - on those streams
+the talk lay behind the band and the walk left the town without it.
+
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
 (`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
@@ -733,7 +767,11 @@ A retry is reported as `pad (attempt N, element-E guards)`, or `pad (attempt N)`
 when there was no element to guard. The Jette
 fight on `jette_fortress_late -> noaru_valley` is the same shape: a Dark
 50000 HP boss the unguarded hand loses at about half its HP, and wins once
-guarded.
+guarded. It is met in the **seated** pass too, so the seated pass takes the
+same guard retry - once, from the same seed - and reports it as `seated
+(element-E guards)`; unguarded, that one hand decided the segment's
+`progresses` and `pad` tiers together, and any change to how long a battle
+action runs moved it.
 
 ## Seeding
 

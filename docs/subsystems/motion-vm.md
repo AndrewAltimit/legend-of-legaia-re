@@ -30,7 +30,7 @@ which runs the whole op table (bodies split for length into
 [`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs)).
 Because its bytecode arrives as MAN tail-section data rather than through the
 actor tick's own buffer, a *static* decode of the same bytes exists too -
-[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs),
+[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs),
 which answers which stream binds to which placement, at what wander pace, with
 what default-move harvest, without running anything.
 
@@ -371,7 +371,7 @@ Two deliberate departures: LUT indices `8..=15` are treated as no-ops rather tha
 
 ## Engine consumers
 
-The runtime [`Camera`](../../crates/engine-core/src/camera.rs) in `engine-core` consumes:
+The runtime [`Camera`](../../crates/engine-field/src/camera.rs) in `engine-core` consumes:
 
 - The field-VM op-`0x45` event stream (`CameraConfigure` / `CameraSave` / `CameraLoad` / `CameraApply`) for the high-level camera state.
 - The motion VM (optional) for cinematic pre-baked camera paths via `Camera::tick_script`.

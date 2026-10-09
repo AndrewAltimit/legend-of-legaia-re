@@ -595,8 +595,13 @@ engaged bit `+0x10 & 0x80000` (`lw a1,0x1c(s0)` off `0x8007C348` is
 context, so a script that holds the player keeps the countdown rearming and
 the HUD never comes up - which is why no ending scene, whose entry script
 spawns the credits record and never lets it end, shows a party readout. The
-port's `world_map_panel_host::field_hud_rearm_held` answers that term for
-both hosts.
+routine reads that bit a frame behind the runner: it runs in the player's
+tick `FUN_801D1344` (`jal 0x801D0D38` at `0x801D1660`), and the player node
+is on `_DAT_8007C34C`, the first actor list `FUN_80016444` walks, while the
+runner steps from `FUN_8003BC08` on the later `_DAT_8007C354` list - so the
+frame a record first engages the player still draws the readout. The port's
+`world_map_panel_host::field_hud_rearm_held` answers that term for both
+hosts, and `FieldPartyHud::rearm_term` delays it the same frame.
 
 The routine is field-overlay code (PROT 0897, slot A at `0x801CE818`), so it
 draws nothing on a frame that slot holds another image. The field-to-battle
@@ -1599,7 +1604,7 @@ deliberate dead end: `suimon` is a sluice-gate puzzle, and its own scene-entry
 script `P1[0]` is what sets the flag.
 
 Recovering that second arm is what
-[`man_field_scripts::partition2_scene_changes`](../../crates/engine-core/src/man_field_scripts/scene_triggers.rs)
+[`man_field_scripts::partition2_scene_changes`](../../crates/engine-field/src/man_field_scripts/scene_triggers.rs)
 does, and the trap is that "the arms differ" has to mean the whole
 destination, not the scene name. A post-beat dungeon variant differs by name
 (`map01`'s `dolk` -> `dolk2` on flag `0x142`); a two-ended pass names one
@@ -1704,7 +1709,7 @@ the mover-follows-the-remap agreement, and the frame's handedness
 The walk camera is the **field zone camera**. The overworld is a mode-`0x03`
 field-run scene and runs the field overlay's per-frame chain, and its camera
 is the follow camera every field scene has
-([`camera_zone`](../../crates/engine-core/src/camera_zone.rs)): the kingdom
+([`camera_zone`](../../crates/engine-field/src/camera_zone.rs)): the kingdom
 MAN's section-3 camera-region record loaded into the parameter block at
 `0x8007B606`, composed by `FUN_801DAB90` into the staging descriptor at
 `0x801F3580`, and eased into the live globals. On all three resident
@@ -1872,7 +1877,7 @@ model + script pointer** for every entity.
 #### Classifying the entity kind from its script
 
 Retail has no static "entity kind" field - a placed actor *is* what its script
-does. [`classify_placements`](../../crates/engine-core/src/man_field_scripts.rs)
+does. [`classify_placements`](../../crates/engine-field/src/man_field_scripts.rs)
 linearly disassembles each placement's per-entity interaction script (records
 `1..` are the actor interaction scripts) and reads the kind off its
 distinguishing opcodes:
@@ -1897,7 +1902,7 @@ so it **desyncs inside embedded message / SJIS text** and can land on a `0x3E`
 whose next byte is `>= 100`. Every such phantom in the corpus rides the `0x80`
 cross-context prefix and carries an out-of-range `op0` (175 / 179 / 200, i.e.
 text bytes), so the genuine-warp gate (`!extended && op0 in 100..=106`, see
-[`man_field_scripts::classify_placement`](../../crates/engine-core/src/man_field_scripts.rs))
+[`man_field_scripts::classify_placement`](../../crates/engine-field/src/man_field_scripts.rs))
 rejects it - `geremi` (a talk NPC, `op0=200`) and the leftover-JP `other7`
 (`op0=175/179`) used to mis-classify as portals to non-existent maps 75 / 79 / 86
 / 100. Real data: `town01` classifies 14 NPCs / 38 plain; across the whole PROT
@@ -1928,7 +1933,7 @@ in an uncaptured overlay" note assumed unreachable (that note is about the
 *separate* `0x3E` door-warp, whose 7-id selector still resolves its name in an
 uncaptured handler).
 
-[`man_field_scripts::scene_destinations`](../../crates/engine-core/src/man_field_scripts.rs)
+[`man_field_scripts::scene_destinations`](../../crates/engine-field/src/man_field_scripts.rs)
 walks the partition-1 records, decodes the `0x3F` ops, and keeps each whose
 inline name passes a clean-CDNAME-label gate (rejecting the text-desync phantoms
 a literal `?` = `0x3F` inside a message produces). On `map01` (Drake overworld)
@@ -2476,17 +2481,41 @@ genuine continent-**walk** RAM image that address disassembles as data, not
 code - the `0x801F76xx` range aliases across overlays.)
 
 **`FUN_801F73E4`** (608 bytes,
-`overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt`) is a
-per-cell GTE **emit helper** in the overview-render extension pack
-(byte-attributed to `world_map_render`, PROT 0901, by
-`classify-worklist.py --explain`), a sibling of the `FUN_801F69D8` sweep. It
-reads a screen-origin accumulator at `0x8007B792`, applies the GTE rotate /
-transfer pair (`FUN_800172C0` / `FUN_8003D1EC` / `FUN_8003D368`), derives a
-tile screen position from the transformed vertex plus the perspective-divided Z
-(`>> 6`), gates the fill colour word (`0x80808080` vs `0x40404040`) on a
-depth / visibility test (`FUN_8003CE64`), and posts a `0x14C`-command packet
-off the scratchpad prim cursor `0x1F8003A0`. Pure GTE/GPU primitive emitter -
-render-track, documented-not-ported.
+`overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt`,
+PROT 0901) is the **overworld sky band**. The terrain sweep `FUN_801F69D8`
+calls it first, unconditionally (`jal` at `0x801F6A18`), so every overworld
+frame draws it, and it links everything into the farthest ordering-table
+bucket (`*0x1F8003F4 + *0x1F8003A6 * 4 - 8`): the terrain draws over it.
+
+- **Placement.** It saves the yaw word `_DAT_8007B792`, zeroes it and rebuilds
+  the view (`FUN_800172C0`), loads `TR` with the raw eye trio
+  `0x800840B8` (`FUN_8003D1EC`), and `RTPS`es `(0, 0, 10000)`
+  (`FUN_8003D368`). Under the `6x` base matrix that vector's eye-space image
+  is `TR + 60000 * (0, -sin pitch, cos pitch)` - roll drops out - so `sy` is
+  the horizon row of the camera; the band's top edge is `sy + 16`.
+- **Scroll.** `x0 = ((sx + _DAT_80089118 / 64 + yaw) & 0xFF) - 0xFF`: the
+  negated player X over 64 (rounded toward zero) plus the saved yaw, wrapped
+  to one 256-pixel period. Sprite `n` of five sits at `x0 + 128 n`.
+- **Sprites.** Five `SPRT`s (command `0x64`), 128x128 each, alternating the
+  two tiles of the 8bpp page `(512, 256)` (draw-mode packet tpage `0x98`,
+  `FUN_80059010`) with CLUT `0x7A80`; the texture is the kingdom bundle's
+  256-colour TIM. Each is clipped against the left and top screen edges by
+  moving its `u` / `v` origin. The right-edge arm computes `w = 128 - (x -
+  320)`, which **widens** the last sprite past the screen rather than
+  narrowing it; the draw area crops the overhang.
+- **Colour.** `0x808080`, or `0x404040` once system flag `0x14C` is set
+  (`FUN_8003CE64`).
+- It restores the yaw word and rebuilds the view before returning, so the
+  rest of the frame draws under the camera it expected.
+
+Both resident overworld states' packets reproduce exactly at `OFY = 114`
+(Sebucus: band top `-60`, sprites at `x = 0 / 41 / 169 / 297`). The band is
+mostly hidden at the walk camera's pitch - the terrain fills the rows above
+the horizon - and shows where the visible-tile window or the coast leaves the
+top of the frame open. Port: `legaia_engine_vm::world_map_sky` (the packets),
+`legaia_engine_core::world_map_sky` (the gate both hosts call), and
+`legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
+at the far plane so it lands only where the scene drew nothing.
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →

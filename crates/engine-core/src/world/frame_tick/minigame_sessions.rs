@@ -69,6 +69,19 @@ impl World {
         std::mem::take(&mut self.minigames.pending_sfx)
     }
 
+    /// The dance's **auto-end**: once the song-over arm of
+    /// [`tick_dance`](Self::tick_dance) has restored the interrupted mode, tear
+    /// the run down ([`Self::exit_dance`]) and hand back its final game for the
+    /// host to log. `None` while the hall still owns the frame, or with no run.
+    /// The per-frame poll both play hosts make; each used to spell the
+    /// `mode != Dance` test beside its own `exit_dance` call.
+    pub fn finish_dance_if_over(&mut self) -> Option<crate::dance::DanceGame> {
+        if self.mode == SceneMode::Dance {
+            return None;
+        }
+        self.exit_dance()
+    }
+
     /// Clear the dance minigame and return the final [`DanceGame`] so the host
     /// can read the score / pass result. Restores the interrupted mode if it is
     /// still `Dance` (a mid-song abort); when the song already auto-ended
@@ -466,8 +479,10 @@ impl World {
         if let Some(bit) = purchase.latched_bit {
             self.minigames.fishing_prizes_purchased |= 1 << bit;
         }
-        let count = self.party.inventory.entry(purchase.item_id).or_insert(0);
-        *count = count.saturating_add(purchase.qty.min(255) as u8);
+        let _ = self
+            .party
+            .inventory
+            .add(purchase.item_id, purchase.qty.min(255) as u8);
         if let Some(s) = &mut self.minigames.fishing {
             s.record.points = self.minigames.fishing_points;
             s.purchased_mask = self.minigames.fishing_prizes_purchased;
@@ -643,11 +658,11 @@ impl World {
     /// Retail's five minigames each quit through their own overlay's SM - the
     /// slot cabinet's exit menu row, the duel's decided-match confirm, the
     /// arena's give-up arm - and every one of those is a *different* control
-    /// in a *different* overlay. The port has none of them wired to a control
-    /// a player can find: the native window exposes developer hotkeys
-    /// (`O` / `B` / `M`), and the browser play page does not draw four of the
-    /// five modes at all, so entering one there leaves a frozen field with the
-    /// BGM still running and no input that does anything.
+    /// in a *different* overlay. Some are ported (the cabinet's cash-out quit
+    /// row through `SlotMachine::cash_out_input`, the duel cabinet's PAY OUT
+    /// choice), but each is reachable only from its own game's screens and
+    /// not every game's exit is, so without one shared exit an entered
+    /// minigame can still strand the player in a mode with the BGM running.
     ///
     /// That is the invariant [`crate::scene::SceneHost::drain_minigame_warp`]
     /// already states for its *failure* arms - "a script that armed a warp must

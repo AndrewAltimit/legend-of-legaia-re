@@ -97,7 +97,7 @@ The browser play page also reads a gamepad (any controller the browser
 reports with the `standard` mapping), by position: bottom / right / left /
 top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1,
 triggers L2 / R2, back / start Select / Start, and both the d-pad and the
-left stick drive the d-pad. Key Config rebinds keys only. The native window
+left stick drive the d-pad. Key Config (Select on the Options screen) rebinds keys only. The native window
 has no gamepad support yet.
 
 In-window extras: left-mouse drag orbits the camera around your character

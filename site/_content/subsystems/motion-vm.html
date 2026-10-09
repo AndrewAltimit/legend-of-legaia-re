@@ -77,12 +77,13 @@
       <tr><td><code>0x37</code> / <code>0x41</code></td><td>Compass walk</td><td>Walk along one of eight compass directions (axis table at <code>0x80073F14</code>), a tile per count for <code>0x37</code>, half a tile for <code>0x41</code>, over a budget the operand scales</td></tr>
       <tr><td><code>0x38</code></td><td>Rotate to angle</td><td>Ramp the yaw toward a compass angle over a frame budget; shortest arc or a forced direction</td></tr>
       <tr><td><code>0x43</code></td><td>No-op</td><td>Budget consumed, nothing moves</td></tr>
-      <tr><td><code>0x47</code></td><td>Move toward target</td><td>Step X/Z toward a tile, dominant axis first, facing snapped to the compass</td></tr>
+      <tr><td><code>0x47</code></td><td>Move toward target</td><td>Step X/Z toward a tile, facing snapped to the compass; the mode byte's high nibble picks the path (<a href="#approach-mode">below</a>)</td></tr>
       <tr><td><code>0x4C</code></td><td>Face target</td><td>Ramp the yaw to the target's <em>live</em> bearing - tracks a moving target</td></tr>
       <tr><td>other</td><td>Done</td><td>End the leg, clear the halt bit</td></tr>
     </tbody>
   </table>
   <p>The opcode numbers are the field VM's own: the jump table is indexed <code>(op &amp; 0x7F) &minus; 0x37</code> over <code>0x37..0x4C</code>, and every slot not listed above ends the leg.</p>
+  <p id="approach-mode"><strong>The <code>0x47</code> approach mode.</strong> While both axes are still open, the high nibble of the mode byte decides which ones a step moves. Mode <code>0</code> closes the dominant axis alone, clamped to the difference, until the two deltas are equal, then cuts the diagonal. Any other mode masks the open axes at the full step: <code>3</code> walks the diagonal from the first frame and finishes on the longer axis, <code>1</code> closes X first, <code>2</code> Z first. The two laws end an uneven leg facing different ways - mode <code>3</code> along the longer axis, mode <code>0</code> on the diagonal - and cutscene walks carry <code>3</code>.</p>
 </section>
 
 <section class="doc-section" id="facing">

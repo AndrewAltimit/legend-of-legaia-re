@@ -303,6 +303,10 @@ void main() {
   if (u_log_depth.x > 0.5 && (a_flags & 2u) != 0u) {
     float den = a_depth - u_log_depth.y;
     v_log_depth = abs(den) > 0.0 ? logDepthOfW(u_log_depth.z / den) : 1.0;
+    /* The far plane itself (the overworld sky band) is the clear value
+     * exactly, so it lands only where the scene drew nothing - including
+     * in front of nothing in the far-bucket slice just short of it. */
+    if (a_depth >= 1.0) v_log_depth = 1.0;
   }
 }
 `;
@@ -595,11 +599,6 @@ void main() {
        * the focus itself is staged per field frame in `_frame` and never
        * during battle or VR first-person. */
       this.occlusionFade = true;
-      /* Eased occlusion-fade strength (0..1): ramps toward the visibility
-       * gate's verdict a quarter of the gap per frame (the native
-       * redraw.rs OCCL_STRENGTH_EASE twin) so the screen-door dissolves
-       * in/out instead of popping while the gate flips at cover edges. */
-      this._occlStrength = 0;
       /* Retail pause menu (Start): the state + navigation live in the engine
        * (`LegaiaRuntime::play_menu_*`), which serves the byte-pinned window
        * chrome + font glyphs as `{ dst, src, color }` quads. This page owns only
@@ -1129,6 +1128,7 @@ void main() {
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
       this._floorWaveLive = false;
       this._objectMovesLive = false;
+      this._objectTurnsLive = false;
       this._objectTintsLive = false;
 
       /* Player: geometry once, positions re-uploaded per frame from the pose. */
@@ -1202,7 +1202,7 @@ void main() {
     _attachInput() {
       const onKey = (e, down) => {
         if (!this.canvas.matches(':focus-within') && document.activeElement !== this.canvas) return;
-        /* Key Config (the pause menu's Options > Key Config row) needs the
+        /* Key Config (Select on the pause menu's Options screen) needs the
          * PHYSICAL key, not the pad bit it currently carries: the whole point
          * is binding a key that is not in the table yet, and the guard below
          * drops exactly those. `repeat` is skipped so holding the confirm key
@@ -2310,6 +2310,52 @@ void main() {
       this._objectMovesLive = mv.length > 0;
     }
 
+    /* A placed object a script has turned - op 0x38's compass write, op
+     * `4C 48`'s heading write (town0c's exit rocks, turned off the road once
+     * the story opens it) - draws at its actor's live angles, as retail's
+     * case-5 draw does. The engine hands back a per-placement 3x3 (column-
+     * major, page frame) to left-multiply into each draw's linear part, or an
+     * EMPTY array while nothing has turned; `_objectTurnsLive` restores the
+     * baked parts on the falling edge. The native window folds the same
+     * table (`World::object_draw_turn_matrices`) into its placed draws. */
+    _applyObjectTurns(rt) {
+      if (!rt.field_placement_turns) return;
+      const tv = rt.field_placement_turns();
+      if (!tv.length && !this._objectTurnsLive) return;
+      for (const d of this.staticDraws) {
+        if (d.placeIdx === undefined) continue;
+        const k = d.placeIdx * 9;
+        const t = k + 8 < tv.length ? tv.slice(k, k + 9) : null;
+        const turned = t && !(t[0] === 1 && t[4] === 1 && t[8] === 1);
+        if (!turned) {
+          /* Back to the baked draw: a yaw-only placement drops the matrix
+           * this pass made for it, a tilted one gets its linear part back. */
+          if (d.turnModel) { delete d.model; d.turnModel = false; }
+          else if (d.model && d.baseLin) {
+            for (let c = 0; c < 3; c++) {
+              for (let row = 0; row < 3; row++) d.model[c * 4 + row] = d.baseLin[c * 4 + row];
+            }
+          }
+          continue;
+        }
+        /* A yaw-only placement draws through the builder at draw time; a
+         * turned one needs a whole matrix, built from the same law. */
+        if (!d.model) {
+          d.model = placementModelScaledY(d.x, d.y, d.z, d.rotY, d.scale);
+          d.turnModel = true;
+        }
+        if (!d.baseLin) d.baseLin = Array.from(d.model.slice(0, 12));
+        for (let c = 0; c < 3; c++) {
+          for (let row = 0; row < 3; row++) {
+            let v = 0;
+            for (let j = 0; j < 3; j++) v += t[j * 3 + row] * d.baseLin[c * 4 + j];
+            d.model[c * 4 + row] = v;
+          }
+        }
+      }
+      this._objectTurnsLive = tv.length > 0;
+    }
+
     /* A camera-facing terrain / decoration cell (record flags +0x12 & 0x380:
      * rugi's candle glows, the vell forest trees) is rebuilt against this
      * frame's engine camera: retail's decoration pass FUN_801F7088 drops the
@@ -2542,12 +2588,15 @@ void main() {
       /* Field pause menu (Start): consumes this frame's edges and, while up,
        * freezes the field. Must run before the tick reads the pad. */
       const menuOpen = this._updateFieldMenu(simSteps);
+      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Modal:
+       * it suspends the script and takes every edge. Asked before the shop,
+       * in the native window's per-tick order (pause menu, then name entry,
+       * then a menu-overlay screen), so the two hosts hand a frame with more
+       * than one of them up to the same owner. */
+      const namingOpen = menuOpen ? false : this._updateNameEntry(simSteps);
       /* Field merchant (field-VM op 0x49 sub-0). The shop suspends the script
        * on the engine side, so the field must not advance under it either. */
-      const shopOpen = menuOpen ? false : this._updateFieldShop(simSteps);
-      /* Opening name-entry prompt (the `town01` timeline's op 0x49). Suspends
-       * the script the same way, and is modal over everything else. */
-      const namingOpen = (menuOpen || shopOpen) ? false : this._updateNameEntry(simSteps);
+      const shopOpen = (menuOpen || namingOpen) ? false : this._updateFieldShop(simSteps);
 
       /* Under the pause menu or a shop the field does not tick, but the SFX
        * scheduler does: retail's mode-0x17 frame handler still runs the cue
@@ -2722,6 +2771,7 @@ void main() {
        * frame and nothing else on a scene whose script never moves the ladder. */
       this._applyFloorWave(rt);
       this._applyObjectMoves(rt);
+      this._applyObjectTurns(rt);
       this._applyObjectParked(rt);
       this._applyObjectModels(rt);
       this._applyObjectTints(rt);
@@ -2761,6 +2811,13 @@ void main() {
       /* The renderer's sticky per-frame state, staged ahead of EVERY draw
        * branch (see `_stageFrameState`). */
       this._stageFrameState(rt);
+      /* The scene clear colour too: the engine's `World::frame_clear_rgb`
+       * already answers black for the four minigame modes (the native
+       * window clears every venue to it), but the page applied it only on
+       * the field and battle branches, so a minigame drawn through the
+       * renderer's own clear (the Baka title card, before its arena is in
+       * shot) kept the walked-in scene's colour - town01's brown. */
+      this._applySceneClear(rt);
       /* The volumetric ground fog draws over the field and battle frames
        * only - never over a minigame venue, which owns its own VRAM and
        * camera. Raised by the two branches below after their scene draw. */
@@ -2803,67 +2860,25 @@ void main() {
       /* In VR first-person there is no third-person lens: the eye IS the
        * player, so nothing can "sit between" them - draw everything. */
       const fpLive = this._vrFp && this.vr && this.vr.isActive();
-      /* Camera-occlusion fade, two halves (native redraw.rs twin):
-       * 1. Visibility gate - the engine ray-casts a 5-point eye->player
-       *    cross against the static scene triangles (the shared
-       *    engine-core::field_occlusion kernel) and the fade arms only
-       *    when EVERY sample is blocked: a partially visible character
-       *    gets no fade at all. The kernel wants the eye in retail
-       *    Y-down world, so the draw-frame `_eye()` Y negates on the way
-       *    in. A wasm bundle predating the export falls back to the
-       *    always-armed fade rather than losing the feature.
-       * 2. Strength ramp - ease toward the verdict so the screen-door
-       *    dissolves in/out instead of popping at cover edges.
-       * The staged focus is the player's body centre (the same point the
-       * dead cull below used - draw frame, +90 up from the feet); the
-       * renderer projects it with the frame's own camera. */
-      /* The host's own arming terms, beside the engine's. The native window
-       * excludes its boot UI, the world map, a scripted shot and its `F3`
-       * debug vantage; this page excluded only battle and the minigames, so
-       * a pause menu, a name-entry prompt or a cutscene kept dissolving the
-       * walls behind them. The world-side half (field mode, no cutscene
-       * camera, a live player, the body centre itself) is the engine's
-       * `play_occlusion_focus`. */
-      const occlHostOk = this.occlusionFade && !fpLive && !this.debugCamera
-        && !menuOpen && !shopOpen && !namingOpen;
-      let occlFocus = null;
-      /* The floor point under the character (the feet-line rule's anchor):
-       * the engine's `player_feet`, the same floor-tier sample as the focus.
-       * A bundle predating it hands back 3 floats - the rule stays off. */
-      let occlFeet = null;
-      if (occlHostOk) {
-        if (typeof rt.play_occlusion_focus === 'function') {
-          try {
-            const f = rt.play_occlusion_focus();
-            if (f && f.length >= 3) occlFocus = [f[0], f[1], f[2]];
-            if (f && f.length >= 6) occlFeet = [f[3], f[4], f[5]];
-          } catch (_) { occlFocus = null; }
-        } else {
-          /* Cached-bundle fallback: the actor origin, which is the reading
-           * that put the hole off the character on any tile whose floor tier
-           * differs from the actor's own Y. */
-          occlFocus = [pt[0], -pt[1] + HALF_CHAR_HEIGHT, pt[2]];
-        }
-      }
-      if (occlFocus) {
-        let hidden = true;
-        if (typeof rt.field_player_occluded === 'function') {
+      /* Camera-occlusion fade (see-through walls): the engine's
+       * `play_occlusion_fade` runs the whole frame - the shared arming
+       * kernel (`field_occlusion::host_fade_armed`) over this page's terms,
+       * the 5-point visibility gate against the eye (retail Y-down, so the
+       * draw-frame `_eye()` Y negates on the way in) and the `FadeRamp`
+       * the native window steps. It answers `[strength, centre, feet]`
+       * when a focus is to be staged. The centre is the point the gate
+       * tested (`field_occlusion::player_body_centre`); the feet anchor the
+       * feet-line rule. A bundle predating the export draws no fade. */
+      if (typeof rt.play_occlusion_fade === 'function') {
+        let f = null;
+        try {
           const eye = this._eye();
-          hidden = !!rt.field_player_occluded(eye[0], -eye[1], eye[2]);
+          f = rt.play_occlusion_fade(eye[0], -eye[1], eye[2], !!this.occlusionFade,
+            !!(fpLive || this.debugCamera), !!(menuOpen || shopOpen || namingOpen));
+        } catch (_) { f = null; }
+        if (f && f.length >= 7) {
+          this.renderer.setOcclusionFocus([f[1], f[2], f[3]], f[0], [f[4], f[5], f[6]]);
         }
-        const target = hidden ? 1 : 0;
-        this._occlStrength += (target - this._occlStrength) * 0.25;
-        if (Math.abs(this._occlStrength - target) < 0.01) this._occlStrength = target;
-        if (this._occlStrength > 0.01) {
-          /* The focus IS the point `field_player_occluded` tested - the one
-           * `engine-core::field_occlusion::player_body_centre` kernel, which
-           * is why it arrives from the engine rather than being rebuilt
-           * here. Staging the fade at a different height than the gate proved
-           * occluded put the hole ~37px above the character's body centre. */
-          this.renderer.setOcclusionFocus(occlFocus, this._occlStrength, occlFeet);
-        }
-      } else {
-        this._occlStrength = 0;
       }
       if (OCCLUDER_CULL && !fpLive) {
         const eye = this._eye();
@@ -2879,7 +2894,11 @@ void main() {
        * world frame is retail's (+Y down), so the draw negates Y the way every
        * placement does. The mesh's rest pose faces -Z while the engine's heading
        * has 0 = travelling +Z, hence the half-turn. */
-      if (this.player) {
+      /* The scene may hide the lead outright (`play_player_drawn`: the
+       * opening prologue's vignette shots have none), the native actor
+       * pass's skip. */
+      const leadDrawn = typeof rt.play_player_drawn !== 'function' || rt.play_player_drawn();
+      if (this.player && leadDrawn) {
         const posed = rt.player_mesh_positions();
         if (posed.length) this.renderer.updateSceneMeshPositions(PLAYER_MESH_ID, posed);
         const playerDraw = {
@@ -3370,6 +3389,16 @@ void main() {
           cursor = rt.play_battle_actor_cursor();
         }
       } catch (e) { /* no cursor tint this frame */ }
+      /* Retail draws a battle body single-sided unless its colour word
+       * carries the double-sided bit (BattleActorDrawPlan::nclip_mode): one
+       * NCLIP word per actor, riding the placement over the battle pass's
+       * both-sided word. Guarded against a cached WASM without the export. */
+      let nclip = null;
+      try {
+        if (typeof rt.play_battle_actor_nclip === 'function') {
+          nclip = rt.play_battle_actor_nclip();
+        }
+      } catch (e) { /* frame word only */ }
       for (let i = 0; i < b.actors.length; i++) {
         const a = b.actors[i];
         const o = i * 5;
@@ -3417,6 +3446,7 @@ void main() {
            * negated (see placementModelScaledY). */
           rotY: -tf[o + 3],
           scale: (c >= 0) ? S * cursor[c + 5] : S,
+          nclip: (nclip && i < nclip.length) ? nclip[i] : undefined,
           cue: (c >= 0 && cursor[c] > 0.5)
             ? {
               far: [cursor[c + 1], cursor[c + 2], cursor[c + 3]],
@@ -3851,7 +3881,6 @@ void main() {
     setOcclusionFade(on) {
       this.occlusionFade = !!on;
       if (!this.occlusionFade) {
-        this._occlStrength = 0;
         if (this.renderer) this.renderer.clearOcclusionFocus();
       }
     }

@@ -1,0 +1,215 @@
+//! Per-scene **gold-shop stock**, decoded from the disc.
+//!
+//! A town merchant's stock list is not an overlay data table - it lives **inline
+//! in the scene's field-VM script** (the MAN), as field-VM op `0x49` (`STATE_RESUME`)
+//! sub-op `0` carrying `[count][item_ids][ASCII name]`. The shared scanner
+//! [`legaia_asset::shop_stock`] locates these records robustly (a byte-scan that
+//! survives the dialogue-picker jump tables a linear walk desyncs on); this
+//! module pairs it with item prices to populate the engine's
+//! [`crate::shop::ShopInventory`] with real per-scene stock.
+//!
+//! Buy **prices** come from the static `SCUS_942.54` item table (the `u16` at
+//! record `+2`, [`legaia_asset::item_names::item_price`]) - the same field the
+//! gold-debiting buy handler reads. A price of `0` marks a quest / key /
+//! found-only / internal item the game never sells, so the price table doubles
+//! as a **sellable mask** (price `> 0`). The mask does double duty in the scan:
+//! a record must lead with a sellable item (rejecting non-shop `0x49` payloads),
+//! and the record `count` over-counts the purchasable stock by a trailing run of
+//! unsellable template ids (the `Ra-Seru Meta $N` placeholders `0x01..=0x03`,
+//! which *are* named but priced `0`) that the mask trims out of the stock. So
+//! every id the engine surfaces is a real, priced item - and the real shops whose
+//! `count` carries that padding are kept (previously they were dropped whole).
+//!
+//! Nothing here is a Sony byte: the stock ids + prices are decoded from the
+//! user's own disc at runtime, exactly like the level-up growth tables and the
+//! move-power table. Disc-free builds leave `legaia_engine_core::world::ShopState::scene_shops`
+//! empty and fall back to host-supplied stock, so determinism oracles are
+//! unaffected.
+
+use crate::shop::{ShopInventory, ShopItem};
+
+/// Item buy-price table from `SCUS_942.54`, the gold-shop path's source of both
+/// prices and the **sellable mask** (price `> 0`). Built once at boot
+/// ([`Self::from_scus`]) and parked on `legaia_engine_core::world::ShopState::item_shop_data`.
+#[derive(Debug, Clone)]
+pub struct ShopItemData {
+    /// Buy price in gold for each id (`0` = quest / found-only / internal /
+    /// not for sale).
+    prices: [u16; 256],
+}
+
+impl ShopItemData {
+    /// Parse the item buy-price table from `SCUS_942.54` bytes. `None` if the
+    /// executable / its item table is absent (the id-1 price slot must resolve).
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        // Require a parseable item table (id 1's price slot resolves), matching
+        // the randomizer's `sellable_pool` precondition.
+        legaia_asset::item_names::price_slot(scus, 1)?;
+        let mut prices = [0u16; 256];
+        for id in 0u16..=255 {
+            prices[id as usize] = legaia_asset::item_names::item_price(scus, id as u8).unwrap_or(0);
+        }
+        Some(Self { prices })
+    }
+
+    /// Build directly from a 256-entry price table. Mainly for tests and hosts
+    /// that source prices another way; [`Self::from_scus`] is the disc path.
+    pub fn from_prices(prices: [u16; 256]) -> Self {
+        Self { prices }
+    }
+
+    /// Buy price in gold for `id` (`0` = not for sale).
+    pub fn price(&self, id: u8) -> u16 {
+        self.prices[id as usize]
+    }
+
+    /// The 256-entry **sellable mask** (id is priced `> 0`) the shop-record scan
+    /// uses to reject a non-shop `0x49` payload and any phantom record made of
+    /// internal price-`0` ids. Every id in an accepted record is therefore a
+    /// real, priced, sellable item.
+    pub fn sellable_mask(&self) -> [bool; 256] {
+        std::array::from_fn(|id| self.prices[id] > 0)
+    }
+}
+
+/// One gold shop located in a scene bundle: its on-screen name and the priced
+/// stock list the buy UI offers.
+#[derive(Debug, Clone)]
+pub struct SceneShop {
+    /// On-screen shop title (e.g. "Variety Store", "Weapon Shop").
+    pub name: String,
+    /// The buy list (item id + gold price), in display order.
+    pub inventory: ShopInventory,
+}
+
+/// Decode every gold shop in one scene-bundle PROT entry.
+///
+/// `entry_bytes` is the raw PROT entry (the same footprint
+/// [`legaia_asset::scene_asset_table`] expects); `entry_idx` is its PROT index,
+/// used only as the [`ShopInventory::shop_id`] tag. When `item_data` is supplied
+/// the scan uses the **sellable** (priced `> 0`) mask: a record must lead with a
+/// sellable item, and the trailing run of unsellable template-id padding the
+/// record `count` over-counts (the `Ra-Seru Meta $N` placeholders) is trimmed out
+/// of the stock - so the priced stock the player sees is exactly the leading
+/// sellable run (see [`legaia_asset::shop_stock`]). Without it the scan is
+/// structural-only and every price is `0`.
+///
+/// Returns an empty vec when the entry isn't a scene bundle, has no MAN, or has
+/// no shop record.
+pub fn scene_shops(
+    entry_bytes: &[u8],
+    entry_idx: usize,
+    item_data: Option<&ShopItemData>,
+) -> Vec<SceneShop> {
+    let mask = item_data.map(|d| d.sellable_mask());
+    let Some(sc) = legaia_asset::shop_stock::locate(entry_bytes, mask.as_ref()) else {
+        return Vec::new();
+    };
+    sc.records
+        .iter()
+        .map(|shop| {
+            // Retail's buy-list builder does not draw the record in record
+            // order: `FUN_80030628` case `0x0B` hoists the rows at or past
+            // `record_count - 3` to the top of the list (and tags them ink
+            // 5). The record reserves three tail slots for that band and pads
+            // the unused ones with sub-`0x1A` template ids, so the hoisted
+            // width is `3 - padding_len`. A catalog has no party to probe, so
+            // it lists the tail as a Platinum-Card holder sees it; the live
+            // merchant (`World::try_arm_field_shop`) runs the probe.
+            //
+            // PORT: FUN_80030628 (case `0x0B`; the builder is
+            // `crate::menu_list_rows::build_shop_buy_rows`)
+            let record_count = usize::from(sc.decoded.get(shop.count_off).copied().unwrap_or(0));
+            let start = shop.count_off + 1;
+            let record_ids = sc.decoded.get(start..start + record_count).unwrap_or(&[]);
+            let inventory = match item_data {
+                Some(d) => {
+                    ShopInventory::from_stock_record(entry_idx as u8, record_ids, true, |id| {
+                        d.price(id)
+                    })
+                }
+                // Structural-only: keep the declared stock, unpriced.
+                None => ShopInventory::new(
+                    entry_idx as u8,
+                    shop.id_offsets
+                        .iter()
+                        .map(|&off| ShopItem {
+                            item_id: sc.decoded[off],
+                            price: 0,
+                        })
+                        .collect(),
+                ),
+            };
+            SceneShop {
+                name: shop.name.clone(),
+                inventory,
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A synthetic scene-bundle entry exercises the scan + pricing without a
+    /// disc: a MAN body with one op-`0x49` shop record, scanned with a
+    /// sellable mask, and the prices flow through to the inventory.
+    #[test]
+    fn sellable_mask_keeps_priced_record_and_prices_flow() {
+        // ids 0x22/0x34 priced (sellable); 0x05 priced 0 (internal).
+        let mut prices = [0u16; 256];
+        prices[0x22] = 50;
+        prices[0x34] = 120;
+        let data = ShopItemData { prices };
+        let mask = data.sellable_mask();
+        assert!(mask[0x22] && mask[0x34] && !mask[0x05]);
+
+        // A minimal MAN: op 0x49, sub-op 0, length 0, count 2, ids, name.
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x22, 0x34]);
+        man.extend_from_slice(b"Variety Store\0");
+        let records = legaia_asset::shop_stock::scan(&man, Some(&mask));
+        assert_eq!(records.len(), 1, "all-priced record is kept");
+        assert_eq!(data.price(0x22), 50);
+        assert_eq!(data.price(0x34), 120);
+    }
+
+    /// A trailing price-`0` (internal / template) id is the shop-record padding
+    /// the `count` over-counts: the record is KEPT (it leads with a sellable
+    /// item) and the padding is trimmed out of the stock. This is what surfaces
+    /// the real shops whose `count` carries the `Ra-Seru Meta $N` placeholders -
+    /// previously they were wrongly dropped whole.
+    #[test]
+    fn sellable_mask_trims_unsellable_padding_from_stock() {
+        let mut prices = [0u16; 256];
+        prices[0x22] = 50;
+        prices[0x34] = 120;
+        // 0x03 left at price 0 (the template padding id).
+        let data = ShopItemData { prices };
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
+        man.extend_from_slice(b"Variety Store\0");
+        let records = legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask()));
+        assert_eq!(records.len(), 1, "the real shop is kept");
+        let stock: Vec<u8> = records[0].id_offsets.iter().map(|&o| man[o]).collect();
+        assert_eq!(stock, vec![0x22, 0x34], "the 0x03 padding is trimmed");
+
+        // A record that doesn't lead with a sellable item is still rejected.
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x02, 0x03, 0x03]);
+        man.extend_from_slice(b"Variety Store\0");
+        assert!(legaia_asset::shop_stock::scan(&man, Some(&data.sellable_mask())).is_empty());
+
+        // Structural-only (no mask) keeps the full declared list including padding.
+        let mut man = Vec::new();
+        man.extend_from_slice(&[0x49, 0x00, 0x00, 0x03, 0x22, 0x34, 0x03]);
+        man.extend_from_slice(b"Variety Store\0");
+        assert_eq!(
+            legaia_asset::shop_stock::scan(&man, None)[0]
+                .id_offsets
+                .len(),
+            3
+        );
+    }
+}

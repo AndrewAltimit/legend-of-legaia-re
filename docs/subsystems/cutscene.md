@@ -563,9 +563,14 @@ The Form-1 extract written to `extracted/MOV/*.STR` keeps the video sectors inta
 each Form-2 audio sector from 2324 to 2048 bytes, corrupting the audio. Faithful playback therefore
 reads the raw 2352-byte sectors **straight off the disc image**:
 [`legaia_engine_shell::cutscene_av::decode_str_av_from_disc`](../../crates/engine-shell/src/cutscene_av.rs)
-makes one pass over the sectors, routing Form-2 audio to a per-`(file_no, ch_no)` buffer (à la
-[`legaia_xa::demux`]) and the rest to the [`StrFrameAssembler`], then decodes the dominant audio
-channel to PCM and the video to RGBA frames.
+makes one pass over the sectors through the shared demuxer
+[`legaia_mdec::str_av::StrAvDemuxer`](../../crates/mdec/src/str_av.rs), routing Form-2 audio to a
+per-`(file_no, ch_no)` buffer and the rest to the [`StrFrameAssembler`], then decodes the dominant
+audio channel to PCM and the video to RGBA frames. The browser play page opens a movie through the
+same demuxer (`play_fmv.rs`), so both hosts index frames by assembled frame (a frame that later
+fails to decode keeps its slot), derive the frame rate from the same sector stride and pick the
+same soundtrack channel; they differ only in when a frame's bitstream is decoded - the native
+window decodes all of them up front, the page one per request.
 
 The decoded PCM is staged into the engine's audio output ([`AudioOut::play_xa`]) and the video clock
 is driven off the audio cursor ([`AudioOut::xa_cursor_secs`]): the visible frame is
@@ -893,7 +898,7 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   The scene-entry SEAT lands *on* the trigger tile, and the stale last-tile compare fires the same tick - so an arrival spawns the opening record immediately. `gate = 1` spawns the P2 record; `gate = 0` records are object-binds consumed at scene init (`FUN_8003A55C`) and never spawn.
   Engine: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-vm/src/field_regions.rs), [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs), `SceneHost`'s `spawn_arrival_trigger_record`.
 
-Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates** against the bitmap at `DAT_80085758` (`bit = byte[flag >> 3] & (0x80 >> (flag & 7))`): **C1 blocks the spawn if ANY listed flag is set** - the one-shot mechanism (`town01` P2[3] lists `0x225`, set once the opening has played) - and **C2 requires ALL listed flags set**. Engine mirror: [`World::p2_record_gates_pass`](../../crates/engine-core/src/world/narration.rs) over [`man_field_scripts::partition2_record_gates`](../../crates/engine-core/src/man_field_scripts/partitions.rs).
+Before spawning, `FUN_8003BDE0` checks the P2 record's **C1/C2 story-flag gates** against the bitmap at `DAT_80085758` (`bit = byte[flag >> 3] & (0x80 >> (flag & 7))`): **C1 blocks the spawn if ANY listed flag is set** - the one-shot mechanism (`town01` P2[3] lists `0x225`, set once the opening has played) - and **C2 requires ALL listed flags set**. Engine mirror: [`World::p2_record_gates_pass`](../../crates/engine-core/src/world/narration.rs) over [`man_field_scripts::partition2_record_gates`](../../crates/engine-field/src/man_field_scripts/partitions.rs).
 
 ### The `opdeene` timeline record
 
@@ -950,7 +955,7 @@ The line pitch is a fixed 16 (retail `addiu s3,s3,0x10`); an earlier capture-fit
 
 The cold-boot `opdeene` capture (`s1_newgame_field`) holds the frame-step floor `DAT_8007B9D8` at `3` and a live roller's accumulator at `3` one frame after a step, so at divisor 4 the crawl climbs a pixel every two frames - 10 px/s, the realtime-video figure the capture-fitted model had approximated with a frame count. The same capture pins the roller's `n + 1 = 9` slot states and its sub-scroll. The floor's writer is the scene: `opdeene`'s prescript record 16 opens with move-VM ext sub-op `0x2F` operand `3` (stored to `DAT_8007B9D8` at `0x801D45E4`, PROT 0897). The engine's field scene entry installs the loader's `2`, the stager raises it to `3` before the first crawl opens, and the roller takes the world's cadence at open.
 
-The timeline stepper installs each block's pages when its PC reaches the block's op ([`NarrationSite`](../../crates/engine-core/src/cutscene_timeline.rs)) and, mirroring the child-context spawn, lets the timeline **continue** (non-blocking) - for **every** block, the last included - so the record's own choreography plays under the crawl. Its two holds are exactly retail's: at a **new** block's op while a prior roller still scrolls, and at a `B3 F8 0A` while any pages are still up. `World::tick` advances the roller independent of the timeline; the host renders `visible_lines()`.
+The timeline stepper installs each block's pages when its PC reaches the block's op ([`NarrationSite`](../../crates/engine-menus/src/cutscene_timeline.rs)) and, mirroring the child-context spawn, lets the timeline **continue** (non-blocking) - for **every** block, the last included - so the record's own choreography plays under the crawl. Its two holds are exactly retail's: at a **new** block's op while a prior roller still scrolls, and at a `B3 F8 0A` while any pages are still up. `World::tick` advances the roller independent of the timeline; the host renders `visible_lines()`.
 
 Parking at the crawl op instead would be wrong for wall-time: `map01`'s fly-in record follows its final crawl with `WaitFrames` 600 + 330, and the retail capture's leg span only fits those waits running **concurrent** with the 3-page roller - a stepper that parks at the crawl op serializes the roller against the authored tail and overshoots the leg by the whole roller duration (~14 s).
 
@@ -986,7 +991,7 @@ The spawner and the crawl-geometry config are two distinct sub-ops of field-VM o
 | `+0x50` | scroll **divisor**. A per-actor accumulator gains the frame step `DAT_1F800393` each frame (not while paused); on reaching `+0x50` it resets to zero and the sub-scroll `actor+0x9E` (0..15) steps. | `0x04` (4) |
 | `+0x52` | **release line count**. With it non-zero and slot 1 occupied, the roller pauses itself (`actor+0x10 |= 0x80000`) and clears `+0x52` when the pages retired so far (`actor+0x6A`, plus one if slot 0 is occupied) equal it. Written only by the `word3 == 1` sub-mode. | `0` |
 
-The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to `0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`. The block ends when the retired count reaches the page count: the roller clears its parent's `+0x10` bit `0x400` and kills itself. The port is [`CutsceneNarration`](../../crates/engine-core/src/cutscene_narration.rs); its [`RollerSeed`](../../crates/engine-core/src/cutscene_narration.rs) is read off the seed op before each block, and because neither host scissors the text, `visible_lines` returns only the rows wholly inside the clip window.
+The **clip window** is `Y` from `(+0x4C) + 4` to `min((+0x4C) + 16*n - 1, 0xE8)`, `X` from `0` to `0x13F`, so lines enter and leave it a pixel at a time. A full 16-pixel climb shifts the slot states up one, counts a retired page when slot 0 held one, and admits the next page at slot `n`. The block ends when the retired count reaches the page count: the roller clears its parent's `+0x10` bit `0x400` and kills itself. The port is [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs); its [`RollerSeed`](../../crates/engine-field/src/cutscene_narration.rs) is read off the seed op before each block, and because neither host scissors the text, `visible_lines` returns only the rows wholly inside the clip window.
 
 A prior model - "one caption per page, 120 frames each, killing its predecessor, drawn at `Y = 180` / mid-screen" - described the separate **`4C E1` single-balloon op** (spawner `FUN_8003C764`, handler `FUN_801DA7F0`, dispatcher case at `0x801E30B8`/`C8`). That op is real but it is **not the crawl**.
 The *"It was the Seru."* caption appears between `opdeene`'s two crawls, as a centered line over the villager-tableau shot (between the creation crawl's last page and the Seru-history crawl's first). It is **not a text balloon at all** and **not any live-rendered font string**: it is a **pre-rendered image**. The caption is a baked **112×32 4bpp TIM** (two CLUT palettes - the fade steps) in the `opdeene` geometry pack **PROT entry 0749** at LZS-decoded offset `0x01EC30`, VRAM `fb=(384,0)`, sitting among that pack's scene textures (the cloth grades, the Genesis-tree flame, the foliage; `tim-scan extracted/PROT/0749_opdeene.BIN`). The scene renderer draws it as a screen-space textured quad; there is no font string to source.
@@ -1007,7 +1012,7 @@ The narration does **not** gate the `town01` hand-off: the roller is timer-drive
 The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as every other field script - there is no dedicated cutscene executor. The pieces:
 
 - **Record header.** Partition-2 records are **named records**, *not* the partition-1 `[u8 N][N*2 locals][4-byte header]` shape. Layout: `[u8 name_len][name_len*2 SJIS name][u8 C0][C0 bytes][u8 C1][C1*u16][u8 C2][C2*u16]<script>`. The name length is in characters; the three condition-list gates are story-flag predicates the dispatcher tests before running the record (block 1 = OR gate, block 2 = AND gate; block 0 is skipped here). The script entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`. For `opdeene`'s record 18 (`name_len=6` "Opening", all blocks empty) that is `0x10` - the `0x34` EFFECT op (an instant colour reset to neutral) that opens the prologue, immediately followed by `GFLAG_SET 26` at `+0x17`. Decoder:
-  [`man_field_scripts::partition_record_span`](../../crates/engine-core/src/man_field_scripts.rs) (`FUN_8003BDE0`).
+  [`man_field_scripts::partition_record_span`](../../crates/engine-field/src/man_field_scripts.rs) (`FUN_8003BDE0`).
 - **Dispatch.** `FUN_8003BDE0` resolves a partition record by index, walks the header, and **spawns a VM context** (`ctx[+0x90]` = record base, `ctx[+0x9e]` = entry PC, `ctx[+0x10] |= 0x100` "run me"); the per-frame runner `FUN_80039B7C` then loops `FUN_801DE840` on it until a yield. The index comes from the two caller families [above](#record-spawn-mechanisms-live-probe-pinned) - an entry-script op `0x44` or a walk-on tile trigger (`FUN_801D1EC4`) - not a sequential partition walk.
 - **Cross-context target `0xF8`.** Nearly every op in the timeline carries the extended-target byte `0xF8` (`A3 F8 …` = MoveTo, `CC F8 …` = MenuCtrl). `FUN_8003C83C(0xF8)` resolves to `_DAT_8007C364` - the **player / camera-anchor actor** - so the timeline drives the camera/lead actor.
 - **Narration op.** `CC F8 80 N` (op `0x4C`, outer-nibble 8, sub-0) **spawns the roller child** - the on-screen-text actor whose handler is `FUN_80037174` - over the `N` inline pages; the parent timeline **keeps running** so the between-block camera choreography plays under the scroll (see [Narration playback](#narration-playback---the-crawl-roller-fun_80037174)). The single-line balloon path (`4C E1`, spawner `FUN_8003C764` → handler `FUN_801DA7F0`: centered `X = (320 − width)/2`, `Y = 180`, 120-frame timer, kills its predecessor, ends early when the player-engaged flag `_DAT_8007C364 +0x10 & 0x80000` re-raises after the spawning engagement drops; port `engine-core::text_balloon`) is a **different op** - not the opening crawl.
@@ -1027,7 +1032,7 @@ The cutscene timeline runs on the **same field/event VM** (`FUN_801DE840`) as ev
   Each focus slot is applied **independently** on its own presence, mirroring the apply handler `FUN_801DE084` writing each focus global only when its slot bit is set (an absent slot leaves its global at the prior beat's value). `opdeene`'s opening beats supply focus X/Z (slots 6/8) but **never slot 7** (focus Y) - so a beat still pans horizontally, and Y holds.
   Both engine-side consumers apply per-axis: `engine-core`'s `Camera::route_camera_events` (an earlier all-or-nothing `(slot6, slot7, slot8)` gate never retargeted these beats, freezing the shot) and the shell's `cutscene_view`, which falls the absent focus Y back to retail's `0` (the vertical framing rides the eye-space Y offset in the translation trio, not the focus Y - so keying it on the lead actor's field cold-spawn `Y=0`, or on the scene-AABB centre, is unnecessary).
 
-  `engine-core`'s [`Camera`](../../crates/engine-core/src/camera.rs) holds the ten live globals as `RetailCamGlobals`, seeded on scene entry with the `FUN_80025C24` field defaults (angles `(0x1B8, 0x64, 0)`, `tr_eye = (0, -256, 16420)`). A Configure with `apply == 0` writes the masked slots through; `apply != 0` arms the shared `camera_mover` over the beat's duration in display frames.
+  `engine-core`'s [`Camera`](../../crates/engine-field/src/camera.rs) holds the ten live globals as `RetailCamGlobals`, seeded on scene entry with the `FUN_80025C24` field defaults (angles `(0x1B8, 0x64, 0)`, `tr_eye = (0, -256, 16420)`). A Configure with `apply == 0` writes the masked slots through; `apply != 0` arms the shared `camera_mover` over the beat's duration in display frames.
 
   The **eye-space translation trio has no representation outside that struct and the shell's `cutscene_view`**, which is what made headless consumers (`sim-trace`, the state-trace oracle) frame every scripted shot from the follow orbit while the angles moved correctly around it. In free-roam the follow camera owns the focus globals (`FUN_801DBE9C`, negated anchor XZ); once a scene executes any Configure the script keeps them, matching retail's step-shaped focus across a shot.
 
@@ -1067,8 +1072,8 @@ whichever build's matrix was live when they were emitted
   Both sites are in **one** routine, `FUN_801F73E4` (608 bytes,
   `0x801F73E4..0x801F7644`), and the pair is a bracket rather than two
   independent builds. It saves the yaw word `_DAT_8007B792`, **zeroes it in the
-  first `jal`'s delay slot**, and rebuilds; draws one screen-fixed band - five
-  clipped quads plus a sprite, linked through `FUN_8003D2C4` off the scratchpad
+  first `jal`'s delay slot**, and rebuilds; draws the overworld sky band - up to
+  five clipped `SPRT`s and a draw-mode packet, linked through `FUN_8003D2C4` off the scratchpad
   prim cursor `0x1F8003A0`, with the colour chosen by the story flag `0x14C`
   through `FUN_8003CE64`; then restores the saved yaw and rebuilds again so the
   rest of the frame draws under the view it expected. So neither slot-B build is
@@ -1193,14 +1198,14 @@ The residual errors are **one-sided**: a retail leg span (scene-label flip to sc
 
 ### Timeline execution (engine port)
 
-The engine **executes** this timeline as a spawned field-VM context. On entering `opdeene` live, [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs) locates the partition-2 record that issues `GFLAG_SET 26` (via [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-core/src/man_field_scripts.rs)), resolves its named-record span, and installs a [`CutsceneTimeline`](../../crates/engine-core/src/cutscene_timeline.rs) - a second `FieldCtx` separate from the scene-entry system script on `World::field_ctx`, seeded on the system channel (`script_id = 0xFB`) so cross-context (`0x80`-bit) ops keep running after the record's first yield sets the context halt bit.
+The engine **executes** this timeline as a spawned field-VM context. On entering `opdeene` live, [`World::load_cutscene_timeline_from_man`](../../crates/engine-core/src/world/narration.rs) locates the partition-2 record that issues `GFLAG_SET 26` (via [`man_field_scripts::walk_partition_gflag_sites`](../../crates/engine-field/src/man_field_scripts.rs)), resolves its named-record span, and installs a [`CutsceneTimeline`](../../crates/engine-menus/src/cutscene_timeline.rs) - a second `FieldCtx` separate from the scene-entry system script on `World::field_ctx`, seeded on the system channel (`script_id = 0xFB`) so cross-context (`0x80`-bit) ops keep running after the record's first yield sets the context halt bit.
 The `opstati` / `opurud` legs install theirs through the faithful op-`0x44` spawn instead ([`World::install_spawned_record`](../../crates/engine-core/src/world/narration.rs)); `map01` / `town01` through the walk-on tile trigger ([above](#record-spawn-mechanisms-live-probe-pinned)).
 
 Only **cutscene-class** records (the opening chain, and gated walk-on beat records via `install_gated_p2_record`) install as this modal timeline (camera seize + locomotion lock). An ordinary scene's mid-play op-`0x44` spawn installs as a **concurrent helper context** instead - `World::field_vm.helper_contexts` (bounded table mirroring retail's small fixed context set), installed by [`World::install_spawned_helper_record`](../../crates/engine-core/src/world/narration.rs) and stepped by `step_helper_contexts` through the same run-until-yield slice (`run_spawned_record_slice`) - without seizing the camera or reading as `cutscene_timeline_active()`.
 
 A helper still holds the pad while it runs (`World::script_context_engages_player`): retail's script runner `FUN_80039B7C` raises the player's engaged bit for every context it steps, modal or not ([`field-locomotion.md`](field-locomotion.md#where-the-294-vsyncs-go)). Pending spawns queue (FIFO) rather than dropping while another record executes.
 
-[`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-core/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-core/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
+[`World::step_cutscene_timeline`](../../crates/engine-core/src/world/narration.rs) runs that context through the same `legaia_engine_vm::field::step` each frame, run-until-yield (mirroring retail's per-frame dispatch), bounded by a per-frame step budget and a frame cap. The Camera Configure (`0x45`) and `MoveTo` (`0x23`) ops emit the same [`FieldEvent`](../../crates/engine-field/src/field_events.rs)s the runtime [`Camera`](../../crates/engine-field/src/camera.rs) folds in; the `GFLAG_SET 26` near the record's top arms the **intro skip** through the same host path the main field VM uses; and the record's terminal `0x3F` SceneChange chains the next opening leg - all **by execution**, not by a static MAN-walk derivation.
 The static arm ([`World::arm_prologue_handoff_from_man`](../../crates/engine-core/src/world/narration.rs)) remains as a fallback for a scene whose timeline record can't be resolved, and a safety net arms it if execution can't reach the arming op within the frame cap, so the prologue can never stall.
 
 Two overlay-variant pins from the live opening run:
@@ -1210,7 +1215,7 @@ Two overlay-variant pins from the live opening run:
 
 Two single-shared-VM accommodations, **approximate by design**:
 
-- **Narration blocks spawn the roller and let the timeline continue.** The inline page bytes are data, not opcodes, so the stepper never walks the VM into them: [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world/narration.rs) parses each block into a [`NarrationSite`](../../crates/engine-core/src/cutscene_timeline.rs) (`op_offset` + [`byte_span`](../../crates/asset/src/cutscene_text.rs) end + pages + kind).
+- **Narration blocks spawn the roller and let the timeline continue.** The inline page bytes are data, not opcodes, so the stepper never walks the VM into them: [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world/narration.rs) parses each block into a [`NarrationSite`](../../crates/engine-menus/src/cutscene_timeline.rs) (`op_offset` + [`byte_span`](../../crates/asset/src/cutscene_text.rs) end + pages + kind).
   When the PC reaches a crawl site, the stepper installs the pages on the roller presenter and, mirroring retail's child-context spawn, **advances the PC past the block** so the between-block camera cuts play under the scroll - non-blocking. Two things hold the timeline: a block reached while a prior roller is still scrolling (`CutsceneTimeline::narration_pc` / `narration_pending_open`), so two rollers never stack, and a `B3 F8 0A` while pages are up ([above](#where-a-record-waits-for-its-crawl)). A card site installs `World::cutscene.card` (blank pages clear it) and the parent continues, per the retail card semantics.
   (The earlier NOP-fill of the narration span, the scene-entry page install, and the per-page confirm-skip are gone; the earlier "park the whole crawl" model is superseded - it serialized the camera cuts after the text instead of playing them under it.)
 - **Camera params (per-slot merge).** The op-`0x45` events flow to the `Camera` controller and the host **merges** each beat's masked slots into a persistent `World::camera.state.params` set.
@@ -1319,7 +1324,7 @@ pokes.
 playing its clip: retail's per-actor animation tick (`FUN_8003BC08 → FUN_80021DF4`) advances each
 actor's keyframe interpolation every frame *independent of the parked script PC*, so a vignette actor
 cued with its placement anim byte animates through the whole narration crawl. The play-window render
-mirrors this - it builds a looping [`FieldClipPlayer`](../../crates/engine-core/src/field_anim.rs)
+mirrors this - it builds a looping [`FieldClipPlayer`](../../crates/engine-field/src/field_anim.rs)
 from each on-screen placement's default anim id (`record = anim id - 1`) and ticks it every frame,
 gated only on Field mode, not on the channel's halt state or the timeline park. The clip source is
 the **per-scene ANM bundle** (`player_anm::find_in_entry`, the type-`0x05` section of the scene's
@@ -1378,7 +1383,7 @@ The engine spawns no player channel, so
 [`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) keeps its
 `None`-for-`0xF8` contract and `run_spawned_record_slice` models the two ops directly: the
 ExecMove emits the same `ExecMove` field event and arms a short in-flight countdown
-([`CutsceneTimeline::player_move_frames`](../../crates/engine-core/src/cutscene_timeline.rs),
+([`CutsceneTimeline::player_move_frames`](../../crates/engine-menus/src/cutscene_timeline.rs),
 standing in for the playout since engine player pokes complete synchronously), and the
 halt-acquire **parks** at the op ([`CutsceneTimeline::player_wait`]) until the countdown drains,
 then steps **past** it by encoded width - the completion side of the handshake - so the record
@@ -1407,7 +1412,7 @@ which folds it into each sheet's colour. Every other site is the op's own store 
 `retona_field_card_boot` state agrees: caught mid-arrival with the word at `27`, its frame shows
 the cave at full brightness and only the fog sheets dim. So the arrival arm fades the fog in, and
 neither host multiplies the frame by it. Engine model:
-[`fade::SceneTintRamp`](../../crates/engine-core/src/fade.rs) (normalized, `1.0` = neutral) in
+[`fade::SceneTintRamp`](../../crates/engine-system/src/fade.rs) (normalized, `1.0` = neutral) in
 `World::presentation.tint`, stepped per `World::tick`, read by `World::fog_render_step` (and by
 the non-retail volumetric fog, so the two fade together). It persists across scene changes. New
 Game arms the handshake (`World::begin_new_game` sets sysflag `0x52F`), and the engine runs the
@@ -1466,7 +1471,7 @@ Breakpoints on the spawner, the per-frame step and the draw
   `0x4C 0x12` fade at all.
 
 The port used to carry the beat twice - a float `effect_tint` ramp beside the
-[`ScreenTintPush`](../../crates/engine-core/src/field_actor_kernels.rs) triples
+[`ScreenTintPush`](../../crates/engine-field/src/field_actor_kernels.rs) triples
 [`step_colour_tween`] emits - with nothing reading either. The measured beat is
 a `(a0, a1, packed)` triple per frame, which is the push's shape exactly, so
 the push is the surviving model: the op seats its tween through
@@ -1546,7 +1551,7 @@ loses an eighth (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is
 why the captured template reads `57` where the instruction's own word is
 `0x41`.
 
-[`step_colour_tween`]: ../../crates/engine-core/src/field_actor_kernels.rs
+[`step_colour_tween`]: ../../crates/engine-field/src/field_actor_kernels.rs
 
 ### Full-scene sepia grade (the gold prologue look)
 
@@ -1634,7 +1639,7 @@ beat: the ground lands **identically** at `G/R 0.890` / `B/R 0.46..0.48` on both
 `scene_color_grade_only_on_the_prologue_cutscene` (engine-core) guards the gate.
 
 The superseded engine approximations are retained as dormant plumbing: `apply_grade`'s pixel
-multiply and the [`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) view-depth ramp
+multiply and the [`fade::DepthCueRamp`](../../crates/engine-system/src/fade.rs) view-depth ramp
 (`Renderer::set_depth_cue_ramp`) still exist and are staged by the host, but the palette mode
 bypasses both while active.
 
@@ -2281,7 +2286,7 @@ Every burst that passes the one-in-sixteen gate spawns at least one particle.
 | XA sector layout + demux | `crates/xa/src/demux.rs`; [`formats/xa.md`](../formats/xa.md) |
 | Interleaved STR A/V decode + sync clock | `crates/engine-shell/src/cutscene_av.rs` |
 | Audio-cursor playback clock | `crates/engine-audio/src/lib.rs` (`AudioOut::xa_cursor_secs`) |
-| Game modes 26 / 27 | `crates/engine-core/src/mode.rs` |
+| Game modes 26 / 27 | `crates/engine-field/src/mode.rs` |
 | `play-str` frame loop | `crates/engine-shell/src/bin/legaia-engine.rs` (`cmd_play_str` / `StrPlayerApp`) |
 
 ## See also

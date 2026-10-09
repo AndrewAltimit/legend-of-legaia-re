@@ -386,8 +386,8 @@ impl FieldSceneAnim {
         }
     }
 
-    /// Which halves of the animator are installed, as a bitmask: bit 0 the
-    /// CLUT walker, bit 1 the legacy ocean-head cycle. Read by
+    /// Which CLUT animator is installed: `1` the walker, `2` the legacy
+    /// ocean-head cycle, `0` none (the two are exclusive). Read by
     /// `LegaiaRuntime::play_field_anim_kind`.
     pub(crate) fn kind_code(&self) -> u32 {
         use legaia_engine_core::clut_walk_anim::ClutWalkAnim;
@@ -1196,6 +1196,12 @@ impl LegaiaViewer {
     pub fn field_scene_npc_transforms(&self) -> Vec<f32> {
         self.npc_ctx()
             .map(|(a, h, _)| a.transforms(h))
+            .unwrap_or_default()
+    }
+
+    pub fn field_scene_npc_draw_poses(&self) -> Vec<f32> {
+        self.npc_ctx()
+            .map(|(a, h, _)| a.draw_poses(h))
             .unwrap_or_default()
     }
 

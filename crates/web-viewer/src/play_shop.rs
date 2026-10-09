@@ -64,16 +64,9 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        let mut opened = false;
-        if let Some(shop) = host.world.take_pending_field_shop() {
-            self.menu.open_shop_menu(shop);
-            opened = true;
-        }
-        // The casino prize counter (op-0x49 sub-7), same drain shape.
-        if let Some(exchange) = host.world.take_pending_prize_exchange() {
-            self.menu.open_prize_exchange(exchange);
-            opened = true;
-        }
+        // The shared drain (`MenuRuntime::open_field_overlay_requests`, the
+        // native window's too): a gold shop or the casino prize counter.
+        let opened = self.menu.open_field_overlay_requests(&mut host.world);
         // The screen takes its first step on the tick that opened it, on no
         // edge - the native window's `menu_edge = 0` beat. The press this
         // tick carried already went to the field (the Cross that closed the
@@ -83,7 +76,8 @@ impl LegaiaRuntime {
         if !opened {
             return;
         }
-        let cue = self.menu.step_field_session(&mut host.world, 0);
+        let edge = legaia_engine_core::menu_runtime::MenuRuntime::session_edge(opened, 0);
+        let cue = self.menu.step_field_session(&mut host.world, edge);
         if let Some(cue) = cue {
             self.play_sfx(u32::from(cue));
         }

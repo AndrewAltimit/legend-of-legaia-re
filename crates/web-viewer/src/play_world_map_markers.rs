@@ -1,4 +1,5 @@
-//! The overworld's entity and player markers on the play page.
+//! The overworld's entity and player markers, and its sky band, on the play
+//! page.
 //!
 //! A port marker, not a retail draw: retail binds each world-map placement to
 //! its own actor model, which is still open, so both hosts can draw a
@@ -19,7 +20,8 @@
 use legaia_engine_core::camera_view::resolve_field_camera;
 use legaia_engine_core::world::SceneMode;
 use legaia_engine_core::world_map_markers::marker_quads;
-use legaia_engine_ui::screen_prim::{ScreenPrim, world_map_marker_prim};
+use legaia_engine_core::world_map_sky::sky_band;
+use legaia_engine_ui::screen_prim::{ScreenPrim, sky_band_prims, world_map_marker_prim};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;
@@ -49,6 +51,24 @@ impl LegaiaRuntime {
             .iter()
             .map(|q| world_map_marker_prim(q.xy, q.rgba, q.depth))
             .collect()
+    }
+
+    /// This frame's overworld sky band (`FUN_801F73E4`), through the gate
+    /// (`legaia_engine_core::world_map_sky`) and wrapper (`sky_band_prims`)
+    /// the native window draws it with. Empty outside the world map.
+    pub(crate) fn world_map_sky_prims(&mut self) -> Vec<ScreenPrim> {
+        let aabb = self.scene_aabb();
+        let Some(host) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        let world = &host.world;
+        if world.mode != SceneMode::WorldMap {
+            return Vec::new();
+        }
+        let centre = [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5];
+        let cam = self.scene_host.camera();
+        let frame = resolve_field_camera(world, cam, None, centre);
+        sky_band_prims(&sky_band(world, cam, &frame))
     }
 }
 

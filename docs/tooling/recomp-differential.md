@@ -407,7 +407,7 @@ only - the subcommand adds no simulation features.
 Retail-unit mapping (see [`sim_trace.rs`](../../crates/parity/src/sim_trace.rs)
 module docs for the full table): every `cam.*` channel is read from the
 engine's live retail camera globals
-([`Camera::globals`](../../crates/engine-core/src/camera.rs)), which are the
+([`Camera::globals`](../../crates/engine-field/src/camera.rs)), which are the
 same ten words the recomp-side address map reads, so the two sides report the
 same quantity in the same frame; player/actor samples come from
 `move_state.world_x/z` + `render_26`. `mode` maps `SceneMode` onto the retail game-mode word (Field
@@ -479,7 +479,7 @@ Those value sets are disjoint by construction, so the reading "the engine's
 camera never leaves a fixed height" (`cam.eye.y` constant at 80) was
 measuring `follow_height`, not a camera that refused to move.
 
-Underneath it sat a real defect: [`Camera`](../../crates/engine-core/src/camera.rs)
+Underneath it sat a real defect: [`Camera`](../../crates/engine-field/src/camera.rs)
 modelled no eye-space translation trio at all. The op-`0x45` Configure
 angle slots and `h` reached it, but slots 3/4/5 had nowhere to land and the
 controller stayed in its follow orbit through scripted shots, so scenes

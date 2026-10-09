@@ -1,0 +1,1074 @@
+//! Scene-level trigger tables: destinations, FMV triggers, BGM starts, stager installs.
+//!
+//! Extracted verbatim from `man_field_scripts.rs`.
+
+use super::*;
+
+/// One inline scene destination decoded from a `0x3F` named-scene-change op.
+///
+/// A field/overworld scene's controller script lists every place it can warp to
+/// as a `0x3F` op that carries the destination scene **name** directly in the
+/// bytecode (plus an `index` id and an entry tile). This is the disc-sourced
+/// counterpart to `legaia_engine_core::scene::DefaultMapIdResolver`'s positional guess: the
+/// destination names are *in the data*, not in an uncaptured overlay. (The
+/// separate `0x3E` door-warp carries only a 7-id scene-*type* selector, whose
+/// name resolution does still live in an uncaptured handler.)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneDestination {
+    /// Destination CDNAME scene label (e.g. `"town0c"`, `"rikuroa"`).
+    pub scene_name: String,
+    /// The `i16` index operand the op carries (a story/entry id; *not* the
+    /// `0x3E` door-warp `map_id` - distinct id space, observed past 100).
+    pub index: i16,
+    /// Entry tile X byte at the destination (`& 0x7F` tile, `& 0x80` half-tile).
+    pub entry_x: u8,
+    /// Entry tile Z byte at the destination (same encoding as `entry_x`).
+    pub entry_z: u8,
+}
+
+/// Recover the inline scene-destination table from a scene's MAN by decoding the
+/// `0x3F` named-scene-change ops across its partition-1 **and** partition-2
+/// scripts.
+///
+/// Returns one [`SceneDestination`] per distinct `(scene_name, index)` reached,
+/// in first-seen order. Only ops whose inline name passes
+/// [`scene_change_name`]'s clean-CDNAME-label gate are kept, so the
+/// over-approximating walk's text-desync phantoms (a literal `?` = `0x3F` inside
+/// a message, which decodes a bogus name) are dropped - exactly the desync
+/// hazard the `0x3E` warp gate guards against. Genuine destinations recur with
+/// stable indices across the controller's records; phantoms don't survive the
+/// gate.
+pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestination> {
+    // Delegates to the shared kernel in `legaia_asset::man_edit`: the P1
+    // destination-table pass (next-P1-record-start bound so the trailing table
+    // is reachable; clean-name gate + `(name, index)` dedup absorb the
+    // over-walk) runs verbatim as the prefix, then a partition-2 pass appends
+    // the clean-gated `0x3F` destinations the P1 tables never carry. The
+    // retail P2-only class is the town/dungeon **exit door** (a P2
+    // door-choreography record): `town01`'s overworld exit to `map01` is
+    // entirely P2-carried - its P1 pass alone sees zero destinations.
+    legaia_asset::man_edit::scene_destinations(man_file, man)
+        .into_iter()
+        .map(|d| SceneDestination {
+            scene_name: d.scene_name,
+            index: d.index,
+            entry_x: d.entry_x,
+            entry_z: d.entry_z,
+        })
+        .collect()
+}
+
+/// One overworld town/dungeon entrance recovered from the `.MAP` walk-on
+/// tile-trigger → MAN partition-2 record → `0x3F` named-scene-change bridge.
+///
+/// On the kingdom overworld hub (`map01`) the town/dungeon entrances are **not**
+/// partition-1 actor warps (the placement classifier finds zero `Portal`s
+/// there); they are gate-1 kind-1 `.MAP` tile triggers, each referencing a
+/// partition-2 record whose field-VM script runs a `0x3F` op to a specific
+/// destination scene + arrival entry tile. This joins the two disc structures:
+/// the trigger supplies the **overworld tile** the player walks onto, the
+/// referenced partition-2 record supplies the **destination**. Both are
+/// byte-exact disc data (verified against `map01`'s trailing `0x3F` table).
+///
+/// See `legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal` (the runtime
+/// entity this seeds) and the drain in
+/// `legaia_engine_core::scene::SceneHost::tick`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverworldPortalSite {
+    /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1
+    /// trigger's `tile_x`).
+    pub overworld_x: u8,
+    /// Overworld trigger tile Z (the trigger's `tile_z`).
+    pub overworld_z: u8,
+    /// Partition-2 record index the gate-1 trigger spawns.
+    pub record: u8,
+    /// Destination CDNAME scene label from the record's `0x3F` op.
+    pub scene_name: String,
+    /// The `0x3F` op's `i16` destination index.
+    pub index: i16,
+    /// Arrival entry-tile X at the destination.
+    pub entry_x: u8,
+    /// Arrival entry-tile Z at the destination.
+    pub entry_z: u8,
+    /// Arrival facing/depth selector.
+    pub dir: u8,
+    /// The flag-SET alternative destination when the record selects its target
+    /// by an op-`0x70` story-flag branch (an overworld entrance whose scene
+    /// changes after a story beat). The primary fields above hold the flag-CLEAR
+    /// (fall-through) destination; the seeder swaps to this alternative when
+    /// `legaia_engine_core::world::World::system_flag_test` of [`ConditionalDest::flag`] is
+    /// true. `None` for the common unconditional single-`0x3F` entrance.
+    ///
+    /// The chapter-1 case is `map01`'s dungeon entrance: flag `0x142` clear ->
+    /// `dolk` (pre-boss), set -> `dolk2` (post-boss); see
+    /// [`docs/subsystems/world-map.md`].
+    pub conditional: Option<ConditionalDest>,
+}
+
+/// The flag-SET alternative destination of a conditional overworld entrance
+/// (an op-`0x70` story-flag branch inside the partition-2 record). See
+/// [`OverworldPortalSite::conditional`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalDest {
+    /// System story-flag index tested by the record's op-`0x70`. When set, the
+    /// entrance resolves to this destination instead of the primary.
+    pub flag: u16,
+    /// Destination CDNAME scene label from the taken arm's `0x3F` op.
+    pub scene_name: String,
+    /// The taken `0x3F` op's `i16` destination index.
+    pub index: i16,
+    /// Arrival entry-tile X at the alternative destination.
+    pub entry_x: u8,
+    /// Arrival entry-tile Z at the alternative destination.
+    pub entry_z: u8,
+    /// Arrival facing/depth selector at the alternative destination.
+    pub dir: u8,
+}
+
+/// A decoded `0x3F` named-scene-change destination:
+/// `(index, scene_name, entry_x, entry_z, dir)`.
+pub type SceneChangeDest = (i16, String, u8, u8, u8);
+
+/// The first `0x3F` named-scene-change destination reached by a fall-through
+/// walk of partition-2 record `body` starting at `from_pc`.
+/// `None` when no `0x3F` is reached before the record ends.
+///
+/// The walk is the *recovering* [`LinearWalker`] - the same advance rule the
+/// executing VM's disassembler uses (an undecodable byte costs one byte and
+/// the walk continues) rather than a decode-or-abort loop. See
+/// [`partition2_scene_changes`] for why the difference is load-bearing.
+fn first_scene_change_from(body: &[u8], from_pc: usize) -> Option<SceneChangeDest> {
+    for insn in LinearWalker::new(body, from_pc).flatten() {
+        if let InsnInfo::SceneChange {
+            index,
+            entry_x,
+            entry_z,
+            dir,
+            ..
+        } = insn.info
+            && let Some(name) = scene_change_name(body, &insn)
+        {
+            return Some((index, name, entry_x, entry_z, dir));
+        }
+    }
+    None
+}
+
+/// Where a partition-2 entrance record's control flow ends, under one
+/// assignment of its story-flag tests. See [`record_path_scene_change`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RecordPathEnd {
+    /// The path reaches this `0x3F` named scene change.
+    SceneChange(SceneChangeDest),
+    /// The path parks (a backward `0x26` - the records' `21 26 FE FF` idle
+    /// spin) or runs off the record without a scene change: the entrance
+    /// does nothing under these flags.
+    Closed,
+    /// The path meets a branch the walk does not model (an op-`0x42`
+    /// conditional jump, a `0x4D` box test, a `0x4E` compare, a picker), so
+    /// where it ends depends on more than the story flags.
+    Undecided,
+}
+
+/// Follow partition-2 record `body`'s control flow from `pc`, the way the
+/// field VM runs it on the crossing: an op-`0x70` `SysFlag.Test` jumps to its
+/// target when `flag_set(idx)` answers `true` and falls through otherwise, a
+/// forward `0x26 JMP_REL` is taken, and the first `0x3F` reached is the
+/// destination.
+///
+/// The entrance records branch *before* their scene change, and the
+/// linear-first `0x3F` is not the fall-through arm in general: `map03`'s
+/// Nivora entrance (P2[3]) tests `0x378`, and its taken arm (NILBOA2) sits
+/// ahead of the fall-through arm (NILBOA), which the test's own jump skips.
+/// Reading the first `0x3F` as the flag-clear destination installed NILBOA2
+/// on both arms, so Nivora was never enterable. Records also nest tests
+/// (`map03` P2[7]: `0x3F2` set closes it, else `0x4C8` selects CONCNOW or -
+/// on a further `0x6C2` test - CONCEND), which one flag and one alternative
+/// cannot express.
+// REF: FUN_801DE840 (op 0x70 TEST taken arm, op 0x26 JMP_REL)
+pub fn record_path_scene_change(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> RecordPathEnd {
+    record_path_walk(body, pc, flag_set).0
+}
+
+/// [`record_path_scene_change`] plus the system-flag writes (`0x5x` SET as
+/// `(true, flag)`, `0x6x` CLEAR as `(false, flag)`, in order) the path makes
+/// before it ends. A later test on a flag the path already wrote reads the
+/// write, as the live bank would.
+///
+/// The crossing replays these so the bank ends as the field VM would leave
+/// it at the `0x3F`: an object-bound overworld entrance (`map01` P0[6], the
+/// Garmel mouth) raises the place-name flag `2` only after its opening
+/// tests and jumps, where a leading-writes walk stops at the first non-flag
+/// op.
+// REF: FUN_801DE840 (op 0x50 SET, op 0x60 CLEAR, op 0x70 TEST, op 0x26 JMP_REL)
+pub fn record_path_walk(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> (RecordPathEnd, Vec<(bool, u16)>) {
+    use legaia_engine_vm::field_disasm::decode;
+    let mut writes: Vec<(bool, u16)> = Vec::new();
+    let mut pc = pc;
+    for _ in 0..4096 {
+        if pc >= body.len() {
+            return (RecordPathEnd::Closed, writes);
+        }
+        let Ok(insn) = decode(body, pc) else {
+            pc += 1;
+            continue;
+        };
+        let next = pc + insn.size.max(1);
+        match insn.info {
+            InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                dir,
+                ..
+            } => {
+                if let Some(name) = scene_change_name(body, &insn) {
+                    return (
+                        RecordPathEnd::SceneChange((index, name, entry_x, entry_z, dir)),
+                        writes,
+                    );
+                }
+                pc = next;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                let set = writes
+                    .iter()
+                    .rev()
+                    .find(|&&(_, f)| f == idx)
+                    .map_or_else(|| flag_set(idx), |&(s, _)| s);
+                pc = if set { target } else { next };
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Set,
+                idx,
+                ..
+            } => {
+                writes.push((true, idx));
+                pc = next;
+            }
+            InsnInfo::SystemFlag {
+                kind: FlagKind::Clear,
+                idx,
+                ..
+            } => {
+                writes.push((false, idx));
+                pc = next;
+            }
+            InsnInfo::JmpRel { target, .. } => {
+                if target <= pc {
+                    return (RecordPathEnd::Closed, writes);
+                }
+                pc = target;
+            }
+            InsnInfo::CondJmp { .. }
+            | InsnInfo::BBoxTest { .. }
+            | InsnInfo::InventoryCmp { .. }
+            | InsnInfo::Picker { .. } => return (RecordPathEnd::Undecided, writes),
+            _ => pc = next,
+        }
+    }
+    (RecordPathEnd::Undecided, writes)
+}
+
+/// [`record_path_walk`] over the MAN record at **flat** index `flat` (the
+/// `[P0..P1..P2]` index space a `.MAP` object bind names - retail's
+/// `FUN_8003C8F0` with partition base 0), from its first opcode. `None` when
+/// the record span does not resolve.
+pub fn flat_record_path_walk(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<(RecordPathEnd, Vec<(bool, u16)>)> {
+    let (start, pc0, len) = flat_record_span(man_file, man, flat)?;
+    Some(record_path_walk(&man[start..start + len], pc0, flag_set))
+}
+
+/// [`record_path_scene_change`] over partition-2 record `record` of a MAN,
+/// from its first opcode. `None` when the record span does not resolve.
+pub fn partition2_record_path_scene_change(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<RecordPathEnd> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    Some(record_path_scene_change(
+        &man[start..start + len],
+        pc0,
+        flag_set,
+    ))
+}
+
+/// Decode partition-2 record `record`'s scene-change destination(s): the
+/// primary (every story-flag test clear) `0x3F`, plus - when the record's
+/// first op-`0x70` test selects a *different* `0x3F` - the flag id and the
+/// flag-SET alternative. Returns `None` when the record is out of range or
+/// carries no `0x3F` at all.
+///
+/// Both arms are followed as the VM runs them ([`record_path_scene_change`]),
+/// not read off the byte order. A record whose flag-clear path closes, or
+/// meets a branch the walk does not model, falls back to its first `0x3F` in
+/// byte order, which is what this static table held before.
+///
+/// The conditional shape is retail's story-progression entrance: an op-`0x70`
+/// `SysFlag.Test` whose taken arm is a different `0x3F` than the linear
+/// fall-through (e.g. `map01`'s dolk/dolk2 dungeon entrance on flag `0x142`).
+///
+/// ## Why the walk resyncs
+///
+/// This is the *static* join that seeds the overworld portal table, and it has
+/// to agree with the *executing* VM about what a record contains. The executing
+/// side decodes with [`LinearWalker`], which spends one byte on an undecodable
+/// opcode and carries on; this join used to `decode(..).ok()?` and abandon the
+/// whole record at the first such byte. A partition-2 door record is mostly
+/// message text and authored waits, and a message body routinely carries bytes
+/// that decode as nothing - so the abort threw away every destination that sat
+/// *after* the first bad byte, which for the long cutscene-shaped exit records
+/// is all of them. Sharing the walker's advance rule is what makes the static
+/// table and the live run answer the same question.
+fn partition2_scene_changes(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+) -> Option<(SceneChangeDest, Option<(u16, SceneChangeDest)>)> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    let body = &man[start..start + len];
+    // The first op-0x70 test on the all-clear path, and each arm's end.
+    let mut first_test: Option<(u16, usize)> = None;
+    for insn in LinearWalker::new(body, pc0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: legaia_asset::field_disasm::FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } => {
+                first_test = Some((idx, target));
+                break;
+            }
+            InsnInfo::SceneChange { .. } => break,
+            _ => {}
+        }
+    }
+    let clear = record_path_scene_change(body, pc0, &|_| false);
+    if let RecordPathEnd::SceneChange(primary) = clear {
+        let alt = first_test.and_then(|(flag, _)| {
+            match record_path_scene_change(body, pc0, &|f| f == flag) {
+                RecordPathEnd::SceneChange(dest) if dest != primary => Some((flag, dest)),
+                _ => None,
+            }
+        });
+        return Some((primary, alt));
+    }
+    // Remember the FIRST op-0x70 flag-test's (flag, taken-target) seen before
+    // the primary scene change, so a post-beat alternative can be resolved.
+    let mut pending_test: Option<(u16, usize)> = None;
+    for insn in LinearWalker::new(body, pc0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag {
+                kind: legaia_asset::field_disasm::FlagKind::Test,
+                idx,
+                target: Some(target),
+                ..
+            } if pending_test.is_none() => {
+                pending_test = Some((idx, target));
+            }
+            InsnInfo::SceneChange {
+                index,
+                entry_x,
+                entry_z,
+                dir,
+                ..
+            } => {
+                if let Some(name) = scene_change_name(body, &insn) {
+                    let primary = (index, name, entry_x, entry_z, dir);
+                    // A conditional entrance: a preceding flag-test branches to
+                    // a *different* second `0x3F` (the flag-SET destination).
+                    //
+                    // "Different" is the whole destination, not just the scene
+                    // name. A two-ended pass branches to the **same** scene at
+                    // a different arrival tile, and that is the case the
+                    // difference matters most in: `map01`'s `suimon` entrance
+                    // (P2[18]) tests flag `0x27B` and names `suimon` on both
+                    // arms - entry `(0x44, 0x2C)` clear, `(0x15, 0x54)` set -
+                    // and the two are opposite chambers of the scene, one of
+                    // which is the only route to the southern half of the
+                    // kingdom. Comparing names alone silently kept the clear
+                    // arm forever. Comparing the tuple still rejects the
+                    // degenerate shape where the branch target falls through
+                    // to the very same `0x3F`, which decodes identically.
+                    let alt = pending_test.and_then(|(flag, target)| {
+                        let dest = first_scene_change_from(body, target)?;
+                        (dest != primary).then_some((flag, dest))
+                    });
+                    return Some((primary, alt));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Recover every overworld portal (town/dungeon entrance) from a scene's `.MAP`
+/// kind-1 tile-trigger tables joined to its MAN partition-2 records.
+///
+/// For each **gate-1** trigger in `triggers` (primary + fallback concatenated
+/// by the caller), the referenced partition-2 record is walked for its first
+/// `0x3F` named-scene-change op; a hit yields one [`OverworldPortalSite`] at the
+/// trigger tile. Triggers whose record carries no `0x3F` (object-bind /
+/// non-warp records) are skipped. Sites are unique by `(overworld_x,
+/// overworld_z)` (first trigger wins), so a tile that fires only once produces
+/// one portal.
+///
+/// This is the disc-sourced seed for the overworld entity SM's portal path -
+/// the faithful mechanism for the `map01` → dungeon hop, since `map01` has no
+/// partition-1 `Portal` placements.
+pub fn overworld_portal_sites(
+    man_file: &ManFile,
+    man: &[u8],
+    triggers: &[crate::field_regions::TileTrigger],
+) -> Vec<OverworldPortalSite> {
+    let mut out: Vec<OverworldPortalSite> = Vec::new();
+    for t in triggers {
+        if t.gate != 1 {
+            continue;
+        }
+        if out
+            .iter()
+            .any(|s| s.overworld_x == t.tile_x && s.overworld_z == t.tile_z)
+        {
+            continue;
+        }
+        let Some(((index, scene_name, entry_x, entry_z, dir), alt)) =
+            partition2_scene_changes(man_file, man, t.record as usize)
+        else {
+            continue;
+        };
+        let conditional =
+            alt.map(
+                |(flag, (a_index, a_name, a_entry_x, a_entry_z, a_dir))| ConditionalDest {
+                    flag,
+                    scene_name: a_name,
+                    index: a_index,
+                    entry_x: a_entry_x,
+                    entry_z: a_entry_z,
+                    dir: a_dir,
+                },
+            );
+        out.push(OverworldPortalSite {
+            overworld_x: t.tile_x,
+            overworld_z: t.tile_z,
+            record: t.record,
+            scene_name,
+            index,
+            entry_x,
+            entry_z,
+            dir,
+            conditional,
+        });
+    }
+    out
+}
+
+/// One inline FMV trigger decoded from a `0x4C 0xE2` op in a scene's scripts.
+///
+/// The field-VM FMV trigger carries its `fmv_id` as a literal `i16` operand
+/// (`[4C, E2, lo, hi, _, _, _]` - it writes `_DAT_8007BA78` and pokes the
+/// next game mode to `StrInit`), so the per-scene movie assignment is
+/// disc-sourced script data, not a runtime value. See
+/// [`docs/formats/str-fmv-table.md`] and the `MenuCtrlKind::FmvTrigger`
+/// decoder in `legaia_asset::field_disasm`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneFmvTrigger {
+    /// Partition-1 record index whose script carries the op.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal `fmv_id` operand (the value written to `_DAT_8007BA78`).
+    pub fmv_id: i16,
+}
+
+/// Recover every inline `0x4C 0xE2` FMV trigger from a scene's MAN by walking
+/// its partition-1 scripts - the same record walk (and the same
+/// over-approximation caveats) as [`scene_destinations`].
+///
+/// Phantom guard: a literal `4C E2` inside message text can desync-decode a
+/// bogus trigger, so ops whose `fmv_id` falls outside the dispatch table's
+/// nine retail slots (`0..=8`; the 23-slot table's slots `9..=22` are
+/// dev-only files no scene MAN references) are dropped, and
+/// `(record, fmv_id)` pairs re-seen from an earlier over-walk start are
+/// deduped. Returns first-seen order.
+pub fn scene_fmv_triggers(man_file: &ManFile, man: &[u8]) -> Vec<SceneFmvTrigger> {
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneFmvTrigger> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::MenuCtrl {
+                kind: MenuCtrlKind::FmvTrigger { fmv_id },
+                ..
+            } = insn.info
+            else {
+                continue;
+            };
+            if !(0..=8).contains(&fmv_id) {
+                continue;
+            }
+            if out.iter().any(|t| t.record == k && t.fmv_id == fmv_id) {
+                continue;
+            }
+            out.push(SceneFmvTrigger {
+                record: k,
+                pc: insn.pc,
+                fmv_id,
+            });
+        }
+    }
+    out
+}
+
+/// One inline BGM start decoded from an op-`0x35` sub-`1` in a scene's scripts.
+///
+/// The field-VM BGM start carries its id as a literal `i16` operand
+/// (`[35, lo, hi, 01]` - it writes `_DAT_8007BAC8`, resolved asynchronously
+/// by `FUN_800243F0`: ids `< 2000` are scene-local PROT slots at
+/// `scene_base + 6 + id`, ids `>= 2000` index the global BGM pool). So the
+/// per-scene music assignment is disc-sourced script data - the same
+/// pattern as [`SceneFmvTrigger`]. See `docs/subsystems/script-vm.md`
+/// § BGM lookup table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneBgmStart {
+    /// Partition-1 record index whose script carries the op.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal BGM id operand (the value written to `_DAT_8007BAC8`).
+    pub bgm_id: u16,
+}
+
+/// Recover every inline op-`0x35` sub-`1` BGM start from a scene's MAN by
+/// walking its partition-1 scripts - the same record walk (and the same
+/// over-approximation caveats) as [`scene_fmv_triggers`].
+///
+/// Phantom guard: a literal `0x35` inside message text can desync-decode a
+/// bogus start, so ids outside the two documented spaces (scene-local
+/// `0..2000` restricted to small slots `< 0x40`, or the global pool
+/// `2000..2082` = the `music_01` bank) are dropped, and `(record, bgm_id)`
+/// pairs re-seen from an earlier over-walk start are deduped. Returns
+/// first-seen order.
+pub fn scene_bgm_starts(man_file: &ManFile, man: &[u8]) -> Vec<SceneBgmStart> {
+    let n1 = man_file.header.partition_counts[1].max(0) as usize;
+    let mut starts: Vec<usize> = (0..n1)
+        .filter_map(|i| man_file.actor_placement_record_offset(i, man.len()))
+        .collect();
+    starts.sort_unstable();
+    let mut out: Vec<SceneBgmStart> = Vec::new();
+    for (k, &start) in starts.iter().enumerate() {
+        let end = starts.get(k + 1).copied().unwrap_or(man.len());
+        let pc0 = {
+            let locals = *man.get(start).unwrap_or(&0) as usize;
+            1 + locals * 2 + 4
+        };
+        if start + pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            let InsnInfo::Bgm { text_id, sub_op: 1 } = insn.info else {
+                continue;
+            };
+            if !(text_id < 0x40 || (2000..2082).contains(&text_id)) {
+                continue;
+            }
+            if out.iter().any(|t| t.record == k && t.bgm_id == text_id) {
+                continue;
+            }
+            out.push(SceneBgmStart {
+                record: k,
+                pc: insn.pc,
+                bgm_id: text_id,
+            });
+        }
+    }
+    out
+}
+
+/// One inline `4C 61` scripted CLUT-cell effect decoded from a scene's
+/// scripts.
+///
+/// The field-VM CLUT-cell op carries its cell coordinates and frame count as
+/// literal LE16 operands (`FUN_8003CE9C` reads at `+1/+3` = cell A, `+5/+7`
+/// = cell B, `+9/+0xB` = destination, `+0xD` = frames) - so which VRAM CLUT
+/// cells a scene's script animates is disc-sourced script data. `frames == 0`
+/// is the one-shot cell write (`FUN_801E4C58` inline path); `frames != 0`
+/// spawns the cross-fade actor (`FUN_801E4794`). map01 carries eight of
+/// these: four one-shots copying `(112, 499)` onto the row-498 strip park
+/// cells `(0/16/32/48, 498)` and four 128-vsync fades back. See
+/// `docs/subsystems/world-map.md` "Ocean animation".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneClutCellFx {
+    /// MAN record partition (0..3) whose script carries the op.
+    pub partition: usize,
+    /// Record index within that partition.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The decoded operands.
+    pub op: crate::clut_fx::ClutCellFxOp,
+}
+
+/// Recover every inline `4C 61` scripted CLUT-cell effect from a scene's MAN
+/// by walking all three record partitions - the same record walk (and the
+/// same over-approximation caveats) as [`scene_fmv_triggers`].
+///
+/// Phantom guard: a literal `4C 61` inside message text can desync-decode a
+/// bogus op, so ops whose destination / non-flat source cells fall outside
+/// the VRAM CLUT space (`0 <= x <= 1008`, `0 <= y < 512`) or whose frame
+/// count is negative are dropped, and `(partition, record, op)` tuples
+/// re-seen from an earlier over-walk start are deduped. Returns
+/// partition-record-order.
+pub fn scene_clut_cell_fx(man_file: &ManFile, man: &[u8]) -> Vec<SceneClutCellFx> {
+    let cell_ok = |(x, y): (i16, i16)| (0..=1024 - 16).contains(&x) && (0..512).contains(&y);
+    let mut out: Vec<SceneClutCellFx> = Vec::new();
+    for partition in 0..3 {
+        let count = man_file.header.partition_counts[partition].max(0) as usize;
+        for record in 0..count {
+            let Some((start, pc0, len)) = partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[start..start + len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble6ClutFx { a, b, dest, frames },
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                let op = crate::clut_fx::ClutCellFxOp { a, b, dest, frames };
+                if frames < 0 || !cell_ok(dest) || !(op.b_is_flat() || cell_ok(b)) {
+                    continue;
+                }
+                if frames != 0 && !cell_ok(a) {
+                    continue;
+                }
+                let site = SceneClutCellFx {
+                    partition,
+                    record,
+                    pc: insn.pc,
+                    op,
+                };
+                if out
+                    .iter()
+                    .any(|t| t.partition == partition && t.record == record && t.op == site.op)
+                {
+                    continue;
+                }
+                out.push(site);
+            }
+        }
+    }
+    out
+}
+
+/// One inline move-VM stager install decoded from an op-`0x34` sub-`3` in a
+/// scene's scripts.
+///
+/// The field-VM "play 3D animation" op carries the prescript record id as a
+/// literal byte operand (`[34, 3x, id]` - retail chains through the
+/// installer `FUN_800252EC(id) = prescript_base + offsets[id]` into the
+/// move-VM part stager `FUN_80021B04`; engine
+/// `legaia_engine_core::world::World::spawn_field_stager`). So which prescript records
+/// are **move-VM stagers** is disc-sourced script data - the operand census
+/// that resolves the prescript bundle's dual-consumer split (see
+/// `docs/reference/open-rev-eng-threads.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneStagerInstall {
+    /// MAN partition the carrying script lives in (0 = house-door records,
+    /// 1 = actor placements / system script, 2 = cutscene timelines).
+    pub partition: usize,
+    /// Record index within that partition.
+    pub record: usize,
+    /// Bytecode pc of the op within that record's walk.
+    pub pc: usize,
+    /// The literal prescript-record id operand (the `FUN_800252EC` id).
+    pub stager_id: u8,
+}
+
+/// Recover every inline op-`0x34` sub-`3` stager install from a scene's MAN
+/// by walking all three partitions' scripts ([`partition_record_span`]
+/// bounds each record; partition 2's Shift-JIS-name header is handled
+/// there) - the same over-approximation caveats as [`scene_fmv_triggers`] /
+/// [`scene_bgm_starts`]. Ids are raw operands (bound them against the
+/// scene's prescript record count at the call site). Returns partition /
+/// record / pc order.
+pub fn scene_stager_installs(man_file: &ManFile, man: &[u8]) -> Vec<SceneStagerInstall> {
+    let mut out: Vec<SceneStagerInstall> = Vec::new();
+    for partition in 0..=2 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for record in 0..count {
+            let Some((start, pc0, len)) = partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[start..start + len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::Effect {
+                    kind: EffectKind::AnimTrigger { arg },
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                if out
+                    .iter()
+                    .any(|t| t.partition == partition && t.record == record && t.pc == insn.pc)
+                {
+                    continue;
+                }
+                out.push(SceneStagerInstall {
+                    partition,
+                    record,
+                    pc: insn.pc,
+                    stager_id: arg,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// The stager ids a scene's **ambient effect-actor scripts** install at
+/// entry - the MAN partition-1 records that are pure effect scripts
+/// (`install id N` + infinite loop, the Shift-JIS-named "effect" actors of
+/// the consumer census). Returns the raw `AnimTrigger` operands, in record
+/// order.
+///
+/// Discrimination is by script shape, not name: a record qualifies when it
+/// contains at least one op-`0x34` sub-3 install and every decodable
+/// instruction in its body is from the effect-script allowlist (no-ops, the
+/// install itself, the self-loop `JmpRel`, and local/context flag writes).
+/// Interaction scripts that *also* carry an install (fired on talk, not on
+/// entry) always carry dialog / menu ops and are excluded; record 0 (the
+/// scene-entry system script) runs live through the field VM and is skipped.
+///
+/// REF: FUN_800252EC (the installer the op chains into; engine consumer
+/// `legaia_engine_core::world::World::spawn_ambient_record`)
+pub fn ambient_effect_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let count = man_file
+        .header
+        .partition_counts
+        .get(1)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    for record in 1..count {
+        let Some((start, pc0, len)) = partition_record_span(man_file, man, 1, record) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        let mut args: Vec<u8> = Vec::new();
+        let mut pure = true;
+        for insn in LinearWalker::new(body, pc0).flatten() {
+            match &insn.info {
+                InsnInfo::Nop | InsnInfo::JmpRel { .. } => {}
+                InsnInfo::LFlag { .. } | InsnInfo::CFlag { .. } => {}
+                InsnInfo::Effect {
+                    kind: EffectKind::AnimTrigger { arg },
+                    ..
+                } => args.push(*arg),
+                _ => {
+                    pure = false;
+                    break;
+                }
+            }
+        }
+        if pure {
+            out.extend(args);
+        }
+    }
+    out
+}
+
+/// `true` when the field VM's next PC after `insn` is statically the byte
+/// after it - the condition under which a linear walk still models the
+/// executed instruction stream.
+///
+/// Everything that reads a flag, a bounding box or the inventory branches on
+/// runtime state; the jump ops leave the straight line; the blocking ops
+/// (`Yield`, `WaitFrames`, dialogue, a scene change) end the frame slice
+/// where they stand. `DataBlock` is inline operand data whose length the
+/// preceding op consumes, so a walk that lands *on* one has already desynced.
+fn continues_entry_slice(insn: &InsnInfo) -> bool {
+    match insn {
+        InsnInfo::JmpRel { .. }
+        | InsnInfo::CondJmp { .. }
+        | InsnInfo::BBoxTest { .. }
+        | InsnInfo::InventoryCmp { .. }
+        | InsnInfo::Yield { .. }
+        | InsnInfo::WaitFrames { .. }
+        | InsnInfo::SceneChange { .. }
+        | InsnInfo::WarpOrInteract { .. }
+        | InsnInfo::TextSegment { .. }
+        | InsnInfo::Picker { .. }
+        | InsnInfo::DataBlock { .. } => false,
+        InsnInfo::LFlag { kind, .. }
+        | InsnInfo::GFlag { kind, .. }
+        | InsnInfo::CFlag { kind, .. }
+        | InsnInfo::SystemFlag { kind, .. } => *kind != FlagKind::Test,
+        _ => true,
+    }
+}
+
+/// The stager ids a scene installs **at scene entry**: the op-`0x34` sub-3
+/// installs a partition-1 placement's spawn-prologue reaches in the one frame
+/// slice retail's placement installer runs it for. Returns the raw
+/// `AnimTrigger` operands (feed each to `World::spawn_ambient_record` as
+/// `arg + 1`), in record / pc order.
+///
+/// # The rule, and where it comes from
+///
+/// `FUN_8003A1E4` - the pre-run the placement spawn loop calls per just-spawned
+/// placement - carries its own copy of the per-actor script runner's frame
+/// slice, and both halves of it are load-bearing here:
+///
+/// - **The pre-run is gated on the record's first opcode.** `0x8003A480`
+///   is `addiu v0,v1,-0x24; sltiu v0,v0,0x2; beq v0,zero,<skip>` - unless the
+///   first byte is `0x24` or `0x25`, the whole VM loop is skipped and the
+///   record's script never runs at load. Every placement whose author wanted
+///   an entry install therefore opens with `25`.
+/// - **The slice runs while `(opcode & 0x7F) >= 0x20`, and breaks *after*
+///   executing an opcode whose full byte is `0x21`** (`0x8003A4C4`
+///   `beq s1,s4` against `li s4,0x21` - the raw byte, so the cross-context
+///   `0xA1` does not break), or when the returned PC does not advance. This
+///   is why `0x25` and `0x21` are both "nop" to the disassembler yet only one
+///   of them ends the entry slice: a record that opens `25 / 34 30 00` fires
+///   its install in the load slice, and the `21` that follows parks it.
+///
+/// So an install is a *scene-entry* install exactly when the prologue slice
+/// executes it. Statically the branch ops' outcomes are unknown, so this
+/// census takes the **unconditional prefix** of that slice
+/// ([`continues_entry_slice`]) and is therefore an under-approximation: a
+/// flag-gated install deeper in a record (`suimon` P1[4], `nilboa` P1[3]'s
+/// second install) is left out rather than guessed at.
+///
+/// Record 0 is skipped: it is the scene's own controller script, which the
+/// host runs live through the field VM, so its installs arrive on that path.
+///
+/// This supersedes [`ambient_effect_installs`], which discriminated by script
+/// *shape* (a record containing nothing but nops, flag writes, the install and
+/// a self-loop). That filter is a strict special case of this one - every id it
+/// finds this finds - but it silently drops every install carried by a placement
+/// that also does something else, which on the retail disc is most of them:
+/// `town0e`'s morph installer is the second instruction of a fully scripted,
+/// dialogue-bearing placement.
+// PORT: FUN_8003A1E4 (placement spawn-prologue pre-run -> entry stager installs)
+// REF: FUN_80039B7C (the same frame slice, per-frame), FUN_8003AEB0 (spawn loop),
+//      FUN_800252EC (the installer the op chains into)
+pub fn scene_entry_ambient_installs(man_file: &ManFile, man: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let count = man_file
+        .header
+        .partition_counts
+        .get(1)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    for record in 1..count {
+        let Some((start, pc0, len)) = partition_record_span(man_file, man, 1, record) else {
+            continue;
+        };
+        let body = &man[start..start + len];
+        // The `FUN_8003A1E4` gate: no pre-run at all unless the script opens
+        // on the non-breaking nop pair.
+        if !matches!(body.get(pc0), Some(0x24 | 0x25)) {
+            continue;
+        }
+        for insn in LinearWalker::new(body, pc0) {
+            // A decode error means the walk has desynced; retail's PC would
+            // not be here at all, so stop rather than resync into noise.
+            let Ok(insn) = insn else { break };
+            let raw = insn.opcode | if insn.extended.is_some() { 0x80 } else { 0 };
+            // `sltiu v0,v0,0x20` - the loop exits BEFORE executing these.
+            if raw & 0x7F < 0x20 {
+                break;
+            }
+            if let InsnInfo::Effect {
+                kind: EffectKind::AnimTrigger { arg },
+                ..
+            } = insn.info
+            {
+                out.push(arg);
+            }
+            // `beq s1,s4` - the `0x21` nop executes, then ends the slice.
+            if raw == 0x21 || !continues_entry_slice(&insn.info) {
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// One partition-1 **boss-stager placement**: a placed actor whose own
+/// interaction record carries the field-VM scripted-battle op `3E FF <row>`
+/// (see `docs/subsystems/battle.md` § "Scripted-battle entry").
+///
+/// The chapter-1 case is Mt. Rikuroa's Caruban: the streaming-carrier MAN's
+/// `P1[3]` (the parked special-model placement the record's SJIS locals name
+/// ノア/Noa) opens on a `SysFlag.Test 0x142` park gate (the beaten-boss
+/// one-shot), stations its actor at the nest tile via its own `0x4C 0x51`
+/// NPC-run leg, self-suspends on a `4C 85` halt-acquire, and its beat body
+/// SETs the transient staged marker (`52 89`) immediately before `3E FF 11`
+/// (formation-table row 17 = lone Caruban `0x49`). Retail resumes the parked
+/// record through the locomotion touch dispatch / interaction probe
+/// (`FUN_801d5b5c` / `FUN_801cf9f4` - no script-side un-halt poke to the
+/// stager channel exists anywhere in the MAN), so approaching the placed
+/// actor is what runs the beat.
+///
+/// Every field is decoded from the record's own bytes; nothing is authored
+/// engine-side.
+// REF: FUN_801d5b5c (touch dispatch), FUN_801cf9f4 (interaction probe),
+//      FUN_801DE840 (case-0x3E interact arm the record's op enters through)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BossStagerPlacement {
+    /// Partition-1 record index (= the placement slot the interact /
+    /// walk-touch dispatch carries).
+    pub placement_index: usize,
+    /// MAN formation-table row the record's `3E FF <row>` selects.
+    pub formation_row: u8,
+    /// The record's park gate: the first clean `SysFlag.Test` at its entry -
+    /// the record parks (one-shot done) while this flag is SET. `None` when
+    /// the record opens unconditionally.
+    pub park_gate_flag: Option<u16>,
+    /// World position the record's own choreography stations the actor at
+    /// (its first own-context non-parked `0x4C 0x51` NPC-run leg) - the
+    /// approach point for the touch/interact dispatch. `None` when the
+    /// record never repositions its actor (the placement spawn tile stands).
+    pub station_world: Option<(i16, i16)>,
+    /// The placement's own spawn world position - the approach point when
+    /// the record carries no station leg (the Ravine ambush placements sit
+    /// at their spawn tiles).
+    pub spawn_world: (i16, i16),
+    /// `true` when the placement spawns at the [`PARKED_SENTINEL_TILE`]
+    /// (off-field until its own script stations it). A parked stager with no
+    /// station leg has no reachable approach point - consumers skip it.
+    pub spawn_parked: bool,
+}
+
+/// Recover every boss-stager placement from a scene's MAN: walk each
+/// partition-1 placement record for a **clean** scripted-battle op
+/// (`3E FF <row>`, base opcode, decoded at a trusted boundary - the same
+/// [`CLEAN_RESYNC_INSNS`] coherence rule the flag census uses, since a `>`
+/// glyph inside dialog text aliases `0x3E`). For each hit the record's park
+/// gate (first clean flag TEST) and station leg (first clean own-context
+/// non-parked `0x4C 0x51`) are decoded alongside.
+///
+/// Consumers must still validate `formation_row` against the scene's
+/// installed MAN formation table (a desync phantom row would not resolve);
+/// see `World::install_boss_stagers_from_man`.
+pub fn boss_stager_placements(man_file: &ManFile, man: &[u8]) -> Vec<BossStagerPlacement> {
+    let mut out: Vec<BossStagerPlacement> = Vec::new();
+    for p in man_file.actor_placements(man) {
+        let start = p.record_offset;
+        let end = record_end_bound(man_file, man.len(), start);
+        if start + p.script_pc0 >= end {
+            continue;
+        }
+        let body = &man[start..end];
+        // Coherence tracking (see `walk_partition_gflag_sites`): sites are
+        // trusted only after CLEAN_RESYNC_INSNS error-free decodes.
+        let mut ok_run = CLEAN_RESYNC_INSNS;
+        let mut park_gate_flag: Option<u16> = None;
+        let mut station_world: Option<(i16, i16)> = None;
+        let mut formation_row: Option<u8> = None;
+        for insn in LinearWalker::new(body, p.script_pc0) {
+            let insn = match insn {
+                Ok(insn) => insn,
+                Err(_) => {
+                    ok_run = 0;
+                    continue;
+                }
+            };
+            let clean = ok_run >= CLEAN_RESYNC_INSNS;
+            ok_run += 1;
+            if !clean {
+                continue;
+            }
+            match insn.info {
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    ..
+                } if park_gate_flag.is_none() => {
+                    park_gate_flag = Some(idx);
+                }
+                InsnInfo::MenuCtrl {
+                    kind: MenuCtrlKind::Nibble5NpcRun { x_enc, z_enc, .. },
+                    ..
+                } if station_world.is_none()
+                    && insn.extended.is_none()
+                    && (x_enc & 0x7F, z_enc & 0x7F) != PARKED_SENTINEL_TILE =>
+                {
+                    station_world = Some((grid_byte_to_world(x_enc), grid_byte_to_world(z_enc)));
+                }
+                InsnInfo::WarpOrInteract {
+                    op0: 0xFF,
+                    op1,
+                    is_warp: false,
+                } if insn.extended.is_none() => {
+                    formation_row = Some(op1);
+                }
+                _ => {}
+            }
+            if formation_row.is_some() {
+                break; // the battle op is the stager's terminal beat
+            }
+        }
+        if let Some(row) = formation_row {
+            out.push(BossStagerPlacement {
+                placement_index: p.index,
+                formation_row: row,
+                park_gate_flag,
+                station_world,
+                spawn_world: (p.world_x, p.world_z),
+                spawn_parked: (p.tile_x, p.tile_z) == PARKED_SENTINEL_TILE,
+            });
+        }
+    }
+    out
+}

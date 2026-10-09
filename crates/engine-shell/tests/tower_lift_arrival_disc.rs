@@ -158,12 +158,13 @@ fn ride(host: &mut SceneHost, d: PadButton) -> Option<(i16, i16)> {
     None
 }
 
-/// `balden`'s elevator cars ride **unbracketed**: P0[7] runs the player to
-/// the upper car with `CC F8 51` and walks it out through P0[14]'s door with
-/// `A2 F8 01` / `A2 F8 02`, setting it down on P0[14]'s contact centre with
-/// no `B1`. The engine runs neither walk-off clip as motion, so the landing
-/// must exempt the partner car until the player is off its box, or the first
-/// step in any direction rides straight back down.
+/// `balden`'s elevator cars ride **unbracketed**: P0[7] glides the player
+/// into the lower car (`B7 F8 04 81`), runs it to the upper car with
+/// `CC F8 51`, and walks it out through P0[14]'s door with the compass leg
+/// `C1 F8 00 43` (192 units toward -Z), with no `B1`. The landing is the end
+/// of that leg, clear of the partner car's contact box, so a step in any
+/// direction but back into the car leaves the player upstairs; a step back in
+/// rides the car down, as the door is meant to.
 #[test]
 fn balden_elevator_arrival_does_not_ride_back() {
     let Some(extracted) = extracted_dir() else {
@@ -206,6 +207,17 @@ fn balden_elevator_arrival_does_not_ride_back() {
                 player_xz(&host)
             );
         };
+        // The walk-off leg sets the player down outside the upper car's
+        // contact box (P0[14], centred on z = 13504).
+        assert!(
+            (i32::from(landing.1) - 13504).abs() >= 80,
+            "the upper car's walk-off left the player on its contact box at {landing:?}"
+        );
+        if d == PadButton::Up {
+            // Back into the car: the door rides it down.
+            tested += 1;
+            continue;
+        }
         hold(&mut host, d.mask(), 24);
         let at = player_xz(&host);
         eprintln!("[balden] {d:?} from {landing:?} -> {at:?}");

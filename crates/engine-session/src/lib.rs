@@ -5,10 +5,12 @@
 //! code. A host supplies only what it owns: the audio output (any
 //! [`legaia_engine_audio::AudioSink`]), the GPU, and its input source.
 //!
+//! - [`battle_fx`] - the move-FX spawn-to-sound step.
 //! - [`bgm`] - the BGM / SFX director over an `AudioSink`.
 //! - [`boot`] - [`BootSession`], the scene host plus the per-frame order
 //!   (mode seat, menus, camera halves, audio routing) around its tick.
 
+pub mod battle_fx;
 pub mod bgm;
 pub mod boot;
 pub mod xa_banks;

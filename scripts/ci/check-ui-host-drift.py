@@ -251,6 +251,8 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 UI_SRC = REPO / "crates" / "engine-ui" / "src"
+# engine-ui plus the render kernels split out of it (which it re-exports).
+UI_SRCS = [UI_SRC, REPO / "crates" / "render-kernels" / "src"]
 WAIVERS = Path(__file__).resolve().parent / "ui-host-drift-waivers.toml"
 
 # Source roots per host. `engine-render` counts as native: it re-exports
@@ -383,7 +385,7 @@ NATIVE_RENDER_STATE = "crates/engine-render/src/renderer/state.rs"
 # The enhanced-lighting model's constants live in the shared kernel; the
 # moods themselves reach the page from the engine (`play_lighting_frame`),
 # so only the shading-law constants have a hand-written JS twin.
-NATIVE_DYN_LIGHT = "crates/engine-ui/src/scene_lighting.rs"
+NATIVE_DYN_LIGHT = "crates/render-kernels/src/scene_lighting.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -542,11 +544,154 @@ NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"
 WEB_FIELD_SCENE = "crates/web-viewer/src/field_scene.rs"
+NATIVE_MINIGAMES = "crates/engine-shell/src/window/minigames.rs"
+WEB_MINIGAMES_DANCE = "crates/web-viewer/src/minigames_dance.rs"
+WEB_PLAY_ARENA_SURFACE = "crates/web-viewer/src/play_minigame_arena.rs"
 NATIVE_TITLE_SAVE = (
     "crates/engine-shell/src/window/title_save_draws.rs"
 )
 
 SIM_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "shop / prize-counter opening, native vs play page - each host "
+        "drained the field VM's op-`0x49` shop and prize-counter requests "
+        "itself and spelled the opening tick's no-edge rule (the Cross that "
+        "closed the merchant's line must not also commit the picker's first "
+        "row). Both open through `MenuRuntime::open_field_overlay_requests` "
+        "and pick the opening tick's edge with `MenuRuntime::session_edge`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_shop.rs", "poll_field_shop"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["open_field_overlay_requests", "session_edge"],
+    },
+    {
+        "what": "dance auto-end, native vs play page - once the song-over arm "
+        "restores the interrupted mode, the run is torn down and its final "
+        "game handed back; each host spelled the `mode != Dance` poll beside "
+        "its own `exit_dance` call. Both poll `World::finish_dance_if_over`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_minigames.rs", "tick_minigame_ui"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["finish_dance_if_over"],
+    },
+    {
+        "what": "scene-hidden lead, native vs play page - the opening "
+        "prologue (`opdeene`) installs a free-roam lead at the cold spawn "
+        "though its vignette shots have none; the native actor pass skipped "
+        "slot 0 there and the page drew him as a stray mesh. Both ask "
+        "`World::actor_hidden_by_scene`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play.rs", "play_player_drawn"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["actor_hidden_by_scene"],
+    },
+    {
+        "what": "placed-object / overworld-landmark live model, native vs "
+        "play page - a scripted model swap (op `0x0E`) re-skins only the "
+        "record's first placement, and the rule was spelled three times: the "
+        "native field pass through a cached bound mask, the native overworld "
+        "pass inline over the records slice, the page with a `0xF0` sentinel "
+        "filter the native passes lacked; the native turn-then-move "
+        "composition was spelled twice inside the window. Both hosts' swaps "
+        "come out of `field_env::placed_model_swaps`, and the native passes "
+        "compose through `field_env::live_placed_model`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play.rs", "field_placement_models"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["placed_model_swaps"],
+    },
+    {
+        "what": "NPC posed-mesh cache key, native vs play page - a script's "
+        "look rotation (`4C 45`) turns the head on top of the keyframe, so it "
+        "is part of the pose each host memoises. The native window packed it "
+        "into the key's high bits; the page folded the same inputs with "
+        "overlapping XORs into its re-pose generation, under which two "
+        "different looks could share a value and the head would not re-pose. "
+        "Both key on `ActorLook::pose_key_bits`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/field_actors.rs", "clip_states"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["pose_key_bits"],
+    },
+    {
+        "what": "field NPC draw transform, native vs play page - the hide "
+        "(off-map box, zero render scale), the heading composition and the "
+        "tilt were spelled out natively and again in field-actors.js over two "
+        "encodings of the yaw, and neither host folded retail's non-unit "
+        "`actor+0x72` render scale in (`FUN_8001ADA4` `0x8001B240`). Both "
+        "build the model from `World::field_npc_draw_pose`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/field_actors.rs", "draw_poses"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_npc_draw_pose"],
+    },
+    {
+        "what": "frame clear colour, native vs play page - both ran the "
+        "shared `scene_clear` selector, but the page passed a hardcoded "
+        "`false` for the screen term the native window built from its boot "
+        "UI and `MenuRuntime::covers_field`, so a shop in a scene with a "
+        "scripted clear colour sat on that colour on the page and on black "
+        "natively. Both ask `field_frame::frame_clear_color`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_battle_render.rs", "play_scene_clear_color"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_clear_color"],
+    },
+    {
+        "what": "prologue colour grade staging, native vs play page - each "
+        "host mapped `World::scene_color_grade` / `scene_depth_cue` onto its "
+        "renderer's colour-grade, palette-grade and depth-cue arms itself. "
+        "Both take the one mapping `World::frame_grade`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_cutscene.rs", "play_cutscene_state_json"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_grade"],
+    },
+    {
+        "what": "enhanced lighting's scene-light selection, native vs play "
+        "page - each host spelled out the gate (field mode, not the world "
+        "map, no screen owning the frame), the focus and the prop-light "
+        "placement itself, and the page's gate lacked the screen term, so "
+        "a shop's black backdrop carried the scene's candle halos there. "
+        "Both ask `field_frame::field_scene_lights`",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/play_lighting.rs", "play_lighting_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["field_scene_lights"],
+    },
+    {
+        "what": "move-FX spawn to sound, native vs play page - each host "
+        "took the pending spawn, seated it, took the cue and classified it "
+        "itself, and the two had drifted on the classification's arms (the "
+        "native window logged a voice arm the page dropped; the cue is a "
+        "byte, so that arm cannot arise). Both run "
+        "`battle_fx::spawn_pending_move_fx` and enqueue the ring value it "
+        "returns",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": ("crates/web-viewer/src/runtime.rs", "tick_world_effects"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["spawn_pending_move_fx"],
+    },
     {
         "what": "dialog picker option labels, native vs play page - both "
         "printed `legaia_mes::PickerOption::label`, which carries no name "
@@ -710,14 +855,15 @@ SIM_PAIRS: list[dict[str, object]] = [
         "what": "battle target-cursor cue, native vs play page - the pulse "
         "toward white on the pointed-at monster and the dim on the rest are "
         "the port's readout of the stamped render flag, and their numbers "
-        "were hand-copied into each host's draw pass. Both sites must read "
-        "`battle_action::cursor_cue`",
+        "were hand-copied into each host's draw pass. The read now sits "
+        "inside the one precedence both draw passes take "
+        "(`BattleActorDrawPlan::body_cue`), which this row pins",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
-        "symbols": ["cursor_cue"],
+        "symbols": ["body_cue"],
     },
     {
         "what": "battle body whole-mesh blend, native vs play page - the "
@@ -740,14 +886,14 @@ SIM_PAIRS: list[dict[str, object]] = [
         "what": "battle body tint-cue gate, native vs play page - which "
         "render flags take the tint pass's cue (not the cursor's two; the "
         "fade only while its word raises ABE). The native gate also asked "
-        "whether the body was posed. Both draw passes must ask "
-        "`BattleActorDrawPlan::tint_cue_applies`",
+        "whether the body was posed. The gate is asked inside "
+        "`BattleActorDrawPlan::body_cue`, which both draw passes take",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": ("crates/web-viewer/src/play_battle_fx.rs", "play_battle_actor_cursor"),
         },
         "mode": "symbols_all",
-        "symbols": ["tint_cue_applies"],
+        "symbols": ["body_cue"],
     },
     {
         "what": "Muscle Dome 3D arena, native vs play page - the page posed "
@@ -846,15 +992,42 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`layer` is an ordering-table bucket and `blend` an ABR equation "
         "(two `i16`s a call site can swap), and `packed` is a GP0 colour word "
         "with red LOW, the opposite of every other kernel here. Both sites "
-        "must emit through `screen_effect_push_prims_split`, which also "
-        "decides which pushes wash the text layer (OT bucket 0, in front of "
-        "the glyphs at bucket 1)",
+        "emit through `screen_effect_push_prims_split`, which also decides "
+        "which pushes wash the text layer (OT bucket 0, in front of the "
+        "glyphs at bucket 1); that call now sits inside the one composer "
+        "both hosts run (`screen_layers::compose_screen_prims`), so the "
+        "assertion is on the composer",
+        "sites": {
+            "native": (NATIVE_REDRAW, "handle_redraw"),
+            "web": (WEB_PLAY_BATTLE, "rebuild_screen_geom"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["compose_screen_prims"],
+    },
+    {
+        "what": "screen-primitive append order, native vs play page - the "
+        "ordering-table walk breaks every bucket tie by append order (LIFO), "
+        "and the two hosts appended in different orders: the PROT-0900 "
+        "screen-effect widgets with the field's ordering-table effects "
+        "natively and last on the page, the shop's opening fade and the "
+        "pause wipe in opposite orders, and the page kept the field's "
+        "effects under a shop that blacks the field out. Both fill "
+        "`HostScreenPrims` and compose through `compose_screen_prims`; "
+        "neither host may append a world-decided layer itself",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
             "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
         },
-        "mode": "symbols_all",
-        "symbols": ["screen_effect_push_prims_split"],
+        "mode": "symbols_same",
+        "symbols": [
+            "HostScreenPrims",
+            "screen_fade_draws",
+            "cross_beam_draw",
+            "shop_fade_level",
+            "cinematic_bar_prims",
+            "arts_banner_prims",
+            "draw_quads",
+        ],
     },
     {
         "what": "battle-intro style inputs, native vs play page - the style "
@@ -917,13 +1090,21 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hole sat off the character. Its arming operands had drifted the same "
         "way - the native window excludes the boot UI, the world map, a "
         "scripted shot and the debug orbit, the page excluded only battle and "
-        "the minigames. Both sites must reach the shared kernels",
+        "the minigames, and the page carried the strength ramp's 0.25 ease "
+        "and 0.01 snap in play-app.js. The arming terms combine in "
+        "`field_occlusion::host_fade_armed` and the ramp is "
+        "`field_occlusion::FadeRamp`; both sites must reach every kernel",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_CAMERA, "play_occlusion_focus"),
+            "web": (WEB_PLAY_CAMERA, "play_occlusion_fade"),
         },
         "mode": "symbols_all",
-        "symbols": ["player_body_centre", "player_feet"],
+        "symbols": [
+            "player_body_centre",
+            "player_feet",
+            "host_fade_armed",
+            "FadeHostTerms",
+        ],
     },
     {
         "what": "`apply == 0` Camera Configure snap beats, native vs play "
@@ -1198,6 +1379,34 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["render_positions"],
+    },
+    {
+        "what": "dance-hall placement composition, native vs browser - every "
+        "venue draw is placed through `EnvDraw::place_point` (Rx * Ry * Rz, "
+        "FUN_80026988, then the world position and the coplanar lift) on "
+        "both hosts. The browser bake once read the yaw alone, which stood the "
+        "hall's tilted video walls inside the back wall: the page drew brick "
+        "where the window drew the dancer screens, with every tier green",
+        "sites": {
+            "native": (NATIVE_MINIGAMES, "build_dance_venue_gpu"),
+            "web": (WEB_MINIGAMES_DANCE, "append_draw"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["place_point"],
+    },
+    {
+        "what": "Muscle Dome 3D surface cadence, native vs play page - the "
+        "surface steps its choreography and battle camera script once per "
+        "call, so a world host must reach it through `frame_at`, which gates "
+        "the step on the world's sim tick. The page once called the per-call "
+        "`frame` from a draw that also runs on idle frames, and its round "
+        "intro framed a different fighter than the window's",
+        "sites": {
+            "native": (NATIVE_MINIGAMES, "refresh_muscle_dome_gpu"),
+            "web": (WEB_PLAY_ARENA_SURFACE, "play_mg_muscle_scene_frame"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["frame_at", "sim_ticks"],
     },
     {
         "what": "Muscle Dome damage - the arena's per-exchange damage must come "
@@ -1534,6 +1743,76 @@ def signature_end(text: str, start: int) -> int:
     return -1
 
 
+# The native redraw is one frame split into named steps across several
+# files: `handle_redraw` (`NATIVE_REDRAW`) calls `run_frame_ticks` and the
+# render steps, the per-tick body `sim_tick` calls its own step helpers. Every
+# check that reads "what the native frame does" reads the whole frame, so a
+# step helper defined in one of these files is spliced back in at its call
+# site (recursively) - which reproduces the text the steps were split out of.
+# The scene draw lists are built by `DrawCtx` methods (`draw_cx.` / `self.`
+# inside them) rather than window methods; the splice follows those too.
+# A helper in any other window file (`tick_field_party_hud`, the draw-pass
+# builders) stays a call: those are kernels in their own right.
+NATIVE_REDRAW_STEP_FILES = (
+    "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_prep.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_present.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_render.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_stage.rs",
+)
+# Splice depth guard: the step tree is shallow, so a deeper chain is a cycle.
+NATIVE_STEP_SPLICE_DEPTH = 8
+
+
+def native_step_bodies() -> dict[str, str]:
+    """Comment-stripped body of every fn the native redraw step files define."""
+    out: dict[str, str] = {}
+    for rel in NATIVE_REDRAW_STEP_FILES:
+        path = REPO / rel
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for m in re.finditer(r"\bfn\s+([a-z_][a-z_0-9]*)\s*[<(]", text):
+            brace = signature_end(text, m.start())
+            if brace < 0:
+                continue
+            out[m.group(1)] = strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace)))
+    return out
+
+
+def splice_native_steps(body: str, steps: dict[str, str] | None = None, depth: int = 0) -> str:
+    """`body` with each `self.<step>(..)` call replaced by the step's body."""
+    if steps is None:
+        steps = native_step_bodies()
+    if depth > NATIVE_STEP_SPLICE_DEPTH or not steps:
+        return body
+    # `self.` for the window's own step methods; `draw_cx.` for the draw-list
+    # builder (`DrawCtx`), whose context the redraw constructs and calls.
+    call_re = re.compile(
+        r"\b(?:self|draw_cx)\.(" + "|".join(map(re.escape, steps)) + r")\s*\("
+    )
+    out: list[str] = []
+    pos = 0
+    for m in call_re.finditer(body):
+        if m.start() < pos:
+            continue
+        # The call's closing paren (arguments may nest).
+        i, par = m.end(), 1
+        while i < len(body) and par:
+            if body[i] == "(":
+                par += 1
+            elif body[i] == ")":
+                par -= 1
+            i += 1
+        out.append(body[pos : m.start()])
+        out.append(splice_native_steps(steps[m.group(1)], steps, depth + 1))
+        pos = i
+    out.append(body[pos:])
+    return "".join(out)
+
+
 def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     """The source a [`SIM_PAIRS`] site names: one fn body, or the whole file.
 
@@ -1554,7 +1833,23 @@ def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     brace = signature_end(text, m.start())
     if brace < 0:
         return None, f"`fn {fn_name}` in {rel} has no body"
-    return strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace))), ""
+    body = strip_comments(BLOCK_COMMENT_RE.sub(" ", fn_body(text, brace)))
+    if rel == NATIVE_REDRAW or rel in NATIVE_REDRAW_STEP_FILES:
+        body = splice_native_steps(body)
+    if rel == NATIVE_REDRAW and fn_name == "handle_redraw":
+        # The draw builder's leaf helpers (the per-draw cue / clip / key
+        # fns, reached as `cues.<fn>(` or as a fn value) were closures and a
+        # nested fn of this body before the split; their bodies belong to it.
+        sources = "\n".join(
+            strip_comments((REPO / r).read_text(encoding="utf-8"))
+            for r in (NATIVE_REDRAW, *NATIVE_REDRAW_STEP_FILES)
+            if (REPO / r).is_file()
+        )
+        spliced = set(re.findall(r"\b(?:self|draw_cx)\.([a-z_][a-z_0-9]*)\s*\(", sources))
+        for name, step in native_step_bodies().items():
+            if name not in spliced:
+                body += "\n" + step
+    return body, ""
 
 
 def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
@@ -1729,7 +2024,7 @@ def is_screen_signature(signature: str) -> bool:
 def collect_builders() -> dict[str, str]:
     """Map builder name -> `path:line` where it is defined."""
     out: dict[str, str] = {}
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in BUILDER_RE.finditer(text):
             # The signature runs from the fn keyword to the body's opening
@@ -1799,7 +2094,7 @@ def fn_body(text: str, brace: int) -> str:
 def collect_fn_names() -> set[str]:
     """Every `fn` name engine-ui defines, at any indentation."""
     out: set[str] = set()
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in ANY_FN_RE.finditer(text):
             out.add(m.group("name"))
@@ -1845,7 +2140,7 @@ def collect_call_graph(names: set[str]) -> dict[str, set[str]]:
     waiver asserting a gap that does not exist.
     """
     refs: dict[str, set[str]] = {n: set() for n in names}
-    for path in sorted(UI_SRC.rglob("*.rs")):
+    for path in sorted(p for r in UI_SRCS for p in r.rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         for m in ANY_FN_RE.finditer(text):
             name = m.group("name")
@@ -2168,6 +2463,17 @@ SELFTEST_WORDS: list[tuple[str, str, str, bool]] = [
 
 def run_selftest() -> int:
     failures = 0
+    # The native step splice: a step's body replaces its call (arguments
+    # included), recursively, and a call to a non-step fn stays a call.
+    spliced = splice_native_steps(
+        "self.a(); let x = self.b(f(1), 2); self.k();",
+        {"a": " self.b(); ", "b": " self.c(); y "},
+    )
+    if spliced == "  self.c(); y ; ; let x =  self.c(); y ; self.k();":
+        print("  ok    native step splice: nested steps inline, kernels stay calls")
+    else:
+        print(f"  FAIL  native step splice: got {spliced!r}")
+        failures += 1
     for label, text, name, want in SELFTEST_WORDS:
         got = name in word_set(text)
         ref = re.search(rf"\b{re.escape(name)}\b", text) is not None
@@ -2351,11 +2657,11 @@ KEY_SET_LITERAL_RE = re.compile(r"\.(?:has|includes)\(\s*['\"]([^'\"]+)['\"]\s*\
 def bindable_dom_codes() -> set[str]:
     """The `KeyboardEvent.code`s the engine's own vocabulary binds.
 
-    Parsed from `KEY_NAME_DOM_CODES` in `crates/engine-core/src/input.rs` rather
+    Parsed from `KEY_NAME_DOM_CODES` in `crates/engine-system/src/input.rs` rather
     than restated here, so this gate cannot drift from the table it polices.
     An unreadable table yields an empty set, which disables only this detector.
     """
-    src = REPO / "crates" / "engine-core" / "src" / "input.rs"
+    src = REPO / "crates" / "engine-system" / "src" / "input.rs"
     if not src.is_file():
         return set()
     text = src.read_text(encoding="utf-8", errors="replace")
@@ -2512,7 +2818,11 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-core",
     REPO / "crates" / "engine-minigames",
     REPO / "crates" / "engine-effects",
+    REPO / "crates" / "engine-field",
+    REPO / "crates" / "engine-menus",
+    REPO / "crates" / "engine-system",
     REPO / "crates" / "engine-ui",
+    REPO / "crates" / "render-kernels",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
     REPO / "crates" / "web-viewer",
@@ -3033,7 +3343,7 @@ def _selftest_render_case(rule: dict, src: str) -> bool:
 OWNED_TYPES: list[dict[str, object]] = [
     {
         "type": "Camera",
-        "defined_in": "crates/engine-core/src/camera.rs",
+        "defined_in": "crates/engine-field/src/camera.rs",
         "why": "which camera owns a frame and what its retail GTE inputs are "
         "is one engine question; a host that renders a field without holding "
         "the type re-implements the mover, the compass azimuth and the "
@@ -3210,7 +3520,7 @@ def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[s
 ENUM_COVERAGE: list[dict[str, object]] = [
     {
         "enum": "SceneMode",
-        "source": "crates/engine-core/src/world/types.rs",
+        "source": "crates/engine-field/src/mode.rs",
         "why": "a mode both hosts can ENTER (the shared scene host drains the "
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "
@@ -3357,9 +3667,13 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
     REPO / "crates" / "engine-minigames" / "src",
     REPO / "crates" / "engine-effects" / "src",
+    REPO / "crates" / "engine-field" / "src",
+    REPO / "crates" / "engine-menus" / "src",
+    REPO / "crates" / "engine-system" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-battle-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
+    REPO / "crates" / "render-kernels" / "src",
     REPO / "crates" / "web-viewer" / "src",
 ]
 
@@ -3522,8 +3836,8 @@ SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
 # and the difference is a whole class of defect none of them can see.
 #
 # The shape. Both hosts drive the engine through one frame path - the native
-# window's redraw tick loop, the browser runtime's `tick_frame` - and both
-# paths short-circuit. The native loop `continue`s out of several arms (the
+# window's per-tick body `sim_tick`, the browser runtime's `tick_frame` - and
+# both paths short-circuit. The native body `return`s out of several arms (the
 # boot UI owns the frame, the name-entry overlay is modal, a prologue
 # hand-off swapped scenes, the narration crawl owns the pad, a Start edge
 # just opened the pause menu); the browser `return`s out of its own. The
@@ -3575,12 +3889,16 @@ SELFTEST_CALL_FORM: list[tuple[str, str, str, bool]] = [
 
 FRAME_PATHS: dict[str, dict] = {
     "native": {
-        "path": NATIVE_REDRAW,
+        "path": NATIVE_REDRAW_STEP_FILES[0],
         # The window's per-tick body. `handle_redraw` runs it up to four
-        # times per rendered frame (the catch-up drain) and then draws once,
-        # so every `continue` here returns to a frame that still draws.
-        "anchor": "for _ in 0..run_ticks",
-        "exit": "continue",
+        # times per rendered frame (the catch-up drain, `run_frame_ticks`)
+        # and then draws once, so every `return` here returns to a frame
+        # that still draws. Its step helpers are spliced back in
+        # (`splice_native_steps`), so the kernels they call read as the
+        # body's own.
+        "anchor": "fn sim_tick(&mut self) -> bool",
+        "exit": "return",
+        "splice": True,
     },
     "web": {
         "path": WEB_RUNTIME,
@@ -3655,6 +3973,8 @@ def frame_path_scan(host: str) -> tuple[list[tuple[str, int]], list[dict]]:
         text = strip_comments((REPO / spec["path"]).read_text(encoding="utf-8"))
     body_start, body_end = brace_block(text, text.index(spec["anchor"]))
     body = text[body_start:body_end]
+    if spec.get("splice"):
+        body = splice_native_steps(body)
     base_line = text.count("\n", 0, body_start) + 1
 
     # One pass: nesting depth, the stack of open-brace offsets, every call
@@ -4114,10 +4434,14 @@ ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
     "engine-effects",
+    "engine-field",
+    "engine-menus",
+    "engine-system",
     "engine-minigames",
     "engine-vm",
     "engine-battle-vm",
     "engine-ui",
+    "render-kernels",
     "engine-audio",
     "engine-session",
     "engine-screens",

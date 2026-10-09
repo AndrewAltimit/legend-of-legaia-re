@@ -284,3 +284,62 @@ fn object_channels_seed_without_partition1_placements() {
     assert_eq!(obj.ctx.script_id, 0);
     assert_eq!((obj.ctx.world_x, obj.ctx.world_z), (100, 200));
 }
+
+/// An object-bind context starts at its `.MAP` angles and turns with op
+/// `0x38`: `town0c`'s exit-rock prologue `25 .. 38 83 00` leaves the actor at
+/// compass 3 (`0x600`) where the record authored `320`, and the draw follows
+/// the actor (`World::object_draw_turns`).
+#[test]
+fn an_object_bind_prologue_turn_reaches_the_draw() {
+    use legaia_asset::man_section::{ManFile, ManHeader, SectionRef};
+
+    let data_region_offset = 0x40usize;
+    let mut man = vec![0u8; data_region_offset];
+    // `[u8 n = 0][u8 attr]`, the partition-0 record header.
+    man.extend_from_slice(&[0x00, 0x00]);
+    // pc0: the bind prologue - NOP-open, face compass 3, then idle.
+    man.extend_from_slice(&[0x25, 0x38, 0x83, 0x00, 0x21, 0x00]);
+    let man_file = ManFile {
+        header: ManHeader {
+            status_flags: 0,
+            low_flag: false,
+            depth_lut: [0; 16],
+            partition_counts: [1, 0, 0],
+            u24_at_28: 0,
+        },
+        partitions: [vec![0u32], vec![], vec![]],
+        data_region_offset,
+        sections: std::array::from_fn(|_| SectionRef {
+            offset: man.len(),
+            length: 0,
+        }),
+    };
+
+    let mut world = World::default();
+    world.seed_field_channels(&man_file, &man);
+    world.set_object_bind_rots([(0usize, [0u16, 320, 0])].into_iter().collect());
+    world.seed_object_channels(&man_file, &man, &[(0usize, (100i16, 200i16))]);
+    let turns = world.object_draw_turns();
+    assert_eq!(turns.get(&0), Some(&[0, 0x600, 0]));
+
+    // The draw turns by the difference, about its own origin.
+    let m = world.object_draw_turn_matrices()[&0];
+    let model: [f32; 16] = [
+        1.0, 0.0, 0.0, 0.0, //
+        0.0, 1.0, 0.0, 0.0, //
+        0.0, 0.0, 1.0, 0.0, //
+        5.0, 6.0, 7.0, 1.0,
+    ];
+    let turned = crate::field_env::turn_placed_model(&model, &m);
+    assert_eq!(&turned[12..16], &[5.0, 6.0, 7.0, 1.0], "origin kept");
+    let a = f32::from(0x600u16 - 320) * std::f32::consts::TAU / 4096.0;
+    assert!((turned[0] - a.cos()).abs() < 1e-5);
+    assert!(
+        (turned[8] - a.sin()).abs() < 1e-5,
+        "Ry: local +Z leans to +X"
+    );
+
+    // A context left at its bind angles is not listed.
+    world.set_object_bind_rots([(0usize, [0u16, 0x600, 0])].into_iter().collect());
+    assert!(world.object_draw_turns().is_empty());
+}

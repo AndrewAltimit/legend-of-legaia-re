@@ -128,6 +128,12 @@ pub struct FrameClock {
     /// [`Self::play_time_seconds`] - the high-water mark
     /// [`crate::world::World::tick_play_clock`] deltas against.
     pub play_clock_high_water: u32,
+    /// A replay's retail battle frame step and the action-SM state it takes
+    /// effect in (`World::seed_battle_frame_step`): `(step, state)`. Not a
+    /// retail field - retail measures its step per frame
+    /// ([`crate::world::BattleFrameClock`]); the retail-compare
+    /// drive seeds the one a capture's frame-time ring reads.
+    pub battle_frame_step_seed: Option<(u8, u8)>,
 }
 
 impl FrameClock {
@@ -150,6 +156,7 @@ impl FrameClock {
             display_frames: 0,
             play_clock_origin: None,
             play_clock_high_water: 0,
+            battle_frame_step_seed: None,
         }
     }
 }

@@ -38,9 +38,10 @@ pub struct RetailCompareArgs {
     /// Only states whose label contains this substring.
     #[arg(long)]
     pub filter: Option<String>,
-    /// Diagnostic: apply the retail save before the scene entry as well as
-    /// after, so the entry scripts see the retail story flags (the default
-    /// is the engine's own card-load order, which hydrates after entry).
+    /// Diagnostic: apply the whole retail save before the scene entry as
+    /// well as after, entering through `enter_scene_live` with no resume
+    /// landing (the default is the engine's own card-load order: story
+    /// flags, the landing, then the whole save).
     #[arg(long, default_value_t = false)]
     pub flags_first: bool,
     /// Write the committed score baseline to this path (no pixels, no RAM).

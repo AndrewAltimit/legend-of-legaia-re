@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,18 +13,30 @@ license = "MIT OR Unlicense"
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 clap = { version = "4", features = ["derive"] }
+console_error_panic_hook = "0.1"
+cpal = "0.15"
+dirs = "6"
+encoding_rs = "0.8"
 env_logger = "0.11"
 flate2 = "1"
 glam = { version = "0.30", features = ["bytemuck"] }
+js-sys = "0.3"
 libc = "0.2"
 log = "0.4"
 png = "0.17"
+pollster = "0.4"
 rayon = "1"
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 sha2 = "0.10"
 tempfile = "3"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
+wgpu = "26"
 winit = "0.30"
 
 # Workspace crates. Those carrying a command-line binary are listed with
@@ -33,6 +45,8 @@ winit = "0.30"
 legaia-bytes = { path = "crates/bytes" }
 legaia-anm = { path = "crates/anm", default-features = false }
 legaia-art = { path = "crates/art", default-features = false }
+legaia-game-tables = { path = "crates/game-tables" }
+legaia-battle-models = { path = "crates/battle-models" }
 legaia-asset = { path = "crates/asset", default-features = false }
 legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
@@ -40,12 +54,16 @@ legaia-engine-battle = { path = "crates/engine-battle" }
 legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
+legaia-engine-field = { path = "crates/engine-field" }
+legaia-engine-menus = { path = "crates/engine-menus" }
+legaia-engine-system = { path = "crates/engine-system" }
 legaia-engine-minigames = { path = "crates/engine-minigames" }
 legaia-engine-render = { path = "crates/engine-render" }
 legaia-engine-session = { path = "crates/engine-session" }
 legaia-engine-screens = { path = "crates/engine-screens" }
 legaia-parity = { path = "crates/parity" }
 legaia-engine-shell = { path = "crates/engine-shell" }
+legaia-render-kernels = { path = "crates/render-kernels" }
 legaia-engine-ui = { path = "crates/engine-ui" }
 legaia-engine-vm = { path = "crates/engine-vm" }
 legaia-font = { path = "crates/font", default-features = false }
@@ -56,6 +74,9 @@ legaia-mdec = { path = "crates/mdec", default-features = false }
 legaia-mdt = { path = "crates/mdt", default-features = false }
 legaia-mednafen = { path = "crates/mednafen", default-features = false }
 legaia-mes = { path = "crates/mes", default-features = false }
+legaia-disc-patch = { path = "crates/disc-patch" }
+legaia-translate = { path = "crates/translate" }
+legaia-party-swap = { path = "crates/party-swap" }
 legaia-patcher = { path = "crates/patcher", default-features = false }
 legaia-pcsxr = { path = "crates/pcsxr", default-features = false }
 legaia-prot = { path = "crates/prot", default-features = false }

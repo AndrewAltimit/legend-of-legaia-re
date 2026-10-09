@@ -53,13 +53,14 @@
 //! pieces of that chain are ported as pure kernels in
 //! [`legaia_engine_vm::battle_formulas`] (`summon_attacker_roll` /
 //! `summon_defender_roll` / `summon_predamage` / `heal_summon_amount` and the
-//! `apply_*` scale helpers). They are **not yet wired** into a live battle here:
-//! the engine's spell path still uses [`SpellEffect`]'s MP-scaled `base_power`,
-//! and the faithful roll needs a live battle-actor context (both actors' AGL/HP/
-//! defense/status, the affinity matrix, and the caster magic-power byte) plus
-//! the `FUN_801ddb30` finisher, which mutates ~20 battle globals. When a
-//! player-driven summon consumer needs real numbers, feed those stats into the
-//! `battle_formulas` kernels rather than the placeholder below.
+//! `apply_*` scale helpers), and the live battle rolls a damaging player cast
+//! through them: `engine-core`'s `World::player_summon_predamage` feeds the
+//! summon creature's record, both actors' stats, the affinity matrix and the
+//! caster's magic-power byte into `summon_predamage_lazy` plus the
+//! `FUN_801ddb30` finisher. The MP-scaled `base_power` below is only the
+//! fallback for a battle whose monster catalog cannot resolve the summon
+//! creature (disc-free fixtures); the ally-side casts take their restore from
+//! the cast module's tick kernel instead.
 
 use crate::spells::{SpellCatalog, SpellDef, SpellEffect, SpellElement, SpellTarget};
 
@@ -261,13 +262,12 @@ fn target_from_shape(shape: legaia_asset::spell_names::SpellTargetShape) -> Spel
     }
 }
 
-/// A spell catalog covering the real player Seru-magic ids on top of the
-/// [`SpellCatalog::vanilla`] demo entries. The real ids (`0x81..=0x8b`) don't
-/// collide with the placeholder range (`0x10..=0x51`), so this is a clean
-/// union: a boot save or capture that uses a real id resolves to the correct
-/// name, while the legacy demo ids still work.
+/// The disc-free boot catalog: the pinned player Seru-magic block
+/// (`0x81..=0x8b`) and nothing else. It carries none of the
+/// [`SpellCatalog::vanilla`] demo entries, whose fabricated ids are real
+/// monster spell ids on the disc (see [`seru_magic_catalog_from_scus`]).
 pub fn retail_seru_magic_catalog() -> SpellCatalog {
-    let mut c = SpellCatalog::vanilla();
+    let mut c = SpellCatalog::new();
     for s in SERU_MAGIC {
         c.insert(spell_def_for(s));
     }
@@ -286,7 +286,13 @@ pub fn retail_seru_magic_catalog() -> SpellCatalog {
 /// `None` only when the image isn't a parseable PSX-EXE.
 pub fn seru_magic_catalog_from_scus(scus: &[u8]) -> Option<SpellCatalog> {
     let table = legaia_asset::spell_names::SpellNameTable::from_scus(scus)?;
-    let mut c = SpellCatalog::vanilla();
+    // Retail's live spell record is the SCUS table itself (`DAT_800754C8`,
+    // read by id for every cast, monster or party - state `0x28` takes the
+    // `+3` MP byte off it at `0x801E4500`), so the boot catalog is built from
+    // that table alone. `SpellCatalog::vanilla`'s demo entries sit on real
+    // ids (`0x26` Thunderbolt, `0x40` Curse, `0xA1` Dead End Crisis, ...)
+    // and stay out.
+    let mut c = SpellCatalog::new();
     for s in SERU_MAGIC {
         let (mp, target, class) = match table.entry(s.id) {
             // `sub_class` is the record's `+0x01` byte - the cast-module key
@@ -383,16 +389,21 @@ fn insert_monster_specials(
     c: &mut SpellCatalog,
     table: &legaia_asset::spell_names::SpellNameTable,
 ) {
-    for id in 0x01..=0x80u8 {
+    // Every record outside the player Seru band, named or not: retail casts
+    // an unnamed record exactly as a named one (the name only feeds the
+    // label), so Koru's `+0x21` `0x10` (class 1, 100 MP) is a cast, not a
+    // strike.
+    for id in (0x01..table.len()).map(|i| i as u8) {
+        if (0x81..=PLAYER_SERU_LAST_ID).contains(&id) {
+            continue;
+        }
         let Some(e) = table.entry(id) else {
             continue;
         };
         if e.is_capture_class() {
             continue;
         }
-        let Some(name) = e.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else {
-            continue;
-        };
+        let name = e.name.as_deref().map(str::trim).unwrap_or_default();
         if let Some(mut v) = c.get(id).cloned()
             && v.name.eq_ignore_ascii_case(name)
         {
@@ -586,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn retail_catalog_resolves_real_ids_and_keeps_vanilla() {
+    fn retail_catalog_resolves_real_ids_and_drops_the_demo_ids() {
         let c = retail_seru_magic_catalog();
         // Real id resolves with its real name.
         assert_eq!(c.get(0x81).map(|d| d.name.as_str()), Some("Gimard"));
@@ -604,7 +615,9 @@ mod tests {
             c.get(0x81).map(|d| &d.effect),
             Some(SpellEffect::Damage { .. })
         ));
-        // Legacy demo id still present (no regression).
-        assert!(c.get(0x20).is_some());
+        // The demo ids are monster spell ids on the disc: none may be here.
+        for id in [0x10, 0x20, 0x26, 0x40, 0x50, 0xA1] {
+            assert!(c.get(id).is_none(), "demo id {id:#04x} in the catalog");
+        }
     }
 }

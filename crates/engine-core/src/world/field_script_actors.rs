@@ -114,6 +114,45 @@ impl World {
         Some([f32::from(x), y as f32, f32::from(z)])
     }
 
+    /// A field NPC's whole draw pose this frame, as both play hosts build its
+    /// model matrix: where ([`Self::field_npc_live_anchor`], retail Y-down),
+    /// which way it faces, its tilt and its render scale. `None` while it is
+    /// not drawn.
+    ///
+    /// Retail's dispatcher (`FUN_8001ADA4`) hands the actor's angle triple at
+    /// `+0x24` whole to the composer (`addiu a0,s0,0x24` / `jal 0x80026988`
+    /// at `0x8001AF04`, X at `+0`, Y at `+2`, Z at `+4`), and before it folds
+    /// `actor[+0x72]` in as a uniform scale whenever it is not `0x1000`
+    /// (`lhu v1,0x72(s0)` / `li v0,0x1000` / `beq` at `0x8001B240`, the
+    /// three `sw` of the word and `jal 0x8005B4E8` at `0x8001B288`). Both
+    /// hosts drew every NPC at unit scale and composed the yaw from two
+    /// different encodings of the same rule; this is the one rule.
+    // REF: FUN_8001ADA4, FUN_80026988
+    pub fn field_npc_draw_pose(&self, slot: u8, spawn: (i16, i16)) -> Option<NpcDrawPose> {
+        let pos = self.field_npc_live_anchor(slot, spawn)?;
+        let u = |v: i32| v.rem_euclid(4096) as u16;
+        // Engine headings compose with the half turn (`render_26`); an NPC
+        // nothing has turned stands at the identity yaw, which is where the
+        // spawn default (`SPAWN_HEADING`, retail `+0x26 = 0`) composes to.
+        let yaw = u(self
+            .npcs
+            .headings
+            .get(&slot)
+            .map_or(0, |&h| i32::from(h) + 2048));
+        let (pitch, roll) = self.field_npc_tilt(slot).unwrap_or((0, 0));
+        let scale = match self.field_npc_render_scale(usize::from(slot)) {
+            Some(s) if s != 0x1000 => f32::from(s) / 4096.0,
+            _ => 1.0,
+        };
+        Some(NpcDrawPose {
+            pos,
+            yaw,
+            pitch: u(i32::from(pitch)),
+            roll: u(i32::from(roll)),
+            scale,
+        })
+    }
+
     /// Start a scripted arc on `actor`: the op `0x43` sub-0/1/A/B arm's call
     /// to `FUN_801D25EC` (`0x801DF5AC`). The landing point is built from the
     /// operand ([`hop_arc::ScriptArcRequest::landing`], the floor under a tile
@@ -417,5 +456,61 @@ impl World {
             });
         }
         out
+    }
+}
+
+/// One field NPC's draw pose ([`World::field_npc_draw_pose`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NpcDrawPose {
+    /// World position, retail Y-down.
+    pub pos: [f32; 3],
+    /// Composed yaw, 12-bit units (`0` = the identity model).
+    pub yaw: u16,
+    /// Pitch (`actor+0x24`), 12-bit units.
+    pub pitch: u16,
+    /// Roll (`actor+0x28`), 12-bit units.
+    pub roll: u16,
+    /// Uniform render scale (`actor+0x72 / 0x1000`).
+    pub scale: f32,
+}
+
+impl NpcDrawPose {
+    /// Whether the pose carries a pitch or roll, so a host needs the full
+    /// `Rx * Ry * Rz` composer rather than its yaw-only model.
+    pub fn tilted(&self) -> bool {
+        self.pitch != 0 || self.roll != 0
+    }
+}
+
+#[cfg(test)]
+mod npc_draw_pose_tests {
+    use super::*;
+
+    /// The yaw rule both hosts used to spell differently: an NPC nothing has
+    /// turned draws at the identity yaw, a seeded heading composes with the
+    /// half turn, and the hide box is not drawn at all.
+    #[test]
+    fn draw_pose_yaw_and_hide() {
+        let mut w = World::new();
+        let p = w
+            .field_npc_draw_pose(3, (100, 200))
+            .expect("drawn at spawn");
+        assert_eq!((p.pos[0], p.pos[2]), (100.0, 200.0));
+        assert_eq!(p.yaw, 0, "unturned = identity");
+        assert_eq!(p.scale, 1.0, "no channel = unit scale");
+        assert!(!p.tilted());
+        w.npcs.headings.insert(3, 0);
+        assert_eq!(w.field_npc_draw_pose(3, (100, 200)).unwrap().yaw, 2048);
+        w.npcs
+            .headings
+            .insert(3, crate::world::field_npc_state::SPAWN_HEADING);
+        assert_eq!(w.field_npc_draw_pose(3, (100, 200)).unwrap().yaw, 0);
+        w.npcs.tilts.insert(3, (-1, 0));
+        let t = w.field_npc_draw_pose(3, (100, 200)).unwrap();
+        assert!(t.tilted());
+        assert_eq!(t.pitch, 4095);
+        let hide = crate::world::FIELD_OFFMAP_HIDE_XZ;
+        w.npcs.positions.insert(3, (hide, hide));
+        assert!(w.field_npc_draw_pose(3, (100, 200)).is_none());
     }
 }

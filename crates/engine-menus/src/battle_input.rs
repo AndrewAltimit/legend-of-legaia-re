@@ -1,0 +1,1205 @@
+//! Player-driven battle command input for the live gameplay loop.
+//!
+//! The live battle loop (`legaia_engine_core::world::World::live_battle_tick`) can run a
+//! battle two ways. By default it auto-resolves: every party turn commits a
+//! physical Attack with no player choice. When
+//! `legaia_engine_core::world::BattleState::player_driven` is set, each party turn pauses
+//! the action state machine and runs a [`BattleCommandSession`] that reads the
+//! pad.
+//!
+//! ## The open flow is three prompts, not one list
+//!
+//! Retail's battle dispatcher `FUN_801D0748` walks `ctx[+0x06]` through three
+//! separate selection surfaces, and each is a **two- or four-chip cluster keyed
+//! to the face buttons**, never a scrolling list. The port follows the same
+//! shape ([`CommandPhase`]):
+//!
+//! | `ctx[+0x06]` | Phase | Chips |
+//! |---|---|---|
+//! | `0x1E` | [`CommandPhase::RoundPrompt`] | `Begin` / `Run` |
+//! | `0x28` | [`CommandPhase::Menu`] | `Item` / `Attack` / magic / `Spirit` |
+//! | `0x78` | [`CommandPhase::AttackMode`] | `Auto` / `Command` |
+//! | `0x6E` | [`CommandPhase::CommitConfirm`] | `Begin` / `Reselect` |
+//!
+//! ## The party's commits are confirmed once, after the last member
+//!
+//! Every arm that commits a member's command asks the forward scan
+//! `FUN_801DB81C` for the next member that can still act; while one remains
+//! the flow returns to the ring (`0x28`) for that member, and when the scan
+//! comes back equal to the party count (`ctx[+0x00]`) the flow stores `0x6E`
+//! instead - the arts review (`0x801D3000..0x801D3018`), the target cursor,
+//! and the magic / item / Spirit commits all carry the same
+//! `beq v0,v1` / `addiu v0,zero,0x6e` pair. So the confirm screen is raised
+//! for **every** party size, a solo party included, and no option word gates
+//! it. On entry the member cursor has already stepped past the last member:
+//! the `party_basic_attack_vs_gobu_gobu` capture holds `ctx[+0x06] = 0x6E`
+//! with `ctx[+0x13] = 1` and `ctx[+0x1F] = 1` on a one-member party.
+//!
+//! The `0x6E` arm (`0x801D3024..0x801D31E4`) draws the D-pad glyph at
+//! `(152, 84)` (`FUN_801DB8F4(0x98, 0x58)`) between two chips - placement
+//! records `0x10` (`Begin`, content `(92, 88)`, width 48) and `0x13`
+//! (`Reselect`, `(180, 88)`, width 48) - and splits the pad two ways:
+//!
+//! * the **confirm** mask `_DAT_800846D0` or Left (`0x8000`) stores `0xFE`
+//!   and plays the round out (`0x801D31A4..0x801D31B4`);
+//! * the **cancel** mask `_DAT_800846D4` or Right (`0x2000`) takes the
+//!   `Reselect` arm (`0x801D3054..0x801D30CC`): `FUN_801D388C(0x21)` steps
+//!   the member cursor **back one** (`FUN_801D32BC(1)` at `0x801D4750`) from
+//!   the past-the-end index to the last member that can act, the flow returns
+//!   to that member's ring (`0x28`), and if the member had committed an item
+//!   (`+0x1DE == 1`) the copy goes back to the bag (`FUN_800421D4(+0x1DF, 1)`
+//!   at `0x801D30BC..0x801D30C0`). With no member able to act at all
+//!   (`FUN_801DBA04` equal to the count) the same press returns to the round
+//!   prompt `0x1E` instead.
+//!
+//! The round prompt runs **once per round**, before the first party member
+//! commands: `801d0e3c` (the intro-timer state `0x0B`) hands the flow to `0x14`
+//! and `0x14` sets `0x1E` unconditionally, and the action SM's round-end
+//! (`801e67e8`) parks the flow back at `0x14`. The one path that skips it is a
+//! **back attack**: `ctx[+0x290] == 1` sends state `0x0B` straight to `0xFE`
+//! (round armed, no input), which is why an ambushed party never gets to enter
+//! a command that round.
+//!
+//! The command ring's four arms are seated on the pinned diamond, and retail
+//! selects them with the **D-pad, not the face buttons**: the state-`0x28`
+//! handler tests the packed pad mask - Up `0x1000` stores the item window
+//! `0x3C` (`0x801D1364..0x801D1384`), Right `0x2000` the magic window `0x46`
+//! (`0x801D136C`/`0x801D1458`), Left `0x8000` the attack-mode prompt `0x78`
+//! (`0x801D1404`/`0x801D1604`), Down `0x4000` commits Spirit
+//! (`0x801D1544`) - and the arm **commits on the press itself** (no cursor,
+//! no confirm). Capture cross-check: from the `cort_evolved_battle_first_menu`
+//! state, a single Up press opened the item window within three vsyncs while
+//! repeated Triangle presses were ignored outright. The port follows retail:
+//! a direction press commits the chip seated on that side of the screen in
+//! the same frame. Cross additionally commits whatever the cursor rests on,
+//! which is what a scripted harness that cannot aim a direction drives.
+//!
+//! REF: FUN_801D0748 (state `0x28`, `0x801D1188..0x801D1670`)
+//!
+//! **`Attack` is not the plain strike** - it is the door to the attack-mode
+//! prompt (`0x78`), whose two chips are retail's `Auto` (auto-target the swing)
+//! and `Command` (open the directional arts entry). That is the port's `Attack`
+//! and its `Arts` under one ring arm, which is where retail puts them.
+//!
+//! `Item` / magic / `Command` resolve to [`Resolution::OpenItemMenu`] /
+//! [`Resolution::OpenSpellMenu`] / [`Resolution::OpenArtsMenu`] hand-offs: the
+//! command session can't run those pickers itself (they need the caster's saved
+//! chains / learned spells / live MP / inventory + party stats), so the live
+//! loop opens a host-owned `legaia_engine_core::battle_arts::BattleArtsSession` /
+//! `legaia_engine_core::battle_magic::BattleSpellSession` /
+//! [`crate::inventory_use::InventoryUseSession`] instead. `Spirit` and `Run`
+//! resolve immediately (no target). Target selection reuses
+//! [`crate::target_picker`].
+//!
+//! The session is a small state machine driven one frame at a time by
+//! [`BattleCommandSession::input`] with an edge-triggered
+//! [`BattleCommandInput`] (the host derives the edges from
+//! [`crate::input::InputState`]). When [`BattleCommandSession::resolved`]
+//! returns a value the live loop arms the action SM with the chosen target.
+//!
+//! Chip labels are the retail words. Their disc coordinates - the SCUS block at
+//! `0x8007B658..0x8007B68D` and the battle overlay's own pool - are pinned in
+//! [`legaia_asset::battle_ui_strings`], which is also where the per-character
+//! Ra-Seru name the magic arm really carries (`Meta` / `Terra` / `Ozma`) comes
+//! from.
+
+use crate::target_picker::{
+    CursorRow, PickerInput, PickerOutcome, SlotState, TargetKind, TargetPickerSession,
+};
+
+/// A top-level battle command, as listed in the battle command menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BattleCommand {
+    /// Physical attack - opens a target cursor and commits a strike.
+    Attack,
+    /// Tactical Arts - hands off to the host saved-chain submenu (see
+    /// `legaia_engine_core::battle_arts`).
+    Arts,
+    /// Magic spell - hands off to the host battle spell submenu (see
+    /// `legaia_engine_core::battle_magic`).
+    Magic,
+    /// Use an item - hands off to the host inventory submenu (see
+    /// [`crate::inventory_use`]).
+    Item,
+    /// Spirit: guard for the turn (+5 AP via
+    /// `legaia_engine_core::ap_gauge::ApGauge::charge_spirit`, guard-halved damage until
+    /// the next turn). Resolves immediately - no target.
+    Spirit,
+    /// Run: attempt to flee through the action SM's run band
+    /// (`RunBegin`/`RunWait`/`RunEscape`, retail states `0x64..0x66`).
+    /// Resolves immediately - no target.
+    Run,
+}
+
+impl BattleCommand {
+    /// The command ring's four arms, in **seat order** - up, left, right,
+    /// down - which is the order retail's placement records 8..=11 sit in.
+    ///
+    /// `Run` is not here: it belongs to the round prompt
+    /// ([`CommandPhase::RoundPrompt`]), one level above. `Arts` is not here
+    /// either: it is the attack-mode prompt's `Command` chip, one level below
+    /// the `Attack` arm ([`CommandPhase::AttackMode`]).
+    pub const MENU: [BattleCommand; 4] = [
+        BattleCommand::Item,
+        BattleCommand::Attack,
+        BattleCommand::Magic,
+        BattleCommand::Spirit,
+    ];
+
+    /// `true` when the command can actually be selected in the live loop.
+    /// All six commands are wired: Attack (physical strike), Arts (saved-chain
+    /// submenu), Magic (spell submenu), Item (inventory submenu), Spirit
+    /// (guard + AP charge) and Run (the action SM's run band).
+    pub fn enabled(self) -> bool {
+        matches!(
+            self,
+            BattleCommand::Attack
+                | BattleCommand::Arts
+                | BattleCommand::Magic
+                | BattleCommand::Item
+                | BattleCommand::Spirit
+                | BattleCommand::Run
+        )
+    }
+
+    /// Can the command **succeed** in *this* battle?
+    ///
+    /// [`Self::enabled`] answers "is the command wired at all"; this adds
+    /// the per-battle outcome the retail flow has: in a scripted no-escape
+    /// battle (`legaia_engine_core::world::BattleState::no_escape`, `ctx[+0x287]`) a
+    /// **Run** cannot get away. It is not a gate on choosing it: the round
+    /// prompt takes Run in every battle and the escape roll
+    /// (`FUN_801E791C`, `ctx[+0x287]` read at `0x801E7B14`) is what refuses
+    /// it - see [`BattleCommandSession::no_escape`].
+    pub fn available(self, no_escape: bool) -> bool {
+        if matches!(self, BattleCommand::Run) && no_escape {
+            return false;
+        }
+        self.enabled()
+    }
+
+    /// Short label for the HUD / command menu.
+    pub fn label(self) -> &'static str {
+        match self {
+            BattleCommand::Attack => "Attack",
+            BattleCommand::Arts => "Arts",
+            BattleCommand::Magic => "Magic",
+            BattleCommand::Item => "Item",
+            BattleCommand::Spirit => "Spirit",
+            BattleCommand::Run => "Run",
+        }
+    }
+
+    /// The target the command applies to. v0.1 only resolves Attack
+    /// (single enemy); the rest carry their natural kind for when they land.
+    /// Spirit / Run never open a picker (they resolve without a target) -
+    /// their kinds here are placeholders.
+    pub fn target_kind(self) -> TargetKind {
+        match self {
+            BattleCommand::Attack | BattleCommand::Arts => TargetKind::SingleEnemy,
+            BattleCommand::Magic | BattleCommand::Run => TargetKind::SingleEnemy,
+            BattleCommand::Item | BattleCommand::Spirit => TargetKind::SingleAllyOrSelf,
+        }
+    }
+}
+
+/// Per-frame, edge-triggered pad bundle for the command session. The host
+/// fills this from [`crate::input::InputState::just_pressed`] so navigation is
+/// one step per press (battle menus don't auto-repeat in v0.1).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BattleCommandInput {
+    pub up: bool,
+    pub down: bool,
+    pub left: bool,
+    pub right: bool,
+    /// Confirm (Cross).
+    pub cross: bool,
+    /// Cancel / back (Circle).
+    pub circle: bool,
+    /// The "Select Attack" option word `0x800846C4`, read by the ring's
+    /// Attack arm alongside the pad (`FUN_801D0748`, `0x801D15E0..0x801D1650`):
+    /// `Select` (0) opens the `Auto | Command` prompt (`0x78`), `Automatic`
+    /// (1) goes straight to the target cursor (`0x5A`), `Command` (2)
+    /// straight to the directional arts entry (`0x50`). The host fills it
+    /// from the world's mirror of the pause-menu row each frame.
+    pub select_attack: crate::option_values::SelectAttackOpt,
+}
+
+/// The round-open prompt's two chips - retail flow state `0x1E`, the pair
+/// whose labels the placement table points straight at `SCUS_942.54`
+/// (`0x8007B688` / `0x8007B684`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoundChoice {
+    /// Fight this round - falls through to the command ring.
+    Begin,
+    /// Try to flee. Retail takes this on Circle without a confirm press.
+    Run,
+}
+
+impl RoundChoice {
+    /// The prompt's chips in seat order (left, right).
+    pub const PROMPT: [RoundChoice; 2] = [RoundChoice::Begin, RoundChoice::Run];
+
+    /// Chip label.
+    pub fn label(self) -> &'static str {
+        match self {
+            RoundChoice::Begin => "Begin",
+            RoundChoice::Run => "Run",
+        }
+    }
+}
+
+/// The attack-mode prompt's two chips - retail flow state `0x78`, seated on the
+/// command diamond's own left / right arms.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttackMode {
+    /// Auto-target the swing: the port's plain strike + target cursor.
+    /// Retail state `0x5A`.
+    Auto,
+    /// Open the directional command entry: the port's arts submenu. Retail
+    /// state `0x50`.
+    Command,
+}
+
+impl AttackMode {
+    /// The prompt's chips in seat order (left, right).
+    pub const PROMPT: [AttackMode; 2] = [AttackMode::Auto, AttackMode::Command];
+
+    /// Chip label.
+    pub fn label(self) -> &'static str {
+        match self {
+            AttackMode::Auto => "Auto",
+            AttackMode::Command => "Command",
+        }
+    }
+}
+
+/// The commit-confirm screen's two chips - retail flow state `0x6E`, raised
+/// once the last member that can act has committed. `Begin` is placement
+/// record `0x10` (its label is stamped from the battle overlay's pool by the
+/// round prompt's `Begin` arm at `0x801D1060`); `Reselect` is record `0x13`,
+/// whose payload points straight at `SCUS_942.54` `0x800152D4`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitChoice {
+    /// Play the round out (retail `0xFE`).
+    Begin,
+    /// Step back to the last member's ring (retail `FUN_801D388C(0x21)`).
+    Reselect,
+}
+
+impl CommitChoice {
+    /// The screen's chips in seat order (left, right).
+    pub const PROMPT: [CommitChoice; 2] = [CommitChoice::Begin, CommitChoice::Reselect];
+
+    /// Chip label - the port's word, used only when the disc strings were not
+    /// read (`legaia_asset::battle_ui_strings::{OVL_BEGIN, SCUS_RESELECT}`).
+    pub fn label(self) -> &'static str {
+        match self {
+            CommitChoice::Begin => "Begin",
+            CommitChoice::Reselect => "Reselect",
+        }
+    }
+}
+
+/// Sub-phase of one party member's command selection.
+#[derive(Debug, Clone)]
+pub enum CommandPhase {
+    /// The round-open `Begin` / `Run` prompt (retail `ctx[+0x06] == 0x1E`).
+    /// `cursor` indexes [`RoundChoice::PROMPT`]. Raised once per round, ahead
+    /// of the round's first party command.
+    RoundPrompt { cursor: u8 },
+    /// Choosing a ring command. `cursor` indexes [`BattleCommand::MENU`].
+    Menu { cursor: u8 },
+    /// The `Auto` / `Command` prompt the `Attack` arm opens (retail
+    /// `ctx[+0x06] == 0x78`). `cursor` indexes [`AttackMode::PROMPT`].
+    AttackMode { cursor: u8 },
+    /// A command is chosen; picking its target.
+    Targeting {
+        command: BattleCommand,
+        picker: TargetPickerSession,
+    },
+    /// Resolved: the live loop should arm `command` against `target_slot`
+    /// (a monster-row index for enemy targets, party-row otherwise).
+    Confirmed {
+        command: BattleCommand,
+        target_row: CursorRow,
+        target_slot: u8,
+    },
+    /// The player picked Arts. Hands off (like Magic / Item): the live loop
+    /// opens a `legaia_engine_core::battle_arts::BattleArtsSession` over the caster's saved
+    /// chains, executes the chosen art, then cycles the turn.
+    OpenArtsMenu,
+    /// The player picked Magic. Like Item, the command session can't run the
+    /// spell picker itself (it needs the caster's learned spells + live MP), so
+    /// it hands off: the live loop opens a
+    /// `legaia_engine_core::battle_magic::BattleSpellSession`, casts the chosen spell, then
+    /// cycles the turn.
+    OpenSpellMenu,
+    /// The player picked Item. The command session can't run the inventory
+    /// picker itself (it needs the live inventory + party stats), so it hands
+    /// off: the live loop opens an [`crate::inventory_use::InventoryUseSession`]
+    /// and applies the chosen item, then cycles the turn.
+    OpenItemMenu,
+    /// The player picked Spirit: the live loop charges the AP gauge and sets
+    /// the guard stance, then consumes the turn. No target.
+    SpiritGuard,
+    /// The player picked Run: the live loop rolls the escape and arms the
+    /// action SM's run band. No target.
+    RunAway,
+    /// No valid action was possible (e.g. nothing left to target). The live
+    /// loop should fall back to a default strike so it never deadlocks.
+    Aborted,
+    /// The cancel press on the ring (retail `0x28`'s cancel-mask arm at
+    /// `0x801D11B4`): the live loop steps the member cursor back - to the
+    /// previous member's ring, or to the round prompt when this is the
+    /// round's first member.
+    StepBack,
+    /// The party-wide `Begin` / `Reselect` screen (retail `ctx[+0x06] ==
+    /// 0x6E`), raised after the last member's commit. `cursor` indexes
+    /// [`CommitChoice::PROMPT`] and opens on `Begin` - the tail of
+    /// `FUN_801D388C` seeds the highlight word `ctx[+0x880]` with Left
+    /// (`0x8000`) whenever the flow byte reads `0x6E` (`0x801D4C38..0x801D4C74`).
+    CommitConfirm { cursor: u8 },
+    /// `Begin` taken on the commit-confirm screen: play the round out.
+    BeginRound,
+    /// `Reselect` taken on the commit-confirm screen: step the member cursor
+    /// back from past the party's end.
+    Reselect,
+}
+
+/// One party member's command-selection session, driven a frame at a time.
+#[derive(Debug, Clone)]
+pub struct BattleCommandSession {
+    /// Actor-table index of the acting party member.
+    pub actor: u8,
+    /// Party-row index (0..=2) of the acting member - the target picker uses
+    /// it to skip-self on ally-targeting commands.
+    pub party_slot: u8,
+    /// Scripted no-escape battle (`legaia_engine_core::world::BattleState::no_escape`),
+    /// carried for the session's readers. The prompt itself never reads it:
+    /// retail's flow SM `FUN_801D0748` takes Run in state `0x1E` and
+    /// confirms it in `0x32` without touching `ctx[+0x287]`, and the escape
+    /// roll is what fails. Set by the live loop; defaults to `false`.
+    pub no_escape: bool,
+    pub phase: CommandPhase,
+}
+
+impl BattleCommandSession {
+    /// Open the command ring for `actor` (party-row index `party_slot`) -
+    /// the mid-round entry, used when a submenu is backed out of and when a
+    /// later party member of the same round takes its turn.
+    pub fn new(actor: u8, party_slot: u8) -> Self {
+        let cursor = BattleCommand::MENU
+            .iter()
+            .position(|c| c.enabled())
+            .unwrap_or(0) as u8;
+        Self {
+            actor,
+            party_slot,
+            no_escape: false,
+            phase: CommandPhase::Menu { cursor },
+        }
+    }
+
+    /// Open at the **round prompt** instead - retail's `0x1E`, raised once per
+    /// round ahead of the round's first party command.
+    pub fn new_round_open(actor: u8, party_slot: u8, no_escape: bool) -> Self {
+        Self {
+            no_escape,
+            phase: CommandPhase::RoundPrompt { cursor: 0 },
+            ..Self::new(actor, party_slot)
+        }
+    }
+
+    /// The command currently under the ring cursor, or `None` once the
+    /// session has left the ring.
+    pub fn menu_command(&self) -> Option<BattleCommand> {
+        match self.phase {
+            CommandPhase::Menu { cursor } => BattleCommand::MENU.get(cursor as usize).copied(),
+            _ => None,
+        }
+    }
+
+    /// Open the party-wide **commit-confirm** screen (retail `0x6E`) after the
+    /// last member's commit. `actor` / `party_slot` name that member; the
+    /// screen itself acts on the whole party.
+    pub fn new_commit_confirm(actor: u8, party_slot: u8) -> Self {
+        Self {
+            actor,
+            party_slot,
+            no_escape: false,
+            phase: CommandPhase::CommitConfirm { cursor: 0 },
+        }
+    }
+
+    /// The commit-confirm chip under the cursor, while that screen is up.
+    pub fn commit_choice(&self) -> Option<CommitChoice> {
+        match self.phase {
+            CommandPhase::CommitConfirm { cursor } => {
+                CommitChoice::PROMPT.get(cursor as usize).copied()
+            }
+            _ => None,
+        }
+    }
+
+    /// The round-prompt chip under the cursor, while the prompt is up.
+    pub fn round_choice(&self) -> Option<RoundChoice> {
+        match self.phase {
+            CommandPhase::RoundPrompt { cursor } => {
+                RoundChoice::PROMPT.get(cursor as usize).copied()
+            }
+            _ => None,
+        }
+    }
+
+    /// The attack-mode chip under the cursor, while that prompt is up.
+    pub fn attack_mode(&self) -> Option<AttackMode> {
+        match self.phase {
+            CommandPhase::AttackMode { cursor } => AttackMode::PROMPT.get(cursor as usize).copied(),
+            _ => None,
+        }
+    }
+
+    /// The active target picker, while one is open.
+    pub fn picker(&self) -> Option<&TargetPickerSession> {
+        match &self.phase {
+            CommandPhase::Targeting { picker, .. } => Some(picker),
+            _ => None,
+        }
+    }
+
+    /// `(command, target_row, slot)` once the player has confirmed, or the
+    /// chosen command on an abort (no valid target). `None` while still
+    /// selecting.
+    pub fn resolved(&self) -> Option<Resolution> {
+        match &self.phase {
+            CommandPhase::Confirmed {
+                command,
+                target_row,
+                target_slot,
+            } => Some(Resolution::Confirmed {
+                command: *command,
+                target_row: *target_row,
+                target_slot: *target_slot,
+            }),
+            CommandPhase::OpenArtsMenu => Some(Resolution::OpenArtsMenu),
+            CommandPhase::OpenSpellMenu => Some(Resolution::OpenSpellMenu),
+            CommandPhase::OpenItemMenu => Some(Resolution::OpenItemMenu),
+            CommandPhase::SpiritGuard => Some(Resolution::SpiritGuard),
+            CommandPhase::RunAway => Some(Resolution::RunAway),
+            CommandPhase::Aborted => Some(Resolution::Aborted),
+            CommandPhase::StepBack => Some(Resolution::StepBack),
+            CommandPhase::BeginRound => Some(Resolution::BeginRound),
+            CommandPhase::Reselect => Some(Resolution::Reselect),
+            _ => None,
+        }
+    }
+
+    /// Advance one frame. `party` / `monsters` describe slot occupancy +
+    /// alive state for the target picker (rebuilt by the host from the live
+    /// actor table each frame). A no-op once the session has resolved.
+    pub fn input(
+        &mut self,
+        ev: BattleCommandInput,
+        party: [SlotState; 3],
+        monsters: [SlotState; 5],
+    ) {
+        match &mut self.phase {
+            CommandPhase::RoundPrompt { cursor } => {
+                self.phase = step_round_prompt(*cursor, ev);
+            }
+            CommandPhase::CommitConfirm { cursor } => {
+                self.phase = step_commit_confirm(*cursor, ev);
+            }
+            CommandPhase::AttackMode { cursor } => {
+                self.phase = step_attack_mode(*cursor, ev, self.party_slot, party, monsters);
+            }
+            CommandPhase::Menu { cursor } => {
+                self.phase = step_menu(*cursor, ev, self.party_slot, party, monsters);
+            }
+            CommandPhase::Targeting { command, picker } => {
+                let command = *command;
+                picker.input(PickerInput {
+                    up: ev.up,
+                    down: ev.down,
+                    left: ev.left,
+                    right: ev.right,
+                    cross: ev.cross,
+                    circle: ev.circle,
+                });
+                if let Some(outcome) = picker.outcome() {
+                    self.phase = match outcome {
+                        PickerOutcome::Single { slot, row } => CommandPhase::Confirmed {
+                            command,
+                            target_row: row,
+                            target_slot: slot,
+                        },
+                        PickerOutcome::Sweep { row } => CommandPhase::Confirmed {
+                            command,
+                            target_row: row,
+                            target_slot: 0,
+                        },
+                        // Backing out of targeting returns to the menu.
+                        PickerOutcome::Cancelled => CommandPhase::Menu {
+                            cursor: menu_index(command),
+                        },
+                        PickerOutcome::NoCandidates => CommandPhase::Aborted,
+                    };
+                }
+            }
+            CommandPhase::Confirmed { .. }
+            | CommandPhase::OpenArtsMenu
+            | CommandPhase::OpenSpellMenu
+            | CommandPhase::OpenItemMenu
+            | CommandPhase::SpiritGuard
+            | CommandPhase::RunAway
+            | CommandPhase::Aborted
+            | CommandPhase::StepBack
+            | CommandPhase::BeginRound
+            | CommandPhase::Reselect => {}
+        }
+    }
+}
+
+/// Outcome of a resolved [`BattleCommandSession`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resolution {
+    /// The player confirmed `command` against the given target.
+    Confirmed {
+        command: BattleCommand,
+        target_row: CursorRow,
+        target_slot: u8,
+    },
+    /// The player picked Arts; the live loop should open the saved-chain
+    /// submenu (it owns the caster's chain library).
+    OpenArtsMenu,
+    /// The player picked Magic; the live loop should open the spell submenu
+    /// (it owns the caster's learned spells + live MP).
+    OpenSpellMenu,
+    /// The player picked Item; the live loop should open the inventory
+    /// submenu (it owns the live inventory + party stats).
+    OpenItemMenu,
+    /// The player picked Spirit; the live loop should charge the caster's AP
+    /// gauge, set its guard stance, and consume the turn.
+    SpiritGuard,
+    /// The player picked Run; the live loop should roll the escape and arm
+    /// the action SM's run band (category 5).
+    RunAway,
+    /// No valid action existed; the live loop should fall back to a default
+    /// strike on the first living enemy.
+    Aborted,
+    /// The player cancelled on the ring; the live loop should step the
+    /// member cursor back (`FUN_801D32BC(1)`).
+    StepBack,
+    /// `Begin` on the commit-confirm screen; the live loop plays the round
+    /// out.
+    BeginRound,
+    /// `Reselect` on the commit-confirm screen; the live loop steps the member
+    /// cursor back from past the party's end to the last member that can act
+    /// (`FUN_801D388C(0x21)` -> `FUN_801D32BC(1)`).
+    Reselect,
+}
+
+/// Index of `command` within [`BattleCommand::MENU`].
+fn menu_index(command: BattleCommand) -> u8 {
+    BattleCommand::MENU
+        .iter()
+        .position(|c| *c == command)
+        .unwrap_or(0) as u8
+}
+
+/// The ring seat a direction press lands on, or `None` for a press the
+/// ring ignores.
+///
+/// The ring is a four-arm cluster, not a list
+/// (`legaia_engine_ui::battle_command_ui`), and the mapping is **spatial**:
+/// each direction seats the cursor on the arm drawn on that side of the
+/// screen - Up = `Item` (top), Left = `Attack` (left), Right = magic
+/// (right), Down = `Spirit` (bottom). That is retail's own dispatch: the
+/// state-`0x28` handler routes the packed D-pad mask per arm (Up `0x1000` →
+/// `0x3C`, Right `0x2000` → `0x46`, Left `0x8000` → `0x78`, Down `0x4000` →
+/// Spirit) and commits on the press, which is what [`step_menu`] does too.
+///
+/// REF: FUN_801D0748 (state `0x28`, direction arms at `0x801D1364` /
+/// `0x801D136C` / `0x801D1404` / `0x801D1544`)
+const fn ring_seat(ev: BattleCommandInput) -> Option<u8> {
+    if ev.up {
+        Some(0) // Item - the diamond's top arm
+    } else if ev.left {
+        Some(1) // Attack - left arm
+    } else if ev.right {
+        Some(2) // magic - right arm
+    } else if ev.down {
+        Some(3) // Spirit - bottom arm
+    } else {
+        None
+    }
+}
+
+/// The pair seat a direction press lands on for a two-chip left/right
+/// prompt (`Begin | Run`, `Auto | Command`): Left always highlights the
+/// chip drawn on the left, Right the chip on the right. Matches retail's
+/// own direction dispatch for the round prompt (Left `0x8000` takes
+/// `Begin`, Right `0x2000` takes `Run` - see [`step_round_prompt`]).
+const fn pair_seat(ev: BattleCommandInput) -> Option<u8> {
+    if ev.left {
+        Some(0)
+    } else if ev.right {
+        Some(1)
+    } else {
+        None
+    }
+}
+
+/// One frame of the **round prompt** (retail `0x1E`). Left takes `Begin`
+/// (the left chip) and Right takes `Run` (the right chip) **on the press
+/// itself** - direction = screen side, one press commits, exactly retail's
+/// own dispatch. Cross commits whatever the cursor rests on (the scripted
+/// harness route), and Circle takes `Run` outright.
+///
+/// **The Circle route is the port's, not retail's, and the citation it used to
+/// carry was a raw-pad misread.** `FUN_801D0748`'s handlers test **packed**
+/// masks (byte halves swapped against the raw BIOS word), so the
+/// `andi v0,s2,0x2000` at `0x801D1058` that routes to flow state `0x32` is
+/// **Right**, not Circle; packed Circle is `0x0020`. Retail's `0x1E` is a
+/// two-chip prompt whose chips *are* directions - Left `0x8000` takes `Begin`,
+/// Right `0x2000` takes `Run` - and confirm reaches one only indirectly: the
+/// pre-dispatch block rewrites `s2` to the highlight it has been walking in
+/// `ctx[+0x880]` (`0x801D0AC4..0x801D0B08`). The port's Cross-plus-cursor is an
+/// ergonomic divergence; converting it wants the prompt's chrome moved with it,
+/// which lives in `engine-ui`. See `docs/subsystems/battle.md`.
+///
+/// Run is taken in **every** battle. `0x801D1038..0x801D10D4` and the `0x32`
+/// confirm at `0x801D10F8..0x801D1184` read no `ctx[+0x287]` (the no-escape
+/// byte's readers are the escape roll, the monster flee roll and the action
+/// SM), so a boss fight's Run commits category `5` like any other and the
+/// roll at each member's dispatch fails it: the run band plays out, shows
+/// its "couldn't escape" banner and consumes the turn.
+///
+/// REF: FUN_801D0748 (state `0x1E`, `0x801D1038..0x801D10D4`)
+fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
+    let len = RoundChoice::PROMPT.len() as u8;
+    let mut cursor = cursor.min(len - 1);
+    // Retail's state 0x1E commits on the direction press itself: Left
+    // (packed 0x8000) takes Begin, Right (0x2000) takes Run.
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
+    if ev.circle {
+        return CommandPhase::RunAway;
+    }
+    if pressed || ev.cross {
+        match RoundChoice::PROMPT[cursor as usize] {
+            RoundChoice::Begin => {
+                let ring = BattleCommand::MENU
+                    .iter()
+                    .position(|c| c.enabled())
+                    .unwrap_or(0) as u8;
+                return CommandPhase::Menu { cursor: ring };
+            }
+            RoundChoice::Run => return CommandPhase::RunAway,
+        }
+    }
+    CommandPhase::RoundPrompt { cursor }
+}
+
+/// One frame of the **commit-confirm screen** (retail `0x6E`). Left or the
+/// confirm button takes `Begin`; Right or the cancel button takes `Reselect` -
+/// each on the press itself, exactly the arm's own two-way split. Cross
+/// commits whatever the cursor rests on, which is the chip retail's highlight
+/// word seeds (`Begin`), so a harness that only presses Cross begins the
+/// round.
+///
+/// REF: FUN_801D0748 (state `0x6E`, `0x801D3024..0x801D31E4`)
+fn step_commit_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
+    let len = CommitChoice::PROMPT.len() as u8;
+    let mut cursor = cursor.min(len - 1);
+    // The cancel mask is its own route to Reselect (`0x801D3038..0x801D3044`
+    // tests `_DAT_800846D4` first), independent of the highlight.
+    if ev.circle {
+        return CommandPhase::Reselect;
+    }
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
+    if pressed || ev.cross {
+        return match CommitChoice::PROMPT[cursor as usize] {
+            CommitChoice::Begin => CommandPhase::BeginRound,
+            CommitChoice::Reselect => CommandPhase::Reselect,
+        };
+    }
+    CommandPhase::CommitConfirm { cursor }
+}
+
+/// One frame of the **attack-mode prompt** (retail `0x78`). Left takes
+/// `Auto` (seated on the diamond's left arm) and Right takes `Command` (the
+/// right arm) **on the press itself** - direction = screen side, one press
+/// commits. Cross commits whatever the cursor rests on; Circle backs out to
+/// the ring with the cursor on the `Attack` arm it came from.
+fn step_attack_mode(
+    cursor: u8,
+    ev: BattleCommandInput,
+    party_slot: u8,
+    party: [SlotState; 3],
+    monsters: [SlotState; 5],
+) -> CommandPhase {
+    let len = AttackMode::PROMPT.len() as u8;
+    let mut cursor = cursor.min(len - 1);
+    let pressed = match pair_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
+    if ev.circle {
+        return CommandPhase::Menu {
+            cursor: menu_index(BattleCommand::Attack),
+        };
+    }
+    if pressed || ev.cross {
+        return match AttackMode::PROMPT[cursor as usize] {
+            AttackMode::Command => CommandPhase::OpenArtsMenu,
+            AttackMode::Auto => {
+                open_target_picker(BattleCommand::Attack, party_slot, party, monsters)
+            }
+        };
+    }
+    CommandPhase::AttackMode { cursor }
+}
+
+/// Open `command`'s target cursor, folding the outcomes a picker can resolve
+/// in its own constructor so no frame is spent on a cursor nothing can move.
+fn open_target_picker(
+    command: BattleCommand,
+    party_slot: u8,
+    party: [SlotState; 3],
+    monsters: [SlotState; 5],
+) -> CommandPhase {
+    let picker = TargetPickerSession::new(command.target_kind(), party_slot, party, monsters);
+    if let Some(outcome) = picker.outcome() {
+        return match outcome {
+            PickerOutcome::Single { slot, row } => CommandPhase::Confirmed {
+                command,
+                target_row: row,
+                target_slot: slot,
+            },
+            PickerOutcome::Sweep { row } => CommandPhase::Confirmed {
+                command,
+                target_row: row,
+                target_slot: 0,
+            },
+            PickerOutcome::NoCandidates => CommandPhase::Aborted,
+            PickerOutcome::Cancelled => CommandPhase::Menu {
+                cursor: menu_index(command),
+            },
+        };
+    }
+    CommandPhase::Targeting { command, picker }
+}
+
+fn step_menu(
+    cursor: u8,
+    ev: BattleCommandInput,
+    party_slot: u8,
+    party: [SlotState; 3],
+    monsters: [SlotState; 5],
+) -> CommandPhase {
+    let len = BattleCommand::MENU.len() as u8;
+    let mut cursor = cursor.min(len - 1);
+
+    // The cancel mask is the handler's first test (`0x801D11B4`, ahead of
+    // the four arms from `0x801D12C0` on), so it wins a same-frame
+    // direction press.
+    if ev.circle {
+        return CommandPhase::StepBack;
+    }
+
+    // Retail's state-0x28 dispatch: each direction is the diamond arm drawn
+    // on that side of the screen, and the press itself commits the arm (see
+    // `ring_seat`).
+    let pressed = match ring_seat(ev) {
+        Some(seat) => {
+            cursor = seat;
+            true
+        }
+        None => false,
+    };
+
+    if pressed || ev.cross {
+        let command = BattleCommand::MENU[cursor as usize];
+        // Magic / Item hand off to the host's own submenus instead of opening
+        // a target cursor here - the picker can't show spell / item rows.
+        if command == BattleCommand::Magic {
+            return CommandPhase::OpenSpellMenu;
+        }
+        if command == BattleCommand::Item {
+            return CommandPhase::OpenItemMenu;
+        }
+        // Spirit acts on the caster - no target cursor.
+        if command == BattleCommand::Spirit {
+            return CommandPhase::SpiritGuard;
+        }
+        // The Attack arm is the door to the attack-mode prompt, not a
+        // strike - and the option word decides whether the prompt is shown
+        // at all: retail's `0x28` Left arm switches on `_DAT_800846C4` at
+        // `0x801D15E0`: `0` stores `0x78` (the prompt), `1` stores `0x5A`
+        // (the target cursor, an `Auto` pick made for the player), `2`
+        // stores `0x50` in the branch delay slot (the arts entry, a
+        // `Command` pick made for the player).
+        if command == BattleCommand::Attack {
+            use crate::option_values::SelectAttackOpt;
+            return match ev.select_attack {
+                SelectAttackOpt::Select => CommandPhase::AttackMode { cursor: 0 },
+                SelectAttackOpt::Automatic => {
+                    open_target_picker(BattleCommand::Attack, party_slot, party, monsters)
+                }
+                SelectAttackOpt::Command => CommandPhase::OpenArtsMenu,
+            };
+        }
+        if command.enabled() {
+            return open_target_picker(command, party_slot, party, monsters);
+        }
+    }
+
+    CommandPhase::Menu { cursor }
+}
+
+/// Which selection surface a chip cluster belongs to - the three clusters
+/// retail seats differently (`engine-ui::battle_command_ui::ChipPhase`
+/// carries the seats; this is the renderer-free twin hosts map onto it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandChipPhase {
+    RoundPrompt,
+    CommandRing,
+    AttackMode,
+    /// The party-wide `Begin | Reselect` screen (retail `0x6E`).
+    CommitConfirm,
+}
+
+/// The live command surface projected into chip labels: one `(label,
+/// enabled)` per chip of whichever prompt is up, in seat order, the cursor
+/// index and the cluster.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleCommandChips {
+    pub chips: Vec<(String, bool)>,
+    pub cursor: usize,
+    pub phase: CommandChipPhase,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alive(present: bool) -> SlotState {
+        SlotState::alive(present, true)
+    }
+
+    fn party3() -> [SlotState; 3] {
+        [alive(true), alive(true), alive(true)]
+    }
+
+    fn one_monster() -> [SlotState; 5] {
+        [
+            alive(true),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+        ]
+    }
+
+    fn press_cross() -> BattleCommandInput {
+        BattleCommandInput {
+            cross: true,
+            ..Default::default()
+        }
+    }
+
+    fn press(dir: fn(&mut BattleCommandInput)) -> BattleCommandInput {
+        let mut ev = BattleCommandInput::default();
+        dir(&mut ev);
+        ev
+    }
+
+    /// A session sitting on the `Auto | Command` prompt: one Left press on
+    /// the ring commits the Attack arm (the diamond's left seat).
+    fn on_attack_mode() -> BattleCommandSession {
+        let mut s = BattleCommandSession::new(0, 0);
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
+        s
+    }
+
+    // ------------------------------------------------------- the round prompt
+
+    /// A round-open session starts on the prompt, not on the ring - retail's
+    /// `0x14` sets `ctx[+0x06] = 0x1E` before any member picks.
+    #[test]
+    fn a_round_open_session_starts_on_the_begin_run_prompt() {
+        let s = BattleCommandSession::new_round_open(0, 0, false);
+        assert_eq!(s.round_choice(), Some(RoundChoice::Begin));
+        assert_eq!(s.menu_command(), None);
+        assert!(s.resolved().is_none());
+        // The mid-round entry skips it, which is where a submenu back-out and
+        // every later member of the same round land.
+        assert_eq!(BattleCommandSession::new(0, 0).round_choice(), None);
+    }
+
+    /// One Left press takes `Begin` (the left chip) and lands on the ring -
+    /// retail's state-0x1E direction dispatch, no confirm press. Cross also
+    /// commits the cursor's chip (the harness route).
+    #[test]
+    fn begin_falls_through_to_the_command_ring() {
+        let mut s = BattleCommandSession::new_round_open(0, 0, false);
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
+        assert!(s.resolved().is_none());
+
+        let mut by_cross = BattleCommandSession::new_round_open(0, 0, false);
+        by_cross.input(press_cross(), party3(), one_monster());
+        assert_eq!(by_cross.menu_command(), Some(BattleCommand::MENU[0]));
+        assert!(by_cross.resolved().is_none());
+    }
+
+    /// Both routes into `Run`: one Right press (the right chip, retail's
+    /// packed 0x2000 arm), and Circle outright - retail's own `801d10bc` arm.
+    #[test]
+    fn run_resolves_from_the_prompt_by_right_or_circle() {
+        let mut by_right = BattleCommandSession::new_round_open(0, 0, false);
+        by_right.input(press(|e| e.right = true), party3(), one_monster());
+        assert_eq!(by_right.resolved(), Some(Resolution::RunAway));
+
+        let mut by_circle = BattleCommandSession::new_round_open(0, 0, false);
+        by_circle.input(press(|e| e.circle = true), party3(), one_monster());
+        assert_eq!(by_circle.resolved(), Some(Resolution::RunAway));
+    }
+
+    /// A scripted no-escape battle still takes Run from either route: the
+    /// flow SM's `0x1E` / `0x32` arms never read `ctx[+0x287]`, so the press
+    /// commits and the escape roll is what fails it.
+    #[test]
+    fn a_no_escape_battle_still_takes_run_from_either_route() {
+        for circle in [false, true] {
+            let mut s = BattleCommandSession::new_round_open(0, 0, true);
+            if circle {
+                s.input(press(|e| e.circle = true), party3(), one_monster());
+            } else {
+                s.input(press(|e| e.right = true), party3(), one_monster());
+            }
+            assert_eq!(s.resolved(), Some(Resolution::RunAway), "circle={circle}");
+        }
+        // The outcome predicate still says the run cannot succeed.
+        assert!(!BattleCommand::Run.available(true));
+        assert!(BattleCommand::Run.available(false));
+    }
+
+    // --------------------------------------------------------- the ring shape
+
+    /// The ring is retail's four arms in seat order, and `Run` / `Arts` are
+    /// not among them - they live one level up and one level down.
+    #[test]
+    fn the_ring_is_the_four_retail_arms_in_seat_order() {
+        assert_eq!(
+            BattleCommand::MENU,
+            [
+                BattleCommand::Item,
+                BattleCommand::Attack,
+                BattleCommand::Magic,
+                BattleCommand::Spirit,
+            ]
+        );
+        assert!(!BattleCommand::MENU.contains(&BattleCommand::Run));
+        assert!(!BattleCommand::MENU.contains(&BattleCommand::Arts));
+        assert!(BattleCommand::MENU.iter().all(|c| c.enabled()));
+    }
+
+    #[test]
+    fn opens_on_first_enabled_command() {
+        let s = BattleCommandSession::new(0, 0);
+        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        assert!(s.resolved().is_none());
+    }
+
+    /// Every direction commits the arm drawn on that side of the screen in
+    /// one press, from **any** starting cursor - retail's own per-arm
+    /// direction dispatch (state `0x28`: Up `0x1000` = Item, Left `0x8000`
+    /// = Attack, Right `0x2000` = magic, Down `0x4000` = Spirit, each arm
+    /// taken on the press itself).
+    #[test]
+    fn each_direction_commits_its_own_arm_in_one_press() {
+        let after = |from: u8, dir: fn(&mut BattleCommandInput)| {
+            let mut s = BattleCommandSession::new(0, 0);
+            s.phase = CommandPhase::Menu { cursor: from };
+            s.input(press(dir), party3(), one_monster());
+            s
+        };
+        for from in 0..BattleCommand::MENU.len() as u8 {
+            assert_eq!(
+                after(from, |e| e.up = true).resolved(),
+                Some(Resolution::OpenItemMenu)
+            );
+            assert_eq!(
+                after(from, |e| e.left = true).attack_mode(),
+                Some(AttackMode::Auto)
+            );
+            assert_eq!(
+                after(from, |e| e.right = true).resolved(),
+                Some(Resolution::OpenSpellMenu)
+            );
+            assert_eq!(
+                after(from, |e| e.down = true).resolved(),
+                Some(Resolution::SpiritGuard)
+            );
+        }
+    }
+
+    /// The Cross route still commits the cursor's own arm - the scripted
+    /// harness path that cannot aim a direction.
+    #[test]
+    fn cross_commits_the_cursor_arm() {
+        let mut s = BattleCommandSession::new(0, 0);
+        assert_eq!(s.menu_command(), Some(BattleCommand::Item));
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::OpenItemMenu));
+    }
+
+    // -------------------------------------------------- the attack-mode prompt
+
+    /// `Attack` is a door, not a strike: one Left press opens the
+    /// `Auto | Command` prompt.
+    #[test]
+    fn the_attack_arm_opens_the_attack_mode_prompt() {
+        let mut s = on_attack_mode();
+        assert!(s.resolved().is_none());
+        // Circle backs out onto the arm it came from.
+        s.input(press(|e| e.circle = true), party3(), one_monster());
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
+    }
+
+    /// `Command` is where the port's arts entry lives - retail's `0x50`:
+    /// one Right press on the mode prompt commits it.
+    #[test]
+    fn command_opens_the_arts_entry() {
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.right = true), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::OpenArtsMenu));
+    }
+
+    /// `Auto` is the plain strike - retail's `0x5A`: one Left press on the
+    /// mode prompt opens the target cursor, and Cross commits the target.
+    #[test]
+    fn auto_opens_the_target_cursor_then_confirms() {
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::Targeting { .. }));
+        assert!(s.resolved().is_none());
+        s.input(press_cross(), party3(), one_monster());
+        assert_eq!(
+            s.resolved(),
+            Some(Resolution::Confirmed {
+                command: BattleCommand::Attack,
+                target_row: CursorRow::Enemy,
+                target_slot: 0,
+            })
+        );
+    }
+
+    /// The whole chain end to end, from the round prompt to a committed
+    /// strike - one press per prompt, the flow the player actually walks:
+    /// Left (Begin), Left (Attack), Left (Auto), then aim and confirm.
+    #[test]
+    fn the_open_flow_runs_prompt_then_ring_then_mode_then_target() {
+        let mut monsters = one_monster();
+        monsters[1] = alive(true);
+        monsters[2] = alive(true);
+        let mut s = BattleCommandSession::new_round_open(0, 0, false);
+        // Begin - the left chip.
+        s.input(press(|e| e.left = true), party3(), monsters);
+        assert_eq!(s.menu_command(), Some(BattleCommand::MENU[0]));
+        // Ring: Left commits the left arm - Attack - onto the mode prompt.
+        s.input(press(|e| e.left = true), party3(), monsters);
+        assert_eq!(s.attack_mode(), Some(AttackMode::Auto));
+        // Auto - the left chip - opens the target cursor.
+        s.input(press(|e| e.left = true), party3(), monsters);
+        // Target cursor: walk two right, confirm.
+        s.input(press(|e| e.right = true), party3(), monsters);
+        s.input(press(|e| e.right = true), party3(), monsters);
+        s.input(press_cross(), party3(), monsters);
+        assert_eq!(
+            s.resolved(),
+            Some(Resolution::Confirmed {
+                command: BattleCommand::Attack,
+                target_row: CursorRow::Enemy,
+                target_slot: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn circle_in_targeting_returns_to_the_ring() {
+        let mut monsters = one_monster();
+        monsters[1] = alive(true);
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), monsters);
+        assert!(matches!(s.phase, CommandPhase::Targeting { .. }));
+        s.input(press(|e| e.circle = true), party3(), monsters);
+        assert_eq!(s.menu_command(), Some(BattleCommand::Attack));
+        assert!(s.resolved().is_none());
+    }
+
+    #[test]
+    fn no_living_target_aborts() {
+        let dead_monsters = [
+            SlotState::alive(true, false),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+            SlotState::default(),
+        ];
+        let mut s = on_attack_mode();
+        s.input(press(|e| e.left = true), party3(), dead_monsters);
+        assert_eq!(s.resolved(), Some(Resolution::Aborted));
+    }
+
+    #[test]
+    fn the_commit_confirm_screen_opens_on_begin() {
+        let s = BattleCommandSession::new_commit_confirm(0, 0);
+        assert_eq!(s.commit_choice(), Some(CommitChoice::Begin));
+        assert!(s.resolved().is_none());
+        assert_eq!(
+            CommitChoice::PROMPT.map(CommitChoice::label),
+            ["Begin", "Reselect"]
+        );
+    }
+
+    #[test]
+    fn commit_confirm_splits_the_pad_two_ways() {
+        // Left or the confirm button -> Begin (retail 0xFE).
+        for ev in [press(|e| e.left = true), press_cross()] {
+            let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+            s.input(ev, party3(), one_monster());
+            assert_eq!(s.resolved(), Some(Resolution::BeginRound));
+        }
+        // Right or the cancel button -> Reselect (FUN_801D388C(0x21)).
+        for ev in [press(|e| e.right = true), press(|e| e.circle = true)] {
+            let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+            s.input(ev, party3(), one_monster());
+            assert_eq!(s.resolved(), Some(Resolution::Reselect));
+        }
+        // Up / Down are not part of the screen.
+        let mut s = BattleCommandSession::new_commit_confirm(0, 0);
+        s.input(press(|e| e.up = true), party3(), one_monster());
+        s.input(press(|e| e.down = true), party3(), one_monster());
+        assert!(s.resolved().is_none());
+        assert_eq!(s.commit_choice(), Some(CommitChoice::Begin));
+    }
+}

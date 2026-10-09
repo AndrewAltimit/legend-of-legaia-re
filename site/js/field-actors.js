@@ -21,8 +21,10 @@
   /* The wall-clock animator's rate, for a WASM build without the clip-state
    * exports (the engine's world-ticked clips replace it). */
   const NPC_CLIP_FPS = 15;
-  /* Retail's off-map hide box, when the WASM does not report it. */
-  const DEFAULT_HIDE_XZ = 16320;
+  /* Floats per actor in a `draw_poses` export (FieldActors::DRAW_POSE_STRIDE). */
+  const DRAW_POSE_STRIDE = 8;
+  /* Ints per actor in a `clip_states` export (FieldActors::CLIP_STATE_STRIDE). */
+  const CLIP_STATE_STRIDE = 4;
 
   /* Pose an object-local mesh into `out` from one frame of a clip: per bone,
    * `Rz . Ry . Rx . v + T`. A character TMD's vertices are relative to their
@@ -82,8 +84,6 @@
   function api(obj, prefix) {
     const f = (name) => (typeof obj[prefix + name] === 'function')
       ? obj[prefix + name].bind(obj) : null;
-    const hide = (typeof obj.field_offmap_hide_xz === 'function')
-      ? obj.field_offmap_hide_xz() : DEFAULT_HIDE_XZ;
     return {
       catalog_json: f('catalog_json'),
       mesh: f('mesh'),
@@ -97,14 +97,12 @@
       live_model: f('live_model'),
       pose_frames: f('pose_frames'),
       pose_dims: f('pose_dims'),
-      transforms: f('transforms'),
-      tilts: f('tilts'),
+      draw_poses: f('draw_poses'),
       tints: f('tints'),
       clip_states: f('clip_states'),
       live_bones: f('live_bones'),
       morph_states: f('morph_states'),
       morph_base: f('morph_base'),
-      hideXZ: hide,
     };
   }
 
@@ -187,13 +185,14 @@
    * `skipSlot(slot)` (an actor another pass draws, e.g. a tile-board cell),
    * `extra` (fields merged into each draw). */
   function frame(renderer, a, recs, draws, opts) {
-    if (!recs || !recs.length || !a.transforms) return;
+    if (!recs || !recs.length || !a.draw_poses) return;
     const o = opts || {};
-    const nt = a.transforms();
-    /* Pitch / roll per actor (retail `actor+0x24` / `+0x28`). Almost always
-     * all-zero, so the draw keeps the cheap yaw-only record unless the pair
-     * is non-zero. */
-    const ntilt = a.tilts ? a.tilts() : null;
+    /* The engine's draw pose per actor (`World::field_npc_draw_pose`, the
+     * native window's NPC transform): DRAW_POSE_STRIDE floats each -
+     * visible, x, y (Y-up), z, yaw, pitch, roll (12-bit units), scale. The
+     * page decides nothing about the transform: not the hide, not the
+     * heading composition, not the render scale. */
+    const np = a.draw_poses();
     /* Op `4C 81` draw tints, `[r, g, b, ir0]` per actor (empty while none
      * is tinted): a constant per-draw cue, the native NPC draw's twin. */
     const ntint = a.tints ? a.tints() : null;
@@ -205,11 +204,10 @@
     const clipFrame = Math.floor(performance.now() / 1000 * NPC_CLIP_FPS);
     for (let k = 0; k < recs.length; k++) {
       const n = recs[k];
-      const base = n.i * 4;
-      if (base + 3 >= nt.length) continue;
-      /* Story-parked actor: retail parks despawned actors at the far-corner
-       * sentinel tile precisely so they never render. */
-      if (nt[base] === a.hideXZ && nt[base + 2] === a.hideXZ) continue;
+      const base = n.i * DRAW_POSE_STRIDE;
+      if (base + DRAW_POSE_STRIDE > np.length) continue;
+      /* Not drawn: parked in the off-map hide box, or at zero render scale. */
+      if (!np[base]) continue;
       if (o.skipSlot && o.skipSlot(n.slot | 0)) continue;
       let morphMoved = false;
       if (morphStates && n.i < morphStates.length) {
@@ -224,8 +222,12 @@
         }
       }
       let posed = false;
-      if (clipStates && n.i * 2 + 1 < clipStates.length) {
-        const f = clipStates[n.i * 2], gen = clipStates[n.i * 2 + 1];
+      const cs = n.i * CLIP_STATE_STRIDE;
+      if (clipStates && cs + CLIP_STATE_STRIDE <= clipStates.length) {
+        const f = clipStates[cs];
+        /* Re-target generation plus the look key's two halves
+         * (`ActorLook::pose_key_bits`): a head turning on a held frame. */
+        const gen = clipStates[cs + 1] + ':' + clipStates[cs + 2] + ':' + clipStates[cs + 3];
         if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
           const bones = a.live_bones(n.i);
           if (bones.length) {
@@ -254,11 +256,12 @@
           renderer.updateSceneMeshPositions(n.meshId, n.base);
         }
       }
+      const yaw = np[base + 4], pitch = np[base + 5], roll = np[base + 6];
       const actorDraw = Object.assign({
         meshId: n.meshId,
-        x: nt[base], y: -nt[base + 1], z: nt[base + 2],
-        rotY: -(nt[base + 3] + 2048) * A2R,
-        scale: 1.0,
+        x: np[base + 1], y: np[base + 2], z: np[base + 3],
+        rotY: -yaw * A2R,
+        scale: np[base + 7],
         /* The placement slot, for per-actor engine lookups (the
          * object-effect clip, `play_effect_clip`). */
         npcSlot: n.slot | 0,
@@ -271,15 +274,12 @@
        * composed together (`FUN_8001ADA4` reads X at `+0`, Y at `+2`, Z at
        * `+4`); the yaw-only builder cannot express that, so it takes the
        * whole `Rx * Ry * Rz` model. */
-      const tb = n.i * 2;
-      const rotX = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb] : 0;
-      const rotZ = (ntilt && tb + 1 < ntilt.length) ? ntilt[tb + 1] : 0;
-      if (rotX || rotZ) {
-        actorDraw.rotX = rotX * A2R;
-        actorDraw.rotZ = rotZ * A2R;
+      if (pitch || roll) {
+        actorDraw.rotX = pitch * A2R;
+        actorDraw.rotZ = roll * A2R;
         actorDraw.model = placementModelEuler(
           actorDraw.x, actorDraw.y, actorDraw.z,
-          actorDraw.rotX, (nt[base + 3] + 2048) * A2R, actorDraw.rotZ, 1.0);
+          actorDraw.rotX, yaw * A2R, actorDraw.rotZ, actorDraw.scale);
       }
       draws.push(actorDraw);
     }

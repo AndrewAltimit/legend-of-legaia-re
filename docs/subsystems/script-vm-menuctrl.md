@@ -980,7 +980,7 @@ casino counter clerk's is turned `Y = -512`. The op is common - the
 [field-op census](../tooling/field-op-census.md) finds it in most town and
 dungeon scenes.
 
-Port: [`engine-core::actor_look`](../../crates/engine-core/src/actor_look.rs)
+Port: [`engine-core::actor_look`](../../crates/engine-field/src/actor_look.rs)
 holds each actor's look and its ramps (ticked at the frame step, reset on a
 scene entry); `CC F8 45 ..` lands on the player through the same stand-in
 context `CC F8 40` / `CC F8 C2` use. `World::actor_look` answers per actor,

@@ -241,6 +241,25 @@ impl World {
         };
         let anchor = id.prop_anchor.expect("checked above");
 
+        // A player compass leg the record armed plays every frame, box or no
+        // box: the walk kernel steps it off the player's own `0x400`, not off
+        // the record. A run whose record has already ended stays engaged
+        // until the leg lands, then releases the player.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_801DE840 (0x801DEE90..0x801DEF1C)
+        if let Some(mut glide) = id.player_glide.take()
+            && self.step_player_glide(&mut glide)
+        {
+            id.player_glide = Some(glide);
+        }
+        if id.done {
+            if id.player_glide.is_none() {
+                self.finish_prop_interaction(&mut id, anchor);
+            } else {
+                self.dialog.inline = Some(id);
+            }
+            return;
+        }
+
         // A box is open: tick the typewriter + route input. The prop's clip
         // keeps ticking underneath (the cupboard holds open at its clamp).
         if let Some(panel) = id.panel.as_mut() {
@@ -296,7 +315,7 @@ impl World {
                     panel.confirm_while_typing();
                 }
             }
-            if id.done {
+            if id.done && id.player_glide.is_none() {
                 self.finish_prop_interaction(&mut id, anchor);
                 return;
             }
@@ -423,6 +442,41 @@ impl World {
                 // leg is not replayed on top of the landing (`tower`'s floor
                 // doors walk the player into the doorway, glide, then `A3 F8`
                 // to the next floor).
+                // The record's next cross-context op on the player waits while
+                // a compass leg it armed is still walking the player; the
+                // halt clear `32 F8 0A` is exempt.
+                // REF: FUN_801DE840 (0x801DE90C..0x801DE944, 0x801DE8E0..0x801DE904)
+                if player_target
+                    && id.player_glide.is_some()
+                    && !(b == 0xB2 && id.bytecode.get(id.pc + 2) == Some(&0x0A))
+                {
+                    break;
+                }
+                // A compass walk on the player (`B7 F8 b0 b1` / `C1 F8 b0
+                // b1`): arm the leg and run on past the op.
+                // REF: FUN_8003774C (the 0x37 / 0x41 arm), FUN_801DE840 (0x801DEEDC..0x801DEF00)
+                if player_target
+                    && matches!(b, 0xB7 | 0xC1)
+                    && let (Some(&body0), Some(&body1)) =
+                        (id.bytecode.get(id.pc + 2), id.bytecode.get(id.pc + 3))
+                {
+                    let mut glide = crate::cutscene_timeline::TimelinePlayerGlide {
+                        state: vm::motion_vm::MotionState {
+                            speed: 1,
+                            ..Default::default()
+                        },
+                        body0,
+                        body1,
+                        rate: if b == 0xB7 { 0x80 } else { 0x40 },
+                        resume_pc: id.pc + 4,
+                        frames: 0,
+                    };
+                    id.pc += 4;
+                    if host.world.step_player_glide(&mut glide) {
+                        id.player_glide = Some(glide);
+                    }
+                    continue;
+                }
                 if player_target
                     && b == 0xC7
                     && !door_teleports
@@ -510,7 +564,7 @@ impl World {
         } else {
             id.park_frames = 0;
         }
-        if id.done {
+        if id.done && id.player_glide.is_none() {
             self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
             self.finish_prop_interaction(&mut id, anchor);
         } else {

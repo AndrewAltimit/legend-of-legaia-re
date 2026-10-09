@@ -127,7 +127,7 @@ impl Glide {
     /// One pass of a tween its caller **re-arms every pass**: the builder
     /// run over `frames` display frames, each component's per-frame
     /// increment `ceil(|current - target| / frames)` scaled by the camera
-    /// step's [`CHASE_FRAME_STEP`] frames - the walker task `FUN_8002149C`
+    /// step's [`BattleCamera::frame_step`] frames - the walker task `FUN_8002149C`
     /// adds `increment * frame_step` (`0x1F800393`) a pass and clamps on the
     /// endpoint. Rate-clamped (`steps_left == None`): the caller steps it
     /// once with [`BattleCamera::step_components`] and rebuilds next pass.
@@ -146,19 +146,22 @@ impl Glide {
         target: BattleCamPose,
         target_tr_z_raw: i32,
         frames: u32,
+        frame_step: f32,
     ) -> Self {
         let mut g = Self::linear(from, target, target_tr_z_raw, frames.max(1), true);
         for r in &mut g.rate {
-            *r *= CHASE_FRAME_STEP;
+            *r *= frame_step;
         }
         g.steps_left = None;
         g
     }
 }
 
-/// Display frames one camera step stands for: the walker's frame-step
-/// multiplier at retail's 30 Hz battle tick.
-pub(super) const CHASE_FRAME_STEP: f32 = 2.0;
+/// Display frames one camera step stands for by default: the walker's
+/// frame-step multiplier at retail's usual 30 Hz battle tick. Retail's step
+/// is load-adaptive (`FUN_80016B6C`); [`BattleCamera::set_frame_step`] runs
+/// the camera on another one.
+pub const DEFAULT_CAMERA_FRAME_STEP: u8 = 2;
 
 /// Step `v` toward `target` by at most `rate`, clamping at the target.
 pub(super) fn step_toward(v: f32, target: f32, rate: f32) -> f32 {
@@ -194,8 +197,13 @@ pub struct BattleCamera {
     pub(super) glides: std::collections::VecDeque<Glide>,
     /// `field_frames` value already consumed, for the 2-vsync step cadence.
     pub(super) last_frames: u64,
-    /// Sub-step vsync accumulator (steps fire every 2 frames).
+    /// Sub-step vsync accumulator (steps fire every [`Self::frame_step`]
+    /// frames).
     pub(super) frame_accum: u64,
+    /// Vsyncs one camera step spans - retail's frame step `DAT_1F800393`,
+    /// the multiplier the walker `FUN_8002149C` applies to every increment.
+    /// [`DEFAULT_CAMERA_FRAME_STEP`] unless a caller sets another.
+    pub(super) frame_step: u8,
     /// The acting actor the submenu close-up frames. Defaults to the
     /// measured solo-Vahn case; hosts that track the live battle actor call
     /// [`BattleCamera::set_actor`] so non-Vahn seats frame correctly.
@@ -244,6 +252,10 @@ pub struct BattleCamera {
     /// first drive, so a camera created mid-action does not reset on its
     /// first frame.
     pub(super) last_active_commits: Option<u32>,
+    /// The last [`BattleCamInputs::active_installs`] seen.
+    pub(super) last_active_installs: Option<u32>,
+    /// [`BattleCamera::clip_age`]'s counter.
+    pub(super) clip_age: u32,
     /// The camera's copy of the `rand()` stream. Retail draws the shake pair
     /// (`FUN_801D9D30`), the strike-loop yaw coin (`FUN_8004E13C`'s party arm)
     /// and the per-art track column (`ctx[+0x26D] = rand() % 2`) from the one
@@ -368,6 +380,10 @@ pub fn battle_entry_yaw(camera_azimuth: u16) -> f32 {
 pub struct BattleCamInputs {
     /// The framing phase ([`phase_for`]).
     pub phase: BattleCamPhase,
+    /// The battle frame step in vsyncs the camera steps on
+    /// ([`BattleCamera::set_frame_step`]); `0` reads as
+    /// [`DEFAULT_CAMERA_FRAME_STEP`].
+    pub frame_step: u8,
     /// The acting battle actor, when one owns the framing.
     pub acting: Option<BattleCamActor>,
     /// The acting actor's **target** (`actor[+0x1DD]` through the actor
@@ -408,6 +424,11 @@ pub struct BattleCamInputs {
     /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
     /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
     pub active_commits: u32,
+    /// The active actor's clip-**install** count
+    /// (`BattleActionCtx::active_clip_installs`): the commits that change the
+    /// committed id, without the natural-end re-commits of a looping clip.
+    /// Port-only; it zeroes [`BattleCamera::clip_age`].
+    pub active_installs: u32,
     /// `(count, coin)` of `FUN_8004E13C`'s value-2 re-seeds
     /// (`BattleActionCtx::swing_yaw_seeds` / `swing_yaw_coin`): a change in
     /// the count sets the yaw counter `ctx[+0x6DA]` to
@@ -513,12 +534,18 @@ pub fn drive_on_stream(
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
     cam.observe_active_commits(inputs.active_commits);
+    cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);
     cam.set_camera_option(inputs.camera_option);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_cursor(inputs.cursor);
     cam.set_phase(inputs.phase);
+    cam.set_frame_step(if inputs.frame_step == 0 {
+        DEFAULT_CAMERA_FRAME_STEP
+    } else {
+        inputs.frame_step
+    });
     cam.advance_to(frames);
     *rng = cam.rand_state;
 }

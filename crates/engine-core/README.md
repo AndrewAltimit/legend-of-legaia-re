@@ -240,7 +240,9 @@ composes them.
   (`0x8007655C`, `legaia_asset::item_effect`) by the disc-gated
   `item_effect_real` test.
 - `shop` / `shop_catalog` - shop session state (buy/sell cursor,
-  quantity, gold/inventory delta) plus the disc-sourced **gold-shop
+  quantity, gold/inventory delta; the kernels live in `legaia-engine-menus`,
+  and engine-core's `shop` adds the one `World`-reading entry,
+  `party_compare_members`) plus the disc-sourced **gold-shop
   stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
   (the sellable mask), and `shop_catalog::scene_shops` decodes a
   scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
@@ -276,6 +278,8 @@ composes them.
   one per party turn and parks the action SM until the player confirms;
   otherwise the loop auto-resolves with a physical Attack. The menu carries
   Attack, Arts, Magic, Item, Spirit and Run (`BattleCommand`). See `docs/subsystems/battle.md#auto-resolve-vs-player-driven`.
+  The session is `World`-free and lives in `legaia-engine-menus`, as do the
+  options screen's value enums (`option_values`) it keys Select Attack on.
 - `battle_flow` - the retail command-flow byte `ctx[+0x06]`, the cursor of
   the battle's *menu* SM `FUN_801D0748` (not the action SM's `ctx[+0x07]`,
   whose value space it overlaps). `flow_state_for` recomposes it each frame
@@ -362,7 +366,11 @@ composes them.
   inline `[count][ids]` arm at a decoded opcode boundary instead of the
   byte-scan false positives (every `0x37`/`0x41` byte in dialog text). The
   town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
-  indexed formation-table install path (see `encounter_record`).
+  indexed formation-table install path (see `encounter_record`). The
+  decoders live in `legaia-engine-field`, where every census takes the MAN
+  carriers it walks; this module re-exports them and adds what needs a
+  loaded `Scene` - `scene_man_carriers` and the scene-name entry points of
+  the system-flag, op-`0x49` window and motion-flag censuses.
 - **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
   entity SM (`legaia_engine_vm::world_map`) in `SceneMode::Field` as well as
   on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
@@ -416,7 +424,10 @@ bakes through `legaia_asset::{scene,character}_gltf`) into the
 ports the retail dialog state machine `FUN_80039B7C` through the *real*
 field VM, so dialogue advances by script execution rather than by a
 reimplemented approximation. Hosts that want the simpler path can leave
-it off and drive the dialog panel directly.
+it off and drive the dialog panel directly. The runner's state
+(`inline_dialogue`), the cutscene timeline's (`cutscene_timeline`) and the
+pager panel (`dialog`) live in `legaia-engine-menus`; the stepping is
+`World`'s.
 
 A pass ends where retail's parks: on the record's backward jump onto a PC
 the pass already reached (`InlineDialogue::visited`). That map marks **text
@@ -483,7 +494,12 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   nothing; a contest pays. Driven by `World::report_muscle_leg` /
   `World::settle_muscle_contest`. The contest ladder, course tables, damage
   model and hub envelopes are World-free and live in `engine-minigames`;
-  this module keeps the leg session and re-exports them.
+  the leg session, its command menu and ring live in `legaia-engine-menus`
+  (beside the battle command input they share). This module re-exports
+  both and keeps `magic_loadout_for`, which reads a fighter's loadout off
+  the live roster and hands the slice to `magic_loadout_of`. `timed_fight`
+  and `battle_open` split the same way: their kernels in
+  `legaia-engine-menus`, their `World` / `ProtIndex` readers here.
 - `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by
@@ -492,9 +508,6 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
 
 ## Smaller modules worth knowing
 
-- `music_labels` - resolves a global BGM id / `music_01` bank slot to its
-  curated sound-test track label. See
-  [`docs/reference/music-tracks.md`](../../docs/reference/music-tracks.md).
 - `world::ambient` - the scene-entry ambient move-VM effect tree
   (`spawn_ambient_record` fan-out, `step_ambient_fx` drain) and its two
   render-tail arms: the CLUT-cell HSV cycler (`clut_cell_fx`, mode 3) and
@@ -523,27 +536,14 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   Logic only; row render stays an `engine-ui` seam. See
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#options-screen).
 - `pause_screens` - the retail Items / Magic pause-screen sessions + view
-  models (`PauseItemsSession` command/list/throw-out focus over the
+  models (kernels in `legaia-engine-menus`; engine-core's `pause_screens`
+  adds the `World`-reading `target_panel_view_model`) (`PauseItemsSession` command/list/throw-out focus over the
   item-use flow - incl. the Throw Out Yes/No confirm and the Arrange
   bag sort - `MenuTextTables` disc text: item + spell
   names/descriptions, accessory passive lines). Feeds the `engine-ui`
   `items_screen_draws_for` / `magic_screen_draws_for` builders in both
   hosts. See
   [`docs/subsystems/field-menu.md`](../../docs/subsystems/field-menu.md#items-screen).
-- `menu_arrange` - the Items screen's Arrange rank table (menu-overlay
-  `0x801E4A88`) + the retail bag-sort kernel (`FUN_801D64A8`).
-- `menu_widget` - the window-widget choreography: `MenuWidgetScripts`
-  resolves the window-script VM's programs out of the menu-overlay image
-  (`legaia_asset::widget_script`), and `MenuWidgetState` is the
-  `legaia_engine_vm::Host` window-list model the shop open / Sell
-  slide-away programs run against (`MenuRuntime::tick` drives the edges,
-  mirroring `FUN_801DAFD4`). See
-  [`docs/formats/window-script.md`](../../docs/formats/window-script.md).
-- `mode_entry_init` - the one-time **mode-entry initialisers**: the field /
-  town scene init (`FUN_801D6704` - step order, BGM slot resolve, primitive
-  buffer sizing, and the cold/warp player seat `SceneHost::enter_field_scene`
-  applies) plus the duel-arena overlay seeds (`FUN_801CF00C`). See
-  [`docs/subsystems/asset-loader.md`](../../docs/subsystems/asset-loader.md#asset-descriptor-walker-fun_80020224---the-slotasset-mapping).
 - `field_regions::window_rebuild_spawns_resident` - the sub-area **window
   rebuild** placed-object sweep (`FUN_801D7B50`), complement of the
   scene-init sweep. `World::recentre_field_window` (`world/static_window.rs`)
@@ -555,14 +555,14 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   target-menu row dedup / labelling and the overlap-relaxation layout
   (`FUN_801D9D3C`), reached each battle frame through
   `battle_hud::battle_intro_names` on both hosts.
-- `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
-  context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
-  fixed-template spawn (`FUN_801DE478`), the list-panel row layout
-  (`FUN_801E6984`), and the CARD mode-request leaf (`FUN_801D84B4`).
-- `field_actor_kernels` - the scene-transition **teardown sweep**
-  (`FUN_801D7518`, which the field initialiser runs once per actor list on a
-  warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
-  the sweep retires by handler address.
+- `camera` - the field camera (`Camera`: presets, the zone follow composer
+  and ease, the script mover, the field-event router, the follow knobs).
+  It lives in `legaia-engine-field` and reaches the world only through the
+  `CameraWorld` trait - scene mode, player position and footing, the
+  region / zone / collision blocks, the story word, the register file and
+  shake, the field event and zone-request queues, the cull view and fog
+  window it publishes, the `rand()` stream; this module implements it for
+  `World`.
 - `camera_view` - the layer above `camera`: which camera owns this frame
   (`resolve_field_camera` - retail follow / op-`0x45` cutscene shot /
   overworld walk / world-map top-view debug) and what its retail GTE inputs
@@ -571,53 +571,42 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   live here, so a host never spells an angle, a depth or a focal length out
   again; the projection itself is `legaia_engine_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
-- `camera_zone` - the **zone-driven follow camera**: the camera parameter
-  block retail keeps at `0x8007B606..` (`CameraZoneConfig`, loaded from a MAN
-  section-3 camera-region record by the port of `FUN_801DBC20`), the composer
-  that turns it plus the player's position into a target pose (`FUN_801DAB90`:
-  position-proportional sweeps, look-at anchors, fixed shots, the floor-height
-  pitch coupling) and the per-frame ease / snap that walk the ten camera
-  globals toward it (`FUN_801DB510` / `FUN_801DB8EC`), with the bearing and
-  square-root LUT helpers they lean on. `Camera::zone` runs it; the pinned
-  constants in `camera_view` are only the terrain-less fallback. Format +
-  arithmetic: [`docs/formats/encounter.md`](../../docs/formats/encounter.md#man-section-3-the-camera-region-table).
-- `camera_ease` - the field camera's smoothed **vertical-offset** step
-  (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
-  position triple, and the eased result lands in the Y halfword of a vector):
-  settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
-- `world_map::WorldMapController` - drives `SceneMode::WorldMap`.
+- `world_map::WorldMapController` - drives `SceneMode::WorldMap`
+  (re-exported from `legaia-engine-field`).
 - `world_map_panel_host` - the world-map band's panel screen: the
   `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
-  travel arts, hosted on `WorldMapController::panels`. See
+  travel arts, hosted on `WorldMapController::panels`. The screen lives in
+  `legaia-engine-field`; this module re-exports it and adds the field HUD
+  queries that read `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
-- `anim_cue` - `walk_anim_cues` / `AnimCueState`, the per-frame walker
-  over a playing battle action's 8-slot `(frame, cue)` track
-  (`FUN_800508DC`): swing, hit, footstep and knockdown SFX, the party
-  `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
-  CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; the battle
-  actor tick in `world::actors` drains them into the SFX ring.
-- `input::Mapping`, `scene::DefaultMapIdResolver` - host-agnostic input
-  binding and scene-name → map-id resolution. (Effect lookup,
+- `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
   `EffectCatalog`, is `legaia_engine_vm::effect_vm`'s; the scene host loads
   it from `efect.dat`.)
 
 ## Other major modules
 
 - `mode` - the game-mode driver and retail mode table (`ModeSeat`, which both
-  hosts enter INIT modes through).
+  hosts enter INIT modes through). The table, driver, seat and `SceneMode`
+  live in `legaia-engine-field` and reach the world only through the
+  `ModeWorld` trait; this module implements it for `World` and keeps the
+  field-entry demo handler.
 - `scene` - the scene-loading shell: PROT asset indexing, per-CDNAME-block
   bundle resolution, BGM lookup, and `SceneHost` (`enter_field_scene`).
 - `model_bank` - the retail model pool `DAT_8007C018` and the id space a
   placement's model byte and the scripted-motion VM's op `0x0E` share.
 - `levelup` / `inn` / `equip_session` / `spells` - the post-battle
   `LevelUpTracker`, the inn rest session, the equipment session, and the
-  spell catalog + cast resolver.
+  spell catalog + cast resolver (all re-exported from the `World`-free
+  crates below).
 - `field_menu` / `field_menu_dispatch` / `menu_runtime` and the `menu_*`
   family - pause-menu sessions, sub-session dispatch, and list / input /
-  validator leaves.
+  validator leaves. `field_menu_dispatch` and `menu_runtime` are the
+  `World` side; `field_menu` and the `menu_*` leaves are re-exported from
+  `legaia-engine-menus`.
 - `title` / `save_select` / `save_subscreen` / `card_flow` / `card_write` /
   `card_bu_io` - title state machine, save-slot select, and the memory-card
-  I/O and write flow.
+  I/O and write flow (all but `card_write` re-exported from
+  `legaia-engine-menus`).
 - `dialog_window` - the field dialog pager's row window, scroll and typing
   reveal.
 - `fishing` / `fishing_actors` / `fishing_hub` / `fishing_venue` - the
@@ -643,42 +632,25 @@ docs carry the retail provenance.
 - **Actor model + hosts** - `actor_handler` (the actor's `+0x0C` per-frame
   handler identity), `actor_alloc_host` / `move_buffer_host` (the `World`
   impls of `engine-vm`'s allocator and MOVE-buffer host traits),
-  `float_tween` (the `gp+0x148` screen-position tween), `morph_weight_apply`,
   `camera_rel_glide`. The effect kernels (`part_motion`, `object_effect`,
   `summon`, the effect arms and ribbon, `screen_fx`) are re-exported from
   [`legaia-engine-effects`](../engine-effects/README.md).
 - **Battle** - `battle_open` (the formation open banner), `battle_party_form`
   (a member's assembled battle form, once for both hosts),
-  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages),
-  `sfx_cue` (cue id → ring / XA clip), `spell_party_broadcast`
-  (`FUN_8003053C`). The kernel modules re-exported from `engine-battle` are
+  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages). The kernel modules re-exported from `engine-battle` are
   mapped in [its README](../engine-battle/README.md).
-- **Field** - `field_events` (the field VM's event queue), `field_ground`
-  (walk-ground heightfield as a render surface), `field_lit_mesh` (the
-  light-source TMD rows' shading), `field_view_window` (the visible-tile
-  crop), `field_occlusion` (the occlusion fade's visibility gate),
-  `coplanar_draws`, `drop_shadow`, `fog_particles` (retail `fog_set`),
-  `fog_volume` (volumetric fog, an enhancement), `clut_fx` /
-  `clut_walk_anim` (scripted CLUT cells, the CLUT-walk shimmer), `vdf_pulse`
-  (enhancement), `register_ramp` (op `0x43` camera zone ramp), `walk_regen`,
-  `text_balloon` (`4C E1`), `place_name_banner`, `field_audio_release`,
-  `field_actor_clone` (`4C 14`), `field_actor_program` (the voice-over
-  scene actor), `field_submode_screen` / `field_submode_code_lock` /
-  `field_submode_flag_window` (op-`0x49` submode host and two handlers),
-  `field_save_screen_actor`, `scene_transition_actor` (the transition
-  streaming actor), `cutscene_script_elements`.
-- **Cutscene + movie** - `cutscene_narration` (subtitle roller),
-  `cutscene_caption`, `movie_audio` (what a movie does to the score),
-  `mdec_dma_sync`.
-- **Overworld** - `overworld_curvature`, `overworld_draw_order`,
-  `overworld_ground_cue`, `world_map_markers` (not retail: marker quads).
-- **Menus + screens** - `menu_cues`, `menu_glyph_atlas`, `menu_input`
-  (`FUN_801d688c`), `menu_item_category`, `menu_list_rows`,
-  `menu_open_sequence`, `menu_validator`, `status_screen`, `spell_menu`,
-  `key_rebind`, `list_order`, `name_entry`, `save_screen` (the save
-  screen's host half), `debug_char_editor`, `dev_menu_host`,
-  `dialog_pacing` / `dialog_picker_slide` (typewriter reveal, picker slide),
-  `title_screen_atlas`, `publisher_logos`, `game_over` (party wipe → title),
+- **Field** - `field_ground` (walk-ground heightfield as a render surface),
+  `field_view_window` (the visible-tile crop), `field_occlusion` (the
+  occlusion fade's visibility gate), `coplanar_draws`, `drop_shadow`,
+  `fog_particles` (retail `fog_set`), `fog_volume` (volumetric fog, an
+  enhancement), `clut_walk_anim` (the CLUT-walk shimmer),
+  `place_name_banner`, `field_submode_screen` / `field_submode_code_lock` /
+  `field_submode_flag_window` (op-`0x49` submode host and two handlers).
+- **Cutscene** - `cutscene_caption`.
+- **Overworld** - `overworld_curvature`, `world_map_markers` (not retail:
+  marker quads), `world_map_sky` (which frames draw the sky band).
+- **Menus + screens** - `menu_input` (`FUN_801d688c`), `menu_validator`,
+  `dev_menu_host`,
   `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
 - **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
   `minigame_floor`, `minigame_status` (the engine's affordance rows),
@@ -687,13 +659,34 @@ docs carry the retail provenance.
   `muscle_ringside`, `other_game_overlay` (PROT 0977 kernels),
   `casino_coin_bank` (op `4C E5`).
 - **Scene loading + session** - `scene_assets`, `scene_bundle`,
-  `scene_live` (a headless live scene preview for viewers), `scene_name_sync`,
-  `resume` (where a load resumes and a New Game starts), `chunk_install`
-  (sound-stream chunk routing), `encounter_registry`, `sound_state`,
-  `fade_ramp`, `retail_pad` (`FUN_8001822c`), `scus_leaf_kernels`.
-- **Cheats + capture pins** - `cheats` (the play hosts' cheat mutations),
-  `cheat_applier` + `ram_map` (parsed GameShark codes → engine cells),
-  `capture_observations` (codified save-state findings).
+  `scene_live` (a headless live scene preview for viewers),
+  `resume` (where a load resumes and a New Game starts),
+  `encounter_registry`, `scus_leaf_kernels`.
+- **Cheats** - `cheats` (the play hosts' cheat mutations) and
+  `cheat_applier` (parsed GameShark codes → engine cells, over
+  `engine-system`'s `ram_map`).
+- **Runtime system** - `input`, `retail_pad`, `chunk_install`,
+  `mdec_dma_sync`, `cutscene`, `movie_audio`, `sound_state`, `music_labels`,
+  `fade` / `fade_ramp` / `pause_wipe`, `mode_entry_init`, `scene_name_sync`,
+  `ram_map`, `capture_observations` and `draw_census` are re-exported from
+  [`legaia-engine-system`](../engine-system/README.md).
+- **Menu front end** - `items`, `equipment`, `inventory_use`,
+  `menu_list_rows`, `menu_item_category`, `menu_arrange`, `spell_menu`,
+  `spell_party_broadcast`, `menu_widget`, `menu_open_sequence`, `menu_cues`,
+  `menu_glyph_atlas`, `save_menu_atlas`, `debug_char_editor`, `key_rebind`,
+  `publisher_logos`, `title`, `title_screen_atlas`, `name_entry`, `game_over`,
+  `card_flow`, `card_bu_io`, `dialog_window`, `dialog_pacing`,
+  `dialog_picker_slide`, `text_balloon` and `inn` are re-exported from
+  [`legaia-engine-menus`](../engine-menus/README.md).
+- **Field kernels** - `actor_handler`, `field_actor_kernels`,
+  `field_actor_clone`, `field_actor_program`, `cutscene_script_elements`,
+  `morph_weight_apply`, `actor_look`, `float_tween`, `camera_zone`,
+  `camera_ease`, `register_ramp`, `field_anim`, `walk_regen`,
+  `scene_transition_actor`, `field_save_screen_actor`, `field_submode`,
+  `field_events`, `cutscene_narration`, `field_audio_release`, `clut_fx`,
+  `clut_cell_fx`, `vdf_pulse`, `field_lit_mesh`, `packet_color`,
+  `overworld_draw_order`, `overworld_ground_cue`, `anim_cue` and `sfx_cue`
+  are re-exported from [`legaia-engine-field`](../engine-field/README.md).
 
 ## See also
 

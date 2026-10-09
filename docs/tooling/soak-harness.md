@@ -55,7 +55,11 @@ and plays the scene with its party, bag and story flags instead of the New
 Game party's, so late-game scenes are soaked with the party and flags they are
 reached with. `LEGAIA_SOAK_SAVE=<save>` applies it to the whole scene set.
 Whatever value check the seeded state already fails (the playthrough card
-holds a 255-count stack) belongs to the save and is not reported.
+holds a 255-count stack) belongs to the save and is not reported. A save on
+another library card is named `@<card>:<save>`
+(`bubu2@playthrough-ladder-pro00-14.mcr:PRO-07`); `LEGAIA_SOAK_SAVE` with a
+non-default `LEGAIA_SOAK_CARD` labels its runs that way, so a replay written
+from one carries its card. The card does not enter the run's seed.
 
 An `@<save>` run still enters its scene by name, not through a door the
 save's story opens, so a finding only such a run raises needs that door
@@ -67,7 +71,9 @@ those walls, so `town0c@PRO-04` leaves the party boxed in on the overworld. That
 the chapter-1 town: in this stretch of the story the party's Rim Elm is
 `town0d`, which the spine reaches through `concend`, not the overworld. And `korb3`'s default entry seat is walled
 on all four sides once the arrival cutscene that moves the party off it is
-gated off by the save's flags.
+gated off by the save's flags. Both are listed in the harness's `SAVE_ENTRY_ARTIFACTS`: when every
+hit of such a signature comes from an `@<save>` run, the report names it on a
+"known entry artifact" line instead of the findings table.
 
 `opurud+rt` once failed its save / load round trip on the party records
 (records 1 and 2 read zero at their first byte after the resume). That one
@@ -297,6 +303,10 @@ regression.
 | `opurud_field_save_zeroes_party_records` | `opurud+rt@PRO-00` lost records 1 and 2 on its save / load round trip | a field save keeps the records; actor mirrors fold back only in a battle |
 | `conc3_ambient_walker_seat_snapback` | a cutscene walk ran from the walker's off-stage wander box across the whole map | an ambient walker adopts the live seat a script's `0x23` writes; it had re-published its own stale coordinates on its next step |
 | `balden_fishing_exchange_pad_dead` | the prize list opened from the pond's hub menu answered no pad input | the engine steps the list off the pad edge (state `0x78`'s keys) |
+| `bubu2_bag_stack_past_99` | `bubu2@...:PRO-07`: a battle grant raised a held stack of 99 to 100 | every bag grant (drop, steal, refund, prize, shop, unequip) goes through the retail add, which caps a merged stack at 99 |
+| `jouina_final_heal_readout_overshoot` | `jouina@...:PRO-01`: a member downed and Final-Healed by one enemy hit parked the `0x51` bar-drain gate | the Final Heal sweep re-syncs the readout before its revive seed; the killing hit's undrained remainder had stacked above max HP |
+| `retockin_monster_curse_folded_as_capture` | `retockin+rt@...:PRO-04`: a monster's Curse took a party member off the field and parked the `0x51` gate | a capture roll downs only a monster seat; the boot catalog resolves Curse's `0x40` to the disc-free demo "Reseal" capture |
+| `tower_floor_door_glides_ignored` | `tower@PRO-10`: a floor door set the player down inside the far door's doorway, walled on every side | a touched object's record plays its cross-context compass walks on the player (`B7 F8` / `C1 F8`) as legs it runs on past, and the out leg carries the player clear |
 
 The field-side fixes are described with their retail evidence in
 [`script-vm.md`](../subsystems/script-vm.md#engagement-and-the-system-script).

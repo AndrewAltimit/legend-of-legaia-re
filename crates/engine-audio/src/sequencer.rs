@@ -51,6 +51,15 @@ fn retail_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
         .max(1)
 }
 
+/// [`retail_play_tempo`] for the header tempo, which the SEQ open rounds to
+/// the nearest BPM where the tempo meta handler truncates
+/// ([`crate::seq_calc::header_bpm`]).
+fn retail_header_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
+    crate::seq_calc::retail_effective_header_us_per_qn(us_per_qn, ppqn)
+        .unwrap_or(us_per_qn)
+        .max(1)
+}
+
 /// NRPN-style controller that carries SEQ loop markers (controller 99).
 const CC_LOOP_MARKER: u8 = 0x63;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.
@@ -102,26 +111,23 @@ fn apply_channel_pan(left: i16, right: i16, pan: u8) -> (i16, i16) {
     }
 }
 
-/// Combine a note's channel-expression - channel volume (CC7) then channel
-/// pan (CC10) - over its channel-free base `(left, right)` (master × velocity
-/// × bank/program/tone vol, tone- and program-panned), then apply the
-/// sequencer path's final square taper. Both controllers are dynamic: a
-/// mid-note CC7 or CC10 recomputes the live voice volume from this same
-/// base, so successive changes don't compound.
-///
-/// PORT: FUN_80067550 (tail) - after every volume factor and pan stage,
-/// retail squares each side (`v * v / 0x3FFF`) on the sequencer path only
-/// (the SFX direct path, retail slot `0x21`, skips both the channel fold
-/// and the square). The taper maps the 14-bit domain onto itself - full
-/// scale stays 0x3FFF, half scale lands at a quarter - so it must sit
-/// after the channel fold, not in the key-on base.
-fn channel_mix(base: (i16, i16), volume: u8, pan: u8) -> (i16, i16) {
-    let v = volume.min(127) as i32;
-    let left = (base.0 as i32 * v / 127) as i16;
-    let right = (base.1 as i32 * v / 127) as i16;
-    let (l, r) = apply_channel_pan(left, right, pan);
+/// The sequencer-path tail of `FUN_80067550` over a head
+/// [`VabBank::seq_note_volume`] already carried through the sequence volume
+/// and the tone and program pans: the channel pan (the staged `0x801CE34D`),
+/// then the square taper `v * v / 0x3FFF` per side. Retail's SFX path (owner
+/// `0x21`) skips the taper; this is the sequencer's.
+fn channel_tail(head: (i16, i16), pan: u8) -> (i16, i16) {
+    let (l, r) = apply_channel_pan(head.0, head.1, pan);
     let sq = |v: i16| ((v as i32 * v as i32) / 0x3FFF) as i16;
     (sq(l), sq(r))
+}
+
+/// Channel volume (CC7) folded into a note's velocity the way libsnd does
+/// it at note-on: `FUN_80066308` stages `vel * chvol / 127` (the channel
+/// record's `+0x60 + ch * 2` halfword, signed `/0x7F` magic at
+/// `0x800663E4..0x80066428`) as the velocity the volume chain then reads.
+fn effective_velocity(velocity: u8, channel_volume: u8) -> u8 {
+    (velocity as i32 * channel_volume.min(127) as i32 / 127) as u8
 }
 
 /// Per-channel state carried across events.
@@ -169,17 +175,48 @@ struct ActiveNote {
     /// captured at NoteOn so a later `0xEn` event scales by the note's own
     /// range (a `(0, 0)` tone never bends).
     bend_range: (u8, u8),
-    /// The voice's channel-free `(left, right)` volume: master × velocity ×
-    /// tone vol, tone-panned, with NO channel volume (CC7) or channel pan
-    /// (CC10) applied. A later CC7/CC10 re-derives the live voice volume from
-    /// this base via [`channel_mix`] so successive changes don't compound,
-    /// mirroring `base_pitch` for bend.
-    base_vol: (i16, i16),
+    /// The note's raw velocity, program and layer tone: a CC7 or CC10
+    /// re-derives the voice volume from these through the whole retail chain
+    /// ([`Sequencer::note_volume`]), as libsnd's re-key does, rather than
+    /// rescaling an already-rounded value.
+    velocity: u8,
+    program: usize,
+    tone: usize,
     /// The voice's [`crate::spu::voice::Voice::key_on_count`] right after
     /// this note keyed it. A different count means an SFX cue re-keyed the
-    /// voice under the note; the note then no longer owns it.
+    /// voice under the note; the note then no longer owns it. For a note
+    /// still [`Self::pending`], the count before its key-on.
     key_on_stamp: u32,
+    /// `Some(id)` while the note's key-on waits for the next flush
+    /// ([`Sequencer::flush_key_ons`]); `None` once it has keyed the voice.
+    pending: Option<u32>,
 }
+
+/// One layer of a note-on staged for the next flush: the voice is chosen and
+/// reserved, the key-on itself is not yet written.
+#[derive(Debug, Clone, Copy)]
+struct PendingKey {
+    id: u32,
+    voice: u8,
+    channel: u8,
+    key: u8,
+    velocity: u8,
+    program: usize,
+    tone: usize,
+}
+
+/// The sequence volume the game gives every BGM sequence: `FUN_8002614C`
+/// passes its argument to `FUN_80064890` (`SsSeqSetVol`, both sides) for each
+/// sound-source record, and its callers pass `(DAT_8007B6EC << 15) >> 16` -
+/// `215` in 90 of the 98 catalogued states, so `107`. The mednafen library's
+/// field and battle states read `107` in the playing sequence's `+0x58` /
+/// `+0x5A`.
+pub const RETAIL_BGM_SEQ_VOL: u8 = 107;
+
+/// SPU samples between two retail key-on flushes: libsnd's `SsSeqCalc` runs
+/// once per vsync, processes every event due, then flushes the staged
+/// key-off and key-on masks (`FUN_80065BAC`).
+pub const FLUSH_SAMPLES: u64 = (SPU_INTERNAL_RATE / 60) as u64;
 
 /// Sequencer state machine. One per playing SEQ.
 pub struct Sequencer {
@@ -210,6 +247,9 @@ pub struct Sequencer {
     play_us_per_qn: u32,
     /// Play the score's exact tempo instead of retail's quantised one.
     exact_tempo: bool,
+    /// The tempo is still the header's (no tempo meta has fired), which the
+    /// SEQ open rounds to the nearest BPM rather than truncating.
+    header_tempo: bool,
     /// Absolute tick offset of the playhead (sum of fired event deltas).
     abs_tick: u64,
     /// Has end-of-track been reached.
@@ -253,6 +293,17 @@ pub struct Sequencer {
     /// allocated voice. Used as the final steal tie-break. u16 with wrapping
     /// add, matching the retail halfword.
     voice_age: [u16; crate::spu::NUM_VOICES],
+    /// Samples advanced since the last key-on flush, `0..FLUSH_SAMPLES`.
+    flush_pos: u64,
+    /// Note layers allocated since the last flush, keyed at the next one.
+    pending: Vec<PendingKey>,
+    /// Id source for [`PendingKey::id`].
+    next_pending_id: u32,
+    /// The retail pump's `+0x90`: tenths of a tick still to wait before
+    /// `events[next]` fires. `None` until the pump first runs, or after an
+    /// outside [`Self::rewind_to`] - then it is seeded from that event's own
+    /// delta, as the stream read after a seek does.
+    pump_wait: Option<i64>,
 }
 
 impl Sequencer {
@@ -273,8 +324,9 @@ impl Sequencer {
             accum_per_sample: ppqn as u64 * 1_000_000,
             sample_carry: 0.0,
             tempo_us_per_qn: tempo,
-            play_us_per_qn: retail_play_tempo(tempo, ppqn),
+            play_us_per_qn: retail_header_play_tempo(tempo, ppqn),
             exact_tempo: false,
+            header_tempo: true,
             abs_tick: 0,
             finished: false,
             loop_to: usize::MAX,
@@ -286,10 +338,17 @@ impl Sequencer {
             loop_count: 0,
             voice_prio: [0; crate::spu::NUM_VOICES],
             voice_age: [0; crate::spu::NUM_VOICES],
+            flush_pos: 0,
+            pending: Vec::new(),
+            next_pending_id: 0,
+            pump_wait: None,
         }
     }
 
-    /// Set the master sequencer volume (libsnd `SsSeqSetVol`). 0..=127.
+    /// Set the sequence volume (libsnd `SsSeqSetVol`, the channel record's
+    /// `+0x58`/`+0x5A`), 0..=127: folded in per side after the key-on head
+    /// chain ([`channel_mix`]). The game's BGM records run at
+    /// [`RETAIL_BGM_SEQ_VOL`].
     pub fn set_master_vol(&mut self, v: u8) {
         self.master_vol = v.min(127);
     }
@@ -329,10 +388,13 @@ impl Sequencer {
     }
 
     fn reprice_tempo(&mut self) {
+        let ppqn = self.seq.header.ppqn.max(1);
         self.play_us_per_qn = if self.exact_tempo {
             self.tempo_us_per_qn
+        } else if self.header_tempo {
+            retail_header_play_tempo(self.tempo_us_per_qn, ppqn)
         } else {
-            retail_play_tempo(self.tempo_us_per_qn, self.seq.header.ppqn.max(1))
+            retail_play_tempo(self.tempo_us_per_qn, ppqn)
         };
     }
 
@@ -405,7 +467,125 @@ impl Sequencer {
 
     /// Core integer-clocked advance. Adds `samples` SPU samples worth of time
     /// to the accumulator, then fires every event that has come due.
+    ///
+    /// Key-ons are written at flush boundaries every [`FLUSH_SAMPLES`], the
+    /// way retail's per-vsync `SsSeqCalc` stages them for its flush: the
+    /// events of each flush period fire first, then the period's staged
+    /// key-ons are written ([`Self::flush_key_ons`]).
     fn advance_samples(&mut self, spu: &mut Spu, samples: u64) {
+        if samples == 0 {
+            // A zero-length advance drains a leading run of zero-delta events
+            // on the sample clock; the retail pump only runs at a vsync.
+            if self.exact_tempo {
+                self.advance_events(spu, 0);
+            }
+            return;
+        }
+        let mut remaining = samples;
+        while remaining > 0 {
+            let step = remaining.min(FLUSH_SAMPLES - self.flush_pos);
+            if self.exact_tempo {
+                self.advance_events(spu, step);
+            }
+            self.flush_pos += step;
+            remaining -= step;
+            if self.flush_pos >= FLUSH_SAMPLES {
+                self.flush_pos = 0;
+                if !self.exact_tempo {
+                    self.pump_vsync(spu);
+                }
+                self.flush_key_ons(spu);
+            }
+        }
+    }
+
+    /// The tick budget the current tempo installs, in tenths of a tick per
+    /// vsync (`+0x54`): the header's rounded BPM until a tempo meta fires,
+    /// the meta's truncated one after. Floored at `1`; the slow mode
+    /// (`+0x52 >= 0`, under one tick a vsync) is not reached by a shipped
+    /// track and runs at that floor.
+    fn retail_budget(&self) -> i64 {
+        let bpm = if self.header_tempo {
+            crate::seq_calc::header_bpm(self.tempo_us_per_qn)
+        } else {
+            (self.tempo_us_per_qn != 0).then(|| 60_000_000 / self.tempo_us_per_qn)
+        }
+        .unwrap_or(0);
+        let (_, budget) = crate::seq_calc::tempo_set_budget(
+            self.seq.header.ppqn.max(1) as i16,
+            bpm,
+            crate::seq_calc::RETAIL_TICK_DIVISOR,
+        );
+        i64::from(budget.max(1))
+    }
+
+    /// One `SsSeqCalc` of the delta-time pump (`FUN_800639A0`, ported
+    /// standalone as [`crate::seq_events::pump_delta_time`]), driven over the
+    /// parsed event list: a wait that outlives the vsync's budget is reduced
+    /// by it and nothing fires; otherwise events fire until the waits
+    /// accumulated since the vsync began reach the budget - which is re-read
+    /// after every event, so a tempo meta retunes the vsync it lands in - and
+    /// the overshoot carries into the next wait. Events therefore land on the
+    /// vsync grid retail lands them on, including after a tempo change.
+    fn pump_vsync(&mut self, spu: &mut Spu) {
+        if self.finished {
+            return;
+        }
+        let delta_of =
+            |seq: &Seq, i: usize| seq.events.get(i).map_or(0, |e| i64::from(e.delta) * 10);
+        let wait = self
+            .pump_wait
+            .unwrap_or_else(|| delta_of(&self.seq, self.next));
+        let short = wait - self.retail_budget();
+        if short > 0 {
+            self.pump_wait = Some(short);
+            return;
+        }
+        let mut accum = wait;
+        // A port bound on one vsync's events; retail spins.
+        for _ in 0..100_000 {
+            let Some(event) = self.seq.events.get(self.next) else {
+                self.finished = true;
+                if let Some(target) = self.loop_target() {
+                    self.rewind_to(target, spu);
+                    self.pump_wait = Some(delta_of(&self.seq, self.next));
+                }
+                return;
+            };
+            self.abs_tick += u64::from(event.delta);
+            let is_eot = matches!(event.body, EventBody::Meta(MetaMessage::EndOfTrack));
+            self.fire(spu, self.next);
+            self.next += 1;
+            if self.pending_loop_forever {
+                self.pending_loop_forever = false;
+                let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
+                self.rewind_to(target, spu);
+            } else if is_eot {
+                match self.loop_target() {
+                    Some(target) => self.rewind_to(target, spu),
+                    None => {
+                        self.finished = true;
+                        return;
+                    }
+                }
+            }
+            let d = delta_of(&self.seq, self.next);
+            if d == 0 {
+                continue;
+            }
+            accum += d;
+            let budget = self.retail_budget();
+            if accum < budget {
+                continue;
+            }
+            self.pump_wait = Some(accum - budget);
+            return;
+        }
+        self.pump_wait = Some(0);
+    }
+
+    /// Fire every event that has come due after `samples` more samples.
+    fn advance_events(&mut self, spu: &mut Spu, samples: u64) {
         if self.finished {
             return;
         }
@@ -469,6 +649,7 @@ impl Sequencer {
     pub fn rewind_to(&mut self, to: usize, spu: &mut Spu) {
         self.silence_all(spu);
         self.next = to;
+        self.pump_wait = None;
         self.accum = 0;
         self.sample_carry = 0.0;
         self.finished = false;
@@ -515,6 +696,7 @@ impl Sequencer {
 
     fn silence_all(&mut self, spu: &mut Spu) {
         self.release_lost_voices(spu);
+        self.pending.clear();
         for note in self.active.drain(..) {
             if (note.voice as usize) < spu.voices.len() {
                 spu.voices[note.voice as usize].key_off();
@@ -535,6 +717,7 @@ impl Sequencer {
                 // accumulator is in tempo-independent units (sample × ppqn ×
                 // 1e6), so no rescaling of the carried remainder is needed.
                 self.tempo_us_per_qn = (*us_per_qn).max(1);
+                self.header_tempo = false;
                 self.reprice_tempo();
             }
             EventBody::Meta(_) => {
@@ -586,7 +769,11 @@ impl Sequencer {
             }
             ChannelMessage::PitchBend { value } => {
                 self.channels[ch].pitch_bend = value;
-                for note in self.active.iter().filter(|n| n.channel as usize == ch) {
+                for note in self
+                    .active
+                    .iter()
+                    .filter(|n| n.channel as usize == ch && n.pending.is_none())
+                {
                     if let Some(v) = spu.voices.get_mut(note.voice as usize) {
                         let (down, up) = note.bend_range;
                         v.pitch = bend_pitch(note.base_pitch, pitch_bend_factor(value, down, up));
@@ -600,26 +787,59 @@ impl Sequencer {
     }
 
     fn note_on(&mut self, spu: &mut Spu, channel: u8, key: u8, velocity: u8) {
-        // Drop the prior instance of this (channel, key) if it exists -
-        // libsnd silently restarts the voice.
-        self.note_off(spu, channel, key);
-        // Resolve the note's allocation priority (the VAB tone `prior` byte)
-        // before scanning: retail stages the tone attrs first (FUN_80066308)
-        // and only then runs the allocation scan against that priority. A
-        // note whose program/tone doesn't resolve never reaches the scan.
+        // A second note-on of a (channel, key) already sounding does NOT
+        // release the first: `FUN_80061B24` hands a non-zero velocity straight
+        // to `FUN_80066308`, which allocates fresh voices. A battle census
+        // sees both of two same-tick `prog 0 / key 60` notes key their two
+        // layers each (nine voices from five notes). The channel's next
+        // note-off for that key releases every voice holding it.
+        //
+        // One voice per covering tone. A program may stack several tones over
+        // one key (a layered instrument), and retail keys every one of them:
+        // FUN_80068568 collects the tones whose `min..=max` covers the key,
+        // and FUN_80066308 runs the allocation scan + key-on once per tone
+        // (`0x800664F0..0x8006684C`), a failed scan dropping only that layer.
         let program = self.channels[channel as usize].program as usize;
-        let Some(prio) = self.bank.tone_prior(program, key) else {
+        // The score's note stream, comparable line for line with the retail
+        // key-on census's `note` rows (`autorun_keyon_census.lua`).
+        log::trace!(
+            "sequencer: note-on t={} ch={channel} prog={program} key={key} vel={velocity}",
+            self.abs_tick
+        );
+        let layers = self.bank.layer_tones(program, key);
+        if layers.is_empty() {
             log::trace!("sequencer: no tone for ch{channel} prog{program} key{key}");
             return;
+        }
+        for tone in layers {
+            self.key_layer(spu, channel, key, velocity, program, tone);
+        }
+    }
+
+    /// Allocate and key one layer (tone) of a note-on.
+    fn key_layer(
+        &mut self,
+        spu: &mut Spu,
+        channel: u8,
+        key: u8,
+        velocity: u8,
+        program: usize,
+        tone: usize,
+    ) {
+        // Resolve the layer's allocation priority (the VAB tone `prior` byte)
+        // before scanning: retail stages the tone attrs first (FUN_80066308)
+        // and only then runs the allocation scan against that priority.
+        let Some(prio) = self.bank.tone_prior_at(program, tone) else {
+            return;
         };
-        // The tone resolves by key range, but it can still fail to sound if
-        // its slot is empty (`vag <= 0`) or its sample never uploaded (SPU RAM
-        // exhausted). Verify it can actually fire BEFORE `alloc_voice`, which
-        // may key-off a sounding voice: stealing a live note for one that then
-        // fails to play is a net dropped note.
-        if !self.bank.can_play(program, key) {
+        // The tone can still fail to sound if its slot is empty (`vag <= 0`)
+        // or its sample never uploaded (SPU RAM exhausted). Verify it can
+        // actually fire BEFORE `alloc_voice`, which may key-off a sounding
+        // voice: stealing a live note for one that then fails to play is a
+        // net dropped note.
+        if !self.bank.can_play_tone(program, tone) {
             log::trace!(
-                "sequencer: tone not playable for ch{channel} prog{program} key{key}; not stealing"
+                "sequencer: tone {tone} not playable for ch{channel} prog{program} key{key}; not stealing"
             );
             return;
         }
@@ -632,60 +852,95 @@ impl Sequencer {
             );
             return;
         };
-        let cs = self.channels[channel as usize];
-        // Give play_note the master × velocity effective velocity only -
-        // NOT the channel volume. The channel volume (CC7) and pan (CC10) are
-        // applied afterward as dynamic channel-expression (`channel_mix`) so a
-        // mid-note CC7/CC10 can re-derive the voice volume from the same base.
-        let combined = ((self.master_vol as u32 * velocity as u32) / 127).min(127) as u8;
-        let ok = self
-            .bank
-            .play_note(spu, voice as usize, cs.program as usize, key, combined);
-        if ok {
-            // play_note set the voice's base pitch; remember it (and the
-            // tone's disc-sourced bend range) so later bends re-scale the
-            // unbent value, then fold in any bend already held on this channel.
-            let base_pitch = spu
-                .voices
-                .get(voice as usize)
-                .map(|v| v.pitch)
-                .unwrap_or(0x1000);
-            let bend_range = self.bank.pitch_bend_range(cs.program as usize, key);
+        // The voice is chosen and reserved now; the key-on is staged for the
+        // next flush, as retail's note-on ORs the voice into the key-on
+        // accumulator (`_DAT_801CDB48/4A`) that `FUN_80065BAC` writes once
+        // per vsync. A note-off before that flush cancels it outright:
+        // `FUN_80067480` clears the voice's staged key-on bit as it sets its
+        // key-off bit (`0x80067500..0x80067544`), so a note shorter than one
+        // flush period never sounds.
+        let id = self.next_pending_id;
+        self.next_pending_id = self.next_pending_id.wrapping_add(1);
+        let key_on_stamp = spu
+            .voices
+            .get(voice as usize)
+            .map_or(0, |v| v.key_on_count());
+        self.active.push(ActiveNote {
+            channel,
+            key,
+            voice,
+            base_pitch: 0x1000,
+            bend_range: self.bank.pitch_bend_range_at(program, tone),
+            velocity,
+            program,
+            tone,
+            key_on_stamp,
+            pending: Some(id),
+        });
+        self.pending.push(PendingKey {
+            id,
+            voice,
+            channel,
+            key,
+            velocity,
+            program,
+            tone,
+        });
+    }
+
+    /// Write every staged key-on - retail's per-vsync flush
+    /// (`FUN_80065BAC` handing the key-on accumulator to `FUN_8006B854`).
+    /// Layers whose note was released, stolen or re-keyed since they were
+    /// staged are skipped. [`Self::tick_sample`] / [`Self::tick_us`] call
+    /// this at every [`FLUSH_SAMPLES`] boundary.
+    pub fn flush_key_ons(&mut self, spu: &mut Spu) {
+        if self.pending.is_empty() {
+            return;
+        }
+        self.release_lost_voices(spu);
+        for p in std::mem::take(&mut self.pending) {
+            let Some(idx) = self.active.iter().position(|n| n.pending == Some(p.id)) else {
+                continue;
+            };
+            let voice = p.voice as usize;
+            let cs = self.channels[p.channel as usize];
+            // Give the layer the master × velocity effective velocity only -
+            // NOT the channel volume. The channel volume (CC7) and pan (CC10)
+            // are applied afterward as dynamic channel-expression
+            // (`channel_mix`) so a mid-note CC7/CC10 can re-derive the voice
+            // volume from the same base.
+            let combined = p.velocity;
+            if !self
+                .bank
+                .play_note_layer(spu, voice, p.program, p.tone, p.key, combined)
+            {
+                self.active.swap_remove(idx);
+                continue;
+            }
+            // The layer set the voice's base pitch; remember it so later
+            // bends re-scale the unbent value, then fold in any bend already
+            // held on this channel.
+            let base_pitch = spu.voices.get(voice).map(|v| v.pitch).unwrap_or(0x1000);
+            let bend_range = self.active[idx].bend_range;
             if cs.pitch_bend != PITCH_BEND_CENTER
-                && let Some(v) = spu.voices.get_mut(voice as usize)
+                && let Some(v) = spu.voices.get_mut(voice)
             {
                 let (down, up) = bend_range;
                 v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
             }
-            // play_note left the voice at master × velocity × bank/program/
-            // tone vol, tone- and program-panned, with NO channel volume/pan
-            // and NO square taper; capture that as the channel-free base,
-            // then fold in the channel's current CC7 volume + CC10 pan (and
-            // the taper) via channel_mix. A later CC7/CC10 re-derives from
-            // this same base.
-            let base_vol = spu
-                .voices
-                .get(voice as usize)
-                .map(|v| (v.vol_left, v.vol_right))
-                .unwrap_or((0x3FFF, 0x3FFF));
-            if let Some(v) = spu.voices.get_mut(voice as usize) {
-                let (l, r) = channel_mix(base_vol, cs.volume, cs.pan);
+            // The voice volume through the full retail chain: CC7 folded into
+            // the velocity, head, sequence volume, tone / program / channel
+            // pans, square taper.
+            if let Some((l, r)) = self.note_volume(&self.active[idx])
+                && let Some(v) = spu.voices.get_mut(voice)
+            {
                 v.vol_left = l;
                 v.vol_right = r;
             }
-            let key_on_stamp = spu
-                .voices
-                .get(voice as usize)
-                .map_or(0, |v| v.key_on_count());
-            self.active.push(ActiveNote {
-                channel,
-                key,
-                voice,
-                base_pitch,
-                bend_range,
-                base_vol,
-                key_on_stamp,
-            });
+            let note = &mut self.active[idx];
+            note.base_pitch = base_pitch;
+            note.key_on_stamp = spu.voices.get(voice).map_or(0, |v| v.key_on_count());
+            note.pending = None;
         }
     }
 
@@ -693,14 +948,33 @@ impl Sequencer {
     /// its channel-free base, using the channel's current CC7 volume + CC10
     /// pan. Called whenever either controller changes mid-note.
     fn remix_channel(&mut self, spu: &mut Spu, ch: usize) {
-        let cs = self.channels[ch];
-        for note in self.active.iter().filter(|n| n.channel as usize == ch) {
-            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                let (l, r) = channel_mix(note.base_vol, cs.volume, cs.pan);
+        for note in self
+            .active
+            .iter()
+            .filter(|n| n.channel as usize == ch && n.pending.is_none())
+        {
+            if let Some((l, r)) = self.note_volume(note)
+                && let Some(v) = spu.voices.get_mut(note.voice as usize)
+            {
                 v.vol_left = l;
                 v.vol_right = r;
             }
         }
+    }
+
+    /// A sounding note's voice volume, the sequencer path of `FUN_80067550`
+    /// end to end: the channel's CC7 folded into the velocity
+    /// ([`effective_velocity`]), the head chain, the sequence volume
+    /// ([`Self::set_master_vol`]) and the tone / program pans
+    /// ([`VabBank::seq_note_volume`]), then the channel pan and the square
+    /// taper ([`channel_tail`]). `None` when the tone does not resolve.
+    fn note_volume(&self, note: &ActiveNote) -> Option<(i16, i16)> {
+        let cs = self.channels[note.channel as usize];
+        let vel = effective_velocity(note.velocity, cs.volume);
+        let head = self
+            .bank
+            .seq_note_volume(note.program, note.tone, vel, self.master_vol)?;
+        Some(channel_tail(head, cs.pan))
     }
 
     fn note_off(&mut self, spu: &mut Spu, channel: u8, key: u8) {
@@ -895,8 +1169,11 @@ mod tests {
                 voice: v,
                 base_pitch: 0x1000,
                 bend_range: (2, 2),
-                base_vol: (0x3FFF, 0x3FFF),
+                velocity: 127,
+                program: 0,
+                tone: 0,
                 key_on_stamp: 0,
+                pending: None,
             });
         }
         assert_eq!(seq.active.len(), 24);
@@ -931,8 +1208,11 @@ mod tests {
             voice: 23,
             base_pitch: 0x1000,
             bend_range: (0, 0),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: stamp,
+            pending: None,
         });
         // A cue takes voice 23.
         spu.voices[23].key_on(&spu.ram.clone());
@@ -958,8 +1238,11 @@ mod tests {
             voice,
             base_pitch: 0x1000,
             bend_range: (2, 2),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: 0,
+            pending: None,
         });
     }
 
@@ -1071,11 +1354,13 @@ mod tests {
     fn fires_program_change_immediately() {
         let mut spu = Spu::new();
         let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+        // The retail pump runs once per vsync: nothing fires before the first.
         seq.tick_us(&mut spu, 0.0);
-        // First two events have delta 0 and fire on the first tick (even
-        // with dt=0, the loop drains zero-delta events). Channel 0 program
-        // should be 0 and there should be no active note (bank is empty so
-        // play_note returns false).
+        assert_eq!(seq.next, 0);
+        // First two events have delta 0 and fire at the first vsync. Channel
+        // 0 program should be 0 and there should be no active note (bank is
+        // empty so play_note returns false).
+        seq.tick_us(&mut spu, 1_000_000.0 / 60.0);
         assert_eq!(seq.channels[0].program, 0);
         assert_eq!(seq.active_notes(), 0);
         // Third event has delta 480 - not yet fired.
@@ -1140,6 +1425,9 @@ mod tests {
         buf.push(0x2F); // EOT
         let seq = Seq::parse(&buf).unwrap();
         let mut s = Sequencer::new(seq, empty_bank());
+        // The sample clock is the exact-tempo mode's; the retail pump fires
+        // on the vsync grid instead.
+        s.set_exact_tempo(true);
         let mut spu = Spu::new();
 
         // Drain the leading zero-delta ProgramChange.
@@ -1366,8 +1654,11 @@ mod tests {
             voice: 0,
             base_pitch: base,
             bend_range: (2, 2),
-            base_vol: (0x3FFF, 0x3FFF),
+            velocity: 127,
+            program: 0,
+            tone: 0,
             key_on_stamp: 0,
+            pending: None,
         });
 
         // Bend sharp: the voice's live pitch register rises, the channel
@@ -1407,25 +1698,37 @@ mod tests {
     }
 
     #[test]
-    fn cc7_volume_rescales_sounding_voice_from_base() {
+    fn cc7_volume_rederives_the_sounding_voice_through_the_velocity() {
         let mut spu = Spu::new();
-        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
-        let base = (0x3000i16, 0x2000i16);
-        spu.voices[0].vol_left = base.0;
-        spu.voices[0].vol_right = base.1;
-        seq.active.push(ActiveNote {
-            channel: 0,
-            key: 60,
-            voice: 0,
-            base_pitch: 0x1000,
-            bend_range: (0, 0),
-            base_vol: base,
-            key_on_stamp: 0,
-        });
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        seq.set_master_vol(RETAIL_BGM_SEQ_VOL);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 100,
+            },
+        );
+        seq.flush_key_ons(&mut spu);
+        let v = seq.active[0].voice as usize;
+        let full = (spu.voices[v].vol_left, spu.voices[v].vol_right);
+        // Retail's chain by hand: CC7 127 leaves velocity 100; head
+        // 100 * 127 * 0x3FFF / 0x3F01 = 12_700, * 127 * 127 / 0x3F01 =
+        // 12_700, * 107 / 127 = 10_700 per side; centre pans (64) cost the
+        // left `(0x7F - 64) / 63` three times over (tone, program,
+        // channel): 10_700 -> 10_700 -> 10_700; taper 10_700^2 / 0x3FFF.
+        let expect = |vel: i32| {
+            let head = vel * (127 * 0x3FFF) / 0x3F01;
+            let head = head * 127 * 127 / 0x3F01;
+            let side = head * 107 / 127;
+            let l = side * 63 / 63 * 63 / 63 * 63 / 63;
+            ((l * l / 0x3FFF) as i16, (side * side / 0x3FFF) as i16)
+        };
+        assert_eq!(full, expect(100));
 
-        // Halve the channel volume: both sides scale by ~63/127, pan
-        // centered, then pass through the retail square taper.
-        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
+        // CC7 63: the velocity becomes 100 * 63 / 127 = 49 (truncated), and
+        // the whole chain re-runs from it.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1435,11 +1738,11 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].volume, 63);
-        assert_eq!(spu.voices[0].vol_left, sq(0x3000 * 63 / 127));
-        assert_eq!(spu.voices[0].vol_right, sq(0x2000 * 63 / 127));
-
-        // Back to full re-derives from the base (no compounding): the result
-        // is the squared base, not the halved value rescaled.
+        assert_eq!(
+            (spu.voices[v].vol_left, spu.voices[v].vol_right),
+            expect(49)
+        );
+        // Back to full re-derives the original, no compounding.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1448,32 +1751,25 @@ mod tests {
                 value: 127,
             },
         );
-        assert_eq!(
-            (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (sq(base.0 as i32), sq(base.1 as i32))
-        );
+        assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), full);
     }
 
     #[test]
-    fn cc10_pan_repans_sounding_voice_from_base() {
+    fn cc10_pan_repans_the_sounding_voice() {
         let mut spu = Spu::new();
-        let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
-        let base = (0x3000i16, 0x3000i16);
-        spu.voices[0].vol_left = base.0;
-        spu.voices[0].vol_right = base.1;
-        seq.active.push(ActiveNote {
-            channel: 0,
-            key: 60,
-            voice: 0,
-            base_pitch: 0x1000,
-            bend_range: (0, 0),
-            base_vol: base,
-            key_on_stamp: 0,
-        });
-
-        // Pan hard left: the right side is silenced, the left passes through
-        // the square taper untouched by pan, channel state updated.
-        let sq = |v: i32| ((v * v) / 0x3FFF) as i16;
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 127,
+            },
+        );
+        seq.flush_key_ons(&mut spu);
+        let v = seq.active[0].voice as usize;
+        let centre = (spu.voices[v].vol_left, spu.voices[v].vol_right);
+        // Pan hard left: the right side is silenced, the left keeps its level.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1483,11 +1779,9 @@ mod tests {
             },
         );
         assert_eq!(seq.channels[0].pan, 0);
-        assert_eq!(spu.voices[0].vol_left, sq(base.0 as i32));
-        assert_eq!(spu.voices[0].vol_right, 0);
-
-        // Returning to center re-pans the base, not the already-panned value:
-        // both sides come back as the squared base.
+        assert_eq!(spu.voices[v].vol_right, 0);
+        assert_eq!(spu.voices[v].vol_left, centre.0);
+        // Back to centre re-pans from scratch.
         seq.fire_channel(
             &mut spu,
             0,
@@ -1496,9 +1790,212 @@ mod tests {
                 value: PAN_CENTER,
             },
         );
-        assert_eq!(
-            (spu.voices[0].vol_left, spu.voices[0].vol_right),
-            (sq(base.0 as i32), sq(base.1 as i32))
+        assert_eq!((spu.voices[v].vol_left, spu.voices[v].vol_right), centre);
+    }
+    fn layer_tone(vag: i16, min: u8, max: u8, center: u8) -> legaia_vab::VagAtr {
+        legaia_vab::VagAtr {
+            prior: 0,
+            mode: 0,
+            vol: 127,
+            pan: 64,
+            center,
+            shift: 0,
+            min,
+            max,
+            vibw: 0,
+            vibt: 0,
+            porw: 0,
+            port: 0,
+            pbmin: 0,
+            pbmax: 0,
+            reserved1: 0,
+            reserved2: 0,
+            adsr1: 0x80FF,
+            adsr2: 0x5FC0,
+            prog: 0,
+            vag,
+            reserved3: [0; 4],
+        }
+    }
+
+    /// Program 0 stacks two tones over key 60 (and a third tone that does
+    /// not cover it): one note-on keys both layers on two voices, and its
+    /// note-off releases both - FUN_80068568 + the per-tone loop of
+    /// FUN_80066308.
+    #[test]
+    fn a_note_on_keys_every_tone_layered_over_its_key() {
+        let upload = Some(crate::vab_bind::UploadedVag {
+            addr: 0x1010,
+            size: 0x20,
+        });
+        let bank = VabBank {
+            master_vol: 127,
+            samples: vec![upload, upload, upload],
+            programs: vec![crate::vab_bind::VabProgram {
+                mvol: 127,
+                mpan: 64,
+                tones: vec![
+                    layer_tone(1, 0, 127, 60),
+                    layer_tone(2, 72, 127, 60),
+                    layer_tone(3, 48, 72, 72),
+                ],
+                key_tones: 3,
+            }],
+        };
+        assert_eq!(bank.layer_tones(0, 60), vec![0, 2]);
+        let mut seq = Sequencer::new(synthetic_seq(), bank);
+        let mut spu = Spu::new();
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOn {
+                key: 60,
+                velocity: 100,
+            },
         );
+        seq.flush_key_ons(&mut spu);
+        let keyed: Vec<u32> = spu.voices.iter().map(|v| v.key_on_count()).collect();
+        assert_eq!(keyed.iter().sum::<u32>(), 2, "one key-on per layer");
+        assert_eq!(seq.active.len(), 2);
+        let pitches: Vec<u16> = seq
+            .active
+            .iter()
+            .map(|n| spu.voices[n.voice as usize].pitch)
+            .collect();
+        // Tone 0 is centred on the key, tone 2 an octave above it.
+        assert_eq!(pitches, vec![0x1000, 0x800]);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOff {
+                key: 60,
+                velocity: 0,
+            },
+        );
+        assert!(seq.active.is_empty(), "the note-off releases both layers");
+    }
+
+    fn one_tone_bank() -> VabBank {
+        let upload = Some(crate::vab_bind::UploadedVag {
+            addr: 0x1010,
+            size: 0x20,
+        });
+        VabBank {
+            master_vol: 127,
+            samples: vec![upload],
+            programs: vec![crate::vab_bind::VabProgram {
+                mvol: 127,
+                mpan: 64,
+                tones: vec![layer_tone(1, 0, 127, 60)],
+                key_tones: 1,
+            }],
+        }
+    }
+
+    fn keys_written(spu: &Spu) -> u32 {
+        spu.voices.iter().map(|v| v.key_on_count()).sum()
+    }
+
+    /// A note-on is staged and written at the next flush; a note-off before
+    /// that flush cancels it, so the note never sounds - FUN_80067480 clears
+    /// the staged key-on bit as it sets the key-off bit.
+    #[test]
+    fn a_note_released_before_the_flush_never_keys() {
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        let mut spu = Spu::new();
+        let on = ChannelMessage::NoteOn {
+            key: 60,
+            velocity: 100,
+        };
+        let off = ChannelMessage::NoteOff {
+            key: 60,
+            velocity: 0,
+        };
+        seq.fire_channel(&mut spu, 0, on);
+        assert_eq!(keys_written(&spu), 0, "staged, not yet written");
+        seq.fire_channel(&mut spu, 0, off);
+        seq.flush_key_ons(&mut spu);
+        assert_eq!(
+            keys_written(&spu),
+            0,
+            "cancelled by the same-period key-off"
+        );
+        assert!(seq.active.is_empty());
+
+        seq.fire_channel(&mut spu, 0, on);
+        seq.flush_key_ons(&mut spu);
+        assert_eq!(keys_written(&spu), 1, "a flushed note keys");
+        seq.fire_channel(&mut spu, 0, off);
+        assert_eq!(keys_written(&spu), 1);
+    }
+
+    /// The sample clock flushes once per [`FLUSH_SAMPLES`]: a note due at
+    /// sample 0 keys at the first boundary, not before.
+    #[test]
+    fn the_sample_clock_writes_key_ons_at_flush_boundaries() {
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        let mut spu = Spu::new();
+        for _ in 0..FLUSH_SAMPLES - 1 {
+            seq.tick_sample(&mut spu);
+        }
+        assert_eq!(keys_written(&spu), 0);
+        seq.tick_sample(&mut spu);
+        assert_eq!(keys_written(&spu), 1);
+    }
+
+    /// Two note-ons of one (channel, key) in one flush period both key -
+    /// FUN_80061B24 does not release the first - and the key's note-off
+    /// releases both.
+    #[test]
+    fn a_repeated_key_keys_again_without_releasing_the_first() {
+        let mut seq = Sequencer::new(synthetic_seq(), one_tone_bank());
+        let mut spu = Spu::new();
+        let on = ChannelMessage::NoteOn {
+            key: 60,
+            velocity: 100,
+        };
+        seq.fire_channel(&mut spu, 0, on);
+        seq.fire_channel(&mut spu, 0, on);
+        seq.flush_key_ons(&mut spu);
+        assert_eq!(keys_written(&spu), 2);
+        assert_eq!(seq.active.len(), 2);
+        seq.fire_channel(
+            &mut spu,
+            0,
+            ChannelMessage::NoteOff {
+                key: 60,
+                velocity: 0,
+            },
+        );
+        assert!(seq.active.is_empty());
+    }
+
+    /// The retail pump fires events on the vsync grid and retunes the vsync
+    /// a tempo meta lands in: at 120 BPM / ppqn 480 a quarter (480 ticks) is
+    /// 30 vsyncs at the 160-tenths budget, so a note 480 ticks in fires at
+    /// the end of vsync 30, not on its exact sample.
+    #[test]
+    fn the_retail_pump_fires_on_the_vsync_grid() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&SEQ_MAGIC);
+        buf.extend_from_slice(&[0x00, 0x01]);
+        buf.extend_from_slice(&[0x01, 0xE0]); // ppqn 480
+        buf.extend_from_slice(&[0x07, 0xA1, 0x20]); // 500000 us/qn
+        buf.push(0x04);
+        buf.push(0x02);
+        buf.extend_from_slice(&[0x00, 0xC0, 0x00]); // delta 0 ProgramChange
+        buf.extend_from_slice(&[0x83, 0x60, 0x90, 60, 100]); // delta 480 NoteOn
+        buf.extend_from_slice(&[0x00, 0xFF, 0x2F]); // EOT
+        let seq = Seq::parse(&buf).unwrap();
+        let mut s = Sequencer::new(seq, empty_bank());
+        let mut spu = Spu::new();
+        for _ in 0..FLUSH_SAMPLES * 29 {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 1, "29 vsyncs spend 464 of the 480 ticks");
+        for _ in 0..FLUSH_SAMPLES {
+            s.tick_sample(&mut spu);
+        }
+        assert_eq!(s.next, 3, "the 30th vsync reaches the note (and the EOT)");
     }
 }

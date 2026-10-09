@@ -1,0 +1,1961 @@
+//! Per-scene camera controller.
+//!
+//! Consumes the field-VM op-`0x45` event stream (Configure / Save / Load /
+//! Apply - see [`crate::field_events::FieldEvent`]) and projects a target
+//! actor's world position into a screen-space view. Engines plug the result
+//! into [`legaia_engine_render`] each frame.
+//!
+//! Two layers:
+//!
+//! - [`CameraState`] (in `legaia_engine_core::world`) - the raw scratch the field VM
+//!   reads / writes. Holds the most recent op-`0x45` payloads.
+//! - [`Camera`] (here) - the *runtime* camera. Reads `CameraState`, layers
+//!   in a follow target, and exposes a `(eye, look_at)` pair plus a yaw /
+//!   pitch the renderer can use to build a view matrix.
+//!
+//! The retail engine does the per-frame math via the third motion VM
+//! ([`legaia_engine_vm::motion_vm`]) and the move-VM ext sub-ops 0x06 / 0x36
+//! / 0x39. This module assembles those primitives into a single Camera
+//! that's easy to drive from `legaia_engine_core::scene::SceneHost`.
+
+use crate::field_events::FieldEvent;
+use legaia_engine_vm::camera_mover::{AXIS_COUNT, CameraMover};
+use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
+use serde::{Deserialize, Serialize};
+
+pub use legaia_engine_vm::retail_cam::RetailCamGlobals;
+
+/// One queued camera-zone arm, drained by [`Camera::tick`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraZoneRequest {
+    /// `[4C 38]` - query + load the camera parameter block from the record
+    /// covering the player's tile. The ease walks the globals to the new
+    /// block's composed pose.
+    QueryAtPlayer,
+    /// `[4C C4 x z]` - the same query at a tile the script names.
+    QueryAtTile { x: u8, z: u8 },
+    /// `[4C 39]` - query at the player's tile, re-conform the player's
+    /// footing to the floor there, then snap the camera and clamp the focus.
+    QueryConformAndSnap,
+    /// `[4C 3E]` - snap the camera from the resident block and clamp the
+    /// focus. No query.
+    SnapAndClamp,
+    /// `[4C 3D]` - re-latch the walk-region attribute box at the player's
+    /// tile (`FUN_800180EC`). Camera-adjacent because the box is what the
+    /// composer's position sweeps span.
+    RefreshAttributes,
+}
+
+/// The camera state the cull reads, as the camera last left it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FieldCullView {
+    /// `_DAT_80089118` / `_DAT_80089120`: the focus X / Z, **negated** as
+    /// retail stores them.
+    pub focus_stored: [i32; 2],
+    /// The walk-region attribute box `0x1F800384..87`, `[x_lo, z_lo, x_hi,
+    /// z_hi]` in world tiles.
+    pub attr_box: [u8; 4],
+    /// The visible tile window `0x1F8003E8..EB`, signed, focus-relative.
+    pub window: [i8; 4],
+}
+
+/// Bit 10 of the scratchpad word `0x1F800394` (`World::flags.story_flags`):
+/// the follow ease `FUN_801DB510` takes its pin leg (`0x801DB564`), the
+/// settle skips its clip bind (`0x801D1E30`) and hop, and the player tick
+/// skips the pad step (`0x801D16A8`). Retail's only setter is the world-map
+/// top-view debug toggle (`0x801E7748`, gated on the debug word), and every
+/// mode entry clears it.
+pub const CAMERA_HOLD_FLAG: u32 = 0x0000_0400;
+
+/// Bit 16 of the scratchpad word `0x1F800394`: the player tick `FUN_801D1344`
+/// runs the follow ease even while the player is movement-locked. The tick
+/// calls the ease (`jal 0x801DB510` at `0x801D1834`) only when its local
+/// gate is up, and it raises the gate on this bit (`0x801D1634..0x801D1648`)
+/// or on a player with `+0x10 & 0x80000` clear and this word's `0x400` clear
+/// (`0x801D1694..0x801D16C0`); otherwise the frame runs only the shake
+/// (`FUN_801D9D30`, `0x801D184C`) and the camera holds.
+pub const CAMERA_LOCKED_EASE_FLAG: u32 = 0x0001_0000;
+
+/// Bit 18 of the scratchpad word `0x1F800394`: the follow ease composes and
+/// eases even on a frame the player did not move (`0x801DB578..0x801DB5A4`).
+/// Field-VM `2E 12` sets it and `2F 12` clears it (`conc`, `opurud`,
+/// `rikuroa`, `urudre2`, `bubu1` and their twins).
+pub const CAMERA_FORCE_EASE_FLAG: u32 = 0x0004_0000;
+
+/// The slice of the game world the camera reads and writes: the scene mode,
+/// the player's position and footing, the walk-region / camera-zone /
+/// collision blocks, the scratchpad story word, the camera register file and
+/// shake, the field event queue and the zone requests the field VM queues,
+/// the cull view and visible-tile window it publishes, and the `rand()`
+/// stream its shake draws from. engine-core's `World` implements it; nothing
+/// else in this module touches the world.
+pub trait CameraWorld {
+    /// The world's current scene mode.
+    fn scene_mode(&self) -> crate::mode::SceneMode;
+    /// The player actor's world position, `None` without a player actor.
+    fn player_world_pos(&self) -> Option<(i32, i32, i32)>;
+    /// Actor `slot`'s world position while it is active, else `None`.
+    fn active_actor_pos(&self, slot: usize) -> Option<(i32, i32, i32)>;
+    /// Ground height under `(world_x, world_z)` off the static floor.
+    fn sample_field_floor_height_static(&self, world_x: i32, world_z: i32) -> i32;
+    /// The scene's walk-region attribute block.
+    fn map_region_block(&self) -> &[u8];
+    /// The scene's camera-zone record table.
+    fn zone_table(&self) -> &[u8];
+    /// The scene's walkability grid.
+    fn collision_grid(&self) -> &[u8];
+    /// The scratchpad story word `0x1F800394`.
+    fn story_flags(&self) -> u32;
+    /// The camera register file the field VM's camera ops write.
+    fn camera_registers(&self) -> &crate::register_ramp::CameraRegisterFile;
+    /// The camera shake amplitude.
+    fn camera_shake_amplitude(&self) -> u8;
+    /// Whether the scene allows saving - the composer's half-eye term.
+    fn scene_save_allowed(&self) -> bool;
+    /// Displayed frames so far.
+    fn display_frames(&self) -> u64;
+    /// Whether a cutscene timeline owns the frame.
+    fn cutscene_timeline_active(&self) -> bool;
+    /// Whether a scripted arc drives the follow camera.
+    fn script_arc_follow_camera(&self) -> bool;
+    /// Whether the per-frame camera-zone re-query flag is raised.
+    fn camera_zone_requery_per_frame(&self) -> bool;
+    /// Whether the player's movement is locked.
+    fn field_player_movement_locked(&self) -> bool;
+    /// Whether a ledge hop is in flight.
+    fn ledge_hop_active(&self) -> bool;
+    /// Whether the player's scripted arc is live.
+    fn player_script_arc_live(&self) -> bool;
+    /// Take the camera-zone arms the field VM queued this frame.
+    fn take_camera_zone_requests(&mut self) -> Vec<CameraZoneRequest>;
+    /// Drain the field event queue.
+    fn drain_field_events(&mut self) -> Vec<FieldEvent>;
+    /// Hand the events the camera did not consume back to the queue.
+    fn requeue_field_events(&mut self, events: Vec<FieldEvent>);
+    /// Publish the field actor cull's camera view.
+    fn set_npc_cull_view(&mut self, view: Option<FieldCullView>);
+    /// Publish the live visible-tile window to the fog pool.
+    fn set_fog_view_window(&mut self, window: [i8; 4]);
+    /// The world's `rand()` stream state.
+    fn rng_state(&self) -> u32;
+    /// Write back the `rand()` stream state.
+    fn set_rng_state(&mut self, state: u32);
+}
+
+/// Discrete camera-distance preset for the field follow camera. `Retail`
+/// is the faithful framing; `Far` / `Farther` are engine enhancements that
+/// pull the eye back so more of the scene is on screen. A pure framing
+/// knob: it scales the eye-back distance only, so it never feeds the
+/// world simulation (locomotion, encounters, replays are unaffected).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CameraDistance {
+    /// The savestate-pinned retail framing (scale 1.0).
+    #[default]
+    Retail,
+    /// A bit further out than retail - the interactive play-window default.
+    Far,
+    /// Wide vantage for eyeballing scene layout.
+    Farther,
+}
+
+impl CameraDistance {
+    /// Multiplier applied to the follow camera's eye-back distance.
+    pub fn scale(self) -> f32 {
+        match self {
+            Self::Retail => 1.0,
+            Self::Far => 1.35,
+            Self::Farther => 1.8,
+        }
+    }
+
+    /// Next preset in the cycle Retail -> Far -> Farther -> Retail.
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Retail => Self::Far,
+            Self::Far => Self::Farther,
+            Self::Farther => Self::Retail,
+        }
+    }
+
+    /// Human-readable label for HUD / logs.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Retail => "retail",
+            Self::Far => "far",
+            Self::Farther => "farther",
+        }
+    }
+
+    /// Parse a CLI/HUD label (`retail` / `far` / `farther`),
+    /// case-insensitive. `None` for unknown strings.
+    pub fn from_label(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "retail" => Some(Self::Retail),
+            "far" => Some(Self::Far),
+            "farther" => Some(Self::Farther),
+            _ => None,
+        }
+    }
+}
+
+/// The user's three **follow-camera knobs** - orbit, tilt and zoom - as one
+/// vocabulary both hosts steer from: the play-window's left-mouse drag and
+/// wheel, and the browser play page's `pointermove` / `wheel` handlers on the
+/// canvas. The knobs compose onto the retail zone-driven follow camera
+/// (`legaia_engine_core::camera_view::field_follow_view`) and stay centred on the
+/// character; every one is identity at its default, so the untouched camera
+/// is the retail shot bit for bit.
+///
+/// They are live only while the follow camera **owns the frame** - free-roam
+/// field. A running cutscene timeline seizes the camera in retail, and the
+/// port keeps that lock: [`Camera::follow_knobs_live`] answers `false` there
+/// and the gated setters ([`Camera::orbit_by`], [`Camera::tilt_by`],
+/// [`Camera::zoom_by`]) drop the gesture rather than banking an offset that
+/// would snap the view when control returns. The world map's walk camera has
+/// retail's own zoom (`WorldMapController`) and is not steered from here
+/// either.
+pub mod follow_knobs {
+    /// Lower bound on the composed follow pitch, radians: keeps the eye
+    /// above the floor plane. The same number the two hosts' debug orbit
+    /// clamps to, so one drag feels the same on either vantage.
+    pub const PITCH_MIN: f32 = 0.12;
+    /// Upper bound on the composed follow pitch, radians: short of fully
+    /// top-down, where the retail framing has no horizon to compose against.
+    pub const PITCH_MAX: f32 = 1.35;
+    /// Widest tilt offset a host can bank, radians, either sign - the whole
+    /// clamp span, so a drag can always reach both ends from any scene pitch
+    /// and never accumulates unseen beyond them.
+    pub const TILT_LIMIT: f32 = PITCH_MAX - PITCH_MIN;
+    /// Closest zoom (a multiplier on the eye-back depth): well outside the
+    /// character but tight enough to read a face.
+    pub const ZOOM_MIN: f32 = 0.35;
+    /// Widest zoom: three times retail's depth, which under the `Farther`
+    /// preset is still inside the scene clip volume.
+    pub const ZOOM_MAX: f32 = 3.0;
+
+    /// The composed follow pitch for a scene pitch `base` and a user tilt:
+    /// `base + tilt` clamped into the knob range, with the range widened to
+    /// include `base` itself. A scene whose own pitch sits outside the range
+    /// is still framed exactly at a zero tilt, and the clamp is continuous
+    /// in the tilt (no snap at the first pixel of drag).
+    pub fn composed_pitch(base: f32, tilt: f32) -> f32 {
+        (base + tilt).clamp(base.min(PITCH_MIN), base.max(PITCH_MAX))
+    }
+}
+
+/// Camera mode - controls how the camera derives its `eye` from the
+/// world / scene state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CameraMode {
+    /// Follow a specific actor slot (default - slot 0 = player).
+    #[default]
+    Follow,
+    /// Held at the last `Apply` payload - engine expects the field VM to
+    /// keep ticking it via op `0x45`. Useful for cutscenes that pre-bake
+    /// camera paths.
+    Cinematic,
+    /// Static - no per-frame motion. Useful for menus, title screen.
+    Static,
+}
+
+/// Runtime camera. Composed from the field-VM's CameraState plus a follow
+/// target. Engines call [`Camera::tick`] each frame after the world ticks
+/// to update the view; the resulting `eye` / `look_at` pair feeds the
+/// renderer's `view` matrix.
+#[derive(Debug, Clone)]
+pub struct Camera {
+    pub mode: CameraMode,
+    /// Actor slot to follow when `mode == Follow`. Defaults to 0.
+    pub follow_slot: u8,
+    /// Distance from target along the -Z axis when following. This is an
+    /// engine framing choice - op-0x45 carries no eye-distance param (retail
+    /// places the eye at the GTE translation and projects through `H`), so it
+    /// is not driven by Camera Configure.
+    pub follow_distance: f32,
+    /// Y offset added to `look_at`. Engine framing default (comfortable
+    /// shoulder height); like `follow_distance`, not an op-0x45 param.
+    pub follow_height: f32,
+    /// Computed eye position in world coordinates.
+    pub eye: [f32; 3],
+    /// Computed look-at point.
+    pub look_at: [f32; 3],
+    /// Yaw in radians (wrapped). Renderers can read this directly when they
+    /// want a free-camera mode.
+    pub yaw: f32,
+    /// Pitch in radians.
+    pub pitch: f32,
+    /// Roll in radians - op-`0x45` slot `2` (`_DAT_8007B794`, the Z angle
+    /// the camera's Euler kernel `FUN_80026988` composes third, after pitch
+    /// and yaw, when `FUN_800172C0` builds the view).
+    ///
+    /// Retail authors this. An executing census of every MAN record on the
+    /// disc (`crates/engine-core/tests/thread_camera_roll_execution.rs`)
+    /// finds control-flow-reachable Configure beats staging a non-zero roll
+    /// in eight scenes, from a `10`-unit (0.9 deg) tilt up to `-660`
+    /// (-58 deg) - all in-range 12-bit angles, each held across the beats of
+    /// one shot the way an authored Dutch angle is. A camera that composes
+    /// pitch and yaw only frames those shots wrong.
+    ///
+    /// REF: FUN_800172C0, FUN_80026988
+    pub roll: f32,
+    /// User-controlled orbit around the follow target (radians), in the
+    /// **compass sense**: positive swings "screen up" from world `+Z`
+    /// toward `+X`. Composed on top of the scripted [`Self::yaw`] by both
+    /// the follow-eye computation and [`Self::compass_azimuth_units`], so
+    /// dragging the camera around the player keeps the movement compass
+    /// aligned with the view. Preserved across
+    /// [`Self::reset_for_free_roam`] (it is player intent, not leaked
+    /// cutscene state). Default `0.0`.
+    pub manual_orbit: f32,
+    /// User-controlled **tilt** on the follow camera (radians), added to the
+    /// pitch the scene composes: positive tips the lens further down toward
+    /// a top-down survey, negative brings it toward the horizon. The
+    /// composed pitch clamps into [`follow_knobs::PITCH_MIN`] ..
+    /// [`follow_knobs::PITCH_MAX`] (widened to include the scene's own pitch
+    /// so an untouched tilt never moves a retail shot). Pure framing: the
+    /// compass reads yaw only, so a tilt never remaps the d-pad. Preserved
+    /// across [`Self::reset_for_free_roam`] like the orbit. Default `0.0`.
+    pub manual_tilt: f32,
+    /// User-controlled **continuous zoom** on the follow camera: a
+    /// multiplier on the eye-back depth, composed under the coarse
+    /// [`Self::distance`] preset. `> 1` pulls the eye back, `< 1` brings
+    /// it in, clamped to [`follow_knobs::ZOOM_MIN`] ..
+    /// [`follow_knobs::ZOOM_MAX`]. Pure framing, never a simulation
+    /// input. Preserved across [`Self::reset_for_free_roam`]. Default `1.0`.
+    pub manual_zoom: f32,
+    /// Fixed yaw the HOST's renderer frames the follow view with, in the
+    /// compass sense (radians). A renderer that draws the field at a
+    /// non-zero base yaw (e.g. the play-window's savestate-pinned
+    /// `-160`-unit follow yaw = `+160` units compass) sets this once so
+    /// [`Self::compass_azimuth_units`] reports the yaw the player actually
+    /// sees. Default `0.0` (headless hosts / the plain follow eye).
+    pub render_yaw_bias: f32,
+    /// Discrete eye-back distance preset. Scales [`Self::follow_distance`]
+    /// in the follow-eye computation; render hosts multiply their own
+    /// follow-camera depth by [`CameraDistance::scale`]. Default
+    /// [`CameraDistance::Retail`] keeps every headless / oracle path
+    /// bit-identical; interactive hosts may default further out.
+    pub distance: CameraDistance,
+    /// Internal motion-VM state used for cinematic / scripted paths. Driven
+    /// by [`Camera::tick_script`].
+    pub motion_state: MotionState,
+    /// Latest cinematic target - set when an op `0x45` apply event fires.
+    pub motion_target: MotionTarget,
+    /// The live retail camera globals - the pose retail actually renders and
+    /// a state trace samples. Driven by op-`0x45` Configure beats through
+    /// [`Self::globals`] / [`Self::mover`], and by the follow camera in
+    /// [`Self::tick`].
+    pub globals: RetailCamGlobals,
+    /// The single in-flight camera-mover glide, when a beat staged one with
+    /// `apply != 0`. `None` once it has arrived (the retail actor marks
+    /// itself dead and frees its pair block).
+    pub mover: Option<CameraMover>,
+    /// Display-frame counter the mover was last advanced to, so a glide
+    /// advances in retail display frames rather than sim ticks (retail's
+    /// `DAT_1F800393` credit - see `camera_mover`'s module docs).
+    last_field_frame: u64,
+    /// Latched once this scene has executed an op-`0x45` Configure: from then
+    /// on the script owns the focus globals and the follow camera stops
+    /// writing them. A scripted scene seizes the camera in retail, and the
+    /// focus it stages is meant to survive the settled gaps between beats -
+    /// retail holds two distinct focus values across the whole of `opdeene`.
+    /// Cleared by [`Self::reset_globals_for_scene_entry`].
+    script_owns_focus: bool,
+    /// The zone-driven follow camera: the retail camera parameter block,
+    /// the target it composes and the ease that walks the globals toward
+    /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
+    pub zone: ZoneFollow,
+    /// This frame's `apply_trigger == 0` Configure beats, as packed-component
+    /// snaps for the host's [`legaia_engine_vm::psx_camera::CutsceneCameraInterp`].
+    ///
+    /// Retail's mover snaps the live camera globals to an `apply == 0` beat
+    /// immediately. The field VM runs until yield, so a snap beat followed by
+    /// a glide beat in the same tick (`map01`'s fly-in: the aerial snap, then
+    /// the descent with no yield between) commits both before any host looks,
+    /// and the merged [`Self::globals`] only carries the glide beat's
+    /// targets, so a host that reads the merged state alone glides from the
+    /// wrong pose.
+    ///
+    /// Filled by [`Self::route_camera_events`] and drained by
+    /// [`Self::take_camera_snap_beats`]. It lives here because this is where
+    /// the beats are: `route_camera_events` consumes every
+    /// `FieldEvent::CameraConfigure` off the world queue and does not restore
+    /// it, so a host looking for them in its own later drain of
+    /// `pending_field_events` finds none.
+    pub camera_snap_beats: Vec<Vec<(u8, u16)>>,
+}
+
+/// The state of the **zone-driven field follow camera** - the engine side
+/// of retail's camera parameter block (`0x8007B606..`), staging descriptor
+/// (`0x801F3580`) and the per-frame ease that runs between them.
+///
+/// Lives on [`Camera`] so both hosts get one camera: the native window and
+/// the browser play page each read the composed globals through
+/// `legaia_engine_core::camera_view::field_follow_view`.
+#[derive(Debug, Clone)]
+pub struct ZoneFollow {
+    /// The camera parameter block (`0x8007B607..0x8007B627`).
+    pub config: crate::camera_zone::CameraZoneConfig,
+    /// The last composed target (the staging descriptor's camera fields).
+    pub target: crate::camera_zone::CameraTarget,
+    /// The camera-region record the block was last loaded from; `None`
+    /// when it holds the zone-miss defaults (or the boot zeros).
+    pub loaded_record: Option<[u8; crate::field_regions::ZONE_RECORD_STRIDE]>,
+    /// The walk-region attribute box the last query latched
+    /// (`0x1F800384..87`), which the composer's sweeps span.
+    pub attrs: crate::field_regions::RegionAttributes,
+    /// `true` once this scene's follow camera has composed from field
+    /// terrain - the gate `legaia_engine_core::camera_view::field_follow_view` reads
+    /// to prefer the composed globals over its pinned fallback.
+    pub active: bool,
+    /// The player tile the block was last queried at.
+    tile: Option<(i32, i32)>,
+    /// The player `(X, footing, Z)` of the previous tick - retail eases
+    /// only on a frame the player moved.
+    prev_player: Option<[i32; 3]>,
+    /// The next tick copies the target straight into the globals (the
+    /// arrival actor's `FUN_801DB8EC`), instead of easing. Public only so
+    /// engine-core's `World`-driven camera tests can stage an arrival.
+    #[doc(hidden)]
+    pub snap_pending: bool,
+    /// The next tick re-runs the zone query even on the same tile.
+    reload_pending: bool,
+    /// The op-`0x43` ramp register values already folded into the block,
+    /// so a ramp write is recognised as a change rather than re-applied.
+    ramp_seen: [i32; 4],
+    /// Whether a script owned the camera on the previous tick - the
+    /// hand-back edge snaps (see [`Camera::tick_globals`]).
+    prev_scripted: bool,
+    /// Camera-zone arms the field VM ran, moved off the world by
+    /// [`Camera::route_camera_events`] and applied by the next
+    /// [`Camera::zone_follow_tick`]. See
+    /// `legaia_engine_core::world::camera_hooks`.
+    pending: Vec<CameraZoneRequest>,
+    /// The camera's **visible tile window** (`0x1F8003E8..EB`, signed
+    /// tiles) as the focus edge clamp reads it. Seeded to the field default
+    /// and overwritten by a camera-region record's mask-kind side-write -
+    /// the four bytes [`crate::camera_zone::CameraZoneConfig::load_record`]
+    /// returns. Seeded per scene entry from
+    /// [`crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW`], replaced by a
+    /// camera-region record's mask-kind side-write
+    /// ([`Self::load_record`]) and by field-VM op `0x46`
+    /// ([`Camera::route_camera_events`]) - retail's order is seed, then
+    /// whichever of those the scene's script runs.
+    pub view_window: [i8; 4],
+    /// The jitter pair the follow ease last added into the eye X / Y
+    /// globals (retail's scene control block `+0x18` / `+0x1C`,
+    /// `*(0x801C6EA4)`), subtracted back out at the top of the next ease.
+    pub shake_offset: [i32; 2],
+    /// The `rand()` state the follow ease's shake draws from. Retail draws
+    /// from the one process-wide BIOS seed, so [`Camera::tick_on_stream`]
+    /// lends `World::rng_state` in here and takes it back after the tick;
+    /// only a bare [`Camera::tick`] (a test, a preview) draws on this copy
+    /// alone. A rest shake (`amplitude == 0`) draws nothing.
+    shake_seed: u32,
+    /// The focus pair (`_DAT_80089118` / `_DAT_80089120`) this follow
+    /// camera left at the end of its previous tick. A mode-5 fixed shot
+    /// eases its focus from here - retail's `FUN_801DB510` pins the focus
+    /// onto the player (`0x801DB820`) only for the other modes, and a
+    /// stationary mode-5 frame leaves it where it was.
+    focus_held: Option<[i32; 2]>,
+    /// The follow switch `_DAT_8007B606` (byte): off, `FUN_801DB510` only
+    /// pins the focus onto the player and neither composes nor eases
+    /// (`0x801DB550`). New-game init stores `1` (SCUS `0x80034B60`, the
+    /// `_DAT_8007B868 == 0` test, which is true on retail); its only other
+    /// writers are the dev menu's CAMERA row (`0x801EAD38`, `0x801EA1C8`),
+    /// which the port's dev menu carries as
+    /// `legaia_engine_core::dev_menu_host::DevMenuRow::Camera`.
+    pub follow_enabled: bool,
+    /// A focus pair (stored form) the next snap lands instead of the
+    /// player's - [`Self::seat_focus_after_snap`].
+    seat_focus: Option<[i32; 2]>,
+}
+
+impl Default for ZoneFollow {
+    fn default() -> Self {
+        Self {
+            config: crate::camera_zone::CameraZoneConfig::BOOT,
+            target: crate::camera_zone::CameraTarget::default(),
+            loaded_record: None,
+            attrs: crate::field_regions::RegionAttributes::DEFAULT_FILL,
+            active: false,
+            tile: None,
+            prev_player: None,
+            snap_pending: false,
+            reload_pending: true,
+            ramp_seen: crate::register_ramp::CameraRegisterFile::DEFAULTS,
+            prev_scripted: false,
+            pending: Vec::new(),
+            view_window: {
+                let (a, b, c, d) = crate::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
+                [a, b, c, d]
+            },
+            shake_offset: [0, 0],
+            shake_seed: 1,
+            focus_held: None,
+            follow_enabled: true,
+            seat_focus: None,
+        }
+    }
+}
+
+impl ZoneFollow {
+    /// Load one 18-byte camera-region record into the block (the op-`0x45`
+    /// LOAD arm, `FUN_801DBC20(operand + 1)`).
+    pub fn load_record(&mut self, rec: &[u8; crate::field_regions::ZONE_RECORD_STRIDE]) {
+        if let Some(w) = self.config.load_record(rec) {
+            self.view_window = w.map(|b| b as i8);
+        }
+        self.loaded_record = Some(*rec);
+        self.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+    }
+
+    /// Copy the composed target straight into the globals on the next tick
+    /// instead of easing - `FUN_801DB8EC`'s snap, which the dev menu's
+    /// `CAMERA` row runs when it switches the follow camera on
+    /// (`0x801EA1E4`). Unlike [`Self::arm_arrival`] it keeps the tile and the
+    /// latched region, so it re-frames without re-querying the zone.
+    pub fn request_snap(&mut self) {
+        self.snap_pending = true;
+    }
+
+    /// [`Self::arm_arrival`] over a given parameter block instead of the
+    /// tile re-query: the snap composes from `config`. For a seat that
+    /// carries a retail state's own block (`0x8007B607..0x8007B627`): the
+    /// block holds whichever camera-region record a script or a walk-on
+    /// loader last ran (`kor5` P2[0] / P2[1], the band at tile X 26 / 28),
+    /// which is walk history a seat cannot replay.
+    pub fn arm_arrival_over(&mut self, config: crate::camera_zone::CameraZoneConfig) {
+        self.arm_arrival();
+        self.config = config;
+        self.loaded_record = None;
+        self.ramp_seen = crate::register_ramp::CameraRegisterFile::DEFAULTS;
+        self.reload_pending = false;
+    }
+
+    /// Land `focus` (stored form, X / Z negated) as the focus of the next
+    /// snap, after its clamp. A debug-seat aid for pairing a retail save
+    /// state whose focus is not on the player: retail's follow ease writes
+    /// the focus only on a frame it runs and the player moved, so a state
+    /// whose player was poked - or carried by a script while
+    /// movement-locked - holds a focus the seat's snap would otherwise
+    /// replace. The ease then leaves it until the player moves.
+    pub fn seat_focus_after_snap(&mut self, focus: [i32; 2]) {
+        self.seat_focus = Some(focus);
+    }
+
+    /// Arm a scene-entry / arrival snap: re-query the tile and copy the
+    /// composed target into the globals on the next tick.
+    pub fn arm_arrival(&mut self) {
+        self.snap_pending = true;
+        self.reload_pending = true;
+        self.tile = None;
+        self.prev_player = None;
+        self.active = false;
+        self.focus_held = None;
+    }
+}
+
+impl Default for Camera {
+    fn default() -> Self {
+        Self {
+            mode: CameraMode::Follow,
+            follow_slot: 0,
+            follow_distance: 200.0,
+            follow_height: 80.0,
+            eye: [0.0, 80.0, 200.0],
+            look_at: [0.0; 3],
+            yaw: 0.0,
+            pitch: 0.0,
+            roll: 0.0,
+            manual_orbit: 0.0,
+            manual_tilt: 0.0,
+            manual_zoom: 1.0,
+            render_yaw_bias: 0.0,
+            distance: CameraDistance::Retail,
+            motion_state: MotionState::default(),
+            motion_target: MotionTarget::default(),
+            globals: RetailCamGlobals::default(),
+            mover: None,
+            last_field_frame: 0,
+            script_owns_focus: false,
+            zone: ZoneFollow::default(),
+            camera_snap_beats: Vec::new(),
+        }
+    }
+}
+
+impl Camera {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drain the world's pending field-VM events of camera variants and
+    /// fold them into this camera. Non-camera events are restored to the
+    /// world queue so engine layers that also consume them aren't shorted.
+    /// Returns the number of camera events applied this frame.
+    ///
+    /// The op-`0x45` Configure slot→camera mapping mirrors the retail apply
+    /// handler; the view build it feeds is `FUN_800172C0` (Euler kernel
+    /// `FUN_80026988`).
+    ///
+    /// Put the mover in flight exactly `left` display frames short of its
+    /// duration and re-derive the globals from it - a capture-alignment aid
+    /// for the retail-compare image channel, not a game path. Retail's
+    /// mover credits the adaptive frame-skip factor per logic tick
+    /// (`t = min(t + DAT_1F800393, d)`), so the progress a glide has made at
+    /// a given script phase is frame-skip history no replay reproduces; a
+    /// retail state's own mover (`+0x9E - +0x9C`) says how much it had left.
+    /// No-op with no glide in flight.
+    ///
+    /// REF: FUN_801DC0BC
+    pub fn align_glide_frames_left(&mut self, left: i32) {
+        if let Some(mv) = self.mover.as_mut() {
+            mv.t = (mv.d - left).clamp(0, mv.d);
+            self.globals.0 = mv.values();
+        }
+    }
+
+    /// Take this frame's `apply_trigger == 0` Configure beats as packed
+    /// component snaps, ready for
+    /// [`legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components`].
+    /// Both hosts call it once per frame, right before arming the glide;
+    /// empty on every frame no snap beat executed. See
+    /// [`Self::camera_snap_beats`].
+    pub fn take_camera_snap_beats(&mut self) -> Vec<Vec<(usize, f32)>> {
+        std::mem::take(&mut self.camera_snap_beats)
+            .iter()
+            .map(|b| legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b))
+            .collect()
+    }
+
+    /// Drop any banked snap beats - the host's cutscene interp is not live
+    /// this frame, so replaying them would snap a pose nothing reads.
+    pub fn clear_camera_snap_beats(&mut self) {
+        self.camera_snap_beats.clear();
+    }
+
+    /// REF: FUN_801DE084
+    pub fn route_camera_events<W: CameraWorld + ?Sized>(&mut self, world: &mut W) -> usize {
+        // The camera-zone arms of op `0x4C` (nibble-3 sub-8/9/D/E and
+        // nibble-C sub-4) queue on the world because the field VM's host is
+        // `World` while these globals live here. Both hosts call this right
+        // before `tick`, so this is the one drain point.
+        self.zone.pending.extend(world.take_camera_zone_requests());
+        let mut applied = 0usize;
+        let mut leftover = Vec::new();
+        for ev in world.drain_field_events() {
+            match ev {
+                FieldEvent::CameraConfigure {
+                    params,
+                    apply_trigger,
+                    mode,
+                } => {
+                    // An `apply == 0` beat is retail's immediate snap. Bank
+                    // it for the host's cutscene interp before the merge
+                    // below folds it into one `camera_state` - see
+                    // [`Self::camera_snap_beats`].
+                    if apply_trigger == 0 {
+                        self.camera_snap_beats
+                            .push(params.iter().map(|p| (p.slot, p.value)).collect());
+                    }
+                    // Op-0x45 slot layout, pinned from the Camera Configure
+                    // apply handler `FUN_801DE084` (writes the camera globals)
+                    // + the view build `FUN_800172C0` (Euler kernel
+                    // FUN_80026988). The 10 slots are three Euler
+                    // angles, an offset trio, a focus trio, and H:
+                    //   0 = pitch  (`_DAT_8007B790`, RotX)   1 = yaw (RotY)
+                    //   2 = roll   (`_DAT_8007B794`, RotZ)   3,4,5 = offset
+                    //   6,7,8 = focus (negated translation)  9 = GTE H
+                    // Angles are 12-bit (4096 = 360 deg). See
+                    // docs/subsystems/cutscene.md.
+                    let ang = |v: u16| (v as i16) as f32 * std::f32::consts::TAU / 4096.0;
+                    let slot = |s: u8| params.iter().find(|p| p.slot == s).map(|p| p.value);
+                    if let Some(v) = slot(0) {
+                        self.pitch = ang(v);
+                    }
+                    if let Some(v) = slot(1) {
+                        self.yaw = ang(v);
+                    }
+                    // Slot 2 = roll (`_DAT_8007B794`, the `RotMatrixZ` angle).
+                    // Retail authors it: see [`Self::roll`] for the executing
+                    // census that found the eight scenes staging one.
+                    if let Some(v) = slot(2) {
+                        self.roll = ang(v);
+                    }
+                    // Focus slots 6/7/8 re-target the cinematic look-at, each
+                    // applied INDEPENDENTLY on its own presence - the retail
+                    // apply handler `FUN_801DE084` writes each camera focus
+                    // global only when its slot bit is set, leaving the others
+                    // at their prior value. A beat that supplies only focus X/Z
+                    // (opdeene's opening beats omit slot 7 entirely) must still
+                    // pan the look-at horizontally rather than freeze it; the
+                    // all-or-nothing gate used before never retargeted such
+                    // beats, pinning the shot on one angle. The focus globals
+                    // are the negated GTE translation, so X/Z are negated back
+                    // to a world point (matching the shell's `cutscene_view`).
+                    if let Some(fx) = slot(6) {
+                        self.look_at[0] = -((fx as i16) as f32);
+                    }
+                    if let Some(fy) = slot(7) {
+                        self.look_at[1] = (fy as i16) as f32;
+                    }
+                    if let Some(fz) = slot(8) {
+                        self.look_at[2] = -((fz as i16) as f32);
+                    }
+                    // The ten retail globals. Every masked slot writes its
+                    // axis; an absent slot holds its prior value, which is
+                    // what `FUN_801DE084` does by writing only the slots the
+                    // mask selects. `apply_trigger` then chooses between the
+                    // two commit behaviours:
+                    //
+                    // - `apply == 0` - SNAP. Write straight through and mark
+                    //   every live mover dead, cancelling a glide in flight.
+                    // - `apply != 0` - GLIDE. Hand the one mover actor ten
+                    //   `(start, end)` pairs, `start` from the LIVE globals,
+                    //   and let it interpolate over `apply` display frames
+                    //   with `mode` as the shared ease curve.
+                    //
+                    // This is the half the camera was missing entirely: the
+                    // eye-space translation trio (slots 3/4/5) had no engine
+                    // representation at all, so every scripted shot rendered
+                    // and traced from the follow orbit's fixed height.
+                    self.script_owns_focus = true;
+                    // Retail's op-`0x45` arms compose the zone camera into
+                    // the same staging struct the beat's slots overwrite
+                    // (`FUN_801DAB90(player, 0x801C6EA8)` at `0x801DF228`),
+                    // so an unmasked slot holds the scene's own shot, and a
+                    // glide starts from it. Snap the zone pose in first if
+                    // this scene has not had its arrival snap yet.
+                    self.prime_zone_before_script(world);
+                    let mut target = self.globals;
+                    for p in &params {
+                        if (p.slot as usize) < AXIS_COUNT {
+                            target.0[p.slot as usize] = (p.value as i16) as i32;
+                        }
+                    }
+                    if apply_trigger == 0 {
+                        self.globals = target;
+                        self.mover = None;
+                    } else {
+                        let mut mv = self.mover.take().unwrap_or_default();
+                        mv.arm(self.globals.0, target.0, apply_trigger, mode);
+                        self.mover = Some(mv);
+                    }
+                    if std::env::var_os("LEGAIA_DIAG_CAMERA").is_some() {
+                        eprintln!(
+                            "DIAG camera configure: params={params:?} -> pitch={:.3} yaw={:.3} look_at={:?}",
+                            self.pitch, self.yaw, self.look_at
+                        );
+                    }
+                    applied += 1;
+                }
+                FieldEvent::CameraSave => {
+                    // Engine snapshots the current eye/look-at into world.camera_state
+                    // already; we just record we saw the event.
+                    applied += 1;
+                }
+                FieldEvent::CameraLoad { payload } => {
+                    // Op-`0x45` LOAD: the 18 bytes after the op byte are one
+                    // camera-region record, and retail hands them straight to
+                    // the camera-config loader (`FUN_801DBC20(operand + 1)`
+                    // at `0x801DF28C`). It is not an eye / look-at pair and
+                    // it does not seize the camera: the follow camera keeps
+                    // running and eases toward the shot the new block
+                    // composes.
+                    if let Ok(rec) = <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(
+                        payload.as_slice(),
+                    ) {
+                        self.zone.load_record(&rec);
+                    }
+                    applied += 1;
+                }
+                FieldEvent::CameraApply {
+                    apply_trigger,
+                    mode,
+                } => {
+                    self.apply_follow_shot(world, apply_trigger, mode);
+                    applied += 1;
+                }
+                // Op-`0x46` `VIEW_WINDOW`, both forms. Retail writes the same
+                // four scratchpad bytes `0x1F8003E8..EB` from either arm
+                // (`0x801DF2AC..0x801DF350` in the field overlay), and they
+                // are the camera's visible-tile window in `[E8, E9, EA, EB]`
+                // order - see docs/formats/encounter.md. The scene-entry
+                // primer seeds them, the script replaces them, and the focus
+                // edge clamp below widens the walk region by whatever is
+                // there, so the op has to land here rather than only on the
+                // event queue.
+                FieldEvent::ViewWindowLong { b1, b2, b3, b4 } => {
+                    self.zone.view_window = [b1 as i8, b2 as i8, b3 as i8, b4 as i8];
+                    applied += 1;
+                }
+                FieldEvent::ViewWindowShort { r, g, b, packed } => {
+                    // The short form is the same four bytes, already built by
+                    // the VM: a window of half-width `op0 >> 1` in X about
+                    // tile offset `-1` and `op1 >> 1` in Z about `+2`. The
+                    // field's own default window is this form's `(7, 8)` -
+                    // X `[-8, 6]`, Z `[-6, 10]` - which is where
+                    // `FIELD_DEFAULT_VIEW_WINDOW`'s asymmetry comes from.
+                    self.zone.view_window = [r as i8, g as i8, b as i8, packed as i8];
+                    applied += 1;
+                }
+                other => leftover.push(other),
+            }
+        }
+        world.requeue_field_events(leftover);
+        // The field actor visibility cull (`FUN_801D79E8`) reads the focus
+        // pair, the region box and the visible tile window. They live here,
+        // so this drain point - which both hosts reach every frame - is
+        // where the world gets them. Published only while the zone follow
+        // camera owns them; before its first compose the focus is not the
+        // one retail's globals would hold, and a cull against it would hold
+        // gliders the player can see. Published after this frame's op-`0x46`
+        // events land: retail's op writes the scratchpad window outright, so
+        // the frame that runs the op already culls and crops against it (a
+        // record's `46 ..` beat one frame late drew its shot against the
+        // previous region's window).
+        world.set_npc_cull_view(self.zone.active.then(|| FieldCullView {
+            focus_stored: [self.globals.0[6], self.globals.0[8]],
+            attr_box: self.zone.attrs.box_bytes,
+            window: self.zone.view_window,
+        }));
+        // Publish the live visible-tile window to the fog pool: the ambient
+        // emitter samples its burst span from the same scratchpad bytes
+        // `0x1F8003E8..EB` every frame (`lb` at `0x801D6158..`), and those
+        // bytes live here, not on the world the emitter ticks in. A record
+        // load in this frame's `tick` reaches the emitter one frame later.
+        world.set_fog_view_window(self.zone.view_window);
+        applied
+    }
+
+    /// [`Self::tick`] on the world's `rand()` stream: the follow ease's shake
+    /// pair draws from `World::rng_state` in tick order, as retail's
+    /// `FUN_801DB510` draws from the one BIOS seed. The shared
+    /// `legaia_engine_core::frame_step::camera_after_world_tick` runs this one.
+    pub fn tick_on_stream<W: CameraWorld + ?Sized>(&mut self, world: &mut W) {
+        self.zone.shake_seed = world.rng_state();
+        self.tick(world);
+        world.set_rng_state(self.zone.shake_seed);
+    }
+
+    /// Per-frame tick. Reads the world to update `eye` / `look_at` based on
+    /// `mode`. Pure function over the world - engines call after
+    /// [`World::tick`] each frame.
+    ///
+    /// [`World::tick`]: legaia_engine_core::world::World::tick
+    pub fn tick<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        self.tick_globals(world);
+        match self.mode {
+            CameraMode::Follow => {
+                if let Some((ax, ay, az)) = world.active_actor_pos(self.follow_slot as usize) {
+                    let tx = ax as f32;
+                    let ty = ay as f32;
+                    let tz = az as f32;
+                    self.look_at = [tx, ty + self.follow_height, tz];
+                    // Effective yaw = scripted yaw + the user's manual orbit
+                    // (compass sense: forward = (sin, cos)). Distance preset
+                    // scales the eye-back distance only. Defaults (orbit 0,
+                    // Retail) keep this arithmetic bit-identical to the
+                    // historical `yaw`/`follow_distance` form.
+                    let yaw = self.yaw + self.manual_orbit;
+                    let dist = self.follow_distance * self.distance.scale() * self.manual_zoom;
+                    self.eye = [
+                        tx - dist * yaw.sin(),
+                        ty + self.follow_height,
+                        tz - dist * yaw.cos(),
+                    ];
+                }
+            }
+            CameraMode::Static | CameraMode::Cinematic => {
+                // No per-frame motion - keep eye/look_at at whatever the last
+                // event configured.
+            }
+        }
+    }
+
+    /// Advance the retail camera globals one frame: run any in-flight mover
+    /// glide, then let the follow camera write the focus it owns.
+    ///
+    /// The mover is clocked in **display frames**, not sim ticks - retail
+    /// credits `DAT_1F800393` (the adaptive frame-skip factor) per logic tick,
+    /// which banks exactly one unit per display frame, making every authored
+    /// `apply` a duration in 60 Hz frames. `World::clock.display_frames` is the
+    /// engine's display-frame counter, so diffing it is the faithful clock
+    /// (the same thing the renderer's glide does).
+    ///
+    /// In [`CameraMode::Follow`] with no glide in flight, the follow camera
+    /// owns the focus globals: `FUN_801DBE9C` stores the **negated** anchor
+    /// position (`_DAT_80089118 = -(anchor+0x14)`,
+    /// `_DAT_80089120 = -(anchor+0x18)`). Writing it here is what makes a
+    /// free-roam field frame comparable against a retail capture, which
+    /// samples those same globals whether a cutscene is running or not.
+    ///
+    /// PORT: FUN_801DC0BC
+    /// REF: FUN_801DBE9C
+    fn tick_globals<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        let now = world.display_frames();
+        let dt = now.saturating_sub(self.last_field_frame) as i32;
+        self.last_field_frame = now;
+
+        let gliding = if let Some(mv) = self.mover.as_mut() {
+            let arrived = mv.tick(dt);
+            self.globals.0 = mv.values();
+            if arrived {
+                self.mover = None;
+            }
+            true
+        } else {
+            false
+        };
+
+        // The follow camera only owns the focus in free-roam. A cutscene's
+        // staged focus must survive the gaps BETWEEN its beats, not just the
+        // frames a glide happens to be in flight: retail's `opdeene` holds two
+        // distinct focus values across the whole scene, so a writeback gated
+        // only on `!gliding` re-pins the focus to the player on every settled
+        // frame and turns those two values into ~1000.
+        let scripted = gliding || self.script_owns_focus || world.cutscene_timeline_active();
+        // A player arc whose release watcher runs the follow camera
+        // (`FUN_801D5D60` calling `FUN_801DB510(player)` + `FUN_801DAA50`
+        // every frame the arc flies) hands a cutscene's shot back to the
+        // follow step for the arc's duration. A glide in flight keeps the
+        // frame: it is the shot the script is actively moving.
+        let arc_follow = !gliding && world.script_arc_follow_camera();
+        let scripted = scripted && !arc_follow;
+        // In a zone-camera scene the focus is the follow ease's to write, and
+        // only on the legs that write it (see [`Self::zone_follow_tick`]): a
+        // standing or movement-locked player leaves it where it was.
+        let zone_scene = zone_camera_scene(world);
+        if !scripted
+            && !zone_scene
+            && self.mode == CameraMode::Follow
+            && let Some((ax, _, az)) = world.active_actor_pos(self.follow_slot as usize)
+        {
+            self.globals.0[6] = -ax;
+            self.globals.0[8] = -az;
+        }
+
+        // The zone-driven follow camera: retail's per-scene / per-tile camera
+        // parameters composed into the same ten globals, then eased. It runs
+        // in any walkable scene with terrain loaded (the zone table and the
+        // walk-region table are what it queries) and only while nothing
+        // scripted owns the shot - the kingdom overworld included: retail's
+        // overworld is an ordinary mode-`0x03` field-run scene, and on all
+        // three resident overworld states the live pitch / yaw / eye trio /
+        // `H` equal the follow composer's staging descriptor at `0x801F3580`
+        // field for field (see [`zone_camera_scene`]).
+        if zone_scene {
+            // A scripted shot handing the camera back snaps. Retail's
+            // scripts do this themselves through the `[4C 39]` / `[4C 3E]`
+            // arms (`FUN_801DB8EC`), which is how every walkable
+            // post-opening state in the library holds a settled follow pose
+            // (live == staging) rather than an ease in flight from the
+            // cinematic shot. Those arms are wired now
+            // ([`CameraZoneRequest`]); the hand-back edge
+            // stays as the port's backstop for a shot the script drops
+            // without one, and it snaps from the resident block rather than
+            // re-querying (retail's hand-back does not re-query either).
+            // The arc's follow is an ease, not a hand-back: retail's
+            // watcher calls the ease, never the snap.
+            if self.zone.prev_scripted && !scripted && !arc_follow {
+                self.zone.snap_pending = true;
+                self.zone.prev_player = None;
+            }
+            self.zone.prev_scripted = scripted;
+            if !scripted && self.mode == CameraMode::Follow {
+                self.zone_follow_tick(world, dt);
+            } else if gliding && self.mode == CameraMode::Follow {
+                // A scripted glide in a free-roam scene drives these same
+                // globals from the zone pose it was primed with; the follow
+                // view keeps reading them rather than its fallback.
+                self.zone.active = !self.zone.snap_pending;
+            }
+            return;
+        }
+
+        // A world without field terrain (unit worlds, the ramp oracles):
+        // camera-register zone ramps (field-VM op `0x43` sub-3..6) own four
+        // of these ten axes while the player stands in an authored zone. The
+        // field-overlay camera composer reads all four straight into the same
+        // camera descriptor these globals mirror - see
+        // [`crate::register_ramp::RampSlot::camera_axis`] for the per-register
+        // store sites. (In a terrain-bearing scene the same four registers
+        // are folded into the parameter block instead, which is where retail
+        // keeps them - see [`Self::zone_follow_tick`].)
+        //
+        // Gated on a register having actually been written: with no ramp in
+        // the scene the file still holds `CAMERA_ZONE_DEFAULTS`, whose
+        // `0x4000` eye-back is *not* the `16420` this camera resets to, so an
+        // ungated feed would re-frame every ramp-free scene. A scripted glide
+        // still wins - it is the shot the script staged.
+        // REF: FUN_801DABA4 (the field-overlay camera composer)
+        if !gliding && world.camera_registers().written() {
+            for slot in crate::register_ramp::RampSlot::ALL {
+                let axis = slot.camera_axis();
+                let v = world.camera_registers().get(slot);
+                // Retail's eye-back store is a halfword whose sign the
+                // composer folds into the yaw (it picks which side of the
+                // player the orbit sits on), so the depth axis takes the
+                // magnitude; the port's follow camera has no side flip.
+                self.globals.0[axis] = if axis == 5 { v.abs() } else { v };
+            }
+        }
+    }
+
+    /// One frame of the **zone-driven follow camera** - the engine side of
+    /// retail's `FUN_801DE3E0` (tile query + load), `FUN_801DAB90`
+    /// (compose), `FUN_801DB510` (ease) and `FUN_801DB8EC` (snap), all in
+    /// [`crate::camera_zone`].
+    ///
+    /// Retail's query is **script-driven**, and so is the port's: the four
+    /// `0x4C` arms ([`CameraZoneRequest`], queued by the field
+    /// VM and drained in [`Self::route_camera_events`]), the op-`0x45` LOAD
+    /// record, and the player-seat path - which retail runs in code at
+    /// `0x801D1FE8..0x801D2014` as exactly the `[4C 39]` sequence, and which
+    /// the port arms as [`ZoneFollow::arm_arrival`]. On top of those there
+    /// is retail's **per-frame** re-query at `0x801D17FC..0x801D1830`, gated
+    /// on scratchpad flag bit `22` (`legaia_engine_core::world::ZONE_REQUERY_FLAG`);
+    /// with the bit clear - its state on every mode entry, and in 109 of the
+    /// disc's 124 CDNAME scenes - the block simply stays put while the
+    /// player walks. The four op-`0x43` ramp registers are folded into the
+    /// block as they change, exactly the cells retail's ramps write.
+    ///
+    /// The composer's floor sample reads the **static** elevation LUT
+    /// ([`World::sample_field_floor_height_static`]): `FUN_801DAB90`
+    /// swaps the MAN's own ladder (`*(_DAT_8007B898) + 2`, 16 negated
+    /// `short`s) into scratchpad `0x1F80035C` around its `FUN_80019278`
+    /// call and restores the live rungs after, so a scripted floor-tier bob
+    /// never shakes the camera.
+    ///
+    /// PORT: FUN_801DE3E0
+    /// REF: FUN_801DAB90, FUN_801DB510, FUN_801DB8EC, FUN_801DBE9C, FUN_801D1344
+    fn zone_follow_tick<W: CameraWorld + ?Sized>(&mut self, world: &W, dt: i32) {
+        use crate::camera_zone::{ComposeInputs, compose, ease_step, ease_step_i16, snap};
+        use crate::field_regions::{RegionTable, refresh_region_attributes, zone_query};
+        use crate::register_ramp::{CameraRegisterFile, RampSlot};
+
+        let Some((x, y, z)) = world.player_world_pos() else {
+            return;
+        };
+        // The player's tile in the two conventions retail uses: the seat
+        // path and every `0x4C` arm take `(coord - 0x40) >> 7` (the exact
+        // inverse of the tile-centre seat `tile * 0x80 + 0x40`), while the
+        // per-frame re-query at `0x801D1804..0x801D181C` takes
+        // `(coord + 0x40) >> 7` - one tile further on. Both are reproduced
+        // rather than unified, because they select different records along a
+        // region edge.
+        let tile = ((x - 0x40) >> 7, (z - 0x40) >> 7);
+        let frame_tile = ((x + 0x40) >> 7, (z + 0x40) >> 7);
+        let requery_per_frame = world.camera_zone_requery_per_frame();
+        let pending = std::mem::take(&mut self.zone.pending);
+        let zone = &mut self.zone;
+
+        // 1. The attribute box. Retail latches it in `FUN_800180EC`, which
+        //    runs from the sub-area rebuild sweep `FUN_80017DD4` (and from
+        //    the `[4C 3D]` arm); the port refreshes it whenever the player
+        //    changes tile, which is the same box on every library state.
+        let table = RegionTable::parse(world.map_region_block());
+        if zone.tile != Some(tile) || zone.reload_pending {
+            let (_, attrs) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
+            zone.attrs = attrs;
+            zone.tile = Some(tile);
+        }
+
+        // 2. The zone query + block load (`FUN_801DE3E0`). Never on a bare
+        //    tile crossing: only on the seat / arrival, on a queued script
+        //    arm, or while the per-frame re-query flag is raised.
+        let load_at = |zone: &mut ZoneFollow, tx: i32, tz: i32| {
+            let attrs = zone.attrs;
+            let hit = zone_query(world.zone_table(), table.as_ref(), &attrs, tx, tz)
+                .and_then(|r| r.record)
+                .and_then(|r| <[u8; crate::field_regions::ZONE_RECORD_STRIDE]>::try_from(r).ok());
+            match hit {
+                Some(rec) => zone.load_record(&rec),
+                None => {
+                    zone.config.load_zone_miss();
+                    zone.loaded_record = None;
+                    zone.ramp_seen = CameraRegisterFile::DEFAULTS;
+                }
+            }
+        };
+        if zone.reload_pending {
+            load_at(zone, tile.0, tile.1);
+            zone.reload_pending = false;
+        } else if requery_per_frame {
+            load_at(zone, frame_tile.0, frame_tile.1);
+        }
+        for req in pending {
+            use CameraZoneRequest as R;
+            match req {
+                R::QueryAtPlayer => load_at(zone, tile.0, tile.1),
+                R::QueryAtTile { x: tx, z: tz } => load_at(zone, i32::from(tx), i32::from(tz)),
+                R::QueryConformAndSnap => {
+                    load_at(zone, tile.0, tile.1);
+                    zone.snap_pending = true;
+                }
+                R::SnapAndClamp => zone.snap_pending = true,
+                R::RefreshAttributes => {
+                    let (_, a) = refresh_region_attributes(table.as_ref(), tile.0, tile.1, false);
+                    zone.attrs = a;
+                }
+            }
+        }
+
+        // 3. Ramp registers (`FUN_80037018` stores through `+0x94`) land in
+        //    the block's own cells.
+        if world.camera_registers().written() {
+            for slot in RampSlot::ALL {
+                let v = world.camera_registers().get(slot);
+                if v != zone.ramp_seen[slot.index()] {
+                    zone.ramp_seen[slot.index()] = v;
+                    match slot {
+                        RampSlot::Dat8007B60C => zone.config.pitch = v,
+                        RampSlot::Dat8007B610 => zone.config.yaw = v,
+                        RampSlot::Dat8007B614 => zone.config.depth = v,
+                        RampSlot::Dat8007B618 => zone.config.h = v,
+                    }
+                }
+            }
+        }
+
+        // The ease's two hold gates (`0x801DB550` / `0x801DB564`): the
+        // follow switch off, or scratchpad `0x1F800394 & 0x400` (the
+        // top-view freeze, also the settle's bind block), sends the frame to
+        // the pin leg `0x801DB820` - focus = `-player`, no compose, no ease,
+        // no mode-5 focus ease - which falls into the shake tail. The arrival
+        // snap waits (retail's `FUN_801DB8EC` tests the switch too).
+        let story = world.story_flags();
+        // The player tick's own gate in front of the ease (`FUN_801D1344`,
+        // `0x801D1634..0x801D16C0`, branch at `0x801D17DC`): a
+        // movement-locked player (`+0x10 & 0x80000` - a conversation, a
+        // scripted walk, a seat) gets only the shake call `FUN_801D9D30`, so
+        // nothing composes, eases, pins the focus or clamps it until the lock
+        // lifts, unless `0x1F800394 & 0x10000` lets the ease through. The
+        // snap is not behind it (the arrival actor and the script arms call
+        // `FUN_801DB8EC` themselves), and neither are the two callers that
+        // run the ease on their own: the ledge hop's phase tick
+        // (`FUN_801D2298`) and the arc release watcher (`FUN_801D5D60`).
+        let locked = world.field_player_movement_locked()
+            && !world.ledge_hop_active()
+            && !world.player_script_arc_live();
+        let gated =
+            locked && story & CAMERA_LOCKED_EASE_FLAG == 0 && !zone.snap_pending && zone.active;
+        let hold = !gated && (!zone.follow_enabled || story & CAMERA_HOLD_FLAG != 0);
+        if hold {
+            zone.prev_player = Some([x, y, z]);
+            let g = &mut self.globals.0;
+            g[6] = -x;
+            g[8] = -z;
+        }
+
+        // 4. Compose (`FUN_801DAB90`).
+        let inputs = ComposeInputs {
+            player: [x, y, z],
+            // The static ladder, not the live one: the composer swaps the
+            // MAN's own rungs in around its floor sample.
+            floor_y: world.sample_field_floor_height_static(x, z),
+            attr_box: zone.attrs.box_bytes,
+            live_pitch: self.globals.0[0],
+            live_yaw: self.globals.0[1],
+            half_eye_y: world.scene_save_allowed(),
+        };
+        if !hold && !gated {
+            let composed = compose(&zone.config, &inputs);
+            if let Some(ly) = composed.live_yaw {
+                self.globals.0[1] = i32::from(ly);
+            }
+            zone.target = composed.target;
+        }
+
+        // 5. Snap on arrival (`FUN_801DB8EC`), else ease on a frame the
+        //    player moved (`FUN_801DB510`'s settle test).
+        let moved = zone.prev_player != Some([x, y, z]);
+        zone.prev_player = Some([x, y, z]);
+        let mode5 = zone.config.mode_nibble() == 5;
+        let focus_anchor = [
+            -(zone.config.anchor_x << 7) - 0x40,
+            -(zone.config.anchor_z << 7) - 0x40,
+        ];
+        let t = zone.target;
+        let g = &mut self.globals.0;
+        // The free-roam writeback in [`Camera::tick_globals`] pins the focus
+        // onto the player every frame. Retail's ease does that too
+        // (`0x801DB820`: focus = `-player`), but only when the shot is not
+        // mode 5: `0x801DB724..0x801DB734` sends a mode-5 frame to the focus
+        // ease instead, which starts from the focus the previous frame left,
+        // and a mode-5 frame the player did not move on skips both. So a
+        // fixed shot gets its own focus back before it eases.
+        if mode5
+            && zone.active
+            && !hold
+            && !gated
+            && let Some([fx, fz]) = zone.focus_held
+        {
+            g[6] = fx;
+            g[8] = fz;
+        }
+        // The stationary test (`0x801DB578..0x801DB5A4`): an unmoved player
+        // skips the compose-and-ease unless scratchpad `0x1F800394 &
+        // 0x40000` forces it - field-VM `2E 12` raises the bit for the
+        // scenes whose camera must keep settling on a standing player.
+        let forced = story & CAMERA_FORCE_EASE_FLAG != 0;
+        let mut snapped = false;
+        if gated || hold {
+            // Shake only / pin leg: nothing more until the shake tail.
+        } else if zone.snap_pending {
+            snapped = true;
+            let (p, yw, eye, h) = snap(&t);
+            g[0] = p;
+            g[1] = yw;
+            g[3..6].copy_from_slice(&eye);
+            g[9] = h;
+            if mode5 {
+                g[6] = focus_anchor[0];
+                g[8] = focus_anchor[1];
+            } else {
+                g[6] = -x;
+                g[8] = -z;
+            }
+            zone.snap_pending = false;
+        } else if moved || forced || !zone.active {
+            let code = zone.config.ease_shift();
+            for _ in 0..dt.clamp(1, 8) {
+                g[0] = i32::from(ease_step_i16(g[0] as i16, t.pitch, code));
+                g[1] = i32::from(ease_step_i16(g[1] as i16, t.yaw, code));
+                g[9] = i32::from(ease_step_i16(g[9] as i16, t.h, code));
+                for (axis, e) in t.eye.iter().enumerate() {
+                    g[3 + axis] = ease_step(g[3 + axis], i32::from(*e), code);
+                }
+                if mode5 {
+                    g[6] = ease_step(g[6], focus_anchor[0], code);
+                    g[8] = ease_step(g[8], focus_anchor[1], code);
+                }
+            }
+            // Any shot but a mode-5 fixed one falls into the pin leg
+            // `0x801DB820` after the ease (`bne` at `0x801DB734`): the focus
+            // goes onto the player on exactly the frames the ease ran.
+            if !mode5 {
+                g[6] = -x;
+                g[8] = -z;
+            }
+        }
+
+        // 5b. The ease's shake arm (`FUN_801DB510` head `0x801DB51C..0x801DB55C`
+        //     and tail `0x801DB844..0x801DB8D4`): the previous jitter pair
+        //     comes back out of eye X / Y, and with a non-zero amplitude
+        //     `_DAT_8007B630` (field-VM `[4C 84 amp]`) two fresh draws go in
+        //     - X centred on zero, Y upward only. Retail runs it on every
+        //     call, moved or not, snapped or not, so it sits outside the
+        //     ease branch; the arithmetic is `FUN_801D9D30`'s, which the
+        //     ease tail duplicates verbatim.
+        {
+            let mut eye = [g[3], g[4]];
+            legaia_engine_vm::battle_camera::apply_shake(
+                &mut eye,
+                &mut zone.shake_offset,
+                u32::from(world.camera_shake_amplitude()),
+                &mut zone.shake_seed,
+            );
+            g[3] = eye[0];
+            g[4] = eye[1];
+        }
+
+        // 6. The focus edge clamp (`FUN_801DAA50`), which every retail
+        //    caller of the ease and the snap runs immediately after them.
+        //    Keeps the focus inside the latched walk region widened by the
+        //    camera's visible-tile window, so the lens never pans past a
+        //    room's edge. The script focus override (`_DAT_8007B628` /
+        //    `_DAT_8007B62A`) has no port-side writer yet, so it is passed
+        //    as "unset".
+        if gated {
+            zone.focus_held = Some([g[6], g[8]]);
+            return;
+        }
+        let clamped = crate::camera_zone::clamp_focus(
+            [g[6], g[8]],
+            zone.config.mode_nibble(),
+            zone.attrs.kind != 0,
+            zone.attrs.box_bytes,
+            zone.view_window,
+            world.scene_save_allowed(),
+            [0, 0],
+        );
+        g[6] = clamped[0];
+        g[8] = clamped[1];
+        if snapped && let Some([fx, fz]) = zone.seat_focus.take() {
+            g[6] = fx;
+            g[8] = fz;
+        }
+        zone.focus_held = Some([g[6], g[8]]);
+        zone.active = true;
+    }
+
+    /// Op-`0x45` APPLY: hand the camera back to the **follow shot**.
+    ///
+    /// Retail's arm (`0x801DF210` in the field overlay) composes the zone
+    /// camera for the player into the staging block (`FUN_801DAB90(player,
+    /// 0x801C6EA8)`), runs the focus edge clamp over the staged focus
+    /// (`FUN_801DAA50`), and hands the block to `FUN_801DE084` - the same
+    /// commit the CONFIGURE arm makes: with a zero trigger every staged axis
+    /// is copied straight into the camera globals and the live movers are
+    /// cancelled; otherwise a mover glides the globals there over `trigger`
+    /// frames with `mode` as its curve. It changes no camera mode: the
+    /// follow ease keeps running from the player's handler afterwards.
+    ///
+    /// So APPLY is where a script **releases** a shot it staged, and several
+    /// scenes run it from a looping record every frame to keep the camera
+    /// pinned on the composed follow pose. Reading it as "commit the staged
+    /// shot and go cinematic" froze the camera on the terrain-less fallback
+    /// pose (`H = 512`, the zone-miss depth) in every such scene.
+    ///
+    /// A zero trigger arms the follow camera's snap, which composes, clamps
+    /// and copies on this frame's [`Camera::tick`]; a non-zero trigger
+    /// composes now and arms the mover toward that pose.
+    ///
+    /// PORT: FUN_801DE084
+    /// REF: FUN_801DAB90, FUN_801DAA50
+    fn apply_follow_shot<W: CameraWorld + ?Sized>(
+        &mut self,
+        world: &W,
+        apply_trigger: i16,
+        mode: u8,
+    ) {
+        self.mode = CameraMode::Follow;
+        self.script_owns_focus = false;
+        if apply_trigger == 0 || !zone_camera_scene(world) {
+            self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        }
+        // Bring the block up to date (an arrival still pending re-queries the
+        // tile) before composing from it.
+        self.prime_zone_before_script(world);
+        let Some((target, live_yaw)) = self.compose_follow_globals(world) else {
+            self.mover = None;
+            self.zone.snap_pending = true;
+            return;
+        };
+        if let Some(ly) = live_yaw {
+            self.globals.0[1] = i32::from(ly);
+        }
+        let mut mv = self.mover.take().unwrap_or_default();
+        mv.arm(self.globals.0, target, apply_trigger as u16, mode);
+        self.mover = Some(mv);
+    }
+
+    /// The ten camera globals the follow camera's snap would write for the
+    /// player's current position: the composed pitch / yaw / eye trio / `H`
+    /// (`FUN_801DAB90`), the focus on the player (a mode-5 shot's on its
+    /// anchor tile) with the edge clamp (`FUN_801DAA50`) applied, and focus
+    /// Y at `0` (`FUN_801DE084` clears it), plus the live yaw the mode-4
+    /// composer rewrites (see [`crate::camera_zone::Composed::live_yaw`]).
+    /// `None` without a player actor.
+    fn compose_follow_globals<W: CameraWorld + ?Sized>(
+        &self,
+        world: &W,
+    ) -> Option<([i32; AXIS_COUNT], Option<i16>)> {
+        use crate::camera_zone::{ComposeInputs, compose, snap};
+        let (x, y, z) = world.player_world_pos()?;
+        let zone = &self.zone;
+        let composed = compose(
+            &zone.config,
+            &ComposeInputs {
+                player: [x, y, z],
+                floor_y: world.sample_field_floor_height_static(x, z),
+                attr_box: zone.attrs.box_bytes,
+                live_pitch: self.globals.0[0],
+                live_yaw: self.globals.0[1],
+                half_eye_y: world.scene_save_allowed(),
+            },
+        );
+        let (p, yw, eye, h) = snap(&composed.target);
+        let mut g = self.globals.0;
+        g[0] = p;
+        g[1] = yw;
+        g[3..6].copy_from_slice(&eye);
+        g[9] = h;
+        let focus = if zone.config.mode_nibble() == 5 {
+            [
+                -(zone.config.anchor_x << 7) - 0x40,
+                -(zone.config.anchor_z << 7) - 0x40,
+            ]
+        } else {
+            [-x, -z]
+        };
+        let clamped = crate::camera_zone::clamp_focus(
+            focus,
+            zone.config.mode_nibble(),
+            zone.attrs.kind != 0,
+            zone.attrs.box_bytes,
+            zone.view_window,
+            world.scene_save_allowed(),
+            [0, 0],
+        );
+        g[6] = clamped[0];
+        g[7] = 0;
+        g[8] = clamped[1];
+        Some((g, composed.live_yaw))
+    }
+
+    /// Run the arrival snap now if it is still pending in a terrain-bearing
+    /// free-roam scene, so a scripted beat that is about to capture the live
+    /// globals sees the zone camera's pose rather than the field reset.
+    fn prime_zone_before_script<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        if self.zone.snap_pending && self.mode == CameraMode::Follow && zone_camera_scene(world) {
+            self.zone_follow_tick(world, 1);
+        }
+    }
+
+    /// The composed follow yaw, PSX 12-bit units (sign-extended from the
+    /// live halfword), or `None` while the zone camera is not driving the
+    /// frame.
+    pub fn zone_follow_yaw_units(&self) -> Option<i32> {
+        self.zone
+            .active
+            .then_some(i32::from(self.globals.0[1] as i16))
+    }
+
+    /// Reset the retail camera globals to their field-entry values and drop
+    /// any glide in flight - the engine side of `FUN_80025C24`, called when a
+    /// scene is entered so a previous scene's shot can't leak into the next.
+    ///
+    /// PORT: FUN_80025C24
+    pub fn reset_globals_for_scene_entry(&mut self) {
+        // Six stores in retail: the three angles and the eye trio. The focus
+        // trio is re-pinned to the player by the follow camera on the next
+        // frame and `H` keeps the register's live value, so a scene whose
+        // entry beat glides slot `9` starts that glide from the `H` the
+        // player was just looking through, as retail does.
+        for axis in RetailCamGlobals::FIELD_RESET_AXES {
+            self.globals.0[axis] = RetailCamGlobals::FIELD_RESET.0[axis];
+        }
+        if self.globals.0[9] == 0 {
+            self.globals.0[9] = RetailCamGlobals::FIELD_RESET.0[9];
+        }
+        self.mover = None;
+        self.script_owns_focus = false;
+        // The field draw context (`FUN_801DE37C`) re-stamps the visible-tile
+        // window every field entry runs through, *before* the new scene's
+        // script can retune it with op `0x46`. Without the re-stamp the
+        // window was seeded once at `Camera::new` and then only ever
+        // overwritten, so a scene that scripts a wide window handed it to
+        // the next scene and widened that scene's focus edge clamp - the
+        // primer `route_camera_events` already names in its op-`0x46` arm.
+        // Both hosts reach this through their scene-entry reset.
+        self.zone.view_window = {
+            let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
+            [x0, z0, x1, z1]
+        };
+        // The shake jitter pair lives in the scene control block (`+0x18` /
+        // `+0x1C`), which the scene reset `FUN_8003A024` zeroes. The eye trio
+        // was just re-seeded, so a pair left over from the departing scene
+        // must not be subtracted back out of it on the next ease.
+        self.zone.shake_offset = [0, 0];
+        // The arrival actor (`FUN_801DBE9C`) re-pins the focus and snaps the
+        // composed shot in on the first frame of the new scene.
+        self.zone.arm_arrival();
+    }
+
+    /// The whole camera-side reset a **direct** scene entry owes - a scene
+    /// picker, a dev warp, a load from a save - as opposed to the in-world
+    /// transition a `SceneEntered` tick event reports, which every host
+    /// already answers with [`Self::reset_globals_for_scene_entry`].
+    ///
+    /// `SceneHost::enter_field_scene` clears the *world's* camera state (the
+    /// timeline and the op-`0x45` param set), so the next frame resolves to
+    /// the follow arm; but the follow view composes from THIS camera's
+    /// globals, and without this call an interrupted cutscene left its pitch
+    /// / yaw / eye trio in them and its `script_owns_focus` latch set, so
+    /// the new scene was framed by the old scene's shot and never re-pinned
+    /// to the player. The cinematic mode and angles go too. The user's own
+    /// orbit / tilt / zoom are intent, not scene state, and stay.
+    pub fn reset_for_scene_entry(&mut self) {
+        self.reset_globals_for_scene_entry();
+        self.mode = CameraMode::Follow;
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.roll = 0.0;
+    }
+
+    /// The camera azimuth to feed
+    /// `legaia_engine_core::world::FieldLocomotion::camera_azimuth`
+    /// this frame, in PSX 12-bit units (`4096` = full turn): scripted yaw +
+    /// the user's manual orbit + the host renderer's fixed framing bias.
+    /// This is what keeps the d-pad -> world-direction remap ("screen up
+    /// walks away from the camera") tracking the yaw the player actually
+    /// sees, including after a drag-orbit. All three terms default to `0`,
+    /// so headless hosts keep the historical `yaw`-only feed bit-identical.
+    pub fn compass_azimuth_units(&self) -> u16 {
+        self.compass_azimuth_with_orbit(self.manual_orbit)
+    }
+
+    /// [`Self::compass_azimuth_units`] for `world`'s mode: the kingdom
+    /// overworld frames its walk camera without the user's orbit
+    /// (`camera_view::resolve_field_camera`), so the d-pad remap there must
+    /// not turn by it either, or "up" stops walking up-screen.
+    pub fn compass_azimuth_units_for<W: CameraWorld + ?Sized>(&self, world: &W) -> u16 {
+        if world.scene_mode() == crate::mode::SceneMode::WorldMap {
+            self.compass_azimuth_with_orbit(0.0)
+        } else {
+            self.compass_azimuth_units()
+        }
+    }
+
+    fn compass_azimuth_with_orbit(&self, manual_orbit: f32) -> u16 {
+        // A host that renders the retail follow view declares it through a
+        // non-zero `render_yaw_bias`; while the zone camera composes that
+        // view, the bias it actually sees is the live follow yaw's negation
+        // (compass sense = `-psi`), not the pinned anchor value.
+        let bias = match self.zone_follow_yaw_units() {
+            Some(yaw) if self.render_yaw_bias != 0.0 => {
+                -(yaw as f32) / 4096.0 * std::f32::consts::TAU
+            }
+            _ => self.render_yaw_bias,
+        };
+        let az = (self.yaw + manual_orbit + bias) / std::f32::consts::TAU * 4096.0;
+        az.rem_euclid(4096.0) as u16
+    }
+
+    /// Whether the user's follow-camera knobs steer this frame: free-roam
+    /// field, with no cutscene timeline owning the camera. The same gate
+    /// [`Self::reset_for_free_roam`] and the field locomotion step run on,
+    /// so the camera is the player's exactly when the character is.
+    pub fn follow_knobs_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
+        matches!(world.scene_mode(), crate::mode::SceneMode::Field)
+            && !world.cutscene_timeline_active()
+    }
+
+    /// Swing [`Self::manual_orbit`] by `radians` (compass sense), when the
+    /// knobs are live. Returns whether the gesture was taken.
+    pub fn orbit_by<W: CameraWorld + ?Sized>(&mut self, world: &W, radians: f32) -> bool {
+        if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);
+        true
+    }
+
+    /// Swing [`Self::manual_orbit`] by `radians` from the host's **debug
+    /// orbit** vantage (the `F3` toggle both hosts carry).
+    ///
+    /// The debug orbit is not a second yaw: both hosts compose their vantage
+    /// as `fixed diagonal + manual_orbit`, so the drag has to land on the
+    /// same field the follow camera reads, or leaving the toggle snaps the
+    /// view by however far the two drifted apart. Unlike [`Self::orbit_by`]
+    /// this is NOT cutscene-gated - the debug vantage is a dev viewpoint and
+    /// ignores whoever owns the scripted camera - but it is still field-only,
+    /// so a drag on the world map or in battle cannot rewrite the compass the
+    /// locomotion remap reads. Returns whether the gesture was taken.
+    pub fn debug_orbit_by<W: CameraWorld + ?Sized>(&mut self, world: &W, radians: f32) -> bool {
+        if !matches!(world.scene_mode(), crate::mode::SceneMode::Field) {
+            return false;
+        }
+        self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);
+        true
+    }
+
+    /// Tip [`Self::manual_tilt`] by `radians` (positive = further down),
+    /// when the knobs are live. Returns whether the gesture was taken.
+    pub fn tilt_by<W: CameraWorld + ?Sized>(&mut self, world: &W, radians: f32) -> bool {
+        if !self.follow_knobs_live(world) {
+            return false;
+        }
+        self.manual_tilt =
+            (self.manual_tilt + radians).clamp(-follow_knobs::TILT_LIMIT, follow_knobs::TILT_LIMIT);
+        true
+    }
+
+    /// Scale [`Self::manual_zoom`] by `factor` (`> 1` pulls the eye back),
+    /// when the knobs are live. Returns whether the gesture was taken.
+    pub fn zoom_by<W: CameraWorld + ?Sized>(&mut self, world: &W, factor: f32) -> bool {
+        if !self.follow_knobs_live(world) || !factor.is_finite() || factor <= 0.0 {
+            return false;
+        }
+        self.manual_zoom =
+            (self.manual_zoom * factor).clamp(follow_knobs::ZOOM_MIN, follow_knobs::ZOOM_MAX);
+        true
+    }
+
+    /// Put the three knobs back at their retail-identical defaults (the
+    /// coarse distance preset is a persisted option and stays).
+    pub fn reset_follow_knobs(&mut self) {
+        self.manual_orbit = 0.0;
+        self.manual_tilt = 0.0;
+        self.manual_zoom = 1.0;
+    }
+
+    /// Drive the cinematic motion script for one tick. Optional layer above
+    /// [`Camera::tick`] - engines that want to pre-bake camera paths upload
+    /// motion-VM bytecode and call this each frame.
+    pub fn tick_script(&mut self, bytecode: &[u8]) -> StepResult {
+        step(&mut self.motion_state, self.motion_target, bytecode)
+    }
+
+    /// Snap the camera back to the follow default when the field is in
+    /// free-roam (a plain [`SceneMode::Field`] with no cutscene timeline owning
+    /// the scene).
+    ///
+    /// An opening / scripted cutscene folds op-`0x45` Camera Configure yaw into
+    /// [`Self::yaw`] and flips [`Self::mode`] to [`CameraMode::Cinematic`] (see
+    /// [`Self::route_camera_events`]). That stale cinematic yaw must not leak
+    /// into free-roam: a renderer frames free-roam field with a fixed follow
+    /// camera, and hosts feed [`Self::yaw`] into
+    /// `legaia_engine_core::world::FieldLocomotion::camera_azimuth`
+    /// to remap the d-pad camera-relative - so a non-zero leaked yaw rotates
+    /// the controls off the on-screen camera (the New Game prologue → Rim Elm
+    /// hand-off left the d-pad ~180deg inverted). Retail returns control on the
+    /// follow camera; this restores it.
+    ///
+    /// Gated on `!cutscene_timeline_active()` (the same gate that unlocks
+    /// `legaia_engine_core::world::World::step_field_locomotion`),
+    /// so an active cutscene's own beats keep their configured yaw. No-op
+    /// outside free-roam field (world map / battle / menu / cutscene).
+    pub fn reset_for_free_roam<W: CameraWorld + ?Sized>(&mut self, world: &W) {
+        if matches!(world.scene_mode(), crate::mode::SceneMode::Field)
+            && !world.cutscene_timeline_active()
+        {
+            self.mode = CameraMode::Follow;
+            self.yaw = 0.0;
+            self.pitch = 0.0;
+            self.roll = 0.0;
+        }
+    }
+}
+
+/// Whether a world carries the per-scene field terrain the zone camera
+/// queries - the walk-region table, the MAN section-3 zone table, or the
+/// collision grid the floor sampler reads.
+/// Whether the zone-driven follow camera owns this world's walk camera: a
+/// walkable scene - the field or the kingdom overworld - with field terrain.
+///
+/// The overworld is not a separate camera. Retail runs it as an ordinary
+/// mode-`0x03` field-run scene through the field overlay's own per-frame
+/// chain, and its walk camera is the zone camera: on the three resident
+/// overworld states (`keikoku_chest_preload` on `map01`,
+/// `sebucus_overworld_resident` on `map02`, `karisto_overworld_resident` on
+/// `map03`) the live pitch `0x8007B790`, yaw, eye trio `0x800840B8/BC/C0` and
+/// GTE `H` `0x8007B6F4` equal the `FUN_801DAB90` staging descriptor at
+/// `0x801F3580` exactly, the block at `0x8007B606` carries `H = 0x170`, and
+/// the eye X is the composer's `-(depth >> 7)` on all three.
+pub fn zone_camera_scene<W: CameraWorld + ?Sized>(world: &W) -> bool {
+    matches!(
+        world.scene_mode(),
+        crate::mode::SceneMode::Field | crate::mode::SceneMode::WorldMap
+    ) && has_field_terrain(world)
+}
+
+fn has_field_terrain<W: CameraWorld + ?Sized>(world: &W) -> bool {
+    !world.zone_table().is_empty()
+        || !world.map_region_block().is_empty()
+        || !world.collision_grid().is_empty()
+}
+
+/// The default camera-zone parameter set the tile re-query `FUN_801DE3E0`
+/// installs when no camera-region record covers the player's tile (the
+/// same nine stores sit in `FUN_801DBE9C`'s dev-only query leg). Raw values
+/// and the `0x8007B607..` globals they land in; the typed form is
+/// [`crate::camera_zone::CameraZoneConfig::ZONE_MISS`].
+///
+/// | field | global | value |
+/// |---|---|---|
+/// | `mode` | `DAT_8007B607` | `0x10` |
+/// | `param_b608` | `DAT_8007B608` | `0x10` |
+/// | `param_b609` | `DAT_8007B609` | `0x30` |
+/// | `param_b60a` | `DAT_8007B60A` | `0x51` |
+/// | `param_b60b` | `DAT_8007B60B` | `0x20` |
+/// | `angle` | `DAT_8007B60C` | `0x1B8` |
+/// | `b610` | `DAT_8007B610` | `0` |
+/// | `b614` | `DAT_8007B614` | `0x4000` |
+/// | `b618` | `DAT_8007B618` | `0x300` |
+///
+/// (`0x1B8` is the same default pitch `FUN_80025C24` seeds at scene entry;
+/// see [`Camera::reset_globals_for_scene_entry`].)
+// REF: FUN_801DBE9C (miss-path stores at 0x801dbf18..0x801dbf74)
+pub const CAMERA_ZONE_DEFAULTS: [(u32, u32); 9] = [
+    (0x8007B607, 0x10),
+    (0x8007B608, 0x10),
+    (0x8007B609, 0x30),
+    (0x8007B60A, 0x51),
+    (0x8007B60B, 0x20),
+    (0x8007B60C, 0x1B8),
+    (0x8007B610, 0),
+    (0x8007B614, 0x4000),
+    (0x8007B618, 0x300),
+];
+
+/// What one [`camera_zone_arrival_tick`] decided.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraZoneArrival {
+    /// Countdown still running - nothing else happened, actor not flagged.
+    Waiting,
+    /// Countdown expired: the player tile was queried and a camera-region
+    /// record hit - load it (`FUN_801DBC20`), then run the follow update.
+    LoadZoneConfig,
+    /// Countdown expired with no covering record: install
+    /// [`CAMERA_ZONE_DEFAULTS`], then run the follow update.
+    LoadDefaults,
+}
+
+/// The camera-zone **arrival tick** - one frame of `FUN_801DBE9C`'s
+/// query arm (the `_DAT_8007B868 != 0` leg). `_DAT_8007B868` is the
+/// dev/dual-mode gate and retail boots with it `0`, so **retail never runs
+/// this arm**: its `== 0` leg counts the same `+0x54` countdown down, then
+/// re-pins the focus to the player and snaps the composed shot in through
+/// `FUN_801DB8EC` without touching the parameter block. The retail-side
+/// zone query is the script-driven `FUN_801DE3E0` ([`crate::camera_zone`]).
+///
+/// PORT: FUN_801dbe9c
+///
+/// Decrements the actor's `+0x54` countdown; while it has not reached
+/// `-1` the tick returns [`CameraZoneArrival::Waiting`] (and retail
+/// neither flags the actor nor touches the camera). On expiry the player
+/// tile quantises as `(pos - 0x40) >> 7` (the region-refresh form, NOT
+/// the walk-on dispatch's raw `>> 7`) and the zone-record query
+/// (`FUN_801DBA20` = [`crate::field_regions::zone_query`]) picks between
+/// the record load and [`CAMERA_ZONE_DEFAULTS`]. Either way the follow
+/// update (`FUN_801DB8EC` + the negated-focus store, see
+/// [`Camera::tick`]) runs and the actor's `+0x10` flags gain bit `8`.
+///
+/// Provenance: `overlay_0897_locomotion_cluster.txt` at `0x801dbe9c..
+/// 0x801dc0b8` (the committed `FUN_801DBEC4` name is a mid-function
+/// label of this body, not its entry).
+///
+/// REPLACED-BY: [`ZoneFollow::arm_arrival`] and the zone-follow tick that
+/// consumes it, which do the retail leg's job - re-pin the focus to the
+/// player and snap the composed shot in - and run the tile query from the
+/// same tick through [`crate::field_regions::zone_query`].
+///
+/// This is the stronger claim, not "nothing calls it". The body ported here
+/// is the leg the entry gate selects when `_DAT_8007B868` is **non-zero**
+/// (`lw v0,-0x4798(v0)` / `beq v0,zero,0x801dbff8` at `0x801dbe9c`), and that
+/// word is the dev / dual-mode gate retail boots clear - the same gate that
+/// closes the world-map dev menu's MAP_CHANGE row and selects the `h:\`
+/// host-file asset arm. Retail therefore always takes the `0x801dbff8` leg,
+/// which never touches the camera parameter block. A call site here would
+/// host a leg the retail machine does not run, beside the leg the engine
+/// already runs.
+pub fn camera_zone_arrival_tick(
+    countdown: &mut i16,
+    player_pos: (i16, i16),
+    zone_hit: impl FnOnce(i32, i32) -> bool,
+) -> CameraZoneArrival {
+    *countdown = countdown.wrapping_sub(1);
+    if *countdown != -1 {
+        return CameraZoneArrival::Waiting;
+    }
+    let tile_x = i32::from(player_pos.0 - 0x40) >> 7;
+    let tile_z = i32::from(player_pos.1 - 0x40) >> 7;
+    if zone_hit(tile_x, tile_z) {
+        CameraZoneArrival::LoadZoneConfig
+    } else {
+        CameraZoneArrival::LoadDefaults
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zone_arrival_counts_down_then_queries_at_region_tile() {
+        let mut cd: i16 = 2;
+        // Two waiting frames (2 -> 1, 1 -> 0), then expiry at -1.
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0, 0), |_, _| true),
+            CameraZoneArrival::Waiting
+        );
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0, 0), |_, _| true),
+            CameraZoneArrival::Waiting
+        );
+        let mut seen = None;
+        let r = camera_zone_arrival_tick(&mut cd, (1838, 2526), |x, z| {
+            seen = Some((x, z));
+            true
+        });
+        assert_eq!(r, CameraZoneArrival::LoadZoneConfig);
+        // Region-refresh quantisation: (pos - 0x40) >> 7.
+        assert_eq!(seen, Some(((1838 - 0x40) >> 7, (2526 - 0x40) >> 7)));
+    }
+
+    #[test]
+    fn zone_arrival_miss_installs_defaults() {
+        let mut cd: i16 = 0;
+        assert_eq!(
+            camera_zone_arrival_tick(&mut cd, (0x40, 0x40), |_, _| false),
+            CameraZoneArrival::LoadDefaults
+        );
+        // The default set includes the scene-entry pitch and GTE far plane.
+        assert!(CAMERA_ZONE_DEFAULTS.contains(&(0x8007B60C, 0x1B8)));
+        assert_eq!(CAMERA_ZONE_DEFAULTS.len(), 9);
+    }
+
+    /// Scene entry restores the `FUN_80025C24` field defaults so a departing
+    /// scene's shot cannot leak into the next one - the six axes retail
+    /// writes. Focus and `H` are the scene's to establish, so they survive.
+    #[test]
+    fn scene_entry_resets_globals_to_field_defaults() {
+        let mut c = Camera {
+            globals: RetailCamGlobals([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]),
+            ..Default::default()
+        };
+        c.reset_globals_for_scene_entry();
+        assert_eq!(c.globals.angles(), [0x1B8, 0x64, 0]);
+        assert_eq!(c.globals.tr_eye(), [0, -256, 16420]);
+        assert_eq!(c.globals.0[6..=8], [7, 8, 9], "focus is not a reset axis");
+        assert_eq!(c.globals.h(), 10, "H keeps the register's live value");
+    }
+
+    /// The field draw context (`FUN_801DE37C`) re-stamps the visible-tile
+    /// window on every field entry, so a scene that scripted a wide window
+    /// through op `0x46` cannot hand it to the next scene's focus edge clamp.
+    #[test]
+    fn scene_entry_restamps_the_field_draw_context_view_window() {
+        let mut c = Camera::new();
+        let default = {
+            let (x0, z0, x1, z1) = crate::mode_entry_init::field_draw_context().view_window;
+            [x0, z0, x1, z1]
+        };
+        assert_eq!(c.zone.view_window, default, "boot seeds the field box");
+        // A script (op `0x46`) widens the window in the departing scene.
+        c.zone.view_window = [-30, -30, 30, 30];
+        c.reset_globals_for_scene_entry();
+        assert_eq!(
+            c.zone.view_window, default,
+            "the next scene starts from the draw context's own box"
+        );
+    }
+
+    /// A camera that never carried an `H` (the boot default, or a headless
+    /// host) gets the field register value, never `0`: a glide beat naming
+    /// slot `9` must start from the `H` retail was projecting through.
+    #[test]
+    fn scene_entry_seeds_a_missing_h_with_the_field_value() {
+        let mut c = Camera {
+            globals: RetailCamGlobals([0; AXIS_COUNT]),
+            ..Default::default()
+        };
+        c.reset_globals_for_scene_entry();
+        assert_eq!(c.globals.h(), 512);
+        assert_eq!(
+            Camera::new().globals.h(),
+            512,
+            "the boot default carries it too"
+        );
+    }
+
+    #[test]
+    fn distance_cycle_and_labels_round_trip() {
+        let mut d = CameraDistance::Retail;
+        for _ in 0..3 {
+            assert_eq!(CameraDistance::from_label(d.label()), Some(d));
+            d = d.cycle();
+        }
+        assert_eq!(d, CameraDistance::Retail, "cycle is a 3-cycle");
+        assert!(CameraDistance::Retail.scale() == 1.0);
+        assert!(CameraDistance::Far.scale() > 1.0);
+        assert!(CameraDistance::Farther.scale() > CameraDistance::Far.scale());
+    }
+
+    #[test]
+    fn compass_azimuth_defaults_to_zero_and_sums_bias() {
+        let c = Camera::default();
+        assert_eq!(c.compass_azimuth_units(), 0, "defaults keep the old feed");
+        let c = Camera {
+            yaw: std::f32::consts::PI,
+            manual_orbit: std::f32::consts::FRAC_PI_2,
+            render_yaw_bias: std::f32::consts::FRAC_PI_2,
+            ..Default::default()
+        };
+        // pi + pi/2 + pi/2 = full turn -> wraps to 0.
+        assert_eq!(c.compass_azimuth_units(), 0);
+    }
+
+    /// The composed pitch is continuous in the tilt and exact at zero, even
+    /// for a scene pitch outside the knob range.
+    #[test]
+    fn composed_pitch_is_exact_at_zero_tilt_and_clamps_otherwise() {
+        use follow_knobs::{PITCH_MAX, PITCH_MIN, composed_pitch};
+        assert_eq!(composed_pitch(0.69, 0.0), 0.69);
+        assert_eq!(
+            composed_pitch(0.05, 0.0),
+            0.05,
+            "an out-of-range scene pitch passes"
+        );
+        assert_eq!(composed_pitch(1.5, 0.0), 1.5);
+        assert_eq!(composed_pitch(0.69, 5.0), PITCH_MAX);
+        assert_eq!(composed_pitch(0.69, -5.0), PITCH_MIN);
+        assert_eq!(
+            composed_pitch(1.5, 5.0),
+            1.5,
+            "widened range ends at the scene pitch"
+        );
+        assert!(
+            (composed_pitch(0.69, 0.001) - 0.691).abs() < 1e-6,
+            "no snap"
+        );
+    }
+
+    /// A direct scene entry (picker / warp / load) after an interrupted
+    /// cutscene: the shot's globals and the focus latch are gone, the follow
+    /// camera owns the frame again, and the user's knobs survive.
+    #[test]
+    fn reset_for_scene_entry_drops_an_interrupted_shot_and_keeps_the_knobs() {
+        let mut c = Camera {
+            mode: CameraMode::Cinematic,
+            yaw: 1.0,
+            pitch: 0.4,
+            roll: 0.1,
+            manual_orbit: 0.5,
+            manual_tilt: 0.2,
+            manual_zoom: 1.5,
+            ..Default::default()
+        };
+        // The interrupted shot: angles, eye trio, a focus the script owns.
+        c.globals.0[0] = 700;
+        c.globals.0[1] = -900;
+        c.globals.0[2] = 50;
+        c.globals.0[3] = -1234;
+        c.globals.0[4] = 2345;
+        c.globals.0[5] = 20000;
+        c.script_owns_focus = true;
+        c.mover = Some(CameraMover::default());
+        c.reset_for_scene_entry();
+        for axis in RetailCamGlobals::FIELD_RESET_AXES {
+            assert_eq!(
+                c.globals.0[axis],
+                RetailCamGlobals::FIELD_RESET.0[axis],
+                "axis {axis}"
+            );
+        }
+        assert!(!c.script_owns_focus, "the follow camera re-pins the focus");
+        assert!(c.mover.is_none(), "no glide survives");
+        assert_eq!(c.mode, CameraMode::Follow);
+        assert_eq!((c.yaw, c.pitch, c.roll), (0.0, 0.0, 0.0));
+        assert_eq!(
+            (c.manual_orbit, c.manual_tilt, c.manual_zoom),
+            (0.5, 0.2, 1.5),
+            "user framing intent is kept"
+        );
+    }
+
+    #[test]
+    fn tick_script_advances_motion_state() {
+        let mut c = Camera::default();
+        c.motion_state.speed = 2;
+        c.motion_target = MotionTarget {
+            x: 4,
+            y: 0,
+            z: 0,
+            id: 0,
+        };
+        // 0x41 compass walk: direction 6 (+X), div 4, two units (total 8
+        // speed units); speed 2 at rate 0x40 moves X by 0x40*2/4 = 32.
+        let bc = [0x41, 0x06, 0x02];
+        let r1 = c.tick_script(&bc);
+        assert_eq!(r1, StepResult::Yield);
+        assert_eq!(c.motion_state.world_x, 32);
+    }
+}

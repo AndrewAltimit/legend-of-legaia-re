@@ -14,7 +14,7 @@
 #
 # The [[event]] rows record the player intent that walks the spine on a live
 # host ("hold Up" toward the south gate, then toward the keikoku portal);
-# pad 0x0010 = D-pad Up (crates/engine-core/src/input.rs PadButton::Up). The
+# pad 0x0010 = D-pad Up (crates/engine-system/src/input.rs PadButton::Up). The
 # disc-gated diff drives the transitions by seating the player on the trigger
 # tiles (the walk-on dispatch keys off the tile crossing, not the pad), so these
 # events document the traversal; the determinism gate expands them.

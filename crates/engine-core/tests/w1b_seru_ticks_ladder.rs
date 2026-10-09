@@ -21,7 +21,6 @@
 
 use legaia_asset::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::cast_module_ticks::SUMMON_SEAT;
 use std::path::PathBuf;
 
 /// The six ids this lane ports, and the PROT entry each resolves to.
@@ -41,6 +40,9 @@ const IDS: [(u8, u32); 6] = [
 /// past this is a body that never reported done.
 const MAX_FRAMES: usize = 1024;
 
+/// The hosts seat the summon creature at `8 + party_count`.
+const LONE_SUMMON_SLOT: u8 = 9;
+
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
     for base in ["extracted", "../../extracted"] {
@@ -52,10 +54,13 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-/// A minimal live battle with a party seat, four monster seats and the summon
-/// seat above them. All six bodies read the caster, the victim and
-/// `actor_table[7]`, and three of them sweep seats `3..=6`, so the row has to
-/// be wide enough or the sweep arm writes nothing and the ladder goes vacuous.
+/// A minimal live battle laid out the way the engine seats a lone member:
+/// the party seat, four monster seats compacted right after it (`1..=4`) and
+/// the summon seat the hosts use (`8 + party_count`). All six bodies read the
+/// caster, the victim and retail's `actor_table[7]`, and three of them sweep
+/// retail's seats `3..=6` - which the cast seam's retail-shaped row maps onto
+/// engine slots `1..=4` - so the row has to be wide enough or the sweep arm
+/// writes nothing and the ladder goes vacuous.
 fn battle_world() -> World {
     let mut world = World {
         party: legaia_engine_core::world::PartyState {
@@ -68,22 +73,26 @@ fn battle_world() -> World {
         world.actors.push(Actor::default());
     }
     world.mode = SceneMode::Battle;
-    for slot in [0usize, 3, 4, 5, 6, SUMMON_SEAT as usize] {
+    for slot in [0usize, 1, 2, 3, 4, LONE_SUMMON_SLOT as usize] {
         world.actors[slot].active = true;
         world.actors[slot].battle.max_hp = 400;
         world.actors[slot].battle.hp = 400;
         world.actors[slot].battle.mp = 99;
         world.actors[slot].battle.liveness = 1;
     }
-    world.actors[0].battle.active_target = 3;
+    for slot in 1..=4 {
+        world.actors[slot].battle_monster_id = Some(1);
+    }
+    world.actors[0].battle.active_target = 1;
     world.battle_ctx.active_actor = 0;
+    world.casting.summon_actor_slot = Some(LONE_SUMMON_SLOT);
     world
 }
 
 /// The fields these bodies write that survive `write_cast_actor_state`, for
 /// the seats they write them on.
 fn choreography_probe(w: &World) -> Vec<(u8, u8, u8, u8)> {
-    (0..8u8)
+    (0..=LONE_SUMMON_SLOT)
         .map(|s| {
             let a = &w.actors[s as usize];
             (

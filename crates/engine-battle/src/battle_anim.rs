@@ -22,12 +22,12 @@
 //! total more than `0xC00`. The per-tick phase
 //! advance is retail-pinned when the clip carries its entry's rate byte:
 //! `FUN_80047430` advances the node's 12.4 cursor by
-//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame (`>> 2` on
-//! the idle branch), where `actor[+0x21D]` is the per-actor anim-rate byte
+//! `(frame_dt * actor[+0x21D] * record[+0x78]) >> 1` per frame (`>> 2` only
+//! for a Slowed actor on idle), where `actor[+0x21D]` is the per-actor anim-rate byte
 //! (normal `8` - the arts slow-motion channel, see
-//! `legaia_engine_vm::battle_anim_rate`). [`step_for_rate`] is the idle
+//! `legaia_engine_vm::battle_anim_rate`). [`step_for_rate`] is the Slowed-idle
 //! advance at the normal rate; [`MonsterAnimPlayer::tick_rated`] applies the
-//! rate and the idle/action branch split. A zero clip rate (clip built
+//! rate and the branch split. A zero clip rate (clip built
 //! without entry context) keeps the historical display default.
 
 use legaia_anm::PoseFrame;
@@ -149,20 +149,22 @@ pub struct HitEventSource {
 }
 
 /// Retail-pinned **base** per-tick phase advance for an entry rate byte:
-/// the `FUN_80047430` idle-branch cursor delta at the normal anim rate -
+/// the `FUN_80047430` `>> 2` (Slowed-idle) cursor delta at the normal anim rate -
 /// `(dt * 8 * rate) >> 2` per game frame, per engine tick `2 * rate` units
 /// of 1/16 keyframe, scaled to this player's 8.8 phase (`rate * 32`). A
 /// zero rate (no entry context) falls back to the historical display
 /// default (`64`, which equals clip rate `2`).
 ///
-/// This is the **idle** advance; a playing action clip runs double
-/// (`>> 1` vs `>> 2` at `0x800476EC..0x8004775C`), and both scale by the
+/// This is the **Slowed idle** advance; every other clip - an ordinary idle
+/// loop included - runs double (`>> 1` vs `>> 2` at `0x800476D8..0x8004775C`:
+/// the `>> 2` arm needs status `+0x16E & 0x1000` *and* `+0x1D9 == 0`), and
+/// both scale by the
 /// per-actor anim-rate byte `actor[+0x21D]` - see
 /// [`MonsterAnimPlayer::tick_rated`] and
 /// `legaia_engine_vm::battle_anim_rate`.
 // PORT: FUN_80047430 - the per-frame anim-node cursor advance
-// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`, idle
-// branch `>> 2`), reduced to the idle case at the normal rate
+// (`node+0x68 += (DAT_1F800393 * actor[+0x21D] * record[+0x78]) >> 1`, Slowed
+// idle `>> 2`), reduced to the Slowed-idle case at the normal rate
 // `actor[+0x21D] = 8` with a 1-vsync engine tick.
 pub fn step_for_rate(rate: u8) -> u32 {
     if rate == 0 { 64 } else { rate as u32 * 32 }
@@ -378,18 +380,20 @@ impl MonsterAnimPlayer {
     }
 
     /// Advance one tick under the retail anim-rate law: the effective step is
-    /// `base_step * rate * (idle ? 1 : 2) / 8`
+    /// `base_step * rate * (slowed_idle ? 1 : 2) / 8`
     /// (`legaia_engine_vm::battle_anim_rate::scaled_anim_step`, mirroring the
-    /// `FUN_80047430` `>> 1` / `>> 2` branch pair). At the normal rate `8` an
-    /// action clip runs at retail's double-idle speed; the arts slow-motion
+    /// `FUN_80047430` `>> 1` / `>> 2` branch pair). At the normal rate `8`
+    /// every clip runs at double the base step, idle included; only a Slowed
+    /// actor's idle takes the base step itself. The arts slow-motion
     /// rates (`4` / `2` / `0`) stretch or freeze it.
     // REF: FUN_80047430 (the rate-scaled cursor advance)
     pub fn tick_rated(
         &mut self,
         rate: legaia_engine_vm::battle_anim_rate::AnimRate,
-        idle: bool,
+        slowed_idle: bool,
     ) -> PoseFrame {
-        let step = legaia_engine_vm::battle_anim_rate::scaled_anim_step(self.step, rate, idle);
+        let step =
+            legaia_engine_vm::battle_anim_rate::scaled_anim_step(self.step, rate, slowed_idle);
         self.advance(step)
     }
 

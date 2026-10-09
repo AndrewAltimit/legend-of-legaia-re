@@ -546,9 +546,15 @@ the ground (its `x0` / `x1` pair swapped), and the ground shaders -
 `field_far_bucket_depth` in `engine-render`, `fieldFarBucket` in
 `site/js/webgl-shaders.js` - scale the marked cell's depth into the thin slice
 at the far end of the range, keeping its own per-pixel order inside it. Flat
-far-bucket cells keep their real depth, so the post passes that read the depth
-buffer (the volumetric fog's soft edge, the lamp halos) see the floor where it
-is. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
+far-bucket cells keep their real depth to within half a percent: they are
+marked by a swapped `z0` / `z1` pair and pushed back by
+`field_ground::FLAT_FAR_BUCKET_PUSH` of their depth, so the post passes that
+read the depth buffer (the volumetric fog's soft edge, the lamp halos) still
+see the floor where it is, while a decal authored on the floor plane paints
+over it as retail's far bucket lets it. Without the push the two surfaces tie
+to the float rounding of the depth row: `doman`'s subtractive shadow strips
+(CLUT `0x7F84`, tpage `0x5F`), a tenth of a unit above the sunk ground at a
+view depth near 1700, lost every pixel and left the pub's corners lit. Disc-gated pin `crates/engine-core/tests/field_ground_far_bucket_disc.rs`.
 
 ### No draw channel is gated on object-grid bit `0x0800`
 
@@ -614,7 +620,7 @@ hardware, not detail:
   quotient, and the corner lands near `OFX + 2 * IR1` rather than at any
   sentinel - the classic PSX behind-the-lens smear.
 
-Port: [`legaia_engine_ui::billboard`](../../crates/engine-ui/src/billboard.rs),
+Port: [`legaia_engine_ui::billboard`](../../crates/render-kernels/src/billboard.rs),
 which runs both through the same `gte_divide` / `saturate_sxy` kernels the
 `Camera::transform` COP2 oracle is pinned against.
 
@@ -651,7 +657,7 @@ screen above or below the viewport still reads as on-screen.
 
 Port: [`legaia_engine_render::battle_on_screen`](../../crates/engine-render/src/battle_on_screen.rs)
 (`battle_actor_on_screen`), riding
-[`billboard::project_billboard`](../../crates/engine-ui/src/billboard.rs).
+[`billboard::project_billboard`](../../crates/render-kernels/src/billboard.rs).
 It is inert, and so is retail's. `0x8005126C` has **no reference of any kind**
 on the disc - no literal address word in any table or actor template, no `jal`,
 no `j`, no PC-relative branch, no `lui`+`addiu` materialisation - across
@@ -1845,6 +1851,22 @@ story-hidden gate's business. Like the hidden gate, the scale is baked with the
 scene's draw lists, so a script that ramps it mid-scene is not followed. Pinned
 by `crates/engine-core/tests/field_object_render_scale_disc.rs`.
 
+**A placed object draws at its actor's angles.** The scene-init sweep copies
+the record's `+0x08 / +0x0A / +0x0C` into the actor's `+0x24 / +0x26 / +0x28`
+(`FUN_8003A55C`), and case 5 composes those actor words, so a script that
+turns the object turns the drawn mesh. Op `0x38`'s simple path writes the
+compass entry into the executing context's own `+0x26` whatever kind of actor
+it is. `town0c`'s two exit rocks (partition-0 records 20 / 21) are the case
+that shows it: once system flag `0x141` is up their bind prologues run
+`38 83 00` / `38 87 00` and seat them at tiles `(22, 46)` / `(27, 45)`, so a
+retail state holds them at yaw `0x600` / `0xE00` where the `.MAP` authored
+`320` / `4000`. The port seeds each object-bind context's angles from its
+object (`man_field_scripts::object_script_bind_rots`), lets op `0x38` and
+`4C 48` move them, and both hosts turn a placed draw about its origin by the
+difference (`World::object_draw_turn_matrices`, `field_env::turn_placed_model`;
+the browser page reads `field_placement_turns`) before the scripted
+displacement (`World::object_draw_displacements`).
+
 **A placed object can lose its `.MAP` lift.** The scene-init sweep seats a
 bound object at `lut[nibble] + y_off` (`FUN_8003A55C`, `0x8003A640`), but the
 field actor tick `FUN_8003BC08` then rewrites `+0x16` with the floor sample
@@ -1967,7 +1989,7 @@ the shaders blend toward the far term in retail's order - DPCS runs on the packe
 the GPU texel multiply, so a textured prim's far term is `texel * far / 128` and an untextured
 prim pulls to the far colour directly. Driven by
 [`World::scene_depth_cue`](../../crates/engine-core/src/world/narration.rs) on the same prologue
-gate ([`fade::DepthCueRamp`](../../crates/engine-core/src/fade.rs) has the calibration); cleared
+gate ([`fade::DepthCueRamp`](../../crates/engine-system/src/fade.rs) has the calibration); cleared
 (`clear_depth_cue_ramp`) on every other scene, where the ramp-off path is pixel-identical to the
 pre-ramp render. See
 [`cutscene.md`](cutscene.md#full-scene-sepia-grade-the-gold-prologue-look) for the calibration
@@ -2034,7 +2056,7 @@ What removes geometry is retail's own rules, plus the projection's clip volume:
   ([below](#the-placed-object-near-reject)).
 - **The per-primitive rejects**: the near reject
   ([below](#the-per-primitive-near-reject)) and, in battle, the GPU
-  polygon-size limit ([below](#the-gpu-polygon-size-limit-in-battle)).
+  polygon-size limit ([below](#the-gpu-polygon-size-limit)).
 - **The projection's clip volume**, whose planes are sized to hold an entire
   scene from any vantage rather than to frame the current view:
 
@@ -2108,7 +2130,15 @@ a sky dome the camera looks at from outside paints its outer shell over the
 scene - korout's and retona's did, and so did the flag-seeded frames of
 several other scenes. The world map keeps both-sided draws (its continent
 terrain's winding parity is the world-map pass's, not the field pass's), as
-do battle and the minigame venues other than the dance hall. The dance hall is
+do the battle pass and the minigame venues other than the dance hall. The
+battle **bodies** are the exception inside the battle pass: each one goes
+through the same dispatcher with its render node's colour word, which never
+carries the double-sided bit, so both hosts cull a body's back faces per draw
+(`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the
+placement `nclip` on the play page) under the field's parity, word `2`. On an
+opaque body the depth test hides the far shell anyway; on a semi-transparent
+one - the near-camera ghost, a defeat fade - both shells add, and the body
+draws about twice retail's brightness. The dance hall is
 a field-shaped pass - game mode `0x19` is one of the three `FUN_80026CE4` runs
 the decoration pass `FUN_801F7088` for, and a live dance capture has its placed
 actors' colour words at `0x40808080` - so it is armed too; see
@@ -2173,7 +2203,7 @@ field and battle only, and never under the debug orbit; the native renderer
 stages it with `Renderer::set_prim_near_reject`, the play page with
 `TmdRenderer.setPrimNear`.
 
-### The GPU polygon-size limit in battle
+### The GPU polygon-size limit
 
 The prim leaves hand the GPU the GTE's `SXY` with no clip of their own, and
 the GPU skips any polygon whose corners lie more than `1023` pixels apart
@@ -2186,31 +2216,32 @@ the eye and the caster - where a per-pixel clip paints them as long shards.
 
 Both hosts run the span test in the same vertex stage as the near reject
 (`prim_near_reject::gpu_span_rejected`, the WGSL `prim_sxy` and the GLSL
-`primSxy`), armed in battle only (`camera_view::prim_gpu_span_h`, the battle
-camera's `H = 256` riding the parameters' enable lane). A split quad is
+`primSxy`), armed in battle and on the field (`camera_view::prim_gpu_span_h`:
+the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`,
+riding the parameters' enable lane). On the field it is what keeps
+`rim_elm_queen_bee_battle`'s frame clear: its camera stands beside a
+decoration rock whose near face projects past the span, and the port drew it
+as a textured wall down the right edge where retail shows the sky. A split quad is
 dropped only when both of its halves exceed the limit. The dance hall applies
 the same rule to its baked hall on the CPU
 ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
 
-`theeder_summon_mid_cast` is the case this does not close, and the reading
-that retail drops the near monster's gouraud prims is wrong. Monster `0xA1`
-(Gilium) has no flat prims at all - every group is `GT3` (`0x25`) or `GT4`
-(`0x27`) - and the near body (pool slot 5, ghosted `B + F/4` by
-`FUN_8004DC68`, Venom in its status word) is the `POLY_FT4` run with tpage
-`0x75` (ABR `3`) in the packet stream, beside the unghosted Giliums' `GT4`
-run on tpage `0x15` through the same CLUTs. Its render node's colour word reads
-`0x87FF2020` - Venom's `0xFF2020`, the ghost's `0x83` and bit 26 - where the
-far Giliums' read `0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4` leaves
-(`0x800457C4`, `0x80045988`) emit a flat-textured packet: code forced to
-`0x2C` (`lui s0,0x2c00`), one colour - the first corner's, depth-cued
-toward the tint colour by `DPCS` - and `0x20` / `0x28`-byte packets. So
-retail draws the whole near body, flat and faint, mostly above the frame
-(its packets reach `y = -684`), and what the engine draws as long leg shards across the caster is a different leg
-geometry on screen, not a missing prim class. The engine has no bank-2 flat
-path (both hosts shade a bit-26 body gouraud), and a vertex-stage emulation
-of the GTE's saturated projection (`SZ < H/2` at twice the eye offset)
-changes no catalogued battle frame, so the leg geometry itself is what
-remains open.
+`theeder_summon_mid_cast` puts monster `0xA1` (Gilium) between the eye and
+the caster. Its render node's colour word reads `0x87FF2020` - Venom's
+`0xFF2020`, the ghost's `0x83` and bit 26 - where the far Giliums' read
+`0x00FF2020`, so `FUN_80043390` takes bank 2 (`0xA0`), whose `GT3` / `GT4`
+leaves (`0x800457C4`, `0x80045988`) emit flat-textured `POLY_FT3` /
+`POLY_FT4` packets (codes `0x24` / `0x2C`, one colour - the first corner's,
+depth-cued toward the tint by `DPCS`) on tpage `0x75`, ABR `3`. The near body
+is drawn whole: its packets' screen corners match the engine's projection of
+the same pose prim for prim, the triangles' claw tips across the caster
+included. What parts the two frames is brightness. The body's texels are
+dark (the leg CLUT tops out at `(128, 88, 0)`), so `B + F/4` under
+`(67, 67, 179)` adds under twenty a channel, and the engine, drawing both
+shells of every limb, added twice that until the bodies were culled single-
+sided ([above](#the-field-pass-culls-back-faces)). An earlier reading here -
+that retail draws no bank-2 triangles and the claw tips are engine-only
+geometry - came from a display-list decoder that dropped every `POLY_FT3`.
 
 ## Coplanar surfaces: retail's ordering model, the port's depth policy
 
@@ -2808,15 +2839,19 @@ the fade circle.
 "See-through walls" checkbox): `occl_keep` / `occl_bayer` GLSL twins in
 `site/js/webgl-shaders.js` (tunables mirrored at the top of that file -
 keep them in lockstep with `occlusion_fade.rs`), staged through
-`TmdRenderer.setOcclusionFocus(world_pos, strength, feet_pos)` (both points
-from the engine's `play_occlusion_focus` export) - `renderAssembled`
+`TmdRenderer.setOcclusionFocus(world_pos, strength, feet_pos)` (strength and
+both points from the engine's `play_occlusion_fade` export) - `renderAssembled`
 projects the focus with the same view-projection it builds for the scene
 draws, so the page never duplicates camera math - and the per-draw actor
 exemption rides the `u_occl_allow` uniform (`noOccl` on the player / NPC
-placements). `play-app.js` runs the same gate through the runtime's
-`field_player_occluded` export (falling back to always-armed on a stale
-wasm bundle) and clears the focus for battle and VR first-person (where
-the eye *is* the player). The other WebGL pages never stage a focus, so
+placements). The export runs the whole frame through the kernels the
+native window runs: the arming terms combine in
+`field_occlusion::host_fade_armed` (the host's toggle, a debug or VR
+first-person eye, a boot or menu-runtime screen owning the frame, plus the
+world's field mode, scripted shot and name-entry prompt), the visibility gate
+is `FieldOccluders::fully_occluded`, and the strength ramp is
+`field_occlusion::FadeRamp` (a quarter of the gap per frame, snapped and
+unstaged inside `0.01`). The other WebGL pages never stage a focus, so
 they are untouched.
 
 The host stages the focus in **field free-roam only** - the player's floor
@@ -3032,7 +3067,7 @@ contiguous same-draw, same-mode tail runs coalesce into single indexed draws
 
 ## GTE math module
 
-A fixed-point GTE math module at `crates/engine-ui/src/gte.rs` mirrors the
+A fixed-point GTE math module at `crates/render-kernels/src/gte.rs` mirrors the
 retail accumulator shape: q3.12 rotation matrices, q19.12 translation vectors,
 i64-widened multiply-add to absorb three-term sums without overflow.
 

@@ -315,6 +315,7 @@ mod fatal_decision;
 mod field_events;
 mod field_grid;
 mod field_interaction;
+mod field_kernels;
 mod field_npc_motion;
 mod field_records;
 mod field_timer_actors;

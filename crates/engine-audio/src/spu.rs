@@ -62,6 +62,15 @@ pub struct Spu {
     /// debugging / tooling. The active mode in the [`Reverb`] processor
     /// is set via [`Spu::set_reverb_mode`].
     pub reverb_mode_raw: u32,
+    /// libsnd's monaural mode (`SsSetMono`, the options screen's "Sound:
+    /// Monaural"): every voice sounds at the **larger** of its two volumes on
+    /// both sides. `FUN_80067550` folds it per voice at key-on when
+    /// `_DAT_801CE330 == 1` (`sltu` / `move` at `0x800677F4..0x80067818`);
+    /// the mednafen states saved in monaural mode carry `L == R == max` on
+    /// every voice. Applied here at mix time - both volumes are positive, so
+    /// the sample with the larger magnitude is the one the larger volume
+    /// scaled - which also covers a voice whose volume a CC changes mid-note.
+    pub mono: bool,
 }
 
 impl Default for Spu {
@@ -74,6 +83,7 @@ impl Default for Spu {
             reverb: Reverb::new(ReverbMode::Off),
             note_trace: None,
             reverb_mode_raw: 0,
+            mono: false,
         }
     }
 }
@@ -180,8 +190,15 @@ impl Spu {
         let mut acc_r: i64 = 0;
         let mut send_l: i64 = 0;
         let mut send_r: i64 = 0;
+        let mono = self.mono;
         for v in &mut self.voices {
             let (l, r) = v.tick(&self.ram);
+            let (l, r) = if mono {
+                let m = if l.abs() >= r.abs() { l } else { r };
+                (m, m)
+            } else {
+                (l, r)
+            };
             acc_l += l as i64;
             acc_r += r as i64;
             if v.reverb_send {
@@ -338,5 +355,36 @@ mod tests {
         // Silence stream → output is silence (no decoded samples), so we
         // can't validate non-zero output here. Rely on the per-Reverb
         // unit tests for that. The smoke value is "no panics".
+    }
+
+    /// Monaural mode sounds each voice at the larger of its two volumes on
+    /// both sides (`FUN_80067550`'s fold under `_DAT_801CE330 == 1`), not at
+    /// their average.
+    #[test]
+    fn mono_sounds_a_voice_at_its_larger_volume_on_both_sides() {
+        let render = |mono: bool| {
+            let mut spu = Spu::new();
+            spu.mono = mono;
+            let mut block = [0x79u8; 16];
+            block[0] = 0x04;
+            block[1] = 0x07; // loop start | repeat | end: a held square wave
+            spu.ram
+                .set_direction(crate::spu::ram::TransferDirection::CpuToSpu);
+            spu.ram.write_at(0x1000, &block);
+            let v = &mut spu.voices[0];
+            v.start_addr = 0x1000;
+            v.vol_left = 0x3FFF;
+            v.vol_right = 0x1000;
+            v.adsr_cfg = crate::spu::adsr::AdsrConfig::from_words(0x000F, 0x1F00);
+            spu.key_on_mask(0b1);
+            (0..64).map(|_| spu.tick()).collect::<Vec<_>>()
+        };
+        let stereo = render(false);
+        let mono = render(true);
+        assert!(stereo.iter().any(|(l, r)| l != r), "the fixture is panned");
+        for ((sl, _), (ml, mr)) in stereo.iter().zip(mono.iter()) {
+            assert_eq!(ml, mr);
+            assert_eq!(ml, sl, "both sides take the louder (left) volume");
+        }
     }
 }

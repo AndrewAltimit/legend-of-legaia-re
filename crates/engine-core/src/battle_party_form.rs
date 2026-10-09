@@ -651,7 +651,7 @@ impl crate::world::World {
 
     /// Install a monster's battle form on its actor: the texture slot its
     /// mesh was relocated into (the posed rebuild re-applies it) and the
-    /// archive idle clip. The archive-order action clips are the engine's own
+    /// archive idle clip, unless one is already playing. The archive-order action clips are the engine's own
     /// to stage (`SceneHost::tick`), so none is installed here.
     pub fn install_monster_battle_form(
         &mut self,
@@ -662,7 +662,15 @@ impl crate::world::World {
         if let Some(a) = self.actors.get_mut(actor) {
             a.battle_tex_slot = Some(tex_slot);
         }
-        if let Some(anim) = idle
+        // The scene host seats the idle the tick the battle is up
+        // (`SceneHost::install_battle_monster_action_clips`); a render build
+        // that lands later does not restart a loop already playing, or the
+        // host's run of a fight drifts a tick from a headless one.
+        if self
+            .actors
+            .get(actor)
+            .is_some_and(|a| a.battle_animation.is_none())
+            && let Some(anim) = idle
             && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(anim)
         {
             self.set_actor_battle_animation(actor, player);

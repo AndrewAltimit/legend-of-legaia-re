@@ -276,7 +276,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         Self {
             audio,
             bank: None,
-            master_vol: 100,
+            master_vol: legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL,
             loop_to: Some(0),
             last_started: None,
             sfx_bank: SfxBank::new(),

@@ -249,8 +249,17 @@ fn every_scripted_cue_resolves_in_its_own_scene() {
         host.world
             .load_field_script(vec![0x36, 0x00, 0x80, lo, hi, 0x00]);
         let _ = host.world.tick();
+        // The scene's ambient effect parts tick too, and their move-VM op
+        // `0x1D` stores straight into a ring slot (`WriteSlot`) - jagaroom's
+        // does on this very tick. Only the cursor pushes are the VM's.
+        let pushes: Vec<SfxRingOp> = host
+            .world
+            .take_sfx_ring_ops()
+            .into_iter()
+            .filter(|op| !matches!(op, SfxRingOp::WriteSlot(..)))
+            .collect();
         assert_eq!(
-            host.world.take_sfx_ring_ops(),
+            pushes,
             vec![SfxRingOp::Push(id)],
             "{scene}: the VM pushes its scripted id"
         );

@@ -102,18 +102,25 @@ impl World {
         if roll >= effective {
             return;
         }
+        // Only a monster is captured. A party seat reaches here through a
+        // monster cast the boot catalog resolves to the disc-free demo
+        // "Reseal" (`SpellCatalog::vanilla` sits it on `0x40`, which the disc
+        // names Curse, a capture-class special the catalog fill skips), and
+        // downing it wrote live HP with no readout seed - an absorbing pair
+        // the `0x51` gate parks on (soak: `retockin`). The roll stays drawn,
+        // so the battle's rand stream is unchanged.
+        let Some(id) = monster_id else {
+            return;
+        };
         if let Some(a) = self.actors.get_mut(target as usize) {
             a.battle.hp = 0;
             a.battle.liveness = 0;
         }
-        if let Some(id) = monster_id {
-            self.seru.battle_captures.push(id);
-            // A shiny enemy's capture marks the learned spell shiny (+35%
-            // damage forever). Tracked in parallel; resolved in
-            // `resolve_captures`.
-            if self.seru.shiny_enemy_slots.contains(&target) {
-                self.seru.shiny_captures.push(id);
-            }
+        self.seru.battle_captures.push(id);
+        // A shiny enemy's capture marks the learned spell shiny (+35% damage
+        // forever). Tracked in parallel; resolved in `resolve_captures`.
+        if self.seru.shiny_enemy_slots.contains(&target) {
+            self.seru.shiny_captures.push(id);
         }
     }
 

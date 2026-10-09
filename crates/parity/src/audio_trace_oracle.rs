@@ -92,6 +92,14 @@ pub struct VoiceTraceFrame {
     /// tank.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub reverb_send: Option<bool>,
+    /// Running count of key-ons this voice has taken (engine:
+    /// `Voice::key_on_count`). The difference between two frames is the
+    /// exact number of key-ons in between, including a re-key of a voice
+    /// that was still sounding - which the `active` edge cannot see. `None`
+    /// on both retail emitters: an SPU snapshot keeps no key-on history (the
+    /// retail count comes from `scripts/pcsx-redux/autorun_keyon_census.lua`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub key_ons: Option<u32>,
 }
 
 /// One sample of the SPU's voice-activity state.
@@ -157,6 +165,12 @@ pub struct AudioTraceFrame {
     pub active_voice_mask: u32,
     /// Per-voice state. Indexed 0..[`NUM_VOICES`].
     pub voices: Vec<VoiceTraceFrame>,
+    /// Engine only: the SFX cue ids the frame's producers wrote into the
+    /// ring (`World::take_sfx_ring_ops` - pushes, replaces and direct slot
+    /// stores, in order). The census side is the retail drainer's cue
+    /// key-ons (`autorun_keyon_census.lua`, `cuekey` rows).
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub sfx_ring: Vec<i16>,
 }
 
 impl AudioTraceFrame {
@@ -173,6 +187,7 @@ impl AudioTraceFrame {
             reverb_depth: None,
             reverb_work_area: None,
             spu_control: None,
+            sfx_ring: Vec::new(),
             active_voice_mask: 0,
             voices: vec![VoiceTraceFrame::default(); NUM_VOICES],
         }
@@ -196,6 +211,11 @@ pub struct AudioTraceBuildOptions {
     pub us_per_frame: f64,
     /// Number of frames to tick. Output has `frames + 1` records.
     pub frames: u64,
+    /// Keep [`Self::bgm_id`] playing: the scene's own op-`0x35` BGM events
+    /// are drained and dropped instead of switching the track. For pairing
+    /// with a retail capture whose story state selected a different track
+    /// than the port's free-roam staging does.
+    pub pin_bgm: bool,
 }
 
 impl Default for AudioTraceBuildOptions {
@@ -205,6 +225,7 @@ impl Default for AudioTraceBuildOptions {
             bgm_id: None,
             us_per_frame: 1_000_000.0 / 60.0,
             frames: 60,
+            pin_bgm: false,
         }
     }
 }
@@ -259,7 +280,7 @@ impl TraceBgmDirector {
             spu,
             bank: None,
             sequencer: None,
-            master_vol: 100,
+            master_vol: legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL,
             loop_to: Some(0),
             paused: false,
             last_started: None,
@@ -485,18 +506,37 @@ pub fn build_engine_audio_trace(
     ));
     let samples_per_frame = (44_100_f64 * (opts.us_per_frame / 1_000_000.0)) as usize;
     let mut sink = vec![0i16; samples_per_frame * 2];
+    // Sink for the scene's own BGM events under `pin_bgm`.
+    let mut discard = TraceBgmDirector::new();
     for _ in 0..opts.frames {
         let _ = session.tick()?;
         // Drain field-VM BGM events into the private director; resolved
         // SEQ bytes flow through `SceneHost::bgm_seq_bytes`, whole
         // global-pool entries through `SceneHost::music_bank_entry_bytes`.
-        let _ = session.host.route_bgm_events(&mut director)?;
+        if opts.pin_bgm {
+            let _ = session.host.route_bgm_events(&mut discard)?;
+        } else {
+            let _ = session.host.route_bgm_events(&mut director)?;
+        }
         director.advance_frame(opts.us_per_frame, &mut sink);
-        out.push(sample_engine_frame(
-            &session,
-            director.spu(),
-            director.sequencer(),
-        ));
+        let mut frame = sample_engine_frame(&session, director.spu(), director.sequencer());
+        // Drain the SFX ring the hosts drain every tick; left alone, a long
+        // trace grows the queue without bound.
+        frame.sfx_ring = session
+            .host
+            .world
+            .take_sfx_ring_ops()
+            .into_iter()
+            .filter_map(|op| {
+                use legaia_engine_core::world::SfxRingOp;
+                match op {
+                    SfxRingOp::Push(id) | SfxRingOp::ReplaceLast(id) => Some(id),
+                    SfxRingOp::WriteSlot(_, id) | SfxRingOp::ArmSlot(_, id, _) => Some(id),
+                    SfxRingOp::SetLastDelay(_) => None,
+                }
+            })
+            .collect();
+        out.push(frame);
     }
     Ok(out)
 }
@@ -600,6 +640,7 @@ fn sample_engine_frame(
             vol_right: Some(v.vol_right),
             adsr_control: Some(v.adsr_cfg.raw.0 as u32 | ((v.adsr_cfg.raw.1 as u32) << 16)),
             reverb_send: Some(v.reverb_send),
+            key_ons: Some(v.key_on_count()),
         });
     }
     AudioTraceFrame {
@@ -614,6 +655,7 @@ fn sample_engine_frame(
         // The engine models no SPU control register - reverb master enable
         // is implicit in the active `ReverbMode`.
         spu_control: None,
+        sfx_ring: Vec::new(),
         active_voice_mask: mask,
         voices,
     }
@@ -674,6 +716,7 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
             vol_right: v.vol_right,
             adsr_control: v.adsr_control,
             reverb_send: eon.map(|m| m & (1u32 << i) != 0),
+            key_ons: None,
         });
     }
     Ok(AudioTraceFrame {
@@ -689,6 +732,7 @@ pub fn load_runtime_audio_trace_from_save(save: &Path) -> Result<AudioTraceFrame
         reverb_depth: spu.reverb_output_volume(),
         reverb_work_area: spu.reverb_work_area().map(|wa| wa.wrapping_mul(2)),
         spu_control: spu.spu_control(),
+        sfx_ring: Vec::new(),
         active_voice_mask: mask,
         voices,
     })
@@ -858,6 +902,7 @@ pub fn engine_trace_from_paths(
         bgm_id,
         us_per_frame: 1_000_000.0 / 60.0,
         frames,
+        pin_bgm: false,
     };
     build_engine_audio_trace(extracted_root, disc, &opts)
 }
@@ -1146,6 +1191,283 @@ pub fn compare_voice_allocation_aligned(
         }
         None => compare_voice_allocation(engine, retail),
     }
+}
+
+/// Per-frame **exact** key-on counts off an engine trace: the sum over
+/// voices of the [`VoiceTraceFrame::key_ons`] deltas between consecutive
+/// frames, so a re-key of a voice that was still sounding counts. Index `i`
+/// holds the key-ons that landed between frames `i - 1` and `i`; index `0`
+/// is always zero. `None` when any frame lacks the counter (a retail trace,
+/// or an engine trace written before the field existed).
+pub fn engine_key_on_counts(frames: &[AudioTraceFrame]) -> Option<Vec<u32>> {
+    let mut out = Vec::with_capacity(frames.len());
+    let mut prev: Option<&AudioTraceFrame> = None;
+    for f in frames {
+        let n = match prev {
+            None => 0,
+            Some(p) => {
+                let mut n = 0u32;
+                for (a, b) in p.voices.iter().zip(f.voices.iter()) {
+                    n = n.wrapping_add(b.key_ons?.wrapping_sub(a.key_ons?));
+                }
+                n
+            }
+        };
+        if f.voices.iter().any(|v| v.key_ons.is_none()) {
+            return None;
+        }
+        out.push(n);
+        prev = Some(f);
+    }
+    Some(out)
+}
+
+/// A retail key-on census, per post-load vsync, as
+/// `scripts/pcsx-redux/autorun_keyon_census.lua` logs it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyOnCensus {
+    /// Score voices keyed per vsync: the voices of every `SpuSetKey` KON
+    /// mask the flush wrote, less the SFX-cue voices.
+    pub key_ons: Vec<u32>,
+    /// Score notes asked for per vsync (`FUN_80066308` calls, SFX cues
+    /// excluded). Empty when the census predates the `note` rows.
+    pub notes: Vec<u32>,
+}
+
+/// Parse the CSV `scripts/pcsx-redux/autorun_keyon_census.lua` writes.
+/// Allocator and clock rows, and rows before the capture loop starts (vsync
+/// `< 0`), are skipped.
+///
+/// Only **score** activity counts. A KON row's `records` column names each
+/// keyed voice's libsnd note owner (`voice:page/tone/vab/owner`), and owner
+/// `0021` is the SFX cue slot (`FUN_80066308`'s `0x21` arm): a field's
+/// ambient cues key voices alongside the music, and the engine trace this
+/// census is compared with plays the music alone. A KON row without records
+/// counts its whole mask; a `note` row with owner `0021` is dropped.
+pub fn parse_keyon_census_csv(s: &str) -> Result<KeyOnCensus> {
+    parse_keyon_census_csv_owned(s, None)
+}
+
+/// [`parse_keyon_census_csv`] restricted to one sequence's notes and voices:
+/// `owner` is the libsnd note owner key (`seq | track << 8`, e.g. `0x0001`
+/// for the field BGM slot, `0x0003` for a battle or minigame track). A state
+/// can hold two scores at once - the Baka Fighter cabinet plays its duel
+/// track while the casino floor's is still open - and the engine trace
+/// plays one.
+pub fn parse_keyon_census_csv_owned(s: &str, owner: Option<u16>) -> Result<KeyOnCensus> {
+    let owner_tag = owner.map(|o| format!("{o:04X}"));
+    let counts = |own: &str| own != "0021" && owner_tag.as_deref().is_none_or(|t| t == own);
+    let mut out = KeyOnCensus::default();
+    let bump = |v: &mut Vec<u32>, at: usize, n: u32| {
+        if v.len() <= at {
+            v.resize(at + 1, 0);
+        }
+        v[at] += n;
+    };
+    for (i, line) in s.lines().enumerate().skip(1) {
+        let mut cols = line.splitn(5, ',');
+        let (Some(vs), Some(mode), Some(mask)) = (cols.next(), cols.next(), cols.next()) else {
+            continue;
+        };
+        let records = cols.nth(1).unwrap_or("").trim();
+        if mode != "1" && mode != "note" {
+            continue;
+        }
+        let vsync: i64 = vs
+            .trim()
+            .parse()
+            .with_context(|| format!("key-on census line {}: vsync {vs:?}", i + 1))?;
+        let Ok(v) = usize::try_from(vsync) else {
+            continue;
+        };
+        if mode == "note" {
+            // `mask` carries the note's owner key on a note row.
+            if counts(mask.trim()) {
+                bump(&mut out.notes, v, 1);
+            }
+            continue;
+        }
+        let mask = u32::from_str_radix(mask.trim(), 16)
+            .with_context(|| format!("key-on census line {}: mask {mask:?}", i + 1))?;
+        let n = if records.is_empty() {
+            (mask & 0x00FF_FFFF).count_ones()
+        } else {
+            records
+                .split_whitespace()
+                .filter(|r| r.rsplit('/').next().is_some_and(counts))
+                .count() as u32
+        };
+        bump(&mut out.key_ons, v, n);
+    }
+    let n = out.key_ons.len().max(out.notes.len());
+    out.key_ons.resize(n, 0);
+    if !out.notes.is_empty() {
+        out.notes.resize(n, 0);
+    }
+    Ok(out)
+}
+
+/// Engine-vs-retail key-on count over an aligned window, both sides counted
+/// exactly (engine: [`engine_key_on_counts`]; retail: the
+/// [`parse_keyon_census_csv`] census).
+#[derive(Debug, Clone, PartialEq)]
+pub struct KeyOnCensusComparison {
+    /// Engine frame the window's first vsync lines up with.
+    pub offset: usize,
+    /// The census vsyncs compared, `first..end`: the span from the first to
+    /// the last vsync with score activity. A state captured before its track
+    /// starts (a minigame's countdown) or after it stops carries silence the
+    /// engine trace, which starts the track at once, has no counterpart for.
+    pub window: std::ops::Range<usize>,
+    /// Retail key-ons matched one to one with an engine key-on within
+    /// [`RETAIL_LAG`].
+    pub matched: u32,
+    pub engine_total: u32,
+    pub retail_total: u32,
+    /// `engine_total / retail_total`.
+    pub ratio: f64,
+}
+
+/// Vsyncs a retail KON may trail (positive) or lead (negative) the engine
+/// key-on it is matched with, nearest first. See [`compare_key_on_census`].
+const RETAIL_LAG: [isize; 5] = [1, 0, 2, 3, -1];
+/// The largest trail in [`RETAIL_LAG`]: how far before the window an engine
+/// key-on can be claimed.
+const RETAIL_LAG_MAX: usize = 3;
+
+/// Align a retail key-on census against an engine trace's exact key-on
+/// counts and compare key-on totals over the aligned window.
+///
+/// The alignment is on **timing**, not on sounding pitches: the offset
+/// maximises the retail events matched by an engine key-on within one frame
+/// (the two clocks quantise a beat onto adjacent vsyncs), exact-frame matches
+/// breaking ties. A pitch-Jaccard alignment ([`best_alignment_offset`]) needs
+/// a capture of the SPU, and a capture's sounding state is on the host's
+/// audio clock.
+///
+/// Both sides are matched key-on for key-on, one to one, each retail KON
+/// taking the nearest unclaimed engine key-on within [`RETAIL_LAG`]. The
+/// engine writes a key-on at the flush of the vsync its note fires in;
+/// retail's can trail that, as `FUN_8006B854` parks the mask while an SPU
+/// transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`.
+/// Matching key-ons (not notes) keeps layered tones, where one note keys two
+/// voices on both sides, from penalising the right offset.
+///
+/// Returns `None` when the engine trace carries no key-on counters or is
+/// shorter than the census.
+pub fn compare_key_on_census(
+    engine: &[AudioTraceFrame],
+    census: &KeyOnCensus,
+) -> Option<KeyOnCensusComparison> {
+    let ek = engine_key_on_counts(engine)?;
+    let active = |i: usize| {
+        census.key_ons.get(i).copied().unwrap_or(0) > 0
+            || census.notes.get(i).copied().unwrap_or(0) > 0
+    };
+    let len = census.key_ons.len().max(census.notes.len());
+    let first = (0..len).find(|&i| active(i))?;
+    let end = (0..len).rev().find(|&i| active(i))? + 1;
+    let crop = |v: &[u32]| -> Vec<u32> {
+        (first..end)
+            .map(|i| v.get(i).copied().unwrap_or(0))
+            .collect()
+    };
+    let key_ons = crop(&census.key_ons);
+    let series: &[u32] = &key_ons;
+    let n = series.len();
+    if n == 0 || ek.len() < n {
+        return None;
+    }
+    // One-to-one matching of retail key-ons to engine key-ons, each retail
+    // KON taking the nearest unclaimed engine key-on from `RETAIL_LAG`: the
+    // engine writes a key-on at the flush of the vsync its note fires in,
+    // while retail's KON can trail that by up to three vsyncs when
+    // `FUN_8006B854` parks it behind a busy SPU transfer, and either side
+    // can land a beat one vsync off the other. Returns (matched, matched
+    // with no deferral) - the second breaks score ties.
+    let mut claim = vec![0u32; ek.len()];
+    let mut matched_at = |off: usize| -> (u32, u32) {
+        let lo = off.saturating_sub(RETAIL_LAG_MAX);
+        let hi = (off + n + 1).min(ek.len());
+        claim[lo..hi].copy_from_slice(&ek[lo..hi]);
+        let (mut all, mut prompt) = (0u32, 0u32);
+        for (i, &r) in series.iter().enumerate().filter(|(_, r)| **r > 0) {
+            let mut want = r;
+            for lag in RETAIL_LAG {
+                let Some(e) = (off + i).checked_add_signed(-lag) else {
+                    continue;
+                };
+                let Some(have) = claim.get_mut(e) else {
+                    continue;
+                };
+                let take = want.min(*have);
+                *have -= take;
+                want -= take;
+                all += take;
+                if (0..=1).contains(&lag) {
+                    prompt += take;
+                }
+                if want == 0 {
+                    break;
+                }
+            }
+        }
+        (all, prompt)
+    };
+    // Score each offset by the Jaccard of matched key-ons against both
+    // sides' totals, so a dense engine window that merely *contains* every
+    // retail event does not outscore the window that plays the same notes
+    // and no others.
+    let series_total: u32 = series.iter().sum();
+    let mut prefix = Vec::with_capacity(ek.len() + 1);
+    prefix.push(0u64);
+    for &k in &ek {
+        prefix.push(prefix.last().copied().unwrap_or(0) + u64::from(k));
+    }
+    let jaccard = |off: usize, near: u32| -> f64 {
+        let window = prefix[off + n] - prefix[off];
+        // A matched engine key-on can sit just outside the window, so the
+        // union is floored at the larger side.
+        let union = (u64::from(series_total) + window)
+            .saturating_sub(u64::from(near))
+            .max(u64::from(series_total).max(window));
+        if union == 0 {
+            0.0
+        } else {
+            f64::from(near) / union as f64
+        }
+    };
+    let mut best: Option<(usize, (u32, u32), f64)> = None;
+    for off in 0..=ek.len() - n {
+        let m = matched_at(off);
+        let score = jaccard(off, m.0);
+        // A higher score wins, then more undeferred matches; the earliest
+        // offset wins a full tie, so a repeating phrase resolves to its first
+        // occurrence.
+        let better = match best {
+            None => true,
+            Some((_, bm, bs)) => score > bs || (score == bs && m.1 > bm.1),
+        };
+        if better {
+            best = Some((off, m, score));
+        }
+    }
+    let (offset, (matched, _), _) = best?;
+    let engine_total: u32 = ek[offset..offset + n].iter().sum();
+    let retail_total: u32 = key_ons.iter().sum();
+    let ratio = if retail_total > 0 {
+        engine_total as f64 / retail_total as f64
+    } else {
+        0.0
+    };
+    Some(KeyOnCensusComparison {
+        offset,
+        window: first..end,
+        matched,
+        engine_total,
+        retail_total,
+        ratio,
+    })
 }
 
 #[cfg(test)]
@@ -1548,5 +1870,142 @@ mod tests {
         BgmDirector::start(&mut d, 42, &[1, 2, 3]);
         assert!(d.sequencer().is_none());
         assert!(!d.is_playing());
+    }
+
+    fn keyed_frame(counts: &[u32]) -> AudioTraceFrame {
+        alloc_frame(
+            counts
+                .iter()
+                .map(|&k| VoiceTraceFrame {
+                    key_ons: Some(k),
+                    ..Default::default()
+                })
+                .collect(),
+        )
+    }
+
+    /// A re-key of a voice that never went silent is invisible to the
+    /// sounding-edge count and visible to the exact counter.
+    #[test]
+    fn exact_key_on_counts_see_a_rekey_of_a_sounding_voice() {
+        let mut a = keyed_frame(&[3, 0]);
+        a.voices[0].active = true;
+        let mut b = keyed_frame(&[4, 0]);
+        b.voices[0].active = true;
+        let c = keyed_frame(&[4, 2]);
+        assert_eq!(engine_key_on_counts(&[a, b, c]), Some(vec![0, 1, 2]));
+        // A frame without the counter (a retail trace) yields no counts.
+        assert_eq!(
+            engine_key_on_counts(&[alloc_frame(vec![voice(true, None)])]),
+            None
+        );
+    }
+
+    #[test]
+    fn keyon_census_csv_counts_kon_mask_bits_per_vsync() {
+        let csv = "vsync,mode,mask,ra,records\n\
+                   -1,alloc,01,80066590,win=1 vmax=24 prior=0\n\
+                   1,0,000001,80065F5C,\n\
+                   1,1,000006,80065F7C,1:9/0/1/0002 2:7/1/1/0002\n\
+                   1,note,0001,80061BC0,vab=1 prog=3 key=60 vel=100\n\
+                   3,1,000C00,80065F7C,10:8/0/1/0002 11:5/0/1/0002\n\
+                   4,1,C00000,80065F7C,22:1/3/3/0021 23:1/2/3/0021\n\
+                   4,note,0021,80065100,vab=3 prog=1 key=60 vel=100\n\
+                   5,1,000003,80065F7C,\n\
+                   60,clock,0,0,ms=1.0\n";
+        // Vsync 4 keys two SFX-cue voices (owner 0x21), which the music-only
+        // engine trace never plays; vsync 5 carries no records and counts
+        // its mask. Only the score note on vsync 1 is a note.
+        let c = parse_keyon_census_csv(csv).unwrap();
+        assert_eq!(c.key_ons, vec![0, 2, 0, 2, 0, 2]);
+        assert_eq!(c.notes, vec![0, 1, 0, 0, 0, 0]);
+    }
+
+    /// The census aligns on key-on timing, tolerates a one-frame skew, and
+    /// compares exact totals over the aligned window.
+    #[test]
+    fn keyon_census_aligns_on_timing_and_compares_totals() {
+        // Engine: cumulative per-voice counters; key-ons land at frames
+        // 5 (x3) and 8 (x1) and 12 (x2).
+        let per_frame = [0u32, 0, 0, 0, 0, 3, 0, 0, 1, 0, 0, 0, 2, 0];
+        let mut cum = 0u32;
+        let engine: Vec<_> = per_frame
+            .iter()
+            .map(|k| {
+                cum += k;
+                keyed_frame(&[cum])
+            })
+            .collect();
+        // Retail census: the same rhythm from its vsync 0, the second beat
+        // quantised one vsync late.
+        let census = KeyOnCensus {
+            key_ons: vec![3, 0, 0, 0, 1, 0, 0, 2],
+            notes: Vec::new(),
+        };
+        let c = compare_key_on_census(&engine, &census).expect("alignable");
+        assert_eq!(c.offset, 5);
+        assert_eq!(c.matched, 6);
+        assert_eq!(c.retail_total, 6);
+        assert_eq!(c.engine_total, 6);
+        assert!((c.ratio - 1.0).abs() < 1e-9);
+    }
+
+    /// A retail KON that trails its note by up to three vsyncs (a flush
+    /// deferred behind a busy SPU transfer) still matches the engine key-on
+    /// written at the note's own vsync.
+    #[test]
+    fn keyon_census_matches_a_deferred_retail_kon() {
+        let per_frame = [
+            0u32, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0,
+        ];
+        let mut cum = 0u32;
+        let engine: Vec<_> = per_frame
+            .iter()
+            .map(|k| {
+                cum += k;
+                keyed_frame(&[cum])
+            })
+            .collect();
+        // Notes at vsyncs 0, 6, 12; KONs written at 3, 7, 15.
+        let mut notes = vec![0u32; 16];
+        let mut key_ons = vec![0u32; 16];
+        for v in [0, 6, 12] {
+            notes[v] = 1;
+        }
+        for v in [3, 7, 15] {
+            key_ons[v] = 1;
+        }
+        let c = compare_key_on_census(&engine, &KeyOnCensus { key_ons, notes }).expect("alignable");
+        assert_eq!(c.matched, 3);
+        assert_eq!((c.engine_total, c.retail_total), (3, 3));
+    }
+
+    /// A census captured before its track starts is compared from its first
+    /// score activity, not from vsync 0.
+    #[test]
+    fn keyon_census_crops_leading_silence() {
+        let per_frame = [0u32, 2, 0, 0, 1, 0, 0, 0];
+        let mut cum = 0u32;
+        let engine: Vec<_> = per_frame
+            .iter()
+            .map(|k| {
+                cum += k;
+                keyed_frame(&[cum])
+            })
+            .collect();
+        let mut key_ons = vec![0u32; 12];
+        key_ons[8] = 2;
+        key_ons[11] = 1;
+        let c = compare_key_on_census(
+            &engine,
+            &KeyOnCensus {
+                key_ons,
+                notes: Vec::new(),
+            },
+        )
+        .expect("alignable");
+        assert_eq!(c.window, 8..12);
+        assert_eq!(c.offset, 1);
+        assert_eq!((c.engine_total, c.retail_total), (3, 3));
     }
 }

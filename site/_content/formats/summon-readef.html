@@ -66,6 +66,8 @@
   </div>
   <p><code>mode</code> is 0, 1 or 2. Mode 1 carries two CLUT rows (page at <code>+0x404</code>), modes 0 and 2 one (page at <code>+0x204</code>). Mode 0's page is 64 halfwords wide, modes 1 and 2 are 128.</p>
 
+  <p id="pages-in-vram">A summon module's parts sample those pages, so the page in VRAM has to be the cast's own. PROT 0903's fire tunnel draws one of its two additive layers from a single texel of the <code>(512, 0)</code> page through CLUT row 488: with the cast's <code>summon.dat</code> page there the tunnel is orange, with the last monster turn's <code>readef.DAT</code> page left there it draws grey. The port streams a player cast's two texture slots when its stager arms (<code>battle_sideband_textures::record_cast_sideband_textures</code>), and the formation's monster groups at battle entry.</p>
+
   <h3>Actor-record slot</h3>
   <p>Consumed in place, slot-relative offsets. The TMD and texture pool route through the same installer the monster archive uses, and the creature is staged as a battle actor.</p>
   <div class="byte-map">

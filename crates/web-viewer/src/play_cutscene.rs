@@ -79,25 +79,18 @@ impl LegaiaRuntime {
         };
         let narration = w.cutscene_narration_active();
         let card = w.cutscene.card.is_some();
-        // The three staging arms of the native window's redraw, resolved
-        // here so the page's renderer takes the same two calls it does.
-        // The op `4C 12` word is the fog particles' tint, not a frame
-        // multiply (its one reader is `FUN_8003F3FC`), so neither the grade
-        // nor the depth cue takes it - the native window's staging.
-        let (grade, palette_grade) = match w.scene_color_grade() {
-            Some(g) => (
-                Some(serde_json::json!({ "gold": g.gold, "strength": g.strength })),
-                serde_json::json!({ "mul": [1.0f32, 1.0, 1.0], "on": true }),
-            ),
-            None => (
-                None,
-                serde_json::json!({ "mul": [1.0f32, 1.0, 1.0], "on": false }),
-            ),
-        };
-        let cue = w.scene_depth_cue().map(|c| {
-            let far = c.far;
+        // The three staging arms are the one engine mapping the native
+        // window stages (`World::frame_grade`). The op `4C 12` word is the
+        // fog particles' tint, not a frame multiply (its one reader is
+        // `FUN_8003F3FC`), so no arm takes it.
+        let fg = w.frame_grade();
+        let grade = (fg.strength > 0.0)
+            .then(|| serde_json::json!({ "gold": fg.gold, "strength": fg.strength }));
+        let palette_grade =
+            serde_json::json!({ "mul": [1.0f32, 1.0, 1.0], "on": fg.palette_collapse });
+        let cue = fg.depth_cue.map(|c| {
             serde_json::json!({
-                "far": far, "near_z": c.near_z, "far_z": c.far_z,
+                "far": c.far, "near_z": c.near_z, "far_z": c.far_z,
                 "max_ir0": c.max_ir0,
             })
         });

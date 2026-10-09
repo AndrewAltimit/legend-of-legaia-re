@@ -78,9 +78,9 @@
     </div>
   </details>
   <details class="disclosure">
-    <summary>The Rust port still uses the old names</summary>
+    <summary>The Rust opcode names are the old ones; the host calls are not</summary>
     <div class="disclosure-body">
-      <p><code>legaia_engine_vm::Opcode</code> was written under the sprite-engine reading and keeps its names: <code>SpawnDefault</code> (<code>01</code>), <code>SpawnAt</code> (<code>02</code>), <code>SetField1d</code> (<code>03</code>), <code>DeleteSprite</code> (<code>04</code>, really begin-close), <code>GlobalUpdate</code> (<code>05</code>, really close-all), <code>ClearField20</code> (<code>06</code>), <code>Effect</code> (<code>08</code>, really immediate destroy), <code>MotionAt</code> (<code>09</code>) and <code>EffectMotion</code> (<code>0A</code>). Its host calls follow the swapped helper reading too: it snaps on <code>01</code> / <code>02</code>, where retail slides, and slides on <code>09</code> / <code>0A</code>, where retail snaps. The engine's window host tracks only a target and a sliding flag, so the swap mostly shows on a re-issued open of a window that is already up.</p>
+      <p><code>legaia_engine_vm::Opcode</code> was written under the sprite-engine reading and keeps its variant names: <code>SpawnDefault</code> (<code>01</code>), <code>SpawnAt</code> (<code>02</code>), <code>SetField1d</code> (<code>03</code>), <code>DeleteSprite</code> (<code>04</code>, really begin-close), <code>GlobalUpdate</code> (<code>05</code>, really close-all), <code>ClearField20</code> (<code>06</code>), <code>Effect</code> (<code>08</code>, really immediate destroy), <code>MotionAt</code> (<code>09</code>) and <code>EffectMotion</code> (<code>0A</code>). The <code>Host</code> methods each arm calls carry the corrected meaning - <code>slide_to</code> on <code>01</code> / <code>02</code>, <code>snap_to</code> on <code>09</code> / <code>0A</code>, <code>begin_close</code>, <code>close_all</code> and <code>destroy</code> - and the menu window list keeps each window&rsquo;s live position, slide source and target.</p>
     </div>
   </details>
 </section>

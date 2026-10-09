@@ -427,8 +427,8 @@ pub struct BattleActor {
     /// name:
     ///
     /// * the SCUS anim tick `FUN_80047430` advances the render node's 12.4
-    ///   anim cursor by `(frame_dt * rate * clip_rate) >> 1` (`>> 2` on the
-    ///   idle branch), so `4` is half speed, `2` quarter speed, `0` a freeze;
+    ///   anim cursor by `(frame_dt * rate * clip_rate) >> 1` (`>> 2` for a
+    ///   Slowed actor on idle), so `4` is half speed, `2` quarter speed, `0` a freeze;
     /// * the arts after-image walk `FUN_80049348` spaces its two mesh ghosts
     ///   `8 / rate` frames apart, so the trail stretches as time slows;
     /// * the attack band multiplies it into the per-frame X/Z impact drift,
@@ -516,6 +516,13 @@ pub struct BattleActor {
     pub flag_word: u32,
     /// `+0x1DC` - per-actor flag bits. See [`ActorFlags`].
     pub flag_bits: ActorFlags,
+    /// The per-frame root-motion truncation carry
+    /// ([`crate::battle_action::motion::RootMotionCarry`]) - port state, not
+    /// a retail field.
+    pub root_carry: crate::battle_action::motion::RootMotionCarry,
+    /// The same carry for the strike loop's swing drift, which retail
+    /// truncates on its own (`0x801E386C..0x801E3994`).
+    pub drift_carry: crate::battle_action::motion::RootMotionCarry,
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,
@@ -1090,6 +1097,10 @@ pub struct BattleActionCtx {
     /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
     /// the retail comparison corpus aligns a summon `0x33` capture on.
     pub active_clip_commit_frame: u64,
+    /// How many clips the active actor has **installed** - the commits
+    /// that change the committed id, without the natural-end re-commit that
+    /// replays a looping clip. Port-only (`BattleCamInputs::active_installs`).
+    pub active_clip_installs: u32,
     /// `[+0x28B]` - the **Arts announcement banner**: `0` idle, `1..=4` a
     /// live banner, `5..=8` a cancel request. Raised by the staged-animation
     /// commit's SpecialStarter arm and stepped once per battle frame; see

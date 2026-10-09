@@ -41,11 +41,11 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-core/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation artefacts - see below. |
 | `Renderer::set_semi_blend` | **on** | Retail ABE semi-transparency blending. On because it *is* retail. |
-| `CameraDistance` (`T`) / debug orbit camera (`F3`) | `Far` / off | Framing only; never feeds the simulation. Both hosts carry both knobs: the default camera on each is the engine's ([`camera_view`](../../crates/engine-core/src/camera_view.rs)) - the retail zone-driven follow camera, whose pitch / yaw / `H` come from the scene's MAN section-3 camera-region record through the retail composer and ease ([`camera_zone`](../../crates/engine-core/src/camera_zone.rs), [encounter.md](../formats/encounter.md#man-section-3-the-camera-region-table)) - and `F3` swaps in that host's own wide vantage. |
-| Follow-camera user knobs: drag orbit / drag tilt / wheel zoom (`Camera::manual_orbit` / `manual_tilt` / `manual_zoom`) | identity (retail shot) | The player steers the retail follow camera about the character on both hosts through one engine vocabulary ([`camera::follow_knobs`](../../crates/engine-core/src/camera.rs)). **Locked while a cutscene owns the camera**: the setters drop the gesture when a timeline is live, so a scripted shot never snaps on return. Field-only: the overworld walk camera ignores them. Orbit feeds the movement compass; tilt and zoom are pure framing. Double-click resets all three. A direct scene entry (picker / warp / load) runs `Camera::reset_for_scene_entry` on both hosts, so an interrupted shot never frames the next scene. |
+| `CameraDistance` (`T`) / debug orbit camera (`F3`) | `Far` / off | Framing only; never feeds the simulation. Both hosts carry both knobs: the default camera on each is the engine's ([`camera_view`](../../crates/engine-core/src/camera_view.rs)) - the retail zone-driven follow camera, whose pitch / yaw / `H` come from the scene's MAN section-3 camera-region record through the retail composer and ease ([`camera_zone`](../../crates/engine-field/src/camera_zone.rs), [encounter.md](../formats/encounter.md#man-section-3-the-camera-region-table)) - and `F3` swaps in that host's own wide vantage. |
+| Follow-camera user knobs: drag orbit / drag tilt / wheel zoom (`Camera::manual_orbit` / `manual_tilt` / `manual_zoom`) | identity (retail shot) | The player steers the retail follow camera about the character on both hosts through one engine vocabulary ([`camera::follow_knobs`](../../crates/engine-field/src/camera.rs)). **Locked while a cutscene owns the camera**: the setters drop the gesture when a timeline is live, so a scripted shot never snaps on return. Field-only: the overworld walk camera ignores them. Orbit feeds the movement compass; tilt and zoom are pure framing. Double-click resets all three. A direct scene entry (picker / warp / load) runs `Camera::reset_for_scene_entry` on both hosts, so an interrupted shot never frames the next scene. |
 | Solo Tetsu spar (`World::sparring_fight_pending`) | **on**, not a knob | The sparring tutorial seats Vahn alone even over a fuller field party, which comes back on the return to the field. Retail has no such override - the story's party is Vahn alone there - so with the retail party it is an identity ([battle](battle.md#the-sparring-tutorial-prompt-machine-overlay-967)). |
 | WebXR [VR mode](vr-mode.md) | off | Stereo presentation on the site's WebGL pages, not the wgpu path. |
-| `World::poll_minigame_escape` (Start inside a minigame) | **on**, not a knob | Leaves any of the five mode-24 minigames (Baka Fighter from its player select on: on the attract card Start begins the game). Retail quits each through its own overlay's SM - a different control in a different overlay per game - and the port has none of those arms wired to a control a player can find, so without this an entered minigame is a softlock ([below](#every-minigame-must-be-leavable)). Each game's own `exit_*` runs, so the cash-out / leg report / point bank match a deliberate exit. |
+| `World::poll_minigame_escape` (Start inside a minigame) | **on**, not a knob | Leaves any of the five mode-24 minigames (Baka Fighter from its player select on: on the attract card Start begins the game). Retail quits each through its own overlay's SM - a different control in a different overlay per game, and only some of those arms are ported - so this is the one exit every game shares ([below](#every-minigame-must-be-leavable)). Each game's own `exit_*` runs, so the cash-out / leg report / point bank match a deliberate exit. |
 
 Two details are worth having straight, because the direction is not uniform:
 
@@ -62,7 +62,7 @@ So the knob defaults on and the policy lifts it off retail framing, rather than 
 
 A mode the player can *enter* has to be one the player can *leave*, on every host, or reaching it is a softlock. `SceneHost::drain_minigame_warp` already states that invariant for its failure arms - "a script that armed a warp must never be left in a mode with no exit" - and it holds for the successful ones too.
 
-It is not free, because retail does not have one exit to port. Each of the five minigames quits through its own overlay's state machine: the slot cabinet's exit menu row, the duel's decided-match confirm, the arena's give-up arm. None of those is wired to a control a player can find on either host - the native window's `O` / `B` / `M` are developer hotkeys and the browser play page has none - so without an engine-level exit, a minigame entered through its door would leave a frozen field with the BGM still running and no input that did anything.
+It is not free, because retail does not have one exit to port. Each of the five minigames quits through its own overlay's state machine: the slot cabinet's exit menu row, the duel's decided-match confirm, the arena's give-up arm. Some of those arms are ported - the cabinet's Triangle / Select cash-out picker and its quit row, and the duel cabinet's PAY OUT choice after a decided match, both end the visit through the return warp on both hosts - but each is a different control in a different state, reachable only from that game's own screens, and not every game's exit is. Without one engine-level exit, a minigame entered through its door could still leave the player in a mode whose way out they never find, with the BGM running.
 
 `World::poll_minigame_escape` is therefore an engine affordance rather than a port: Start leaves whichever minigame is live, through that game's own `exit_*` - except on the Baka Fighter attract card, which reads Start as its own begin edge - and closes the mode-24 round trip (`World::minigame_return_warp`) when the entry came through a door warp. It lives in `World::tick`, so both hosts inherit it and neither can drift from the other. Pinned by `engine-shell/tests/casino_floor_softlock.rs`, which enters each of the five the way the door warp does and asserts a pad press gets back out.
 
@@ -87,7 +87,9 @@ The project deliberately does not describe this as "clean-room": the same people
 iso          ← (none)
 prot         → iso (conceptual)
 lzs          ← (none)
-asset        → lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
+game-tables  → bytes  (SCUS / overlay static tables)
+battle-models → game-tables, lzs, prot, tim, tmd, bytes  (battle model formats + glTF)
+asset        → game-tables, battle-models, lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
 tmd          → tim
 tim          ← (none)
 xa           → iso
@@ -96,14 +98,22 @@ mdt          ← (none)
 mes          ← (none)
 anm          ← (none)
 extract      → iso, prot, lzs, asset, tim, tmd, xa, font
+disc-patch   → iso, prot, lzs, asset, xa  (DiscPatcher, PPF, space ledger)
+translate    → disc-patch, asset, art, font, lzs, prot  (language packs)
+party-swap   → asset, lzs, tim, tmd, bytes  (battle-model swap kernels)
+patcher      → disc-patch, translate, party-swap + the parser crates
 
 engine-battle-vm → asset, art               (battle action SM, formulas, battle camera, cast ticks; below engine-vm)
 engine-vm     → engine-battle-vm, asset, prot, art, anm  (VM layer; no GPU / audio deps)
-engine-battle → engine-vm, asset, art, anm, save, tim, tmd  (World-free battle kernels; no GPU / audio deps)
+engine-battle → engine-vm, asset, art, anm, save, tim, tmd, bytes  (World-free battle kernels; no GPU / audio deps)
 engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no World)
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
-engine-core   → engine-battle, engine-effects, engine-minigames, engine-vm + the parser crates
-engine-ui     → engine-vm, asset, tim, font (draw-list builders; no wgpu)
+engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system: input, fades, streaming, sound state)
+engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim, serde  (World-free menu / title / card front end)
+engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, bytes, mes, tmd, serde  (World-free field kernels: actor programs, camera params, cue routers)
+engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-vm + the parser crates
+render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)
+engine-ui     → render-kernels, engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
 engine-audio  → xa, vab, seq, prot          (cpal + SPU model; no engine-core dep)
 engine-session → engine-core, engine-audio, engine-vm (+ parser crates)  (BootSession + BGM director; no wgpu / winit / cpal)
@@ -235,7 +245,7 @@ Every VM is a handler-by-handler translation: the opcode handler is dumped from 
 
 The shell loop closes: title → save-select → field / encounter → battle → save.
 
-- **Game-mode driver** - `crates/engine-core/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#the-ported-vms) for the `World`'s tick path; hosts plug per-mode behaviour through the `ModeHandler` trait (default: no-op). Boot starts in `MainInit`, mirroring the retail boot path.
+- **Game-mode driver** - `crates/engine-field/src/mode.rs`. Port of the 28-entry table at SCUS `0x8007078C` as a `GameMode` enum + `ModeEntry` table + `ModeDriver`. Each game mode maps to a [`SceneMode`](#the-ported-vms) for the `World`'s tick path; hosts plug per-mode behaviour through the `ModeHandler` trait (default: no-op). The seat reaches the world only through the `ModeWorld` trait, which `World` implements in `crates/engine-core/src/mode.rs`. Boot starts in `MainInit`, mirroring the retail boot path.
 - **Title screen** (`engine-core::title::TitleSession`) - `FadeIn → PressStart → MainMenu → Done` with a no-save fallback. The real title TIM (PROT 0890 at `0x14228`, 256×256 8bpp) is decoded by `engine-core::title_screen_atlas::build_atlas_from_prot_888` and uploaded as a sprite atlas by `play-window`; the title-tick body's on-screen layout is documented under [boot - title overlay](boot.md#title-screen-overlay-state).
 - **Save-select** (`engine-core::save_select::SaveSelectSession`) - slot-list browse with Load / Save / Delete confirms.
 - **Encounter system** (`engine-battle::encounter`, re-exported as `engine-core::encounter`) - per-scene table + step-driven random battle trigger + 5-phase transition SM.
@@ -310,7 +320,7 @@ Two responsibilities fall to any host that enters a scene without a door to arri
   - otherwise the spawn relocates to a kind-0 door-arrival destination inside that component, or to the component's centroid. A warp arrival still overrides X/Z afterwards.
   - Hosts seating a player manually should also avoid gate-1 walk-on trigger tiles ([`SceneHost::tile_has_walk_on_trigger`]) - the first tick would fire it and warp the scene away.
   - If an entry-spawned record ends with the player parked inside a wall (a first-visit record's `MoveTo` choreography, e.g. izumi's spring), the helper-context teardown re-seats them at the resolved spawn (`World::step_helper_contexts`).
-- **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and neither culls geometry: a wall or roof between the lens and the player is handled by the camera-occlusion fade ([Fidelity and enhancements](#fidelity-and-enhancements)), which the browser stages through `play_occlusion_focus`.
+- **Framing.** Both hosts run the engine's retail follow camera ([`camera_view`](../../crates/engine-core/src/camera_view.rs)), and neither culls geometry: a wall or roof between the lens and the player is handled by the camera-occlusion fade ([Fidelity and enhancements](#fidelity-and-enhancements)), which the browser stages through `play_occlusion_fade`.
 
 ## Provenance + memory hygiene
 

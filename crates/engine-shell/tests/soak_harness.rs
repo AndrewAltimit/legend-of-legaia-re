@@ -210,6 +210,15 @@ impl Rng {
 /// Per-(scene, seed) policy seed, so one scene's run does not depend on the
 /// order the scene list happens to be in.
 fn run_seed(scene: &str, seed: u64) -> u64 {
+    // The card a `@<card>:<save>` label names is where the save is read
+    // from, not part of the run: the stream is the `@<save>` label's.
+    let scene = match scene.split_once('@') {
+        Some((label, save)) => match save.split_once(':') {
+            Some((_, save)) => format!("{label}@{save}"),
+            None => scene.to_string(),
+        },
+        None => scene.to_string(),
+    };
     let mut h: u64 = 0xCBF2_9CE4_8422_2325;
     for b in scene.bytes() {
         h ^= u64::from(b);
@@ -767,6 +776,43 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
     if w.dialog.current.is_some() || w.dialog.inline.is_some() {
         out.push_str(" dialog");
     }
+    // Free roam: which of the locomotion controller's gates holds the pad,
+    // and which directions the wall / actor probes refuse - the first
+    // question for a `free-roam:immobile` park.
+    if matches!(w.mode, SceneMode::Field) && !w.dialogue_owns_input() {
+        let walls: String = (0..4)
+            .map(|d| {
+                let wall = w.field_dir_blocked(m.world_x, m.world_z, d);
+                let actor = w.field_actor_dir_blocked(m.world_x, m.world_z, d);
+                match (wall, actor) {
+                    (true, true) => 'B',
+                    (true, false) => 'W',
+                    (false, true) => 'A',
+                    (false, false) => '.',
+                }
+            })
+            .collect();
+        let _ = write!(
+            out,
+            " gates(lock80000 {} engaged {} battle {} warp {} scale {:#x}) dirs[Z-,X-,Z+,X+]={walls}",
+            m.flags & 0x0008_0000 != 0,
+            w.script_context_engages_player(),
+            w.field_scripts_held_for_battle(),
+            w.field_warp_in_flight(),
+            m.field_72,
+        );
+    }
+    // Whose talk record the inline runner is stepping, and where.
+    if let Some(d) = w.dialog.inline.as_ref() {
+        let _ = write!(
+            out,
+            "(npc {:?} prop {:?} pc {:#x}[{}])",
+            d.npc_slot,
+            d.prop_anchor,
+            d.pc,
+            bytes(&d.bytecode, d.pc)
+        );
+    }
     if w.mode == SceneMode::Battle {
         let _ = write!(
             out,
@@ -779,6 +825,17 @@ fn trace_line(s: &BootSession, pad: u16) -> String {
             w.game_over,
             w.game_over_hold
         );
+        // The acting actor's command: category `+0x1DE` and its first
+        // parameter (the spell / move id a cast-module park keys on).
+        if let Some(a) = w.actors.get(usize::from(w.battle_ctx.active_actor)) {
+            let _ = write!(
+                out,
+                " act(cat {} p0 {:#04x} monster {:?})",
+                a.battle.action_category,
+                a.battle.params.first().copied().unwrap_or(0),
+                a.battle_monster_id
+            );
+        }
         for (i, a) in w.actors.iter().take(8).enumerate() {
             if a.battle.max_hp > 0 || a.battle.liveness != 0 {
                 let _ = write!(
@@ -2151,6 +2208,22 @@ fn confirm(
 /// `(rank, signature, [(outcome index, finding index)])`.
 type SigRow = (u8, String, Vec<(usize, usize)>);
 
+/// Findings an `@<save>` run raises only because it enters a scene by name
+/// that the save's story reaches through a door it never opens (see
+/// `docs/tooling/soak-harness.md`). A signature here whose every hit comes
+/// from an `@<save>` run is listed apart from the findings, with its reason;
+/// the same signature from a plain run is still a finding.
+const SAVE_ENTRY_ARTIFACTS: &[(&str, &str)] = &[
+    (
+        "softlock|map01|free-roam:immobile@tile(96,25)",
+        "map01 P1[0] walls in Rim Elm's footprint from PRO-04 on; the town0b / town0c / op* exits land inside it",
+    ),
+    (
+        "softlock|korb3|free-roam:immobile@tile(36,26)",
+        "korb3's default entry seat is walled once the save's flags gate off the arrival cutscene that moves the party off it",
+    ),
+];
+
 fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &SoakResult) {
     let out = out_dir(&cfg.tag);
     let _ = std::fs::create_dir_all(out.join("replays"));
@@ -2171,6 +2244,14 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
     rows.sort_by(|a, b| {
         (a.0, std::cmp::Reverse(a.2.len())).cmp(&(b.0, std::cmp::Reverse(b.2.len())))
     });
+    // Known `@<save>` entry artifacts come out of the table.
+    let (artifacts, rows): (Vec<SigRow>, Vec<SigRow>) =
+        rows.into_iter().partition(|(_, sig, hits)| {
+            SAVE_ENTRY_ARTIFACTS.iter().any(|(s, _)| s == sig)
+                && hits
+                    .iter()
+                    .all(|&(oi, _)| r.outcomes[oi].spec.scene.contains('@'))
+        });
 
     let frames_total: u64 = r.outcomes.iter().map(|o| o.stats.frames_run).sum();
     let battles: u32 = r.outcomes.iter().map(|o| o.stats.battles).sum();
@@ -2232,7 +2313,20 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
         "- runs that changed scene {moved}; distinct scenes entered by transition {}",
         reached.len()
     );
-    let _ = writeln!(md, "- distinct finding signatures: {}\n", rows.len());
+    let _ = writeln!(md, "- distinct finding signatures: {}", rows.len());
+    for (_, sig, hits) in &artifacts {
+        let why = SAVE_ENTRY_ARTIFACTS
+            .iter()
+            .find(|(s, _)| s == sig)
+            .map_or("", |(_, w)| w);
+        let _ = writeln!(
+            md,
+            "- known `@<save>` entry artifact (not a finding): `{}` x{} - {why}",
+            sig.replace('|', "/"),
+            hits.len()
+        );
+    }
+    md.push('\n');
     let _ = writeln!(
         md,
         "| rank | detector | scene | location | hits | repro | first (start scene / seed / frame) | detail |"
@@ -2279,6 +2373,8 @@ fn write_report(src: &Source, known: &BTreeSet<String>, cfg: &SoakConfig, r: &So
             .iter()
             .map(|&(oi, _)| r.outcomes[oi].spec.scene.as_str())
             .collect();
+        // A JSON array: `{:?}` on a set prints `{..}`, which is not JSON.
+        let starts: Vec<&str> = starts.into_iter().collect();
         let _ = writeln!(
             json,
             "  {{\"signature\": {:?}, \"rank\": {}, \"hits\": {}, \"repro\": {:?}, \"start_scenes\": {:?}, \"first\": {{\"scene\": {:?}, \"seed\": {}, \"frame\": {}}}, \"mode\": {:?}, \"detail\": {:?}, \"replay\": {:?}}},",
@@ -2511,7 +2607,15 @@ fn card_save(save: &str) -> Result<legaia_save::SaveFile, String> {
     let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| repo_root().join("saves/library"));
-    let card = std::env::var("LEGAIA_SOAK_CARD").unwrap_or_else(|_| SOAK_CARD.to_string());
+    // `<card>:<save>` names its own card; a bare save reads
+    // `LEGAIA_SOAK_CARD`, else the default.
+    let (card, save) = match save.split_once(':') {
+        Some((card, save)) => (card.to_string(), save),
+        None => (
+            std::env::var("LEGAIA_SOAK_CARD").unwrap_or_else(|_| SOAK_CARD.to_string()),
+            save,
+        ),
+    };
     let path = lib.join("cards").join(&card);
     let mounted = legaia_save::emu::MountedCard::open(&path).map_err(|e| format!("{e:#}"))?;
     for block in 1..=15u8 {
@@ -2562,13 +2666,21 @@ fn filter_scenes(all: &[String], extra: &[String]) -> Vec<String> {
             .chain(extra.iter().cloned())
             .collect(),
     };
-    // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save.
+    // `LEGAIA_SOAK_SAVE=<save>` plays every run from that card save. A
+    // `LEGAIA_SOAK_CARD` other than the default rides in the label
+    // (`@<card>:<save>`), so a replay written from the run names its card.
     if let Ok(save) = std::env::var("LEGAIA_SOAK_SAVE")
         && !save.trim().is_empty()
     {
+        let save = match std::env::var("LEGAIA_SOAK_CARD") {
+            Ok(card) if !card.trim().is_empty() && card.trim() != SOAK_CARD => {
+                format!("{}:{}", card.trim(), save.trim())
+            }
+            _ => save.trim().to_string(),
+        };
         for s in &mut scenes {
             if !s.contains('@') {
-                *s = format!("{s}@{}", save.trim());
+                *s = format!("{s}@{save}");
             }
         }
     }

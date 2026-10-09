@@ -922,7 +922,7 @@ inferred from the ring's arm order, not read off a commit arm.
 ### How the engine raises the flow state
 
 The engine splits what `FUN_801D0748` does in one machine across a
-[`battle_input::BattleCommandSession`](../../crates/engine-core/src/battle_input.rs)
+[`battle_input::BattleCommandSession`](../../crates/engine-menus/src/battle_input.rs)
 plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
 each frame by `battle_flow::flow_state_for` (an open submenu wins over the
 command phase). The round around them is retail's own two bands - every
@@ -1731,6 +1731,59 @@ and `5` are the same no-op tail slot:
 | `7` | `0x801D65DC` | post-strike **two-shot** | attacker-target **midpoint** |
 | `8` | `0x801D67D0` | end-of-action | the target |
 | `9` | `0x801D6EF4` | far Begin/Run framing | formation centre |
+
+### The battle frame step is the frame's own cost
+
+Every per-frame battle path - the camera walker `FUN_8002149C`, the effect
+waits, the root-motion term - scales by the frame step `DAT_1F800393`, and
+the frame driver `FUN_80016B6C` rebuilds that byte every frame from what the
+frame cost. The newest frame time (`FUN_800173BC`'s `VSync(1)` hblank
+count) goes into a sixteen-entry ring at `0x80084098`, index `gp+0x440`,
+clamped to `0x2BC` at `0x2D0` or more (`0x80017098..0x800170CC`); the step
+is the ring's maximum against `0xF1` / `0x1FF` / `0x2D1` - `1` / `2` / `3`,
+else `4` (`0x80017108..0x8001715C`) - raised to the floor `0x8007B9D8`
+(`0x80017170..0x80017198`). Only mode word `gp+0x4CE == 0x10` measures; a
+non-zero `gp+0x5D8` forces the step instead.
+
+The battle's floor is `1` in every catalogued battle state, so its step is
+the load alone and is not a property of the game state. Across the
+battle captures the ring reads `2` on about three in five; summon close-ups,
+module casts, the arts input and the Spirit-heavy Delilas fights read `3`
+(`theeder_summon_mid_cast` peaks at `625`, `gimard_burning_attack` sits at
+the `700` clamp), and two light casts and the battle-loading frame read
+`1`. A capture recovers only its newest sixteen frames this way:
+`gp+0x480` counts frames and the libetc vsync count `0x8007A894` counts
+vsyncs, but the frame counter restarts somewhere no `SCUS_942.54` store
+shows (only its increment at `0x80016BA8` is there) and nothing records the
+vsync count beside it, so the steps of a whole fight are lost. Two captures of
+one session show how mixed they are: `player_steal_skeleton_pre` to
+`_banner` is `304` vsyncs over `115` frames.
+
+The engine ticks once a vsync, which keeps every per-vsync rate whatever
+the step; the step only places the frame boundaries. `BattleFrameClock`
+groups the ticks into frames - two vsyncs by default - for the root-motion
+carry and the camera (`BattleCamera::set_frame_step`). The camera keeps
+every tween's length in display frames whatever the step: a step fires
+every `step` vsyncs, the walker scales each increment by it, a tween armed
+over `a3` frames lands in `a3 / step` steps (`frames_to_steps`, the module
+and spell-cast shots; `steps_of` for the glides authored in default-step
+steps), and the idle orbit turns `2 * step` a step. Play keeps the
+default; a replay that knows retail's step installs it while the action SM
+sits in one state (`World::seed_battle_frame_step`). The retail-compare
+drive does so for a replayed cast caught in the summon close-up `0x33` /
+`0x34`, where each pass re-arms case `0x12`'s three-frame tween: at step
+`3` the walker lands it every pass, at `2` it trails
+([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
+The cast modules keep their per-vsync passes. Run once a battle frame
+with every drain, drift and ramp scaled by the step - retail's own shape -
+they measured worse on the step-`3` captures than the per-vsync passes,
+which run the same rates: `nova_summon_mid_cast` `image` `.963` to `.717`
+(its flash fade spawned up to two vsyncs later), `gimard_burning_attack`
+`camera` `.965` to `.932`. The captures these modules reach are placed by
+the module's own arm and countdown
+([retail-compare](../tooling/retail-compare.md#driving-to-the-phase)), so
+quantising the arms to frame boundaries moves only what spawns on them.
 
 ### The post-strike two-shot (`FUN_801D5854` cases 7 and 8)
 
@@ -2992,8 +3045,10 @@ The from-scratch engine ports it across `engine-core`:
 The picker drives the live loop's monster turns, folding a chosen cast through
 `cast_spell_on_slots` (the shared player/monster cast path) and parking the SM at
 `EndOfAction`. Scripted casts emit retail spell ids; they fold when the active
-catalog knows the id (the disc spell table, or the from-scratch monster block in
-`SpellCatalog::vanilla`) and otherwise degrade to a physical strike.
+catalog knows the id (the disc spell table; a capture-class special resolves
+off its disc record through `World::monster_cast_def`) and otherwise degrade to
+a physical strike. `SpellCatalog::vanilla` is a disc-free test fixture; no boot
+catalog carries it.
 
 **Faithful default = uniform-random single target.** Retail's `OneEnemy` /
 physical target is a uniform random living party member (`rand % party_count`,
@@ -3912,7 +3967,7 @@ cap at the record's per-stat cap constant; HP/MP max at 9999. (These items are
 field-only and absent from the captured battle traces, so the exact retail cap /
 refill rule is not byte-pinned - the engine uses self-consistent rules.)
 
-Implementation: [`crates/engine-core::items`](../../crates/engine-core/src/items.rs).
+Implementation: [`crates/engine-core::items`](../../crates/engine-menus/src/items.rs).
 
 
 ## Battle round lifecycle
@@ -4042,7 +4097,7 @@ carved-gold plate row, which is the same art the field menu's tab banner
 already bakes. Source rects live in
 [`title_pak`](../../crates/asset/src/title_pak.rs) as
 `OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
-[`save_menu_atlas`](../../crates/engine-core/src/save_menu_atlas.rs) as
+[`save_menu_atlas`](../../crates/engine-menus/src/save_menu_atlas.rs) as
 `ATLAS_RECT_BATTLE_*`, all at their natural sheet coordinates except the
 numeral strip, whose own row the filigree tile holds.
 
@@ -4381,7 +4436,12 @@ raises it for the acting member; and the item band's `0x3E` arm
 a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
 caster (see the roster-panel note above). A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
-cast on a member shows that member's bar.
+cast on a member shows that member's bar. The openers test the target byte
+once, so a group cast raises no bar even after the band rewrites its `8` / `9`
+to a slot (`sb t2,0x1dd(s3)` at `0x801E42D0` / `0x801E431C`):
+`evolved_0x91_midcast`, Holy Eyes from a lone Vahn, holds `0` mid-cast and its
+handle list carries no bar. The port draws the bar only after an opener ran
+this action (`BattleState::readout_bar_glide`).
 A counterattack runs no seed of its own: the strike loop's swap hands the
 monster's action to the counterer, so the elements the monster's seed opened
 stay up - the bar for its party target, the counterer - and the combo cluster
@@ -4952,7 +5012,7 @@ State machine that drives the "open inventory → pick item → pick target → 
 
 Filters items by `InventoryContext` (battle vs field - `usable_in_battle` / `usable_in_field` from the catalog), validates target compatibility (Revive needs a dead target; everything else needs a live one), and folds the resolved `ItemOutcome` into the engine's world state via `World::use_item`.
 
-Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-core/src/inventory_use.rs).
+Implementation: [`crates/engine-core::inventory_use`](../../crates/engine-menus/src/inventory_use.rs).
 
 
 ## Encounter system
@@ -5126,7 +5186,7 @@ A pre/post encounter save pair (one frame walking the `map01` field scene; the n
 
 The active scene-name table at `0x80084540` (CDNAME label + scene index) is **identical** between the pre-encounter and post-encounter saves - the battle is layered on top of the field scene rather than swapping it out. Engines that drive the field-to-battle transition therefore preserve the active-scene state and only resolve the formation + battle overlay.
 
-Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-core/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
+Codified as constants in [`crates/engine-core::capture_observations::encounter_trigger`](../../crates/engine-system/src/capture_observations.rs); a disc-gated test in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) (`encounter_trigger_diff_loads_battle_overlay`) exercises the real save bytes.
 
 ## Battle scene-init residency window
 
@@ -5155,7 +5215,7 @@ generate without manual frame-stepping (mednafen 1.29 has no headless
 mode).
 
 Codified as constants in
-[`engine_core::capture_observations::battle_init_overlay`](../../crates/engine-core/src/capture_observations.rs);
+[`engine_core::capture_observations::battle_init_overlay`](../../crates/engine-system/src/capture_observations.rs);
 disc-gated test
 `battle_init_overlay_pair_pins_battle_bundle_window_and_actor_tick_wiring`
 in `crates/mednafen/tests/real_saves.rs`.
@@ -5179,7 +5239,7 @@ the Fire Book-specific writer to the displayed-skills array at
 is required to lift that writer.
 
 Codified as constants in
-[`engine_core::capture_observations::item_use_battle_event`](../../crates/engine-core/src/capture_observations.rs);
+[`engine_core::capture_observations::item_use_battle_event`](../../crates/engine-system/src/capture_observations.rs);
 disc-gated test
 `item_use_pair_pins_field_pack_base_flip_and_script_vm_ctx_shift`
 in `crates/mednafen/tests/real_saves.rs`.
@@ -5256,7 +5316,7 @@ Slots match the retail `equip[8]` byte array at character record `+0x196`:
 | Ring 1/2 | 5/6 | Power / Defense / Speed / Hit Rings |
 | Accessory | 7 | Goblin Foot (encounter rate down) / Wisdom Ring (MP cost) / Lucky Charm (bonus EXP) |
 
-Implementation: [`crates/engine-core::equipment`](../../crates/engine-core/src/equipment.rs).
+Implementation: [`crates/engine-core::equipment`](../../crates/engine-menus/src/equipment.rs).
 
 ## Seru capture + spell learning
 
@@ -5414,7 +5474,7 @@ the monsters dispatch.
 
 The engine runs the same two bands (`battle_round::RoundFlow`,
 `RoundPhase::{Command, Execute}`; `World::begin_battle_round` /
-`begin_round_execution` / `end_battle_round` in `world/battle/loop_driver.rs`):
+`begin_round_execution` / `end_battle_round` in `world/battle/loop_driver/round.rs`):
 
 - **Command band.** `begin_battle_round` is retail's `0x14`: the actor sweep
   (`BattleRound::boundary`), the initiative re-seed when no key is live, the
@@ -5525,7 +5585,7 @@ popup is surfaced (`World::drain_battle_hit_fx`), and the action SM is **parked 
 `EndOfAction`** so the re-arm block cycles to the next combatant - a cast / art
 / item use is the actor's whole turn, no Attack-SM strike fires. Backing out
 reopens the command menu for the same actor. Implementation:
-[`crates/engine-core::battle_input`](../../crates/engine-core/src/battle_input.rs)
+[`crates/engine-core::battle_input`](../../crates/engine-menus/src/battle_input.rs)
 + [`arts_command_input`](../../crates/engine-battle/src/arts_command_input.rs) /
 [`battle_arts`](../../crates/engine-battle/src/battle_arts.rs) /
 [`battle_magic`](../../crates/engine-battle/src/battle_magic.rs).
@@ -5550,7 +5610,7 @@ Capturing a monster (magic capture roll or a capture item) downs it and logs its
 - `World::tick` advances the banner one frame per call and clears it when the session reaches `Done`, so it plays out over the field after the battle ends. The session's `current_banner()` yields the active line (`"Captured: <Seru>!"` then per-learn `"<char> learned <spell>!"`); the play-window renders it via `legaia_engine_render::capture_banner_draws_for`.
 - `resolve_captures` always drains `battle_captures`; with an empty `World::seru.registry` (the default) it banks nothing - the monster is still downed, but no Seru is learned.
 - Capture-point progress (including sub-threshold totals) persists through `World::save_full` / `load_full` as `(seru_id, points)` pairs in each `CharSaveExt::seru_captures`; reload restores the points and, with the registry installed, re-marks any over-threshold Seru as learned.
-- The `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are engine-side approximations (`SeruRegistry::vanilla`); pinning the real per-monster Seru attachments and capture arithmetic is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
+- This registry path serves the capture *spells* only. Its `MonsterDef::seru_id` mapping + `learn_threshold` / `capture_points` values are engine-side approximations (the live loop installs `SeruRegistry::retail`, which pins only the taught spell ids); the killing-blow Seru absorb does not use them - it reads the record's own `+0x3E` / `+0x3F` ([above](#the-retail-capture-roll-fun_801ec3e4)). Pinning the capture spells' per-monster attachments is gated on the still-uncaptured stat-grant table loader (see [`crate::capture_observations::battle_init_overlay`]).
 
 ### What the loop flag does and does not gate
 
@@ -5598,7 +5658,7 @@ Both hosts arm the loop through one shared kernel, `World::arm_live_loop` (`crat
 The `legaia-engine play-window` host ships the loop **on**, matching the browser play page and the project's enhancement-forward default; retail-shaped inspection is one flag away:
 
 - `--no-live-loop` turns the encounter roll off (field VM + locomotion only - the scene-inspection mode). A battle the engine is already in still resolves.
-- `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the vanilla spell + item catalogs; with `LEGAIA_DEMO_BATTLE_SEED=1` it also seeds demo items - Healing Leaf + Bomb - saved chains and a demo `Art1B` record into an empty save, so the ally-heal and offensive item paths are exercisable without a real save. Without the variable an empty save stays empty, as on retail).
+- `--no-player-battle` turns off the command menu, auto-attacking each party turn instead. By default battles are player-driven and the HUD renders party/monster HP plus the command menu / target cursor / arts + spell + item submenus (the host installs the boot spell catalog (the disc table) and the vanilla item catalog; with `LEGAIA_DEMO_BATTLE_SEED=1` it also seeds demo items - Healing Leaf + Bomb - saved chains and a demo `Art1B` record into an empty save, so the ally-heal and offensive item paths are exercisable without a real save. Without the variable an empty save stays empty, as on retail).
 - `--battle-bgm <id>` overrides the Battle↔Field music swap track: the live loop cross-fades to it on encounter and resumes the field track on battle end. The swap is on by default (retail's standard battle theme, global BGM `2026` = `music_labels::BATTLE_THEME_1_BGM_ID`, installed by `LiveLoopOpts::playable()`); `0` disables it. Ids route through the same director as field op-`0x35` starts - scene-local ids via the scene's BGM table, `>= 2000` via the global `music_01` pool. The browser twin is `LegaiaRuntime::set_battle_bgm`.
 
 ### Battle end, both hosts

@@ -175,56 +175,60 @@ fn options_session_round_trip_persists_changes() {
     );
 }
 
-/// The Key Config row is engine-only and **opt-in**: a session built without
-/// a binding table shows the retail ten rows and nothing else, so an oracle,
-/// a replay driver or a headless host cannot pick up a row retail has no
-/// config word for.
+/// The options window is retail's ten rows whether or not a host armed its
+/// binding table: the engine-only key-rebind screen is not a row (a row grew
+/// the window past retail's frame), and Select is inert on a session no host
+/// armed - an oracle, a replay driver or a headless host has no table to edit.
 #[test]
-fn the_key_config_row_appears_only_when_a_host_arms_a_binding_table() {
-    let plain = OptionsSession::new(OptionsState::default());
+fn the_options_window_keeps_the_retail_ten_rows_when_armed() {
+    let mut plain = OptionsSession::new(OptionsState::default());
     assert!(!plain.key_config_armed());
     assert_eq!(plain.display_rows().len(), 10);
-    assert!(plain.state().rows_for(false).len() == 10);
+    let events = plain.tick(OptionsInput {
+        select: true,
+        ..Default::default()
+    });
+    assert!(
+        events.is_empty() && plain.key_rebind().is_none(),
+        "Select is inert unarmed"
+    );
 
     let armed = OptionsSession::with_key_rebind(OptionsState::default(), Mapping::default());
     assert!(armed.key_config_armed());
-    assert_eq!(armed.display_rows().len(), 11);
-    let rows = armed.state().rows_for(true);
-    assert_eq!(rows[10].label, "Key Config");
-    // A value string, not an empty column: an empty one reads as the
-    // "Dual Shock" group header directly above it.
-    assert!(rows[10].value.is_some());
+    assert_eq!(armed.display_rows().len(), 10);
+    assert_eq!(armed.screen_model().rows.len(), 10);
+    assert!(
+        armed
+            .screen_model()
+            .rows
+            .iter()
+            .all(|r| r.label != "Key Config")
+    );
 }
 
-/// The whole menu route the key-rebind screen used to lack, end to end: walk
-/// the browse cursor onto the engine-only row, Cross into the sub-screen,
-/// Cross onto a button row, press a key, and read the committed table back
-/// out of the session the way both hosts do (native persists it to
-/// `legaia-input.toml`, the browser page to `localStorage`).
+/// The whole menu route the key-rebind screen used to lack, end to end: Select
+/// opens the sub-screen from any browse row, Cross onto a button row, press a
+/// key, and read the committed table back out of the session the way both
+/// hosts do (native persists it to `legaia-input.toml`, the browser page to
+/// `localStorage`).
 #[test]
 fn the_options_screen_reaches_the_key_rebind_sub_screen_and_commits_a_bind() {
     let mut s = OptionsSession::with_key_rebind(OptionsState::default(), Mapping::default());
-    // Ten Downs from row 0 lands on the eleventh row: the Dual Shock header
-    // is skipped as unselectable, so the walk wraps once through row 0.
-    let mut guard = 0;
-    while s.cursor() as usize != 10 {
-        let _ = s.tick(OptionsInput {
-            down: true,
-            ..Default::default()
-        });
-        guard += 1;
-        assert!(guard < 64, "cursor never reached the Key Config row");
-    }
-    // Cross opens the sub-screen rather than a value popup.
+    let _ = s.tick(OptionsInput {
+        down: true,
+        ..Default::default()
+    });
+    let row = s.cursor();
+    // Select opens the sub-screen, not a value popup.
     let events = s.tick(OptionsInput {
-        cross: true,
+        select: true,
         ..Default::default()
     });
     assert!(events.iter().any(|e| matches!(
         e,
-        legaia_engine_core::options::OptionsEvent::KeyRebindOpened { row: 10 }
+        legaia_engine_core::options::OptionsEvent::KeyRebindOpened { row: r } if *r == row
     )));
-    assert!(s.popup().is_none(), "this row has no value popup");
+    assert!(s.popup().is_none(), "Select opens no value popup");
     let sub = s.key_rebind().expect("sub-screen open");
     assert_eq!(sub.rows().len(), 16, "one row per pad button");
     assert_eq!(sub.rows()[0].button, PadButton::Cross);
@@ -260,7 +264,7 @@ fn the_options_screen_reaches_the_key_rebind_sub_screen_and_commits_a_bind() {
         ..Default::default()
     });
     assert!(s.key_rebind().is_none());
-    assert_eq!(s.cursor(), 10);
+    assert_eq!(s.cursor(), row);
     assert!(!s.is_done());
     let _ = s.tick(OptionsInput {
         circle: true,

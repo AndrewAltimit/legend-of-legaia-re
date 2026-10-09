@@ -1258,8 +1258,7 @@ impl World {
                 != crate::battle_steal::HELD_CAP
         {
             drops.push(item);
-            let entry = self.party.inventory.entry(item).or_insert(0);
-            *entry = entry.saturating_add(1);
+            let _ = self.party.inventory.add(item, 1);
         }
         // The +25% gold bonus fires when a living party member carries bit
         // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
@@ -1345,8 +1344,7 @@ impl World {
         let entry = steal_table.entry(monster_id).filter(|e| e.is_stealable())?;
         let roll = (self.next_rand() % 100) as u8;
         if roll < entry.chance_pct {
-            let slot = self.party.inventory.entry(entry.item_id).or_insert(0);
-            *slot = slot.saturating_add(1);
+            let _ = self.party.inventory.add(entry.item_id, 1);
             Some(entry.item_id)
         } else {
             None
@@ -1377,8 +1375,7 @@ impl World {
             return None;
         }
         self.party.money = (self.party.money + delta).clamp(0, 9_999_999);
-        let count = self.party.inventory.entry(item_id).or_insert(0);
-        *count = count.saturating_add(qty);
+        let _ = self.party.inventory.add(item_id, qty);
         Some((item_id, qty, delta))
     }
 

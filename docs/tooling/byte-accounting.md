@@ -918,6 +918,13 @@ register (the `addu` in the call's delay slot, or a call before the register is
 rewritten) counts as an access to the element's start. Two different leaves
 summed (a two-dimensional index) state no single stride and are left alone.
 
+A stride of 1 is a **byte table**: the index is added to the base unscaled, as
+in PROT `0897`'s op-`0x49` sub-op map at `0x801F33A4` (`lbu` the sub-op, `addu`
+it to the formed base, `lb` the slot, `0x801F145C..0x801F1468`). The field test
+does the discriminating - a 1-byte element admits only a byte access - so an
+`addu` of a pointer and a byte offset that a word load then reads claims
+nothing.
+
 The count comes from one of two places, and the claim's reason line says
 which:
 

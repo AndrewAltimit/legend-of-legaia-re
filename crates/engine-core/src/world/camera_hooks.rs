@@ -40,26 +40,7 @@
 
 use super::World;
 
-/// One queued camera-zone arm, drained by [`crate::camera::Camera::tick`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CameraZoneRequest {
-    /// `[4C 38]` - query + load the camera parameter block from the record
-    /// covering the player's tile. The ease walks the globals to the new
-    /// block's composed pose.
-    QueryAtPlayer,
-    /// `[4C C4 x z]` - the same query at a tile the script names.
-    QueryAtTile { x: u8, z: u8 },
-    /// `[4C 39]` - query at the player's tile, re-conform the player's
-    /// footing to the floor there, then snap the camera and clamp the focus.
-    QueryConformAndSnap,
-    /// `[4C 3E]` - snap the camera from the resident block and clamp the
-    /// focus. No query.
-    SnapAndClamp,
-    /// `[4C 3D]` - re-latch the walk-region attribute box at the player's
-    /// tile (`FUN_800180EC`). Camera-adjacent because the box is what the
-    /// composer's position sweeps span.
-    RefreshAttributes,
-}
+pub use crate::camera::CameraZoneRequest;
 
 impl World {
     /// Queue one camera-zone arm. The queue is bounded: a script that

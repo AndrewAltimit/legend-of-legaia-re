@@ -22,7 +22,7 @@
  * Z / X / C / V and the shoulders on Q / E.
  *
  * That layout is now the DEFAULT rather than the whole story: the pause
- * menu's Options > Key Config row rebinds keys, and the engine persists the
+ * menu's Options > Key Config screen rebinds keys, and the engine persists the
  * edited table to localStorage. A page that folded this table into `PAD` at
  * load therefore has to re-read it - `legaiaSyncPadBindings(rt)` does that off
  * the engine's own revision counter. Still no table in this file.
@@ -157,7 +157,7 @@
   window.legaiaResetGamepad = () => { gamepadHeld = new Set(); };
 
   window.legaiaAdoptPadBindings = adoptPadBindings;
-  /* Re-read the engine's table after the options screen's Key Config row
+  /* Re-read the engine's table after the options screen's Key Config screen
    * rebound something. The table above is folded into `PAD` once at load, so
    * nothing about the engine serving new bindings would reach a running page;
    * `pad_bindings_revision` is the engine's own change counter and this is the

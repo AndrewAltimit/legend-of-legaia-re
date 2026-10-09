@@ -1108,6 +1108,14 @@ impl World {
     // PORT: FUN_80016444 (frame-pass sequencing; render/flip halves are the
     //                     host renderer's, dev prints not ported)
     pub fn tick(&mut self) -> Option<StepOutcome> {
+        // A pinned encounter entry ([`EncounterState::rng_hold`]).
+        if let Some(seed) = self.encounters.rng_hold {
+            if self.mode == SceneMode::Battle {
+                self.encounters.rng_hold = None;
+            } else {
+                self.rng_state = seed;
+            }
+        }
         // The move-VM strip set on screen is one tick's
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();

@@ -58,6 +58,79 @@ pub fn fade_armed(world: &World, cutscene_camera_owns_frame: bool) -> bool {
     world.mode == crate::world::SceneMode::Field && !cutscene_camera_owns_frame
 }
 
+/// The host's own arming terms of the fade, beside [`fade_armed`]'s world
+/// half. Each host fills the three it can see; [`host_fade_armed`] is the one
+/// place they combine, so the two play hosts cannot again disagree on which
+/// screens dissolve the walls behind them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FadeHostTerms {
+    /// The host's master toggle (`--no-occlusion-fade` / `F4` natively, the
+    /// page's "See-through walls" checkbox).
+    pub enabled: bool,
+    /// A debug vantage owns the frame (the native `F3` orbit, the page's
+    /// debug camera, a VR first-person eye) - nothing sits between it and
+    /// the player in the follow camera's sense.
+    pub debug_camera: bool,
+    /// A UI screen owns the frame: the boot UI, or any menu-runtime screen
+    /// (the pause menu, a shop, the prize counter - `MenuRuntime::is_open`).
+    pub screen_owned: bool,
+}
+
+/// Whether the fade arms this frame: the host's terms, a live name-entry
+/// prompt (engine state, so not a host term) and [`fade_armed`].
+///
+/// The native window used to exclude only its boot UI and debug vantage, so
+/// a pause menu or a name-entry prompt kept dissolving the walls behind it;
+/// the browser page had added those screens itself. Both now ask this.
+pub fn host_fade_armed(world: &World, cutscene_camera_owns_frame: bool, h: FadeHostTerms) -> bool {
+    h.enabled
+        && !h.debug_camera
+        && !h.screen_owned
+        && !world.name_entry_active()
+        && fade_armed(world, cutscene_camera_owns_frame)
+}
+
+/// Fraction of the remaining gap the fade strength closes per frame.
+pub const FADE_STRENGTH_EASE: f32 = 0.25;
+/// Below this distance from its target the strength snaps onto it; a
+/// strength at or below it is not staged at all.
+pub const FADE_STRENGTH_SNAP: f32 = 0.01;
+
+/// The fade's per-frame **strength ramp**: eased toward the visibility gate's
+/// verdict a quarter of the gap per frame so the screen-door dissolves in and
+/// out instead of popping while the gate flips at cover edges.
+///
+/// One value per host, stepped once per drawn field frame. Both play hosts
+/// used to carry their own copy of the ease and the snap (the page in JS).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct FadeRamp {
+    strength: f32,
+}
+
+impl FadeRamp {
+    /// The current strength, `0.0..=1.0`.
+    pub fn strength(&self) -> f32 {
+        self.strength
+    }
+
+    /// Drop to zero: the fade did not arm this frame.
+    pub fn reset(&mut self) {
+        self.strength = 0.0;
+    }
+
+    /// Step one frame toward `fully_hidden`'s target and answer the strength
+    /// to stage, `None` when it is too faint to stage.
+    pub fn step(&mut self, fully_hidden: bool) -> Option<f32> {
+        let target = if fully_hidden { 1.0 } else { 0.0 };
+        let mut s = self.strength + (target - self.strength) * FADE_STRENGTH_EASE;
+        if (s - target).abs() < FADE_STRENGTH_SNAP {
+            s = target;
+        }
+        self.strength = s;
+        (s > FADE_STRENGTH_SNAP).then_some(s)
+    }
+}
+
 /// The player's body centre in **raw retail Y-down world coordinates** - the
 /// one point the camera-occlusion fade is about.
 ///
@@ -228,22 +301,10 @@ impl FieldOccluders {
     /// them to the occluder set. Public so tests (and future hosts holding
     /// raw geometry) can compose a set without a [`SceneResources`].
     pub fn add_instanced_mesh(&mut self, positions: &[[f32; 3]], indices: &[u32], d: &EnvDraw) {
-        // Retail pure-Y rotation (FUN_80026988): local +Z -> (sin, 0, cos).
-        // Known gap: this rotates by yaw only, while the draw itself now composes
-        // all three authored angles (`battle_intro::placement_rotation`). The
-        // handful of disc placements carrying a real X/Z tilt therefore get a
-        // plane whose normal is off by that tilt. Harmless for the pure-yaw
-        // majority; fixing it means sharing the same composition here.
-        let ang = f32::from(d.rot_y & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-        let (s, c) = ang.sin_cos();
-        let t = [d.world_x as f32, d.world_y as f32, d.world_z as f32];
-        let xf = |v: [f32; 3]| -> [f32; 3] {
-            [
-                c * v[0] + s * v[2] + t[0],
-                v[1] + t[1],
-                -s * v[0] + c * v[2] + t[2],
-            ]
-        };
+        // The draw's own placement (`Rx * Ry * Rz` then the world position,
+        // `EnvDraw::place_point`), so a tilted placement occludes where it is
+        // drawn rather than where a yaw-only bake would stand it.
+        let xf = |v: [f32; 3]| -> [f32; 3] { d.place_point(v, [0.0; 3]) };
         let start = self.tris.len();
         let mut lo = [f32::INFINITY; 3];
         let mut hi = [f32::NEG_INFINITY; 3];
@@ -537,5 +598,63 @@ mod tests {
         // Wall exactly at the player's Z: intersection t = 1.0, trimmed.
         let o = set_with_wall_at(PLAYER[2] as i32);
         assert!(!o.segment_blocked(EYE, PLAYER));
+    }
+}
+
+#[cfg(test)]
+mod fade_ramp_tests {
+    use super::*;
+
+    /// The ramp both hosts step: a quarter of the gap per frame, snapped
+    /// onto the target inside `FADE_STRENGTH_SNAP`, and not staged at or
+    /// below it.
+    #[test]
+    fn ramp_eases_snaps_and_gates_staging() {
+        let mut r = FadeRamp::default();
+        assert_eq!(r.step(true), Some(0.25));
+        assert_eq!(r.step(true), Some(0.4375));
+        for _ in 0..20 {
+            r.step(true);
+        }
+        assert_eq!(r.strength(), 1.0, "snaps onto the target");
+        let mut down = r;
+        assert_eq!(down.step(false), Some(0.75));
+        for _ in 0..20 {
+            down.step(false);
+        }
+        assert_eq!(down.strength(), 0.0);
+        assert_eq!(down.step(false), None, "a zero strength stages nothing");
+        r.reset();
+        assert_eq!(r.strength(), 0.0);
+    }
+
+    /// The host terms veto on their own: any one of them keeps the fade off.
+    #[test]
+    fn host_terms_veto() {
+        let w = World::new();
+        let on = FadeHostTerms {
+            enabled: true,
+            ..Default::default()
+        };
+        // An empty world is not in field free-roam with a player, so arming
+        // follows `fade_armed`; the host terms can only remove it.
+        let base = host_fade_armed(&w, false, on);
+        assert_eq!(base, fade_armed(&w, false) && !w.name_entry_active());
+        for t in [
+            FadeHostTerms {
+                enabled: false,
+                ..on
+            },
+            FadeHostTerms {
+                debug_camera: true,
+                ..on
+            },
+            FadeHostTerms {
+                screen_owned: true,
+                ..on
+            },
+        ] {
+            assert!(!host_fade_armed(&w, false, t));
+        }
     }
 }

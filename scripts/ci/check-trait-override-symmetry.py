@@ -94,6 +94,12 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CORE_SRC = REPO / "crates" / "engine-core" / "src"
+# Crates split out of engine-core whose traits engine-core re-exports.
+SPLIT_SRCS = [
+    REPO / "crates" / "engine-field" / "src",
+    REPO / "crates" / "engine-menus" / "src",
+    REPO / "crates" / "engine-system" / "src",
+]
 WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"
 
 # Same host split as check-ui-host-drift.py: engine-render re-exports engine-ui
@@ -217,7 +223,7 @@ def collect_defaulted_traits() -> dict[str, tuple[set[str], str]]:
     methods are all required cannot drift, because the compiler enforces it.
     """
     out: dict[str, tuple[set[str], str]] = {}
-    for path in sorted(CORE_SRC.rglob("*.rs")):
+    for path in sorted(p for r in [CORE_SRC, *SPLIT_SRCS] for p in r.rglob("*.rs")):
         if is_test_source(path):
             continue
         text = strip_line_comments(path.read_text(encoding="utf-8"))

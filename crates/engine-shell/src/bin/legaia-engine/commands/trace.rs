@@ -673,13 +673,28 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         );
     }
     let resolved = resolve_audio_trace_inputs(&args)?;
-    let trace = engine_trace_from_paths(
-        &resolved.scene_name,
-        args.extracted_root,
-        args.disc,
-        args.frames,
-        args.bgm_id,
-    )?;
+    let trace = if args.pin_bgm {
+        let opts = legaia_parity::audio_trace_oracle::AudioTraceBuildOptions {
+            scene: resolved.scene_name.clone(),
+            bgm_id: args.bgm_id,
+            frames: args.frames,
+            pin_bgm: true,
+            ..Default::default()
+        };
+        legaia_parity::audio_trace_oracle::build_engine_audio_trace(
+            args.extracted_root,
+            args.disc,
+            &opts,
+        )?
+    } else {
+        engine_trace_from_paths(
+            &resolved.scene_name,
+            args.extracted_root,
+            args.disc,
+            args.frames,
+            args.bgm_id,
+        )?
+    };
     let jsonl = audio_trace_to_jsonl(&trace);
 
     let out_label = if args.out.as_os_str() == "-" {
@@ -700,6 +715,10 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
         args.bgm_id,
         out_label
     );
+
+    if let Some(csv) = args.retail_keyon_csv {
+        print_key_on_census(&trace, csv, args.retail_keyon_owner)?;
+    }
 
     let divergence = match resolved.retail.as_ref() {
         None => return Ok(()),
@@ -753,6 +772,32 @@ pub(crate) fn cmd_audio_trace(args: AudioTraceArgs<'_>) -> Result<()> {
                 eprintln!("{msg}");
             }
         }
+    }
+    Ok(())
+}
+
+/// Render the exact key-on comparison for `--retail-keyon-csv`.
+fn print_key_on_census(engine: &[AudioTraceFrame], csv: &Path, owner: Option<u16>) -> Result<()> {
+    use legaia_parity::audio_trace_oracle::{compare_key_on_census, parse_keyon_census_csv_owned};
+    let text = std::fs::read_to_string(csv)
+        .with_context(|| format!("read key-on census {}", csv.display()))?;
+    let census = parse_keyon_census_csv_owned(&text, owner)?;
+    match compare_key_on_census(engine, &census) {
+        Some(c) => eprintln!(
+            "  [key-on census] vsyncs {}..{} aligned at engine frame {}: engine {} key-ons vs retail {} (ratio {:.3}); {} of retail's matched within its lag window",
+            c.window.start,
+            c.window.end,
+            c.offset,
+            c.engine_total,
+            c.retail_total,
+            c.ratio,
+            c.matched,
+        ),
+        None => eprintln!(
+            "  [key-on census] not comparable: the engine trace ({} frames) must be at least as long as the census ({} vsyncs)",
+            engine.len(),
+            census.key_ons.len()
+        ),
     }
     Ok(())
 }
@@ -863,6 +908,7 @@ pub(crate) fn cmd_pcm_trace(args: PcmTraceArgs<'_>) -> Result<()> {
         bgm_id: args.bgm_id,
         us_per_frame: 1_000_000.0 / 60.0,
         frames: args.frames,
+        pin_bgm: false,
     };
     let engine: EnginePcmTrace = build_engine_pcm_trace(args.extracted_root, args.disc, &opts)?;
     let engine_stats = pcm_stats(&engine.pcm);

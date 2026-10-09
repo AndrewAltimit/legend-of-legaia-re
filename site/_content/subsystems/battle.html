@@ -185,14 +185,14 @@
 
 <section class="doc-section" id="live-gameplay-loop">
   <h2>In the port</h2>
-  <p>The engine keeps the battle simulation renderer-free in <code>engine-core</code> and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call on both hosts. Where to look:</p>
+  <p>The engine keeps the battle simulation renderer-free - the action machine and formulas in <code>engine-battle-vm</code>, the <code>World</code>-free kernels (AI, catalogs, encounters, level-up, pickers) in <code>engine-battle</code>, the round loop and command flow on <code>World</code> in <code>engine-core</code>, which re-exports the other two at their old paths - and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call on both hosts. Where to look:</p>
   <ul class="bullets">
     <li><strong>Encounters and entry:</strong> <code>engine-core::encounter</code>, <code>World::begin_encounter_battle</code>, <code>battle_seats</code>.</li>
     <li><strong>Menu half:</strong> <code>battle_input</code>, <code>battle_flow</code>, with the submenus in <code>battle_arts</code>, <code>battle_magic</code>, <code>inventory_use</code>, <code>target_picker</code>.</li>
-    <li><strong>Action half:</strong> <code>engine-vm::battle_action</code> (the state machine) and <code>battle_formulas</code> (the arithmetic).</li>
+    <li><strong>Action half:</strong> <code>battle_action</code> (the state machine) and <code>battle_formulas</code> (the arithmetic).</li>
     <li><strong>Monsters, spoils, wipe:</strong> <code>monster_ai</code>, <code>World::apply_battle_loot</code>, <code>LevelUpTracker</code>, <code>game_over::GameOverSession</code>.</li>
   </ul>
-  <p>Retail's render and animation systems clear two gates the action machine waits on - the advance-done flag at attack recovery and the caster's spell iterator at magic sustain - so a renderer-free port has to retire them itself. Post-battle HP / MP is written into the character records before the field snapshot is restored. The per-monster Seru attachment table is an engine-side approximation (<code>SeruRegistry::vanilla</code>), Inferred, not Confirmed.</p>
+  <p>Retail's render and animation systems clear two gates the action machine waits on - the advance-done flag at attack recovery and the caster's spell iterator at magic sustain - so a renderer-free port has to retire them itself. Post-battle HP / MP is written into the character records before the field snapshot is restored. The battle entry seats each member's HP and MP from its character record, as retail's init does, never from a field actor a scene script may have blanked. A killing blow's Seru absorb reads the monster record's own Seru id and catch chance, as retail does; the separate registry the capture spells feed teaches the pinned retail spell ids (<code>SeruRegistry::retail</code>), but its per-monster Seru attachment is an engine-side approximation, Inferred, not Confirmed.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

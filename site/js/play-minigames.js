@@ -378,8 +378,14 @@
       }
       const s = hubSheet(rt, q.sheet, q.pal);
       if (!s) continue;
-      withAbr(g, q.abr, (sub) =>
-        g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
+      /* The quad's Gouraud colour (`texel * c / 128`): the hub screens'
+       * fade in / out is this colour, not an alpha - the native window's
+       * sprite pass modulates by it, and leaving it out drew every banner at
+       * full strength through its whole fade. */
+      const mod = q.rgb ? window.LegaiaUtil.modulatedSprite(s, q.u, q.v, q.w, q.h, q.rgb[0], q.rgb[1]) : null;
+      withAbr(g, q.abr, (sub) => (mod && !sub)
+        ? g.drawImage(mod, 0, 0, q.w, q.h, q.x * sx, q.y * sy, q.dw * sx, q.dh * sy)
+        : g.drawImage(sub ? hubSilhouette(s) : s, q.u, q.v, q.w, q.h,
           q.x * sx, q.y * sy, q.dw * sx, q.dh * sy));
       /* The ringside still is an opaque packet modulated by its fade level
        * (`texel * c / 128`): below neutral that is the image darkened
@@ -630,12 +636,14 @@
     btn.type = 'button';
     btn.id = 'play-fishing-prizes-btn';
     btn.textContent = 'Prize exchange';
-    btn.style.cssText = 'position:absolute;top:8px;right:8px;z-index:3;font:600 12px/1 system-ui,sans-serif;'
+    /* Bottom-left: the top-right corner is the fishing HUD's own lure
+     * counter (`Left: N`), which a corner button there covered. */
+    btn.style.cssText = 'position:absolute;bottom:8px;left:8px;z-index:3;font:600 12px/1 system-ui,sans-serif;'
       + 'padding:6px 10px;border-radius:6px;border:1px solid #6c7a90;background:#1b2230;color:#e8ecf3;'
       + 'cursor:pointer;display:none;';
     const panel = document.createElement('div');
     panel.id = 'play-fishing-prizes';
-    panel.style.cssText = 'position:absolute;top:40px;right:8px;z-index:3;width:300px;max-height:70%;overflow:auto;'
+    panel.style.cssText = 'position:absolute;bottom:40px;left:8px;z-index:3;width:300px;max-height:70%;overflow:auto;'
       + 'font:12px/1.4 system-ui,sans-serif;background:rgba(12,16,24,0.94);color:#e8ecf3;'
       + 'border:1px solid #6c7a90;border-radius:8px;padding:10px;display:none;';
     wrap.appendChild(btn);

@@ -306,8 +306,14 @@ impl World {
         // `ctx[+0x27]` in its jump's delay slot (`sb zero, 0x16(s5)` at
         // `0x801E3A84`, `s5 = ctx + 0x11`), for monsters' chains as well as
         // the party's - so each attacking action gets one steal roll.
+        self.apply_battle_frame_step_seed();
         if let StepOutcome::Transition { from, to } = out {
             self.battle.steal.on_action_transition(from, to);
+            // A new action's seed ends whatever flight held the last one's
+            // effect lists.
+            if to == vm::battle_action::ActionState::ActionSeed.as_byte() {
+                self.casting.homing_holds_lists = None;
+            }
         }
         if let StepOutcome::Transition { from, to } = out
             && log::log_enabled!(log::Level::Debug)
@@ -599,6 +605,7 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
+        self.queue_battle_part_scrolls(&mut scene.parts);
         // The morph-lane ramp envelope `FUN_80020740`, run by the part tick
         // on every part whose `+0x10` carries the op-`0x0A` bit `0x1000` -
         // the step `tick_move_fx` takes for the effect-script scenes. PROT
@@ -1186,6 +1193,7 @@ impl World {
             };
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, channel_delta);
+            self.queue_battle_part_scrolls(&mut scene.parts);
             // The morph-lane ramp envelope `FUN_80020740`, which the part
             // tick runs on a part whose `+0x10` word carries the op-`0x0A`
             // bit `0x1000` - the same gate the field ambient tree takes. It
@@ -1231,6 +1239,7 @@ impl World {
             scene.channel_delta = channel_delta;
             scene.tick(&mut host, frame_delta);
         }
+        self.queue_battle_part_scrolls(&mut scene.parts);
         if !scene.finished() {
             self.casting.active_move_fx = Some(scene);
         } else {
@@ -1766,13 +1775,47 @@ impl World {
         let loaded = !loads.is_empty();
         loads.replay(vram);
         let moves = std::mem::take(&mut self.battle.vram_moves);
-        apply_vram_moves(moves, vram) || loaded
+        let moved = apply_vram_moves(moves, vram);
+        let mut scrolled = false;
+        for fx in std::mem::take(&mut self.battle.vram_scrolls) {
+            scrolled |= super::ambient::apply_scroll_fx(vram, &fx);
+        }
+        moved || loaded || scrolled
+    }
+
+    /// The mode-4 render tail of the part tick for every live part of an
+    /// effect scene ticked in battle: `FUN_80021DF4` runs the cyclic VRAM
+    /// scroller after the VM call on any part whose `+0x5A` is `4`
+    /// (`0x80022CB8`), whatever list the part sits on, so a battle effect's
+    /// scroller animates its rect exactly as a field ambient one does
+    /// ([`super::ambient::vram_scroll`]). The fired rotations queue on
+    /// [`crate::world::BattleState::vram_scrolls`] for the hosts' battle VRAM.
+    ///
+    /// PORT: FUN_80021DF4 (the mode-4 arm, `0x80022CB8..0x80022EE0`, on the
+    /// battle effect lists)
+    pub(crate) fn queue_battle_part_scrolls(
+        &mut self,
+        parts: &mut [crate::summon::SummonPartRuntime],
+    ) {
+        if self.mode != SceneMode::Battle {
+            return;
+        }
+        let step = self.clock.frame_step.max(1);
+        for part in parts.iter_mut().filter(|p| !p.finished) {
+            if part.state.move_submode != super::ambient::vram_scroll::RENDER_MODE_SCROLL {
+                continue;
+            }
+            if let Some(fx) = super::ambient::vram_scroll::mode4_integrate(&mut part.state, step) {
+                self.battle.vram_scrolls.push(fx);
+            }
+        }
     }
 
     /// Drop this frame's queued battle VRAM edits unapplied - the hosts'
     /// path when no battle VRAM is resident to apply them to.
     pub fn discard_battle_vram_edits(&mut self) {
         self.battle.vram_moves.clear();
+        self.battle.vram_scrolls.clear();
         self.battle.vram_loads = Default::default();
     }
 }

@@ -914,10 +914,6 @@ impl PlayWindowApp {
         };
         self.field_pack_meshes = bridge(&tmd_src_index);
         self.field_pack_color_meshes = bridge(&color_tmd_src_index);
-        self.field_placement_stream_bound =
-            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_records);
-        self.field_placement_color_stream_bound =
-            legaia_engine_core::field_env::stream_bound_draws(&self.field_placement_color_records);
         // The ladder those four lists were baked against, plus their per-draw
         // rungs: `handle_redraw` folds any later movement into the matrices.
         let floor_base = self.session.host.scene.as_ref().and_then(|s| {

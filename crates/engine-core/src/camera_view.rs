@@ -594,13 +594,24 @@ pub const BATTLE_OT_SHIFT: u32 = 2;
 /// REF: FUN_80043390, FUN_80043768
 /// The projection `H` the GPU polygon-size limit is tested under this frame
 /// (`legaia_engine_ui::prim_near_reject::gpu_span_rejected`), or `None` when
-/// the pass does not apply it. Battle only: every catalogued battle state's
-/// camera reads `H = 256`, and the battle stage puts a combatant between the
-/// eye and the caster on the summon close-ups (`theeder_summon_mid_cast`'s
-/// monster, `0xA1`), whose legs reach past the eye; retail's GPU drops those
-/// primitives. The field and the dance hall keep their own rules.
-pub fn prim_gpu_span_h(mode: SceneMode, retail_camera: bool) -> Option<f32> {
-    (retail_camera && mode == SceneMode::Battle).then_some(BATTLE_GTE_H)
+/// the pass does not apply it. The limit is the GPU's, so it holds wherever
+/// the per-prim leaves hand it raw `SXY`: in battle (every catalogued battle
+/// camera reads `H = 256`; a summon close-up seats a combatant between the
+/// eye and the caster, `theeder_summon_mid_cast`'s monster `0xA1`) and on
+/// the field, under the frame's own `H` (`field_h`, the live camera
+/// globals' `_DAT_8007B6F4`). `rim_elm_queen_bee_battle`'s camera stands
+/// beside a decoration rock whose near face projects past the span: retail's
+/// GPU skips it and the frame shows the sky behind. The overworld and the
+/// minigame venues keep their own rules.
+pub fn prim_gpu_span_h(mode: SceneMode, retail_camera: bool, field_h: f32) -> Option<f32> {
+    if !retail_camera {
+        return None;
+    }
+    match mode {
+        SceneMode::Battle => Some(BATTLE_GTE_H),
+        SceneMode::Field if field_h > 0.0 => Some(field_h),
+        _ => None,
+    }
 }
 
 /// The battle camera's projection distance `H`.

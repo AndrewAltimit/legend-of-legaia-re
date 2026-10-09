@@ -223,6 +223,11 @@ pub struct ArmDirection {
     pub shot: Option<ModuleShot>,
     /// The case-6 follow the arm re-armed, if any.
     pub follow: Option<ModuleFollow>,
+    /// `true` when the arm framed the active actor through the action SM's
+    /// case 8 (`FUN_801D5854(ctx[+0x13], 8)`) on this pass - the post-action
+    /// framing on the caster and its target, whose dead-target arm also
+    /// zeroes the yaw ladder `ctx[+0x6DA]`.
+    pub end_frame: bool,
     /// The drift the arm wrote straight into the camera globals, if any.
     pub nudge: Option<ModuleNudge>,
     /// `true` on an arm a camera-only director does not cover: the module
@@ -382,6 +387,7 @@ impl ArmDirection {
         hold: true,
         shot: None,
         follow: None,
+        end_frame: false,
         nudge: None,
         park: false,
         spawns: &[],
@@ -394,6 +400,7 @@ impl ArmDirection {
         hold: false,
         shot: None,
         follow: None,
+        end_frame: false,
         nudge: None,
         park: false,
         spawns: &[],
@@ -406,6 +413,7 @@ impl ArmDirection {
         hold: true,
         shot: None,
         follow: None,
+        end_frame: false,
         nudge: None,
         park: true,
         spawns: &[],

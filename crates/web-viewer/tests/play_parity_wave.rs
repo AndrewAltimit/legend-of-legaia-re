@@ -114,7 +114,7 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     let npcs = cat["npcs"].as_array().unwrap();
     let target = (0..npcs.len()).find(|&i| {
         let dims = rt.play_npc_pose_dims(i as u32);
-        s0[i * 2] >= 0 && dims[0] > 1
+        s0[i * 4] >= 0 && dims[0] > 1
     });
     let Some(i) = target else {
         panic!("town01 must have at least one animated NPC clip");
@@ -122,7 +122,7 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     let dims = rt.play_npc_pose_dims(i as u32);
     let frames = dims[0] as i32;
     let bones = dims[1] as usize;
-    let f0 = s0[i * 2];
+    let f0 = s0[i * 4];
 
     // The live pose stream is 6 ints per bone.
     let bones0 = rt.play_npc_live_bones(i as u32);
@@ -137,7 +137,7 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
         rt.tick_frame().expect("tick");
     }
     let s2 = rt.play_npc_clip_states();
-    let key = s2[i * 2];
+    let key = s2[i * 4];
     let ungated = key & 0xF == f0 & 0xF && key >> 4 == ((f0 >> 4) + 4).rem_euclid(frames);
     let gated = (1..=8u8).any(|div| {
         use legaia_engine_core::field_anim::{CLIP_RATE, clip_step};

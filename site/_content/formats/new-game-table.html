@@ -184,6 +184,7 @@
 <section class="doc-section" id="parser">
   <h2>In the port</h2>
   <p><code>legaia_asset::new_game</code> reads the table and the seed routine's literals from the user's own <code>SCUS_942.54</code> (same address-to-file-offset resolver as the <a href="item-table.html">item-name table</a>): <code>StartingParty</code> for the rows, <code>StartingInventory</code> for the bag (it replays the routine's stores, so it reads both the retail byte pair and the randomizer's packed halfword), <code>new_game_seed_words</code> for the world-state cells and <code>seed_live_records</code> for the expander's record stores. CLI: <code>asset new-game &lt;SCUS&gt; [--json]</code>.</p>
+  <p>Retail's seed loop fills all four live records, so a member who joins later (field op <code>0x3C</code>) already has a level-1 record. The engine's New Game roster is Vahn alone and keeps the template beside it; when a party list names a slot the roster has no record for, <code>World::set_active_party</code> seeds that slot from the template, so a joining member fights with real HP rather than an empty record counted alive.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

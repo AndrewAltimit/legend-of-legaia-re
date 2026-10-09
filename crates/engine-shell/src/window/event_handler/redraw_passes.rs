@@ -568,6 +568,30 @@ impl PlayWindowApp {
             .collect()
     }
 
+    /// The overworld sky band (`FUN_801F73E4`) as screen primitives, through
+    /// the gate (`legaia_engine_core::world_map_sky`) and wrapper
+    /// (`screen_prim::sky_band_prims`) the browser play page calls. Each
+    /// quad is depth-tested at the far plane, so it fills only what the
+    /// terrain left clear - retail's farthest-bucket draw order.
+    pub(super) fn world_map_sky_prims(
+        &self,
+    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
+        let world = &self.session.host.world;
+        if world.mode != SceneMode::WorldMap || self.boot_ui.is_active() {
+            return Vec::new();
+        }
+        let aabb = (self.scene_aabb.0, self.scene_aabb.1);
+        let frame = legaia_engine_core::camera_view::resolve_field_camera(
+            world,
+            &self.session.camera,
+            None,
+            [(aabb.0[0] + aabb.1[0]) * 0.5, (aabb.0[2] + aabb.1[2]) * 0.5],
+        );
+        let sprites =
+            legaia_engine_core::world_map_sky::sky_band(world, &self.session.camera, &frame);
+        legaia_engine_render::screen_overlay::sky_band_prims(&sprites)
+    }
+
     pub(super) fn build_effect_model_draws(
         &self,
         r: &legaia_engine_render::Renderer,
@@ -720,8 +744,12 @@ impl PlayWindowApp {
                     &v.indices,
                 ) {
                     Ok(m) => {
-                        let model =
-                            Mat4::from_translation(Vec3::from(rb.world_pos)) * fx_model_flip;
+                        // Placed like a part - `T(F world_pos)`, the frame
+                        // flip on the translation too - as the page does
+                        // (`play_battle_fx.rs`). A bare `T(world_pos)` put
+                        // the disc's lift on the wrong side of the floor in
+                        // this Y-up frame, and the stage hid every shadow.
+                        let model = place(rb.flags_52, rb.world_pos) * fx_model_flip;
                         summon_part_draws.push((m, model));
                     }
                     Err(e) => log::warn!("battle ground shadow upload: {e:#}"),
@@ -864,37 +892,6 @@ impl PlayWindowApp {
     /// the weapon as drawn.
     // REF: FUN_800485BC (packet + band order live in
     // `legaia_engine_ui::battle_trail`; this is the per-host projection)
-    /// The world's live full-screen fades as flat quads
-    /// ([`legaia_engine_core::world::World::screen_fade_draws`] through
-    /// `fade_prim`, the kernel both hosts composite fades with): empty while
-    /// no fade is up or every start delay is still running.
-    pub(super) fn screen_fade_screen_prims(
-        &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        self.session
-            .host
-            .world
-            .screen_fade_draws()
-            .into_iter()
-            .map(|(rgb, abr, ot)| legaia_engine_render::screen_overlay::fade_prim(rgb, abr, ot))
-            .collect()
-    }
-
-    /// PROT 0948's Cross Beam packets while arm 3 runs
-    /// ([`legaia_engine_core::world::World::cross_beam_draw`] through
-    /// `legaia_engine_ui::cast_beam::cross_beam_prims`, the kernel the browser
-    /// play page draws them with). Empty on every other frame.
-    pub(super) fn cross_beam_screen_prims(
-        &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        self.session
-            .host
-            .world
-            .cross_beam_draw()
-            .map(legaia_engine_render::cast_beam::cross_beam_prims)
-            .unwrap_or_default()
-    }
-
     /// PROT 0904's (Theeder) beam packets this frame
     /// ([`legaia_engine_core::world::World::theeder_draw`] through
     /// `legaia_engine_ui::cast_theeder::theeder_prims`, the kernel the browser
@@ -1190,72 +1187,9 @@ impl PlayWindowApp {
         out
     }
 
-    /// This frame's PROT-0900 screen-effect widgets (iris mask, scripted
-    /// sprites, image panel, letterbox bands and feathers) as screen
-    /// primitives, for the pass the field fog sheets and attached lights sort
-    /// in - the browser play page's `screen_fx_prims` twin, a variant-for-variant
-    /// re-wrap of the shared [`legaia_engine_core::screen_fx::ScreenFxFrame::draw_quads`]
-    /// kernel.
-    ///
-    /// Retail links the mask's black borders at OT `+0x1C` and a fog sheet at
-    /// `SZ >> 5`, so the sheets sort **under** the mask. Drawn as scene meshes,
-    /// the widgets landed before every screen primitive and the ending's fog
-    /// haze painted over its black credits card.
-    pub(super) fn screen_fx_screen_prims(
-        &self,
-    ) -> Vec<legaia_engine_render::screen_overlay::ScreenPrim> {
-        use legaia_engine_core::screen_fx::ScreenFxQuad;
-        use legaia_engine_render::screen_overlay::{FlatQuad, ScreenPrim, ScreenQuad};
-        self.session
-            .host
-            .world
-            .presentation
-            .fx_frame
-            .draw_quads()
-            .into_iter()
-            .map(|q| match q {
-                ScreenFxQuad::Flat {
-                    xy,
-                    rgba,
-                    gouraud,
-                    semi_transparent,
-                    abr_mode,
-                    ot,
-                } => ScreenPrim::Flat(FlatQuad {
-                    xy,
-                    color: rgba,
-                    gouraud,
-                    semi_transparent,
-                    abr_mode,
-                    ot_index: ot,
-                    depth: None,
-                }),
-                ScreenFxQuad::Textured {
-                    xy,
-                    uv,
-                    clut,
-                    tpage,
-                    color,
-                    semi_transparent,
-                    ot,
-                } => ScreenPrim::Textured(ScreenQuad {
-                    xy,
-                    uv,
-                    clut,
-                    tpage,
-                    color,
-                    gouraud: None,
-                    semi_transparent,
-                    ot_index: ot,
-                    depth: None,
-                }),
-            })
-            .collect()
-    }
-
     /// Build this frame's move-FX afterimage streak mesh. The PROT-0900
     /// screen-effect widgets it used to batch with ride the screen-prim pass
-    /// ([`Self::screen_fx_screen_prims`]), where they sort against the fog
+    /// (`screen_layers::screen_fx_prims`), where they sort against the fog
     /// sheets by their retail OT slots.
     pub(super) fn build_screen_fx_meshes(
         &self,

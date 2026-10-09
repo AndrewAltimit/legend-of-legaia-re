@@ -293,10 +293,10 @@ impl LegaiaRuntime {
         // this page never called `exit_dance` at all, so a finished song kept
         // playing the chart's track over the field and the run stayed
         // installed until the player pressed Start.
-        if let Some(host) = self.scene_host.host_mut()
-            && host.world.mode != legaia_engine_core::world::SceneMode::Dance
-        {
-            host.world.exit_dance();
+        // The poll is the one engine kernel the native window makes
+        // (`World::finish_dance_if_over`).
+        if let Some(host) = self.scene_host.host_mut() {
+            host.world.finish_dance_if_over();
         }
         // The dance entry's globals - block base, this page's camera window,
         // the venue camera - staged on the first dance frame and restored on

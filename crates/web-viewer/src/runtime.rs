@@ -170,9 +170,15 @@ pub struct LegaiaRuntime {
     /// so the per-frame accessors must not re-tick) with the primitive count
     /// alongside for the page's early-out.
     pub(crate) battle_intro_geom: Option<(u32, legaia_engine_ui::screen_prim::OverlayGeometry)>,
-    /// The last tick's screen primitives before the shop fade, and the index
-    /// the fade goes in at ([`crate::play_battle`]'s `rebuild_screen_geom`).
-    pub(crate) screen_prims_base: (Vec<legaia_engine_ui::screen_prim::ScreenPrim>, usize),
+    /// The last tick's host-projected screen layers, recomposed with the
+    /// world's live layers and the shop / pause fades by
+    /// [`crate::play_battle`]'s `rebuild_screen_geom`.
+    pub(crate) screen_prims_base: legaia_engine_screens::screen_layers::HostScreenPrims,
+    /// The camera-occlusion fade's strength ramp
+    /// (`engine-core::field_occlusion::FadeRamp`), stepped once per drawn
+    /// field frame by [`Self::play_occlusion_fade`] - the native window's
+    /// `occl_fade_strength` twin.
+    pub(crate) occl_fade: legaia_engine_core::field_occlusion::FadeRamp,
     /// SCUS item-name table, parsed once at `load_disc` - the labels the field
     /// menu's Item screen shows. `None` on a PROT.DAT-only load (no executable).
     pub(crate) item_names: Option<legaia_asset::item_names::ItemNameTable>,
@@ -400,7 +406,8 @@ impl LegaiaRuntime {
             battle_vram: Default::default(),
             disc_files: Vec::new(),
             battle_intro_geom: None,
-            screen_prims_base: (Vec::new(), 0),
+            screen_prims_base: Default::default(),
+            occl_fade: Default::default(),
             field_party_hud: Default::default(),
             field_party_hud_scene: None,
             passive_hud_icons: Vec::new(),
@@ -2034,22 +2041,11 @@ impl LegaiaRuntime {
         let Some(host) = self.scene_host.host_mut() else {
             return;
         };
-        let world = &mut host.world;
-        let mut cue = None;
-        if let Some((move_id, origin)) = world.take_pending_move_fx_spawn()
-            && world.spawn_move_fx(move_id, origin)
-        {
-            cue = world.take_pending_move_fx_cue();
-        }
-        // The shared frame-tail kernel the native window's loop calls.
-        world.tick_effect_scene_graphs();
-        // The full ring value goes through: `enqueue_sfx` takes
-        // `impl Into<u16>`, and the `u8::try_from` this used to narrow
-        // through dropped cue id `0`, whose ring value is `0xFFFF`.
-        if let Some(cue) = cue
-            && let legaia_engine_audio::CueDispatch::Ring { ring_value, .. } =
-                legaia_engine_audio::classify_cue(cue as u32)
-        {
+        // Spawn to sound through the shared step the native window runs
+        // (`battle_fx::spawn_pending_move_fx`), then the frame-tail kernel.
+        let ring = legaia_engine_session::battle_fx::spawn_pending_move_fx(&mut host.world);
+        host.world.tick_effect_scene_graphs();
+        if let Some(ring_value) = ring {
             self.enqueue_sfx(ring_value, 0);
         }
     }

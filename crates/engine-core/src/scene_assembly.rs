@@ -81,6 +81,79 @@ pub fn draw_rot_y_radians(rot_y: u16) -> f32 {
     -((rot_y & 0xFFF) as f32) * std::f32::consts::PI / 2048.0
 }
 
+/// A draw's full placement rotation in the **render frame**, as a glTF
+/// quaternion `[x, y, z, w]`: the record's three authored angles composed
+/// `Rx * Ry * Rz` through [`EnvDraw::rotate`] (the kernel every play-host
+/// placement pass uses), conjugated by the render frame's Y flip
+/// (`F * R * F`, `F = diag(1, -1, 1)`). The baked geometry carries the flip
+/// (`F * v`), so a node applying this quaternion lands each vertex on
+/// `F * R * v` - the retail placement, seen through the same flip as the
+/// translation ([`draw_translation`]).
+///
+/// For a yaw-only record this is the standard `Ry` of the authored angle
+/// (the flip commutes with a rotation about Y), i.e. what
+/// [`draw_rot_y_radians`] encodes; a record with a pitch or roll is the
+/// case a yaw-only placement stands upright.
+///
+// REF: FUN_80026988
+pub fn draw_rotation_quat(d: &EnvDraw) -> [f32; 4] {
+    // Columns of R are the rotated basis vectors.
+    let c = [
+        d.rotate([1.0, 0.0, 0.0]),
+        d.rotate([0.0, 1.0, 0.0]),
+        d.rotate([0.0, 0.0, 1.0]),
+    ];
+    let f = [1.0f32, -1.0, 1.0];
+    // m[i][j] = f_i * R[i][j] * f_j  (row i, column j).
+    let m = |i: usize, j: usize| f[i] * c[j][i] * f[j];
+    mat3_to_quat([
+        [m(0, 0), m(0, 1), m(0, 2)],
+        [m(1, 0), m(1, 1), m(1, 2)],
+        [m(2, 0), m(2, 1), m(2, 2)],
+    ])
+}
+
+/// Rotation matrix (row-major, acting on column vectors) to a unit
+/// quaternion `[x, y, z, w]` (Shepperd's method, largest-diagonal branch).
+fn mat3_to_quat(m: [[f32; 3]; 3]) -> [f32; 4] {
+    let tr = m[0][0] + m[1][1] + m[2][2];
+    let q = if tr > 0.0 {
+        let s = (tr + 1.0).sqrt() * 2.0;
+        [
+            (m[2][1] - m[1][2]) / s,
+            (m[0][2] - m[2][0]) / s,
+            (m[1][0] - m[0][1]) / s,
+            0.25 * s,
+        ]
+    } else if m[0][0] > m[1][1] && m[0][0] > m[2][2] {
+        let s = (1.0 + m[0][0] - m[1][1] - m[2][2]).sqrt() * 2.0;
+        [
+            0.25 * s,
+            (m[0][1] + m[1][0]) / s,
+            (m[0][2] + m[2][0]) / s,
+            (m[2][1] - m[1][2]) / s,
+        ]
+    } else if m[1][1] > m[2][2] {
+        let s = (1.0 + m[1][1] - m[0][0] - m[2][2]).sqrt() * 2.0;
+        [
+            (m[0][1] + m[1][0]) / s,
+            0.25 * s,
+            (m[1][2] + m[2][1]) / s,
+            (m[0][2] - m[2][0]) / s,
+        ]
+    } else {
+        let s = (1.0 + m[2][2] - m[0][0] - m[1][1]).sqrt() * 2.0;
+        [
+            (m[0][2] + m[2][0]) / s,
+            (m[1][2] + m[2][1]) / s,
+            0.25 * s,
+            (m[1][0] - m[0][1]) / s,
+        ]
+    };
+    let n = q.iter().map(|v| v * v).sum::<f32>().sqrt();
+    [q[0] / n, q[1] / n, q[2] / n, q[3] / n]
+}
+
 /// Assemble a CDNAME scene's full static map: field-mode [`SceneResources`]
 /// (VRAM + env TMD pack) + the `.MAP` placement / terrain-tile draws resolved
 /// through [`field_env`] + the walk-ground heightfield.
@@ -425,7 +498,85 @@ pub fn is_sky_mesh(mesh: &legaia_tmd::mesh::VramMesh) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_hybrid_pack_mesh, merge_hybrid_halves};
+    use super::{build_hybrid_pack_mesh, draw_rotation_quat, merge_hybrid_halves};
+    use crate::field_env::{EnvDraw, FloorAnchor};
+
+    fn draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
+        EnvDraw {
+            env_slot: 0,
+            res_tmd: 0,
+            world_x: 0,
+            world_y: 0,
+            world_z: 0,
+            rot_y,
+            rot_x,
+            rot_z,
+            anim_id: 0,
+            anchor: (0, 0),
+            floor: FloorAnchor {
+                corners: None,
+                nibble: None,
+            },
+            cell: (0, 0),
+            cull_radius: 0,
+            view_skip: 0,
+        }
+    }
+
+    /// Rotate `v` by the unit quaternion `q = [x, y, z, w]`.
+    fn qrot(q: [f32; 4], v: [f32; 3]) -> [f32; 3] {
+        let [qx, qy, qz, w] = q;
+        let u = [qx, qy, qz];
+        let cross = |a: [f32; 3], b: [f32; 3]| {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        };
+        let t = cross(u, v).map(|c| 2.0 * c);
+        let ut = cross(u, t);
+        [
+            v[0] + w * t[0] + ut[0],
+            v[1] + w * t[1] + ut[1],
+            v[2] + w * t[2] + ut[2],
+        ]
+    }
+
+    /// The node quaternion applied to the Y-flipped geometry (`F * v`)
+    /// reproduces the placement kernel seen through the same flip
+    /// (`F * place(v)`), with all three axes non-zero so a dropped pitch or
+    /// roll, a reversed order or an un-conjugated flip cannot pass.
+    #[test]
+    fn rotation_quat_matches_place_point_through_the_y_flip() {
+        let d = draw(0x155, 0x6A0, 0xF40);
+        let q = draw_rotation_quat(&d);
+        for v in [[30.0f32, -12.0, 5.0], [-7.0, 40.0, 22.0], [1.0, 0.0, 0.0]] {
+            let want = d.rotate(v);
+            let want = [want[0], -want[1], want[2]];
+            let got = qrot(q, [v[0], -v[1], v[2]]);
+            for k in 0..3 {
+                assert!(
+                    (got[k] - want[k]).abs() < 1e-3,
+                    "{v:?}: {got:?} vs {want:?}"
+                );
+            }
+        }
+    }
+
+    /// Yaw-only records keep the established world-glb facing: the
+    /// quaternion is the standard `Ry` of the authored angle, the one the
+    /// `rot_y` path emitted.
+    #[test]
+    fn rotation_quat_of_a_yaw_only_record_is_the_standard_ry() {
+        let d = draw(0, 0x400, 0);
+        let q = draw_rotation_quat(&d);
+        let h = std::f32::consts::FRAC_PI_4; // half of 90 degrees
+        let want = [0.0, h.sin(), 0.0, h.cos()];
+        for k in 0..4 {
+            assert!((q[k] - want[k]).abs() < 1e-5, "{q:?} vs {want:?}");
+        }
+    }
     use legaia_tmd::mesh::{ColorMesh, TSB_SEMI_TRANSPARENT_BIT, VramMesh};
 
     /// One object mixing a textured `FT3` group (flags `0x20`, the same prim

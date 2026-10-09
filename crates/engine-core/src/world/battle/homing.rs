@@ -62,7 +62,34 @@ impl World {
         // (`CastFxState::homing_takes_lists`). An action with no fold (a
         // physical strike) keeps the effects its own paths draw, and its
         // flight only moves the camera's point.
-        self.casting.homing.emits = std::mem::take(&mut self.casting.homing_takes_lists);
+        //
+        // The flight also takes them when the fold is still to come: retail
+        // has no fold - `FUN_801E09F8` spawns the lists from this flight
+        // whatever the order - so a cast whose terminator runs first emits
+        // here, and the fold, finding the flight holds the lists, stages
+        // nothing ([`crate::world::CastFxState::homing_holds_lists`]).
+        let fold_took = std::mem::take(&mut self.casting.homing_takes_lists);
+        let fold_pending = !fold_took && self.cast_fold_pending(caster);
+        self.casting.homing.emits = fold_took || fold_pending;
+        self.casting.homing_holds_lists = fold_pending.then_some(caster as u8);
+    }
+
+    /// Whether actor `slot`'s committed action is a cast whose fold
+    /// (`World::cast_spell_on_slots`) will stage a move-FX scene that has not
+    /// run yet: a Magic-category action (`+0x1DE == 2`) on a move that is
+    /// not a player summon and carries spawnable effect lists.
+    fn cast_fold_pending(&self, slot: usize) -> bool {
+        let Some(a) = self.actors.get(slot) else {
+            return false;
+        };
+        let move_id = a.battle.params.first().copied().unwrap_or(0);
+        a.battle.action_category == vm::battle_action::ActionCategory::Magic.as_byte()
+            && !crate::summon::PLAYER_SUMMON_IDS.contains(&move_id)
+            && self
+                .tables
+                .move_power
+                .as_ref()
+                .is_some_and(|cat| cat.move_has_spawn_fx(move_id))
     }
 
     /// Whether actor `slot`'s committed effect script has a terminator

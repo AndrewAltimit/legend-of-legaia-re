@@ -187,7 +187,7 @@ The anim-record header at the post-anim dispatch pointer reads as a
 ```
 
 These offsets are codified as
-[`engine_core::capture_observations::battle_action_animation`](../../crates/engine-core/src/capture_observations.rs)
+[`engine_core::capture_observations::battle_action_animation`](../../crates/engine-system/src/capture_observations.rs)
 and exercised by the disc-gated test
 `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window`
 in `crates/mednafen/tests/real_saves.rs`.

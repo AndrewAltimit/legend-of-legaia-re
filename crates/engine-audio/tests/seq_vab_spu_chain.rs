@@ -137,9 +137,10 @@ fn end_to_end_seq_to_pcm_chain_produces_non_silent_output() {
     let seq = build_seq();
     let mut sequencer = Sequencer::new(seq, bank);
 
-    // Tick the sequencer enough that the ProgramChange + NoteOn fire.
+    // Tick the sequencer enough that the ProgramChange + NoteOn fire and the
+    // staged key-on reaches its flush (one vsync, `FLUSH_SAMPLES`).
     sequencer.tick_us(&mut spu, 0.0);
-    sequencer.tick_us(&mut spu, 1_000.0);
+    sequencer.tick_us(&mut spu, 17_000.0);
 
     // Render one frame's worth of PCM (44.1 kHz mono). Look for any sample
     // whose absolute value exceeds a threshold - the synth VAG's positive

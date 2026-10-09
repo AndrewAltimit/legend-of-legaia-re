@@ -1,0 +1,1905 @@
+//! Save-UI sub-screen graph.
+//!
+//! PORT: FUN_801DC6B4 (outer dispatcher), FUN_801E4F40 (sub-screen pointer table)
+//! REF: FUN_801DD35C (the card-driver pair's shared body; its op selector is
+//!      what fixes which of `0x18` / `0x19` is which direction)
+//! REF: FUN_801E37CC (the BIOS erase the save direction issues before writing)
+//!
+//! The retail save UI is not one screen but a graph of small step
+//! machines. An outer dispatcher runs a fade-in / dispatch / fade-out
+//! cycle, and the dispatch case indirects through a pointer table into
+//! whichever sub-screen is current. Each sub-screen owns a step counter,
+//! invokes an actor-VM display script on its first step, waits for that
+//! script to go idle, then either advances its own step or writes a new
+//! sub-screen id - which is how control moves through the graph.
+//!
+//! The id space is **not** save-specific: `0x801E4F40` is the menu overlay's
+//! whole screen table (33 entries, `0x00..=0x20`), so the same dispatcher
+//! runs the Items, Magic, Equip, shop and casino screens. What makes this
+//! module the *save* graph is the subset it carries step machines for, plus
+//! the entry-context decode that names which family a record opens.
+//!
+//! Two globals carry all of it: the sub-screen id and the step counter.
+//! A sub-screen never returns a value; it *is* the transition, by writing
+//! the id global. That makes the graph a plain state machine once lifted
+//! out of the pointer-table indirection, which is what this module is.
+//!
+//! ## What this models, and what it does not
+//!
+//! This is the **control flow** - which screen follows which, on what
+//! input, and where the outer fade sits around it. The screens' *content*
+//! (panels, slot previews, the info panel) is [`crate::save_select`],
+//! which models the same UI as player-facing phases rather than retail
+//! ids. The two are complementary: a host drives the session for content
+//! and can key retail-exact chrome off [`SaveSubScreen`].
+//!
+//! A sub-screen this module carries no step machine for is not therefore
+//! unknown, and [`SaveSubScreen`] says which of the two it is. Of the
+//! table's 33 ids, 14 are stepped here, `0x16` is a bare frame-flush
+//! wrapper ([`SaveSubScreen::FrameFlushTick`]), and the remaining 18 are
+//! [`SaveSubScreen::Routed`] - screens another `engine-core` module already
+//! ports, named per id by [`SaveSubScreen::routed_port`] and handed to the
+//! host as [`SubScreenEffect::Route`]. [`SaveSubScreen::Unpinned`] survives
+//! only for an id past the end of the retail table. See
+//! `docs/subsystems/save-screen.md` for the per-id table.
+//!
+//! WIRED: [`crate::save_screen::SaveScreenFlow`] constructs a
+//! [`SaveScreenMachine`] on its first card-rack frame and ticks it around
+//! [`crate::save_select::SaveSelectSession`], so both hosts run it - the flow
+//! is the kernel they share. The two models are joined at the card op, not
+//! stacked: the driver's `script_busy` / `card_done` waits are answered by
+//! the flow's [`crate::save_select::CardIoMachine`] result, and the outer
+//! fade's input threshold is what suppresses the pad while a screen comes up.
+//!
+//! Two parts of the graph stay unreached and say so on themselves: the
+//! screens whose per-frame body belongs to another module (they park here and
+//! the host drives them), and the `sub15_*` family below, which no step
+//! machine calls at all - hosting the machine does not reach a free function,
+//! and a reader should not read this heading onto them.
+
+/// Sub-screen ids, as indexed out of the retail pointer table.
+///
+/// The id space is the table's, so the discriminants are the retail
+/// numbers and a transition can be written as the number the decompile
+/// stores. Ids the table fills with screens whose behaviour is not yet
+/// pinned are [`SaveSubScreen::Unpinned`], which keeps the space total.
+///
+/// PORT: FUN_801E4F40 (the table this indexes)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveSubScreen {
+    /// `0x00` - terminal screen; exits the save flow with code 3.
+    FinalExit,
+    /// `0x01` - the slot selector.
+    SlotSelect,
+    /// `0x02` - the developer **character-parameter editor**
+    /// (`FUN_801D6E18`), not a save screen. Its twelve cursor rows write
+    /// the live character record directly: XP `+0x000`, HP / MP max
+    /// `+0x11C` / `+0x11E`, the six record stats `+0x122..+0x12C`, the
+    /// magic rank `+0x130` and the skill roster `+0x185` / `+0x186`. The
+    /// name this variant used to carry ("save entry, reached from the
+    /// pause menu") is contradicted by those stores.
+    CharParamEditor,
+    /// `0x03` - Yes/No confirm, cursor defaulting to `No`.
+    ConfirmYesNo,
+    /// `0x04` - post-save "press any button" return.
+    PostSaveReturn,
+    /// `0x08` - message screen that waits for the pad to be *released*.
+    PadReleaseWait,
+    /// `0x0B` - Yes/No confirm whose Yes branch exits with code 4.
+    ConfirmExit,
+    /// `0x12` - scrollable party-count picker.
+    PartyPicker,
+    /// `0x17` - generic picker wrapper over slots `0..=9`.
+    GenericPicker,
+    /// `0x18` - load-card driver (card to RAM), `FUN_801DAE24`.
+    ///
+    /// The pair's direction is fixed by the root picker's row labels: row
+    /// `5` is `@Load` and routes here, row `6` is `@Save` and routes to
+    /// [`Self::CardSave`] - see
+    /// `legaia_engine_core::pause_screens::ROOT_MENU_ROUTES`. Retail's own op selector
+    /// agrees: this driver calls `FUN_801DD35C(1, 2)`, the arm that skips
+    /// the card-file erase.
+    CardLoad,
+    /// `0x19` - save-card driver (RAM to card), `FUN_801DAEF4`.
+    ///
+    /// Calls `FUN_801DD35C(1, 1)`, the arm that looks the file up and
+    /// erases it before writing (`FUN_801E37CC`, ported as
+    /// [`crate::card_bu_io::erase_file`]).
+    CardSave,
+    /// `0x1A` - the shop's **Buy / Sell / Quit mode select**
+    /// (`FUN_801DAFD4`), not a save-slot confirm.
+    ///
+    /// The two halves that kept the old name alive are settled together.
+    /// `save-screen.md` reads the screen's row-`1` validation as a walk of
+    /// the item bag at `0x80085958` ("own anything to sell"), not a
+    /// save-block existence table - and `0x1B`..`0x1F` around it are all
+    /// shop screens. The entry-context decode agrees from the other side:
+    /// context byte `0x00` routes here (`0x801DC89C..0x801DC8A0`), and
+    /// that byte is the shop's own record kind, which is why the fallback
+    /// below is now [`SaveEntryContext::ShopEntry`].
+    ShopModeSelect,
+    /// `0x1E` - inventory spinner ahead of the quantity screen. In context
+    /// (`save-screen.md`) this is the shop **sell list**; the staged
+    /// "inventory bytes" are the bag slot the sell-quantity screen consumes.
+    QuantitySpinner,
+    /// `0x20` - the casino **prize-exchange** confirm (`FUN_801DC1CC`),
+    /// not an auto-save. It reads the block byte from the entry-context
+    /// record `_DAT_8007B450[1]` and indexes the prize table at
+    /// `0x801E4518 + block*0x60`, which is the casino table and nothing
+    /// else. `docs/subsystems/field-menu.md` pins the same id to window
+    /// 46 from the widget-script sweep, independently.
+    CasinoPrizeConfirm,
+    /// `0x16` - a bare frame-flush tick. `FUN_801DD310` is eight
+    /// instructions - prologue, `jal 0x80031D00`, epilogue - so the slot
+    /// exists to keep the table dense and does nothing else; the flush it
+    /// tail-calls is the frame-end / actor-tick one every dispatch pass
+    /// already runs. Pinned, not unknown: there is nothing further to learn
+    /// from the bytes.
+    FrameFlushTick,
+    /// A table slot whose screen **another `engine-core` module ports**.
+    /// Carries its retail id; [`SaveSubScreen::routed_port`] names the
+    /// routine and the module.
+    ///
+    /// This is not a softer spelling of [`Self::Unpinned`]. Every id here
+    /// has a `// PORT:` tag on live engine code reached from a host - the
+    /// pause-menu Items flow, the Magic flow, the Equip flow, the shop, and
+    /// this module's own `0x15` list helpers. What the id lacks is a step
+    /// machine *in this module*, which is a statement about where the port
+    /// lives rather than about whether the screen is understood.
+    Routed(u8),
+    /// A table slot whose screen is not yet pinned. Carries its id so a
+    /// transition into one round-trips.
+    ///
+    /// After the [`Self::Routed`] split this covers **no live table slot**:
+    /// the retail table is `0x00..=0x20` and every one of those 33 ids is
+    /// either pinned above or routed. It remains so the id space stays
+    /// total for an out-of-range byte, which retail itself reads as `0`
+    /// past the end of the table.
+    Unpinned(u8),
+}
+
+/// Where a [`SaveSubScreen::Routed`] id's port lives.
+///
+/// The `engine_module` / `engine_item` pair is the chain a reader follows to
+/// the code that runs the screen; `retail_fn` is the entry the sub-screen
+/// pointer table holds for the id. All three are `&'static str` rather than
+/// typed handles on purpose - this is a map from one id space to another, and
+/// the modules it names have no common session trait to hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RoutedPort {
+    /// The retail table entry for the id.
+    pub retail_fn: &'static str,
+    /// The `engine-core` module that ports it.
+    pub engine_module: &'static str,
+    /// The item in that module a host enters the screen through.
+    pub engine_item: &'static str,
+}
+
+/// The routed ids, in table order: `(id, retail fn, module, item)`.
+///
+/// Each row's `retail_fn` is the entry `docs/subsystems/save-screen.md`'s
+/// pointer-table section lists for the id, and each `engine_module` carries a
+/// `// PORT:` tag naming that same routine - so a row that drifts is
+/// detectable by grepping for the address, which
+/// [`tests::every_routed_id_names_a_distinct_port`] does structurally.
+const ROUTED_PORTS: &[(u8, RoutedPort)] = &[
+    (
+        0x05,
+        RoutedPort {
+            retail_fn: "FUN_801D7C00",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Use / Throw Out / Arrange command window)",
+        },
+    ),
+    (
+        0x06,
+        RoutedPort {
+            retail_fn: "FUN_801D7E50",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Use list + effect-class dispatch)",
+        },
+    ),
+    (
+        0x07,
+        RoutedPort {
+            retail_fn: "FUN_801D8734",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the Throw Out list + confirm)",
+        },
+    ),
+    (
+        0x09,
+        RoutedPort {
+            retail_fn: "FUN_801D7FF8",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the ApplyAll route)",
+        },
+    ),
+    (
+        0x0A,
+        RoutedPort {
+            retail_fn: "FUN_801D8308",
+            engine_module: "crate::pause_screens",
+            engine_item: "PauseItemsSession (the ApplySingle route)",
+        },
+    ),
+    (
+        0x0C,
+        RoutedPort {
+            retail_fn: "FUN_801D8B90",
+            engine_module: "crate::pause_screens",
+            engine_item: "SpecialUseSession (the Door of Wind destination list)",
+        },
+    ),
+    (
+        0x0D,
+        RoutedPort {
+            retail_fn: "FUN_801D8D94",
+            engine_module: "crate::pause_screens",
+            engine_item: "SpecialUseSession (the Incense confirm + class-0x82 apply)",
+        },
+    ),
+    (
+        0x0E,
+        RoutedPort {
+            retail_fn: "FUN_801D8F10",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the CharSelect phase)",
+        },
+    ),
+    (
+        0x0F,
+        RoutedPort {
+            retail_fn: "FUN_801D9110",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the SpellSelect phase + spell_targets_group)",
+        },
+    ),
+    (
+        0x10,
+        RoutedPort {
+            retail_fn: "FUN_801D9280",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the group-cast confirm)",
+        },
+    ),
+    (
+        0x11,
+        RoutedPort {
+            retail_fn: "FUN_801D9594",
+            engine_module: "crate::spell_menu",
+            engine_item: "SpellMenuSession (the TargetSelect phase + resolve)",
+        },
+    ),
+    (
+        0x13,
+        RoutedPort {
+            retail_fn: "FUN_801D99F0",
+            engine_module: "crate::equip_session",
+            engine_item: "EquipSession (the slot browse + Best Equipment row)",
+        },
+    ),
+    (
+        0x14,
+        RoutedPort {
+            retail_fn: "FUN_801D9C14",
+            engine_module: "crate::equip_session",
+            engine_item: "EquipSession (the candidate list + trial-equip commit)",
+        },
+    ),
+    (
+        0x15,
+        RoutedPort {
+            retail_fn: "FUN_801DA2A0",
+            engine_module: "crate::save_subscreen",
+            engine_item: "sub15_list_source / sub15_list_len / sub15_list_frame",
+        },
+    ),
+    (
+        0x1B,
+        RoutedPort {
+            retail_fn: "FUN_801DB21C",
+            engine_module: "crate::shop",
+            engine_item: "shop::buy_list_confirm_route",
+        },
+    ),
+    (
+        0x1C,
+        RoutedPort {
+            retail_fn: "FUN_801DB380",
+            engine_module: "crate::shop",
+            engine_item: "shop (the buy recipient picker)",
+        },
+    ),
+    (
+        0x1D,
+        RoutedPort {
+            retail_fn: "FUN_801DB7F4",
+            engine_module: "crate::shop",
+            engine_item: "shop::BuyQuantitySession",
+        },
+    ),
+    (
+        0x1F,
+        RoutedPort {
+            retail_fn: "FUN_801DBD94",
+            engine_module: "crate::shop",
+            engine_item: "shop (the sell-quantity input + commit)",
+        },
+    ),
+];
+
+/// The [`RoutedPort`] for a retail sub-screen id, if another module ports it.
+pub fn routed_port(id: u8) -> Option<RoutedPort> {
+    ROUTED_PORTS
+        .iter()
+        .find_map(|(k, port)| (*k == id).then_some(*port))
+}
+
+impl SaveSubScreen {
+    /// The retail table index for this screen.
+    pub fn id(self) -> u8 {
+        match self {
+            Self::FinalExit => 0x00,
+            Self::SlotSelect => 0x01,
+            Self::CharParamEditor => 0x02,
+            Self::ConfirmYesNo => 0x03,
+            Self::PostSaveReturn => 0x04,
+            Self::PadReleaseWait => 0x08,
+            Self::ConfirmExit => 0x0B,
+            Self::PartyPicker => 0x12,
+            Self::GenericPicker => 0x17,
+            Self::CardLoad => 0x18,
+            Self::CardSave => 0x19,
+            Self::ShopModeSelect => 0x1A,
+            Self::QuantitySpinner => 0x1E,
+            Self::CasinoPrizeConfirm => 0x20,
+            Self::FrameFlushTick => 0x16,
+            Self::Routed(id) | Self::Unpinned(id) => id,
+        }
+    }
+
+    /// Resolve a retail table index into a screen.
+    pub fn from_id(id: u8) -> Self {
+        match id {
+            0x00 => Self::FinalExit,
+            0x01 => Self::SlotSelect,
+            0x02 => Self::CharParamEditor,
+            0x03 => Self::ConfirmYesNo,
+            0x04 => Self::PostSaveReturn,
+            0x08 => Self::PadReleaseWait,
+            0x0B => Self::ConfirmExit,
+            0x12 => Self::PartyPicker,
+            0x17 => Self::GenericPicker,
+            0x18 => Self::CardLoad,
+            0x19 => Self::CardSave,
+            0x1A => Self::ShopModeSelect,
+            0x1E => Self::QuantitySpinner,
+            0x20 => Self::CasinoPrizeConfirm,
+            0x16 => Self::FrameFlushTick,
+            other if routed_port(other).is_some() => Self::Routed(other),
+            other => Self::Unpinned(other),
+        }
+    }
+
+    /// Whether this module carries a step machine for the screen.
+    ///
+    /// A [`Self::Routed`] id is **not** pinned by this predicate and that is
+    /// deliberate: the question it answers is "does [`SaveScreenMachine`]
+    /// step it", and for a routed id the answer is no - the owning module
+    /// does. Use [`Self::routed_port`] to ask the other question.
+    pub fn is_pinned(self) -> bool {
+        !matches!(self, Self::Unpinned(_) | Self::Routed(_))
+    }
+
+    /// Where this screen's port lives, for an id another module owns.
+    pub fn routed_port(self) -> Option<RoutedPort> {
+        match self {
+            Self::Routed(id) => routed_port(id),
+            _ => None,
+        }
+    }
+}
+
+/// What opened the save UI. Retail decodes an entry-context pointer into
+/// the starting sub-screen; the pointer's *target byte* selects, except
+/// for the sentinel value which is never dereferenced.
+///
+/// REF: FUN_801DC6B4 (state 0's entry-context decode).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SaveEntryContext {
+    /// The sentinel pointer value `1`, which retail tests for and never
+    /// dereferences (`bne v0,s1` at `0x801DC868`, then
+    /// `_DAT_8007B450 = 0`). It opens sub-screen `0x02` - the developer
+    /// character-parameter editor, not the save flow. None of the four
+    /// context bytes below reaches a save screen either - the card
+    /// drivers are entered from the root picker's own rows.
+    DebugParamEditor,
+    /// Context byte `0x01` - a field script's save point: retail opens
+    /// straight on the save-card driver `0x19`
+    /// (`0x801DC8AC..0x801DC8B4`), skipping the root picker entirely.
+    ScriptSave,
+    /// Context byte `0x07` - the casino ticket counter, which opens the
+    /// prize-exchange confirm [`SaveSubScreen::CasinoPrizeConfirm`]
+    /// (`0x801DC8C8`). Read as "auto-save" before the screen it opens was
+    /// traced.
+    CasinoPrizeCounter,
+    /// Context byte `0x0D` - returning after a save completed. The same
+    /// kind byte hides the root picker's Load row and arms its
+    /// leave-confirm (`legaia_engine_core::pause_screens::ROOT_MENU_CONTEXT_LOCKED`).
+    PostSave,
+    /// Context byte `0x00` - a **town shop**. The byte is the op-`0x49`
+    /// record's own kind, and it opens the shop's mode select
+    /// [`SaveSubScreen::ShopModeSelect`] (`0x801DC89C`).
+    ShopEntry,
+}
+
+impl SaveEntryContext {
+    /// The sub-screen this context opens on.
+    pub fn start_screen(self) -> SaveSubScreen {
+        match self {
+            Self::DebugParamEditor => SaveSubScreen::CharParamEditor,
+            Self::ScriptSave => SaveSubScreen::CardSave,
+            Self::CasinoPrizeCounter => SaveSubScreen::CasinoPrizeConfirm,
+            Self::PostSave => SaveSubScreen::PostSaveReturn,
+            Self::ShopEntry => SaveSubScreen::ShopModeSelect,
+        }
+    }
+}
+
+/// Outer state-machine phase.
+///
+/// REF: FUN_801DC6B4 (the 9-case switch on its state global).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SavePhase {
+    /// State 0 - one-shot init; seeds the fade and the start screen.
+    Init,
+    /// State 1 - waiting for the fade-in to clear the input threshold.
+    FadeIn,
+    /// State 2 - dispatching the current sub-screen every frame.
+    Dispatch,
+    /// States 3..5 - fading out, gated on the fade climbing back to
+    /// [`FADE_OPAQUE`]. Each of the three adds `3` to reach a terminal
+    /// state, which is how the exit code survives into `Done`.
+    FadeOut,
+    /// State >= 6 - terminal.
+    Done,
+}
+
+/// Fade level retail seeds on init: fully opaque. `0` is transparent, so
+/// the flow fades *in* from `FADE_OPAQUE` down to `0` and back *out* up to
+/// `FADE_OPAQUE` on the way,  which is the direction both phases run.
+pub const FADE_OPAQUE: u8 = 0xF2;
+
+/// Fade level pad input is suppressed at or above.
+///
+/// Retail masks the pad globals while the level is `>= 0x7A` (`slti
+/// 0x7a` guarding the mask block), so input reaches the sub-screens from
+/// `0x79` down.
+pub const FADE_INPUT_THRESHOLD: u8 = 0x7A;
+
+/// Fade level the fade-in wait advances to dispatch below (`slti 0x79`).
+///
+/// One below [`FADE_INPUT_THRESHOLD`] - retail really does use two
+/// distinct constants here, so dispatch starts on the first frame after
+/// input has already been let through.
+pub const FADE_DISPATCH_THRESHOLD: u8 = 0x79;
+
+/// Outer state a sub-screen writes to end the flow normally.
+///
+/// Retail's "exit code" is a write to the dispatcher's own state global:
+/// states `3..=5` are the fade-out entries, and each adds `3` to reach a
+/// terminal state `>= 6`. So `3` and `4` are not return values but the
+/// fade-out state the screen jumps the outer machine to, and they survive
+/// into the terminal state as the record of how the flow ended.
+pub const EXIT_CODE_NORMAL: u8 = 3;
+
+/// Outer state the Yes-branch of the confirm-exit screen writes.
+pub const EXIT_CODE_CONFIRMED: u8 = 4;
+
+/// Per-frame inputs a sub-screen step machine reads.
+///
+/// Retail reads these from globals the actor VM and pad layer maintain;
+/// bundling them keeps the step machines pure.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SubScreenInput {
+    /// The display script is still running. Every wait step blocks on
+    /// this going false.
+    pub script_busy: bool,
+    /// Any button is currently held. Two screens branch on it - one
+    /// waits for a press, the other for a release.
+    pub any_button_held: bool,
+    /// The list navigator's result for screens that own a cursor:
+    /// `1` confirm, `2` cancel, `3` moved, `0` none.
+    pub nav: u8,
+    /// The cursor's index, masked to its low 12 bits.
+    pub cursor: u16,
+    /// The card driver finished this frame.
+    pub card_done: bool,
+    /// The bag holds at least one sellable entry in the scanned window
+    /// (`0x80085958`, stride 2). The shop's mode select refuses to open the
+    /// Sell list without one. Named for the superseded "save block
+    /// existence table" reading of the same walk.
+    pub sellable_items_available: bool,
+    /// The spinner's outcome selector: `2` commits to the quantity
+    /// screen, `3` re-runs the spinner's second display script.
+    pub spinner_result: u8,
+}
+
+/// A side effect a step machine asks the host to perform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubScreenEffect {
+    /// Run the sub-screen's display script (an actor-VM invocation).
+    RunScript,
+    /// Play a UI sound cue.
+    Sfx(u8),
+    /// Install the memory-card handle ahead of a card operation.
+    InstallCardHandle,
+    /// Drive the card transfer in this direction.
+    CardOp(CardOp),
+    /// Read the focused inventory entry into the screen's staging cells.
+    ReadInventoryEntry,
+    /// Zero the screen's staging cells and reset the list parameter.
+    ClearStaging,
+    /// The current sub-screen is one another `engine-core` module ports:
+    /// hand the frame to [`RoutedPort::engine_module`] rather than stepping
+    /// it here.
+    ///
+    /// Retail has no counterpart - its dispatcher just indirects through the
+    /// pointer table - so this is the port's seam, not a retail effect. It
+    /// exists because the alternative is what this module used to do: return
+    /// an empty effect list, which is indistinguishable from "this screen had
+    /// nothing to do this frame" and let 19 of the table's 33 ids read as
+    /// unknown.
+    Route(RoutedPort),
+}
+
+/// Direction of a card transfer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardOp {
+    /// Card to RAM.
+    Load,
+    /// RAM to card.
+    Save,
+}
+
+/// The save UI's outer dispatcher plus the current sub-screen's step
+/// counter - the two globals that between them are the whole flow.
+///
+/// PORT: FUN_801DC6B4
+#[derive(Debug, Clone)]
+pub struct SaveScreenMachine {
+    phase: SavePhase,
+    screen: SaveSubScreen,
+    step: u8,
+    fade: u8,
+    exit_code: Option<u8>,
+    entry: SaveEntryContext,
+}
+
+impl SaveScreenMachine {
+    /// Open the save UI from an entry context.
+    pub fn new(entry: SaveEntryContext) -> Self {
+        Self {
+            phase: SavePhase::Init,
+            screen: entry.start_screen(),
+            step: 0,
+            fade: FADE_OPAQUE,
+            exit_code: None,
+            entry,
+        }
+    }
+
+    /// The entry context this flow opened on.
+    pub fn entry(&self) -> SaveEntryContext {
+        self.entry
+    }
+
+    /// The outer phase.
+    pub fn phase(&self) -> SavePhase {
+        self.phase
+    }
+
+    /// The current sub-screen.
+    pub fn screen(&self) -> SaveSubScreen {
+        self.screen
+    }
+
+    /// The current sub-screen's step counter.
+    pub fn step(&self) -> u8 {
+        self.step
+    }
+
+    /// Current fade level; `0` is transparent.
+    pub fn fade(&self) -> u8 {
+        self.fade
+    }
+
+    /// Whether the flow has terminated.
+    pub fn is_done(&self) -> bool {
+        self.phase == SavePhase::Done
+    }
+
+    /// The exit code a sub-screen wrote, once one has.
+    pub fn exit_code(&self) -> Option<u8> {
+        self.exit_code
+    }
+
+    /// Whether pad input reaches the sub-screens this frame. Retail
+    /// suppresses it while the fade is still above the threshold.
+    pub fn input_active(&self) -> bool {
+        self.fade < FADE_INPUT_THRESHOLD
+    }
+
+    /// Force a sub-screen transition, resetting the step counter the way
+    /// a retail screen's id write does.
+    pub fn goto(&mut self, screen: SaveSubScreen) {
+        self.screen = screen;
+        self.step = 0;
+    }
+
+    /// Advance one frame, returning whatever effects the current
+    /// sub-screen asked for.
+    ///
+    /// `fade_delta` is how much the fade level drops this frame; retail
+    /// runs the fade on its own timer, so the caller owns its rate.
+    pub fn tick(&mut self, input: SubScreenInput, fade_delta: u8) -> Vec<SubScreenEffect> {
+        match self.phase {
+            SavePhase::Init => {
+                // Retail's init seeds a full fade and decodes the entry
+                // context into the starting screen, then falls straight
+                // through to the fade-in wait.
+                self.fade = FADE_OPAQUE;
+                self.screen = self.entry.start_screen();
+                self.step = 0;
+                self.phase = SavePhase::FadeIn;
+                Vec::new()
+            }
+            SavePhase::FadeIn => {
+                self.fade = self.fade.saturating_sub(fade_delta);
+                if self.fade < FADE_DISPATCH_THRESHOLD {
+                    self.phase = SavePhase::Dispatch;
+                }
+                Vec::new()
+            }
+            SavePhase::Dispatch => {
+                let effects = self.dispatch(input);
+                if self.exit_code.is_some() {
+                    self.phase = SavePhase::FadeOut;
+                }
+                effects
+            }
+            SavePhase::FadeOut => {
+                // The fade-out ramps back *up* to opaque; retail's exiting
+                // screen flips the fade delta positive and the fade-out
+                // state completes on `fade >= 0xF2`, not on zero.
+                self.fade = self.fade.saturating_add(fade_delta).min(FADE_OPAQUE);
+                if self.fade >= FADE_OPAQUE {
+                    self.phase = SavePhase::Done;
+                }
+                Vec::new()
+            }
+            SavePhase::Done => Vec::new(),
+        }
+    }
+
+    /// Run the current sub-screen's step machine for one frame.
+    fn dispatch(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.screen {
+            SaveSubScreen::FinalExit => self.tick_final_exit(input),
+            SaveSubScreen::ConfirmYesNo => self.tick_confirm_yes_no(input),
+            SaveSubScreen::PostSaveReturn => self.tick_post_save_return(input),
+            SaveSubScreen::PadReleaseWait => self.tick_pad_release_wait(input),
+            SaveSubScreen::ConfirmExit => self.tick_confirm_exit(input),
+            SaveSubScreen::PartyPicker => self.tick_party_picker(input),
+            SaveSubScreen::CardSave => self.tick_card_driver(input, CardOp::Save),
+            SaveSubScreen::CardLoad => self.tick_card_driver(input, CardOp::Load),
+            SaveSubScreen::ShopModeSelect => self.tick_shop_mode_select(input),
+            SaveSubScreen::QuantitySpinner => self.tick_quantity_spinner(input),
+            // `FUN_801DD310` is a bare flush wrapper: no step, no transition,
+            // nothing for a host to do. The menu image's routine at that VA
+            // (other images hold unrelated code there, hence the stem):
+            // PORT: overlay_menu_0899_801dd310
+            SaveSubScreen::FrameFlushTick => Vec::new(),
+            // A screen another module ports. Retail indirects into it through
+            // the pointer table; the engine names the module instead, so a
+            // host can hand the frame on rather than watch the flow park.
+            SaveSubScreen::Routed(id) => routed_port(id)
+                .map(|port| vec![SubScreenEffect::Route(port)])
+                .unwrap_or_default(),
+            // Named here but not stepped here: each is a screen this module
+            // decodes (its entry-context route, its exit code, its id) whose
+            // per-frame body belongs to another module - the slot grid and
+            // the info panel to `crate::save_select`, the character-parameter
+            // editor and the generic picker to no host at all, the casino
+            // confirm to `legaia_engine_core::prize_exchange`. A host drives them through
+            // `goto`, as it always has.
+            SaveSubScreen::SlotSelect
+            | SaveSubScreen::CharParamEditor
+            | SaveSubScreen::GenericPicker
+            | SaveSubScreen::CasinoPrizeConfirm => Vec::new(),
+            // An id outside the retail table (`>= 0x21`). Retail reads `0`
+            // there; the port parks rather than inventing a transition.
+            SaveSubScreen::Unpinned(_) => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x00`: run the terminal display script, then exit.
+    ///
+    /// PORT: FUN_801DD12C
+    fn tick_final_exit(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => {
+                // Retail writes `0xF2` to the fade *delta*, not the fade
+                // level - it flips the ramp positive so the fade-out
+                // phase climbs back to opaque. Slamming the level here
+                // would end the fade-out on its first frame.
+                self.exit_code = Some(EXIT_CODE_NORMAL);
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x03`: Yes/No confirm defaulting to `No`.
+    ///
+    /// The cursor seeds to `1`, and confirming on `1` returns to the slot
+    /// selector while confirming on `0` falls through to the terminal
+    /// screen. Cancel returns the same way `1` does.
+    ///
+    /// PORT: FUN_801D6D38
+    fn tick_confirm_yes_no(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => match input.nav {
+                1 => {
+                    // Retail writes the exit screen first and overwrites
+                    // it when the cursor sits on the default row, so the
+                    // exit is the fallthrough, not the choice.
+                    let next = if input.cursor & 0xFFF == 1 {
+                        SaveSubScreen::SlotSelect
+                    } else {
+                        SaveSubScreen::FinalExit
+                    };
+                    self.goto(next);
+                    vec![SubScreenEffect::Sfx(0x20)]
+                }
+                2 => {
+                    self.goto(SaveSubScreen::SlotSelect);
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x04`: "press any button" after a save.
+    ///
+    /// The wait is for a button to go *down*, unlike the release-wait
+    /// screen; that is the only difference between the two.
+    ///
+    /// PORT: FUN_801DD1B8
+    fn tick_post_save_return(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy && input.any_button_held => {
+                self.goto(SaveSubScreen::SlotSelect);
+                vec![SubScreenEffect::Sfx(0x20)]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x08`: message screen that waits for the pad to be
+    /// released before moving on.
+    ///
+    /// PORT: FUN_801DD26C
+    fn tick_pad_release_wait(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy && !input.any_button_held => {
+                self.goto(SaveSubScreen::Routed(0x05));
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x0B`: Yes/No confirm whose Yes branch plays a second
+    /// display script and then exits with the confirmed code.
+    ///
+    /// PORT: FUN_801D8A58
+    fn tick_confirm_exit(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => match input.nav {
+                1 if input.cursor & 0xFFF == 0 => {
+                    // Yes: play the confirm script and advance to the
+                    // wait step rather than leaving the screen.
+                    self.step = 2;
+                    vec![SubScreenEffect::RunScript, SubScreenEffect::Sfx(0x88)]
+                }
+                1 | 2 => {
+                    self.goto(SaveSubScreen::Routed(0x06));
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
+            2 if !input.script_busy => {
+                // As in `tick_final_exit`: the `0xF2` retail writes here
+                // is the fade delta, not the level.
+                self.exit_code = Some(EXIT_CODE_CONFIRMED);
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x12`: the scrollable party-count picker.
+    ///
+    /// PORT: FUN_801D98F0
+    fn tick_party_picker(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => match input.nav {
+                1 => {
+                    self.goto(SaveSubScreen::Routed(0x13));
+                    vec![SubScreenEffect::Sfx(0x20)]
+                }
+                2 => {
+                    self.goto(SaveSubScreen::SlotSelect);
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screens `0x18` / `0x19`: the card drivers.
+    ///
+    /// The two are the same four-step machine; only the transfer
+    /// direction differs - retail passes it as the card driver's second
+    /// argument (`1` save, `2` load) - which is why they share one
+    /// implementation. Both return to the slot selector when the
+    /// transfer lands.
+    ///
+    /// One retail asymmetry is not modelled: the **save** driver's final
+    /// step re-tests the entry-context pointer and leaves for the terminal
+    /// screen instead of the selector when it is set - a save raised by a
+    /// field script hands control back to the script rather than to the
+    /// menu - where the load driver has no such branch. Modelling it needs
+    /// an input this struct does not carry, so the shared machine always
+    /// takes the selector exit.
+    ///
+    /// PORT: FUN_801DAE24 (load), FUN_801DAEF4 (save)
+    fn tick_card_driver(&mut self, input: SubScreenInput, op: CardOp) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![
+                    SubScreenEffect::InstallCardHandle,
+                    SubScreenEffect::RunScript,
+                ]
+            }
+            1 => {
+                if !input.script_busy {
+                    self.step = 2;
+                }
+                Vec::new()
+            }
+            2 => {
+                if input.card_done {
+                    self.step = 3;
+                }
+                vec![SubScreenEffect::CardOp(op)]
+            }
+            3 => {
+                self.goto(SaveSubScreen::SlotSelect);
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x1A`: the shop's Buy / Sell / Quit mode select, a
+    /// three-row list.
+    ///
+    /// The rows do not share an exit. Row `2` and the cancel button both
+    /// leave for the terminal screen; row `0` (Buy) leaves for the buy list
+    /// `0x1B`; row `1` (Sell) is the only one that can *proceed*, and only
+    /// after a walk of the item bag finds something to sell. Failing that
+    /// walk buzzes and leaves the screen where it is - retail does not fall
+    /// through to a transition.
+    ///
+    /// The row-`2` exit fires *two* audio calls in retail - the same cue
+    /// entry point the other screens use, with id `0`, plus a second
+    /// routine with `0x37`. Only the `0x37` one is modelled here, since
+    /// [`SubScreenEffect::Sfx`] does not distinguish the two entry
+    /// points.
+    ///
+    /// PORT: FUN_801DAFD4
+    fn tick_shop_mode_select(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                vec![SubScreenEffect::ClearStaging, SubScreenEffect::RunScript]
+            }
+            1 if !input.script_busy => match (input.nav, input.cursor & 0xFFF) {
+                (1, 0) => {
+                    self.goto(SaveSubScreen::Routed(0x1B));
+                    vec![SubScreenEffect::ClearStaging]
+                }
+                (1, 1) => {
+                    if input.sellable_items_available {
+                        self.step = 2;
+                        vec![SubScreenEffect::RunScript]
+                    } else {
+                        vec![SubScreenEffect::Sfx(0x23)]
+                    }
+                }
+                (1, _) => {
+                    self.goto(SaveSubScreen::FinalExit);
+                    vec![SubScreenEffect::Sfx(0x37)]
+                }
+                (2, _) => {
+                    self.goto(SaveSubScreen::FinalExit);
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            },
+            2 if !input.script_busy => {
+                self.goto(SaveSubScreen::QuantitySpinner);
+                vec![SubScreenEffect::ClearStaging]
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Sub-screen `0x1E`: the inventory spinner ahead of the quantity
+    /// screen.
+    ///
+    /// Steps 1 and 2 both land on the staging read, so the screen reads
+    /// the focused inventory entry on the frame it settles and every
+    /// frame it re-runs.
+    ///
+    /// PORT: FUN_801DBC5C
+    fn tick_quantity_spinner(&mut self, input: SubScreenInput) -> Vec<SubScreenEffect> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                return vec![SubScreenEffect::RunScript];
+            }
+            1 if input.script_busy => return Vec::new(),
+            1 => self.step = 2,
+            2 => {}
+            3 => {
+                if !input.script_busy {
+                    self.goto(SaveSubScreen::ShopModeSelect);
+                }
+                return Vec::new();
+            }
+            _ => return Vec::new(),
+        }
+
+        // Steps 1-settling and 2 share the staging read and the outcome
+        // branch below.
+        let mut effects = vec![SubScreenEffect::ReadInventoryEntry];
+        match input.spinner_result {
+            3 => {
+                self.step = 3;
+                effects.push(SubScreenEffect::RunScript);
+            }
+            2 => self.goto(SaveSubScreen::Routed(0x1F)),
+            _ => {}
+        }
+        effects
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sub-screen 0x15 - the per-character list screen (`FUN_801DA2A0`)
+// ---------------------------------------------------------------------------
+
+/// Character-record offsets sub-screen `0x15` addresses, expressed relative
+/// to the record base `0x80084708`.
+///
+/// The disassembly indexes from `0x80084140` instead, so every printed
+/// displacement here is `0x5C8` higher than the constant below - the record
+/// array starts `0x5C8` into that block
+/// (see [`save-record.md`](../../../docs/formats/save-record.md)).
+mod sub15_record {
+    /// `0x6BC` printed - the 64-slot accessory-passive ("Goods") ability
+    /// bitfield, the same field
+    /// `legaia_engine_core::accessory_passives` indexes.
+    pub const ABILITY_BITS: usize = 0x0F4;
+    /// `0x5D0` printed - a word array the row swap exchanges, 4-byte stride.
+    pub const ROW_WORDS: usize = 0x008;
+    /// `0x704` printed - the learned-spell count.
+    pub const SPELL_COUNT: usize = 0x13C;
+    /// `0x705` printed - the learned-spell id list, immediately after its
+    /// count.
+    pub const SPELL_LIST: usize = 0x13D;
+    /// `0x729` printed - the per-spell byte the swap keeps in step with
+    /// [`SPELL_LIST`].
+    pub const SPELL_AUX: usize = 0x161;
+    /// `0x74D` printed - the third list's count byte.
+    pub const THIRD_COUNT: usize = 0x185;
+    /// `0x75E` printed - the eight-byte equip array; the Ra-Seru slot index
+    /// comes from the `0x8007B424 + char*2` halfword table.
+    pub const EQUIP: usize = 0x196;
+}
+
+pub use sub15_record::{
+    ABILITY_BITS as SUB15_ABILITY_BITS, EQUIP as SUB15_EQUIP, ROW_WORDS as SUB15_ROW_WORDS,
+    SPELL_AUX as SUB15_SPELL_AUX, SPELL_COUNT as SUB15_SPELL_COUNT, SPELL_LIST as SUB15_SPELL_LIST,
+    THIRD_COUNT as SUB15_THIRD_COUNT,
+};
+
+/// Width of the ability bitfield sub-screen `0x15` counts over: `0x40`
+/// bits, walked one at a time as `word[bit >> 5] & (1 << (bit & 0x1F))`.
+pub const SUB15_ABILITY_BIT_COUNT: usize = 0x40;
+
+/// Which per-character list sub-screen `0x15` is showing.
+///
+/// The screen is one body serving three lists, and the *step counter*
+/// selects which - not a separate screen id. Steps `2`/`5`, `3`/`6` and
+/// `4`/`7` are the settle / running pair for each list, which is why the
+/// resolver below maps both members of a pair to the same source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sub15ListSource {
+    /// Steps `2` / `5`: the row count is the **population count** of the
+    /// 64-slot ability bitfield.
+    Abilities,
+    /// Steps `3` / `6`: the row count is the learned-spell count, and it
+    /// is gated on the character's Ra-Seru equip slot being filled - an
+    /// empty slot reports zero rows rather than an empty list.
+    Magic,
+    /// Steps `4` / `7`: the row count is the single byte at `+0x185`.
+    Third,
+    /// Any other step: no list.
+    None,
+}
+
+/// Step -> list source, the three-way branch at `0x801DA538..0x801DA64C`.
+///
+/// PORT: FUN_801DA2A0 (see `ghidra/scripts/funcs/overlay_save_ui_801da2a0.txt`)
+///
+/// Wired: [`crate::list_order::ListOrderSession`] is the page, opened over
+/// the Magic screen's spell rows on both hosts, and the step it opens at is
+/// what this resolves. The three sources stay one body, as retail has them:
+/// the session asks this which list it is showing and only the spell list's
+/// step carries the exchange arm.
+pub fn sub15_list_source(step: u8) -> Sub15ListSource {
+    match step {
+        2 | 5 => Sub15ListSource::Abilities,
+        3 | 6 => Sub15ListSource::Magic,
+        4 | 7 => Sub15ListSource::Third,
+        _ => Sub15ListSource::None,
+    }
+}
+
+/// Row count for one frame of sub-screen `0x15`.
+///
+/// `record` is the character's `0x414`-byte record and `raseru_slot` is the
+/// index the `0x8007B424 + char*2` halfword table supplies for that
+/// character. A short `record` yields `0` rather than panicking.
+///
+/// The Magic gate is the load-bearing part: retail reads
+/// `record[0x196 + raseru_slot]` **first** and only reads the spell count
+/// when that byte is non-zero, so a character with spells but no Ra-Seru
+/// equipped reports an empty list and takes the reject arm below - the same
+/// gate the Magic caster picker applies (`FUN_801D9110`).
+///
+/// PORT: FUN_801DA2A0 (`0x801DA550..0x801DA64C`)
+///
+/// Wired through `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`,
+/// which re-derives the live length from the record before it replays the
+/// page's exchanges - the record is the authority on how long the list is,
+/// and the Ra-Seru gate is why a caster with spells can still report none.
+pub fn sub15_list_len(step: u8, record: &[u8], raseru_slot: usize) -> u8 {
+    let byte = |off: usize| record.get(off).copied().unwrap_or(0);
+    match sub15_list_source(step) {
+        Sub15ListSource::Abilities => {
+            let mut n = 0u8;
+            for bit in 0..SUB15_ABILITY_BIT_COUNT {
+                let word_off = sub15_record::ABILITY_BITS + (bit >> 5) * 4;
+                let word = record
+                    .get(word_off..word_off + 4)
+                    .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]))
+                    .unwrap_or(0);
+                if word & (1 << (bit & 0x1F)) != 0 {
+                    n = n.saturating_add(1);
+                }
+            }
+            n
+        }
+        Sub15ListSource::Magic => {
+            if byte(sub15_record::EQUIP + raseru_slot) == 0 {
+                0
+            } else {
+                byte(sub15_record::SPELL_COUNT)
+            }
+        }
+        Sub15ListSource::Third => byte(sub15_record::THIRD_COUNT),
+        Sub15ListSource::None => 0,
+    }
+}
+
+/// What one frame of sub-screen `0x15`'s list half does once the row count
+/// is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Sub15Frame {
+    /// `len == 0`: retail buzzes `0x23`, drops the step back to `1` (the
+    /// character picker) and masks both cursors back to their index bits.
+    Reject,
+    /// `step < 5`: the settle frame. Retail adds **three** to the step,
+    /// which is what turns steps `2`/`3`/`4` into their running twins
+    /// `5`/`6`/`7`, and runs nothing else this frame.
+    Settle { next_step: u8 },
+    /// `step >= 5`: run the row picker over `len` rows.
+    Browse { rows: u8 },
+}
+
+/// One frame of sub-screen `0x15` after the row count, the arm chain at
+/// `0x801DA650..0x801DA6D0`.
+///
+/// Two details the shape depends on. The reject test runs **before** the
+/// settle test, so an empty list is rejected on the settle frame rather
+/// than one frame later. And the row picker is driven with mode `0`
+/// (`FUN_801D688C(&_DAT_8007BB98, len, 0)`) - the only clamping picker in
+/// this overlay; every other call site in the save UI passes `1` and wraps.
+///
+/// PORT: FUN_801DA2A0 (`0x801DA650..0x801DA6D0`)
+///
+/// Wired: [`crate::list_order::ListOrderSession::open`] runs this before it
+/// opens the page, so an empty list takes the reject arm and no page opens
+/// rather than a page opening empty.
+pub fn sub15_frame(step: u8, len: u8) -> Sub15Frame {
+    if len == 0 {
+        return Sub15Frame::Reject;
+    }
+    if step < 5 {
+        return Sub15Frame::Settle {
+            next_step: step + 3,
+        };
+    }
+    Sub15Frame::Browse { rows: len }
+}
+
+/// The row swap the screen commits: exchange rows `a` and `b` of the
+/// character's list across all three parallel arrays at once - the id byte
+/// at `+0x13D`, its companion byte at `+0x161`, and the word at `+0x08`.
+///
+/// Retail performs the three exchanges through a scratch byte each, in that
+/// order, and raises flag `0x1000` on the second cursor as it commits. A
+/// row index outside the record is skipped rather than clamped.
+///
+/// PORT: FUN_801DA2A0 (`0x801DA768..0x801DA844`)
+///
+/// Wired: the page ([`crate::list_order::ListOrderSession`]) records each
+/// exchange it makes and
+/// `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome` replays them
+/// here against the character's own bytes when the page closes. The page
+/// permutes a copy so a cancelled visit changes nothing; this is the only
+/// thing that touches the record.
+///
+/// What the permutation is worth: `build_spell_session` fills each caster's
+/// rows from `member.spell_list()`, which reads exactly the `+0x13D` /
+/// `+0x161` pair this swaps, **in record order**, so an exchange here is an
+/// exchange on the Magic screen - `spell_swap_permutes_the_magic_screen_order`
+/// in `field_menu_subsession_e2e` pins that.
+pub fn sub15_swap_rows(record: &mut [u8], a: usize, b: usize) {
+    if a == b {
+        return;
+    }
+    for base in [sub15_record::SPELL_LIST, sub15_record::SPELL_AUX] {
+        let (ia, ib) = (base + a, base + b);
+        if ia < record.len() && ib < record.len() {
+            record.swap(ia, ib);
+        }
+    }
+    let (wa, wb) = (
+        sub15_record::ROW_WORDS + a * 4,
+        sub15_record::ROW_WORDS + b * 4,
+    );
+    if wa + 4 <= record.len() && wb + 4 <= record.len() {
+        for k in 0..4 {
+            record.swap(wa + k, wb + k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn idle() -> SubScreenInput {
+        SubScreenInput::default()
+    }
+
+    /// Every id the table indexes round-trips, including the ones with no
+    /// step machine - the enum has to keep the space total or a retail
+    /// transition into an unpinned screen would be inexpressible.
+    #[test]
+    fn subscreen_ids_round_trip() {
+        for id in 0u8..=0x20 {
+            assert_eq!(SaveSubScreen::from_id(id).id(), id, "id {id:#04x}");
+        }
+        assert!(!SaveSubScreen::from_id(0x05).is_pinned());
+        assert!(SaveSubScreen::from_id(0x18).is_pinned());
+    }
+
+    /// The entry context picks the opening screen, which is what makes
+    /// the same overlay serve Load, Save and auto-save.
+    #[test]
+    fn entry_context_picks_the_start_screen() {
+        assert_eq!(
+            SaveEntryContext::DebugParamEditor.start_screen(),
+            SaveSubScreen::CharParamEditor
+        );
+        assert_eq!(
+            SaveEntryContext::ScriptSave.start_screen(),
+            SaveSubScreen::CardSave
+        );
+        assert_eq!(
+            SaveEntryContext::CasinoPrizeCounter.start_screen(),
+            SaveSubScreen::CasinoPrizeConfirm
+        );
+        assert_eq!(
+            SaveEntryContext::PostSave.start_screen(),
+            SaveSubScreen::PostSaveReturn
+        );
+    }
+
+    /// Input is gated on the fade, so a machine that has only just opened
+    /// must not dispatch pad reads.
+    #[test]
+    fn fade_gates_input_then_dispatch_starts() {
+        let mut m = SaveScreenMachine::new(SaveEntryContext::DebugParamEditor);
+        m.tick(idle(), 0x10); // Init
+        assert_eq!(m.phase(), SavePhase::FadeIn);
+        assert!(!m.input_active());
+        // Fade down past the threshold.
+        while m.phase() == SavePhase::FadeIn {
+            m.tick(idle(), 0x10);
+        }
+        assert_eq!(m.phase(), SavePhase::Dispatch);
+        assert!(m.input_active());
+    }
+
+    fn dispatching(entry: SaveEntryContext) -> SaveScreenMachine {
+        let mut m = SaveScreenMachine::new(entry);
+        while m.phase() != SavePhase::Dispatch {
+            m.tick(idle(), 0x40);
+        }
+        m
+    }
+
+    /// The terminal screen runs its script, waits for it, then ends the
+    /// flow with the normal exit code and a re-opaqued fade.
+    #[test]
+    fn final_exit_runs_script_then_exits() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::FinalExit);
+
+        let fx = m.tick(idle(), 0);
+        assert_eq!(fx, vec![SubScreenEffect::RunScript]);
+        assert_eq!(m.step(), 1);
+
+        // Still busy: nothing happens.
+        m.tick(
+            SubScreenInput {
+                script_busy: true,
+                ..idle()
+            },
+            0,
+        );
+        assert!(m.exit_code().is_none());
+
+        m.tick(idle(), 0);
+        assert_eq!(m.exit_code(), Some(EXIT_CODE_NORMAL));
+        // The screen writes the fade *delta*, so the level is unchanged
+        // at the point the exit lands; the fade-out phase is what walks
+        // it back up to opaque.
+        assert!(m.fade() < FADE_DISPATCH_THRESHOLD);
+        assert_eq!(m.phase(), SavePhase::FadeOut);
+    }
+
+    /// Confirming on the default row returns to the slot selector;
+    /// confirming on the other row falls through to the exit screen.
+    /// Retail writes the exit first and overwrites it, so getting this
+    /// backwards is the easy mistake.
+    #[test]
+    fn confirm_yes_no_default_row_returns_to_the_selector() {
+        for (cursor, expected) in [
+            (1u16, SaveSubScreen::SlotSelect),
+            (0, SaveSubScreen::FinalExit),
+        ] {
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+            m.goto(SaveSubScreen::ConfirmYesNo);
+            m.tick(idle(), 0);
+            let fx = m.tick(
+                SubScreenInput {
+                    nav: 1,
+                    cursor,
+                    ..idle()
+                },
+                0,
+            );
+            assert_eq!(m.screen(), expected, "cursor {cursor}");
+            assert_eq!(fx, vec![SubScreenEffect::Sfx(0x20)]);
+        }
+    }
+
+    /// Cancelling the confirm goes back to the selector, the same place
+    /// the default row goes.
+    #[test]
+    fn confirm_yes_no_cancel_returns_to_the_selector() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::ConfirmYesNo);
+        m.tick(idle(), 0);
+        m.tick(SubScreenInput { nav: 2, ..idle() }, 0);
+        assert_eq!(m.screen(), SaveSubScreen::SlotSelect);
+    }
+
+    /// The two pad-wait screens are mirror images: one needs a button
+    /// down, the other needs the pad clear.
+    #[test]
+    fn pad_wait_screens_mirror_each_other() {
+        let mut press = dispatching(SaveEntryContext::PostSave);
+        press.tick(idle(), 0);
+        // Pad clear: the press-wait screen stays put.
+        press.tick(idle(), 0);
+        assert_eq!(press.screen(), SaveSubScreen::PostSaveReturn);
+        press.tick(
+            SubScreenInput {
+                any_button_held: true,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(press.screen(), SaveSubScreen::SlotSelect);
+
+        let mut release = dispatching(SaveEntryContext::DebugParamEditor);
+        release.goto(SaveSubScreen::PadReleaseWait);
+        release.tick(idle(), 0);
+        // Button held: the release-wait screen stays put.
+        release.tick(
+            SubScreenInput {
+                any_button_held: true,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(release.screen(), SaveSubScreen::PadReleaseWait);
+        release.tick(idle(), 0);
+        assert_eq!(release.screen(), SaveSubScreen::Routed(0x05));
+    }
+
+    /// The Yes branch of the confirm-exit screen does not leave: it runs
+    /// a second script and exits with the confirmed code once that
+    /// settles.
+    #[test]
+    fn confirm_exit_yes_branch_runs_a_second_script() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::ConfirmExit);
+        m.tick(idle(), 0);
+
+        let fx = m.tick(
+            SubScreenInput {
+                nav: 1,
+                cursor: 0,
+                ..idle()
+            },
+            0,
+        );
+        assert!(fx.contains(&SubScreenEffect::RunScript));
+        assert!(fx.contains(&SubScreenEffect::Sfx(0x88)));
+        assert_eq!(m.step(), 2);
+        assert_eq!(m.screen(), SaveSubScreen::ConfirmExit);
+
+        m.tick(idle(), 0);
+        assert_eq!(m.exit_code(), Some(EXIT_CODE_CONFIRMED));
+    }
+
+    /// The No branch leaves for a different screen than the Yes branch's
+    /// exit, and cancel goes the same way No does.
+    #[test]
+    fn confirm_exit_no_and_cancel_leave() {
+        for nav in [1u8, 2] {
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+            m.goto(SaveSubScreen::ConfirmExit);
+            m.tick(idle(), 0);
+            m.tick(
+                SubScreenInput {
+                    nav,
+                    cursor: 1,
+                    ..idle()
+                },
+                0,
+            );
+            assert_eq!(m.screen(), SaveSubScreen::Routed(0x06), "nav {nav}");
+            assert!(m.exit_code().is_none());
+        }
+    }
+
+    /// Both card drivers are the same machine; only the op differs, and
+    /// both land back on the slot selector.
+    #[test]
+    fn card_drivers_differ_only_in_direction() {
+        for (screen, op) in [
+            (SaveSubScreen::CardSave, CardOp::Save),
+            (SaveSubScreen::CardLoad, CardOp::Load),
+        ] {
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+            m.goto(screen);
+
+            let fx = m.tick(idle(), 0);
+            assert!(fx.contains(&SubScreenEffect::InstallCardHandle));
+            assert!(fx.contains(&SubScreenEffect::RunScript));
+
+            m.tick(idle(), 0); // step 1 -> 2 (script idle)
+            assert_eq!(m.step(), 2);
+
+            // Transfer in flight: the op keeps being driven.
+            let fx = m.tick(idle(), 0);
+            assert_eq!(fx, vec![SubScreenEffect::CardOp(op)]);
+            assert_eq!(m.step(), 2);
+
+            m.tick(
+                SubScreenInput {
+                    card_done: true,
+                    ..idle()
+                },
+                0,
+            );
+            assert_eq!(m.step(), 3);
+            m.tick(idle(), 0);
+            assert_eq!(m.screen(), SaveSubScreen::SlotSelect);
+        }
+    }
+
+    /// The shop mode select's three rows do not share an exit: only row 1
+    /// (Sell) can proceed, row 0 (Buy) opens the buy list `0x1B`, row 2
+    /// (Quit) leaves.
+    #[test]
+    fn shop_mode_select_rows_have_distinct_exits() {
+        let cases = [
+            (0u16, SaveSubScreen::Routed(0x1B)),
+            (2, SaveSubScreen::FinalExit),
+        ];
+        for (cursor, expected) in cases {
+            let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+            m.goto(SaveSubScreen::ShopModeSelect);
+            m.tick(idle(), 0);
+            m.tick(
+                SubScreenInput {
+                    nav: 1,
+                    cursor,
+                    ..idle()
+                },
+                0,
+            );
+            assert_eq!(m.screen(), expected, "cursor {cursor}");
+        }
+    }
+
+    /// Row 1 proceeds only when the scan found a usable save block;
+    /// without one it plays the error cue and stays put rather than
+    /// falling through to a transition.
+    #[test]
+    fn shop_mode_select_row_one_needs_a_sellable_bag() {
+        let mut blocked = dispatching(SaveEntryContext::DebugParamEditor);
+        blocked.goto(SaveSubScreen::ShopModeSelect);
+        blocked.tick(idle(), 0);
+        let fx = blocked.tick(
+            SubScreenInput {
+                nav: 1,
+                cursor: 1,
+                sellable_items_available: false,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(fx, vec![SubScreenEffect::Sfx(0x23)]);
+        assert_eq!(blocked.screen(), SaveSubScreen::ShopModeSelect);
+        assert_eq!(blocked.step(), 1);
+
+        let mut ok = dispatching(SaveEntryContext::DebugParamEditor);
+        ok.goto(SaveSubScreen::ShopModeSelect);
+        ok.tick(idle(), 0);
+        ok.tick(
+            SubScreenInput {
+                nav: 1,
+                cursor: 1,
+                sellable_items_available: true,
+                ..idle()
+            },
+            0,
+        );
+        assert_eq!(ok.step(), 2);
+        ok.tick(idle(), 0);
+        assert_eq!(ok.screen(), SaveSubScreen::QuantitySpinner);
+    }
+
+    /// The spinner reads the focused inventory entry once it settles, and
+    /// its result selector picks between committing and re-running.
+    #[test]
+    fn quantity_spinner_commits_on_result_two() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::QuantitySpinner);
+        m.tick(idle(), 0);
+
+        let fx = m.tick(
+            SubScreenInput {
+                spinner_result: 2,
+                ..idle()
+            },
+            0,
+        );
+        assert!(fx.contains(&SubScreenEffect::ReadInventoryEntry));
+        assert_eq!(m.screen(), SaveSubScreen::Routed(0x1F));
+    }
+
+    /// Result `3` re-runs the second display script and parks on the
+    /// wait step rather than leaving the screen.
+    #[test]
+    fn quantity_spinner_rerun_parks_on_the_wait_step() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::QuantitySpinner);
+        m.tick(idle(), 0);
+
+        let fx = m.tick(
+            SubScreenInput {
+                spinner_result: 3,
+                ..idle()
+            },
+            0,
+        );
+        assert!(fx.contains(&SubScreenEffect::RunScript));
+        assert_eq!(m.step(), 3);
+        assert_eq!(m.screen(), SaveSubScreen::QuantitySpinner);
+
+        m.tick(idle(), 0);
+        assert_eq!(m.screen(), SaveSubScreen::ShopModeSelect);
+    }
+
+    /// A full script-save flow: the card driver runs, lands on the
+    /// selector, and the confirm's default row keeps the player there.
+    #[test]
+    fn script_save_flow_walks_card_driver_into_the_selector() {
+        let mut m = dispatching(SaveEntryContext::ScriptSave);
+        assert_eq!(m.screen(), SaveSubScreen::CardSave);
+
+        m.tick(idle(), 0); // install + script
+        m.tick(idle(), 0); // script idle
+        m.tick(
+            SubScreenInput {
+                card_done: true,
+                ..idle()
+            },
+            0,
+        );
+        m.tick(idle(), 0);
+        assert_eq!(m.screen(), SaveSubScreen::SlotSelect);
+        assert!(!m.is_done());
+    }
+
+    /// The flow only terminates after the fade-out finishes, so an exit
+    /// code alone does not mean the UI is gone.
+    #[test]
+    fn exit_code_still_waits_for_the_fade_out() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::FinalExit);
+        m.tick(idle(), 0);
+        m.tick(idle(), 0);
+        assert_eq!(m.phase(), SavePhase::FadeOut);
+        assert!(!m.is_done());
+
+        while !m.is_done() {
+            m.tick(idle(), 0x20);
+        }
+        // The fade-out ends opaque, not transparent - it is the reverse
+        // of the fade-in, and retail's terminal state is reached by the
+        // level climbing back to `0xF2`.
+        assert_eq!(m.fade(), FADE_OPAQUE);
+    }
+
+    /// A shop entry context opens on the shop's mode select, and that
+    /// screen must be the *dispatchable* variant. Naming it as an
+    /// unpinned id would round-trip the number while comparing unequal
+    /// to `ShopModeSelect`, so the dispatcher would park on a screen this
+    /// module implements.
+    #[test]
+    fn shop_context_opens_a_dispatchable_mode_select() {
+        let start = SaveEntryContext::ShopEntry.start_screen();
+        assert_eq!(start, SaveSubScreen::ShopModeSelect);
+        assert_eq!(start.id(), 0x1A);
+        assert_eq!(start, SaveSubScreen::from_id(0x1A));
+        assert!(start.is_pinned());
+
+        // It really dispatches: step 0 stages and runs the display
+        // script rather than returning nothing.
+        let mut m = dispatching(SaveEntryContext::ShopEntry);
+        let effects = m.tick(idle(), 0);
+        assert!(effects.contains(&SubScreenEffect::RunScript), "{effects:?}");
+    }
+
+    /// Retail uses two distinct fade constants: pad input is unmasked
+    /// from `0x79` down, but the fade-in only hands over to dispatch
+    /// below `0x79`. Collapsing them into one would let dispatch start a
+    /// frame early.
+    #[test]
+    fn input_unmasks_one_level_before_dispatch_begins() {
+        assert_eq!(FADE_INPUT_THRESHOLD, 0x7A);
+        assert_eq!(FADE_DISPATCH_THRESHOLD, 0x79);
+
+        let mut m = SaveScreenMachine::new(SaveEntryContext::DebugParamEditor);
+        m.tick(idle(), 0); // Init
+        // Land exactly on 0x79: input is already live, dispatch is not.
+        while m.fade() > 0x79 {
+            m.tick(idle(), 1);
+        }
+        assert_eq!(m.fade(), 0x79);
+        assert!(m.input_active());
+        assert_eq!(m.phase(), SavePhase::FadeIn);
+
+        m.tick(idle(), 1);
+        assert_eq!(m.phase(), SavePhase::Dispatch);
+    }
+
+    /// The fade-out climbs to opaque and stops there - it neither
+    /// overshoots nor completes on a transparent screen.
+    #[test]
+    fn fade_out_ramps_up_to_opaque_and_clamps() {
+        let mut m = dispatching(SaveEntryContext::DebugParamEditor);
+        m.goto(SaveSubScreen::FinalExit);
+        m.tick(idle(), 0);
+        m.tick(idle(), 0);
+        assert_eq!(m.phase(), SavePhase::FadeOut);
+        // The exiting screen writes a delta, so the level is still the
+        // transparent one the dispatch phase ran at.
+        assert!(m.fade() < FADE_DISPATCH_THRESHOLD);
+
+        let mut seen = vec![m.fade()];
+        while !m.is_done() {
+            m.tick(idle(), 0x30);
+            seen.push(m.fade());
+        }
+        assert!(
+            seen.windows(2).all(|w| w[1] >= w[0]),
+            "not monotonic: {seen:?}"
+        );
+        assert_eq!(m.fade(), FADE_OPAQUE);
+    }
+
+    // -----------------------------------------------------------------
+    // The routed half of the id space
+    // -----------------------------------------------------------------
+
+    /// The retail sub-screen pointer table is `0x00..=0x20`, and after the
+    /// `Routed` split every one of those 33 ids resolves to a screen this
+    /// crate can name. `Unpinned` is left holding nothing, which is the
+    /// whole point: the enum no longer claims a live table slot is unknown.
+    #[test]
+    fn no_live_table_id_is_unpinned() {
+        for id in 0x00u8..=0x20 {
+            let screen = SaveSubScreen::from_id(id);
+            assert!(
+                !matches!(screen, SaveSubScreen::Unpinned(_)),
+                "id {id:#04x} still reads as Unpinned"
+            );
+            assert_eq!(screen.id(), id, "id {id:#04x} does not round-trip");
+        }
+        // ...and the variant is still reachable for a byte past the table,
+        // which is what keeps the id space total.
+        assert_eq!(SaveSubScreen::from_id(0x21), SaveSubScreen::Unpinned(0x21));
+        assert_eq!(SaveSubScreen::from_id(0xFF), SaveSubScreen::Unpinned(0xFF));
+    }
+
+    /// Exactly 14 named + 1 flush + 18 routed = 33. Asserting the split
+    /// rather than only the total: a routed id silently promoted to
+    /// `Unpinned`, or a named one demoted to `Routed`, keeps the sum right
+    /// and breaks the claim. "Named" is not "stepped" - four of the fourteen
+    /// (`0x01`, `0x02`, `0x17`, `0x20`) are decoded here and driven
+    /// elsewhere; see the dispatch arm that lists them.
+    #[test]
+    fn the_table_splits_fourteen_named_one_flush_eighteen_routed() {
+        let mut stepped = 0;
+        let mut flush = 0;
+        let mut routed = 0;
+        for id in 0x00u8..=0x20 {
+            match SaveSubScreen::from_id(id) {
+                SaveSubScreen::FrameFlushTick => flush += 1,
+                SaveSubScreen::Routed(_) => routed += 1,
+                SaveSubScreen::Unpinned(_) => unreachable!(),
+                _ => stepped += 1,
+            }
+        }
+        assert_eq!((stepped, flush, routed), (14, 1, 18));
+    }
+
+    /// Every routed id names a port, each row names a distinct retail
+    /// routine, and the routine name is the `FUN_801D....` form the
+    /// `// PORT:` tags use - so a row that drifts from the code it points at
+    /// is findable by grepping the address.
+    #[test]
+    fn every_routed_id_names_a_distinct_port() {
+        let mut seen_fns = std::collections::BTreeSet::new();
+        let mut seen_ids = std::collections::BTreeSet::new();
+        for (id, port) in ROUTED_PORTS {
+            assert!(seen_ids.insert(*id), "duplicate routed id {id:#04x}");
+            assert!(
+                seen_fns.insert(port.retail_fn),
+                "two ids claim {}",
+                port.retail_fn
+            );
+            assert!(
+                port.retail_fn.starts_with("FUN_801D") && port.retail_fn.len() == 12,
+                "{} is not a FUN_801Dxxxx address",
+                port.retail_fn
+            );
+            assert!(port.engine_module.starts_with("crate::"));
+            assert!(!port.engine_item.is_empty());
+            assert_eq!(SaveSubScreen::from_id(*id).routed_port(), Some(*port));
+        }
+        // A pinned screen has no routed port, and neither does an id past
+        // the table.
+        assert_eq!(SaveSubScreen::SlotSelect.routed_port(), None);
+        assert_eq!(SaveSubScreen::FrameFlushTick.routed_port(), None);
+        assert_eq!(SaveSubScreen::from_id(0x21).routed_port(), None);
+    }
+
+    /// Dispatching a routed screen emits the route rather than an empty
+    /// list. The empty list was the defect: it is what "this screen had
+    /// nothing to do this frame" looks like too, so a parked flow and a
+    /// handed-off one were indistinguishable to a host.
+    #[test]
+    fn a_routed_screen_dispatches_its_route() {
+        let mut m = dispatching(SaveEntryContext::ShopEntry);
+        m.goto(SaveSubScreen::Routed(0x1B));
+        let effects = m.tick(SubScreenInput::default(), 0);
+        assert_eq!(
+            effects,
+            vec![SubScreenEffect::Route(RoutedPort {
+                retail_fn: "FUN_801DB21C",
+                engine_module: "crate::shop",
+                engine_item: "shop::buy_list_confirm_route",
+            })]
+        );
+        // The flush slot really does nothing, and an out-of-table id parks.
+        m.goto(SaveSubScreen::FrameFlushTick);
+        assert!(m.tick(SubScreenInput::default(), 0).is_empty());
+        m.goto(SaveSubScreen::Unpinned(0x30));
+        assert!(m.tick(SubScreenInput::default(), 0).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod sub15_tests {
+    use super::*;
+
+    fn record() -> Vec<u8> {
+        vec![0u8; 0x414]
+    }
+
+    /// Steps pair up: the settle step and its running twin read the same
+    /// list. Getting this wrong shows as a screen that changes what it
+    /// lists one frame after it opens.
+    #[test]
+    fn each_list_has_a_settle_step_and_a_running_twin() {
+        for (settle, running, want) in [
+            (2u8, 5u8, Sub15ListSource::Abilities),
+            (3, 6, Sub15ListSource::Magic),
+            (4, 7, Sub15ListSource::Third),
+        ] {
+            assert_eq!(sub15_list_source(settle), want);
+            assert_eq!(sub15_list_source(running), want);
+            assert_eq!(
+                sub15_frame(settle, 1),
+                Sub15Frame::Settle { next_step: running },
+                "settle step {settle} advances by three, not one",
+            );
+        }
+        for step in [0u8, 1, 8, 9, 0xFF] {
+            assert_eq!(sub15_list_source(step), Sub15ListSource::None);
+        }
+    }
+
+    /// The ability list counts *set bits*, over exactly `0x40` of them -
+    /// the accessory-passive index space. A bit past 64 is outside the
+    /// field the walk reads.
+    #[test]
+    fn ability_rows_are_the_popcount_of_the_64_slot_bitfield() {
+        let mut r = record();
+        // bits 0, 31, 32 and 63 - one at each word boundary.
+        r[SUB15_ABILITY_BITS] = 0x01;
+        r[SUB15_ABILITY_BITS + 3] = 0x80;
+        r[SUB15_ABILITY_BITS + 4] = 0x01;
+        r[SUB15_ABILITY_BITS + 7] = 0x80;
+        assert_eq!(sub15_list_len(5, &r, 0), 4);
+
+        // Bit 64 lives in the third word, past the walk's `< 0x40` bound.
+        r[SUB15_ABILITY_BITS + 8] = 0x01;
+        assert_eq!(sub15_list_len(5, &r, 0), 4);
+    }
+
+    /// The Ra-Seru gate is read before the count, so spells with no Seru
+    /// equipped is an *empty* list, not a populated one.
+    #[test]
+    fn magic_rows_are_gated_on_the_raseru_slot_not_on_the_spell_count() {
+        let mut r = record();
+        r[SUB15_SPELL_COUNT] = 7;
+        assert_eq!(sub15_list_len(6, &r, 2), 0, "no Ra-Seru -> no rows");
+        r[SUB15_EQUIP + 2] = 0x40;
+        assert_eq!(sub15_list_len(6, &r, 2), 7);
+        // A different slot index reads a different equip byte.
+        assert_eq!(sub15_list_len(6, &r, 3), 0);
+    }
+
+    #[test]
+    fn third_list_rows_come_from_one_byte() {
+        let mut r = record();
+        r[SUB15_THIRD_COUNT] = 0x0C;
+        assert_eq!(sub15_list_len(7, &r, 0), 0x0C);
+        assert_eq!(sub15_list_len(4, &r, 0), 0x0C);
+    }
+
+    /// The reject test runs ahead of the settle test, so an empty list is
+    /// refused on the frame the screen opens rather than the one after.
+    #[test]
+    fn an_empty_list_is_rejected_on_the_settle_frame() {
+        assert_eq!(sub15_frame(2, 0), Sub15Frame::Reject);
+        assert_eq!(sub15_frame(5, 0), Sub15Frame::Reject);
+        assert_eq!(sub15_frame(5, 3), Sub15Frame::Browse { rows: 3 });
+    }
+
+    /// The swap moves all three parallel arrays together; permuting only
+    /// the id list would decouple a spell from its companion byte.
+    #[test]
+    fn the_row_swap_moves_all_three_arrays() {
+        let mut r = record();
+        r[SUB15_SPELL_LIST] = 0x81;
+        r[SUB15_SPELL_LIST + 1] = 0x82;
+        r[SUB15_SPELL_AUX] = 0x11;
+        r[SUB15_SPELL_AUX + 1] = 0x22;
+        r[SUB15_ROW_WORDS..SUB15_ROW_WORDS + 4].copy_from_slice(&1u32.to_le_bytes());
+        r[SUB15_ROW_WORDS + 4..SUB15_ROW_WORDS + 8].copy_from_slice(&2u32.to_le_bytes());
+
+        sub15_swap_rows(&mut r, 0, 1);
+        assert_eq!((r[SUB15_SPELL_LIST], r[SUB15_SPELL_LIST + 1]), (0x82, 0x81));
+        assert_eq!((r[SUB15_SPELL_AUX], r[SUB15_SPELL_AUX + 1]), (0x22, 0x11));
+        assert_eq!(
+            u32::from_le_bytes(r[SUB15_ROW_WORDS..SUB15_ROW_WORDS + 4].try_into().unwrap()),
+            2
+        );
+
+        // Same row twice is a no-op, and an out-of-record row is skipped
+        // rather than panicking.
+        let before = r.clone();
+        sub15_swap_rows(&mut r, 1, 1);
+        sub15_swap_rows(&mut r, 0, 0x400);
+        assert_eq!(r, before);
+    }
+}

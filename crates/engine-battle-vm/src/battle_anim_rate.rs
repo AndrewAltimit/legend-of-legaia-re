@@ -5,7 +5,9 @@
 //! plays, and the mechanism is one byte per actor. The SCUS anim tick
 //! `FUN_80047430` advances each render node's 12.4 anim cursor by
 //! `(DAT_1F800393 * actor[+0x21D] * clip[+0x78]) >> 1` per game frame
-//! (`>> 2` on the idle branch, `0x800476EC..0x80047764`), so the byte is a
+//! (`>> 2` only for a **Slowed** actor on idle - status `+0x16E & 0x1000`
+//! at `0x800476E0` and `+0x1D9 == 0` at `0x800476EC` - `0x800476D8..
+//! 0x80047764`), so the byte is a
 //! per-actor time scale with `8` as normal speed. Every animation-driven
 //! edge - swing pacing, root motion, the strike loop's per-clip gate -
 //! stretches with it.
@@ -130,12 +132,21 @@ pub fn commit_rate_decay(rate: AnimRate) -> AnimRate {
     }
 }
 
+/// The Slow status bit of `actor[+0x16E]`: the one condition (with the
+/// actor on idle, `+0x1D9 == 0`) under which `FUN_80047430` takes its `>> 2`
+/// cursor advance (`andi v0,v0,0x1000` at `0x800476E0`).
+pub const SLOW_STATUS_BIT: u16 = 0x1000;
+
 /// Scale a fixed-point anim-cursor step by the actor's rate, mirroring the
-/// retail advance `(dt * rate * clip_rate) >> 1` (non-idle) / `>> 2` (idle)
-/// against the engine's base step (which equals the retail idle advance at
-/// [`RATE_NORMAL`]): `step * rate * (idle ? 1 : 2) / 8`.
-pub fn scaled_anim_step(base_step: u32, rate: AnimRate, idle: bool) -> u32 {
-    let mult = u32::from(rate.0) * if idle { 1 } else { 2 };
+/// retail advance `(dt * rate * clip_rate) >> 1`, or `>> 2` for a Slowed
+/// actor on idle, against the engine's base step (which equals the `>> 2`
+/// advance at [`RATE_NORMAL`]): `step * rate * (slowed_idle ? 1 : 2) / 8`.
+///
+/// An ordinary idle loop is **not** the slow branch: the branch tests the
+/// status bit first (`0x800476D8..0x800476E4`) and only then the idle id, so
+/// an unstatused actor's idle advances as fast as any clip.
+pub fn scaled_anim_step(base_step: u32, rate: AnimRate, slowed_idle: bool) -> u32 {
+    let mult = u32::from(rate.0) * if slowed_idle { 1 } else { 2 };
     base_step * mult / 8
 }
 
@@ -200,9 +211,9 @@ mod tests {
 
     #[test]
     fn scaled_step_matches_the_retail_shift_pair() {
-        // Base step is the retail idle advance at rate 8: unchanged.
+        // Base step is the retail Slowed-idle advance at rate 8: unchanged.
         assert_eq!(scaled_anim_step(64, AnimRate(8), true), 64);
-        // Non-idle clips run double the idle branch (>>1 vs >>2).
+        // Every other clip, idle included, runs double (>>1 vs >>2).
         assert_eq!(scaled_anim_step(64, AnimRate(8), false), 128);
         // Half / quarter / frozen.
         assert_eq!(scaled_anim_step(64, AnimRate(4), false), 64);

@@ -61,6 +61,7 @@
 <section class="doc-section" id="event-stream">
   <h2>Event stream</h2>
   <p>Each event is a variable-length delta time, a status byte and its data - standard MIDI encoding, with running status (a first byte below <code>0x80</code> reuses the previous status). Channel is the low nibble.</p>
+  <p id="meta-running-status"><strong>A meta is a running status too.</strong> The retail decoder (<code>FUN_80063CEC</code>) latches <code>0xFF</code> as the channel's running status when it reads a meta, so a data byte after a meta is the next meta's <em>kind</em>: <code>FF 51 t t t &lt;delta&gt; 51 t t t</code> is two tempo events, and a channel event after a meta needs its own status byte. A parser that keeps the previous channel status across a meta falls one byte out of phase on the one track that relies on this.</p>
   <table>
     <thead><tr><th>Status</th><th>Event</th><th>Data</th><th>Retail use</th></tr></thead>
     <tbody>
@@ -79,7 +80,8 @@
   <p>Looping is encoded as ordinary control changes: controller 99 value 20 = Loop Start, value 30 = Loop Forever (jump back to the last Loop Start). 88 of 92 tracks carry them. The engine <code>Sequencer</code> rewinds to the event <em>after</em> the marker and resets its sample clock, so the loop re-fires on the same sample offset every pass; an end-of-track after a Loop Start also rewinds.</p>
 
   <h3 id="tempo-math">Tempo math</h3>
-  <p>Per-tick duration is <code>tempo / ppqn</code> microseconds. The engine clock keeps every term integer - it accumulates in units of <code>sample &times; ppqn &times; 1&nbsp;000&nbsp;000</code> and fires a delta-<code>d</code> event once the accumulator reaches <code>d &times; tempo &times; 44100</code> - so long tracks never drift. <code>legaia_seq::us_per_tick</code> returns the float form for inspection only.</p>
+  <p>Per-tick duration is <code>tempo / ppqn</code> microseconds as written. The engine clock keeps every term integer - it accumulates in units of <code>sample &times; ppqn &times; 1&nbsp;000&nbsp;000</code> and fires a delta-<code>d</code> event once the accumulator reaches <code>d &times; tempo &times; 44100</code> - so long tracks never drift. <code>legaia_seq::us_per_tick</code> returns the float form for inspection only.</p>
+  <p>Retail does not play the written tempo exactly: its driver turns each tempo into an integer BPM and a per-vsync tick budget rounded to tenths of a tick, so a track runs at the rate that budget implies - <code>80</code> BPM plays at <code>80.25</code>, and the slow closing tempos drift furthest. The engine <code>Sequencer</code> plays that retail rate by default and the written score behind <code>set_exact_tempo(true)</code>; the <a href="../subsystems/audio-internals.html#ssapi">audio internals</a> page has the derivation.</p>
 </section>
 
 <section class="doc-section" id="program-change-unused-slot">
@@ -89,9 +91,9 @@
     <li><strong>Truncation.</strong> An unknown meta type or a system status byte (<code>0xF0..=0xFE</code>) stops parsing; the parser appends a synthetic End of Track and marks the track truncated so players and parity oracles can tell it from a clean end.</li>
   </ul>
   <details class="disclosure">
-    <summary>Details: the one non-clean track (PROT 1045)</summary>
+    <summary>Details: the track that needs the meta latch (PROT 1045)</summary>
     <div class="disclosure-body">
-      <p>The stream is a valid, complete track. A few notes before its real end the parser drifts by exactly one byte inside a dense run of running-status notes (near offset ~4900, beside a non-round-BPM tempo event). Latched one byte ahead, it reads the closing fade's volume CCs as deltas plus note data, walks through the real <code>FF 2F 00</code>, and halts on a <code>0xF4</code> eleven bytes past the true end. Every other track in the corpus ends cleanly.</p>
+      <p>Every stream in the corpus parses to a clean end. PROT 1045 (sound test 57, the "sorrowful event" requiem) closes on a ritardando written with the meta latch: <code>FF 51 0E C4 3E</code> (62 BPM), then <code>51 0F 42 40</code> (60 BPM) with no second <code>FF</code>. Read <code>51 0F 42</code> as a note instead and the parser falls one byte out of phase, reads the closing volume fade (<code>B5 07 nn</code> / <code>B6 07 nn</code>) as long deltas and notes, walks through the real <code>FF 2F 00</code> and halts on a <code>0xF4</code> eleven bytes past it - the last bars garbled and the loop never reached. That was once recorded as a one-byte desync in an otherwise valid stream.</p>
     </div>
   </details>
 </section>
@@ -114,6 +116,8 @@
     <tbody>
       <tr><td>Version check</td><td><code>FUN_80062410</code> (SsAPI loader, SCUS)</td><td>Reads the version word and rejects <code>!= 1</code></td></tr>
       <tr><td>No meta length byte</td><td>Corpus arithmetic</td><td>Read raw, every retail tempo lands on a round BPM (65, 70, 80, 128, 130, 140, 150, 160, 170); a phantom length byte scatters them</td></tr>
+      <tr><td>A meta latches the running status</td><td><code>FUN_80063CEC</code> (<code>sb v0,0x16(s3)</code> at <code>0x80063EE4</code>)</td><td><code>0xFF</code> stored as the channel's running status; a data byte under it dispatches as a meta kind (<code>0x80063F44</code>)</td></tr>
+      <tr><td>Retail tempo quantisation</td><td><code>FUN_80062410</code> / <code>FUN_80061954</code> (shared tail)</td><td>Integer BPM plus a rounded tenths-of-a-tick budget per <code>SsSeqCalc</code></td></tr>
       <tr><td>Event usage, loop markers, pitch bend</td><td>Disc-wide sweep of every SEQ-bearing entry</td><td>Which status bytes occur, how often, and where program changes land on unused slots</td></tr>
       <tr><td>BGM slot resolution</td><td><code>_DAT_8007BAC8</code> &rarr; <code>FUN_800243F0</code></td><td>Field-VM BGM slot resolved through CDNAME to the streaming entry</td></tr>
       <tr><td>Program-slot aliasing</td><td><code>FUN_80068D94</code> (bank open)</td><td>Used-program counter stored per slot, read back as tone-page index</td></tr>

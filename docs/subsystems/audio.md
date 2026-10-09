@@ -949,6 +949,11 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 | `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
 
 **engine-audio port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order (`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the tightening-threshold steal tier keyed on the VAB tone `prior` byte (`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail signedness quirk - challenger age sign-extends, incumbent zero-extends), the drop-when-outranked case, and the age bookkeeping.
+**A note-on keys one voice per covering tone.** `FUN_80068568` walks the program's tones on its page (count `0x801CE348`, page `0x801CE34F`) and records every tone whose `min (+6) <= key <= max (+7)`; `FUN_80066308` then runs the allocation scan and the key-on once per recorded tone (`0x800664F0..0x8006684C`), staging each tone's own `prior` as the request and skipping only the layer whose scan fails. A program that stacks two tones over a key - a two-sample instrument - therefore sounds on two voices.
+The port does the same (`VabBank::layer_tones`, `Sequencer::key_layer`); keying only the first covering tone dropped the second layer, which the [key-on census](#count-the-key-ons-not-the-edges) measured as `165` engine key-ons against `173` on `vozz` (`2004`), `173` against `173` once every layer keys.
+
+**A key-on waits for the flush, and a key-off before it cancels it.** A note-on only ORs its voice into the key-on accumulator `_DAT_801CDB48/4A`; `FUN_80065BAC` writes it to the SPU once per `SsSeqCalc`, after the key-off mask. The key-off `FUN_80067480` sets the voice's key-off bit and clears every accumulated key-off bit out of the key-on accumulator (`0x80067500..0x80067544`), so a note whose note-off is processed in the same vsync as its note-on never keys at all - the census sees those notes allocate a voice and then appear only in the KOFF mask.
+The port stages each layer the same way (`Sequencer::flush_key_ons`, every `FLUSH_SAMPLES` = one 60 Hz vsync of SPU samples): the voice is chosen and reserved at the note-on, the key-on is written at the period's end unless a note-off cancelled it. That brought `tunnelb` (`2007`) from `296` engine key-ons against `291` retail to `291`, and `korb2` / `uru` (`2008`) to exact; it also puts every BGM key-on on the vsync grid retail keys on.
 Engine stand-ins: "reserved" = bound to an active sequencer note; "envelope" = the live ADSR level. The engine keeps no 16-frame silent-history ring - a released voice unreserves when its owning note drops, and its decaying tail stays steal-visible through the envelope tie-break.
 Provenance: per-instruction read of `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065978` / `FUN_80066308`. The "no Ghidra dump exists for this tier" caveat this line used to carry is **stale** - all four now have dumps carrying full disassembly sections (163 / 271 / 132 / 353 instructions), so the readings above are checkable against the instruction stream rather than a C rendering. `see ghidra/scripts/funcs/80066b00.txt`, `80065bac.txt`, `80065978.txt`, `80066308.txt`.
 
@@ -1259,8 +1264,8 @@ tempo at the event's absolute tick (matching libsnd's mid-stream
 
 Retail does not clock a track in samples. A tempo set - the SEQ open
 `FUN_80062410` (`0x8006265C..0x80062738`) and the tempo meta `FUN_80061954`
-(`0x800619D4..0x80061AF4`), which share one tail - stores the integer
-`60000000 / us_per_qn` as the BPM and installs a budget of tenths of a tick
+(`0x800619D4..0x80061AF4`), which share one tail - stores an integer BPM and
+installs a budget of tenths of a tick
 per call, `resolution * bpm * 10 / (divisor * 60)` **rounded to nearest**
 (the remainder is compared against `(divisor * 15) << 1`; a half rounds down).
 The pump spends that budget once per `SsSeqCalc` and carries the overshoot,
@@ -1269,6 +1274,18 @@ divisor `0x801CD2BC` reads `60` in every catalogued save state - the libsnd
 per-vsync tick mode. (The tempo *slide* `FUN_800649B0` recomputes the same
 budget with a floor rather than a rounding; no shipped track reaches it
 through the engine.)
+
+The two paths derive that BPM differently. The tempo meta truncates
+`60000000 / us_per_qn` (`div` / `mflo` at `0x800619D4`). The SEQ open rounds the
+**header** tempo to nearest: it increments the quotient when the remainder
+exceeds `tempo / 2` (`0x800625CC..0x800625E4`). A track whose header tempo is
+its only tempo plays at the rounded BPM - the battle theme `2026` (PROT
+`1014`, 421052 us/qn, 142.5 BPM) opens at `143` and a budget of `191`, not the
+truncated `142` and `189`. Played at the truncated rate it drifts a frame late
+every hundred vsyncs against a key-on census of a battle state; at the
+rounded rate `166` of its `167` notes land within a frame. `Sequencer` keeps
+the header's rounding until a tempo meta fires
+(`seq_calc::retail_effective_header_us_per_qn`).
 
 So a track runs at `budget * 6` ticks a second, not at its written tempo.
 Over the disc's `music_01` scores the two differ by `0.44 %` on average
@@ -1279,10 +1296,20 @@ end on drift furthest - `24.83` BPM truncates to `24` and plays `3.4 %` slow.
 (`seq_calc::retail_effective_us_per_qn`); `Sequencer::set_exact_tempo(true)`
 plays the score as written. The port's frame is a flat 60 Hz, which is the
 rate the budget is spent at here; the console's own vsync is a little under
-that. One difference is kept on purpose: retail fires an event at the first
-`SsSeqCalc` after it falls due, so every onset lands on a vsync (up to a frame
-late, and unevenly so wherever the budget is not a whole number of ticks); the
-`Sequencer` fires it on its own sample. The rate matches, the jitter does not.
+that. Retail fires an event at the first `SsSeqCalc` after it falls due and
+writes its key-on at that call's flush, so every onset lands on a vsync. The
+`Sequencer` runs the same pump: once per `FLUSH_SAMPLES` it spends one vsync's
+budget the way `FUN_800639A0` does (`seq_events::pump_delta_time` is the
+standalone port) - a wait that outlives the budget shrinks by it; otherwise
+events fire until the accumulated waits reach the budget, re-read after every
+event so a tempo meta retunes the vsync it lands in, and the overshoot carries
+- then writes the period's key-ons
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)).
+Firing events on their own samples instead put notes near a vsync boundary in
+the neighbouring flush after any tempo change: `rugi` read `200` key-ons
+against `201`, and `s3_rimelm_freeroam` matched `286` of `292` within a frame
+where the pump matches all `292`. `set_exact_tempo(true)` keeps the
+sample clock at the written tempo.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
@@ -1328,6 +1355,13 @@ boundary - on a zero-delta EOT the tick peaks and resets inside a single sample
 - which is why the counter exists. The site plays this as an
 `AudioBufferSourceNode` with `loopStart`/`loopEnd` set to one true period, so
 minigame BGM repeats without the seam a fixed-window hard-loop leaves.
+An off-line render has to build its SPU the way the live mixer core does
+(`StreamResampler`, which every output drives: cpal, WebAudio and the test
+sink): `Spu::new()` plus `set_retail_reverb()`. A bare `Spu::new()` renders
+the score dry, so the site's minigame and audio pages played music the play
+page and the native window play wet. With the reverb installed the pre-render
+equals the live core sample for sample (at the interpolator's two-sample lag;
+`test_sink::the_pre_render_path_matches_the_live_mixer_core`).
 
 **Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
 (`engine-audio/tests/real_seq_expressive_events.rs`) fixes which control
@@ -1344,22 +1378,34 @@ routed by default), not a per-cue or per-channel parameter the score drives.
 **Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
 the two most-used controllers, and both are **dynamic** - the score swells
 volume and pans voices around mid-note, not just at note-on (a corpus sweep
-finds the majority of CC7 events fire while a note is already sounding). The
-sequencer treats them as channel-expression layered over a per-note base:
-`play_note` leaves the voice at `master × velocity × tone-vol` (scaled into
-the register's `0..=0x3FFF` domain, not the `0..=127` input domain), tone-panned
-by the same law described below - libsnd applies this attenuation once per pan
-source, so the tone and channel sources share it -
-with **no** channel volume or pan; each `ActiveNote` stores that channel-free
-base L/R (mirroring `base_pitch` for bend). `channel_mix` then folds in the
-channel's CC7 volume (scale both sides by `volume/127`) and CC10 pan, where
-pan uses libsnd's voice-volume law (`FUN_80067550`): a pan left of center
-(`< 0x40`) attenuates the **right** by `pan/0x3f`, a pan right of center
-attenuates the **left** by `(0x7f - pan)/0x3f`. A mid-note CC7 or CC10 event
-re-derives every sounding voice on the channel from its base (`remix_channel`),
-so successive changes don't compound, and a fresh NoteOn picks up the
-channel's current volume + pan. A full-volume, centered channel is the
-identity, so this is faithful over the prior note-on-only behavior.
+finds the majority of CC7 events fire while a note is already sounding). A
+voice's volume is the sequencer path of `FUN_80067550` end to end, in retail's
+order and integer steps (`Sequencer::note_volume`):
+
+1. CC7 folded into the **velocity**: `FUN_80066308` stages `vel * chvol / 127`
+   (the channel record's `+0x60 + ch * 2`) as the velocity the chain reads;
+2. the head, `vel * bank_mvol * 0x3FFF / 0x3F01`, then
+   `* prog_mvol * tone_vol / 0x3F01`;
+3. the **sequence volume** (`SsSeqSetVol`, the record's `+0x58` / `+0x5A`)
+   per side, `/ 0x7F`. The game gives every BGM sequence `107`:
+   `FUN_8002614C` passes `(DAT_8007B6EC << 15) >> 16` = `(215 << 15) >> 16`
+   to `FUN_80064890` for each sound-source record
+   (`sequencer::RETAIL_BGM_SEQ_VOL`);
+4. the tone, program and channel pans, each attenuating its far side by
+   `pan / 63` or `(0x7F - pan) / 63`;
+5. the square taper `v * v / 0x3FFF`.
+
+A mid-note CC7 or CC10 re-runs the whole chain for every sounding voice on the
+channel (`remix_channel`), as libsnd's re-key does. Against the mednafen states
+`title_screen_new_game`, `sebucus_overworld_resident` and
+`karisto_overworld_resident`, every sounding BGM voice's pitch, ADSR words,
+left and right volume and reverb send is one the engine programs for the same
+track (`engine-shell/tests/mednafen_voice_parity.rs`).
+
+**Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
+"Sound: Monaural") sounds each voice at the larger of its two volumes on both
+sides (`0x800677F4..0x80067818`) - every voice of a mono-mode state reads
+`L == R == max` - not at their average. `Spu::mono` applies it at mix time.
 
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.
@@ -2251,22 +2297,101 @@ uncontrolled amount of envelope motion. Two measurements pin it:
   the mean sounding-voice count itself reads `4.041` against `3.694`.
 
 A statistic that moves by nine percent when the host gets slower is not a
-parity comparand. What is left on this axis is the **key-on rate**
-(`VoiceAllocationStats::onsets_per_frame`, and `onset_ratio` on the
-comparison): a key-on is a register write the score performs from the game's
-own vsync handler, so it is on the emulated clock on both sides, and on the
-aligned window the two sides' rates agree.
+parity comparand. A key-on is: it is a register write the score performs from
+the game's own vsync handler, so it is on the emulated clock on both sides.
+But a capture can only *see* a key-on as a voice's envelope rising from zero
+(`VoiceAllocationStats::onsets_per_frame`, `onset_ratio` on the comparison),
+and that edge is read off the same host-clocked envelope. A short note can
+attack and drain between two captures and never be seen, and a note re-keyed
+while its voice still rings is no edge at all. The two captures of one state
+above report `122` and `130` edges over the same 250 emulated vsyncs.
 
-The alignment is not optional for this statistic either. Against the
-250-frame `s3_rimelm_freeroam` window, an engine trace of `3601` frames aligns
-at engine frame `3103` and reads `0.560` key-ons per frame against retail's
-`0.488` (ratio `1.148`); the 120-frame window aligns there too and reads
-`0.592` against `0.558` (ratio `1.060`). An engine trace only as long as the
-retail window has nowhere to slide - the best offset is frame `1`, the track's
-opening bars - and the same pairing then reads `0.244` against `0.488`, a
-ratio of `0.5` that is a statement about which bars were compared, not about
-the port. Ask `audio-trace` for at least the aligned frame plus the retail
-window's length. The capture probe that carries the
+### Count the key-ons, not the edges
+
+The exact count needs no SPU state on either side:
+
+- **Retail**:
+  [`autorun_keyon_census.lua`](../../scripts/pcsx-redux/autorun_keyon_census.lua)
+  breaks on `FUN_8006B854` (`SpuSetKey`) and logs every KON mask the per-frame
+  flush `FUN_80065BAC` hands it (`a0 = 1`, called from `0x80065F74`), with the
+  voice allocator's verdict at `0x80066C84` beside it. Per call, not per
+  capture, so it runs without the per-vsync save-state dump.
+- **Engine**: each trace voice carries `key_ons`, the voice's running
+  `Voice::key_on_count`; `engine_key_on_counts` differences consecutive
+  frames.
+
+`audio-trace --retail-keyon-csv <census.csv>` aligns the census on timing
+(`compare_key_on_census`) and prints both totals. Four rules keep that
+comparison honest:
+
+- **Match key-on for key-on, with retail's lag.** Each retail KON takes the
+  nearest unclaimed engine key-on up to three vsyncs earlier or one later.
+  The engine writes a key-on at the flush of the vsync its note fires in;
+  retail's can trail that, because `FUN_8006B854` parks the mask while an SPU
+  transfer is busy (`_DAT_8007AF38 & 1`) - by up to three vsyncs on `rugi`,
+  enough on a sparse score to put a strict alignment on the wrong bar.
+  Matching key-ons rather than the census's `note` rows keeps a layered
+  program, one note keying two voices on both sides, from penalising the
+  right offset.
+- **Score each offset symmetrically.** The offset maximises the Jaccard of
+  matched key-ons against both sides' totals, so a dense engine window that
+  merely contains every retail key-on does not outscore the one that plays
+  those notes and no others.
+- **Compare the span the score sounds in.** The window runs from the
+  census's first score activity to its last: a state captured in a
+  minigame's countdown or a cutscene's silence has nothing the engine trace,
+  which starts its track at once, could pair with.
+- **Count one score.** A field's ambient cues key voices next to the music
+  and are left out (libsnd note owner `0x21`, the cue slot). A state can also
+  hold two sequences - the Baka Fighter cabinet's duel track while the casino
+  floor's is still open - so `--retail-keyon-owner` keeps one (`1` the field
+  slot, `3` a battle or minigame track), and `--pin-bgm` keeps `--bgm-id`
+  playing over the scene's own op-`0x35` starts.
+
+On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census reads **`292`
+engine key-ons against `292` retail**, every one matched. No drops: the
+allocator never returns its out-of-range sentinel, so every note-on the
+score issues reaches the KON register. The same holds across the field
+states cold-booted from a memory card, the Gobu Gobu battle (`2026`), the
+title menu (`2065`) and the minigames - the casino floor (`2018`), the Baka
+Fighter duel (`2055`), the dance (`2060`), the fishing pond (`2017`) - with
+one exception: `dolk2_market_noa` reads `358` against `357`. Its odd key-on
+is a note whose note-off lands while retail's KON is still parked behind the
+busy transfer; the key-off path of `FUN_8006B854` clears the parked bit, and
+the port models no SPU transfer.
+
+The census found four sequencer defects: every tone layered over a key keys
+a voice ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)),
+a note on an unused program slot keys none
+([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), a note
+released inside its own flush period never keys, and a repeated note-on of a
+key already sounding on its channel keys fresh voices without releasing the
+first (`FUN_80061B24` calls `FUN_80066308` straight). Two states needed a
+different track than their scene's: `rikuroa_pre_caruban` plays `2028` from
+sequence slot `3` while `_DAT_8007BAC8` still names `2006`, and
+`retock_field_card_boot`'s story flags select `2015` where the port's
+free-roam staging starts `2005`.
+
+The `1.148` the edge statistic reported on the same scenario is therefore not
+a key-on surplus. Two instrument effects made it. The edge count is
+host-clocked, as above. And the census and the older SPU capture of that
+scenario do not start at the same bar of the track: the capture's sounding
+pitches align it at engine frame `3103`, the census's key-on rhythm at
+`2936`, one phrase earlier, where the first 84 vsyncs carry the sparser
+accompaniment the census logs. The pitch-Jaccard alignment of a capture lands
+on a bar that rings the same pitches, which is not the same as one that keys
+the same notes. And the allocator's free-voice test reads each voice's
+envelope back off the SPU (`FUN_80065BAC` stores `ENVX`, fetched by
+`FUN_8006C9A8`, into `+0x06` of the `0x801CDB50` record at `0x80065C24`), so on
+PCSX-Redux even the **voice index** a note lands on varies from run to run of
+one state. It is not a comparand either.
+
+The alignment matters for any per-window statistic. An engine trace only as
+long as the retail window has nowhere to slide - the best offset is frame
+`1`, the track's opening bars - and an edge-rate pairing then reads `0.244`
+against `0.488`, a ratio of `0.5` that is a statement about which bars were
+compared, not about the port. Ask `audio-trace` for at least the aligned frame
+plus the retail window's length. The capture probe that carries the
 wall-clock stamp is
 [`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
 and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.

@@ -1,0 +1,512 @@
+//! Actor-placement classification (portals, dialog, props) + inline-dialog prologue.
+//!
+//! Extracted verbatim from `man_field_scripts.rs`.
+
+use super::*;
+
+/// The interactive role of a placed actor ([`ActorPlacement`]), inferred from
+/// its per-entity field-VM script ([`classify_placements`]).
+///
+/// Retail has no static "entity kind" field: a placed actor's behaviour is
+/// whatever its script does. This classifies by two signals:
+///
+/// - a **warp** (`0x3E` with `op0 >= 100`, retail `scene_transition`), found by
+///   the linear opcode walk → a [`Portal`](Self::Portal) whose target map id is
+///   `op0 - 100`;
+/// - otherwise, an **inline dialog-text block** - a run of `0x1F`-lead /
+///   `0x00`-terminated message segments embedded in the record - found
+///   *structurally* (see [`first_inline_dialog_offset`]) → an
+///   [`Npc`](Self::Npc) carrying that text;
+/// - none of those → [`Plain`](Self::Plain) (a moving / animated / model-only
+///   actor, e.g. the lead-actor slot or a decorative NPC).
+///
+/// ## Why dialog text is found structurally, not by opcode
+///
+/// A field-scene interaction record is dominated by its embedded message text,
+/// and that text contains bytes that look like field-VM opcodes (a literal
+/// `>` is `0x3E`, the `scene_transition`/interact opcode; a literal `?` is
+/// `0x3F`, the named-scene-change opcode; ASCII punctuation hits `0x37`/`0x41`
+/// yield bytes). A linear disassembly therefore *desyncs* inside the text and
+/// reports phantom interact / scene-change ops with garbage operands. So the
+/// message text is located by scanning for the `0x1F`-lead segment block
+/// directly, and the (unreliable, for field scenes) opcode-decoded `interact_id`
+/// is kept only as a best-effort hint. The warp scan is opcode-based but gated
+/// (see `is_genuine_warp`): a *genuine* warp marks the actor a portal, and
+/// genuine warp records carry no inline text block to confuse it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlacementKind {
+    /// The script carries a genuine **mode-24 minigame door warp** (field-VM
+    /// `0x3E` with `op0` in `100..=106`; see `is_genuine_warp`).
+    ///
+    /// **`target_map` is a misnomer kept for compile compatibility.** The value
+    /// is `op0 - 100`, the mode-24 `sub_id`
+    /// (`legaia_engine_core::minigame_entry::MinigameSubId`), and it selects a *code
+    /// overlay*, not a scene - the arm calls no scene-change packet and the op
+    /// carries no destination name. Routing it through a `MapIdResolver`
+    /// resolves a code-overlay selector against a CDNAME ordinal and warps the
+    /// player somewhere unrelated; every consumer in this crate reads it as a
+    /// sub-id. The field name survives only because the one out-of-crate
+    /// consumer sits in a crate this rename cannot reach in the same change.
+    Portal { target_map: u8 },
+    /// The actor carries an inline dialog-text block and/or a field-interact
+    /// op but never warps - a talk-to NPC / sign / event trigger.
+    Npc {
+        /// Best-effort `0x3E`-op interact selector from the opcode walk.
+        /// Unreliable for text-heavy field records (the walk desyncs inside the
+        /// message); the real message text is
+        /// [`dialog_inline`](Self::Npc::dialog_inline).
+        interact_id: Option<u8>,
+        /// Record bytes from the start of the first inline `0x1F`-lead text
+        /// segment through the record's bounded end - the actual message text;
+        /// `legaia_engine_core::dialog::OwnedDialogPanel::from_inline_dialog` renders it
+        /// (it re-finds the `0x1F` lead and types the first segment).
+        dialog_inline: Option<Vec<u8>>,
+    },
+    /// No warp / dialog / interact opcode: a decorative or script-only actor
+    /// (movement, animation, model preload, the lead-actor slot).
+    Plain,
+}
+
+/// Find the byte offset of the first inline dialog-text segment in `body`,
+/// searching from `from`.
+///
+/// A field-scene interaction record stores its message text as a run of
+/// segments, each `0x1F <glyph bytes> 0x00`. This returns the offset of the
+/// first `0x1F` that introduces a segment whose body is non-trivial (≥3 bytes)
+/// and overwhelmingly printable (≥3/4 of the bytes in `0x20..=0x7E`) - the
+/// printable-ratio gate rejects a stray `0x1F` glyph byte that happens to sit in
+/// opcode / move-script data. Returns `None` when no such segment exists (a
+/// decorative or warp-only actor).
+///
+/// The segment's extent is the MES line walk ([`legaia_mes::dialog_box::line_end`]), not a
+/// scan to the first `0x00`: a `0xC0..=0xCF` escape is two bytes, and its
+/// argument is often `0x00` - the party-name escape `C1 00` ("Vahn") opens a
+/// line as `1F C1 00 ...`. Cutting the segment at that argument made the line
+/// one byte long, the gate rejected it, and the scan resumed *inside* the
+/// line's text, so the first segment reported was the line after it and every
+/// consumer dropped the name line (town01 `P1[16]`, record `+0x4C`). An escape
+/// pair counts as printable: it expands to glyphs on screen.
+pub fn first_inline_dialog_offset(body: &[u8], from: usize) -> Option<usize> {
+    let mut i = from.min(body.len());
+    while i < body.len() {
+        if body[i] == 0x1F {
+            let text_start = i + 1;
+            let j = legaia_mes::dialog_box::line_end(body, text_start).min(body.len());
+            let raw = &body[text_start..j];
+            let mut printable = 0usize;
+            let mut k = 0usize;
+            while k < raw.len() {
+                let b = raw[k];
+                if (0xC0..=0xCF).contains(&b) && k + 1 < raw.len() {
+                    printable += 2;
+                    k += 2;
+                    continue;
+                }
+                if (0x20..=0x7E).contains(&b) {
+                    printable += 1;
+                }
+                k += 1;
+            }
+            if raw.len() >= 3 && printable * 4 >= raw.len() * 3 {
+                return Some(i);
+            }
+            i = j.max(text_start) + 1;
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Classify every partition-1 actor placement by scanning its field-VM script.
+///
+/// Pairs each [`ManFile::actor_placements`] entry with the
+/// [`PlacementKind`] its script implies. The script is walked from the
+/// placement's `script_pc0`, bounded by the same record-end ceiling
+/// [`walk_partition1_scripts`] uses, so the scan never spills into the next
+/// record or the encounter section.
+pub fn classify_placements(man_file: &ManFile, man: &[u8]) -> Vec<(ActorPlacement, PlacementKind)> {
+    man_file
+        .actor_placements(man)
+        .into_iter()
+        .map(|p| {
+            let kind = classify_placement(man_file, man, &p);
+            (p, kind)
+        })
+        .collect()
+}
+
+/// Classify a single placement by scanning its script. See [`PlacementKind`].
+pub fn classify_placement(man_file: &ManFile, man: &[u8], p: &ActorPlacement) -> PlacementKind {
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return PlacementKind::Plain;
+    }
+    let body = &man[start..end];
+
+    // Opcode-walk pass: a *genuine* door-warp wins outright (the actor is a
+    // portal). A real warp is the base `0x3E op0 ...` with `op0` in the 7-id
+    // door-warp range ([`WARP_OP0_RANGE`]). The over-approximating linear walk
+    // can still desync inside embedded message / SJIS text and land on a `0x3E`
+    // whose next byte is `>= 100` - but every such phantom in the corpus rides
+    // the `0x80` cross-context prefix and carries an out-of-range `op0`
+    // (175 / 179 / 200), so [`is_genuine_warp`] rejects it. The decoded interact
+    // / dialog hints, likewise, are unreliable on text-heavy field records (the
+    // walk desyncs inside the message), so they are best-effort only - the real
+    // dialog text is recovered structurally below.
+    let mut interact_id = None;
+    for insn in LinearWalker::new(body, p.script_pc0).flatten() {
+        match insn.info {
+            // A warp wins outright - but only when it is a *genuine* door-warp,
+            // not a text-desync phantom (see [`is_genuine_warp`]). A phantom
+            // warp (cross-context `0x80` prefix and/or `op0` outside the 7-id
+            // door-warp range) is dropped here so the actor falls through to the
+            // structural dialog pass, which classifies a text-bearing record as
+            // an [`Npc`] (e.g. `geremi`'s talk NPC) rather than a portal to a
+            // non-existent map.
+            InsnInfo::WarpOrInteract {
+                op0, is_warp: true, ..
+            } if is_genuine_warp(op0, insn.extended) => {
+                return PlacementKind::Portal {
+                    target_map: op0 - 100,
+                };
+            }
+            InsnInfo::WarpOrInteract {
+                op1,
+                is_warp: false,
+                ..
+            } => {
+                interact_id.get_or_insert(op1);
+            }
+            // NB: `0x3F` (`InsnInfo::SceneChange`) is deliberately *not* read as a
+            // dialog hint here - it is the named scene-change opcode, not a dialog
+            // op (field dialogue is the `0x4C` nibble-5 path). Its inline string is
+            // a destination scene name, recovered by the scene-destination resolver,
+            // not NPC message text.
+            _ => {}
+        }
+    }
+
+    // Structural pass: the message text is a run of `0x1F`-lead segments. Carry
+    // the record bytes from the first segment's `0x1F` through the record end;
+    // `from_inline_dialog` re-finds the lead and types the first segment.
+    let dialog_inline = first_inline_dialog_offset(body, p.script_pc0).map(|o| body[o..].to_vec());
+
+    if dialog_inline.is_some() || interact_id.is_some() {
+        PlacementKind::Npc {
+            interact_id,
+            dialog_inline,
+        }
+    } else {
+        PlacementKind::Plain
+    }
+}
+
+/// The prologue-aware form of a placement's inline interaction script.
+///
+/// [`classify_placement`]'s [`PlacementKind::Npc::dialog_inline`] is the record
+/// truncated to start at the first `0x1F` text segment - enough for the
+/// simplified renderer, but it discards the **interaction prologue**: the
+/// field-VM bytecode between the interaction entry and that first segment
+/// (story-flag `SysFlag.Test` / `JmpRel` chains, `CFlag.Set`, NPC move-to-tile,
+/// and for a minigame door the whole camera / affordability / fade run that
+/// precedes its `0x3E` warp). Retail runs that prologue first; its
+/// `SysFlag.Test` branches are how the box *selects which segment to start at*
+/// per story state. This struct carries the untruncated record so the field-VM
+/// dialogue runner can execute it.
+///
+/// `entry_pc` and `first_segment` are byte offsets **into `body`** (the record
+/// from `record_offset` to its bounded end). The runner steps the VM from
+/// `entry_pc`; if the prologue reaches a text segment it opens there, otherwise
+/// it falls back to `first_segment`, so it is never worse than the truncated
+/// path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineDialogPrologue {
+    /// The full interaction record body (`man[record_offset..record_end]`).
+    pub body: Vec<u8>,
+    /// Offset of the **interaction** entry within `body` - see
+    /// [`placement_interaction_entry_pc`]. This is the record's `script_pc0`
+    /// only when the record has no spawn section.
+    pub entry_pc: usize,
+    /// Offset of the first `0x1F` text segment within `body`.
+    pub first_segment: usize,
+}
+
+/// The PC an *interaction* on this record resumes at: one instruction past the
+/// record's **spawn-section terminator**, the raw `0x21` byte.
+///
+/// A partition-1 placement record is one stream carrying two consecutive
+/// scripts, and retail keeps a single cursor over both. The scene setup spawns
+/// a script context per record (`FUN_8003A1E4`: base `actor[+0x90]`, PC
+/// `actor[+0x9E]`), which runs the record's **spawn** section - class-flag
+/// setup, the initial camera / seat pokes - and stops at the first raw `0x21`.
+/// The dialog SM `FUN_80039B7C` then resumes that same `actor[+0x9E]` on an
+/// interaction, so the interaction begins where the spawn section stopped.
+///
+/// The `0x21` stop is explicit in the SM's own run loop: it keeps `s4 = 0x21`
+/// live across the dispatcher call and breaks on `beq s0,s4` at `0x80039E20`
+/// **after** `sh a1,0x9e(s2)` has already stored the forwarded PC, so the
+/// stored cursor points past the terminator; the arm it breaks to
+/// (`0x80039E5C`, `a2 == 0x21`) is the conversation-end teardown, not the
+/// pager. The engine's runner mirrors the same raw-`0x21` rule from
+/// `FUN_8003CF7C`'s run-to-next-text helper.
+///
+/// So entering an interaction at `script_pc0` re-runs the spawn section and
+/// then trips that terminator immediately - which for the port's runner means
+/// falling straight through to the first text segment, skipping the whole
+/// interaction prologue. For a minigame door that skip lands in the record's
+/// *refusal* branch: `koin1`'s cabinets check the coin bank at `0x57`
+/// (`0x4E` sub-9 vs 1) and their first `0x1F` is the "no tokens" line the
+/// failed check jumps to.
+///
+/// `limit` bounds the scan (the caller passes the first text segment, so the
+/// walk can never desync inside message bytes and read an ASCII `!` as a
+/// terminator). Returns `script_pc0` unchanged when the record has no spawn
+/// section before `limit`.
+///
+/// REF: FUN_80039B7C (`s4 = 0x21`, the `+0x9E` cursor), FUN_8003A1E4 (the
+///      spawn context), FUN_8003CF7C (the run-to-next-text helper)
+pub fn placement_interaction_entry_pc(body: &[u8], script_pc0: usize, limit: usize) -> usize {
+    for insn in LinearWalker::new(body, script_pc0).flatten() {
+        if insn.pc >= limit {
+            break;
+        }
+        if body.get(insn.pc).copied() == Some(0x21) {
+            let next = insn.pc + insn.size;
+            return if next < limit { next } else { script_pc0 };
+        }
+    }
+    script_pc0
+}
+
+/// Recover the [`InlineDialogPrologue`] for placement `p`, or `None` when the
+/// record carries no inline text segment (a decorative / warp-only actor). The
+/// `body`/`entry_pc`/`first_segment` are derived from the same bounds
+/// [`classify_placement`] uses, so `body[first_segment..]` equals that
+/// placement's `dialog_inline` byte-for-byte.
+///
+/// `entry_pc` here is the record's `script_pc0`, **not** the interaction cursor
+/// [`placement_interaction_entry_pc`] derives; the interaction dispatch uses
+/// [`placement_interaction_record`]. This form is for consumers that want the
+/// whole record from its first opcode (the disc sweeps).
+pub fn placement_inline_prologue(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let first_segment = first_inline_dialog_offset(body, p.script_pc0)?;
+    Some(InlineDialogPrologue {
+        body: body.to_vec(),
+        entry_pc: p.script_pc0,
+        first_segment,
+    })
+}
+
+/// [`placement_inline_prologue`] entered at the **interaction cursor**
+/// ([`placement_interaction_entry_pc`]) instead of at `script_pc0`.
+///
+/// This is what retail's dialog SM resumes (`actor[+0x9E]`, left past the spawn
+/// section's `0x21`), and it is the entry a **minigame door** needs: a cabinet
+/// record's interaction section is camera work, an affordability compare and
+/// the `0x3E` warp, and its *first* text segment is the line the **failed**
+/// compare jumps to - so entering at `script_pc0`, tripping the terminator and
+/// falling through to that segment lands in the refusal branch.
+///
+/// Talk NPCs take this entry too (`World::install_field_carriers_from_man`):
+/// retail runs one SM over one cursor for every placement, and entering a
+/// talk record at `script_pc0` re-ran its spawn section on every talk - the
+/// section's seat pokes, and any story-flag write it carries (`kor5` `P1[2]`
+/// sets `0x619` there) - then tripped the spawn terminator and fell through
+/// to the first line, skipping the record's own segment-selection prologue.
+///
+/// The inn regression that once held NPCs on the old entry was the runner,
+/// not the cursor: `retock`'s innkeeper opens its interaction with a
+/// cross-context halt-acquire on the player (`CC F8 85`), and the runner left
+/// that halt on the record's own context, so every later player gesture of
+/// the stay returned `Halt` and the talk ended before the gold gate. See
+/// `World::step_inline_dialogue`.
+pub fn placement_interaction_record(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    let mut record = placement_inline_prologue(man_file, man, p)?;
+    record.entry_pc =
+        placement_interaction_entry_pc(&record.body, record.entry_pc, record.first_segment);
+    Some(record)
+}
+
+/// The interaction record of a **text-free scripted menu press** - a save
+/// point - or `None` for any other placement.
+///
+/// A save point's record is `31 02 21` (its spawn section) then `49 01 00 21`:
+/// the interaction is a single op-`0x49` park on a `-1` table row, which
+/// presses the menu button (`legaia_engine_core::world::World::scripted_menu_open_pending`),
+/// and the `0x21` after it is where retail's dialog SM stops once the park
+/// resumes. It carries no text, so [`placement_interaction_record`] (keyed on
+/// the first text segment) never sees it, and the placement had no
+/// interaction dispatch at all: the action button found the save point and
+/// ran nothing.
+///
+/// The record qualifies when its interaction section - from the spawn
+/// terminator to the next raw `0x21` - decodes cleanly and holds an op `0x49`
+/// whose sub-op is a scripted press
+/// ([`OP49_PARK_PRESERVING_SUB_OPS`]), or an op
+/// `0x44` record spawn. The returned `first_segment` is the body length:
+/// there is no text to page.
+///
+/// The spawn arm is a touch that starts a cutscene. Retail's touch post
+/// (`FUN_801D5B5C`) engages whatever placement the probe hits and the dialog
+/// SM runs its interaction section from the PC, text or none. `retock`
+/// `P1[32]` (the stand-in at `(121, 14)` while `0x357` is set and `0x33B`
+/// clear) is `25 31 02 .. 38 81 00 21` then `76 3C 08 00 44 65 21`: touched,
+/// it spawns `P2[16]`, or with `0x63C` set `P2[33]` - Eliza's Seru-bride
+/// scene, which raises `0x33C` and opens Lord Saryu's room. Without the arm
+/// the press found the stand-in and ran nothing, and the story stopped.
+///
+/// REF: FUN_80039B7C (the dialog SM's run loop and its `0x21` stop)
+pub fn placement_scripted_menu_record(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<InlineDialogPrologue> {
+    if placement_inline_prologue(man_file, man, p).is_some() {
+        return None;
+    }
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let entry_pc = placement_interaction_entry_pc(body, p.script_pc0, body.len());
+    if entry_pc == p.script_pc0 {
+        // No spawn terminator: nothing marks where an interaction begins.
+        return None;
+    }
+    let mut presses = false;
+    for insn in LinearWalker::new(body, entry_pc) {
+        let Ok(insn) = insn else {
+            return None;
+        };
+        if body.get(insn.pc).copied() == Some(0x21) {
+            break;
+        }
+        match insn.info {
+            InsnInfo::StateResume { sub_op, .. }
+                if OP49_PARK_PRESERVING_SUB_OPS.contains(&sub_op) =>
+            {
+                presses = true;
+            }
+            InsnInfo::SpawnRecord { .. } => presses = true,
+            _ => {}
+        }
+    }
+    presses.then(|| InlineDialogPrologue {
+        body: body.to_vec(),
+        entry_pc,
+        first_segment: body.len(),
+    })
+}
+
+/// The partition-1 placement a **talk proxy** hands its interaction to, or
+/// `None` for any other placement.
+///
+/// A proxy is a text-free placement whose interaction section - from the
+/// spawn terminator to the next raw `0x21` - raises the touched mark on
+/// another actor: a cross-context `B1 <id> 08` (`+0x10 |= 0x100`, the bit the
+/// touch post `FUN_801D5B5C` sets and the context runner `FUN_80039B7C`
+/// steps a record on). Pressing the action button at the proxy therefore
+/// runs the other actor's conversation. `concnow` P1[26] is one: an
+/// undrawn actor (`4C 40` scale `0` in its spawn section) standing one tile
+/// in front of the gate guards at (89, 117), whose touch runs guard P1[13]'s
+/// record - the guards themselves stand inside the gate's wall, out of the
+/// facing probe's reach (64 ahead, a 72-unit box) from either side.
+///
+/// `<id>` is a flat actor index (partition-0 objects first); only a target
+/// inside partition 1 is returned, as a partition-1 index.
+///
+/// REF: FUN_801D5B5C, FUN_80039B7C, FUN_801CF9F4
+pub fn placement_talk_proxy_target(
+    man_file: &ManFile,
+    man: &[u8],
+    p: &ActorPlacement,
+) -> Option<usize> {
+    if placement_inline_prologue(man_file, man, p).is_some() {
+        return None;
+    }
+    let start = p.record_offset;
+    let end = record_end_bound(man_file, man.len(), start);
+    if start + p.script_pc0 >= end {
+        return None;
+    }
+    let body = &man[start..end];
+    let entry_pc = placement_interaction_entry_pc(body, p.script_pc0, body.len());
+    if entry_pc == p.script_pc0 {
+        return None;
+    }
+    let n0 = man_file.partitions.first().map_or(0, Vec::len);
+    let n1 = man_file.partitions.get(1).map_or(0, Vec::len);
+    for insn in LinearWalker::new(body, entry_pc) {
+        let Ok(insn) = insn else {
+            return None;
+        };
+        if body.get(insn.pc).copied() == Some(0x21) {
+            break;
+        }
+        if let (
+            InsnInfo::CFlag {
+                kind: FlagKind::Set,
+                bit: 8,
+            },
+            Some(id),
+        ) = (insn.info, insn.extended)
+        {
+            let flat = usize::from(id);
+            return (flat >= n0 && flat - n0 < n1 && flat - n0 != p.index).then(|| flat - n0);
+        }
+    }
+    None
+}
+
+/// Op-`0x49` sub-ops whose park is a **scripted menu-button press**: the
+/// table row is `-1` *and* the port has no dedicated path for it, so no
+/// submode screen is opened and the park stands until the pause menu the
+/// press opens has closed.
+///
+/// A `-1` row does not leave the subsystem actor alone. The enter half
+/// `FUN_801F1278` writes handler `7` and a zero phase before it reads the
+/// table, and the `-1` test only skips the overwrite:
+///
+/// ```text
+/// 801f1404  li    v0,0x7
+/// 801f140c  sh    v0,0x50(s4)         ; +0x50 = 7, the state pick
+/// 801f141c  sh    zero,0x54(s4)       ; +0x54 = 0
+/// 801f1454  lw    a1,-0x4bb0(v0)      ; the parked operand pointer
+/// 801f145c  lbu   v0,0x0(a1)          ; its first byte = the sub-op
+/// 801f1468  lb    v0,0x0(v0)          ; OP49_SUBOP_SLOTS[sub_op], SIGNED
+/// 801f1470  beq   v0,a0,0x801f14b0    ; == -1 -> keep +0x50 = 7
+/// ```
+///
+/// (`overlay_baka_fighter_801f1278.txt`, `FUN_801F1278`.) Handler `7` picks
+/// `0x30`, the pause-menu session, so the menu opens by itself - see
+/// `World::scripted_menu_open_pending`. Its close is the release
+/// (`World::release_menu_entry_context_park`): the session's last phase
+/// clears the cursor context's `+0x3E` (`0x801ED52C`), and the dispatcher's
+/// retire arm then writes the Done sentinel because the park is still live
+/// (`0x801F1678..0x801F16AC`: `bne v1,zero` -> `sw 1,-0x4bb0`).
+///
+/// Sub-op `1` is a field save point - the menu's entry decode opens it on the
+/// save-card driver `0x19` - and sub-op `0x0D` the context that opens on the
+/// notice panel, blocks the root Load row and turns its cancel into the ready
+/// check. The other `-1` rows run through the same press in retail (`0` the
+/// inline gold shop, `7` the casino prize exchange), and the port reaches
+/// both through `field_submode_screen::OP49_DEDICATED_SUB_OPS` instead.
+pub const OP49_PARK_PRESERVING_SUB_OPS: [u8; 2] = [1, 0x0D];

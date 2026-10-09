@@ -89,7 +89,6 @@ mod field_terrain;
 mod field_vm_state;
 mod frame_clock;
 mod frame_step_floor;
-mod item_bag;
 mod menu_state;
 mod minigame_state;
 mod move_vm_globals;
@@ -132,7 +131,7 @@ pub use field_script_actor_state::{
 pub use field_terrain::{FieldTerrain, step_floor_ladder};
 pub use field_vm_state::FieldVmState;
 pub use frame_clock::FrameClock;
-pub use item_bag::{BagEntry, ItemBag};
+pub use legaia_engine_menus::item_bag::{BagEntry, ItemBag};
 pub use menu_state::MenuState;
 pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
 pub use move_vm_globals::{MOVE_STRIP_REQUEST_CAP, MoveVmGlobals};
@@ -151,7 +150,7 @@ mod actors;
 pub mod ambient;
 mod cutscene_elements;
 mod field_script_actors;
-pub use field_script_actors::FieldLightDraw;
+pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod fog_render;
 mod fog_volume_host;
@@ -165,13 +164,13 @@ mod bag_rows;
 pub use bag_rows::BagRow;
 mod battle;
 pub use battle::{
-    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleDefeatBanner, BattleMessageBanner,
-    BattleSpoilsBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA, LEVEL_UP_CUE,
-    MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS, PendingCast, RoutedEffectSpawn,
-    SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase, SummonStager, TIMED_MESSAGE_ELEMENT,
-    VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED, VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES,
-    VICTORY_STREAM_FRAMES, VictoryPhase, VictorySequence, victory_pose_column, victory_pose_id,
-    victory_pose_tier,
+    ABSORB_BANNER_ELEMENT, BattleActorDrawPlan, BattleDefeatBanner, BattleFrameClock,
+    BattleMessageBanner, BattleSpoilsBanner, COUNTER_MESSAGE_HOLD, COUNTER_MESSAGE_VA,
+    DEFAULT_BATTLE_FRAME_STEP, LEVEL_UP_CUE, MAGIC_LEVEL_BANNER_ELEMENT, PARTY_BODY_RADIUS,
+    PendingCast, RoutedEffectSpawn, SUMMON_SPAWN_BEHIND, SUMMON_STRIKE_BEHIND, SummonPhase,
+    SummonStager, TIMED_MESSAGE_ELEMENT, VICTORY_EXIT_PHASE, VICTORY_FADE_PHASE_SEED,
+    VICTORY_LOAD_FRAMES, VICTORY_RESULTS_HOLD_FRAMES, VICTORY_STREAM_FRAMES, VictoryPhase,
+    VictorySequence, victory_pose_column, victory_pose_id, victory_pose_tier,
 };
 pub use battle::{AutoComboInputs, AutoComboState};
 pub use battle::{CASTER_STAGE_TICK_LIMIT, CasterStagePhase, CasterStageRun};
@@ -205,6 +204,7 @@ pub use handler_actors::TransitionSweepReport;
 mod items_arts;
 pub use items_arts::BATTLE_GOLD_CAP;
 mod narration;
+pub use narration::FrameGrade;
 mod npc_morph;
 pub use npc_morph::MorphOwner;
 mod object_actor_height;

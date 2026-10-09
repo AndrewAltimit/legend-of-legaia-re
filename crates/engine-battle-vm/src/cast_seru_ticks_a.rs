@@ -492,11 +492,14 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 /// * arm `11` - advances **first** (`0x801F7478`), then, unless the victim
 ///   carries [`FLAG_NON_TARGETABLE`], `FUN_801DD0AC(0x12, 7, victim_seat)` at
 ///   `0x801F74AC`, the unsigned clamp at `0x801F74D8`, `+0x10 +=`,
-///   `+0x14C -=`, [`stage_reaction_bits`], `+0x0C = 0x1000` and the victim's
-///   render flag `= 0`. Then unconditionally the summon seat's render flag
-///   `= 2`, its `+0x1DD = 0`, and the caster's render flag `= 0`;
+///   `+0x14C -=`, [`stage_reaction_bits`], then the victim's burn
+///   presentation `+0x0C = 0x1000`, `+0x04 = 0x3FF`, `+0x21F = 1` and render
+///   flag `= 0` (applied with or without a damage roll). Then
+///   unconditionally the summon seat's render flag `= 2`, its `+0x1DD = 0`,
+///   and the caster's render flag `= 0`;
 /// * arm `12` - the victim's animation rate, and `0xFF` once the victim has
-///   settled;
+///   settled: a dead one faded to a zero `+0x04`, a living one back on idle
+///   (the countdown ahead of it is the director's);
 /// * arm `0xFF` - `return 0`.
 ///
 /// Not ported: the packet arms (1..8 are almost entirely
@@ -546,16 +549,26 @@ pub fn gimard_tick(
         GIMARD_HIT_ARM => {
             if let Some(v) = seats.get_mut(who.victim as usize)
                 && (v.flags & FLAG_NON_TARGETABLE) == 0
-                && let Some(roll) = hit
             {
-                let applied = site.apply(v, roll);
-                stage_reaction_bits(v);
+                if let Some(roll) = hit {
+                    let applied = site.apply(v, roll);
+                    stage_reaction_bits(v);
+                    hits.push(SweepHit {
+                        seat: who.victim,
+                        applied,
+                    });
+                }
+                // The victim's burn presentation, inside the same
+                // targetable branch but not the damage's: `+0x21F = 1`,
+                // node `+0x74 = 0xFF`, `+0x04 = 0x3FF`, `+0x0C = 0x1000`,
+                // `+0x21C = 0` (`0x801F757C..0x801F759C`). A host that folds
+                // the damage elsewhere still needs it - the render flag `0`
+                // is what lets the victim's death fade run, which arm 12
+                // waits out.
                 v.root_speed = SERU_HIT_ROOT_SPEED;
                 v.render_flag = 0;
-                hits.push(SweepHit {
-                    seat: who.victim,
-                    applied,
-                });
+                v.present_04 = GIMARD_POSE_PRESENT_WORD;
+                v.render_21f = GIMARD_POSE_21F;
             }
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.render_flag = GIMARD_DONE_RENDER_FLAG;
@@ -567,9 +580,18 @@ pub fn gimard_tick(
             CastArmStep::Advance
         }
         GIMARD_SETTLE_ARM => {
-            let settled = seats
-                .get(who.victim as usize)
-                .is_some_and(|v| v.hp == 0 || v.playing_anim == 0);
+            // A dead victim settles once its defeat fade has walked the
+            // render word `+0x04` to zero (`lhu 0x14c` / `lw v0,0x4(s2)` /
+            // `bne v0,zero` at `0x801F765C..0x801F768C`), a living one once
+            // it is back on idle (`+0x1D9 == 0`). The module's own countdown
+            // gates the arm ahead of both (`gimard_direct`).
+            let settled = seats.get(who.victim as usize).is_some_and(|v| {
+                if v.hp == 0 {
+                    v.present_04 == 0
+                } else {
+                    v.playing_anim == 0
+                }
+            });
             if let Some(v) = seats.get_mut(who.victim as usize) {
                 v.anim_rate = GIMARD_SETTLE_ANIM_RATE;
             }
@@ -2107,6 +2129,28 @@ mod tests {
     // -- per-body walks -----------------------------------------------------
 
     #[test]
+    fn gimard_waits_out_a_dead_victims_fade() {
+        let mut seats = row();
+        let mut ctx = CastModuleCtx {
+            phase: GIMARD_HIT_ARM,
+            ..Default::default()
+        };
+        // A host that folds the damage itself passes no roll: the burn
+        // presentation still lands on the victim.
+        let (_, hits) = gimard_tick(&mut ctx, &mut seats, WHO, None);
+        assert!(hits.is_empty());
+        assert_eq!(seats[3].render_flag, 0);
+        assert_eq!(seats[3].present_04, GIMARD_POSE_PRESENT_WORD);
+        seats[3].hp = 0;
+        seats[3].playing_anim = 0;
+        gimard_tick(&mut ctx, &mut seats, WHO, None);
+        assert_eq!(ctx.phase, GIMARD_SETTLE_ARM, "the fade has not run");
+        seats[3].present_04 = 0;
+        gimard_tick(&mut ctx, &mut seats, WHO, None);
+        assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);
+    }
+
+    #[test]
     fn gimard_hits_only_on_arm_eleven_and_settles_from_twelve() {
         let mut seats = row();
         let mut ctx = CastModuleCtx {
@@ -2128,6 +2172,7 @@ mod tests {
 
         // Arm 12 latches the terminal once the victim has stopped reacting.
         seats[3].playing_anim = 0;
+        assert_eq!(seats[3].present_04, GIMARD_POSE_PRESENT_WORD);
         let (step, _) = gimard_tick(&mut ctx, &mut seats, WHO, None);
         assert_eq!(step, CastTickStep::Busy);
         assert_eq!(ctx.phase, CHOREOGRAPHY_DONE_PHASE);

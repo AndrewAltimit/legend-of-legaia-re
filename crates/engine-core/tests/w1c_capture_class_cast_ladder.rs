@@ -6,7 +6,7 @@
 //!
 //! The reach-triage GATED row names the gate as "a capture-class boss cast",
 //! and says the gate already has a seeded oracle
-//! (`world/battle/tests/battle_capture_class_disc.rs`) that no union member
+//! (`world/tests/battle_capture_class_disc.rs`) that no union member
 //! can ever be: it is a `#[cfg(test)]` module inside the crate, and
 //! `CANONICAL_LADDERS` takes `--test <name>` integration binaries. This is the
 //! integration-binary twin of that gate.

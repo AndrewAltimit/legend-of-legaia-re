@@ -745,11 +745,19 @@ impl LegaiaRuntime {
                 .battle_render
                 .as_ref()
                 .is_some_and(|b| b.stage_present());
-        let field_rgb = self
-            .scene_host
-            .host()
-            .map_or([0; 3], |h| h.world.frame_clear_rgb());
-        legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle, field_rgb).to_vec()
+        // The page draws no boot UI through the engine; the menu-overlay
+        // screen term is the shared kernel's (`MenuRuntime::covers_field`).
+        match self.scene_host.host() {
+            Some(h) => legaia_engine_screens::field_frame::frame_clear_color(
+                &h.world,
+                false,
+                &self.menu,
+                stage_battle,
+            )
+            .to_vec(),
+            None => legaia_engine_ui::battle_stage_clear::scene_clear(false, stage_battle, [0; 3])
+                .to_vec(),
+        }
     }
 
     /// `true` while a battle 3D render is built and the world is in

@@ -408,7 +408,7 @@ Mixed function: the content-selection (item-usability / discovery-flag gating, p
 ### `80020C14` / `80025000`
 
 The SCUS fade family's per-frame half, and the exact reason
-[`fade.rs`](../../../crates/engine-core/src/fade.rs)'s ramp used to carry a
+[`fade.rs`](../../../crates/engine-system/src/fade.rs)'s ramp used to carry a
 guessed endpoint: the loader `FUN_80020B00` and the spawn `FUN_80024E80` were
 dumped, the tick was not.
 

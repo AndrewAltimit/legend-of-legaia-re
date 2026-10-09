@@ -352,6 +352,17 @@ and the render tail scrolls forever. Unlike the mode-3 write (recomputed each
 frame from a cached capture), the rotate is **destructive**: each fires on
 the VRAM the previous one left.
 
+The arm belongs to the part tick, not to the ambient tree, so a battle effect
+part runs it too. PROT 0903's fire tunnel (the Gimard summon's attack) seats
+one on `(0x1F8, 0x70, 0x08, 0x80)` - the flame band its inner layer samples
+on page `(448, 0)` through CLUT `(208, 476)` - stepping up one row per
+period; in `gimard_burning_attack` the part sits on the effect list with
+`+0xCE = 1` and the band is rotated against the summon-start copy. The
+engine runs the same integrator over every live part of the battle effect
+scenes (`World::queue_battle_part_scrolls`, after each scene's tick) and
+applies the fired rotations to the battle VRAM with the stage module's
+`MoveImage`s (`World::apply_battle_vram_moves`), which both hosts call.
+
 ### The master ambient record 0 - the per-scene SFX descriptor bank
 
 Town prescripts' record 0 is the fixed run of 8-byte rows
@@ -507,9 +518,15 @@ ahead of the `SysFlag.Test`, so it is in the unconditional prefix and fires
 whichever way the flag reads. A census that discriminates on script *shape*
 (a record of nothing but nops, flag writes, the install and a self-loop)
 reports town0e as having no ambient install - the record is not pure, but
-the install is there. **Inferred:** the precise moment inside scene load; the
-pre-run mechanism is disassembly-settled and this record is inside its first
-slice, but no live capture has shown that slice running for this scene.
+the install is there. The moment inside scene load is read off the bytes too:
+MAIN INIT `FUN_801D6704` calls the MAN loader `FUN_8003AEB0` with
+`a0 = (s4 & 4) != 0` (`0x801D6D98..0x801D6DA8`), where `s4` ORs the bundle
+walk's and the streamed walk's dispatch returns and the MAN arm of
+`FUN_8001F05C` contributes the `4` (`ori s4,s4,4` at `0x8001F304`); the loader
+runs its spawn-and-pre-run loop over placements `1..count-1` only behind that
+flag (`sll v0,s5,0x10; beq` at `0x8003B89C`, loop `0x8003B8BC..0x8003B8EC`).
+town0e's bundle carries its MAN, so the install fires inside that loop. No live
+capture of this scene has shown it.
 
 The tree it installs is small and entirely about the VDF morphs: record 1 fans
 out into two render-mode nodes, three copies of the mesh record binding
@@ -545,6 +562,23 @@ ordering table carries the matching additive `POLY_FT4`s at packet colours up
 to `0x7F7F7F`. Additive sheets of that texture stacked eight to a node
 saturate to white where they overlap, so a player walked up to the bank sees a
 white screen on retail's rules too.
+
+### A spawned sheet drifts along its spawner's yaw
+
+`garmel`'s cave mist is the same family on a different tree: stager record
+`14` re-seats itself at `(3008, y, 8128)` with a random `y` and a random yaw
+(`2F 05` writes `rand` into the `07` and `06` operands that follow it) and
+spawns record `15`, a sheet that sets a `+0x98` speed and nothing else. Forty
+of them drift out from the one spawn point in every direction because the
+stager seeds a child's **motion heading** `+0x96` from the yaw it inherits:
+`FUN_80021B04` copies its second argument (`actor+0x24`) into the child's
+`+0x24 / +0x26 / +0x28` (`0x80021D8C..0x80021DB8`), and for every render mode
+but `0x4000` / `0x4001` it also stores that yaw `& 0xFFF` at `+0x96`
+(`0x80021D54..0x80021D7C`, `a3 = actor + 0x80`). The motion block then runs
+the speed along that heading. Port: the ambient pool's child spawn carries the
+spawner's banks (`World::push_ambient_part`). A retail frame holds whichever
+sheets the `rand()` stream has put where, which no seed replays, so a frame
+comparison of the mist scores its placement, not its presence.
 
 ## Mechanism 4 - the ambient particle emitter
 
@@ -881,8 +915,12 @@ oscillators.
 - Walker tables: `legaia_asset::clut_walk::{from_scene_bundle, scene_park_strips}`
   feeding `engine-core::clut_walk_anim`. VDF packs: `legaia_asset::scene_vdf`.
 - Ambient tree: `engine-core::world::ambient` (pool capped at the retail 143,
-  op-`0x25` record 0 refused), entry census
-  `engine-core::man_field_scripts::scene_entry_ambient_installs`; render tails
+  op-`0x25` record 0 refused), installed by the scene-entry prologue pre-run
+  (`World::pre_run_field_channel_prologues` executing each op-`0x34` sub-3,
+  once, at the executing context's position) - the static census
+  `engine-core::man_field_scripts::scene_entry_ambient_installs` names the
+  same records and is a tool for tests and the `.glb` export, not a second
+  installer; render tails
   `engine-core::clut_cell_fx` (mode 3) and `world::ambient::vram_scroll`
   (mode 4); morph kernels `engine-vm::vdf_morph` and
   `engine-core::world::npc_morph`; enhancement pulse `engine-core::vdf_pulse`.

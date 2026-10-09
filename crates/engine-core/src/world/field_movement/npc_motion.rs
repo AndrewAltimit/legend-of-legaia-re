@@ -1360,12 +1360,12 @@ impl World {
         // A ride that sets the player down inside another door's contact
         // box walks the player out of it before letting go (`balden`'s
         // elevator cars, P0[7] / P0[14]: `CC F8 51` runs the player to the
-        // partner car, then `A2 F8 01` / `A2 F8 02` walk it out through the
-        // partner's door, with no `B1` bracket). The engine runs neither
-        // clip as motion, so a landing on the partner's centre would post
-        // its touch on the first step in any direction and ride straight
-        // back; the partner is exempt until the player has stepped off it,
-        // as a bracketed one is.
+        // partner car, then the compass leg `C1 F8 00 43` - under the
+        // `A2 F8 01` / `A2 F8 02` walk clips - carries it out through the
+        // partner's door, with no `B1` bracket). A landing still on the
+        // partner's centre would post its touch on the first step in any
+        // direction and ride straight back; the partner is exempt until the
+        // player has stepped off it, as a bracketed one is.
         let landing = self
             .player_actor_slot
             .and_then(|p| self.actors.get(p as usize))

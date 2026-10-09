@@ -10,6 +10,14 @@ pub(in crate::world) struct BattleHostImpl<'a> {
 }
 
 impl<'a> BattleActionHost for BattleHostImpl<'a> {
+    fn display_tick(&self) -> u64 {
+        self.world.clock.display_frames
+    }
+
+    fn battle_frame(&self) -> u64 {
+        self.world.battle_frame_id()
+    }
+
     fn actor(&self, slot: u8) -> Option<&BattleActor> {
         self.world.actors.get(slot as usize).map(|a| &a.battle)
     }

@@ -492,3 +492,47 @@ fn town01_world_export_drops_steep_far_bucket_sheets_only() {
     let world = export_world_glb(&index, &scene, &a, &opts).expect("world glb");
     assert_eq!(world.ground_quads, hf.quad_count() - gone);
 }
+
+/// Placement rotation is all three authored angles (the play hosts'
+/// `EnvDraw::place_point` kernel), not the yaw alone. `rikuroa` carries
+/// pitched / rolled records; each one's world-glb node must hold a
+/// quaternion off the Y axis - a yaw-only export stood them all upright.
+#[test]
+fn rikuroa_world_export_keeps_pitched_and_rolled_placements() {
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let a = assemble_field_scene(&index, "rikuroa").expect("assemble rikuroa");
+    let scene = Scene::load(&index, "rikuroa").expect("load rikuroa");
+    let opts = GlbExportOptions {
+        scale: 1.0,
+        include_sky: true,
+    };
+    let world = export_world_glb(&index, &scene, &a, &opts).expect("world glb");
+    let wj = glb_json(&world.glb);
+    let tilted = a
+        .terrain
+        .iter()
+        .chain(&a.placements)
+        .filter(|d| (d.rot_x & 0xFFF) != 0 || (d.rot_z & 0xFFF) != 0)
+        .count();
+    let tilted_nodes = wj["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|n| n["rotation"].as_array())
+        .filter(|q| q[0].as_f64().unwrap().abs() > 1e-4 || q[2].as_f64().unwrap().abs() > 1e-4)
+        .count();
+    eprintln!("[ran] rikuroa tilted draws {tilted}, tilted world nodes {tilted_nodes}");
+    assert!(tilted > 0, "rikuroa carries pitched / rolled records");
+    assert_eq!(
+        tilted_nodes, tilted,
+        "every tilted placement exports as a tilted node"
+    );
+}

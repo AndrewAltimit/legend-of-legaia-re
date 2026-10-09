@@ -306,37 +306,37 @@ was written - find the symbol by name, not by line.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
-| `8001d7f8` | `sync_scene_name` | `crates/engine-core/src/scene_name_sync.rs:73` | DISCLOSE |
-| `8001e54c` | `install_chunks` | `crates/engine-core/src/chunk_install.rs` | WIRED |
+| `8001d7f8` | `sync_scene_name` | `crates/engine-system/src/scene_name_sync.rs:73` | DISCLOSE |
+| `8001e54c` | `install_chunks` | `crates/engine-system/src/chunk_install.rs` | WIRED |
 | `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs:236` | FALSE INERT |
-| `80024e80` | `spawn_fade` | `crates/engine-core/src/fade.rs` | WIRED |
+| `80024e80` | `spawn_fade` | `crates/engine-system/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
-| `80038050` | `confirm_menu` | `crates/engine-core/src/dialog.rs:409` | FALSE INERT |
+| `80038050` | `confirm_menu` | `crates/engine-menus/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
 | `8003ebe4` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ebe4` | `load_overlay_a` | `crates/engine-core/src/overlay_loader.rs:180` | DISCLOSE |
 | `8003ec70` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ec70` | `load_overlay_b` | `crates/engine-core/src/overlay_loader.rs:212` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs:135` | DISCLOSE |
-| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-core/src/cutscene.rs:205` | WIRE |
+| `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/cutscene.rs:205` | WIRE |
 | `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs:172` | WIRE |
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
 | `801d06c8` | `buy` | `crates/engine-minigames/src/fishing/prize.rs:159` | FALSE INERT |
-| `801d0748` | `hp_left` / `turns_left` | `crates/engine-core/src/muscle_dome/session.rs` | FALSE INERT |
+| `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome/session.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-minigames/src/fishing/prize.rs:137` | FALSE INERT |
-| `801d0b90` | `tick_walk_regen` | `crates/engine-core/src/walk_regen.rs:86` | WIRE |
+| `801d0b90` | `tick_walk_regen` | `crates/engine-field/src/walk_regen.rs:86` | WIRE |
 | `801d0c3c` | `first_visible` | `crates/engine-minigames/src/fishing/prize.rs:98` | FALSE INERT |
 | `801d4040` | `symbol_pad_bit` | `crates/engine-minigames/src/dance/types.rs:84` | DELETE |
 | `801d6f90` | `is_available` | `crates/engine-minigames/src/fishing/prize.rs:124` | FALSE INERT |
 | `801d712c` | `select_owned_rod` | `crates/engine-minigames/src/fishing/rod_menu.rs:42` | FALSE INERT |
-| `801d8258` | `arm` | `crates/engine-core/src/world_map.rs:78` | DISCLOSE |
+| `801d8258` | `arm` | `crates/engine-field/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
-| `801dd0c0` | `category_check` | `crates/engine-core/src/menu_item_category.rs` | WIRED |
-| `801e1208` | `classify_card_directory` | `crates/engine-core/src/save_select/card_directory.rs` | WIRE |
+| `801dd0c0` | `category_check` | `crates/engine-menus/src/menu_item_category.rs` | WIRED |
+| `801e1208` | `classify_card_directory` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE |
 | `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs:414` | WIRE |
-| `801e3af0` | `card_directory_scan` | `crates/engine-core/src/save_select/card_directory.rs:281` | DISCLOSE |
-| `801e3ba0` | `card_free_blocks` | `crates/engine-core/src/save_select/card_directory.rs:311` | DISCLOSE |
+| `801e3af0` | `card_directory_scan` | `crates/engine-menus/src/save_select/card_directory.rs:281` | DISCLOSE |
+| `801e3ba0` | `card_free_blocks` | `crates/engine-menus/src/save_select/card_directory.rs:311` | DISCLOSE |
 | `801e4794` | `step_clut_fx` | `crates/engine-core/src/world/effects.rs:923` | FALSE INERT |
 | `801e4c58` | `ClutCellFx` | `crates/engine-core/src/world/effects.rs:852` | FALSE INERT |
 
@@ -380,7 +380,7 @@ Both closed, and they closed in opposite directions - which is the point of
 keeping them together. Neither could be settled from the audit row itself.
 
 **`timed_fight_turns_left`** (`801d0748`) was `DISCLOSE` while it lived in
-`crates/engine-core/src/muscle_dome.rs`, and the reason was a *deliberate*
+`crates/engine-menus/src/muscle_dome.rs`, and the reason was a *deliberate*
 non-read rather than a missing host: the strip it feeds is Koru's timed fight,
 and a dome round is an ordinary battle that ends on a knockout, so
 `MuscleDomeSession` must not consult a turn limit. The row is the
@@ -489,7 +489,7 @@ why the obvious placement was wrong. Where each one lives now:
 - `tick_walk_regen` - `World::tick_field_walk_regen` runs it from the field
   frame tick in `frame_tick.rs`, gated on the retail `0x20` step cost.
 - `advance_battle_mode` - called from the battle loop driver
-  (`crates/engine-core/src/world/battle/loop_driver.rs`).
+  (`crates/engine-core/src/world/battle/loop_driver/round.rs`).
 - `validate_action` / `item_count_gate` - `WorldActionValidator` in
   `crates/engine-core/src/world/battle/validator_host.rs` implements
   `ActionValidatorHost`; `World::action_validity_mask` accumulates the
@@ -827,9 +827,9 @@ dispatch that was the actual blocker is ~30 lines.
 Both are the accepted over-approximation direction, and both are named here
 because a reader looking for the row will otherwise not find it.
 
-**`arm`** (`801d8258`, `crates/engine-core/src/world_map.rs:78`) keeps the
+**`arm`** (`801d8258`, `crates/engine-field/src/world_map.rs:78`) keeps the
 `DISCLOSE` verdict above but no longer appears in the audit at all. Making the
-winit tree reachable made `route_camera_events` in `engine-core/src/camera.rs`
+winit tree reachable made `route_camera_events` in `engine-field/src/camera.rs`
 reachable, and its `.arm(` call on a `CameraMover` resolves by name to
 `EmitterGate::arm` as well, because receiver types are not inferred. That is
 audit cause 2 - a method-name collision - and it hides a genuine gap. The
@@ -1429,7 +1429,7 @@ already parses from the disc.
 
 `save_screen_spawn` (`801d841c`), whose call site is `PanelActorHost`'s handler
 for the fade/flash actor's phase-1 arm in
-`crates/engine-core/src/world_map_panel_host.rs`. The handler saved and cleared
+`crates/engine-field/src/world_map_panel_host.rs`. The handler saved and cleared
 the tint triple and stopped, dropping the spawn.
 
 Reading the callee before wiring it changed what the wire *is*. `FUN_801D841C`
@@ -1997,7 +1997,7 @@ the new-press word's bit `0x800`: R1 held plus Start pressed. A second arm
 (`_DAT_8007B83C == 3` and held mask exactly `0x900`) calls
 `FUN_80026740(0x8007056C)` and clears both the mode word and this flag.
 
-So the channel is a **debug pause**, and `crates/engine-core/src/retail_pad.rs`
+So the channel is a **debug pause**, and `crates/engine-system/src/retail_pad.rs`
 already says so about the same tail. The verdict stays `DISCLOSE`, but the
 prerequisite it names changes from "a frame-time sampler" to "the port's own
 debug surface" - the tag on `World::clock.frame_begin_skip` now carries the three

@@ -1055,13 +1055,14 @@ Display sets the field party HUD's idle delay on both hosts
 no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
 and the other settings persist in the engine's options config file.
 
-The port's one engine-only row, **Key Config**, hangs below the retail ten on
-hosts with a keyboard binding table. Window 48 is sized for the ten, so the
-settings frame grows by the extra rows' advances
-(`engine-ui::options_window_extra_height`; zero on the retail set). Its
-rebind sub-screen reuses the window and lays its sixteen buttons out in two
-columns of eight at the popup's 13-px pitch so the header, rows and hint fit
-the frame.
+The settings window is retail's ten rows on every host. The port's one
+engine-only screen, **Key Config**, is not a row: on a host with a keyboard
+binding table, Select on the Options screen opens it (retail's picker reads
+no Select edge). It used to hang below the ten as an eleventh row, which grew
+window 48 past retail's frame and read as a different screen in the retail
+comparison corpus. The rebind sub-screen reuses the window and lays its
+sixteen buttons out in two columns of eight at the popup's 13-px pitch so the
+header, rows and hint fit the frame.
 
 ### Dev-menu EVENT FLAG editor (debug build only)
 

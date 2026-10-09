@@ -38,8 +38,11 @@
 //! the scratchpad frame-delta pair `0x1F80037D` / `0x1F800393` against a
 //! module-local countdown word, which is capture-pinned timing and not static
 //! shape - except PROT 0910's arms `6..=0x0A`, whose timers are what schedule
-//! its four slashes and are ported in [`swordie_tick`] / [`SwordieSlashes`]),
-//! and the text draws (`FUN_8003541C`).
+//! its four slashes and are ported in [`swordie_tick`] / [`SwordieSlashes`],
+//! and the post-hit countdown the other four re-arm in their hit arm and
+//! drain in their settle arm, which decides when the Done band opens and is
+//! ported through each body's `settle` word), and the text draws
+//! (`FUN_8003541C`).
 //!
 //! ## Three clamp shapes, not two
 //!
@@ -310,20 +313,45 @@ pub const ROW_SWEEP_SEAT_END: u8 = 7;
 /// dead seat -> require +0x04  == 0   (the fade word has run out)
 /// ```
 ///
-/// The engine has no mirror for `+0x04`, so a dead seat is treated as
-/// settled: the fade is presentation, and holding the whole band on it would
-/// park the phase on state no host writes.
+/// `+0x04` is [`CastActorState::present_04`], the battle actor's render
+/// word, which a dead seat's defeat fade walks to zero - so the band holds
+/// until the row's dead have faded out, as retail's does.
 fn row_is_idle(seats: &[CastActorState], first: u8, end: u8) -> bool {
     (first..end).all(|s| {
         seats
             .get(s as usize)
-            .map(|a| a.hp == 0 || a.playing_anim == 0)
+            .map(|a| {
+                if a.hp == 0 {
+                    a.present_04 == 0
+                } else {
+                    a.playing_anim == 0
+                }
+            })
             .unwrap_or(true)
     })
 }
 
 /// The terminal phase every one of the five chains names (`0xFF`).
 pub const SERU_B_DONE_PHASE: u8 = 0xFF;
+
+/// The settle countdown's drain per engine tick. Retail drains the module's
+/// countdown word by `0x1F800393 * 0x1F80037D` (frame step times the speed
+/// scalar) a battle pass; the engine ticks once a vsync, so a tick drains
+/// the scalar alone - the convention [`SwordieClock`] states for PROT 0910.
+pub const SETTLE_DRAIN_PER_TICK: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
+/// The scalar the arms shift into their countdown re-arms (`lbu 0x37D`).
+const SETTLE_SCALAR: i32 = crate::battle_anim_rate::RATE_NORMAL as i32;
+
+/// The gated drain the settle arms of PROT 0909, 0912 and 0913 open with
+/// (`lw; blez; subu; sw; bgtz`): a word already spent is left alone, a live
+/// one drains, and the arm holds while it is still positive.
+fn settle_countdown_holds(cd: &mut i32) -> bool {
+    if *cd <= 0 {
+        return false;
+    }
+    *cd -= SETTLE_DRAIN_PER_TICK;
+    *cd > 0
+}
 
 // ---------------------------------------------------------------------------
 // PROT 0909 - Viguro
@@ -403,6 +431,7 @@ pub fn viguro_tick(
     seats: &mut [CastActorState],
     caster_seat: u8,
     summon_seat: u8,
+    settle: &mut i32,
     mut rolls: impl FnMut(u8) -> i32,
 ) -> (CastTickStep, ViguroSweep) {
     let mut sweep = ViguroSweep::default();
@@ -470,10 +499,17 @@ pub fn viguro_tick(
                 v.render_flag = 0;
                 sweep.hits.push(SweepHit { seat, applied });
             }
+            // `sll v0,v0,0x7` on the scalar, stored to the countdown word
+            // `0x801F8360` (`0x801F7798..0x801F77A8`).
+            *settle = SETTLE_SCALAR << 7;
             CastArmStep::Advance
         }
         VIGURO_SETTLE_PHASE => {
-            if row_is_idle(seats, FIRST_MONSTER_SEAT, ROW_SWEEP_SEAT_END) {
+            // The countdown drains first (`0x801F77C0..0x801F77F0`); the arm
+            // writes `0xFF` only once the row is idle **and** the word is
+            // spent (`bgtz` at `0x801F78BC`).
+            let held = settle_countdown_holds(settle);
+            if row_is_idle(seats, FIRST_MONSTER_SEAT, ROW_SWEEP_SEAT_END) && !held {
                 c.phase = SERU_B_DONE_PHASE;
             }
             CastArmStep::Hold
@@ -992,6 +1028,7 @@ pub fn orb_tick(
     summon_seat: u8,
     amount: u32,
     cleanse: Option<u8>,
+    settle: &mut i32,
     max_hp: impl Fn(u8) -> u16,
 ) -> (CastTickStep, Vec<SeruHeal>) {
     let mut healed = Vec::new();
@@ -1063,10 +1100,17 @@ pub fn orb_tick(
                     });
                 }
             }
+            // `countdown += scalar << 8` (`0x801F78A4..0x801F78B8`).
+            *settle += SETTLE_SCALAR << 8;
             CastArmStep::Advance
         }
         ORB_SETTLE_PHASE => {
-            c.phase = SERU_B_DONE_PHASE;
+            // An ungated drain (`subu; bgtz` at `0x801F7F74..0x801F7F94`):
+            // `0xFF` once the word arm 9 re-armed is spent.
+            *settle -= SETTLE_DRAIN_PER_TICK;
+            if *settle <= 0 {
+                c.phase = SERU_B_DONE_PHASE;
+            }
             CastArmStep::Hold
         }
         SERU_B_DONE_PHASE => CastArmStep::Finish,
@@ -1133,6 +1177,8 @@ pub fn spoon_cure_sweep(seats: &mut [CastActorState], cleanse: Option<u8>) -> Ve
 pub const FREED_DAMAGE_PHASE: u8 = 0x11;
 /// PROT 0912's settle arm.
 pub const FREED_SETTLE_PHASE: u8 = 0x13;
+/// PROT 0912's post-hit hold, between the damage and settle arms.
+pub const FREED_HOLD_PHASE: u8 = 0x12;
 /// `ctx[+0x278]` arm `0x0E` writes (`0x801F7D5C`).
 pub const FREED_ARM14_CTX_278: u8 = 2;
 /// The `+0x0C` root speed arm `0x10` and arm `7` write (`0x801F7F0C`,
@@ -1180,6 +1226,7 @@ pub fn freed_tick(
     ctx: &mut CastModuleCtx,
     seats: &mut [CastActorState],
     summon_seat: u8,
+    settle: &mut i32,
     mut rolls: impl FnMut(u8) -> i32,
 ) -> (CastTickStep, Vec<SweepHit>) {
     let mut hits = Vec::new();
@@ -1254,16 +1301,33 @@ pub fn freed_tick(
                 v.anim_rate = FREED_HIT_ANIM_RATE;
                 hits.push(SweepHit { seat, applied });
             }
+            // `countdown += scalar << 7` (`0x801F8154..0x801F816C`).
+            *settle += SETTLE_SCALAR << 7;
+            CastArmStep::Advance
+        }
+        FREED_HOLD_PHASE => {
+            // Drain, hold while positive, then re-arm by `scalar << 5`
+            // (`0x801F81E4..0x801F8210`).
+            *settle -= SETTLE_DRAIN_PER_TICK;
+            if *settle > 0 {
+                return CastArmStep::Hold;
+            }
+            *settle += SETTLE_SCALAR << 5;
             CastArmStep::Advance
         }
         FREED_SETTLE_PHASE => {
+            // The gated drain first (`0x801F8244..0x801F827C`), then the row
+            // poll (`0x801F8284..0x801F8304`).
+            if settle_countdown_holds(settle) {
+                return CastArmStep::Hold;
+            }
             if row_is_idle(seats, FIRST_MONSTER_SEAT, ROW_SWEEP_SEAT_END) {
                 c.phase = SERU_B_DONE_PHASE;
             }
             CastArmStep::Hold
         }
         SERU_B_DONE_PHASE => CastArmStep::Finish,
-        1 | 3 | 4 | 5 | 6 | 8 | 0x0B | 0x0C | 0x0D | 0x12 => CastArmStep::Advance,
+        1 | 3 | 4 | 5 | 6 | 8 | 0x0B | 0x0C | 0x0D => CastArmStep::Advance,
         _ => CastArmStep::Finish,
     });
     (step, hits)
@@ -1319,6 +1383,7 @@ pub fn nova_tick(
     summon_seat: u8,
     victim_seat: u8,
     roll: i32,
+    settle: &mut i32,
 ) -> (CastTickStep, Option<SweepHit>) {
     let mut hit = None;
     let step = run_latched(ctx, |c| match c.phase {
@@ -1371,12 +1436,26 @@ pub fn nova_tick(
                     s.render_flag = 0;
                 }
             }
+            // `countdown += scalar << 7` (`0x801F8550..0x801F8568`).
+            *settle += SETTLE_SCALAR << 7;
             CastArmStep::Advance
         }
         NOVA_SETTLE_PHASE => {
+            // The gated drain (`0x801F858C..0x801F85C0`), then the victim: a
+            // dead one once its render word `+0x04` has faded to zero, a
+            // living one once it is back on idle (`0x801F85C4..0x801F85F4`).
+            if settle_countdown_holds(settle) {
+                return CastArmStep::Hold;
+            }
             let settled = seats
                 .get(victim_seat as usize)
-                .map(|v| v.hp == 0 || v.playing_anim == 0)
+                .map(|v| {
+                    if v.hp == 0 {
+                        v.present_04 == 0
+                    } else {
+                        v.playing_anim == 0
+                    }
+                })
                 .unwrap_or(true);
             if settled {
                 c.phase = SERU_B_DONE_PHASE;
@@ -1431,11 +1510,69 @@ mod tests {
         }
     }
 
+    /// Ticks a body spends in its post-hit countdown before it writes the
+    /// terminal phase, with every seat idle.
+    fn settle_ticks(mut tick: impl FnMut(&mut CastModuleCtx) -> CastTickStep, from: u8) -> u32 {
+        let mut ctx = ctx_at(from);
+        let mut n = 0;
+        while ctx.phase != SERU_B_DONE_PHASE {
+            tick(&mut ctx);
+            n += 1;
+            assert!(n < 10_000, "never settled");
+        }
+        n
+    }
+
+    #[test]
+    fn the_post_hit_countdowns_pace_the_settle_arms() {
+        let per = |shift: i32| (SETTLE_SCALAR << shift) / SETTLE_DRAIN_PER_TICK;
+        // PROT 0909: the damage arm stores `scalar << 7`, the settle arm
+        // drains it.
+        let mut cd = 0;
+        let mut s = seats(8);
+        let n = settle_ticks(
+            |c| viguro_tick(c, &mut s, 0, 7, &mut cd, |_| 0).0,
+            VIGURO_DAMAGE_PHASE,
+        );
+        assert_eq!(n as i32, 1 + per(7));
+        // PROT 0911: arm 9 adds `scalar << 8`, the settle arm drains it.
+        let mut cd = 0;
+        let mut s = seats(8);
+        let n = settle_ticks(|c| orb_tick(c, &mut s, 7, 0, None, &mut cd, |_| 400).0, 9);
+        assert_eq!(n as i32, 1 + per(8));
+        // PROT 0912: `scalar << 7` through the hold arm, `scalar << 5` more
+        // through the settle arm.
+        let mut cd = 0;
+        let mut s = seats(8);
+        let n = settle_ticks(
+            |c| freed_tick(c, &mut s, 7, &mut cd, |_| 0).0,
+            FREED_DAMAGE_PHASE,
+        );
+        assert_eq!(n as i32, 1 + per(7) + per(5));
+        // PROT 0913: `scalar << 7`, and a dead victim holds until faded.
+        let mut cd = 0;
+        let mut s = seats(8);
+        let n = settle_ticks(
+            |c| nova_tick(c, &mut s, 7, 3, 0, &mut cd).0,
+            NOVA_DAMAGE_PHASE,
+        );
+        assert_eq!(n as i32, 1 + per(7));
+        let mut ctx = ctx_at(NOVA_SETTLE_PHASE);
+        let mut s = seats(8);
+        s[3].hp = 0;
+        s[3].present_04 = 0x2008_0200;
+        nova_tick(&mut ctx, &mut s, 7, 3, 0, &mut 0);
+        assert_eq!(ctx.phase, NOVA_SETTLE_PHASE, "the fade has not run");
+        s[3].present_04 = 0;
+        nova_tick(&mut ctx, &mut s, 7, 3, 0, &mut 0);
+        assert_eq!(ctx.phase, SERU_B_DONE_PHASE);
+    }
+
     #[test]
     fn viguro_arm_zero_writes_both_context_bytes() {
         let mut ctx = ctx_at(0);
         let mut s = seats(8);
-        let (step, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 0);
+        let (step, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
         assert_eq!(step, CastTickStep::Busy);
         assert_eq!(ctx.ctx_278, VIGURO_ARM0_CTX_278);
         assert_eq!(ctx.ctx_27a, VIGURO_ARM0_CTX_27A);
@@ -1450,7 +1587,7 @@ mod tests {
         for p in VIGURO_RENDEZVOUS_PHASES {
             let mut ctx = ctx_at(p);
             let mut s = seats(8);
-            let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 0);
+            let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
             assert_eq!(step, CastTickStep::Busy, "phase {p} holds");
             assert_eq!(ctx.phase, p, "phase {p} does not advance");
         }
@@ -1464,7 +1601,7 @@ mod tests {
         let mut s = seats(8);
         s[4].flags |= FLAG_NON_TARGETABLE;
         s[5].hp = 0;
-        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 10_000);
+        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 10_000);
         let seats_hit: Vec<u8> = sweep.hits.iter().map(|h| h.seat).collect();
         assert_eq!(seats_hit, vec![3, 6], "dead and untargetable seats skipped");
         assert_eq!(s[3].hp, 0, "shape A clamps to HP, so the hit kills");
@@ -1487,7 +1624,7 @@ mod tests {
         for a in s[4..7].iter_mut() {
             a.hp = 0;
         }
-        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 25);
+        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 25);
         assert_eq!(sweep.single_target_roll, Some(25));
         assert_eq!(sweep.hits.len(), 1);
     }
@@ -1499,7 +1636,7 @@ mod tests {
         let mut s = seats(8);
         s[5].hp = 0;
         s[6].hp = 0;
-        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 25);
+        let (_, sweep) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 25);
         assert_eq!(sweep.single_target_roll, None);
         assert_eq!(sweep.hits.len(), 2);
     }
@@ -1513,7 +1650,7 @@ mod tests {
         for a in s[4..7].iter_mut() {
             a.hp = 0;
         }
-        viguro_tick(&mut ctx, &mut s, 0, 7, |_| 1);
+        viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 1);
         assert_eq!(s[3].staged_anim, 0x21);
         assert_eq!(s[3].restage, 5);
     }
@@ -1523,16 +1660,16 @@ mod tests {
         let mut ctx = ctx_at(VIGURO_SETTLE_PHASE);
         let mut s = seats(8);
         s[3].playing_anim = 4;
-        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 0);
+        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
         assert_eq!(step, CastTickStep::Busy);
         assert_eq!(ctx.phase, VIGURO_SETTLE_PHASE);
 
         s[3].playing_anim = 0;
-        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 0);
+        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
         assert_eq!(step, CastTickStep::Busy);
         assert_eq!(ctx.phase, SERU_B_DONE_PHASE);
 
-        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, |_| 0);
+        let (step, _) = viguro_tick(&mut ctx, &mut s, 0, 7, &mut 0, |_| 0);
         assert_eq!(step, CastTickStep::Done);
         assert_eq!(s[7].render_flag, VIGURO_DONE_RENDER_FLAG);
         assert_eq!(ctx.ctx_27a, 0);
@@ -1705,7 +1842,7 @@ mod tests {
     fn orb_arm_five_jumps_to_phase_nine() {
         let mut ctx = ctx_at(5);
         let mut s = seats(8);
-        let (step, healed) = orb_tick(&mut ctx, &mut s, 7, 0, None, |_| 400);
+        let (step, healed) = orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 400);
         assert_eq!(step, CastTickStep::Busy);
         assert_eq!(ctx.phase, ORB_ARM5_TARGET_PHASE);
         assert_eq!(ctx.ctx_278, ORB_ARM5_CTX_278);
@@ -1723,9 +1860,17 @@ mod tests {
         s[2].hp = 0;
         s[3].flags |= FLAG_NON_TARGETABLE;
         // Seat 0 has room for the whole amount, seat 1 only for ten points.
-        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, orb_heal_amount(0), None, |seat| {
-            if seat == 0 { 2000 } else { 400 }
-        });
+        let (_, healed) = orb_tick(
+            &mut ctx,
+            &mut s,
+            7,
+            orb_heal_amount(0),
+            None,
+            &mut 0,
+            |seat| {
+                if seat == 0 { 2000 } else { 400 }
+            },
+        );
         assert_eq!(s[0].hp, 100 + 0x1C0, "a full 448 fits under the cap");
         assert_eq!(s[0].hp_bar_delta, -0x1C0);
         assert_eq!(s[1].hp, 400, "clamped to maxHP - HP");
@@ -1745,7 +1890,7 @@ mod tests {
         for a in s.iter_mut() {
             a.flags = 0x0403;
         }
-        orb_tick(&mut ctx, &mut s, 7, 0, None, |_| 400);
+        orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 400);
         assert_eq!(s[0].flags, 0x0403, "no selector: nothing is cleared");
 
         let mut ctx = ctx_at(9);
@@ -1753,7 +1898,7 @@ mod tests {
         for a in s.iter_mut() {
             a.flags = 0x0403;
         }
-        orb_tick(&mut ctx, &mut s, 7, 0, Some(4), |_| 400);
+        orb_tick(&mut ctx, &mut s, 7, 0, Some(4), &mut 0, |_| 400);
         assert_eq!(s[0].flags, 0, "selector 4 clears Venom, Toxic and the mark");
     }
 
@@ -1771,7 +1916,7 @@ mod tests {
         s[2].hp = 0;
         s[3].spirit_gauge = 9;
         s[3].flags |= FLAG_NON_TARGETABLE;
-        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, 0, Some(4), |_| 400);
+        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, 0, Some(4), &mut 0, |_| 400);
         assert_eq!(s[0].spirit_gauge, 34);
         assert_eq!(s[1].spirit_gauge, 100, "capped at 100");
         assert_eq!(s[2].spirit_gauge, 20, "a dead seat is untouched");
@@ -1782,7 +1927,7 @@ mod tests {
             let mut ctx = ctx_at(9);
             let mut s = seats(8);
             s[0].spirit_gauge = 17;
-            orb_tick(&mut ctx, &mut s, 7, 0, sel, |_| 400);
+            orb_tick(&mut ctx, &mut s, 7, 0, sel, &mut 0, |_| 400);
             assert_eq!(s[0].spirit_gauge, 17, "selector {sel:?} leaves AP alone");
         }
     }
@@ -1828,7 +1973,7 @@ mod tests {
     fn freed_sweep_uses_the_or_restage_form() {
         let mut ctx = ctx_at(FREED_DAMAGE_PHASE);
         let mut s = seats(8);
-        let (_, hits) = freed_tick(&mut ctx, &mut s, 7, |_| 30);
+        let (_, hits) = freed_tick(&mut ctx, &mut s, 7, &mut 0, |_| 30);
         assert_eq!(hits.len(), 4, "seats 3..7");
         assert_eq!(s[3].hp, 370);
         assert_eq!(s[3].staged_anim, 0x21, "alive, gate clear: alternate clip");
@@ -1844,7 +1989,7 @@ mod tests {
         let mut steps = 0;
         // Bounded: the chain names 0..=0x13 and then 0xFF.
         while steps < 64 {
-            let (step, _) = freed_tick(&mut ctx, &mut s, 7, |_| 0);
+            let (step, _) = freed_tick(&mut ctx, &mut s, 7, &mut 0, |_| 0);
             steps += 1;
             if step == CastTickStep::Done {
                 break;
@@ -1863,14 +2008,14 @@ mod tests {
         let mut ctx = ctx_at(NOVA_DAMAGE_PHASE);
         let mut s = seats(8);
         s[3].hp = 0;
-        let (_, hit) = nova_tick(&mut ctx, &mut s, 7, 3, 50);
+        let (_, hit) = nova_tick(&mut ctx, &mut s, 7, 3, 50, &mut 0);
         assert_eq!(hit.map(|h| h.applied), Some(0), "clamped to a zero HP bar");
         assert_eq!(s[3].staged_anim, 0x20, "and still staged the knockdown");
 
         let mut ctx = ctx_at(NOVA_DAMAGE_PHASE);
         let mut s = seats(8);
         s[3].flags |= FLAG_NON_TARGETABLE;
-        let (_, hit) = nova_tick(&mut ctx, &mut s, 7, 3, 50);
+        let (_, hit) = nova_tick(&mut ctx, &mut s, 7, 3, 50, &mut 0);
         assert_eq!(hit, None, "the flag guard is the one that skips");
         assert_eq!(s[3].hp, 400);
     }
@@ -1879,7 +2024,7 @@ mod tests {
     fn nova_arm_nine_writes_the_same_two_from_one_register() {
         let mut ctx = ctx_at(9);
         let mut s = seats(8);
-        nova_tick(&mut ctx, &mut s, 7, 3, 0);
+        nova_tick(&mut ctx, &mut s, 7, 3, 0, &mut 0);
         assert_eq!(s[7].staged_anim, NOVA_ARM9_CLIP);
         assert_eq!(ctx.ctx_278, NOVA_ARM9_CLIP);
         assert_eq!(s[7].restage, 1);
@@ -1916,7 +2061,15 @@ mod tests {
         s[0].hp = 42;
         let mut ctx = ctx_at(9);
         ctx.party_count = 1;
-        let (_, healed) = orb_tick(&mut ctx, &mut s, 7, orb_heal_amount(3), None, |_| 999);
+        let (_, healed) = orb_tick(
+            &mut ctx,
+            &mut s,
+            7,
+            orb_heal_amount(3),
+            None,
+            &mut 0,
+            |_| 999,
+        );
         assert_eq!(healed.len(), 1);
         assert_eq!(healed[0].restored, 640);
         assert_eq!(s[0].hp, 42 + 640);
@@ -1928,7 +2081,7 @@ mod tests {
     fn w3a_retail_orb_arm_five_jumps_over_six_to_eight() {
         let mut s = seats(8);
         let mut ctx = ctx_at(5);
-        orb_tick(&mut ctx, &mut s, 7, 0, None, |_| 999);
+        orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 999);
         assert_eq!(ctx.phase, ORB_ARM5_TARGET_PHASE);
         assert_eq!(ctx.ctx_278, ORB_ARM5_CTX_278);
     }

@@ -203,6 +203,7 @@ mod tests {
                 mvol: 127,
                 mpan: 64,
                 tones: vec![tone],
+                key_tones: legaia_vab::TONES_PER_PROGRAM as u8,
             }],
         }
     }
@@ -399,5 +400,46 @@ mod tests {
         assert_eq!(TestAudioSink::new(48_000).frames_per_video_frame(), 800);
         // Degenerate rates still yield a usable (non-zero) frame budget.
         assert_eq!(TestAudioSink::new(0).frames_per_video_frame(), 1);
+    }
+
+    /// The browser pages' pre-rendered music (`render_bgm_to_pcm` over a
+    /// caller-built SPU) and the live mixer core every output drives - cpal,
+    /// WebAudio and this sink alike - produce the same samples, provided the
+    /// pre-render SPU runs the live mixer's global reverb. At a 1:1 rate the
+    /// live core's interpolator emits two samples behind the SPU it pulls
+    /// (the first pull primes it), so the streams agree sample for sample at
+    /// that lag.
+    #[test]
+    fn the_pre_render_path_matches_the_live_mixer_core() {
+        let frames = crate::SPU_INTERNAL_RATE as usize;
+        let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+        let bank = sink.with_spu(held_tone_bank);
+        sink.attach_sequencer(Sequencer::new(held_note_seq(), bank));
+        let live: Vec<(i16, i16)> = (0..frames + 2).map(|_| sink.next_frame()).collect();
+
+        let render = |wet: bool| {
+            let mut spu = crate::Spu::new();
+            if wet {
+                spu.set_retail_reverb();
+            }
+            let bank = held_tone_bank(&mut spu);
+            let mut seq = Sequencer::new(held_note_seq(), bank);
+            crate::render_bgm_to_pcm(&mut seq, &mut spu, frames)
+        };
+        let wet = render(true);
+        let wet: Vec<(i16, i16)> = wet.chunks(2).map(|c| (c[0], c[1])).collect();
+        assert_eq!(
+            &live[2..],
+            &wet[..],
+            "pre-render with retail reverb == live core"
+        );
+
+        let dry = render(false);
+        let dry: Vec<(i16, i16)> = dry.chunks(2).map(|c| (c[0], c[1])).collect();
+        assert_ne!(
+            &live[2..],
+            &dry[..],
+            "a bare Spu::new() pre-render is dry where the live mixer is wet"
+        );
     }
 }

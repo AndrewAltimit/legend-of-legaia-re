@@ -434,3 +434,50 @@ fn actor_pool_top_counts_live_actors() {
     world.actors.push(Actor::default());
     assert_eq!(world.actor_pool_top(), 0x8E - 3);
 }
+
+/// A battle effect part seated in render mode 4 (PROT 0903's fire tunnel
+/// band) scrolls its rect in the battle VRAM: the part tick's mode-4 tail
+/// queues the rotation and `apply_battle_vram_moves` lands it - an up
+/// rotation by `+0xCE * frame_step` rows.
+#[test]
+fn a_battle_effect_part_in_render_mode_4_scrolls_the_battle_vram() {
+    let mut world = World::new();
+    world.enter_battle(1, 1);
+    world.clock.frame_step = 1;
+    let mut state = legaia_engine_vm::move_vm::ActorState {
+        move_submode: crate::world::ambient::vram_scroll::RENDER_MODE_SCROLL,
+        ..Default::default()
+    };
+    // `+0xC4` period 0, `+0xCE` = 1, rect (0x1F8, 0x70, 8, 0x80).
+    let at = |off: usize| off - 0xAC;
+    state.anim_block_u16_set(at(0xCE), 1);
+    state.anim_block_u16_set(at(0xD0), 0x1F8);
+    state.anim_block_u16_set(at(0xD2), 0x70);
+    state.anim_block_u16_set(at(0xD4), 8);
+    state.anim_block_u16_set(at(0xD6), 0x80);
+    let mut parts = vec![crate::summon::SummonPartRuntime {
+        model_sel: -1,
+        reserved: 0,
+        buf: Vec::new(),
+        state,
+        finished: false,
+        origin: None,
+        tag: None,
+    }];
+    world.queue_battle_part_scrolls(&mut parts);
+    assert_eq!(world.battle.vram_scrolls.len(), 1);
+    let mut vram = legaia_tim::Vram::new();
+    // Row y holds the value y in every halfword of the rect.
+    for y in 0x70..0xF0u16 {
+        let row: Vec<u8> = (0..8).flat_map(|_| y.to_le_bytes()).collect();
+        vram.write_block(0x1F8, y, 8, 1, &row);
+    }
+    assert!(world.apply_battle_vram_moves(&mut vram));
+    assert!(world.battle.vram_scrolls.is_empty(), "queue drained");
+    assert_eq!(vram.pixel(0x1F8, 0x70), 0x71, "rotated up one row");
+    assert_eq!(
+        vram.pixel(0x1F8, 0xEF),
+        0x70,
+        "top row wrapped to the bottom"
+    );
+}

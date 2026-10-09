@@ -67,7 +67,7 @@
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/asset → <code>asset</code></div>
-        <div class="layer-desc">Entries carry no type label, so detectors classify each one by its bytes: LZS-compressed, TIM-pack, streaming container, scene bundle, effect bundle, sound-driver output, sound bank, or a code overlay. Three different "pack" layouts coexist here - the format pages keep their header math apart.</div>
+        <div class="layer-desc">Entries carry no type label, so detectors classify each one by its bytes: LZS-compressed, TIM-pack, streaming container, scene bundle, effect bundle, sound-driver output, sound bank, or a code overlay. One pack format is read two ways (at offset 0, or four bytes in past a chunk header), beside a separate magic-prefixed effect bundle - the <a href="formats/pack.html">pack</a> pages keep their header math apart.</div>
       </div>
     </a>
 
@@ -92,8 +92,8 @@
         <span class="layer-title">Engine reimplementation</span>
       </div>
       <div class="layer-body">
-        <div class="layer-crate">engine-core / engine-vm / engine-ui / engine-render / engine-audio / engine-shell</div>
-        <div class="layer-desc">The from-scratch Rust port: world and scene state, the script VMs, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build share the same simulation - the <a href="play.html">play page</a> is the engine itself, not a second implementation.</div>
+        <div class="layer-crate">engine-core / engine-vm / engine-battle / engine-effects / engine-minigames / engine-ui / engine-render / engine-audio / engine-session / engine-shell</div>
+        <div class="layer-desc">The from-scratch Rust port: world and scene state, the script VMs, the battle, effect and minigame kernels, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build tick the same game session - the <a href="play.html">play page</a> is the engine itself, not a second implementation. The <a href="subsystems/engine.html#crate-layout">engine page</a> draws how the engine crates stack.</div>
       </div>
     </a>
   </div>
@@ -121,7 +121,7 @@
       <tr>
         <td><strong>Reimplementation</strong></td>
         <td>A playable engine built from those specs plus logic traced in Ghidra and rewritten fresh - never a decompilation or static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
-        <td><code>engine-core</code>, <code>engine-vm</code>, <code>engine-ui</code>, <code>engine-render</code>, <code>engine-audio</code>, <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
+        <td>The simulation (<code>engine-core</code> over <code>engine-vm</code>, <code>engine-battle-vm</code>, <code>engine-battle</code>, <code>engine-effects</code>, <code>engine-minigames</code>), presentation (<code>engine-ui</code>, <code>engine-render</code>, <code>engine-audio</code>), the shared game loop (<code>engine-session</code>, <code>engine-screens</code>), the <code>parity</code> oracles, the native <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
       </tr>
     </tbody>
   </table>
@@ -162,7 +162,7 @@
       <dl>
         <dt>What it runs</dt> <dd>NPC pathing, face-the-player, camera follow</dd>
         <dt>Where</dt>       <dd>Executable</dd>
-        <dt>Opcodes</dt>     <dd>22</dd>
+        <dt>Opcodes</dt>     <dd>6 (22-slot table)</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
         <dt>Status</dt>      <dd><span class="tag tag-done">ported</span></dd>
       </dl>
@@ -173,9 +173,9 @@
       <dl>
         <dt>What it runs</dt> <dd>Cutscene blocking and story-flag writes; bytecode ships in each scene's MAN</dd>
         <dt>Where</dt>       <dd>Executable</dd>
-        <dt>Opcodes</dt>     <dd>32</dd>
+        <dt>Opcodes</dt>     <dd>26 (32-slot table)</dd>
         <dt>Operands</dt>    <dd>byte stream</dd>
-        <dt>Status</dt>      <dd><span class="tag tag-partial">partial</span> - table decoded, port split across three crates</dd>
+        <dt>Status</dt>      <dd><span class="tag tag-done">ported</span> - the whole op table runs; a static decoder reads the same bytes</dd>
       </dl>
     </a>
     <a class="vm-card" href="subsystems/script-vm.html" title="Details, including the driver function, on the field/event-VM subsystem page">
@@ -262,7 +262,7 @@
 
       <rect x="315" y="388" width="250" height="58" class="vm-box-soft"/>
       <text x="331" y="410" class="vm-title">Motion VMs</text>
-      <text x="331" y="428" class="vm-sub">22 + 32 opcodes - executable</text>
+      <text x="331" y="428" class="vm-sub">6 + 26 opcodes - executable</text>
       <text x="331" y="441" class="vm-sub">NPC pathing, camera, cutscenes</text>
 
       <rect x="590" y="388" width="250" height="58" class="vm-box-soft"/>

@@ -192,6 +192,28 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
         .expect("PROT 867 reads");
     let slots = legaia_asset::monster_archive::slot_count(&archive) as u16;
 
+    // The catalog is the disc table: no record on a capture-class id (its
+    // cast is the module's), a record on every other id outside the player
+    // band, under the disc's name - no demo entry survives on a real id.
+    for id in 1..table.len() as u8 {
+        let e = table.entry(id).expect("in range");
+        let got = catalog.get(id);
+        if e.is_capture_class() {
+            assert!(
+                got.is_none(),
+                "catalog record on capture-class id {id:#04x}"
+            );
+        } else if !(0x81..=0xA0).contains(&id) {
+            let got = got.unwrap_or_else(|| panic!("no catalog record for {id:#04x}"));
+            assert_eq!(
+                got.name,
+                e.name.as_deref().map(str::trim).unwrap_or_default(),
+                "{id:#04x} carries the disc's name"
+            );
+            assert_eq!(got.mp_cost, e.mp, "{id:#04x} costs the disc's MP");
+        }
+    }
+
     let mut live = 0usize;
     let mut missing = Vec::new();
     for id in 1..=slots {

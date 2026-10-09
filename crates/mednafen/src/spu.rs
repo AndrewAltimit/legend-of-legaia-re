@@ -11,11 +11,20 @@
 //! Voice-state sub-entry naming follows mednafen's internal layout exactly,
 //! e.g. `Voices[7].StartAddr`, `Voices[7].Pitch`, `Voices[7].ADSR.Phase`,
 //! `(Voices[7].Sweep[0]).Current`. The 24-voice array is `Voices[0]..Voices[23]`.
-//! Master volume is stored as the *current accumulated* output of mednafen's
-//! global sweep registers (`(GlobalSweep[0]).Current` for left,
-//! `(GlobalSweep[1]).Current` for right) - i.e. what the SPU actually
-//! emitted on the last cycle, not the libspu MVOL write that drives the
-//! sweep target.
+//! Master volume is read off the *current* value of mednafen's global sweep
+//! registers (`(GlobalSweep[0]).Current` for left, `(GlobalSweep[1]).Current`
+//! for right) - what the SPU applied on the last cycle, not the libspu MVOL
+//! write that drives the sweep target.
+//!
+//! **Volumes are reported at register scale.** Mednafen keeps a sweep's
+//! `Current` at twice the register value - a fixed-volume write sets
+//! `Current = (Control & 0x7FFF) << 1`, a Q15 gain where the register is Q14 -
+//! so a voice written `0x0850` reads `Current = 4256`, and a `0x3FFF` master
+//! reads `0x7FFE` (checked against the same states' `Regs` shadow). The
+//! accessors halve it (`Current >> 1`, arithmetic), the scale the hardware
+//! register, libsnd's computed volumes and the engine's `Voice::vol_left`
+//! share. Read raw, every retail volume compared or seeded from a save was
+//! twice the volume retail set.
 //!
 //! ADSR phase values are mednafen's internal enum (4-byte u32 each,
 //! `0 = Attack` .. `3 = Release`, with no `Off` member); we
@@ -62,11 +71,11 @@ pub struct SpuVoiceState {
     pub adsr_phase: Option<u32>,
     /// Current ADSR envelope level (0..=0x7FFF).
     pub adsr_env_level: Option<u16>,
-    /// Voice left output volume (current value of `Sweep[0]`). PSX hardware
-    /// drives this through a sweep register; this is what the SPU emitted
-    /// on the last cycle.
+    /// Voice left output volume at register scale (`Sweep[0].Current >> 1`;
+    /// see the module docs). PSX hardware drives this through a sweep
+    /// register; this is what the SPU applied on the last cycle.
     pub vol_left: Option<i16>,
-    /// Voice right output volume (current value of `Sweep[1]`).
+    /// Voice right output volume at register scale (`Sweep[1].Current >> 1`).
     pub vol_right: Option<i16>,
     /// Raw 32-bit ADSR-control word as stored by mednafen
     /// (`Voices[N].ADSRControl`). The libspu `(adsr1, adsr2)` words can be
@@ -128,8 +137,8 @@ impl<'a> PsxSpu<'a> {
             cur_phase: self.voice_u32(idx, "CurPhase"),
             adsr_phase: self.voice_u32_dotted(idx, "ADSR.Phase"),
             adsr_env_level: self.voice_u16_dotted(idx, "ADSR.EnvLevel"),
-            vol_left: self.voice_sweep_current(idx, 0),
-            vol_right: self.voice_sweep_current(idx, 1),
+            vol_left: self.voice_sweep_current(idx, 0).map(sweep_to_register),
+            vol_right: self.voice_sweep_current(idx, 1).map(sweep_to_register),
             adsr_control: self.voice_u32(idx, "ADSRControl"),
         };
         // Any field set → return a populated snapshot; otherwise None so
@@ -283,7 +292,7 @@ impl<'a> PsxSpu<'a> {
     pub fn master_volume(&self) -> Option<(i16, i16)> {
         let l = self.global_sweep_current(0)?;
         let r = self.global_sweep_current(1)?;
-        Some((l, r))
+        Some((sweep_to_register(l), sweep_to_register(r)))
     }
 
     // --- internal helpers ---------------------------------------------------
@@ -350,6 +359,11 @@ impl<'a> PsxSpu<'a> {
         }
         Some(i16::from_le_bytes([b[0], b[1]]))
     }
+}
+
+/// Mednafen sweep `Current` (Q15, `register << 1`) to register scale (Q14).
+fn sweep_to_register(current: i16) -> i16 {
+    current >> 1
 }
 
 #[cfg(test)]
@@ -432,8 +446,9 @@ mod tests {
         assert_eq!(v.adsr_phase, Some(1));
         assert_eq!(v.adsr_env_level, Some(0x4000));
         assert_eq!(v.adsr_control, Some(0xDEADBEEF));
-        assert_eq!(v.vol_left, Some(0x3FFF));
-        assert_eq!(v.vol_right, Some(-0x100));
+        // Register scale: mednafen's `Current` is the register doubled.
+        assert_eq!(v.vol_left, Some(0x1FFF));
+        assert_eq!(v.vol_right, Some(-0x80));
         assert!(v.is_active());
     }
 
@@ -507,7 +522,7 @@ mod tests {
         assert_eq!(spu.block_end_mask(), Some(0x0000_0100));
         assert_eq!(spu.reverb_mode(), Some(7));
         assert_eq!(spu.spu_control(), Some(0xC000));
-        assert_eq!(spu.master_volume(), Some((0x3F00, 0x3F00)));
+        assert_eq!(spu.master_volume(), Some((0x1F80, 0x1F80)));
     }
 
     #[test]

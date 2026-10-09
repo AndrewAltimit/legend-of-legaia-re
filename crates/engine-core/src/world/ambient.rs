@@ -134,6 +134,48 @@ pub const MAX_AMBIENT_PARTS: usize = 143;
 /// ticks without ever passing a VRAM surface (headless sims, tests).
 const MAX_PENDING_SCROLLS: usize = 64;
 
+/// One live draw-kind-4 sprite-arm node of a **retail** state, as the
+/// retail comparison's image child installs it
+/// ([`World::install_sprite_arm_snapshot`]): the stager record it runs
+/// (`+0x48` less the bundle base `_DAT_8007B8D0`), its position, rotation
+/// banks, render scale `+0x72`, far colour `+0x74` and depth-cue level
+/// `+0x78` - what the sheet's draw reads - and, for a keyframe-pose node
+/// (`+0x5A == 6`), the 8-byte clip entries the mode-6 tail packed into its
+/// `+0x4C` block (entries from `+8`, `FUN_80021DF4` `0x80022EFC..`): where
+/// each of the node's sheets stands relative to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpriteArmSeed {
+    pub record_off: u32,
+    pub pos: [i16; 3],
+    pub rot: [i16; 3],
+    pub scale: u16,
+    pub colour: u32,
+    pub level: u16,
+    pub pose: Vec<[u8; 8]>,
+}
+
+/// Seat a keyframe-pose node so its mode-6 pack reproduces `entries`: each
+/// part's current and target keyframes both hold the packed values, so the
+/// blend at any cursor packs them back byte for byte.
+fn seat_pose(st: &mut ActorState, entries: &[[u8; 8]]) {
+    if st.move_submode != 6 || entries.len() != st.keyframe_pose.len() {
+        return;
+    }
+    for (kf, e) in st.keyframe_pose.iter_mut().zip(entries) {
+        let x = i16::from(e[0]) | (i16::from(e[2] & 0x0F) << 8);
+        let y = i16::from(e[1]) | (i16::from(e[2] & 0xF0) << 4);
+        let z = i16::from(e[3]) | (i16::from(e[4] & 0x0F) << 8);
+        let (rxz, ry) = (i16::from(e[5]) << 4, i16::from(e[6]) << 4);
+        for base in [0usize, 6] {
+            kf[base + 1] = rxz;
+            kf[base + 2] = ry;
+            kf[base + 3] = x;
+            kf[base + 4] = y;
+            kf[base + 5] = z;
+        }
+    }
+}
+
 /// One live ambient move-VM part.
 #[derive(Debug, Clone)]
 pub struct AmbientPart {
@@ -180,6 +222,65 @@ pub struct AmbientMorphPart {
 }
 
 impl World {
+    /// Seat the live sprite-arm nodes on a retail state's own
+    /// ([`SpriteArmSeed`]), record by record, in list order: where an
+    /// emitter has put each sheet and how far its fade has come is the
+    /// `rand()` stream's history since the entry, which no seed replays
+    /// (`garmel`'s cave mist, `map01`'s ridge bank). A record with more
+    /// retail nodes than live ones clones one of its own; surplus live nodes
+    /// and nodes of a record retail holds none of are retired. The image
+    /// child of the retail comparison calls this on the frame it captures,
+    /// as it installs the fog pool. A no-op for an empty snapshot.
+    pub fn install_sprite_arm_snapshot(&mut self, seeds: &[SpriteArmSeed]) {
+        if seeds.is_empty() {
+            return;
+        }
+        let is_sheet = |p: &AmbientPart| {
+            !p.finished && p.state.move_substate == 4 && p.state.field_9e & 0x4000 != 0
+        };
+        let mut used: std::collections::HashMap<usize, usize> = Default::default();
+        for seed in seeds {
+            let off = seed.record_off as usize;
+            let n = used.entry(off).or_insert(0);
+            let live: Vec<usize> = (0..self.ambient.fx.len())
+                .filter(|&i| self.ambient.fx[i].record_off == off && is_sheet(&self.ambient.fx[i]))
+                .collect();
+            let idx = match live.get(*n) {
+                Some(&i) => i,
+                None => {
+                    let Some(&first) = live.first() else {
+                        continue;
+                    };
+                    let clone = self.ambient.fx[first].clone();
+                    self.ambient.fx.push(clone);
+                    self.ambient.fx.len() - 1
+                }
+            };
+            *n += 1;
+            let st = &mut self.ambient.fx[idx].state;
+            [st.world_x, st.world_y, st.world_z] = seed.pos;
+            st.world_y_mirror = seed.pos[1];
+            [st.render_24, st.render_26, st.render_28] = seed.rot;
+            st.field_72 = seed.scale;
+            st.field_74 = seed.colour;
+            st.field_78 = seed.level;
+            seat_pose(st, &seed.pose);
+        }
+        // Retire what retail does not hold: a seeded record's surplus, and
+        // every sheet of a record the state has none of.
+        let mut kept: std::collections::HashMap<usize, usize> = Default::default();
+        for p in self.ambient.fx.iter_mut() {
+            if !is_sheet(p) {
+                continue;
+            }
+            let k = kept.entry(p.record_off).or_insert(0);
+            *k += 1;
+            if *k > used.get(&p.record_off).copied().unwrap_or(0) {
+                p.finished = true;
+            }
+        }
+    }
+
     /// Spawn prescript stager record `id` as an ambient part at `origin`
     /// and run its first move-VM slice immediately (the `FUN_80021B04`
     /// spawn-time run - op-`0x25` children spawn recursively, each with its
@@ -200,15 +301,9 @@ impl World {
     /// `0x80021D8C..`). The scene-entry census passes zeroes for both because
     /// its installs run before any actor has moved.
     pub fn spawn_ambient_record_at(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> bool {
-        let Some(idx) = self.push_ambient_part(id, origin) else {
+        let Some(idx) = self.push_ambient_part(id, origin, rot) else {
             return false;
         };
-        {
-            let st = &mut self.ambient.fx[idx].state;
-            st.render_24 = rot[0];
-            st.render_26 = rot[1];
-            st.render_28 = rot[2];
-        }
         self.tick_ambient_part(idx, 0);
         true
     }
@@ -223,7 +318,7 @@ impl World {
 
     /// Seat record `id` as a new ambient part (no first run). Returns the
     /// part index.
-    fn push_ambient_part(&mut self, id: usize, origin: [i16; 3]) -> Option<usize> {
+    fn push_ambient_part(&mut self, id: usize, origin: [i16; 3], rot: [i16; 3]) -> Option<usize> {
         if self.ambient.fx.len() >= MAX_AMBIENT_PARTS {
             // Not a silent truncation: an ambient tree that reaches the pool
             // ceiling has stopped animating whatever it could not seat. No
@@ -265,6 +360,21 @@ impl World {
         // from it (`effect_sprite_arm`) collapses to a point: `map01`'s mist
         // puff column drew nothing.
         state.field_72 = 0x1000;
+        // The rotation banks take the spawner's `+0x24 / +0x26 / +0x28`
+        // (`0x80021D8C..0x80021DB8`), and every part but the two `0x4000` /
+        // `0x4001` render modes also takes the yaw as its **motion heading**
+        // `+0x96` (`andi v0,v0,0xfff` / `sh v0,0x16(a3)`, `a3 = actor + 0x80`,
+        // `0x80021D54..0x80021D7C`) - the heading the motion block's `+0x98`
+        // speed runs along. garmel's mist emitter turns itself to a random
+        // yaw (`2F 05` into its `06` operand) before each `25 0F`, and every
+        // sheet drifts off along it; seated at heading `0`, all forty slid up
+        // the one Z line through the spawn point.
+        state.render_24 = rot[0];
+        state.render_26 = rot[1];
+        state.render_28 = rot[2];
+        if !(0x4000..=0x4001).contains(&(rec.model_sel as u16)) {
+            state.tween_scale_x = rot[1] & 0x0FFF;
+        }
         self.ambient.fx.push(AmbientPart {
             record_off,
             model_sel: rec.model_sel,
@@ -399,7 +509,7 @@ impl World {
         // Spawn-time first run for each op-0x25 child, in spawn order (the
         // retail chain runs the child's VM inside the parent's spawn op,
         // which is what sequences the self-modifying fan-outs).
-        for (slot, origin) in spawns {
+        for (slot, origin, rot) in spawns {
             // Table entry 0 is not a stager record - it is the per-scene SFX
             // descriptor bank (`docs/formats/sfx-table.md`'s `>= 0x200` half;
             // `FUN_800250D4` and `FUN_80016B6C` both read it as 8-byte rows
@@ -428,7 +538,7 @@ impl World {
             if slot <= 0 {
                 continue;
             }
-            if let Some(child) = self.push_ambient_part(slot as usize, origin) {
+            if let Some(child) = self.push_ambient_part(slot as usize, origin, rot) {
                 self.tick_ambient_part(child, depth + 1);
             }
         }
@@ -856,20 +966,7 @@ impl World {
             }
             let queued = std::mem::take(&mut self.ambient.fx[idx].scroll_fx);
             for fx in queued {
-                let (x, y, w, h) = fx.rect;
-                if w == 0 || h == 0 || w > 1024 || h > 512 {
-                    continue;
-                }
-                let src = read_rect(vram, x, y, w, h);
-                let out = vram_scroll::rotate_rect(
-                    &src,
-                    usize::from(w),
-                    usize::from(h),
-                    usize::from(fx.strip_w),
-                    usize::from(fx.strip_h),
-                );
-                if out != src {
-                    write_rect(vram, x, y, w, &out);
+                if apply_scroll_fx(vram, &fx) {
                     // A rotated rect invalidates any mode-3 capture keyed on
                     // exactly this rect (no retail scene pairs the two on one
                     // rect; this keeps the cache honest if one ever did).
@@ -919,6 +1016,29 @@ fn pack_slot_of_model_sel(model_sel: i16) -> Option<usize> {
 }
 
 /// Read a `w x h` halfword rect out of the software VRAM.
+/// One fired mode-4 tick against `vram`: rotate the part's rect by its strip
+/// widths. `true` when any texel moved. Shared by the field ambient parts and
+/// the battle effect parts ([`World::apply_battle_vram_moves`]).
+pub(crate) fn apply_scroll_fx(vram: &mut legaia_tim::Vram, fx: &vram_scroll::VramScrollFx) -> bool {
+    let (x, y, w, h) = fx.rect;
+    if w == 0 || h == 0 || w > 1024 || h > 512 {
+        return false;
+    }
+    let src = read_rect(vram, x, y, w, h);
+    let out = vram_scroll::rotate_rect(
+        &src,
+        usize::from(w),
+        usize::from(h),
+        usize::from(fx.strip_w),
+        usize::from(fx.strip_h),
+    );
+    if out == src {
+        return false;
+    }
+    write_rect(vram, x, y, w, &out);
+    true
+}
+
 fn read_rect(vram: &legaia_tim::Vram, x: u16, y: u16, w: u16, h: u16) -> Vec<u16> {
     let mut out = Vec::with_capacity(usize::from(w) * usize::from(h));
     for row in 0..h {

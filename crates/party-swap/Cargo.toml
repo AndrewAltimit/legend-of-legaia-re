@@ -1,0 +1,17 @@
+[package]
+name = "legaia-party-swap"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_party_swap"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-asset.workspace = true
+legaia-bytes.workspace = true
+legaia-lzs.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true

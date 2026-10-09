@@ -10,7 +10,7 @@
 //! This is a thin Rust port of the placement-extraction half of
 //! ``scripts/mednafen/resolve_bulk_terrain.py``. It deliberately does
 //! NOT execute the FieldVM prescript - that would require a full port
-//! of ``FUN_801DE840`` (see ``crates/engine-vm::field_vm``) plus the
+//! of ``FUN_801DE840`` (see ``legaia_engine_vm::field``) plus the
 //! actor-allocation environment it ticks against. Instead it captures
 //! the *post-resolve* state from a save snapshot.
 //!

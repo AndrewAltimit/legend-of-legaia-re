@@ -1032,7 +1032,8 @@ Each `+0x4000` byte packs two nibbles for its 128-unit tile:
 
 **Ramps and staircases are the second model, and only the second model.** A ramp tile's collision nibble carries no useful elevation - Rim Elm's two shore ramps sit on nibble-`0` (sea-level) tiles and hold their entire elevation in the kind-2 records, whose two step fields (`-32` per whole-tile count, `-16` per 64-unit sub-cell) are what make a 128-unit tile a *staircase* rather than a plane. Interpolating a ramp's nibbles instead reads the whole ramp as sea level: an actor walking off the plateau drops the full tier height at the lip and travels **under** the drawn stair mesh. The kind-2 record is not an optional "fast path" layered on the bilinear branch - it replaces it.
 
-Engine port: `World::sample_field_floor_height(world_x, world_z)` carries both branches. Its inputs are the per-scene LUT (`World::terrain.floor_height_lut`), the collision grid, the object-grid cell words (`World::terrain.object_cells`, tested against `world::CELL_ELEVATION_OVERRIDE`), and the parsed kind-2 records (`World::terrain.elevation_overrides`, `world::field_elevation`) - all installed at field entry. The pad locomotion path follows the sample: with `World::locomotion.follow_terrain_height` set (on by default in `play-window`; `--flat-y` opts out), each committed step snaps the player actor's `world_y` to it, so the player rides slopes and stairs. Field NPCs and props are floor-snapped through the same sampler.
+Engine port: `World::sample_field_floor_height(world_x, world_z)` carries both branches. Its inputs are the per-scene LUT (`World::terrain.floor_height_lut`), the collision grid, the object-grid cell words (`World::terrain.object_cells`, tested against `world::CELL_ELEVATION_OVERRIDE`), and the parsed kind-2 records (`World::terrain.elevation_overrides`, `world::field_elevation`) - all installed at field entry. The pad locomotion path follows the sample: with `World::locomotion.follow_terrain_height` set (on by default in `play-window`; `--flat-y` opts out), each committed step snaps the player actor's `world_y` to it, so the player rides slopes and stairs.
+The scene entry settles the seat the same way: the entry operand lands the player at `y = 0` (retail's glide then carries it onto the tier under it), so with the snap on the entry samples the floor once, on every host - a card load at a raised save point would otherwise draw the player inside the ground until its first step. Field NPCs and props are floor-snapped through the same sampler.
 
 The **base wall + floor data is an on-disc blob**: it is the `+0x4000..+0x8000` region of the per-scene field map file (`DATA\FIELD\<scene>.MAP`), streamed into the field buffer at scene load by `FUN_8001f7c0` (see [Field-buffer load chain](#field-buffer-load-chain)). On top of that base, the field VM's `0x4C` (MENU_CTRL) opcode with outer-nibble 7 (`op0` ∈ `0x70..0x7F`, `[4C, 0x7s, b1, b2, b3, b4 (, mask)]` - **6 bytes** for subs 0/1, **7** for the masked subs 2/3) applies **story-conditional deltas** - a rectangular paint that sets/clears the high-nibble wall bits over a tile range (`col ∈ [b1, b3+1)`, `row ∈ [b2+1, b4+2)`; sub-op `s` = clear-walkable / block-all / clear-mask / set-mask), gated behind system-flag tests in the prescript.
 The nibble-7 op is the same dispatch row in [`script-vm.md`](script-vm.md#0x4c-menu_ctrl---outer-nibble-dispatch).
@@ -2065,7 +2066,7 @@ So the input lock and the `+0x16` scroll are the *rise-up animation of a debug w
 
 ## The scripted-scene actor - `FUN_801d4a60`
 
-A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-core/src/field_actor_program.rs).
+A 38-state jump-table dispatcher on the actor's `+0x54`: bound `sltiu v1,0x26`, table at `0x801CE960` (`0x801D0000 - 0x16A0`), one word per state, `jr v0`, out-of-range falls to the epilogue. Port: [`engine-core::field_actor_program`](../../crates/engine-field/src/field_actor_program.rs).
 
 ### `+0x50` is a program selector, and that is what makes the table readable
 
@@ -2369,7 +2370,7 @@ second prim emitter, and one hit from the VRAM DMA loop at `0x80059DE4`. Probe:
 
 So the parked word is write-only state: the return is carried by the driver's
 own `+0x50` handler slot, not read back out of `scene[+0x40]`. The port
-(`crates/engine-core/src/field_submode.rs`) collapsing enter and return into one
+(`crates/engine-field/src/field_submode.rs`) collapsing enter and return into one
 step and keeping no `scene[+0x40]` therefore drops a store retail also never
 consumes.
 
@@ -2391,7 +2392,7 @@ The heading space itself is pinned from the locomotion's pad→facing writes (`F
 
 Town prologues route the facing leg through a story-flag `0x7x`-TEST branch chain (jump when the flag is **set**), so the fall-through branch - the first leg in linear record order - is the fresh-game state.
 
-The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
+The engine decodes that leg statically per placement ([`man_field_scripts::placement_initial_facing`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs), skipping cross-context and park-sentinel legs), converts through [`facing_index_to_engine_heading`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs), and seeds `World::npcs.headings` at scene entry (`World::seed_field_npc_facings`) - a later walk overwrites the slot exactly as retail's walk-leg facing writes overwrite `+0x26`.
 
 That static leg is only the guess for a record the load slice does not run.
 `World::pre_run_field_channel_prologues` executes every `0x24`/`0x25`
@@ -2555,7 +2556,7 @@ An NPC's per-frame glide is NOT the player's `+0x72` walk step (that premise is 
 There is **no synthesised motion bytecode** for the yield ops: 0x37/0x41/0x47 are the field VM's own yield-class opcodes. The dispatcher parks the op's instruction pointer at actor `+0x94` (progress cursor `+0x54`, HALT flag `0x400`) and `FUN_8003774C` interprets the record bytes in place each frame, resolving the same `0x80` extended-target convention as the field VM ([script-vm.md](script-vm.md) § 0x37-0x42).
 
 The engine decodes each placement's glide speed from those real operands off the disc:
-[`man_field_scripts::placement_glide_speed`](../../crates/engine-core/src/man_field_scripts/npc_motion.rs)
+[`man_field_scripts::placement_glide_speed`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs)
 tries the placement's bound tail-section-1 stream first (`placement_wander_step` - binding id = `N0 + placement_index`, default variant first),
 then the record's own pre-text field-VM yield ops (`placement_yield_step` - own-context only, with the park-sentinel/locality filters on a 0x47's target),
 maps the selector through [`World::field_npc_walk_step_speed`](../../crates/engine-core/src/world/config.rs),

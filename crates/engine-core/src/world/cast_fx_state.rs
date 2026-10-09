@@ -119,6 +119,10 @@ pub struct CastFxState {
     /// ([`legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes`]) - the module
     /// image's own words in retail, so a fresh cast starts them at zero.
     pub module_swordie: legaia_engine_vm::cast_seru_ticks_b::SwordieSlashes,
+    /// The settle countdown word PROT 0909 / 0911 / 0912 / 0913 arm after
+    /// their hit and drain before they write `0xFF`
+    /// (`legaia_engine_vm::cast_seru_ticks_b::SETTLE_DRAIN_PER_TICK`).
+    pub module_settle_countdown: i32,
     /// The resident player-Seru module's camera-arm state: its countdown
     /// word and the creature seat as the module placed it
     /// ([`legaia_engine_vm::cast_module_camera`]). Module-image words in
@@ -187,6 +191,12 @@ pub struct CastFxState {
     /// homing flight its caster's terminator is about to seed; taken by that
     /// seed (`World::seed_homing_slots`).
     pub(crate) homing_takes_lists: bool,
+    /// The caster whose homing flight took the move's effect lists ahead of
+    /// its cast's fold - a terminator that seeded the flight before the fold
+    /// ran (an enemy Tail Fire, `battle_gimard_tail_fire_b`). The fold reads
+    /// it and leaves the lists to the flight; cleared on the next action
+    /// seed (`0x0C`).
+    pub(crate) homing_holds_lists: Option<u8>,
     /// The text a directed summon module's arm last put up
     /// ([`legaia_engine_vm::cast_module_camera::ModuleCaption`]), cleared at
     /// the band's `0x37` exit. Read by `battle_hud::battle_move_name`.
@@ -245,6 +255,7 @@ impl CastFxState {
             module_split_saved_target: None,
             // --- end W1-D ---
             module_swordie: Default::default(),
+            module_settle_countdown: 0,
             module_cam: Default::default(),
             capture_spell: None,
             caster_stages: None,
@@ -255,6 +266,7 @@ impl CastFxState {
             move_fx_streak: Default::default(),
             homing: Default::default(),
             homing_takes_lists: false,
+            homing_holds_lists: None,
             module_caption: None,
             pending_move_fx_cue: None,
             pending_burst_triggers: Vec::new(),

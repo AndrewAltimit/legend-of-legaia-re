@@ -175,6 +175,77 @@ impl World {
             .collect()
     }
 
+    /// Record the scene's object-bind rotations
+    /// ([`crate::man_field_scripts::object_script_bind_rots`]). Call before
+    /// [`Self::seed_object_channels`], which seats each context's angles from
+    /// them.
+    pub fn set_object_bind_rots(&mut self, rots: std::collections::HashMap<usize, [u16; 3]>) {
+        self.field_vm.object_channel_rots = rots;
+    }
+
+    /// Seed each object-bind context's `+0x24 / +0x26 / +0x28` from its
+    /// object's `.MAP` angles, as `FUN_8003A55C` seeds the actor: a later
+    /// op `0x38` or `4C 48` turns it from there.
+    // REF: FUN_8003A55C
+    pub(crate) fn seat_object_channel_rots(
+        &self,
+        chans: &mut [crate::field_channels::FieldChannel],
+    ) {
+        for c in chans.iter_mut().filter(|c| c.object_bind) {
+            if let Some(&[rx, ry, rz]) = self.field_vm.object_channel_rots.get(&c.placement_index) {
+                c.ctx.field_24 = rx as i16;
+                c.ctx.field_26 = ry;
+                c.ctx.field_28 = rz as i16;
+            }
+        }
+    }
+
+    /// Flat record -> the live `(pitch, yaw, roll)` of each object-bind
+    /// actor a script has **turned** away from its bind-time angles (op
+    /// `0x38`'s compass write, op `4C 48`'s heading write). Retail's case-5
+    /// draw composes the actor's `+0x24 / +0x26 / +0x28`, not the `.MAP`
+    /// record's, so the drawn mesh turns with it: `town0c`'s two exit rocks
+    /// are seated off the path and turned a quarter-plus (`38 83 00` /
+    /// `38 87 00`) once the story opens the south road.
+    ///
+    /// Hosts pair each entry with the bind-time angles
+    /// ([`Self::object_bind_rot`]) through
+    /// [`crate::field_env::object_turn_matrix`]. Unturned objects are not
+    /// listed.
+    // REF: FUN_8001ADA4 (case 5 composes the actor's angles), FUN_8003A55C
+    pub fn object_draw_turns(&self) -> std::collections::HashMap<usize, [u16; 3]> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind)
+            .filter_map(|c| {
+                let seed = *self.field_vm.object_channel_rots.get(&c.placement_index)?;
+                let live = [c.ctx.field_24 as u16, c.ctx.field_26, c.ctx.field_28 as u16];
+                let turned = live.iter().zip(seed).any(|(&l, s)| (l ^ s) & 0x0FFF != 0);
+                turned.then_some((c.placement_index, live))
+            })
+            .collect()
+    }
+
+    /// [`Self::object_draw_turns`] as the rotation each turned record's draws
+    /// take about their own origin ([`crate::field_env::object_turn_matrix`]):
+    /// the one table both hosts fold into their placed draws
+    /// ([`crate::field_env::turn_placed_model`]).
+    pub fn object_draw_turn_matrices(&self) -> std::collections::HashMap<usize, [f32; 16]> {
+        self.object_draw_turns()
+            .into_iter()
+            .filter_map(|(record, live)| {
+                let seed = self.object_bind_rot(record)?;
+                Some((record, crate::field_env::object_turn_matrix(seed, live)))
+            })
+            .collect()
+    }
+
+    /// The bind-time `.MAP` angles of object-bind record `record`.
+    pub fn object_bind_rot(&self, record: usize) -> Option<[u16; 3]> {
+        self.field_vm.object_channel_rots.get(&record).copied()
+    }
+
     /// Retail's spawn-install prologue pre-run: `FUN_8003A1E4` runs each
     /// just-spawned placement context through the field VM at scene load, so
     /// the record's story-flag-tested opening ops execute BEFORE the first
@@ -542,6 +613,7 @@ impl World {
             return;
         }
         let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
+        self.seat_object_channel_rots(&mut obj);
         self.pre_run_object_channel_prologues(&mut obj, man);
         self.field_vm.channels.extend(obj);
     }

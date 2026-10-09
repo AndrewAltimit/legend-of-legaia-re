@@ -185,6 +185,13 @@ pub struct ActionSteer {
     pub aim: Option<u8>,
     pub queue: Option<[u8; 16]>,
     pub cursor: Option<u8>,
+    /// Retail pool seat of a victim the capture shows in its defeat fade, and
+    /// the fade lane it reads: an [`SpanGate::Age`] phase is met only once
+    /// the engine's victim has faded at least as far.
+    pub fading: Option<(u8, u16)>,
+    /// The capture shows the death-spoils caption (HUD element `0x5B`): the
+    /// phase is met only on a stream whose kill rolled the steal too.
+    pub spoils: bool,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -304,6 +311,23 @@ pub const CAPTURE_FADE_STATES: [u8; 3] = [0x6E, 0x6F, 0x70];
 /// `0` once it is there.
 pub(super) fn capture_ramp_left(world: &legaia_engine_core::world::World, height: u16) -> u16 {
     ((world.battle.camera_frame_height as u16).wrapping_sub(height) as i16).max(0) as u16
+}
+
+/// How old the active actor's clip is, in the close-up accumulator's units
+/// ([`BattleCamera::clip_age`](legaia_engine_vm::battle_cam_script::BattleCamera::clip_age)):
+/// the engine's `ctx[+0x87C]` with the natural-end re-commits of a looping
+/// clip left out. Retail's
+/// accumulator restarts on those (`player_steal_skeleton_banner` reads `176`
+/// 22 vsyncs after Vahn's idle wrapped), so the age is an upper bound on it
+/// whenever the engine plays retail's clip - the gates read it with `>=` -
+/// and it keeps placing a phase whose engine clip loops where retail's did
+/// not (a parked Gaza on idle against the engine's Gaza still walking).
+pub(super) fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
+    world
+        .battle
+        .camera
+        .as_ref()
+        .map_or(u32::MAX, |c| c.clip_age())
 }
 
 /// Whether the engine's close-up accumulator has run as far through `0x6E`
@@ -505,6 +529,12 @@ impl BattleDrive {
                 if let Some(u) = steer.cursor {
                     s.push_str(&format!(",u{u}"));
                 }
+                if let Some((f, lane)) = steer.fading {
+                    s.push_str(&format!(",f{f}/{lane}"));
+                }
+                if steer.spoils {
+                    s.push_str(",s");
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -556,6 +586,8 @@ impl BattleDrive {
                 steer.plate_cleared = true;
             } else if last == "a" {
                 steer.arts = true;
+            } else if last == "s" {
+                steer.spoils = true;
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -564,6 +596,9 @@ impl BattleDrive {
                 steer.aim = Some(p.parse().ok()?);
             } else if let Some(u) = last.strip_prefix('u') {
                 steer.cursor = Some(u.parse().ok()?);
+            } else if let Some(f) = last.strip_prefix('f') {
+                let (seat, lane) = f.split_once('/')?;
+                steer.fading = Some((seat.parse().ok()?, lane.parse().ok()?));
             } else if let Some(q) = last.strip_prefix('q') {
                 if q.len() != 32 {
                     return None;
@@ -819,11 +854,7 @@ impl BattleDrive {
                             !world.battle.camera.as_ref().is_some_and(|c| c.is_gliding())
                         }
                         SpanGate::Age { accum } => {
-                            world
-                                .battle
-                                .camera
-                                .as_ref()
-                                .is_none_or(|c| c.close_up_accum() >= u32::from(accum))
+                            active_clip_age(world) >= u32::from(accum)
                                 && steer.clip.is_none_or(|k| {
                                     world.battle_current_anim(usize::from(engine_seat(seat, pc)))
                                         == k
@@ -833,6 +864,19 @@ impl BattleDrive {
                                         .actors
                                         .get(usize::from(engine_seat(seat, pc)))
                                         .is_some_and(|a| a.battle.strike_index == u)
+                                })
+                                && (!steer.spoils
+                                    || world.battle_ctx.message_id
+                                        == legaia_engine_core::battle_steal::STEAL_CAPTION_ELEMENT)
+                                && steer.fading.is_none_or(|(v, lane)| {
+                                    world
+                                        .actors
+                                        .get(usize::from(engine_seat(v, pc)))
+                                        .is_some_and(|a| {
+                                            a.battle.render_flag
+                                            == legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE
+                                            && (a.battle.render_color & 0x3FF) as u16 <= lane
+                                        })
                                 })
                         }
                         _ => true,

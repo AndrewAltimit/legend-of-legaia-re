@@ -24,6 +24,8 @@ default = ["cli"]
 cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
+legaia-battle-models.workspace = true
+legaia-game-tables.workspace = true
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 serde.workspace = true

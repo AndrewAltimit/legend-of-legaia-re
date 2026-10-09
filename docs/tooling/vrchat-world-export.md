@@ -177,7 +177,7 @@ objects - the village centre, not the map-grid centre), composition
   0..179-degree spin ends displaced from frame 0 and its four-blade
   symmetry is what makes the loop seamless, so shape alone misreads
   retail's one always-running prop as a one-shot),
-  and per-instance position + yaw plus two door tags: `is_door` (the
+  and per-instance position + rotation plus two door tags: `is_door` (the
   instance stands on a doorway-teleport trigger - retail parks a door
   placement on its own doorway tile, so its clip is the door record's
   swing, meant to open on approach rather than loop; the tag covers both
@@ -213,14 +213,23 @@ objects - the village centre, not the map-grid centre), composition
 
 Transforms are in the **export frame**: the site renderers' convention
 (mesh-local Y flipped at bake so the model reads +Y-up,
-mirror-handedness and all), already multiplied by `scale`; yaw in radians
-about +Y exactly as the world-glb instances apply it - a **standard**
-positive rotation about +Y, which lands on the authored retail yaw. That
-is a sign conversion away from the internal `placementModelScaledY`
-param (the page function's inline rotY block is transposed, so its param
-is the negated yaw); `scene_gltf` performs the negation when emitting
-node quaternions, and the manifest mirrors it. A consumer that applies
-`rot_y_radians` as a plain `Ry` therefore matches the baked frame-0
+mirror-handedness and all), already multiplied by `scale`. Rotations
+carry all three authored placement angles: each world-glb instance node
+and each manifest prop instance (`rotation_xyzw`) holds the quaternion
+`legaia_engine_core::scene_assembly::draw_rotation_quat` builds from the
+record's `Rx * Ry * Rz` composition - the `EnvDraw::rotate` kernel the
+play hosts place with - conjugated by the export frame's Y flip
+(`F * R * F`, `F = diag(1, -1, 1)`), so a pitched or rolled record (a
+leaning plank, a tilted sign, a video wall) keeps its tilt instead of
+standing upright. A yaw-only record's quaternion is the **standard**
+positive rotation about +Y by the authored retail yaw, which is what the
+manifest's legacy `rot_y_radians` encodes; that field is exact only when
+the record has no pitch or roll. It is a sign conversion away from the
+internal `placementModelScaledY` param (the page function's inline rotY
+block is transposed, so its param is the negated yaw); `scene_gltf`
+performs the negation for a yaw-only instance, and the manifest mirrors
+it. A consumer that applies `rotation_xyzw` (or, for a yaw-only record,
+`rot_y_radians` as a plain `Ry`) therefore matches the baked frame-0
 twins exactly. The frame is
 **X-mirrored relative to the site pages' presentation**: a consumer that
 wants the explorer's orientation mirrors the assembled scene once on X
@@ -240,8 +249,8 @@ the world glb in **handedness**: the world bakes the site convention's
 Y-mirror into its vertices (determinant -1), while the NPC / prop files
 are proper-rotation models (root `Rx(180)`, determinant +1). Placing a
 prop into the world therefore needs one mirror in the instance transform -
-`Ry(rot_y_radians) * diag(1, 1, -1)` composed onto the file's root - or no
-yaw will ever line it up with its baked frame-0 twin. The kit's builder
+`rotation_xyzw * diag(1, 1, -1)` composed onto the file's root - or no
+rotation will ever line it up with its baked frame-0 twin. The kit's builder
 applies this as a negative-Z instance scale (unit magnitude for current
 exports; a manifest without the `npc_prop_units` flag is an older
 raw-units export whose instances get the full `scale`).

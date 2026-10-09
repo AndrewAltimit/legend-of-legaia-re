@@ -10,8 +10,22 @@ const DOUBLE_CLICK_WINDOW: std::time::Duration = std::time::Duration::from_milli
 mod keyboard;
 #[path = "event_handler/redraw.rs"]
 mod redraw;
+#[path = "event_handler/redraw_draws.rs"]
+mod redraw_draws;
+#[path = "event_handler/redraw_overlay.rs"]
+mod redraw_overlay;
 #[path = "event_handler/redraw_passes.rs"]
 mod redraw_passes;
+#[path = "event_handler/redraw_prep.rs"]
+mod redraw_prep;
+#[path = "event_handler/redraw_present.rs"]
+mod redraw_present;
+#[path = "event_handler/redraw_render.rs"]
+mod redraw_render;
+#[path = "event_handler/redraw_stage.rs"]
+mod redraw_stage;
+#[path = "event_handler/redraw_tick.rs"]
+mod redraw_tick;
 
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {

@@ -1,0 +1,856 @@
+//! Title screen state machine.
+//!
+//! Drives the boot-time UI: title fade-in → "Press Start" → main menu
+//! (New Game / Continue / Options) → hand off to either field boot or
+//! save-select. Engines render via the existing renderer text overlay;
+//! audio host fires the title-music BGM through the BGM director.
+//!
+//! ## States
+//!
+//! - [`TitlePhase::FadeIn`] - opening fade from black. No input
+//!   accepted; advances on a frame counter.
+//! - [`TitlePhase::PressStart`] - "Press START" prompt with cursor blink.
+//!   Start (or Cross) advances to the main menu.
+//! - [`TitlePhase::MainMenu`] - three-row menu (New Game / Continue /
+//!   Options). Up/Down move the cursor; Cross confirms.
+//! - [`TitlePhase::Done`] - the player chose; engine inspects
+//!   [`TitleSession::outcome`].
+//!
+//! Engines run [`TitleSession::tick`] each frame and react to the
+//! returned [`TitleEvent`]s (CursorMoved, MenuConfirmed, etc.). The
+//! session is intentionally renderer-free - it knows only abstract phase
+//! state, not pixel coordinates.
+//!
+//! ## What is retail's and what is the port's
+//!
+//! The menu half runs retail's own law: [`TitleSession::tick`] packs its
+//! booleans into the repacked pad word and steps
+//! [`legaia_engine_vm::title_overlay::TitleMenuState`], the port of the
+//! title tick's `AttractIdle` (`0x10`) block. That gets both hosts the
+//! retail cursor step + wrap, the `Start | L1 | Cross` confirm mask, the
+//! `0x21` / `0x20` cue pair, and the attract countdown's input-freeze
+//! band, from one kernel.
+//!
+//! Three things around it are the port's own and are named as such:
+//!
+//! - [`TitlePhase::FadeIn`] / [`TitlePhase::PressStart`] are the port's
+//!   staging. Retail's own entry is `Init` -> `0x11` `AttractDelay` ->
+//!   `0x10` `AttractIdle`, and the attract countdown runs from the moment
+//!   `AttractIdle` is up - so the port's prompt runs the same countdown by
+//!   the same rules (freeze band, any-bit re-arm, fire on underflow) and
+//!   a player who never presses Start still gets the movie. The movie
+//!   returns to whichever of the two the countdown fired from.
+//!   The sub-mode **word** is `0x801F0204`
+//!   (`0x801DD920` / `0x801DD97C` are the *instruction* addresses of the
+//!   two stores), and the `0x02` arm is unreachable on retail because
+//!   `init.pak` raises the entry word `_DAT_8007BB00` at `0x801CEB84`
+//!   and the tick's shared epilogue rewrites `0x02` to `0x10` again at
+//!   `0x801DFEF8`. The "`0x02 -> 0x14` is the default graph" reading is
+//!   falsified; the executable graph is
+//!   [`legaia_engine_vm::title_overlay::TitleTickState`].
+//! - `continue_enabled` skipping the CONTINUE row has no retail
+//!   counterpart - retail always lets the row be picked and lets the
+//!   save screen say "No data". It is a port guard, applied on top of the
+//!   retail step.
+//! - The attract countdown is **opt-in per host**
+//!   ([`TitleSession::attract_enabled`]), because a host with no movie
+//!   destination would freeze input for the last sixteen frames of every
+//!   idle period and then do nothing. Both shipped hosts now set it: the
+//!   native window plays `fmv_id 0` through its windowed MDEC path, and
+//!   the browser play page enters the same [`TitlePhase::Attract`] and
+//!   finishes it immediately (the play page has no STR/MDEC playback -
+//!   the deviation its `play_cutscene` module already documents). With
+//!   the flag off the session is bit-identical to a session with no
+//!   countdown at all.
+
+/// Phase of the title state machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitlePhase {
+    FadeIn {
+        frames_remaining: u16,
+    },
+    PressStart {
+        blink_phase: u16,
+    },
+    MainMenu {
+        cursor: u8,
+    },
+    /// The attract countdown underflowed and the screen belongs to the
+    /// opening movie. Retail's `AttractIdle` arm zeroes `_DAT_8007BA78`
+    /// and writes master game mode `0x1A` (`0x801DDCE8` / `0x801DDCF0`),
+    /// so `fmv_id` is always `0`. `playing` is set once a host has picked
+    /// the movie up; [`TitleSession::finish_attract`] returns to the menu
+    /// the way retail's re-entry does (`Init` with the entry word at
+    /// `2`, which still takes the `0x11` -> `0x10` arm).
+    Attract {
+        fmv_id: i16,
+        playing: bool,
+    },
+    Done(TitleOutcome),
+}
+
+/// Final outcome of the title session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleOutcome {
+    NewGame,
+    /// Player picked Continue - engines drop into save-select.
+    Continue,
+    /// Player opened the Options panel - engines push the menu.
+    Options,
+}
+
+/// Per-frame input bundle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TitleInput {
+    pub up: bool,
+    pub down: bool,
+    pub cross: bool,
+    pub start: bool,
+    pub circle: bool,
+}
+
+/// Events emitted per `tick` call. Engines fold these into HUD blips
+/// and audio-cue triggers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleEvent {
+    /// Title fade-in completed; engines start the BGM ramp.
+    FadeInDone,
+    /// Player pressed Start at the prompt; menu opens.
+    StartPressed,
+    /// Cursor moved in the main menu.
+    CursorMoved { row: u8 },
+    /// Player confirmed a menu row.
+    MenuConfirmed { row: u8 },
+    /// Player picked New Game.
+    NewGameSelected,
+    /// Player picked Continue.
+    ContinueSelected,
+    /// Player picked Options.
+    OptionsSelected,
+    /// The attract countdown underflowed - retail's hand-off to master
+    /// game mode `0x1A` (the opening movie). Only ever emitted with
+    /// [`TitleSession::attract_enabled`] set; see the module docs for why
+    /// it is off by default.
+    AttractTimeout,
+}
+
+/// Title screen state machine.
+#[derive(Debug, Clone)]
+pub struct TitleSession {
+    phase: TitlePhase,
+    /// Frames the [`TitlePhase::FadeIn`] phase lasts. Default 90 (1.5s).
+    pub fade_in_frames: u16,
+    /// Cursor blink period in frames. Default 30 (0.5s).
+    pub blink_period: u16,
+    /// Number of menu rows. Default 2 (New Game / Continue). Retail
+    /// only carries those two rows; Options is reached through the
+    /// in-game field menu, not from the title screen.
+    rows: u8,
+    /// Set to `false` if no save data is present - disables the Continue
+    /// row in the menu.
+    pub continue_enabled: bool,
+    /// Retail's title-menu state: the row counter, the attract countdown
+    /// and the last cue. Stepped once per frame in [`Self::tick`].
+    menu: legaia_engine_vm::title_overlay::TitleMenuState,
+    /// Whether the attract countdown may fire. Off by default and set by
+    /// each host for itself; both shipped hosts set it. See the module
+    /// docs for why it is not on by default.
+    pub attract_enabled: bool,
+    /// The attract fired from the port's Press Start prompt rather than
+    /// from the menu, so [`Self::finish_attract`] returns there.
+    attract_from_prompt: bool,
+    /// Retail's own front-end tick state, stepped alongside the session so
+    /// the host can ask which sub-mode of `FUN_801DD35C` the title is in.
+    ///
+    /// It is seeded the way retail seeds it - by **raising the entry word**
+    /// `_DAT_8007BB00` and running `Init`, not by writing a sub-mode - so
+    /// the boot lands in `0x11` `AttractDelay` and then `0x10`
+    /// `AttractIdle`, which is what a cold-boot capture sees.
+    tick: legaia_engine_vm::title_overlay::TitleTickState,
+}
+
+impl TitleSession {
+    pub fn new() -> Self {
+        Self {
+            phase: TitlePhase::FadeIn {
+                frames_remaining: 90,
+            },
+            fade_in_frames: 90,
+            blink_period: 30,
+            rows: legaia_engine_vm::title_overlay::TITLE_MENU_ROWS,
+            continue_enabled: true,
+            menu: legaia_engine_vm::title_overlay::TitleMenuState::new(),
+            attract_enabled: false,
+            attract_from_prompt: false,
+            tick: Self::cold_boot_tick(),
+        }
+    }
+
+    /// Run retail's front-end entry: `Init` with the boot entry word raised,
+    /// then the `AttractDelay` hand-off, leaving the state in `AttractIdle`.
+    ///
+    /// This is the whole point of keeping the tick state around - the entry
+    /// sub-mode is *derived* from `_DAT_8007BB00` by executing `Init`
+    /// (`0x801DD820`), never written by hand, so the port cannot drift into
+    /// the `0x02` graph retail's `init.pak` makes unreachable.
+    fn cold_boot_tick() -> legaia_engine_vm::title_overlay::TitleTickState {
+        use legaia_engine_vm::title_overlay::{
+            ATTRACT_DELAY_SEED, TitleCardStatus, TitleTickPad, TitleTickState,
+        };
+        let mut tick = TitleTickState::cold_boot();
+        // Init -> AttractDelay, then the hold the SCUS stager seeded
+        // (`0x100` at `0x8002579C`, spent at 8 a frame) -> AttractIdle.
+        for _ in 0..=(2 + ATTRACT_DELAY_SEED / 8) {
+            let _ = tick.step(TitleTickPad::from_edge(0), TitleCardStatus::default());
+        }
+        tick
+    }
+
+    /// The retail sub-mode of `FUN_801DD35C` this session's title is in.
+    ///
+    /// A cold boot reports `0x10` (`AttractIdle`) - never `0x02`, whose
+    /// handler `init.pak`'s entry word makes unreachable. Confirming NEW GAME
+    /// moves it to `0x16` (`LaunchFade`) and CONTINUE to `0x18`
+    /// (`ContinueFadeIn`), the two rows' real retail destinations.
+    pub fn retail_submode(&self) -> u8 {
+        self.tick.submode
+    }
+
+    /// The attract countdown's current value, in frames. Retail seeds it
+    /// with `0x5DC` and re-arms it on any held pad bit.
+    pub fn attract_countdown(&self) -> i32 {
+        self.menu.countdown
+    }
+
+    /// The SFX cue the last [`Self::tick`] stored, if any - retail's
+    /// `0x8007B6D8` halfword (`0x21` cursor move, `0x20` confirm).
+    pub fn last_sfx_cue(&self) -> Option<u16> {
+        self.menu.sfx
+    }
+
+    /// The title session a shipped host's front end opens: Continue enabled
+    /// exactly when `any_save_present`, and the attract countdown armed.
+    ///
+    /// Both hosts open every title through this - the cold boot, a return
+    /// from Options or a backed-out Continue, and the post-wipe title - and
+    /// each passes a **fresh** scan of its save rack (native: the save
+    /// directory port plus the mounted `--card`; browser: the two card
+    /// ports). The native window used to scan only at cold boot and reopen
+    /// every later title with Continue forced on, so closing Options on a
+    /// rack with no saves turned a greyed Continue live.
+    pub fn for_front_end(any_save_present: bool) -> Self {
+        let mut s = if any_save_present {
+            Self::new()
+        } else {
+            Self::without_save_data()
+        };
+        s.attract_enabled = true;
+        s
+    }
+
+    /// [`Self::for_front_end`] opened on `row` - the row counter
+    /// `_DAT_8007B820` a host carries across titles in its
+    /// `legaia_engine_core::mode::ModeSeat::title_row`. Retail never resets the counter,
+    /// so a later title (a party wipe's, a backed-out Continue's) opens on
+    /// whichever row the last one held. A CONTINUE row with nothing to
+    /// continue folds to NEW GAME: the port greys that row out, and the
+    /// cursor must not open on a row its own step skips.
+    pub fn for_front_end_at(any_save_present: bool, row: u8) -> Self {
+        let mut s = Self::for_front_end(any_save_present);
+        let row = i32::from(row) % i32::from(s.rows.max(1));
+        s.menu.row_counter = if s.continue_enabled { row } else { 0 };
+        s
+    }
+
+    /// The row counter as it stands (`0` NEW GAME, `1` CONTINUE) - what a
+    /// host hands `legaia_engine_core::mode::ModeSeat::set_title_row` each frame.
+    pub fn row_counter(&self) -> u8 {
+        self.menu
+            .row_counter
+            .rem_euclid(i32::from(self.rows.max(1))) as u8
+    }
+
+    /// Construct a session with `Continue` disabled (no save data).
+    pub fn without_save_data() -> Self {
+        let mut s = Self::new();
+        s.continue_enabled = false;
+        s
+    }
+
+    pub fn phase(&self) -> TitlePhase {
+        self.phase
+    }
+
+    pub fn is_done(&self) -> bool {
+        matches!(self.phase, TitlePhase::Done(_))
+    }
+
+    pub fn outcome(&self) -> Option<TitleOutcome> {
+        match self.phase {
+            TitlePhase::Done(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// Force-skip to the [`TitlePhase::PressStart`] phase. Used by
+    /// engines that pre-load assets while the fade-in animates and
+    /// want to drop the player directly at the prompt.
+    pub fn skip_fade_in(&mut self) {
+        self.phase = TitlePhase::PressStart { blink_phase: 0 };
+    }
+
+    /// One-frame tick.
+    pub fn tick(&mut self, input: TitleInput) -> Vec<TitleEvent> {
+        let mut events = Vec::new();
+        let phase = self.phase;
+        match phase {
+            TitlePhase::FadeIn { frames_remaining } => {
+                if frames_remaining > 0 {
+                    self.phase = TitlePhase::FadeIn {
+                        frames_remaining: frames_remaining - 1,
+                    };
+                } else {
+                    self.phase = TitlePhase::PressStart { blink_phase: 0 };
+                    events.push(TitleEvent::FadeInDone);
+                }
+            }
+            TitlePhase::PressStart { blink_phase } => {
+                use legaia_engine_vm::title_overlay::{
+                    ATTRACT_FMV_ID, ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE,
+                };
+                self.phase = TitlePhase::PressStart {
+                    blink_phase: (blink_phase + 1) % self.blink_period,
+                };
+                // Retail has no prompt phase - `AttractIdle`'s countdown
+                // runs from the moment the title is up - so the prompt
+                // spends the same countdown by the same rules as
+                // `TitleMenuState::step`: no input inside the freeze band,
+                // any held bit re-arms, one frame per tick, fire on
+                // underflow.
+                let (_, held) = Self::pad_words(input);
+                let frozen = self.menu.countdown < ATTRACT_INPUT_FREEZE_BELOW;
+                if !frozen && (input.start || input.cross) {
+                    // The cursor opens on NEW GAME whether or not a save
+                    // exists. Retail's row counter `_DAT_8007B820` is only
+                    // ever stepped by the title's own Up / Down arm; the one
+                    // other writer, init.pak's card scan (`0x801CF1DC` /
+                    // `0x801CF300`), raises it to CONTINUE only when its
+                    // match count `0x801F3978` is non-zero - and the scan
+                    // (`FUN_801CFF68`) compares each file against
+                    // "BISCUS-94254PRO-" (`0x801D098C`), a prefix no US save
+                    // (`BASCUS-94254PRO-`) carries. The `title_attract`
+                    // capture shows it: nine US saves in the directory table
+                    // at `0x801F39A4`, count `0`, row `0`.
+                    self.phase = TitlePhase::MainMenu {
+                        cursor: self.menu.row_counter.clamp(0, 1) as u8,
+                    };
+                    events.push(TitleEvent::StartPressed);
+                }
+                if held != 0 {
+                    self.menu.countdown = COUNTDOWN_RESET_VALUE as i32;
+                }
+                self.menu.countdown -= 1;
+                if self.menu.countdown < 0 {
+                    if self.attract_enabled {
+                        events.push(TitleEvent::AttractTimeout);
+                        self.attract_from_prompt = true;
+                        self.phase = TitlePhase::Attract {
+                            fmv_id: ATTRACT_FMV_ID,
+                            playing: false,
+                        };
+                    }
+                    self.menu.countdown = COUNTDOWN_RESET_VALUE as i32;
+                }
+            }
+            TitlePhase::MainMenu { cursor } => {
+                // Cancel is the port's own row-return; retail's `0x10`
+                // block has no cancel arm at all.
+                if input.circle {
+                    self.phase = TitlePhase::PressStart { blink_phase: 0 };
+                    return events;
+                }
+                self.menu.row_counter = cursor as i32;
+                let (edge, held) = Self::pad_words(input);
+                let stepped = self.menu.step(
+                    edge,
+                    held,
+                    1,
+                    legaia_engine_vm::title_overlay::TITLE_MENU_ROWS,
+                );
+                for e in stepped {
+                    use legaia_engine_vm::title_overlay::TitleMenuEvent as Vm;
+                    match e {
+                        Vm::CursorMoved { row } => {
+                            // The port's one deviation from the retail
+                            // step: a row the host greyed out is skipped.
+                            let row = self.skip_disabled(cursor, row);
+                            self.menu.row_counter = row as i32;
+                            if row != cursor {
+                                self.phase = TitlePhase::MainMenu { cursor: row };
+                                events.push(TitleEvent::CursorMoved { row });
+                            }
+                        }
+                        Vm::Confirmed { row } => {
+                            // The retail graph picks the row's destination,
+                            // not this session: `AttractIdle`'s confirm arm
+                            // sends row 0 to `0x16` `LaunchFade`
+                            // (`0x801DDC3C`) and row 1 to `0x18`
+                            // `ContinueFadeIn` (`0x801DDC5C`).
+                            self.tick.row_counter = row as i32;
+                            let _ = self.tick.step(
+                                legaia_engine_vm::title_overlay::TitleTickPad::from_edge(
+                                    legaia_engine_vm::title_overlay::PADMASK_START_L1_CROSS,
+                                ),
+                                legaia_engine_vm::title_overlay::TitleCardStatus::default(),
+                            );
+                            let outcome = match row {
+                                0 => TitleOutcome::NewGame,
+                                1 => TitleOutcome::Continue,
+                                2 => TitleOutcome::Options,
+                                _ => TitleOutcome::NewGame,
+                            };
+                            self.phase = TitlePhase::Done(outcome);
+                            events.push(TitleEvent::MenuConfirmed { row });
+                            events.push(match outcome {
+                                TitleOutcome::NewGame => TitleEvent::NewGameSelected,
+                                TitleOutcome::Continue => TitleEvent::ContinueSelected,
+                                TitleOutcome::Options => TitleEvent::OptionsSelected,
+                            });
+                        }
+                        Vm::AttractFired => {
+                            if self.attract_enabled {
+                                events.push(TitleEvent::AttractTimeout);
+                                self.attract_from_prompt = false;
+                                // Retail's arm hands the screen to the
+                                // opening movie: `_DAT_8007BA78 = 0` then
+                                // master game mode `0x1A`.
+                                self.phase = TitlePhase::Attract {
+                                    fmv_id: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                                    playing: false,
+                                };
+                            }
+                            // Re-arm either way; with the flag off there
+                            // is nothing to hand the screen to and the
+                            // session must not sit under the input freeze.
+                            self.menu.countdown =
+                                legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE as i32;
+                        }
+                    }
+                }
+            }
+            // The movie owns the screen; the session freezes until the
+            // host calls `finish_attract`.
+            TitlePhase::Attract { .. } => {}
+            TitlePhase::Done(_) => {}
+        }
+        events
+    }
+
+    /// The `fmv_id` waiting for a host to pick up, or `None` when the
+    /// session is not in [`TitlePhase::Attract`] or a host already took
+    /// it. Always [`ATTRACT_FMV_ID`] on retail.
+    ///
+    /// [`ATTRACT_FMV_ID`]: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID
+    pub fn attract_pending(&self) -> Option<i16> {
+        match self.phase {
+            TitlePhase::Attract {
+                fmv_id,
+                playing: false,
+            } => Some(fmv_id),
+            _ => None,
+        }
+    }
+
+    /// Whether a host has picked the attract movie up and not yet
+    /// finished it. Hosts poll this to know when their own playback
+    /// drained and it is time to call [`Self::finish_attract`].
+    pub fn attract_playing(&self) -> bool {
+        matches!(self.phase, TitlePhase::Attract { playing: true, .. })
+    }
+
+    /// Claim the pending attract movie. A host calls this once it has
+    /// started (or decided it cannot start) playback, so the session
+    /// stops re-offering the same `fmv_id` every frame.
+    pub fn mark_attract_started(&mut self) {
+        if let TitlePhase::Attract { fmv_id, .. } = self.phase {
+            self.phase = TitlePhase::Attract {
+                fmv_id,
+                playing: true,
+            };
+        }
+    }
+
+    /// Return from the attract movie to the title, the way retail does:
+    /// the front-end re-enters through `Init` with the entry word at
+    /// `2`, which still takes the `0x11` -> `0x10` arm, so the player
+    /// lands back on the live title with the countdown re-armed and the
+    /// cursor on row 0. Which of the port's two staging phases that is
+    /// follows the one the countdown fired from: the menu, or the Press
+    /// Start prompt.
+    pub fn finish_attract(&mut self) {
+        if matches!(self.phase, TitlePhase::Attract { .. }) {
+            self.menu = legaia_engine_vm::title_overlay::TitleMenuState::new();
+            // Retail re-enters the front-end through `Init` with the entry
+            // word still non-zero, so the sub-mode walks `0x11` -> `0x10`
+            // again rather than resuming where the movie interrupted it.
+            self.tick = Self::cold_boot_tick();
+            self.phase = if self.attract_from_prompt {
+                TitlePhase::PressStart { blink_phase: 0 }
+            } else {
+                TitlePhase::MainMenu { cursor: 0 }
+            };
+            self.attract_from_prompt = false;
+        }
+    }
+
+    /// Pack a [`TitleInput`] into the two pad words the ported menu
+    /// kernel reads: the just-pressed word the cursor and confirm test,
+    /// and the held word the attract countdown re-arms from.
+    ///
+    /// The bit layout is Legaia's repacked pad word (`FUN_8001822C`):
+    /// `0x1000` Up, `0x4000` Down, `0x40` Cross, `0x04` L1, `0x20`
+    /// Circle, `0x800` Start.
+    fn pad_words(input: TitleInput) -> (u16, u16) {
+        let mut w = 0u16;
+        if input.up {
+            w |= legaia_engine_vm::title_overlay::PADMASK_CURSOR_PREV;
+        }
+        if input.down {
+            w |= legaia_engine_vm::title_overlay::PADMASK_CURSOR_NEXT;
+        }
+        if input.cross {
+            w |= 0x0040;
+        }
+        if input.start {
+            w |= 0x0800;
+        }
+        if input.circle {
+            w |= 0x0020;
+        }
+        (w, w)
+    }
+
+    /// Walk past a row the host disabled. Port-only; retail lets every
+    /// row be picked.
+    fn skip_disabled(&self, from: u8, to: u8) -> u8 {
+        if self.continue_enabled || to != 1 {
+            return to;
+        }
+        from
+    }
+
+    #[allow(dead_code)]
+    fn step_cursor(&self, from: u8, dir: i8) -> u8 {
+        let n = self.rows as i16;
+        let mut cursor = from as i16;
+        for _ in 0..self.rows {
+            cursor = (cursor + dir as i16).rem_euclid(n);
+            if !self.continue_enabled && cursor == 1 {
+                continue;
+            }
+            return cursor as u8;
+        }
+        from
+    }
+}
+
+impl Default for TitleSession {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fade_in_completes() {
+        let mut s = TitleSession::new();
+        s.fade_in_frames = 3;
+        s.phase = TitlePhase::FadeIn {
+            frames_remaining: 3,
+        };
+        let mut events = Vec::new();
+        for _ in 0..4 {
+            events.extend(s.tick(TitleInput::default()));
+        }
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert!(events.iter().any(|e| matches!(e, TitleEvent::FadeInDone)));
+    }
+
+    #[test]
+    fn skip_fade_in_drops_to_prompt() {
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+    }
+
+    #[test]
+    fn front_end_session_follows_the_scan_and_arms_attract() {
+        let with = TitleSession::for_front_end(true);
+        assert!(with.continue_enabled && with.attract_enabled);
+        let without = TitleSession::for_front_end(false);
+        assert!(!without.continue_enabled && without.attract_enabled);
+    }
+
+    /// The US build's title opens on NEW GAME even with saves on the card:
+    /// init.pak's scan matches "BISCUS-94254PRO-", which no US save carries,
+    /// so the row counter stays `0` (the `title_attract` capture: nine US
+    /// saves, count `0x801F3978 = 0`, row `0x8007B820 = 0`). This test used to
+    /// assert the cursor opened on CONTINUE.
+    /// Retail's row counter outlives the title: a title opened at the row
+    /// the last one held opens its menu there, and reports it back.
+    #[test]
+    fn a_later_title_opens_on_the_row_the_last_one_held() {
+        let mut first = TitleSession::for_front_end(true);
+        first.skip_fade_in();
+        first.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        first.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        assert_eq!(first.row_counter(), 1);
+        let mut again = TitleSession::for_front_end_at(true, first.row_counter());
+        again.skip_fade_in();
+        again.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(again.phase(), TitlePhase::MainMenu { cursor: 1 });
+        // Nothing to continue: the greyed row is never the opening row.
+        let mut bare = TitleSession::for_front_end_at(false, 1);
+        bare.skip_fade_in();
+        bare.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert_eq!(bare.phase(), TitlePhase::MainMenu { cursor: 0 });
+    }
+
+    #[test]
+    fn start_press_opens_menu_on_new_game_even_with_saves() {
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        let events = s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert!(s.continue_enabled);
+        match s.phase() {
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            _ => panic!("expected MainMenu"),
+        }
+        assert!(events.contains(&TitleEvent::StartPressed));
+    }
+
+    #[test]
+    fn no_save_data_starts_at_new_game() {
+        let mut s = TitleSession::without_save_data();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        match s.phase() {
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn cursor_skips_continue_when_disabled() {
+        // With only two rows (NewGame / Continue) and Continue disabled,
+        // pressing Down wraps right back to NewGame - that's the
+        // intended UX (don't land on a greyed-out row).
+        let mut s = TitleSession::without_save_data();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        match s.phase() {
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn confirm_emits_menu_confirmed_and_specific() {
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        // The cursor opens on New Game; Down moves it to Continue.
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        let events = s.tick(TitleInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert!(events.contains(&TitleEvent::MenuConfirmed { row: 1 }));
+        assert!(events.contains(&TitleEvent::ContinueSelected));
+        assert_eq!(s.outcome(), Some(TitleOutcome::Continue));
+    }
+
+    #[test]
+    fn attract_fires_from_the_prompt_and_returns_to_it() {
+        use legaia_engine_vm::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
+        let mut s = TitleSession::new();
+        s.attract_enabled = true;
+        s.skip_fade_in();
+        let reset = COUNTDOWN_RESET_VALUE as i32;
+        let mut fired_at = None;
+        for frame in 0..=reset + 1 {
+            if s.tick(TitleInput::default())
+                .contains(&TitleEvent::AttractTimeout)
+            {
+                fired_at = Some(frame);
+                break;
+            }
+        }
+        assert_eq!(
+            fired_at,
+            Some(reset),
+            "0x5DC idle frames on the prompt fire it"
+        );
+        assert_eq!(s.attract_pending(), Some(ATTRACT_FMV_ID));
+        s.mark_attract_started();
+        assert!(s.attract_playing());
+        s.finish_attract();
+        assert!(
+            matches!(s.phase(), TitlePhase::PressStart { .. }),
+            "a movie that fired from the prompt returns to the prompt"
+        );
+        assert_eq!(s.attract_countdown(), reset);
+        // ...and one that fired from the menu returns to the menu.
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::MainMenu { .. }));
+        for _ in 0..=reset + 1 {
+            if s.attract_pending().is_some() {
+                break;
+            }
+            s.tick(TitleInput::default());
+        }
+        assert!(s.attract_pending().is_some());
+        s.finish_attract();
+        assert!(matches!(s.phase(), TitlePhase::MainMenu { cursor: 0 }));
+    }
+
+    #[test]
+    fn prompt_countdown_re_arms_on_any_input_and_only_fires_when_enabled() {
+        use legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE;
+        let reset = COUNTDOWN_RESET_VALUE as i32;
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        for _ in 0..100 {
+            s.tick(TitleInput::default());
+        }
+        assert_eq!(s.attract_countdown(), reset - 100);
+        // Down does nothing on the prompt except re-arm the countdown.
+        s.tick(TitleInput {
+            down: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert_eq!(s.attract_countdown(), reset - 1);
+        // With the flag off the underflow only re-arms.
+        let mut events = Vec::new();
+        for _ in 0..=reset + 1 {
+            events.extend(s.tick(TitleInput::default()));
+        }
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert!(!events.contains(&TitleEvent::AttractTimeout));
+        assert!(s.attract_countdown() > 0);
+    }
+
+    #[test]
+    fn prompt_ignores_start_inside_the_freeze_band() {
+        use legaia_engine_vm::title_overlay::{ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE};
+        let mut s = TitleSession::new();
+        s.attract_enabled = true;
+        s.skip_fade_in();
+        s.menu.countdown = ATTRACT_INPUT_FREEZE_BELOW - 1;
+        let events = s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+        assert!(!events.contains(&TitleEvent::StartPressed));
+        // A held bit still re-arms inside the band, as in the menu kernel.
+        assert_eq!(s.attract_countdown(), COUNTDOWN_RESET_VALUE as i32 - 1);
+    }
+
+    #[test]
+    fn circle_returns_to_press_start() {
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        s.tick(TitleInput {
+            circle: true,
+            ..Default::default()
+        });
+        assert!(matches!(s.phase(), TitlePhase::PressStart { .. }));
+    }
+
+    #[test]
+    fn cursor_wraps_around() {
+        // Two-row menu (NewGame / Continue). Start press lands cursor
+        // on NewGame (0); Up wraps to Continue (1); Up again comes back
+        // to NewGame (0).
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        s.tick(TitleInput {
+            up: true,
+            ..Default::default()
+        });
+        match s.phase() {
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 1),
+            _ => panic!(),
+        }
+        s.tick(TitleInput {
+            up: true,
+            ..Default::default()
+        });
+        match s.phase() {
+            TitlePhase::MainMenu { cursor } => assert_eq!(cursor, 0),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn outcome_new_game() {
+        let mut s = TitleSession::new();
+        s.skip_fade_in();
+        s.tick(TitleInput {
+            start: true,
+            ..Default::default()
+        });
+        s.tick(TitleInput {
+            cross: true,
+            ..Default::default()
+        });
+        assert_eq!(s.outcome(), Some(TitleOutcome::NewGame));
+    }
+}

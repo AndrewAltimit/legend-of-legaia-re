@@ -394,6 +394,25 @@ impl SceneHost {
                 self.world
                     .set_actor_battle_action_clips(slot, Arc::new(clips));
             }
+            // ...and its idle loop, the clip the loader seats the monster
+            // on. The play hosts installed it from their render build
+            // (`World::install_monster_battle_form`), so a headless session's
+            // monster stood clip-less until the SM first posed it: its first
+            // walk began from another cursor, came into range a tick away
+            // from the window's, and the two runs of one fight diverged
+            // (`battle_gaza2_park_0x19_target_vahn`'s capture child never
+            // reached the phase its headless replay did).
+            let unposed = self
+                .world
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_animation.is_none());
+            if unposed
+                && let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, id)
+                && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(&idle)
+            {
+                self.world.set_actor_battle_animation(slot, player);
+            }
         }
     }
 
@@ -1003,6 +1022,28 @@ impl SceneHost {
         // The installed ladder is the baseline a scripted floor wave moves
         // from (`FieldLocomotion::ladder_seen`).
         self.world.locomotion.ladder_seen = self.world.terrain.floor_height_lut;
+        // The seat lands at `y = 0`, and retail's every-frame glide then
+        // carries the player onto the floor tier under it. Under the port's
+        // snap the standing-still re-read fires only when that ladder moves,
+        // so a player seated on a raised tier (a card load at a save point, a
+        // door onto a ledge) stayed buried at `0` until its first step: the
+        // browser page drew it inside the rock with the camera focus under
+        // the ground, while the native window hid it behind a host-side snap
+        // at mesh upload. The entry settles the seat itself, for every host.
+        if self.world.locomotion.follow_terrain_height
+            && let Some(player) = self.world.actors.first()
+            && player.move_state.world_y == 0
+        {
+            let (x, z) = (
+                i32::from(player.move_state.world_x),
+                i32::from(player.move_state.world_z),
+            );
+            let floor = self.world.sample_field_floor_height(x, z);
+            if let Some(player) = self.world.actors.first_mut() {
+                player.move_state.world_y =
+                    floor.clamp(i32::from(i16::MIN), i32::from(i16::MAX)) as i16;
+            }
+        }
         // The field initialiser's camera-window install, `FUN_80017DD4(seat >>
         // 7, ...)` at `0x801D6ECC` - after the grid marks (`0x801D6BF8`) and
         // the MAN decode that installs the floor ladder (`0x801D6DA8`), which
@@ -1181,25 +1222,19 @@ impl SceneHost {
                     // never-walked NPC stands with its retail facing.
                     // REF: FUN_8003A1E4
                     self.world.seed_field_npc_facings(&man_file, &man_bytes);
-                    // Ambient effect stagers: retail's placement installer
-                    // pre-runs each P1 placement's spawn prologue for one
-                    // frame slice at scene load, and every op-0x34 sub-3 that
-                    // slice executes installs a prescript stager record
-                    // (`FUN_800252EC(arg + 1)` - see
-                    // `World::spawn_ambient_record`). The census is that
-                    // slice's unconditional prefix; note it must run BEFORE
-                    // `pre_run_field_channel_prologues` below, which is the
-                    // same retail pre-run seen from the actor-position side.
-                    // jou: one install (arg 0 → record 1) fans out into the
-                    // lightning director + fifteen CLUT-row cyclers + the
-                    // ambient SFX loop. town0e: the morph installer riding a
-                    // dialogue-bearing placement.
-                    // REF: FUN_8003A1E4
-                    for arg in crate::man_field_scripts::scene_entry_ambient_installs(
-                        &man_file, &man_bytes,
-                    ) {
-                        self.world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
-                    }
+                    // Ambient effect stagers are installed by the prologue
+                    // pre-run below and nowhere else: retail's placement
+                    // installer (`FUN_8003A1E4`) runs each P1 placement's
+                    // spawn prologue for one frame slice at scene load, and
+                    // each op-0x34 sub-3 that slice executes calls
+                    // `FUN_800252EC(arg + 1)` at the executing context's
+                    // position - one install per op. The slice's static census
+                    // (`man_field_scripts::scene_entry_ambient_installs`)
+                    // names the same records; installing from it as well runs
+                    // every ambient part twice (kor5's cue `0x204` then reaches
+                    // the SFX ring twice per period where retail stores it
+                    // once).
+                    // REF: FUN_8003A1E4, FUN_800252EC
                     // Initial NPC POSITIONS: the same retail pre-run also
                     // executes each record's story-flag-tested opening ops -
                     // the `0x23 MoveTo` park to the off-map sentinel for
@@ -1327,6 +1362,14 @@ impl SceneHost {
                             crate::field_env::object_record_pack_slots(&placements, &binds),
                         );
                     }
+                    self.world.set_object_bind_rots(
+                        map_bytes
+                            .as_deref()
+                            .map(|map| {
+                                crate::man_field_scripts::object_script_bind_rots(map, &triggers)
+                            })
+                            .unwrap_or_default(),
+                    );
                     self.world
                         .seed_object_channels(&man_file, &man_bytes, &object_binds);
                     // Boss-stager placements (chapter-1: Mt. Rikuroa's Caruban

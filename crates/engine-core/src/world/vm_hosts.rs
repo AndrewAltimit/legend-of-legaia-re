@@ -143,8 +143,10 @@ pub(super) struct MoveVmHostImpl<'a> {
     pub(super) field_record_words: Option<usize>,
     /// Child spawns collected from op `0x25` while ticking an ambient part
     /// (`FUN_80021B04(actor+0x14, ..., _DAT_8007B8D0 + offsets[v1], ...)`):
-    /// the prescript record id + the spawning part's world position.
-    pub(super) child_spawns: Vec<(i16, [i16; 3])>,
+    /// the prescript record id + the spawning part's world position and
+    /// its rotation banks `+0x24 / +0x26 / +0x28` (`actor+0x24`, the
+    /// stager's second argument).
+    pub(super) child_spawns: Vec<(i16, [i16; 3], [i16; 3])>,
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
@@ -165,6 +167,20 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
                 rot: [state.render_24, state.render_26, state.render_28],
                 scale: state.field_72,
             });
+    }
+
+    /// Op `0x1D` - `sh op[1], DAT_8007B6DE`: a store straight into SFX ring
+    /// slot 3 with no cursor pair and no countdown (`0x80023680..0x8002368C`
+    /// in `FUN_80023070`). The drainer plays it on its next pass. This is how
+    /// the field's ambient effect scripts sound: `kor5`'s looping cue `0x204`
+    /// every 63 vsyncs, the lightning director's thunder `0x20B` - a
+    /// census of a `kor5` memory-card state sees the store at `0x80023688`
+    /// (`ra 0x80023AE8`) two vsyncs before each drained key-on.
+    fn global_write_1d(&mut self, value: u16) {
+        self.world
+            .audio
+            .sfx_ring_ops
+            .push(crate::world::SfxRingOp::WriteSlot(3, value as i16));
     }
 
     /// Ext `0x17` / `0x18` / `0x1A` / `0x19`: the object-effect table
@@ -282,11 +298,15 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     fn spawn_child(&mut self, state: &mut MoveActorState, slot: i16) {
         // Only the ambient field-fx path spawns children in the engine (the
         // summon stand-in keeps its scenes single-record). Retail seats the
-        // child at the parent's world position (`FUN_80021B04(actor+0x14,
-        // actor+0x24, _DAT_8007B8D0 + offsets[v1], 0x1000)`).
+        // child at the parent's world position and rotation banks
+        // (`FUN_80021B04(actor+0x14, actor+0x24, _DAT_8007B8D0 + offsets[v1],
+        // 0x1000)`).
         if self.field_record_words.is_some() {
-            self.child_spawns
-                .push((slot, [state.world_x, state.world_y, state.world_z]));
+            self.child_spawns.push((
+                slot,
+                [state.world_x, state.world_y, state.world_z],
+                [state.render_24, state.render_26, state.render_28],
+            ));
         }
     }
 

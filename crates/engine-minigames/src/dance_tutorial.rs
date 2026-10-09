@@ -230,7 +230,7 @@ pub fn talk_advance(state: i16, pad: u16) -> Option<(i16, u16)> {
 ///
 /// Named `tutorial_countdown_frame` and not `countdown_frame` on purpose: the
 /// Baka Fighter round chrome carries an unrelated free `countdown_frame`
-/// (`crates/engine-core/src/baka_fighter_chrome.rs`) that a live host does
+/// (`crates/engine-minigames/src/baka_fighter_chrome.rs`) that a live host does
 /// call, and the reachability audit resolves a bare call against every free
 /// function of that name. Sharing the name made this disclosure read as stale.
 // PORT: FUN_801d0750 cases 0x0C / 0x11 (the countdown steps)

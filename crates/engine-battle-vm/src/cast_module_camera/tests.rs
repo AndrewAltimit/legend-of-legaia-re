@@ -87,6 +87,28 @@ fn gimard_walk_arm_follows_the_creature_until_it_arrives() {
     assert!(d.follow.is_some());
 }
 
+/// The settle arm frames the caster through case 8 on every pass, held or
+/// not (`jal 0x801D5854` with `a1 = 8` at `0x801F761C`, ahead of the
+/// countdown) - the call whose dead-target arm zeroes the yaw ladder.
+#[test]
+fn gimard_settle_arm_frames_case_eight_every_pass() {
+    let mut st = ModuleCamState::default();
+    let s = seats();
+    st.countdown.add(192);
+    let d = gimard_direct(&mut st, 12, s);
+    assert!(d.hold, "holds on the countdown");
+    assert!(d.end_frame);
+    st.countdown.0 = 0;
+    let d = gimard_direct(&mut st, 12, s);
+    assert!(!d.hold);
+    assert!(d.end_frame);
+    // No other arm calls case 8.
+    for arm in 0..12 {
+        let mut st = ModuleCamState::default();
+        assert!(!gimard_direct(&mut st, arm, s).end_frame, "arm {arm}");
+    }
+}
+
 #[test]
 fn gimard_creature_shots_frame_the_placed_creature() {
     let mut st = ModuleCamState::default();

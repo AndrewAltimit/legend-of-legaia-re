@@ -11,9 +11,10 @@
 //!
 //! This is exercised by real data: a handful of retail tracks program-change to
 //! an unused slot. They split three ways:
-//!   - a used slot follows, so retail aliases to a *valid different page* and
-//!     the notes play -> the port must resolve to that same page, not silence
-//!     (PROT 868 prog 5 -> page of slot 10; PROT 996 prog 19 -> page of slot 23);
+//!   - a used slot follows, so retail aliases to a *valid different page*
+//!     (PROT 868 prog 5 -> page of slot 10; PROT 996 prog 19 -> page of slot 23),
+//!     but the notes still key nothing, because the note-on searches only the
+//!     slot's own `ProgAtr.tones` rows (zero), not the aliased page's;
 //!   - no used slot follows, so retail's alias runs past the tone region and
 //!     reads garbage (PROT 994 prog 42) -> the port leaves it empty (silent),
 //!     which is at least as faithful as replaying undefined bytes;
@@ -69,6 +70,11 @@ struct UnusedHit {
     /// prescribes? In-range: the port's page equals the aliased used slot's
     /// page (non-empty). Past-region: the port leaves it empty (silence).
     port_matches_retail: bool,
+    /// Whether a sequencer note on this slot keys any voice at any key. It
+    /// must not: the note-on searches only the slot's own `ProgAtr.tones`
+    /// rows (`FUN_80066308` stages that byte, `FUN_80068568` loops over it),
+    /// and an unused slot has none.
+    keys_a_voice: bool,
 }
 
 fn sweep() -> Option<Vec<UnusedHit>> {
@@ -163,6 +169,7 @@ fn sweep() -> Option<Vec<UnusedHit>> {
                 retail_alias,
                 notes_after,
                 port_matches_retail,
+                keys_a_voice: (0..=127u8).any(|k| !bank.layer_tones(p, k).is_empty()),
             });
         }
     }
@@ -208,17 +215,16 @@ fn unused_slot_program_changes_alias_like_retail() {
         "these unused-slot ProgramChanges do not match retail's alias: {mismatched:?}"
     );
 
-    // The load-bearing bucket: retail aliases to a valid *different* page AND
-    // notes follow. Before the fix the port dropped these to silence; now they
-    // must resolve (non-empty aliased page), so the instruments actually play.
-    let audible_alias: Vec<(usize, u8)> = hits
+    // The page aliases, but nothing keys: a note on an unused slot searches
+    // zero tone rows. Capture-confirmed on PROT 996 (uru, BGM 2008): the
+    // note on prog 19 reaches no voice allocation between its neighbours'.
+    let keyed: Vec<(usize, u8)> = hits
         .iter()
-        .filter(|h| h.retail_alias.is_some() && h.notes_after > 0 && h.port_matches_retail)
+        .filter(|h| h.keys_a_voice)
         .map(|h| (h.prot, h.program))
         .collect();
     assert!(
-        audible_alias.contains(&(868, 5)) && audible_alias.contains(&(996, 19)),
-        "PROT 868 prog 5 and PROT 996 prog 19 must now resolve to their aliased page: \
-         {audible_alias:?}"
+        keyed.is_empty(),
+        "a note on an unused slot must key no voice: {keyed:?}"
     );
 }

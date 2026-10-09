@@ -252,7 +252,7 @@ from `FUN_801D5DE0`, which this page previously filed as the shop buy list on
 the strength of the `overlay_shop_save.bin` dump filename. That filename names
 the *image* the routine was dumped from, and that overlay carries menu and
 casino code as well - it is not evidence about what the routine does. The same
-mistake reached `crates/engine-core/src/shop.rs` and the browser host's module
+mistake reached `crates/engine-menus/src/shop.rs` and the browser host's module
 docs; both now carry the correction.
 
 What the disassembly says: `FUN_801D5DE0` indexes the casino prize table

@@ -18,7 +18,7 @@ The player characters have **two distinct mesh packs**, one per game form:
   the same characters with default equipment - it is what the **Baka
   Fighter** fist-fight minigame loads, and most default-section geometry is
   byte-shared between the two sources. Parser
-  [`legaia_asset::battle_char_pack`](../../crates/asset/src/battle_char_pack.rs).
+  [`legaia_asset::battle_char_pack`](../../crates/battle-models/src/battle_char_pack.rs).
 
 The field form is field-only; battle uses the battle form. (Two earlier
 readings - "battle reuses the field pack" and "battle renders PROT 1204
@@ -803,7 +803,7 @@ The **assembled player-file meshes** all author at texpages `0x15`/`0x16` =
 `(320, 256)`/`(384, 256)` and CLUT row 480, so on them the pass is a uniform
 `+3` texpage / `+0x40` CLUT-id rewrite - exactly the residual delta between
 the disc assembly and the live registered blob. From-scratch port:
-[`legaia_asset::battle_char_assembly::relocate_tsb_cba`](../../crates/asset/src/battle_char_assembly.rs)
+[`legaia_asset::battle_char_assembly::relocate_tsb_cba`](../../crates/battle-models/src/battle_char_assembly.rs)
 (dump `ghidra/scripts/funcs/80053a28.txt`;
 disc-gated `battle_char_assembly_real::relocates_each_character_into_its_runtime_band`).
 

@@ -137,6 +137,11 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_core::fog_particles::FogParticle>>>,
+    /// `LEGAIA_SEAT_SPRITE_ARMS`: a retail state's live sprite-arm sheets,
+    /// installed over the ambient pool's on the frame the capture is taken
+    /// (`World::install_sprite_arm_snapshot`); taken once.
+    pub seat_sprite_arms:
+        std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::SpriteArmSeed>>>,
     /// `LEGAIA_BATTLE_DRIVE=menu,<flow>,<seat>` /
     /// `action,<seat>,<state>,<category>,<queued>`: walk the fight through
     /// its pad path to the retail capture's phase and capture the first
@@ -423,6 +428,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_FOG")
                     .ok()
                     .map(|v| legaia_parity::retail_compare::fog_from_env(&v)),
+            ),
+            seat_sprite_arms: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_SPRITE_ARMS")
+                    .ok()
+                    .map(|v| legaia_parity::retail_compare::sprite_arms_from_env(&v)),
             ),
             seat_clear: std::env::var("LEGAIA_SEAT_CLEAR").ok().and_then(|v| {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
@@ -906,11 +916,6 @@ struct PlayWindowApp {
     /// object whose motion stream swapped its model (op `0x0E`,
     /// `World::object_live_models`); textured and colour bridges.
     field_pack_meshes: Vec<Option<usize>>,
-    /// Parallel to `field_placement_records` / `_color_records`: the draw
-    /// is its record's first placement, the one a motion stream drives
-    /// (`field_env::stream_bound_draws`).
-    field_placement_stream_bound: Vec<bool>,
-    field_placement_color_stream_bound: Vec<bool>,
     field_pack_color_meshes: Vec<Option<usize>>,
     /// Field-scene **terrain / ground** draws: `(uploaded-mesh index, world
     /// model)` per visible cell of the field `.MAP` object grid
@@ -1435,7 +1440,7 @@ struct PlayWindowApp {
     /// so the screen-door dissolves in/out instead of popping while the
     /// gate flickers at cover edges. `Cell` because the redraw pass updates
     /// it while the renderer borrow is live.
-    occl_fade_strength: std::cell::Cell<f32>,
+    occl_fade_strength: std::cell::Cell<legaia_engine_core::field_occlusion::FadeRamp>,
     /// The current scene's derived point lights (world space), rebuilt by
     /// `upload_assets` at scene load and staged into the renderer each
     /// field frame together with the camera's view-projection.

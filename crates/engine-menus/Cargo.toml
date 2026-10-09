@@ -1,0 +1,26 @@
+[package]
+name = "legaia-engine-menus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_menus"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-art.workspace = true
+legaia-asset.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-minigames.workspace = true
+legaia-engine-system.workspace = true
+legaia-engine-vm.workspace = true
+legaia-font.workspace = true
+legaia-mes.workspace = true
+legaia-save.workspace = true
+legaia-tim.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+legaia-prot.workspace = true

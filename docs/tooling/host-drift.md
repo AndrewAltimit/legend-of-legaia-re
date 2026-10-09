@@ -259,6 +259,8 @@ is reached at runtime.
 | walk-ground render surface | `symbols_all` on `field_ground::render_positions` (the sink) and `render_indices` (the winding) across the native mesh builder and the play page's ground exports. |
 | CD-XA staging | `symbols_all` on `xa_banks::install_shout_file` / `install_clip_file` across the native boot's two bank readers and the play page's `play_xa_install`. |
 | visible-tile crop | `symbols_all` on `field_view_window::field_view_cells` + `framing_is_retail` (whether a frame crops), `terrain_draw_visible` (the terrain list) and `field_ground::crop_indices` (the ground) across the native redraw / ground re-upload and the play page's crop exports. |
+| dance-hall placement composition | `symbols_all` on `EnvDraw::place_point` across the native venue upload (`build_dance_venue_gpu`) and the browser bake (`DanceEnv::append_draw`). |
+| Muscle Dome surface cadence | `symbols_all` on `MuscleDomeSurface::frame_at` + `sim_ticks` across the native `refresh_muscle_dome_gpu` and the play page's `play_mg_muscle_scene_frame`. |
 
 The last three exist because each named a divergence the reachability tier
 could not see, and each divergence was a *model* one rather than a missing
@@ -327,7 +329,7 @@ and reachability of it is the [port catalog's](port-catalog.md) question.
 
 The three hosts share one keyboard layout, served out of the engine by
 `pad_bindings_json`
-([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-core/src/input.rs)),
+([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-system/src/input.rs)),
 and the whole point of serving it is that a page cannot write a second one
 down. A page that does write one down never looks like a table: it looks like
 a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.
@@ -696,8 +698,9 @@ an entry it arms. This one measures what a host **runs this frame**, and the
 difference is a failure class none of them can see.
 
 Both hosts drive the engine through one frame path - the native window's
-redraw tick loop, the browser runtime's `tick_frame` - and both paths
-short-circuit. The native loop `continue`s out of five arms; the browser
+per-tick body (`sim_tick`, run once per tick the redraw drains, with its
+step helpers spliced back in), the browser runtime's `tick_frame` - and both
+paths short-circuit. The native body `return`s out of five arms; the browser
 runtime `return`s out of three; the page's own `_frame` gates the whole call
 to `tick_frame` behind a fourth kind of arm in JavaScript. The **draw** does
 not short-circuit with them: the native draw passes run after the loop
@@ -824,9 +827,10 @@ remaining difference, the page advancing its clip players inside the step.
 
 This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
-reaches. Engine means the six wgpu-free crates both hosts link
-(`engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `engine-session`,
-`engine-screens`). A host's own
+reaches. Engine means the wgpu-free crates both hosts link
+(`ENGINE_API_CRATES`: `engine-core`, `engine-battle`, `engine-effects`,
+`engine-minigames`, `engine-vm`, `engine-battle-vm`, `engine-ui`,
+`engine-audio`, `engine-session`, `engine-screens`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.
 
@@ -959,7 +963,7 @@ never turned that pass off, so town01's terrain drew through the battle camera,
 sampling the battle VRAM. The bisect that pins it: with the whole battle draw
 list filtered out of `renderAssembled`, the strips and the patch still draw.
 The native window draws its heightfield only in the non-battle branch of
-`window/event_handler/redraw.rs`, and a retail command-phase frame of the same
+its scene draw lists (`window/event_handler/redraw_draws.rs`), and a retail command-phase frame of the same
 stage (`v0_1_battle_command_menu`, `mednafen-state vram-dump --display-crop`)
 shows bare gravel. The page now turns the pass off while a battle draws and
 back on for every non-battle frame; the billboard-outline candidate the first
@@ -1089,6 +1093,27 @@ off by default natively (`--edge-collision` / `--solid-npcs` / `--live-npcs`
 opt-ins). The same engine, the same scene, two different games in a town.
 Native now defaults them on with `--no-*` opt-outs; a paired-defaults row
 would have caught it and none exists.
+
+**One transform spelled twice, with an axis missing.** The browser dance
+hall baked its venue draw list with each placement's yaw alone, while the
+native window placed the same draws through all three authored angles
+(`Rx * Ry * Rz`, `FUN_80026988`). The hall carries tilted placements - its
+three video walls among them - and the yaw-only bake stood them upright
+inside the back wall, so both browser pages drew bare brick where the window
+draws the dancer screens. Every tier was green: the geometry, the VRAM and the
+triangle count were identical, only the vertices moved. The composition is now
+one kernel, `field_env::EnvDraw::place_point`, which the dance hall, the
+fishing venue and the occlusion-fade occluder set all place through, and the
+dance pairing is a tier-3 row.
+
+**A per-call stepper behind a per-frame draw.** The Muscle Dome's 3D
+surface advanced its choreography and battle camera script once per call, and
+both hosts called it from their draw. The browser page draws idle and paused
+frames too, so over the same ticks its dome took more camera steps than the
+window's and the round intro framed the other fighter. The surface now steps
+through `frame_at`, gated on the world's sim tick; the shape to look for is
+any surface whose own counter advances inside a call a host makes per display
+frame.
 
 **A typed channel narrowed at one host.** The web strike-SFX scheduler was
 `u8` end to end, so every cast cue the engine emits above `0xFF` was dropped
@@ -2197,7 +2222,7 @@ Both hosts now composite it through one emitter:
 
 | host | call site | source |
 |---|---|---|
-| native window | `handle_redraw`'s `screen_prims` assembly, `window/event_handler/redraw.rs` | `World::screen_tint_push_args` |
+| native window | the redraw's `build_screen_prims`, `window/event_handler/redraw_overlay.rs` | `World::screen_tint_push_args` |
 | play page | `tick_battle_intro`'s prim assembly, `play_battle.rs` | the same |
 
 The emitter is `screen_prim::screen_effect_push_prims`, and it exists as a
@@ -2251,7 +2276,7 @@ the GLSL twin is compiled but not run by any test, so an edit to one shader
 has to be carried to the other by hand.
 
 The ground's depth cue joins the same pair (`overworld_ground_cue` /
-`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-core/src/overworld_ground_cue.rs)):
+`overworldGroundCue`, [`overworld_ground_cue`](../../crates/engine-field/src/overworld_ground_cue.rs)):
 each re-projects the cell's `(x1, z0)` corner from the flat-depth references
 and runs retail's `DPCS` arithmetic toward the literal far colour on the packet
 colour. The WGSL cue is GPU-tested in the same file. The GLSL twin has a
@@ -2399,8 +2424,9 @@ are simulated once, in `World::script_actors`, and each host only reads.
 NPC height is the one read a host could get wrong silently: the NPC position
 map carries X / Z, so a host that samples the floor under an NPC itself draws
 an arcing NPC on the ground with every tier green. Both place NPCs through
-`World::field_npc_render_y` - the native window's field NPC pass and the play
-page's `play_npc_transforms` - and the lights ride each host's screen-prim pass
+`World::field_npc_render_y`, inside the one draw-pose kernel
+`World::field_npc_draw_pose` the native window's field NPC pass and the play
+page's `play_npc_draw_poses` both read - and the lights ride each host's screen-prim pass
 through the tier-7 rule above. The arc's follow camera (`FUN_801DB510` /
 `FUN_801DAA50` from the release watcher) is engine-side too: the shared
 `Camera` tick reads `World::script_arc_follow_camera`, so both hosts' follow
@@ -3190,6 +3216,15 @@ there as one list - the fog sheets, the move strips and the light pools - so
 they order against each other exactly as the page's single pass orders them.
 Transitions, fades and battle readouts stay in the tail.
 
+Both lists come out of one composer, `engine-screens::screen_layers::compose_screen_prims`:
+a host fills `HostScreenPrims` with the layers that need its own camera or
+VRAM, and the composer appends them together with every layer the world
+decides alone, in one order. That order matters even though the walk sorts by
+bucket, because a tie inside a bucket breaks by append order. The page
+concatenates `under` and `over` into its one sort; the native window draws its
+text between them. That layering is the one difference left, and it is about
+the text, not about the order.
+
 ## A side-by-side pass over one set of both-host features
 
 The drift tiers are green over every feature below, and each one was then shot
@@ -3851,8 +3886,9 @@ or the deviating host adopting the other's behaviour.
   its rest mesh stayed opaque and un-cued there. Both hosts now go through
   `BattleActorDrawPlan::apply_body_blend` (the native window keeps each battle
   body's rest mesh CPU-side and re-uploads it blended while the word raises
-  ABE) and `BattleActorDrawPlan::tint_cue_applies`, under two `SIM_PAIRS`
-  rows.
+  ABE) and `BattleActorDrawPlan::tint_cue_applies` - asked inside
+  `BattleActorDrawPlan::body_cue`, the one tint-over-cursor precedence both
+  draw passes take - under two `SIM_PAIRS` rows.
 - **The Muscle Dome arena in 3D.** The page posed the arena, the fighter
   and the monster in its script (swing clips picked off the turn edge, an
   orbit framing) and the native window drew no 3D dome at all. Both play
@@ -4239,6 +4275,39 @@ banner and the cheats panel. Closed rows:
 - **Absent on both:** a dialogue text blip, a door cue and any footstep cue
   (the page runs a footstep timer that keys nothing), and the casino prize
   counter's cues.
+
+## Per-frame decisions moved out of the hosts
+
+A side-by-side read of the native redraw and the play page found decisions
+each host had written out for itself - some in Rust on both sides, some in
+`play-app.js` - several of which had already drifted. Each is now one engine
+kernel both hosts call, pinned by a tier-3 `SIM_PAIRS` row on the kernel's
+name so a host that re-spells the decision locally fails the gate.
+
+| decision | kernel | what had drifted |
+|---|---|---|
+| occlusion-fade arming + strength ramp | `field_occlusion::host_fade_armed`, `FadeRamp` | the page carried the ramp's ease and snap in JS; the native window kept dissolving walls behind the pause menu and a name-entry prompt |
+| scene-light selection | `engine-screens::field_frame::field_scene_lights` | the page's gate had no screen term, so a shop's black backdrop carried the scene's candle halos |
+| screen-primitive append order | `engine-screens::screen_layers::compose_screen_prims` | the widgets sorted with the field effects natively and last on the page, the shop fade and pause wipe sat in opposite orders, and the page kept the field's effects under a blacked-out shop |
+| NPC draw transform | `World::field_npc_draw_pose` | the hide, heading composition and tilt were spelled natively and again in `field-actors.js` over two yaw encodings, and neither host applied retail's non-unit `actor+0x72` render scale |
+| NPC pose-cache look key | `ActorLook::pose_key_bits` | the page folded a script's head-look angles into its re-pose generation with overlapping XORs, so two different looks could alias and the head stayed put |
+| placed-object / landmark model swap and live model | `field_env::placed_model_swaps`, `field_env::live_placed_model` | the first-placement swap rule was spelled three ways (the page alone filtered the `0xF0` sentinel) and the native turn-then-move twice; the page still applies the move and turn tables in `play-app.js`, in its own Y-up frame |
+| battle body cue precedence | `BattleActorDrawPlan::body_cue` | the tint word beat the cursor pulse on both hosts, by two routes (stage-then-overwrite natively, test-then-fall-through on the page) |
+| scene-hidden lead | `World::actor_hidden_by_scene` | the native actor pass skipped the opening prologue's cold-spawned lead; the page drew him as a stray mesh |
+| shop / prize-counter opening | `MenuRuntime::open_field_overlay_requests`, `MenuRuntime::session_edge` | each host drained the op-`0x49` requests and spelled the opening tick's no-edge rule itself |
+| dance auto-end | `World::finish_dance_if_over` | each host spelled the `mode != Dance` poll beside its own `exit_dance` call |
+| frame clear colour | `engine-screens::field_frame::frame_clear_color` | the page passed `false` for the screen term, so a shop in a scene with a scripted clear colour (`teien`) sat on that colour instead of black |
+| prologue grade staging | `World::frame_grade` | each host mapped the grade onto its colour-grade, palette-grade and depth-cue arms itself |
+| move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` | each host classified the cue itself; the native window logged a voice arm the page dropped, though a byte cue can never reach the voice band |
+
+The per-tick screen owners are not one kernel yet. Both hosts hand a frame
+with more than one screen up to the same owner - the pause menu, then the
+name-entry prompt, then a menu-overlay screen (shop, prize counter) - but
+each spells that order itself: the native window as the arm order of its
+per-tick body, the page as the order of its `_updateFieldMenu` /
+`_updateNameEntry` / `_updateFieldShop` calls, which asked the shop before the
+name entry until it was put in the native order. No gate reads the JavaScript
+side.
 
 ## Adding coverage
 

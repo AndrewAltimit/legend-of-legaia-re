@@ -1241,7 +1241,9 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-anm",
+ "legaia-battle-models",
  "legaia-bytes",
+ "legaia-game-tables",
  "legaia-lzs",
  "legaia-mdec",
  "legaia-mes",
@@ -1283,6 +1285,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-battle-models"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "png",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "legaia-bytes"
 version = "0.1.0"
 
@@ -1295,6 +1314,19 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-disc-patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-iso",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-xa",
+ "serde",
 ]
 
 [[package]]
@@ -1350,7 +1382,10 @@ dependencies = [
  "legaia-cheats",
  "legaia-engine-battle",
  "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-menus",
  "legaia-engine-minigames",
+ "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
  "legaia-gamedata",
@@ -1383,6 +1418,41 @@ dependencies = [
  "legaia-engine-minigames",
  "legaia-engine-vm",
  "legaia-tmd",
+]
+
+[[package]]
+name = "legaia-engine-field"
+version = "0.1.0"
+dependencies = [
+ "legaia-anm",
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-engine-battle",
+ "legaia-engine-minigames",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-mes",
+ "legaia-tmd",
+ "serde",
+]
+
+[[package]]
+name = "legaia-engine-menus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-engine-battle",
+ "legaia-engine-minigames",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-mes",
+ "legaia-prot",
+ "legaia-save",
+ "legaia-tim",
+ "serde",
 ]
 
 [[package]]
@@ -1493,6 +1563,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-system"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-cheats",
+ "legaia-engine-battle",
+ "legaia-engine-vm",
+ "legaia-gamedata",
+ "legaia-save",
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "legaia-engine-ui"
 version = "0.1.0"
 dependencies = [
@@ -1502,6 +1588,7 @@ dependencies = [
  "legaia-engine-vm",
  "legaia-font",
  "legaia-mednafen",
+ "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
  "serde",
@@ -1553,6 +1640,15 @@ dependencies = [
  "png",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-game-tables"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "serde",
 ]
 
 [[package]]
@@ -1670,6 +1766,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-party-swap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-lzs",
+ "legaia-tim",
+ "legaia-tmd",
+]
+
+[[package]]
 name = "legaia-patcher"
 version = "0.1.0"
 dependencies = [
@@ -1679,14 +1787,17 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-bytes",
+ "legaia-disc-patch",
  "legaia-font",
  "legaia-gamedata",
  "legaia-iso",
  "legaia-lzs",
  "legaia-mes",
+ "legaia-party-swap",
  "legaia-prot",
  "legaia-tim",
  "legaia-tmd",
+ "legaia-translate",
  "legaia-vab",
  "legaia-xa",
  "libc",
@@ -1716,6 +1827,19 @@ dependencies = [
  "clap",
  "libc",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "legaia-render-kernels"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "legaia-asset",
+ "legaia-engine-vm",
+ "legaia-tim",
+ "legaia-tmd",
  "serde_json",
 ]
 
@@ -1762,6 +1886,23 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-translate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "encoding_rs",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-disc-patch",
+ "legaia-font",
+ "legaia-lzs",
+ "legaia-prot",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]

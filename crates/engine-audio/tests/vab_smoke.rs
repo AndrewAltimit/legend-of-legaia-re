@@ -209,13 +209,19 @@ fn sparse_bank_programs_resolve_by_used_slot_rank() {
     assert!(bank.play_note(&mut spu, 1, 3, 60, 100));
     assert_eq!(spu.voices[1].start_addr, vag2_addr);
     // Unused slots alias onto the page the NEXT used slot gets (retail's +8
-    // used-counter), so they resolve rather than fall silent: slot 0 -> page 0
-    // (VAG 1, same as program 1), slot 2 -> page 1 (VAG 2, same as program 3).
-    assert!(bank.play_note(&mut spu, 2, 0, 60, 100));
-    assert_eq!(spu.voices[2].start_addr, vag1_addr);
-    assert!(bank.play_note(&mut spu, 3, 2, 60, 100));
-    assert_eq!(spu.voices[3].start_addr, vag2_addr);
-    assert_eq!(bank.tone_prior(0, 60), bank.tone_prior(1, 60));
-    assert_eq!(bank.tone_prior(2, 60), bank.tone_prior(3, 60));
+    // used-counter): slot 0 -> page 0, slot 2 -> page 1. But a note-on on one
+    // keys nothing - FUN_80068568 searches only the slot's own
+    // `ProgAtr.tones` rows, zero for an unused slot (capture: a uru note on
+    // gap slot 19 reaches no voice allocation).
+    assert_eq!(bank.programs[0].tones[0].vag, 1, "slot 0 aliases page 0");
+    assert_eq!(bank.programs[2].tones[0].vag, 2, "slot 2 aliases page 1");
+    assert_eq!(
+        bank.programs[0].key_tones, 0,
+        "an unused slot declares no tones"
+    );
+    assert!(!bank.play_note(&mut spu, 2, 0, 60, 100));
+    assert!(!bank.play_note(&mut spu, 3, 2, 60, 100));
+    assert_eq!(bank.tone_prior(0, 60), None);
+    assert_eq!(bank.tone_prior(2, 60), None);
     assert!(bank.tone_prior(1, 60).is_some());
 }

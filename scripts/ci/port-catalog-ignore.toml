@@ -742,8 +742,6 @@
 "801f6000" = "Data, not code: the only dump is a DATA REGION hex listing with every line tagged `D`. docs/subsystems/level-up.md and docs/tooling/overlay-capture.md both record 0x801F6000+ as live animation-state globals, zero at rest. see ghidra/scripts/funcs/overlay_magic_level_up_data_0x801f6000.txt"
 "801f7000" = "Interior code, not an entry: the region dump's first word is 0x00561021 = `addu v0,v0,s6`, mid-computation with no prologue. docs/tooling/playthrough-coverage.md independently flags this VA as an alias mismatch whose magic_level_up dump stem is the wrong identity for the resident overlay. see ghidra/scripts/funcs/overlay_magic_level_up_data_0x801f7000.txt"
 "801f74f4" = "Ghidra-promoted switch case inside FUN_801F747C: the dump is named `caseD_0` by Ghidra itself and its body is `j 0x801f7518` into the shared tail plus that function's own epilogue. Already described as the switch case 0x801F74F4 in the 801F747C row of docs/reference/functions.md. see ghidra/scripts/funcs/overlay_effect_0967_801f74f4.txt"
-"801f7624" = "Not an entry in any dumped overlay: in PROT 0967 this VA is the epilogue delay slot of FUN_801F747C, and the muscle_dome dump opens `lw t6,0x1c(v0)` mid GTE matrix load with an in_v0 / in_t5 / in_at decompile and no prologue. see ghidra/scripts/funcs/overlay_muscle_dome_801f7624.txt"
-"801f76f4" = "Interior block of a larger GTE transform/draw routine: the only dump opens `nop` then `cop2 0x480012` (RTPT) with no prologue, and the decompile carries unaff_s0..s8 plus in_stack_ slots. see ghidra/scripts/funcs/overlay_muscle_dome_801f76f4.txt"
 [global_accessors]
 "80019788" = "Global-buffer base getter: `lui v0, 0x8009; jr ra; ...` returns the fixed RAM pointer 0x80088758 (callers scan it as a char* for '_'-separator CDNAME names). Engine carries scene/name state as typed Rust fields (active_scene_label etc.); no body to port. See docs/reference/functions.md row 80019788."
 "8004695c" = "Request-latch setter: clears DAT_8007b6cc, arms gp[0x9d4]=1 with payload gp[0x9d0]=a0. A three-store one-shot 'arm this action' latch with no body of its own; the semantic lives in whichever consumer reads the latch. see ghidra/scripts/funcs/8004695c.txt"
@@ -1448,7 +1446,7 @@
 # The boot / init.pak overlay, PROT 0895 (slot A, base 0x801CE818). Its
 # publisher-logo half IS ported - the sequencer FUN_801CEFD4, the quad emitter
 # FUN_801CFBB8 and the two pair drawers FUN_801D0868 / FUN_801D08F0 all carry
-# `// PORT:` tags in crates/engine-core/src/publisher_logos.rs, and the quad
+# `// PORT:` tags in crates/engine-menus/src/publisher_logos.rs, and the quad
 # table is in docs/subsystems/boot.md. The rows here are the rest of the image:
 # a CD/asset streamer and a PSX memory-card driver, both of which the port
 # replaces wholesale (legaia-iso / legaia-prot / legaia-lzs for the first,
@@ -1511,7 +1509,7 @@
 # one encodes is preserved in docs/reference/functions.md where it is worth
 # keeping; what is excluded is a tick path that cannot run on a shipped disc.
 [dev_gated_scus]
-"800179c0" = "Debug mode-advance chord. First two instructions load _DAT_8007B98C and branch to the epilogue when it is zero, so the whole 59-instruction body is retail-inert. Inside: a hold-repeat countdown at _DAT_8007B890, a pad chord on _DAT_8007B850 (0x900 when _DAT_8007B868 == 0, else 0x100 plus a `pad & 0xF == 0xF` alternative), and a write of mode_table[cur].next - the i16 at +0xA of the 24-byte row at 0x8007078C - into the game-mode global _DAT_8007B83C, with a mode-3 special case that jumps to mode 0x0E when _DAT_8007B8C8 is set. The `next` semantics it encodes are the ported ModeEntry::next, and the geometry is asserted against the ported table in crates/engine-core/src/mode.rs (DEBUG_MODE_ADVANCE_*). Only the chord itself is excluded. see ghidra/scripts/funcs/800179c0.txt"
+"800179c0" = "Debug mode-advance chord. First two instructions load _DAT_8007B98C and branch to the epilogue when it is zero, so the whole 59-instruction body is retail-inert. Inside: a hold-repeat countdown at _DAT_8007B890, a pad chord on _DAT_8007B850 (0x900 when _DAT_8007B868 == 0, else 0x100 plus a `pad & 0xF == 0xF` alternative), and a write of mode_table[cur].next - the i16 at +0xA of the 24-byte row at 0x8007078C - into the game-mode global _DAT_8007B83C, with a mode-3 special case that jumps to mode 0x0E when _DAT_8007B8C8 is set. The `next` semantics it encodes are the ported ModeEntry::next, and the geometry is asserted against the ported table in crates/engine-field/src/mode.rs (DEBUG_MODE_ADVANCE_*). Only the chord itself is excluded. see ghidra/scripts/funcs/800179c0.txt"
 
 # Surfaced by the byte-denominated coverage sweep rather than by a citation:
 # each is code no reference of any form reaches on the disc, so Ghidra built no
@@ -1759,11 +1757,8 @@
 "801ddb00" = "Slot 3 of the same eight-entry corner-writer table at 0x801CEC40 (its word sits at 0x801CEC4C, its only reference). Seven `sh` stores of the POLY_F4 corner halfwords at a1[+0x08..+0x14] then `j 0x801DDBC4`, one word earlier than slot 0's join because the tail supplies the eighth halfword. Same scope as slot 0 and the dispatcher 801dd9d4. see ghidra/scripts/funcs/overlay_field_0897_801ddb00.txt"
 "801d1610" = "Muscle Dome arena full-screen gradient quad, (x, y, w, h, ot_slot). A real entry - own `addiu sp,sp,-0x28` prologue directly under the previous routine's `jr ra`, and `jal`ed from 0x801D01AC inside the backdrop 801d00f8 (ported as legaia_engine_ui::ringside_backdrop). It takes the scratchpad draw context 0x1F800314, bumps its +0x8C packet cursor by 0x24, writes a POLY_G4 (tag 0x08000000, code word 0x3A101010, top corners shaded 0x64 and bottom corners 0) spanning (x, y)..(x+w, y+h), and links it with 8003d2c4 at *(0x1F8003F4) + ot_slot*4, then appends a 0xC-byte libgpu draw-mode fill through 80059010 and links that too. Packet-and-OT-only, same family as the 801d6480 Baka Fighter gradient bar above. see ghidra/scripts/funcs/overlay_0977_slotA_801d1610.txt"
 
-# Slot-B world-map render overlay (PROT 0901, link base 0x801F69D8): same
-# packet-only shape as the slot-A rows above.
-"801f73e4" = "World-map top-view band strip: zeroes the camera roll global 0x8007B792 (saving it into s5) and restores it on exit, pushes the camera through 800172c0 / 8003d1ec / 8003d368, then loops five times emitting a 0x14-byte flat rect (tag 0x04000000) per band into the scratchpad prim arena at *(0x1F8003A0) - each screen-clipped against the 0x140-wide, 0x80-high draw area with the extent shrunk rather than the packet dropped - and links each with 8003d2c4, closing with one 0x98 SetDrawMode fill through 80059010 and a final link. No band count, colour or geometry is read from game state: the tint endpoints come from literals (0x00808080 / 0x00404040 + 0x64000000) selected by 8003ce64, and the row pitch is `i << 7`. The engine draws the world-map sky/band layer from engine-render's own draw list. Body resolves to world_map_render(901) at its mapped base. see ghidra/scripts/funcs/overlay_world_map_top_ext_wm_ext_dispatcher_caller_helper_801f73e4.txt"
-
-# Same overlay family, the 3D half: GTE matrix push / RotTrans / mesh submit
+# Slot-B world-map render overlay family (PROT 0901), the 3D half: GTE matrix
+# push / RotTrans / mesh submit
 # wrappers. Each pushes a matrix with 8005B268, transforms through 8003D344 or
 # 8003D368, submits with the shared mesh renderer 0x80043390. The two Baka Fighter rows also push and
 # pop a matrix with 8005B268 / 8005B308. The port renders minigame geometry through `engine-render`'s own
@@ -1993,6 +1988,8 @@
 # three entry tables (docs/subsystems/cast-module.md); this section is only
 # about the ADDRESS not being one port site.
 [worklist_va_aliased]
+"801f7624" = "Distinct code at this VA by image: an entry in cast_curse(943), whose own bytes open `addiu sp,sp,-0x18` here (the capture trampoline overlay_cast_curse_0943_801f7624.txt), while in PROT 0967 it is the epilogue delay slot of FUN_801F747C and the unbased muscle_dome dump opens mid GTE matrix load with no prologue. Was filed under [ghidra_phantoms] off those two alone; the VA is aliased, not a phantom."
+"801f76f4" = "Distinct code at this VA by image: an entry in cast_water_column(945), whose own bytes open `addiu sp,sp,-0x18` here (the capture trampoline overlay_cast_water_column_0945_801f76f4.txt), while the unbased muscle_dome dump opens `nop` then RTPT with no prologue, an interior block of a GTE draw routine. Was filed under [ghidra_phantoms] off that dump alone; the VA is aliased, not a phantom."
 "801f69f8" = "3 slot-B images hold DISTINCT code at this VA (cast_glare_divide(940), cast_water_column(945), summon_aluru(916)), each confirmed against that image's own bytes at 0x801F69D8 - so the bare VA is not one port site and the ref count over it sums unrelated per-module callees. Was filed under [worklist_data] before those images were mapped; the reason was wrong about the shape, not about the verdict."
 "801f6a30" = "2 slot-B images hold DISTINCT code at this VA (summon_barra(917), summon_terra(933)), each confirmed against that image's own bytes at 0x801F69D8 - so the bare VA is not one port site and the ref count over it sums unrelated per-module callees. Was filed under [worklist_data] before those images were mapped; the reason was wrong about the shape, not about the verdict."
 "801f6a74" = "2 slot-B images hold DISTINCT code at this VA (cast_evil_seru_magic(966), summon_horn(930)), each confirmed against that image's own bytes at 0x801F69D8 - so the bare VA is not one port site and the ref count over it sums unrelated per-module callees. Was filed under [worklist_data] before those images were mapped; the reason was wrong about the shape, not about the verdict."

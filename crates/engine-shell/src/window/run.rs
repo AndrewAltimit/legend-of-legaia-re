@@ -256,6 +256,19 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
             world.seed_battle_backdrop_keep_object_1(k != 0);
         }
     }
+    // `LEGAIA_BATTLE_FRAME_STEP=step,state` (the retail-compare image
+    // channel): run the battle on frames of `step` vsyncs from the first tick
+    // the action SM reaches `state` (`World::seed_battle_frame_step`).
+    if let Some((step, state)) = std::env::var("LEGAIA_BATTLE_FRAME_STEP")
+        .ok()
+        .and_then(|s| {
+            let (a, b) = s.split_once(',')?;
+            Some((a.trim().parse::<u8>().ok()?, b.trim().parse::<u8>().ok()?))
+        })
+    {
+        world.seed_battle_frame_step(step, state);
+    }
+
     // `LEGAIA_BATTLE_INFLIGHT=caster,spell,target[;x:z,...]`: dispatch that
     // cast the moment the first command prompt opens - the retail comparison
     // corpus's replay of a capture taken mid-cast (`InflightCastSeed`), with
@@ -314,6 +327,7 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         .and_then(|s| s.trim().parse::<u32>().ok())
     {
         world.rng_state = seed;
+        world.encounters.rng_hold = Some(seed);
     }
     if world.force_encounter(row) {
         log::info!(
@@ -321,6 +335,8 @@ fn arm_requested_battle(session: &mut BootSession, spec: &str) {
              the normal encounter transition",
             world.active_scene_label
         );
+    } else {
+        world.encounters.rng_hold = None;
     }
 }
 
@@ -1291,7 +1307,7 @@ pub(super) fn cmd_play_window_with_record(
     //      carries the 9-slice panel chrome (CLUT row 2).
     // Plus the optional menu-glyph TIM above for the HUD numerals.
     // The atlas builder composites both into one 256x256 RGBA atlas;
-    // see `crates/engine-core/src/save_menu_atlas.rs`. The 9-slice
+    // see `crates/engine-menus/src/save_menu_atlas.rs`. The 9-slice
     // tile geometry was pinned via `scripts/pcsx-redux/scan_panel_prims.py`
     // against sstate9's RAM dump - every primitive's source u/v + CLUT
     // is byte-pinned to the retail render.
@@ -1444,8 +1460,6 @@ pub(super) fn cmd_play_window_with_record(
         field_placement_records: Vec::new(),
         field_placement_color_records: Vec::new(),
         field_pack_meshes: Vec::new(),
-        field_placement_stream_bound: Vec::new(),
-        field_placement_color_stream_bound: Vec::new(),
         field_pack_color_meshes: Vec::new(),
         field_placement_color_window_keys: Vec::new(),
         field_placement_cell_keys: Vec::new(),
@@ -1584,7 +1598,7 @@ pub(super) fn cmd_play_window_with_record(
         dyn_shadows,
         occlusion_fade,
         field_occluders: Default::default(),
-        occl_fade_strength: std::cell::Cell::new(0.0),
+        occl_fade_strength: std::cell::Cell::new(Default::default()),
         scene_point_lights: Vec::new(),
         scene_prop_lights: Vec::new(),
         orbit_drag_last_x: None,

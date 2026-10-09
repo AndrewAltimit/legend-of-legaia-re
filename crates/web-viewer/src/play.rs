@@ -798,6 +798,46 @@ impl LegaiaRuntime {
         per.into_iter().flatten().map(|v| v as f32).collect()
     }
 
+    /// Per-placement **scripted turn** (parallel to
+    /// [`Self::field_placement_slots`]), flattened 9 column-major floats per
+    /// placement: the rotation a script's op `0x38` / `4C 48` put on the
+    /// placed object's actor, relative to its bind-time `.MAP` angles, in the
+    /// page's Y-up frame (`F * turn * F`, `F = scale(1,-1,1)`). The page
+    /// left-multiplies each draw's linear part by it, about the draw's own
+    /// origin. Identity for an unturned placement; **empty** while nothing has
+    /// turned. The same `World::object_draw_turn_matrices` table the native
+    /// play-window folds into its placed draws.
+    pub fn field_placement_turns(&self) -> Vec<f32> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let turns = h.world.object_draw_turn_matrices();
+        if turns.is_empty() {
+            return Vec::new();
+        }
+        let ident: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let mut out = Vec::with_capacity(f.placement_records.len() * 9);
+        for r in &f.placement_records {
+            let lin = r
+                .and_then(|r| turns.get(&r))
+                .map(|t| {
+                    // Column-major 3x3, conjugated by the Y flip: an element
+                    // that mixes Y with X or Z changes sign.
+                    let mut m = [0.0f32; 9];
+                    for c in 0..3 {
+                        for row in 0..3 {
+                            let flip = if (row == 1) != (c == 1) { -1.0 } else { 1.0 };
+                            m[c * 3 + row] = flip * t[c * 4 + row];
+                        }
+                    }
+                    m
+                })
+                .unwrap_or(ident);
+            out.extend_from_slice(&lin);
+        }
+        out
+    }
+
     /// Per-terrain-draw authored pitch (object record `+0x08`), parallel to
     /// [`Self::field_terrain_slots`]. Composed with yaw and roll in retail's
     /// `Rx * Ry * Rz` order, as the native window composes every terrain
@@ -933,16 +973,9 @@ impl LegaiaRuntime {
         if models.is_empty() {
             return Vec::new();
         }
-        let bound = field_env::stream_bound_draws(&f.placement_records);
-        f.placement_records
-            .iter()
-            .zip(bound)
-            .map(|(r, bound)| {
-                r.filter(|_| bound)
-                    .and_then(|r| models.get(&r))
-                    .filter(|&&id| (0..0xF0).contains(&id))
-                    .map_or(-1, |&id| i32::from(id))
-            })
+        field_env::placed_model_swaps(&f.placement_records, models)
+            .into_iter()
+            .map(|id| id.map_or(-1, |id| id as i32))
             .collect()
     }
 
@@ -1447,6 +1480,17 @@ impl LegaiaRuntime {
         }
     }
 
+    /// Whether the page draws the lead's field body this frame: `false`
+    /// where the scene hides it outright (`World::actor_hidden_by_scene` -
+    /// the opening prologue's vignette shots have no lead), the native
+    /// window's actor-pass skip.
+    pub fn play_player_drawn(&self) -> bool {
+        self.scene_host.host().is_none_or(|h| {
+            let slot = h.world.player_actor_slot.map_or(0, usize::from);
+            !h.world.actor_hidden_by_scene(slot)
+        })
+    }
+
     /// `[world_x, world_y, world_z, facing_units]` for the player actor.
     /// `facing_units` is the engine heading (`render_26`, PSX 12-bit; `0` =
     /// travelling `+Z`); the world coords are the raw retail frame (`+Y` down).
@@ -1616,7 +1660,8 @@ impl LegaiaRuntime {
     }
 
     /// Live clip-playback state of every catalogued NPC, `[pose, generation,
-    /// ...]` (`[-1, -1]` with no live clip player).
+    /// look_lo, look_hi, ...]` (`FieldActors::clip_states`; `[-1, -1, 0, 0]`
+    /// with no live clip player).
     pub fn play_npc_clip_states(&self) -> Vec<i32> {
         self.actors.clip_states(self.scene_host.host())
     }
@@ -1635,6 +1680,16 @@ impl LegaiaRuntime {
         self.scene_host
             .host()
             .map(|h| self.actors.transforms(h))
+            .unwrap_or_default()
+    }
+
+    /// Every catalogued NPC's draw pose (`FieldActors::draw_poses`, the
+    /// engine's `World::field_npc_draw_pose` - the native window's NPC
+    /// transform), 8 floats per entry.
+    pub fn play_npc_draw_poses(&self) -> Vec<f32> {
+        self.scene_host
+            .host()
+            .map(|h| self.actors.draw_poses(h))
             .unwrap_or_default()
     }
 

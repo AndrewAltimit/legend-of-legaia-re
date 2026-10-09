@@ -66,6 +66,8 @@ const SEAT_CHARS: u32 = 0x8007_BD10;
 const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The tint-state byte `actor[+0x21C]`'s defeat-fade value.
+const DEFEAT_FADE_STATE: u8 = legaia_engine_vm::battle_formulas::STATE_DEFEAT_FADE;
 /// The SCUS frame driver's battle-entry counter `gp+0x330`: below `0x80`
 /// the fight loads, `0x80..=0xC0` the entry sweep owns the camera, `0xFF`
 /// the battle tick runs (`FUN_80046A20`, `0x80046EEC..0x8004700C`).
@@ -104,7 +106,10 @@ pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// channel that rides the stream (monster picks, the camera and its framing,
 /// the frame) then moved whenever a field-side port changed its draw count
 /// or shape, with no change to the battle itself. Pinning the stream at the
-/// entry keeps a battle state's scores a property of the battle.
+/// entry - and holding it there through the field-side intro transition,
+/// whose NPC and ambient programs keep drawing
+/// (`EncounterState::rng_hold`) - keeps a battle state's scores a property
+/// of the battle.
 ///
 /// A capture taken on a monster's action (or on anything else a draw
 /// decides) is one realisation of the stream. When the first seed's drive or
@@ -153,6 +158,9 @@ pub struct RetailBattle {
     pub flow: u8,
     /// `ctx[+0x07]`.
     pub action_state: u8,
+    /// The frame step the capture's frame ran at (`*(0x1F800393)`, rebuilt
+    /// from the frame-time ring - [`frame_step`]).
+    pub frame_step: u8,
     pub run_state: u8,
     pub stage_id: u8,
     pub scripted: bool,
@@ -279,6 +287,14 @@ pub struct RetailBattle {
     /// Record `0x51`'s content word `0x800773BC` is zero: the strike loop's
     /// counter swap cleared the target plaque.
     pub target_plate_cleared: bool,
+    /// The active seat's target (`+0x1DD`) in the defeat fade (`+0x21C ==
+    /// 2`, written by the death arm of `FUN_8004AD80` at `0x8004B66C`): its
+    /// colour word `+0x04`'s first 10-bit lane, which the fade walks down
+    /// from `0x200` by `dt << 3` a frame - so it dates the death commit.
+    pub target_fade_lane: Option<u16>,
+    /// The death-spoils caption is up: `ctx[+0x18]` holds HUD element
+    /// `0x5B`, which the steal / thief's-loot arm of `FUN_8004AD80` raises.
+    pub spoils_caption: bool,
 }
 
 /// The summon band's live full-screen flash in a capture: which of the two
@@ -940,6 +956,36 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
 impl RetailBattle {
+    /// The battle frame step a replay of this capture runs its capture state
+    /// on, and that state: the step the capture's own frame ran at, applied
+    /// while the engine sits in the capture's action state
+    /// (`World::seed_battle_frame_step`). `None` when that step is the
+    /// engine's default, the capture is not a replayed cast, or the state is
+    /// not the summon close-up.
+    ///
+    /// Retail's step is the maximum of its last sixteen frame times
+    /// ([`frame_step`]), so the ring a capture holds says what its newest
+    /// frames ran at - the capture state's - and nothing about the frames
+    /// before them. Two limits keep the seed where it measures better:
+    ///
+    /// * a replayed cast ([`SeedPlan::Cast`]) runs the captured action alone,
+    ///   where a pad drive plays every earlier round through the same states
+    ///   and a seeded step rewrites the history it reaches the capture by
+    ///   (`battle_vahn_tri_somersault_super` reached its round 380 ticks
+    ///   later, camera `.864` to `.663`);
+    /// * the summon close-up `0x33` / `0x34`
+    ///   ([`legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES`]) re-arms
+    ///   `FUN_801DC0A0` case `0x12`'s three-frame tween every pass, which the
+    ///   walker lands in one step at step `3` and trails at `2`. The module
+    ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
+    ///   `image` `+.022`, `camera` `-.026`).
+    pub fn frame_step_seed(&self) -> Option<(u8, u8)> {
+        (matches!(self.seed_plan(), SeedPlan::Cast)
+            && legaia_engine_vm::battle_cam_script::SUMMON_CAST_STATES.contains(&self.action_state)
+            && self.frame_step != legaia_engine_core::world::DEFAULT_BATTLE_FRAME_STEP)
+            .then_some((self.frame_step, self.action_state))
+    }
+
     /// How the seed has to place the engine for this capture.
     pub fn seed_plan(&self) -> SeedPlan {
         if OPENING_FLOWS.contains(&self.flow) {
@@ -1227,6 +1273,7 @@ impl RetailBattle {
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
+            frame_step: frame_step(ram),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
@@ -1301,6 +1348,14 @@ impl RetailBattle {
                 (hold > 0 && va != 0).then_some((va, hold.min(i32::from(i16::MAX)) as i16))
             },
             target_plate_cleared: game_anchors::u32_at(ram, TARGET_PLATE_WORD) == 0,
+            spoils_caption: game_anchors::u8_at(ram, ctx + 0x18)
+                == legaia_engine_core::battle_steal::STEAL_CAPTION_ELEMENT,
+            target_fade_lane: active.and_then(|p| {
+                let t = game_anchors::u8_at(ram, p + 0x1DD);
+                let tp = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(t.min(7)) * 4);
+                (t < 8 && in_ram(tp) && game_anchors::u8_at(ram, tp + 0x21C) == DEFEAT_FADE_STATE)
+                    .then(|| (game_anchors::u32_at(ram, tp + 4) & 0x3FF) as u16)
+            }),
         })
     }
 }
@@ -1694,6 +1749,12 @@ pub fn run_engine_battle(
     let field_word = session.host.bgm_track_word.or(director.last);
     let field_current = session.host.world.audio.current_bgm;
     session.host.world.rng_state = rng_seed;
+    // Held through the intro transition, so the field's own draws there do
+    // not re-deal the fight (`EncounterState::rng_hold`).
+    session.host.world.encounters.rng_hold = Some(rng_seed);
+    if let Some((step, state)) = battle.frame_step_seed() {
+        session.host.world.seed_battle_frame_step(step, state);
+    }
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");
     }
@@ -2206,6 +2267,25 @@ impl RetailBattle {
                         && matches!(self.caster_clip, 0x10 | 0x11)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.strike_cursor),
+                    // A party swing captured after its victim's death commit:
+                    // the close-up accumulator restarts on every idle cycle
+                    // of the attacker (its natural-end re-commit), so the
+                    // age alone matches the first cycle after the swing,
+                    // before the knockdown has ended. The defeat fade dates
+                    // the death (`player_steal_skeleton_banner`: lane
+                    // `0xF0`, 34 vsyncs into the fade, with the idle on its
+                    // second cycle).
+                    fading: self
+                        .target_fade_lane
+                        .filter(|_| {
+                            seat < 3
+                                && self.target_code >= 3
+                                && matches!(self.span_gate, SpanGate::Age { .. })
+                        })
+                        .map(|lane| (self.target_code, lane)),
+                    // The caption is the steal roll's outcome, a draw: a
+                    // stream whose kill rolls no steal shows another frame.
+                    spoils: seat < 3 && self.spoils_caption,
                 },
             }),
             SeedPlan::Opening => Some(BattleDrive::Opening {
@@ -2245,7 +2325,7 @@ fn run_drive(
         let world = &session.host.world;
         if reached.is_none() {
             if drive.in_aged_state(world) {
-                aged = world.battle.camera.as_ref().map(|c| c.close_up_accum());
+                aged = Some(drive::active_clip_age(world));
             } else if let Some(a) = aged.take() {
                 // The state ended before it was as old as retail's: the
                 // re-run samples its last tick.

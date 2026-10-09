@@ -62,8 +62,9 @@
 //! ([`legaia_asset::cast_effect_pool`], installed by the scene host) and stage
 //! through [`World::spawn_cast_module_fx`] at the same first tick, because the
 //! records are the shape the summon path already runs. What stays open is the
-//! module's *code* half - lift, camera, phase machine, damage shape - and that
-//! function's `NOT WIRED:` names the worklist rows it covers.
+//! module's *code* half - lift, camera, phase machine, damage shape - where a
+//! module's tick bodies are not ported
+//! (`docs/subsystems/cast-module.md`).
 //!
 //! Timing is the engine's: the retail durations are the stager's own phase
 //! machine and are not dumped, so the frame counts below are chosen to land
@@ -86,14 +87,17 @@ const SUMMON_IDLE_FRAMES: u16 = 30;
 /// Walk speed, world units per frame.
 const SUMMON_WALK_STEP: i16 = 12;
 /// A directed walk arm's creature speed, world units per display frame,
-/// along its heading onto the victim. Measured off `gimard_burning_attack`
-/// (PROT 0903 arm 11): the yaw base has swung `0x5D9 - 0x200 = 985` at
-/// `6 * scalar` (`48`) a display frame - 20.5 frames into the walk - and the
-/// creature stands 670 units on from its arm-3 seat (`z -2276 -> -1606`),
-/// `32.7` a frame. The walk is the clip's root motion, which the anim tick's
-/// root-motion term integrates for the creature like any body; this measured
-/// constant only walks a creature whose playing clip carries no speed.
-const SUMMON_DIRECTED_WALK_STEP: i32 = 32;
+/// along its heading onto the victim: Gimard's walk clip (archive creature
+/// `10`, clip 1, tag `1`) carries root speed `28`, which the anim tick's
+/// root-motion term integrates for a creature seated with its clips. A
+/// per-vsync log from `shiny_refactor_gimard_plus35` measures the same rate:
+/// each game frame at step `4` moves the creature `111` units (`(-16, 110)`)
+/// and swings the yaw base `6 * step * scalar + drift = 197`, and the arm's
+/// first pass moves the creature before the swing has run - which is what an
+/// earlier reading off `gimard_burning_attack`'s yaw (`985`, read as 20.5
+/// frames and `32.7` a frame) left out. This constant only walks a creature
+/// whose playing clip carries no speed (a headless seat).
+const SUMMON_DIRECTED_WALK_STEP: i32 = 28;
 /// Frames the creature stands at the strike point after the outcome.
 const SUMMON_LINGER_FRAMES: u16 = 40;
 /// A host with no creature to seat (a headless driver) still owes the
@@ -630,6 +634,7 @@ impl World {
         self.casting.module_ring_angle = 0;
         self.casting.module_theeder = Default::default();
         self.casting.module_swordie = Default::default();
+        self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.summon_stager = Some(SummonStager {
             caster,
@@ -1185,6 +1190,11 @@ impl World {
             };
             cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
         }
+        if run.as_ref().is_some_and(|r| r.camera_end_frame)
+            && let Some(cam) = self.battle.camera.as_mut()
+        {
+            cam.arm_module_end_frame();
+        }
         // The module's seat arm (`FUN_801F19EC`): a seat owed since the
         // stager armed is requested as the module reaches it.
         let seat_arm = run
@@ -1367,6 +1377,7 @@ impl World {
         self.casting.fatal_decision = None;
         self.casting.fatal_banner = None;
         self.casting.module_swordie = Default::default();
+        self.casting.module_settle_countdown = 0;
         self.casting.module_cam = Default::default();
         self.casting.module_beam_counter = 0;
         self.casting.module_beam_live = false;
@@ -1736,6 +1747,9 @@ pub struct CastModuleCodeRun {
     /// The case-6 follow the module re-armed this frame
     /// ([`vm::cast_module_camera::ModuleFollow`]).
     pub camera_follow: Option<vm::cast_module_camera::ModuleFollow>,
+    /// The module framed the acting actor through case 8 this frame
+    /// ([`vm::cast_module_camera::ArmDirection::end_frame`]).
+    pub camera_end_frame: bool,
     /// The drift the module wrote into the camera globals this frame.
     pub camera_nudge: Option<vm::cast_module_camera::ModuleNudge>,
     /// A capture-class body's drift this frame
@@ -1766,6 +1780,7 @@ const CAST_STEAL_RUN_CLIP: u8 = 1;
 // --- end W1-D ---
 
 mod code_run;
+mod seat_map;
 
 #[cfg(test)]
 mod capture_hold_tests {
@@ -1923,5 +1938,70 @@ mod sweep_code_tests {
     #[test]
     fn a_self_target_is_the_casters_own_slot() {
         assert_eq!(staged_target(1, SpellTarget::SelfOnly, vec![1]), 1);
+    }
+}
+
+#[cfg(test)]
+mod divide_split_tests {
+    use super::*;
+
+    fn split() -> vm::cast_arm_ticks::GlareDivideSplit {
+        vm::cast_arm_ticks::GlareDivideSplit {
+            // Retail pool space: the second monster of any party.
+            clone_seat: vm::cast_module_ticks::FIRST_MONSTER_SEAT + 1,
+            clone_hp: 69,
+            saved_caster_target: 0,
+            weakened: None,
+        }
+    }
+
+    /// Retail's pool slot `3 + k` is the engine's `party_count + k`; an empty
+    /// small-party seat has no engine slot. Element Change lands on the first
+    /// monster whatever the party size.
+    #[test]
+    fn retail_pool_seats_map_onto_the_compacted_row() {
+        let mut world = World::default();
+        world.enter_battle(1, 2);
+        assert_eq!(world.engine_slot_for_retail_pool(0), Some(0));
+        assert_eq!(world.engine_slot_for_retail_pool(1), None);
+        assert_eq!(world.engine_slot_for_retail_pool(3), Some(1));
+        assert_eq!(world.engine_slot_for_retail_pool(4), Some(2));
+        world.actors[1].battle_monster_id = Some(7);
+        world.apply_cast_element_change(5);
+        assert_eq!(world.actors[1].battle_element, Some(5));
+        let mut world = World::default();
+        world.enter_battle(3, 2);
+        for r in 0..8 {
+            assert_eq!(
+                world.engine_slot_for_retail_pool(r),
+                Some(r),
+                "identity at 3"
+            );
+        }
+    }
+
+    /// A lone party member's monster row starts at engine slot 1, so a
+    /// Divide clone takes slot 2 - inside the five-seat row the target picker
+    /// walks - and each later clone the next seat, up to retail's five.
+    #[test]
+    fn a_small_partys_divide_clone_lands_in_the_engine_row() {
+        let mut world = World::default();
+        world.enter_battle(1, 1);
+        world.actors[1].battle_monster_id = Some(7);
+        world.actors[1].battle.max_hp = 69;
+        world.actors[1].battle.hp = 69;
+        assert!(world.apply_glare_divide_split(1, &split()));
+        assert_eq!(world.actors[2].battle_monster_id, Some(7));
+        assert_eq!(world.actors[2].battle.hp, 69);
+        let (_, monsters) = world.battle_target_rows();
+        assert!(monsters[1].alive, "the clone is a targetable enemy seat");
+        for seat in 3..6 {
+            assert!(world.apply_glare_divide_split(1, &split()));
+            assert_eq!(world.actors[seat].battle_monster_id, Some(7));
+        }
+        assert!(
+            !world.apply_glare_divide_split(1, &split()),
+            "a sixth monster has no seat"
+        );
     }
 }

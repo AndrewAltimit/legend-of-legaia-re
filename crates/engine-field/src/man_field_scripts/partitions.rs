@@ -1,0 +1,1328 @@
+//! MAN partition record-offset helpers + narration / g-flag site collection.
+//!
+//! Extracted verbatim from `man_field_scripts.rs`.
+
+use std::collections::BTreeMap;
+
+use super::*;
+
+/// Which flag bank a [`GFlagSite`] touches.
+///
+/// The two banks are distinct id spaces, so census consumers must not merge
+/// them: a scratchpad bit `26` and a system flag `26` are unrelated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlagBank {
+    /// The 32-bit scratchpad story-flag word `_DAT_1F800394` (the engine's
+    /// `legaia_engine_core::world::StoryFlagState::story_flags`); reached by opcodes `0x2E`
+    /// (`SET`) / `0x2F` (`CLEAR`). Flag numbers are bit indices `0..31`.
+    Scratchpad,
+    /// The wide SYSTEM-flag bitmap reached by the `0x50..=0x7F` op family
+    /// (`0x5x` SET, `0x6x` CLEAR, `0x7x` TEST). The flag number is a `u16`
+    /// (`(lead & 0x8F) << 8 | operand`); the engine's bit helpers live at
+    /// `legaia_engine_core::world::World::system_flag_set` /
+    /// `legaia_engine_core::world::World::system_flag_test`. This is the id space of the
+    /// overworld progress gates (e.g. `0x193` / `0x482` / `0x2FC`).
+    System,
+}
+
+/// One field-VM **flag write / test** found while walking a MAN partition's
+/// records as field-VM scripts. Covers both the scratchpad global-flag ops
+/// (`GFLAG_SET` `0x2E` / `GFLAG_CLEAR` `0x2F`) and the wide SYSTEM-flag ops
+/// (`0x50..=0x7F`), annotated with the bank + flag number it touches.
+///
+/// The opening prologue's `opdeene` cutscene-timeline record ends with a
+/// scratchpad `GFLAG_SET 26`, the write the `town01` hand-off gate
+/// (`FUN_801D1344`) waits on - see `legaia_engine_core::world::PROLOGUE_HANDOFF_FLAG`.
+/// SYSTEM-flag setters (the overworld progress gates) typically live in a
+/// *different* scene's MAN than the one that gates on them, which is what the
+/// disc-wide [`system_flag_census`] surfaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GFlagSite {
+    /// Absolute byte offset of the flag opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The opcode byte (scratchpad `0x2E`/`0x2F`, or a `0x50..=0x7F` system op).
+    pub opcode: u8,
+    /// `true` iff this is a SET op (scratchpad `0x2E` or system `0x5x`).
+    /// `false` for CLEAR **and** TEST - use [`GFlagSite::kind`] to tell those
+    /// apart. Kept for the prologue-arm consumers that only care about SET.
+    pub set: bool,
+    /// SET / CLEAR / TEST discriminator (carries TEST, which `set` cannot).
+    pub kind: FlagKind,
+    /// Which bank the op targets.
+    pub bank: FlagBank,
+    /// Low byte of the flag number. For [`FlagBank::Scratchpad`] this is the
+    /// full bit index (`0..31`); for [`FlagBank::System`] it is truncated -
+    /// use [`GFlagSite::flag`] for the full number.
+    pub bit: u8,
+    /// The full flag number: scratchpad bit index, or the `u16` system flag id.
+    pub flag: u16,
+    /// `true` iff the site sits in a locally coherent opcode stream: at
+    /// least [`CLEAN_RESYNC_INSNS`] instructions decoded without error
+    /// between the walker's last decode error (or the record start) and this
+    /// site. `false` means the walker was desynced or freshly resyncing -
+    /// typically inside unframed Shift-JIS text or an inline data table (a
+    /// `0x1F`-framed dialogue segment is one decoded stride and desyncs
+    /// nothing),
+    /// where operand/text bytes alias the `0x50..=0x7F` flag opcodes: e.g.
+    /// the full-width digit run `82 54 82 4F` yields a phantom
+    /// `SysFlag.Set idx=0x482`. Non-clean sites are byte noise until
+    /// verified by hand disasm or a live capture - the wave-8 `other7`-pool
+    /// "0x482 writers" were exactly this class (all 37 census sites for
+    /// `0x482` are non-clean; the live-confirmed `0x142` writer ladders all
+    /// stay clean).
+    pub clean: bool,
+    /// `true` iff the site looks like an **ASCII text alias**: its raw
+    /// operand byte is printable ASCII **and** the surrounding byte window
+    /// carries a sentence-length printable run (see [`text_alias_suspect`]).
+    /// US dialogue letters land
+    /// exactly on the wide flag ops (`0x53..=0x57` = `'S'..'W'` Set,
+    /// `0x61..=0x67` = `'a'..'g'` Clear, `0x71..=0x77` = `'q'..'w'` Test), so
+    /// prose like `"ta"` (`74 61`) mints an error-free `Test 0x461` row that
+    /// the `clean` decode-coherence heuristic alone cannot reject. This flag
+    /// is a marker, not a suppression: mirrored Set/Clear runs and
+    /// non-printable operands are alias-immune and stay unmarked, while a
+    /// genuine flag op that happens to sit inside a text-dense window
+    /// self-identifies for hand verification.
+    pub text_alias: bool,
+    /// `true` iff the site is an arm of a **developer flag-setting menu**
+    /// embedded in the record (see [`debug_flag_menu_arm`]). Such a site is a
+    /// genuine, cleanly decoded instruction of the stream, so `clean` and
+    /// `text_alias` both leave it looking like a story writer; it is reached
+    /// only by picking that option in a debug picker.
+    pub debug_menu: bool,
+}
+
+/// Bytes inspected on each side of a flag opcode by [`text_alias_suspect`]'s
+/// local text window.
+pub const TEXT_ALIAS_WINDOW: usize = 16;
+
+/// Minimum length of a consecutive printable-ASCII run inside the window for
+/// [`text_alias_suspect`] to call the site text. US-dialogue prose runs tens
+/// of printable bytes between control codes; genuine bytecode never gets
+/// close - flag-op ladders are themselves printable ASCII (`52 81 52 82 ..
+/// 51 42` renders as `R.R.R.QB`) but every 1-2 printable bytes are broken by
+/// a non-printable operand/terminator, so raw printable *density* cannot
+/// separate a `51 42` ladder from `"ta"` prose while run length can.
+pub const TEXT_ALIAS_MIN_RUN: usize = 10;
+
+/// ASCII text-alias heuristic for a flag site at `pc` in `body` (the
+/// record's bounded byte slice), with the site's raw operand byte at
+/// `pc + header_size`.
+///
+/// `true` iff the operand byte is printable ASCII (`0x20..=0x7E`) **and**
+/// the [`TEXT_ALIAS_WINDOW`]-byte window on each side of the opcode contains
+/// a consecutive printable-ASCII run of at least [`TEXT_ALIAS_MIN_RUN`]
+/// bytes **and** the window has two *adjacent* lowercase letters somewhere.
+/// All three conditions are required:
+///
+/// - a **non-printable operand** is alias-immune (no US-dialogue byte pair
+///   can mint it), so e.g. `62 89` (`SysFlag.Clear 0x289`) never flags;
+/// - a **printable operand inside binary bytecode** stays unflagged because
+///   bytecode rarely sustains a long printable run - the runtime-pinned
+///   town01 P2[3] self-latch `52 25` (`SysFlag.Set 0x225`, operand `'%'`)
+///   and the rikuroa variant `51 42`/`61 42` ladders (operand `'B'`) top
+///   out at 4-5 consecutive printable bytes, while the prose that mints
+///   `"ta"` = `Test 0x461` sits inside a sentence-length run;
+/// - a flag ladder whose operands are *also* printable defeats run length
+///   alone (the `0x527..0x52E` one-hot selector clears `65 27 65 28 ..`
+///   render as a 16-byte printable run), but it alternates op/operand so
+///   it never puts two lowercase letters side by side, while English prose
+///   always does.
+pub fn text_alias_suspect(body: &[u8], pc: usize, header_size: usize) -> bool {
+    let Some(&operand) = body.get(pc + header_size) else {
+        return false;
+    };
+    if !(0x20..=0x7E).contains(&operand) {
+        return false;
+    }
+    let lo = pc.saturating_sub(TEXT_ALIAS_WINDOW);
+    let hi = (pc + TEXT_ALIAS_WINDOW).min(body.len());
+    let window = &body[lo..hi];
+    let mut run = 0usize;
+    let mut best = 0usize;
+    for &b in window {
+        if (0x20..=0x7E).contains(&b) {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 0;
+        }
+    }
+    let lowercase_pair = window
+        .windows(2)
+        .any(|p| p[0].is_ascii_lowercase() && p[1].is_ascii_lowercase());
+    best >= TEXT_ALIAS_MIN_RUN && lowercase_pair
+}
+
+/// Bytes before a flag site [`debug_flag_menu_arm`] will look back over for
+/// the picker's `0x00 0x21` head - the last option label's terminator and
+/// the record's stop. `rikuroa`'s nine-flag ladders are the widest observed
+/// block and fit inside this.
+const MENU_BLOCK_LOOKBACK: usize = 160;
+
+/// Instructions [`debug_flag_menu_arm`] will decode from a candidate block
+/// head before giving up.
+const MENU_BLOCK_INSNS: usize = 96;
+
+/// How many consecutive arms make a menu. One flag-op run ending in a jump
+/// is an ordinary story beat looping back to its gate (`doman` P1[15]); two
+/// or more side by side are a picker's options.
+const MENU_ARM_MIN: usize = 2;
+
+/// Is the flag op at `pc` an arm of a **developer flag-setting menu** rather
+/// than a story writer?
+///
+/// Several shipped scene scripts carry a debug picker whose options write the
+/// scene's own story flags. The option labels are in the record's own text
+/// (`"Set all flags"` / `"Clear"` / `"Exit"` in `geremi` P1[1], `"Clear all
+/// flags"` in `map01` P1[2], the `"On"` / `"Off"` / `"Exit"` triple in
+/// `doman` P1[2], `kor5` P1[22] and `jou` P1[6]), and each option's body is
+/// a run of flag ops ending in an unconditional `JmpRel` back to the picker.
+///
+/// These decode cleanly and their operands are the scene's real flags, so
+/// neither [`GFlagSite::clean`] nor [`GFlagSite::text_alias`] separates them
+/// from a story beat. What does is the **block**: the label list's `0x00`
+/// terminator and the record's `0x21` stop, then [`MENU_ARM_MIN`] or more
+/// flag-op arms each ending in a `JmpRel`. A beat that sets a flag and
+/// clears the same flag two instructions later is a toggle, not a latch; a
+/// story writer's own `SET … JmpRel` back to its gate test (the `doman`
+/// P1[15] Usha latch) is a single arm behind no label list and stays
+/// unflagged.
+///
+/// The walk is the decoder's, not a byte stride, because an arm carries
+/// ordinary ops too - `geremi`'s Set arm runs an `0x39` and its Clear arm a
+/// `4C 52` `TAKE_ITEM` between the flag writes.
+pub fn debug_flag_menu_arm(body: &[u8], pc: usize) -> bool {
+    let lo = pc.saturating_sub(MENU_BLOCK_LOOKBACK).max(1);
+    (lo..pc)
+        .rev()
+        .filter(|&i| body[i] == 0x21 && body[i - 1] == 0x00)
+        .any(|head| menu_block_covers(body, head, pc))
+}
+
+/// Walk the arm block at `head` (the picker's stop byte) and report whether
+/// `pc` is a flag op inside a block of [`MENU_ARM_MIN`] or more arms.
+fn menu_block_covers(body: &[u8], head: usize, pc: usize) -> bool {
+    let mut arms = 0usize;
+    let mut flags_this_arm = 0usize;
+    let mut covers = false;
+    for insn in LinearWalker::new(body, head)
+        .flatten()
+        .take(MENU_BLOCK_INSNS)
+    {
+        match insn.info {
+            // Text ends the block: the arms run between the label list and
+            // the continuation prose.
+            InsnInfo::TextSegment { .. } | InsnInfo::Picker { .. } => break,
+            // A test sits inside an arm but does not make one: an arm is an
+            // option's write. A talk body's `Test / Test / JmpRel` dispatch
+            // ahead of its `SET` would otherwise read as a first arm (`son`
+            // P1[22], whose `SET 0x3A2` sits behind a `JmpRel` operand's `00`
+            // that mimics a label terminator).
+            InsnInfo::GFlag {
+                kind: FlagKind::Test,
+                ..
+            }
+            | InsnInfo::SystemFlag {
+                kind: FlagKind::Test,
+                ..
+            } => {
+                if insn.pc == pc {
+                    covers = true;
+                }
+            }
+            InsnInfo::GFlag { .. } | InsnInfo::SystemFlag { .. } => {
+                flags_this_arm += 1;
+                if insn.pc == pc {
+                    covers = true;
+                }
+            }
+            InsnInfo::JmpRel { .. } => {
+                if flags_this_arm > 0 {
+                    arms += 1;
+                }
+                flags_this_arm = 0;
+            }
+            _ => {}
+        }
+        if arms >= MENU_ARM_MIN && covers {
+            return true;
+        }
+        // Walked past the site without it landing on a flag op in an arm.
+        if insn.pc > pc && !covers {
+            break;
+        }
+    }
+    false
+}
+
+/// Consecutive error-free instructions the linear walk must decode before a
+/// flag site counts as [`GFlagSite::clean`] again after a desync. SJIS text
+/// runs do produce short bursts of 2..4 valid-looking decodes between
+/// errors, so the resync window must comfortably exceed that; genuine flag
+/// ladders (e.g. the rikuroa variant `0x142` battery) decode dozens of
+/// instructions cleanly.
+pub const CLEAN_RESYNC_INSNS: usize = 8;
+
+/// The script `script_start` of `partition`'s record `index`, computed from
+/// the partition's u24 record-offset table against the MAN data region.
+/// `None` when the partition or index is out of range or the offset lands
+/// past the buffer.
+pub(crate) fn partition_record_offset(
+    man_file: &ManFile,
+    man_len: usize,
+    partition: usize,
+    index: usize,
+) -> Option<usize> {
+    let off = *man_file.partitions.get(partition)?.get(index)? as usize;
+    let abs = man_file.data_region_offset.checked_add(off)?;
+    (abs < man_len).then_some(abs)
+}
+
+/// First-opcode offset of a **partition-2 named-record** (the cutscene-timeline
+/// records), relative to the record start in `body`.
+///
+/// Partition-2 records are not the partition-1 `[u8 N][N*2 locals][4-byte
+/// header]` shape - they open with a Shift-JIS **name** and three
+/// condition-list gates that the dispatcher `FUN_8003BDE0` walks before the
+/// script proper:
+///
+/// ```text
+/// [u8 name_len]                 ; name length in CHARACTERS
+/// [name_len * 2 bytes]          ; SJIS name (no separate terminator)
+/// [u8 C0][C0 bytes]             ; cond-block 0 (byte-granular; skipped)
+/// [u8 C1][C1 * u16]             ; cond-block 1 (story-flag OR gate)
+/// [u8 C2][C2 * u16]             ; cond-block 2 (story-flag AND gate)
+/// <script…>                     ; first field-VM opcode
+/// ```
+///
+/// So the entry offset is `1 + name_len*2 + (1+C0) + (1+C1*2) + (1+C2*2)`.
+/// Returns `None` if a count byte lies past the record body. For `opdeene`'s
+/// record 18 (`name_len=6` "Opening", all three blocks empty) this is `0x10`,
+/// the `0x34` EFFECT op that opens the prologue timeline.
+// REF: FUN_8003BDE0
+// PORT: FUN_8003D0BC (the name-field skip: first byte = char count, advance
+// 1 + count*2 - retail's standalone helper for the same walk)
+pub(crate) fn partition2_record_script_offset(body: &[u8]) -> Option<usize> {
+    let name_len = *body.first()? as usize;
+    let mut cur = 1 + name_len * 2; // name field (chars * 2, no terminator)
+    let c0 = *body.get(cur)? as usize;
+    cur += 1 + c0; // cond-block 0: 1 byte per unit
+    let c1 = *body.get(cur)? as usize;
+    cur += 1 + c1 * 2; // cond-block 1: u16 per unit
+    let c2 = *body.get(cur)? as usize;
+    cur += 1 + c2 * 2; // cond-block 2: u16 per unit
+    Some(cur)
+}
+
+/// The C1 / C2 story-flag gate lists of a **partition-2 named-record**
+/// (see [`partition2_record_script_offset`] for the header shape).
+///
+/// Retail's record dispatcher `FUN_8003BDE0` tests each listed flag against
+/// the story-flag bitmap at `DAT_80085758` (`bit = byte[flag >> 3] &
+/// (0x80 >> (flag & 7))`): **C1 blocks the spawn if ANY listed flag is set**
+/// (the one-shot mechanism - e.g. `town01`'s opening record lists `0x225`,
+/// set once the opening has played); **C2 requires ALL listed flags set**.
+/// Returns `None` when the header overruns the record body.
+// REF: FUN_8003BDE0
+pub fn partition2_record_gates(
+    man_file: &ManFile,
+    man: &[u8],
+    index: usize,
+) -> Option<(Vec<u16>, Vec<u16>)> {
+    let script_start = partition_record_offset(man_file, man.len(), 2, index)?;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let name_len = *body.first()? as usize;
+    let mut cur = 1 + name_len * 2;
+    let c0 = *body.get(cur)? as usize;
+    cur += 1 + c0;
+    let read_u16_list = |body: &[u8], cur: &mut usize| -> Option<Vec<u16>> {
+        let n = *body.get(*cur)? as usize;
+        *cur += 1;
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            let lo = *body.get(*cur)?;
+            let hi = *body.get(*cur + 1)?;
+            *cur += 2;
+            out.push(u16::from_le_bytes([lo, hi]));
+        }
+        Some(out)
+    };
+    let c1 = read_u16_list(body, &mut cur)?;
+    let c2 = read_u16_list(body, &mut cur)?;
+    Some((c1, c2))
+}
+
+/// The raw Shift-JIS name bytes of a **partition-2 named-record** (the
+/// `[u8 name_len][name_len*2 bytes]` header field `FUN_8003BDE0` matches
+/// records by; see [`partition2_record_script_offset`]). Returns `None` when
+/// the index is out of range or the name field overruns the record body.
+/// Callers render lossily (the names are dev labels, often SJIS).
+// REF: FUN_8003BDE0
+pub fn partition2_record_name(man_file: &ManFile, man: &[u8], index: usize) -> Option<Vec<u8>> {
+    let script_start = partition_record_offset(man_file, man.len(), 2, index)?;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let name_len = *body.first()? as usize;
+    body.get(1..1 + name_len * 2).map(|s| s.to_vec())
+}
+
+/// The byte span of `partition`'s record `index` as a field-VM script:
+/// `(script_start, pc0, body_len)`, where `script_start` is the absolute
+/// MAN offset of the record, `pc0` the first-opcode offset relative to it,
+/// and `body_len` the bounded body length (clamped so the walk does not spill
+/// into the next record or a sibling section).
+///
+/// The header shape is **partition-specific** - all three differ:
+///
+/// - **partition 0** (the *object* records the gate-0 `.MAP` tile triggers
+///   bind - `FUN_8003A55C`: house doors, chests, signs, scenery) opens
+///   `[u8 n][n*2 SJIS name][u8 attr]`, so `pc0 = 1 + n*2 + 1`. The name is a
+///   dev label (`主人公の家の中`, `恋人ＩＮ`…); `attr` is the object's class
+///   byte. Applying the partition-1 formula here starts the walk three bytes
+///   late and desyncs the whole script - which is exactly how an entire class
+///   of door records goes missing from a census.
+/// - **partition 1** (actor placements / per-actor scripts) opens
+///   `[u8 N][N*2 locals][4-byte placement header]`, so `pc0 = 1 + N*2 + 4`.
+///   The 4-byte header is `[model, anim, tile_x, tile_z]` (what
+///   `FUN_8003D0BC` skips the name field to reach, and what
+///   `world::vm_hosts::apply_script_table_teleport` re-seats a context from).
+/// - **partition 2** (the cutscene-timeline / walk-on-beat records) uses the
+///   named-record header decoded by [`partition2_record_script_offset`]
+///   (`FUN_8003BDE0`).
+///
+/// `None` when the partition / index is out of range, the offset lands past
+/// the buffer, or the record's header already overruns its bound.
+pub fn partition_record_span(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+    index: usize,
+) -> Option<(usize, usize, usize)> {
+    let script_start = partition_record_offset(man_file, man.len(), partition, index)?;
+    let end = record_end_bound(man_file, man.len(), script_start);
+    let body = man.get(script_start..end)?;
+    let n = *body.first().unwrap_or(&0) as usize;
+    let pc0 = match partition {
+        // `[u8 n][n*2 SJIS name][u8 attr]` - the object-record header.
+        0 => 1 + n * 2 + 1,
+        // `[u8 N][N*2 locals][4-byte placement header]`.
+        1 => 1 + n * 2 + 4,
+        _ => partition2_record_script_offset(body)?,
+    };
+    if script_start + pc0 >= end {
+        return None;
+    }
+    Some((script_start, pc0, end - script_start))
+}
+
+/// The byte span of the MAN record at **flat** index `flat` - the index space
+/// of the concatenated `[P0..P1..P2]` record-offset table, which is what the
+/// retail record resolver `FUN_8003C8F0(id, 0)` walks (its `param_2 = 0`
+/// partition argument adds a zero base, so `param_1` is already flat).
+///
+/// A field-VM context's `+0x50` script id lives in this space: the placement
+/// spawner `FUN_8003A1E4` writes `+0x50 = N0 + placement_index` (`N0` = the
+/// partition-0 record count). So a context that resolves *its own* record -
+/// e.g. the op-`0x4C` nibble-C sub-3 script-table teleport - must resolve it
+/// flat, not as "partition-0 record `script_id`".
+///
+/// Header shape follows the partition the flat index lands in (see
+/// [`partition_record_span`]). Returns `(script_start, pc0, body_len)`.
+// PORT: FUN_8003C8F0
+pub fn flat_record_span(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+) -> Option<(usize, usize, usize)> {
+    let mut base = 0usize;
+    for (partition, records) in man_file.partitions.iter().enumerate() {
+        if flat < base + records.len() {
+            return partition_record_span(man_file, man, partition, flat - base);
+        }
+        base += records.len();
+    }
+    None
+}
+
+/// Collect every inline cutscene-narration page in `partition`'s records, in
+/// record-then-page order.
+///
+/// Each record's bounded body is handed to
+/// [`legaia_asset::cutscene_text::parse_narration`], which finds the narration
+/// op + `0x1F`/`0x00` page framing structurally. The opening prologue scene
+/// (`opdeene`) carries its narration in the cutscene-timeline partition
+/// (partition 2); this returns those subtitle pages as plain text for the
+/// runtime presenter ([`crate::cutscene_narration::CutsceneNarration`]).
+pub fn collect_partition_narration(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+) -> Vec<String> {
+    let count = man_file
+        .header
+        .partition_counts
+        .get(partition)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let mut pages = Vec::new();
+    for index in 0..count {
+        let Some((script_start, _pc0, body_len)) =
+            partition_record_span(man_file, man, partition, index)
+        else {
+            continue;
+        };
+        let body = &man[script_start..script_start + body_len];
+        for block in legaia_asset::cutscene_text::parse_narration(body) {
+            pages.extend(block.pages.into_iter().map(|p| p.text));
+        }
+    }
+    pages
+}
+
+/// Walk every record of `partition` (`0..3`) as a field-VM script and
+/// collect its flag write/test sites: the scratchpad global-flag ops
+/// (`GFLAG_SET` `0x2E` / `GFLAG_CLEAR` `0x2F`) **and** the wide SYSTEM-flag
+/// ops (`0x50..=0x7F`, SET/CLEAR/TEST). Each site is tagged with its
+/// [`FlagBank`] and full flag number, so callers can tell a scratchpad bit
+/// from a system flag that share a low byte.
+///
+/// This is the partition-agnostic companion to [`walk_partition1_scripts`]:
+/// the encounter hunt cares about partition 1's yield sites, the opening
+/// prologue cares about partition 2's cutscene-timeline `GFLAG_SET`, and the
+/// overworld progress-gate hunt cares about SYSTEM-flag setters across every
+/// partition. All share the same `[u8 N][N*2 locals][4-byte header]` record
+/// prefix and the same opcode-aware [`LinearWalker`] decode, so a site is
+/// reported only at a real instruction boundary - not at an operand / SJIS
+/// byte that happens to equal a flag opcode.
+///
+/// Prologue-arm consumers filter on `s.set && s.bit == 26` over the scratchpad
+/// bank; TEST sites (`set == false`) and system-bank sites are ignored by that
+/// filter, so the extra sites are additive.
+pub fn walk_partition_gflag_sites(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+) -> Vec<GFlagSite> {
+    let count = man_file
+        .header
+        .partition_counts
+        .get(partition)
+        .copied()
+        .unwrap_or(0)
+        .max(0) as usize;
+    let mut out = Vec::new();
+    for index in 0..count {
+        // `partition_record_span` applies the partition-correct header shape:
+        // `[u8 n][n*2 SJIS][attr]` for partition 0, `[u8 N][N*2 locals]
+        // [4-byte header]` for partition 1, the named-record header
+        // (`FUN_8003BDE0`) for partition 2. Walking partition 2 with the
+        // generic prefix starts one byte late on a typical named record and
+        // can misdecode the leading instructions.
+        let Some((script_start, pc0, body_len)) =
+            partition_record_span(man_file, man, partition, index)
+        else {
+            continue;
+        };
+        let body = &man[script_start..script_start + body_len];
+        // Coherence tracking: after a decode error the walker is no longer at
+        // a trustworthy instruction boundary - it resynchronises by advancing
+        // one byte at a time, and inside unframed SJIS dialogue / data tables
+        // that produces phantom flag ops. A site is `clean` only once the
+        // walk has put CLEAN_RESYNC_INSNS error-free instructions behind it
+        // (see [`GFlagSite::clean`]). Start past the threshold: record starts
+        // are real boundaries.
+        let mut ok_run = CLEAN_RESYNC_INSNS;
+        for insn in LinearWalker::new(body, pc0) {
+            let insn = match insn {
+                Ok(insn) => insn,
+                Err(_) => {
+                    ok_run = 0;
+                    continue;
+                }
+            };
+            let clean = ok_run >= CLEAN_RESYNC_INSNS;
+            ok_run += 1;
+            let header_size = if insn.extended.is_some() { 2 } else { 1 };
+            let text_alias = text_alias_suspect(body, insn.pc, header_size);
+            let debug_menu = debug_flag_menu_arm(body, insn.pc);
+            match insn.info {
+                // Scratchpad global flag (`0x2E` set / `0x2F` clear). The VM
+                // has no scratchpad TEST op reaching this variant, but guard
+                // anyway so `set`/`kind` stay coherent.
+                InsnInfo::GFlag { kind, bit } => out.push(GFlagSite {
+                    abs_pc: script_start + insn.pc,
+                    partition,
+                    record: index,
+                    opcode: insn.opcode,
+                    set: kind == FlagKind::Set,
+                    kind,
+                    bank: FlagBank::Scratchpad,
+                    bit,
+                    flag: u16::from(bit),
+                    clean,
+                    text_alias,
+                    debug_menu,
+                }),
+                // Wide SYSTEM-flag bank (`0x5x` set / `0x6x` clear / `0x7x`
+                // test). `idx` is the full `u16` flag number; `bit` keeps the
+                // low byte for the scratchpad-shaped consumers.
+                InsnInfo::SystemFlag { kind, idx, .. } => out.push(GFlagSite {
+                    abs_pc: script_start + insn.pc,
+                    partition,
+                    record: index,
+                    opcode: insn.opcode,
+                    set: kind == FlagKind::Set,
+                    kind,
+                    bank: FlagBank::System,
+                    bit: (idx & 0xFF) as u8,
+                    flag: idx,
+                    clean,
+                    text_alias,
+                    debug_menu,
+                }),
+                _ => {}
+            }
+        }
+    }
+    out
+}
+
+/// A system flag a field-VM record **SETs on its way into a scripted battle**:
+/// a `0x5x SET` followed, within [`BATTLE_ENTRY_ARM_WINDOW`] coherently
+/// decoded instructions, by the `3E FF <row>` battle-entry op that hands
+/// formation-table row `row` to the entity SM
+/// (`World::trigger_scripted_battle`).
+///
+/// This is the shape of retail's one-shot sparring-tutorial arm: town01's
+/// Tetsu record reads `50 19 · 50 00 · 52 3C · 3E FF 04`, so the flag `0x19`
+/// the entity SM's battle-entry tail tests (`FUN_801DA51C`,
+/// `0x801DA698`) is raised by the very record that enters formation row `4`.
+/// The pairing is what a direct entry into that row (`--battle 4`, which runs
+/// the entry without the record) needs to replay
+/// (`World::replay_scripted_battle_arm`).
+///
+/// The forward re-walk is the coherence test, not [`GFlagSite::clean`]: a
+/// phantom SET inside unframed text or a data table is not followed by a
+/// decodable `3E FF` within a handful of instructions, and a real one is.
+/// (The clean bit was once structurally `false` behind a record's dialogue,
+/// the walk resynchronising through the text; a bare `0x1F` segment is now
+/// one decoded stride, so the SET behind it is clean as well.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BattleEntryArm {
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// Absolute byte offset of the SET opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// The `u16` system flag the SET raises.
+    pub flag: u16,
+    /// The formation-table row the following `3E FF <row>` enters.
+    pub row: u8,
+}
+
+/// How many coherently decoded instructions past a system-flag SET the
+/// `3E FF` battle-entry op may sit for the SET to count as a
+/// [`BattleEntryArm`]. Town01's arm has two SETs between the `0x19` write
+/// and the entry op; the window leaves one to spare.
+pub const BATTLE_ENTRY_ARM_WINDOW: usize = 4;
+
+/// Every [`BattleEntryArm`] in `man`, across all three partitions.
+///
+/// Each partition's records are walked as field-VM scripts; at every system
+/// SET a fresh walk from the instruction after it decodes up to
+/// [`BATTLE_ENTRY_ARM_WINDOW`] instructions and stops at the first decode
+/// error. A `3E` with `op0 == 0xFF` in that run (the scripted-battle form -
+/// the door-warp form `op0 >= 100` is not an entry) pairs the SET with the
+/// op's row operand.
+pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                let Some(row) = battle_entry_row_after(body, insn.pc + insn.size) else {
+                    continue;
+                };
+                out.push(BattleEntryArm {
+                    partition,
+                    record: index,
+                    abs_pc: script_start + insn.pc,
+                    flag: idx,
+                    row,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Every formation-table row a scripted-battle op (`3E <op0> <row>` with
+/// `op0 < 100` or `op0 == 0xFF`; the `op0 >= 100` door-warp form is not an
+/// entry) in record `index` of `partition` names, in linear decode order.
+///
+/// This is the record's own battle-entry surface: retail enters a scripted
+/// fight only through this op, so a placement whose record carries none
+/// cannot start one, whatever it looks like.
+pub fn record_battle_entry_rows(
+    man_file: &ManFile,
+    man: &[u8],
+    partition: usize,
+    index: usize,
+) -> Vec<u8> {
+    let Some((script_start, pc0, body_len)) =
+        partition_record_span(man_file, man, partition, index)
+    else {
+        return Vec::new();
+    };
+    let body = &man[script_start..script_start + body_len];
+    LinearWalker::new(body, pc0)
+        .flatten()
+        .filter_map(|insn| match insn.info {
+            InsnInfo::WarpOrInteract {
+                op1,
+                is_warp: false,
+                ..
+            } => Some(op1),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The row operand of a scripted-battle `3E FF <row>` reached within
+/// [`BATTLE_ENTRY_ARM_WINDOW`] coherently decoded instructions from `pc`, or
+/// `None` when the run ends (a decode error, the body end) first.
+fn battle_entry_row_after(body: &[u8], pc: usize) -> Option<u8> {
+    LinearWalker::new(body, pc)
+        .take(BATTLE_ENTRY_ARM_WINDOW)
+        .map_while(Result::ok)
+        .find_map(|insn| match insn.info {
+            InsnInfo::WarpOrInteract {
+                op0: 0xFF,
+                op1,
+                is_warp: false,
+            } => Some(op1),
+            _ => None,
+        })
+}
+
+/// The op-`0x35` BGM words a field-VM record runs **on its way into a
+/// scripted battle**: the record's last track start (sub-op `1` or `9`) and
+/// the control words after it (pause `2` / `3`, re-attach `4`, commit `0xA`),
+/// then its last battle sound-set selection (sub-op `7`), each up to the
+/// `3E FF <row>` battle-entry op that hands formation-table row `row` to the
+/// entity SM.
+///
+/// A scripted boss's event picks the fight's music itself: `korb3`'s Gaza
+/// record starts `2028` with sub-op `9`, commits it, selects sound set `-1`
+/// (`35 FF FF 07`) and enters row `15`, so the fight plays on that theme and
+/// the track word `0x8007BAC8` names it for the whole battle
+/// (`docs/subsystems/audio.md`, "The battle sound set picks the fight's track").
+/// A direct entry into the row (`--battle <row>`, the retail comparison
+/// corpus's battle seed) runs the entry without the record; these are the
+/// words it replays (`World::replay_scripted_battle_score`).
+///
+/// The walk is linear in byte order, so a record that branches between two
+/// starts contributes the later one; a sub-op `5` timed release is not
+/// carried, because the record issues it on the occupant its own sub-op `9`
+/// is about to displace (the commit `0xA` releases that occupant).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BattleEntryScore {
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The formation-table row the record's `3E FF <row>` enters.
+    pub row: u8,
+    /// The op-`0x35` words to replay, in record order: `(operand, sub_op)`.
+    pub words: Vec<(u16, u8)>,
+}
+
+/// Every [`BattleEntryScore`] in `man`, across all three partitions: one per
+/// `3E FF <row>` scripted-battle entry op whose record ran at least one BGM
+/// word before it.
+pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryScore> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut start_run: Vec<(u16, u8)> = Vec::new();
+            let mut sound_set: Option<(u16, u8)> = None;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                match insn.info {
+                    InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                        1 | 9 => start_run = vec![(text_id, sub_op)],
+                        2 | 3 | 4 | 0xA if !start_run.is_empty() => {
+                            start_run.push((text_id, sub_op));
+                        }
+                        7 => sound_set = Some((text_id, sub_op)),
+                        _ => {}
+                    },
+                    InsnInfo::WarpOrInteract {
+                        op0: 0xFF,
+                        op1,
+                        is_warp: false,
+                    } => {
+                        let mut words = start_run.clone();
+                        words.extend(sound_set);
+                        if !words.is_empty() {
+                            out.push(BattleEntryScore {
+                                partition,
+                                record: index,
+                                row: op1,
+                                words,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
+/// How many decoded instructions before an op-`0x44` spawn a track start may
+/// sit and still count as the spawning arm's own ([`walk_spawn_scores`]).
+pub const SPAWN_ARM_WINDOW: usize = 8;
+
+/// The op-`0x35` BGM words a record runs **on its way into an op-`0x44`
+/// spawn** of another record: the last track start (sub-op `1` / `9`) within
+/// [`SPAWN_ARM_WINDOW`] instructions before the `44 <global index>`, and the
+/// control words (`2` / `3` / `4` / `0xA`) between it and the spawn.
+///
+/// The beat a scene entry spawns is often scored by the entry, not by the
+/// spawned record: `rikuroa`'s system script `P1[0]` tests the post-battle
+/// marker `0x289` on the re-entry after Caruban and its taken arm fades,
+/// starts the track and spawns `44 5C` = `P2[50]`, the post-victory record,
+/// which itself starts none. A record started from its first opcode without
+/// that arm (the retail comparison's resume of a mid-record capture) runs
+/// over whatever track the entry's other arm chose; these are the words it
+/// replays first.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpawnScore {
+    /// Partition of the spawning record.
+    pub partition: usize,
+    /// Record index of the spawning record within its partition.
+    pub record: usize,
+    /// The flat (global) record index the spawn names.
+    pub global_index: u8,
+    /// The op-`0x35` words to replay, in record order: `(operand, sub_op)`.
+    pub words: Vec<(u16, u8)>,
+}
+
+/// Every [`SpawnScore`] in `man`: one per op-`0x44` spawn whose arm started a
+/// track within [`SPAWN_ARM_WINDOW`] instructions before it.
+pub fn walk_spawn_scores(man_file: &ManFile, man: &[u8]) -> Vec<SpawnScore> {
+    let mut out = Vec::new();
+    for partition in 0..3 {
+        let count = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for index in 0..count {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, index)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            let mut start_run: Vec<(u16, u8)> = Vec::new();
+            let mut since_start = usize::MAX;
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                since_start = since_start.saturating_add(1);
+                match insn.info {
+                    InsnInfo::Bgm { text_id, sub_op } => match sub_op {
+                        1 | 9 => {
+                            start_run = vec![(text_id, sub_op)];
+                            since_start = 0;
+                        }
+                        2 | 3 | 4 | 0xA if !start_run.is_empty() => {
+                            start_run.push((text_id, sub_op));
+                        }
+                        _ => {}
+                    },
+                    InsnInfo::SpawnRecord { global_index }
+                        if !start_run.is_empty() && since_start <= SPAWN_ARM_WINDOW =>
+                    {
+                        out.push(SpawnScore {
+                            partition,
+                            record: index,
+                            global_index,
+                            words: start_run.clone(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    out
+}
+
+/// One walkable MAN payload resolved for a scene - either the scene's
+/// asset-table **bundle** MAN (what [`Scene::field_man_payload`] returns) or
+/// a **variant** MAN carried as a type-3 chunk of a standalone DATA_FIELD
+/// streaming entry in the same CDNAME block.
+///
+/// The variant carriers exist: thirteen retail blocks (`dolk2`, `rikuroa`,
+/// `rikuroa2`, `rayman`, `station`, `balden2`, `ropeway2`, `taiku`, `taiku2`,
+/// `doman`, `nilboa2`, `edbalden`, `eddoman`) ship a second MAN with
+/// different partition counts and different scripts than the bundle MAN -
+/// story-state variants of the scene. The Mt. Rikuroa post-Caruban
+/// story-flag write (system flag `0x142` SET) lives ONLY in the variant MAN
+/// (PROT `0157_rikuroa`, byte-matched against the live script heap at the
+/// beat), so a bundle-only census is structurally blind to an entire class
+/// of story-spine writers. Censuses walk every carrier.
+#[derive(Debug, Clone)]
+pub struct ManCarrier {
+    /// PROT extraction index of the entry the payload came from.
+    pub entry_idx: u32,
+    /// `None` for the scene's asset-table bundle MAN; `Some(header_offset)`
+    /// for a variant MAN lifted from the type-3 chunk at that byte offset of
+    /// a DATA_FIELD streaming entry.
+    pub chunk_offset: Option<usize>,
+    /// The decoded MAN bytes (what `man_section::parse` consumes).
+    pub payload: Vec<u8>,
+}
+
+impl ManCarrier {
+    /// `true` iff this is a standalone variant MAN (not the bundle MAN).
+    pub fn is_variant(&self) -> bool {
+        self.chunk_offset.is_some()
+    }
+}
+
+/// One SYSTEM-flag site recovered by [`system_flag_census`], carrying the
+/// scene it lives in plus the partition/record/op that touches the flag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlagCensusSite {
+    /// CDNAME scene name whose MAN carries the op.
+    pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN (a type-3
+    /// streaming chunk), not the scene's bundle MAN. See [`ManCarrier`].
+    pub variant: bool,
+    /// Partition the carrying record lives in (`0..3`).
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// The opcode byte (a `0x50..=0x7F` system op).
+    pub opcode: u8,
+    /// SET / CLEAR / TEST discriminator.
+    pub kind: FlagKind,
+    /// Decode coherence: `false` when the record's walk had already desynced
+    /// (a decode error) before this site - byte noise until verified. See
+    /// [`GFlagSite::clean`].
+    pub clean: bool,
+    /// ASCII/SJIS text-alias suspect: the operand byte is printable ASCII
+    /// and the local byte window is majority text. Catches the prose aliases
+    /// that decode error-free and so pass `clean` (e.g. `"ta"` = `74 61` =
+    /// `Test 0x461`). See [`GFlagSite::text_alias`] / [`text_alias_suspect`].
+    pub text_alias: bool,
+    /// Developer flag-menu arm: a cleanly decoded, genuine flag op that is
+    /// one option of an in-record debug picker rather than a story writer.
+    /// See [`debug_flag_menu_arm`].
+    pub debug_menu: bool,
+}
+
+/// Disc-wide SYSTEM-flag census: walk every scene's MAN across all three
+/// partitions and map each SYSTEM flag number to the list of sites (scene +
+/// partition + record + op + kind) that set / clear / test it.
+///
+/// This is the tool the overworld progress-gate RE needs: a gate like
+/// `system_flag_test(0x193)` lives in one scene, but the *setter* that opens
+/// it almost always lives in a different scene's MAN. Only the SYSTEM bank
+/// (`0x50..=0x7F` ops) is reported - the scratchpad bank is a separate 32-bit
+/// id space with its own tooling ([`walk_partition_gflag_sites`]).
+///
+/// Scenes that fail to load or have no MAN are skipped silently (the census is
+/// best-effort over the whole CDNAME scene set). The returned map is sorted by
+/// flag number; each flag's site list preserves scene / carrier / partition /
+/// record discovery order.
+///
+/// Walks **every** MAN carrier per scene ([`scene_man_carriers`]) - the
+/// bundle MAN plus the standalone story-state variant MANs - so writers that
+/// live only in a variant (e.g. the `rikuroa` post-Caruban `0x142` SET in
+/// PROT `0157`) are surfaced.
+pub fn system_flag_census_of<I, S>(scenes: I) -> BTreeMap<u16, Vec<FlagCensusSite>>
+where
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
+    S: AsRef<str>,
+{
+    let mut out: BTreeMap<u16, Vec<FlagCensusSite>> = BTreeMap::new();
+    for (name, carriers) in scenes {
+        let name = name.as_ref();
+        for carrier in carriers {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            for partition in 0..3 {
+                for site in walk_partition_gflag_sites(&man_file, man, partition) {
+                    if site.bank != FlagBank::System {
+                        continue;
+                    }
+                    out.entry(site.flag).or_default().push(FlagCensusSite {
+                        scene_name: name.to_string(),
+                        entry_idx: carrier.entry_idx,
+                        variant: carrier.is_variant(),
+                        partition: site.partition,
+                        record: site.record,
+                        opcode: site.opcode,
+                        kind: site.kind,
+                        clean: site.clean,
+                        text_alias: site.text_alias,
+                        debug_menu: site.debug_menu,
+                    });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Side-channel byte-scan for the field-VM **TEST-op branch idiom** of a SYSTEM
+/// flag: `[0x70|hi][lo][branch_lo][0x00]` (a `0x7x` TEST followed by a small
+/// `u16` branch-offset word whose high byte is zero). Returns `(raw, genuine)`
+/// where `raw` counts every `[op][operand]` pair in `payload` (the noise pool)
+/// and `genuine` the subset whose following branch high byte is `0x00`.
+///
+/// This cross-checks [`system_flag_census`]'s TEST count, which is *not*
+/// authoritative in dialogue-heavy records: the opcode walker desyncs into
+/// Shift-JIS text / data tables and silently drops real ops (undercount) or
+/// mis-attributes aliased operand bytes (overcount). The byte-scan is
+/// walker-independent, so a discrepancy exposes a desync:
+///
+/// - `genuine` far above the `raw / 256` random-noise floor while the census
+///   reports **zero** TEST is a desync-**hidden reader** - the `0x528` case,
+///   independently confirmed live (field-VM op-`0x70` handler `ra 0x801E35E8`,
+///   flag `0x528` read 1951x). "Census zero-TEST" alone is a desync *floor*,
+///   not proof of write-only.
+/// - `raw == 0` conversely proves the flag is genuinely **never** TESTed - the
+///   TEST byte-pair is absent disc-wide, so no reader can hide (the robust
+///   form of a "write-only cutscene toggle": `0x5A0` / `0x5A1` / `0x6C3`).
+///
+/// Caveat: the `genuine` **count** is only decisive when `raw` is small (a rare
+/// op-pair). For a common byte-pair the `raw / 256` floor swamps the signal and
+/// only a runtime read-watch settles the exact reader.
+pub fn flag_test_bytescan(payload: &[u8], flag: u16) -> (usize, usize) {
+    let op = (0x70 | (flag >> 8)) as u8;
+    let operand = (flag & 0xFF) as u8;
+    let mut raw = 0usize;
+    let mut genuine = 0usize;
+    for o in 0..payload.len().saturating_sub(1) {
+        if payload[o] == op && payload[o + 1] == operand {
+            raw += 1;
+            if o + 3 < payload.len() && payload[o + 3] == 0x00 {
+                genuine += 1;
+            }
+        }
+    }
+    (raw, genuine)
+}
+
+/// One field-VM op-`0x49` (`STATE_RESUME`) site recovered by
+/// [`op49_window_census`], with its operand bytes interpreted under the
+/// **flag-window descriptor** layout the field-overlay picker widget
+/// `FUN_801EF014` consumes through `_DAT_8007B450` (system-actor handler id
+/// `0x23` in the `PTR_FUN_801f33b4` table, dispatcher `FUN_801F159C`):
+///
+/// ```text
+/// [0]    opcode 0x49          (descriptor pointer targets byte [1])
+/// [1]    sub-op
+/// [2]    count               ; window width in flags (`+1` from _DAT_8007B450)
+/// [3]    default_index       ; state-0 fallback selection (`+2`)
+/// [4]    rows                ; widget row geometry (`+3`)
+/// [5..6] base_flag (u16 LE)  ; first flag of the window (`+4..5`, read via
+///                            ; the u16 loader FUN_8003CE9C)
+/// ```
+///
+/// The picker's writes land on `DAT_80085758` system flags
+/// `base_flag + i` for `i` in `0..count` (state-0 window CLEAR loop via
+/// `FUN_8003CE34`) plus `base_flag + default_index` (the state-0 fallback
+/// `_DAT_8007BB88` seed the state-1 confirm SET `FUN_8003CE08` can land on) -
+/// so a site's covered flag set is `[base, base+count) ∪ {base+default}`.
+///
+/// Every op-`0x49` site is reported regardless of sub-op: which sub-op arms
+/// handler `0x23` is runtime state (`actor+0x50`), so the census interprets
+/// the descriptor window at **all** sub-ops as the conservative superset.
+/// `in_footprint` records whether the 6 descriptor bytes lie inside the
+/// instruction's own decoded operand footprint (sub-ops narrower than 5
+/// operand bytes would make the picker read into the following instruction's
+/// bytes - still resident MAN bytes at runtime, so they are interpreted too).
+// REF: FUN_801EF014
+// REF: FUN_801F159C
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Op49WindowSite {
+    /// CDNAME scene name whose MAN carries the op.
+    pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN. See
+    /// [`ManCarrier`].
+    pub variant: bool,
+    /// Partition the carrying record lives in.
+    pub partition: usize,
+    /// Record index within the partition.
+    pub record: usize,
+    /// Absolute byte offset of the `0x49` opcode in the MAN buffer.
+    pub abs_pc: usize,
+    /// The sub-op byte (`_DAT_8007B450` target).
+    pub sub_op: u8,
+    /// Descriptor `+1`: window width in flags.
+    pub count: u8,
+    /// Descriptor `+2`: default selection index.
+    pub default_index: u8,
+    /// Descriptor `+3`: widget row-geometry byte.
+    pub rows: u8,
+    /// Descriptor `+4..5` (u16 LE): first flag id of the window.
+    pub base_flag: u16,
+    /// `true` iff all 6 descriptor bytes sit inside the instruction's own
+    /// decoded footprint (see the type docs).
+    pub in_footprint: bool,
+}
+
+impl Op49WindowSite {
+    /// The window's inclusive flag span `[base, base+count-1]`, or `None`
+    /// when `count == 0` (the CLEAR loop never runs; only the
+    /// `base + default_index` fallback remains reachable).
+    pub fn window(&self) -> Option<(u32, u32)> {
+        (self.count > 0).then(|| {
+            let base = u32::from(self.base_flag);
+            (base, base + u32::from(self.count) - 1)
+        })
+    }
+
+    /// `true` iff `flag` is in the site's covered flag set
+    /// `[base, base+count) ∪ {base + default_index}`.
+    pub fn covers(&self, flag: u16) -> bool {
+        self.min_distance(flag) == 0
+    }
+
+    /// Minimum absolute distance from `flag` to the site's covered flag set
+    /// (`0` = contained). Computed in `u32` so `base + count` cannot wrap.
+    pub fn min_distance(&self, flag: u16) -> u32 {
+        let flag = u32::from(flag);
+        let base = u32::from(self.base_flag);
+        let fallback = base + u32::from(self.default_index);
+        let mut best = flag.abs_diff(fallback);
+        if let Some((lo, hi)) = self.window() {
+            // Distance to the inclusive span [lo, hi]: 0 when inside.
+            let d = if flag < lo {
+                lo - flag
+            } else {
+                flag.saturating_sub(hi)
+            };
+            best = best.min(d);
+        }
+        best
+    }
+}
+
+/// Disc-wide **op-`0x49` flag-window census**: walk every scene MAN's
+/// field-VM bytecode (every partition record, decoded with the opcode-aware
+/// [`LinearWalker`] - real instruction boundaries, not raw byte pairs) and
+/// report every op-`0x49` site with its operand window interpreted under the
+/// [`Op49WindowSite`] flag-window descriptor layout.
+///
+/// This is the residual static probe for the spine flags whose writers are
+/// corpus-negative as LITERAL operands (`0x142` dolk-clear / `0x482` Drake
+/// mist-walls, plus the same-family orphans `0x1BE` / `0x225`): a flag-window
+/// site writes `base + offset`, so a window whose arithmetic covers a target
+/// flag would explain the write with **no literal** anywhere in the corpus.
+/// Consumers check containment / near-miss with [`Op49WindowSite::covers`] /
+/// [`Op49WindowSite::min_distance`].
+///
+/// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
+/// without a resolvable MAN are skipped (best-effort over the CDNAME scene
+/// set, all bundle forms incl. scripted-table + v12-embedded via
+/// `legaia_engine_core::scene::Scene::field_man_payload`); site order preserves scene /
+/// partition / record discovery order. Descriptor bytes are read from the
+/// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
+/// resident MAN, not the instruction footprint); sites whose descriptor
+/// window would run past the MAN end are skipped (nothing resident to read).
+// REF: FUN_801EF014
+pub fn op49_window_census_of<I, S>(scenes: I) -> Vec<Op49WindowSite>
+where
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
+    S: AsRef<str>,
+{
+    let mut out = Vec::new();
+    for (name, carriers) in scenes {
+        let name = name.as_ref();
+        for carrier in carriers {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            op49_walk_carrier(&mut out, name, &carrier, &man_file, man);
+        }
+    }
+    out
+}
+
+/// The per-carrier body of [`op49_window_census`] - split out so each MAN
+/// carrier (bundle + variants) shares the identical record walk.
+fn op49_walk_carrier(
+    out: &mut Vec<Op49WindowSite>,
+    name: &str,
+    carrier: &ManCarrier,
+    man_file: &ManFile,
+    man: &[u8],
+) {
+    let partition_count = man_file.header.partition_counts.len();
+    for partition in 0..partition_count {
+        let records = man_file
+            .header
+            .partition_counts
+            .get(partition)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as usize;
+        for record in 0..records {
+            let Some((script_start, pc0, body_len)) =
+                partition_record_span(man_file, man, partition, record)
+            else {
+                continue;
+            };
+            let body = &man[script_start..script_start + body_len];
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::StateResume { sub_op, .. } = insn.info else {
+                    continue;
+                };
+                // Header size: 1 byte, or 2 with the 0x80 cross-context
+                // prefix. The descriptor pointer (`_DAT_8007B450`)
+                // targets the sub-op byte right after the header.
+                let hs = if insn.extended.is_some() { 2 } else { 1 };
+                let desc = script_start + insn.pc + hs;
+                // Descriptor bytes +1..+5 from the sub-op byte, read
+                // from the full resident MAN (see fn docs).
+                let Some(win) = man.get(desc + 1..desc + 6) else {
+                    continue;
+                };
+                out.push(Op49WindowSite {
+                    scene_name: name.to_string(),
+                    entry_idx: carrier.entry_idx,
+                    variant: carrier.is_variant(),
+                    partition,
+                    record,
+                    abs_pc: script_start + insn.pc,
+                    sub_op,
+                    count: win[0],
+                    default_index: win[1],
+                    rows: win[2],
+                    base_flag: u16::from_le_bytes([win[3], win[4]]),
+                    in_footprint: insn.size >= hs + 6,
+                });
+            }
+        }
+    }
+}
+
+/// One motion-VM system-flag site recovered by [`motion_flag_census`]:
+/// the scene plus the [`legaia_asset::man_motion::MotionFlagSite`] the
+/// scene's MAN tail-section 1 carries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MotionCensusSite {
+    /// CDNAME scene name whose MAN motion section carries the op.
+    pub scene_name: String,
+    /// PROT extraction index of the MAN carrier entry.
+    pub entry_idx: u32,
+    /// `true` iff the op lives in a standalone **variant** MAN's motion
+    /// section. See [`ManCarrier`]. (Distinct from `site.variant`, which is
+    /// the motion record's per-actor stream variant index.)
+    pub carrier_variant: bool,
+    /// The section-1 record / variant / gate / offset / kind detail.
+    pub site: legaia_asset::man_motion::MotionFlagSite,
+    /// The record's actor bindings (who the stream runs on).
+    pub bindings: Vec<legaia_asset::man_motion::MotionBinding>,
+}
+
+/// Disc-wide **motion-VM** flag census - the sibling of
+/// [`system_flag_census`] for the *second* bytecode VM that writes the
+/// `DAT_80085758` system story-flag bank: `FUN_80038158` op `0x07` (SET) /
+/// `0x08` (CLEAR), whose scripts live in each scene MAN's tail **section 1**
+/// (installed on actors by `FUN_8003A9D4` at scene entry; see
+/// [`legaia_asset::man_motion`]). The MAN field-VM census is structurally
+/// blind to these writes - they are a different opcode space in a different
+/// carrier section.
+///
+/// Same contract as [`system_flag_census`]: scenes without a resolvable MAN
+/// (or with a terminator section 1) are skipped, the map is sorted by flag
+/// id, and site order preserves scene / record discovery order.
+pub fn motion_flag_census_of<I, S>(scenes: I) -> BTreeMap<u16, Vec<MotionCensusSite>>
+where
+    I: IntoIterator<Item = (S, Vec<ManCarrier>)>,
+    S: AsRef<str>,
+{
+    use legaia_asset::man_motion;
+    let mut out: BTreeMap<u16, Vec<MotionCensusSite>> = BTreeMap::new();
+    for (name, carriers) in scenes {
+        let name = name.as_ref();
+        for carrier in carriers {
+            let man = &carrier.payload;
+            let Ok(man_file) = legaia_asset::man_section::parse(man) else {
+                continue;
+            };
+            let records = man_motion::motion_records(man, &man_file);
+            for site in man_motion::motion_flag_sites(man, &man_file) {
+                let bindings = records
+                    .get(site.record)
+                    .map(|r| r.bindings.clone())
+                    .unwrap_or_default();
+                out.entry(site.flag).or_default().push(MotionCensusSite {
+                    scene_name: name.to_string(),
+                    entry_idx: carrier.entry_idx,
+                    carrier_variant: carrier.is_variant(),
+                    site,
+                    bindings,
+                });
+            }
+        }
+    }
+    out
+}

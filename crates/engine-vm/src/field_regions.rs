@@ -283,6 +283,12 @@ pub struct MapObject {
     pub contact: (i16, i16),
     /// The trigger **key tile** the record lookup uses.
     pub key_tile: (u8, u8),
+    /// The descriptor's authored rotation, `+0x08` / `+0x0A` / `+0x0C` (PSX
+    /// angle units) - what `FUN_8003A55C` copies into the actor's
+    /// `+0x24` / `+0x26` / `+0x28`, the angles its draw composes. A script
+    /// can turn the actor afterwards (op `0x38`, op `4C 48`), so this is the
+    /// bind-time seed, not the live heading.
+    pub rot: [u16; 3],
 }
 
 /// Half-extent of the static-object contact box on each axis
@@ -336,6 +342,7 @@ pub fn parse_map_objects(map: &[u8]) -> Vec<MapObject> {
                 world: (clamp(wx), clamp(wz)),
                 contact: (clamp(cx), clamp(cz)),
                 key_tile: (kx as u8, kz as u8),
+                rot: [0x08, 0x0A, 0x0C].map(|o| u16::from_le_bytes([d[o], d[o + 1]])),
             });
         }
     }

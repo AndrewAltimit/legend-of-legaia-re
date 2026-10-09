@@ -870,6 +870,8 @@ pub struct MuscleDomeSurface {
     camera_option: u8,
     /// A host-named selection framing ([`Self::set_select_framing`]).
     select_framing: Option<SelectFraming>,
+    /// The world sim tick [`Self::frame_at`] last stepped on.
+    last_sim_tick: Option<u32>,
 }
 
 /// The selection-screen framing a host names for the dome camera, in the
@@ -943,6 +945,31 @@ impl MuscleDomeSurface {
         };
         let monster = self.seated_monster(&read_prot, contest)?;
         self.frame_seated(read_prot, session, monster, char_slot)
+    }
+
+    /// [`Self::frame`] gated on the world's sim tick
+    /// ([`crate::world::FrameClock::sim_ticks`]): the choreography, the pose
+    /// and the battle camera script step once per tick the world ran, and a
+    /// display frame that ran no tick re-draws the last pose. [`Self::frame`]
+    /// steps once per *call*, so a host calling it once per display frame
+    /// ran the dome's camera and fighters at the monitor's rate - and the
+    /// browser page, which re-draws a paused or idle frame, ran its dome a
+    /// different number of steps than the window over the same ticks (the
+    /// round intro framed the fighter's back on one host and the monster's
+    /// on the other). Both world hosts call this one.
+    pub fn frame_at(
+        &mut self,
+        read_prot: impl Fn(usize) -> Option<Arc<Vec<u8>>>,
+        session: Option<&MuscleDomeSession>,
+        contest: Option<&DomeContest>,
+        char_slot: u32,
+        sim_tick: u32,
+    ) -> Option<&MuscleDomeScene> {
+        if session.is_some() && self.scene.is_some() && self.last_sim_tick == Some(sim_tick) {
+            return self.scene.as_ref();
+        }
+        self.last_sim_tick = session.map(|_| sim_tick);
+        self.frame(read_prot, session, contest, char_slot)
     }
 
     /// [`Self::frame`] for an opponent the host names itself rather than the

@@ -2392,11 +2392,18 @@ fn stage_music01_seq(
     let vab_off = split.vab;
     let vab_report = legaia_vab::parse(buf, vab_off).ok()?;
     let seq = legaia_seq::Seq::parse(buf.get(split.seq..)?).ok()?;
+    // The same global reverb every live host's mixer runs
+    // (`StreamResampler`): Studio C at the retail depth, each voice's send
+    // set per keyed tone. A bare `Spu::new()` renders the minigame pages'
+    // music dry while the native host and the play page play it wet.
     let mut spu = legaia_engine_audio::Spu::new();
+    spu.set_retail_reverb();
     let mut alloc = legaia_engine_audio::spu::ram::SpuAllocator::new(0x1000, 0x40_000);
     let bank =
         legaia_engine_audio::VabBank::upload(&mut spu, &mut alloc, &vab_report, &buf[vab_off..]);
     let mut sequencer = legaia_engine_audio::sequencer::Sequencer::new(seq, bank);
+    // The sequence volume every live BGM director gives a track.
+    sequencer.set_master_vol(legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL);
     // In-stream loop markers take precedence; this is the fallback for the
     // (few) tracks with no markers so every jukebox track loops.
     sequencer.set_loop_to(0);

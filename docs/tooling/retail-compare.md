@@ -225,6 +225,20 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
+  The ambient tree's draw-kind-4 sprite-arm sheets are the same case: an
+  emitter re-seats itself at a random point and yaw before each spawn
+  (`garmel`'s cave mist, [field-ambient-fx](../subsystems/field-ambient-fx.md#a-spawned-sheet-drifts-along-its-spawners-yaw)),
+  so the population matches retail's and the placement never does. The
+  image child takes the state's live sheets (`retail_sprite_arms`: part tick
+  `FUN_80021DF4`, `+0x56 == 4`, `+0x9E & 0x4000`, keyed by their stager
+  record `+0x48` less the bundle base `_DAT_8007B8D0`) as
+  `LEGAIA_SEAT_SPRITE_ARMS` and seats the engine's sheets of the same
+  record on them on the capture frame (`World::install_sprite_arm_snapshot`):
+  position, rotation banks, render scale, far colour and depth-cue level,
+  and for a keyframe-pose node (`+0x5A == 6`, `map01`'s ridge bank) the
+  packed clip entries of its `+0x4C` block, seated as both keyframes of every
+  part so the mode-6 tail packs them back unchanged.
+
   The mode-4 VRAM scrollers get the same treatment: their rotation count
   is time since the entry, so the state's live scroller rects (`+0x5A = 4`,
   rect `+0xD0..+0xD6`, `retail_scroll_rects`) go to the child with the
@@ -514,7 +528,11 @@ monster's pick and target, the battle camera, the frame) moved whenever a
 field-side port changed how many draws it takes or how they are shaped,
 with nothing in the battle changed. The world stream is therefore set to a
 fixed seed just before `World::force_encounter`, on the headless seed and in
-the image child alike (`LEGAIA_BATTLE_RNG_SEED`). A capture of something a
+the image child alike (`LEGAIA_BATTLE_RNG_SEED`), and held there at the head
+of every tick of the field-side intro transition
+(`EncounterState::rng_hold`): the field's NPC and ambient programs keep
+drawing until the fight is in battle mode, and a pin before the transition
+alone let a fix to a scene's ambient installs re-deal its fights. A capture of something a
 draw decides is still one realisation of the stream, so the seeds in
 `BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
 still on, its opening reached a prompt, and the drive or replayed cast
@@ -1172,8 +1190,7 @@ the title picker, the card-boot save select) and a screen no root row routes
 to is script-entered (the casino prize exchange, `0x20`); both are kept with
 a `menu not seedable:` reason and counted as classified limits.
 
-What a like-for-like menu frame shows is the engine's. The options screen
-carries the port's extra Key Config row. The Status and Equip character lists are the present
+What a like-for-like menu frame shows is the engine's. The Status and Equip character lists are the present
 party (`DAT_80084594` over `0x80084598`,
 `field_menu_dispatch::status_snapshots` and `EquipScreenModel::party_row`), not
 every roster record - the New Game template seeds all four records, so a
@@ -1593,17 +1610,23 @@ a compose the port gets wrong:
 - `keikoku_chest_open` shows the party HP readout over a chest whose record
   is already running: the chest actor (`P1`, `+0x50 = 19`) is engaged
   (`+0x10 & 0x100`), stepping (`+0x9C = 0`) and parked on its lid's end-latch
-  wait `2D 08` at `+0x2F`, and its lid clip cursor `+0x68` reads `16` at rate
-  `8` - two ticks into the clip, which is the display lag. The readout is the
-  pre-touch frame's. The rule that hides it is the one the port runs: the
-  runner `FUN_80039B7C` raises the player's `+0x10 & 0x80000` on every frame
-  it steps the context (`0x80039DB8..0x80039DD4`), and `FUN_801D0D38` takes
-  its rearm arm on that bit (`0x801D0DCC..0x801D0DD8`), which reloads the
-  countdown and leaves through `0x801D1314` without drawing. That the
-  state's own RAM holds the bit clear is inferred to be the snapshot landing
-  partway through a three-vsync logic frame, before the chest's tick runs
-  (no capture pins it); the countdown `_DAT_801F348C = 0` is the readout the
-  displayed frame drew.
+  wait `2D 08` at `+0x2F`. The player object (`*0x8007C364`) holds `+0x10 =
+  0x090A0880`, the engaged bit **set** (`keikoku_chest_pre` holds
+  `0x09020880`, clear), while the countdown `_DAT_801F348C` still reads `0`,
+  where a rearm under Field HP Display Immediate stores `0x28`
+  (`0x801D0E24..0x801D0E2C`). The order of the actor lists explains it, not a
+  display lag: `FUN_801D0D38` runs inside the player's tick `FUN_801D1344`
+  (`0x801D1660`), and the player node sits on `_DAT_8007C34C`, the first list
+  `FUN_80016444` walks (`0x800165A4`), ahead of `_DAT_8007C354`, whose
+  `FUN_8003BC08` steps the runner that raises the bit (`0x8003BD34`). On the
+  frame a record first engages the player the routine still sees the bit
+  clear and draws. Both hosts ask the rearm term one frame late
+  (`FieldPartyHud::rearm_term`), and the suppress kernel no longer hides the
+  readout on a conversation or interaction record by itself - retail hides it
+  under one only through that rearm. The capture is script-gated, so the
+  image child cannot phase-align the countdown to a tick (its `capture_tick`
+  is only the gate's deadline); a gated capture whose retail countdown reads
+  `0` pins the engine's at `0` instead.
 
 ### A poked player keeps the arrival focus
 
@@ -1637,6 +1660,17 @@ focus on the seat. So the corpus reads retail's focus pair whenever it is not
 leaves it until the player moves, and the frame looks where retail's looked.
 The headless seed does not take it, so the `camera` channel's focus part
 keeps reporting the miss - it is history the seat cannot replay, not a
+compose the engine got wrong.
+
+The same gate leaves the **rest** of the pose half-eased.
+`town01_npc16_dialogue_first_page` was poked to `(3456, 3072)` and stepped
+154 units down to Z `2918` before the talk locked the player, so its follow ease ran
+for only those frames: the state holds eye `(-87, 1117, 11202)` where the
+engine's snap composes `(-87, 1444, 11224)` at the same seat, pitch, yaw and
+`H`. A PCSX-Redux run from the state confirms the engine's target: with the
+talk open the globals never move (the lock), and once it closes a three-frame
+step eases eye Y `1117 -> 1158 -> 1194 -> 1226`, each step about an eighth of
+a gap that closes near `1450`. The eye is ease history like the focus, not a
 compose the engine got wrong.
 
 ### Arrival states are captured before the town runs
@@ -1855,17 +1889,20 @@ is checkable even where the pose is not. Two seeding limits follow.
   and trails its target by `14` units at step `2`, and the captures split
   that way: `theeder`, `gizam` and `nighto_summon_mid_cast` were saved on a
   step-`3` frame and read landed, `freed` and `swordie` on step `2` and read
-  the lag. The engine runs a fixed step `2`, so on a step-`3` capture it shows
-  the lag retail did not have. Seeding retail's step into the engine clock
-  would change every actor's cadence, not only the camera, so the corpus
-  keeps it as a seeding limit. On `theeder_summon_mid_cast` the lag is most
-  of what the `image` channel reads (the capture is in `0x33`, ahead of
-  PROT 0904's own arms, so the module's pacing does not reach it): the
-  close-up's eye sits `76` units
-  further back (TR z `2392` against `2316`), so the caster draws smaller and
-  higher, and the monster seated between the camera and the caster - a
-  near-camera ghost on both sides (`+0x08 = 0x83000000`, `B + F/4`) - spans
-  more of the frame.
+  the lag. The capture's step is recoverable - the frame driver keeps the
+  last sixteen frame times in RAM
+  ([battle](../subsystems/battle.md#the-battle-frame-step-is-the-frames-own-cost)),
+  and the step is their maximum - but only that window of it. A capture in
+  `0x33` / `0x34` whose step is not the engine's `2` has the drive install
+  it while the engine sits in that state (`RetailBattle::frame_step_seed`,
+  `LEGAIA_BATTLE_FRAME_STEP` for the image child): `theeder` `image` `.380`
+  to `.538`, `nighto` `.876` to `.984`. The seed stays off pad drives, which
+  play every earlier round through the same states - seeded there,
+  `battle_vahn_tri_somersault_super`'s drive reached its round 380 ticks
+  later (camera `.864` to `.663`). With the camera's tweens kept in display
+  frames under any step, a replayed cast in the module states `0x35` /
+  `0x36` measured mixed (`gimard_burning_attack` `image` `+.022`, `camera`
+  `-.026`), so those stay at the default step too.
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`
@@ -1894,16 +1931,26 @@ is checkable even where the pose is not. Two seeding limits follow.
   *down* through the wrap to `4051`, while the drive hands `0x6E` the engine's
   `0x0C` framing at `2620`, a shortest arc up. No word in the state records
   the camera before the cast, so the start is a seeding limit.
-- **A yaw base the walk swung.** `shiny_refactor_gimard_levelup` is held in
-  the Done band's `0x51` after Gimard's breath killed its victim; the step
-  table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
-  facing`, `TR (0, 0x500, prescale(0x800))`), which the engine now frames to
-  the unit in eye and focus. The yaw base is not recoverable: PROT 0903's
-  arm 10 stores `0x200` and its walk arm swings it by `6 * scalar` a vsync
-  for as long as the creature walks, and the prologue's drift runs on top,
-  so the word the Done band reads is the walk's length plus the time since
-  - a creature walk the headless seed does not run, and one the image
-  child's walk times on its own geometry.
+- **A yaw base the settle arm zeroes.** `shiny_refactor_gimard_levelup` is
+  held in the Done band's `0x51` after Gimard's breath killed its victim; the
+  step table's endpoints are case 6 on the caster (yaw `ctx[+0x6DA] + 0x800 -
+  facing`, `TR (0, 0x500, prescale(0x800))`). The walk's swing does not reach
+  that word. PROT 0903's arm 12 calls case 8 on the caster every pass
+  (`jal 0x801D5854` with `a1 = 8` at `0x801F761C`), and over a dead victim
+  whose render word `+0x04` is still fading that is case 8's dead-target arm,
+  which stores `0` over `ctx[+0x6DA]` (`sh zero,0x4(t0)` at `0x801D6B1C`). A
+  write watch from `shiny_refactor_gimard_plus35` (the same run, arm 9) shows
+  the two writers alternating each frame - the prologue's drift, then the
+  zero - for the whole settle, so the Done band reads only the drift since
+  arm 12 ended (`56` at the capture, 54 vsyncs at step 2). Arm 12 lasts as
+  long as that fade: it also halves the victim's animation rate on every pass
+  (`+0x21D = scalar >> 1`, past the countdown's `bgtz`), which slows the dead
+  victim's knock-back clip, and it waits for the render word to reach zero
+  after the clip lands. What the engine still reads differently is the
+  caster's facing: the cast re-faces the caster onto the victim's seeded
+  position, and the state holds the victim where its knock-back left it, not
+  where it stood when the cast began (`4038` retail against `3983`) - a
+  seeding limit.
 - **A counter the drive has to wait for.**
   `battle_vahn_tri_somersault_super` is Vahn's Super Art played as a
   counterattack on a monster's swing. The drive plays rounds until a counter
@@ -1945,18 +1992,25 @@ is checkable even where the pose is not. Two seeding limits follow.
   camera reads exact on both sides; what moves the frame is Tetsu's idle
   clip, sampled at whatever phase of its loop that elapsed time lands on.
   The capture holds no word that pins the idle phase.
-- **A capture after the action replays it from its end.**
+- **An idle loop restarts the accumulator.**
   `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
-  idle clip, the skeleton dead and the steal caption up. The seed drives the
-  whole art again, and the replayed round draws its own initiative and steal
-  roll: with Vahn seeded at his captured `17` HP the skeletons kill him first
-  under most of the seeds, and the one seed that reaches the state does not
-  roll the steal. The art's own drift and knockback are taken back
-  ([above](#battle-states), a push the capture already holds), but the
-  replayed history is not retail's: the framing's focus still lands some
-  `270` units off retail's. The engine's caption and the frame's timing
-  are not what this state measures; nothing in the capture recovers the
-  round's draws.
+  idle clip, the skeleton dead and the steal caption up. A looping clip's
+  natural end re-commits it, and the commit zeroes `ctx[+0x87C]` for the
+  acting actor ([battle-action](../subsystems/battle-action.md#the-animation-rate-byte-actor0x21d)),
+  so the capture's `176` counts from the idle's last **wrap**, not from its
+  first commit: the history ring (`actor[+0x17A]` cursors, one a frame)
+  holds Vahn's idle wrapping 22 vsyncs before the save and the idle's
+  first commit 58 back, and the skeleton's knockdown ending between them.
+  The age alone matches the first cycle, before the knockdown has ended,
+  so the drive also waits for the victim's defeat-fade lane (`+0x04`,
+  `0xF0` here - 34 vsyncs of fade) and, since the caption is the steal
+  roll's outcome, for the caption on a stream whose kill rolled it. The
+  death commit itself lands where retail's does. The drive's ages are the
+  camera's **clip age** (`BattleCamera::clip_age`): the accumulator with
+  those loop re-commits left out, which keeps placing a phase whose
+  engine clip loops where retail's held another clip - the parked Gaza of
+  `battle_gaza2_park_0x19_target_vahn` sits on its 45-frame idle (wrapped
+  69 vsyncs before the save, `552` exactly) while the engine's still walks.
 
 ## See also
 

@@ -502,6 +502,25 @@ pub(crate) enum Cmd {
         /// left loaded (`0x8007BAC8`), and the two routinely differ.
         #[arg(long, default_value_t = false)]
         per_voice: bool,
+        /// Retail key-on census CSV from
+        /// `scripts/pcsx-redux/autorun_keyon_census.lua`: every `SpuSetKey`
+        /// KON mask the game wrote, per emulated vsync. Aligns it on key-on
+        /// timing against the engine's exact per-voice key-on counters and
+        /// prints both totals - the key-on comparison that reads no SPU
+        /// state, so neither side's envelope clock can bias it.
+        #[arg(long)]
+        retail_keyon_csv: Option<PathBuf>,
+        /// Keep `--bgm-id` playing for the whole trace: the scene's own
+        /// op-`0x35` BGM events are dropped instead of switching the track.
+        /// For a retail state whose story flags select a different track
+        /// than the port's free-roam staging, or whose music is a battle's.
+        #[arg(long, default_value_t = false)]
+        pin_bgm: bool,
+        /// Restrict `--retail-keyon-csv` to one sequence: the libsnd note
+        /// owner key in hex (`1` for the field BGM slot, `3` for a battle or
+        /// minigame track).
+        #[arg(long, value_parser = parse_hex_u16)]
+        retail_keyon_owner: Option<u16>,
     },
     /// PCM-window parity oracle - the I2 sibling of `audio-trace`.
     ///
@@ -1419,6 +1438,11 @@ pub(crate) enum ConfigCmd {
         #[arg(long, default_value = "legaia-cutscene-map.toml")]
         out: PathBuf,
     },
+}
+
+/// `--retail-keyon-owner` value: hex with or without a `0x` prefix.
+fn parse_hex_u16(v: &str) -> Result<u16, String> {
+    u16::from_str_radix(v.trim_start_matches("0x"), 16).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
