@@ -155,8 +155,10 @@ pub fn range_metric(inp: &RangeInputs, sin: i16, cos: i16) -> u16 {
     if in_range { 0 } else { d as i16 as u16 }
 }
 
-/// PORT: FUN_80047430 (root-motion term, `0x80047D20..0x80047E18`) - one
-/// tick of the playing clip's approach/retreat drive.
+/// One tick of the playing clip's approach/retreat drive (`FUN_80047430`'s
+/// root-motion term), truncated per call - the shift retail applies once a
+/// battle frame. Live callers go through [`root_motion_raw`] and carry the
+/// remainder across the frame (`RootMotionCarry`).
 ///
 /// `(dx, dz) = (sin * speed * frame_dt * scale >> 15,
 ///              cos * speed * frame_dt * scale >> 15)` with the exact retail
@@ -170,6 +172,8 @@ pub fn root_motion_step(sin: i16, cos: i16, speed: i16, frame_dt: u8, scale: u8)
 
 /// The un-shifted product [`root_motion_step`] shifts:
 /// `trig * speed * frame_dt * scale` per axis, in the same multiply order.
+///
+/// PORT: FUN_80047430 (root-motion term, `0x80047D20..0x80047E18`)
 pub fn root_motion_raw(sin: i16, cos: i16, speed: i16, frame_dt: u8, scale: u8) -> (i32, i32) {
     let raw = |trig: i16| -> i32 {
         i32::from(trig)
