@@ -5,6 +5,10 @@
 
 use super::*;
 
+/// The run band's wait the Spikefish flute's flee hands the action SM
+/// (`ctx[+0x6D8] = 0x3C`, PROT 0925 arm 8).
+const FLUTE_FLEE_WAIT_FRAMES: i16 = 0x3C;
+
 /// Fixed lifetime (frames) of the dev-spawned [`DebugEffect`] entries -
 /// engine-side visualization aids, not a retail cadence (retail effects
 /// retire when their spawn records + child animations drain through
@@ -282,6 +286,7 @@ impl World {
         let mut ctx = self.battle_ctx.clone();
         let pre_state = ctx.action_state;
         let pre_banner = ctx.levelup_banner_element;
+        let pre_cursor = ctx.turn_cursor;
         let mut host = BattleHostImpl { world: self };
         let out = vm::battle_action::step(&mut host, &mut ctx);
         // One host path does write the context: the summon stager's strike
@@ -292,9 +297,27 @@ impl World {
         // Done band seeded its `0x3C` hold instead of `0x96` and its teardown
         // never unloaded the banner.
         let host_banner = self.battle_ctx.levelup_banner_element;
+        // The second: a cast module's turn steal bumps the turn cursor
+        // `ctx[+0x1A]` from inside the same stager call (PROT 0955's arms,
+        // PROT 0925's round tail - `World::run_cast_module_code` writes it
+        // back). The SM never writes the cursor in a summon-band state, so
+        // a moved host value is the module's and survives the write-back.
+        let host_cursor = self.battle_ctx.turn_cursor;
         self.battle_ctx = ctx;
         if host_banner != pre_banner && self.battle_ctx.levelup_banner_element == pre_banner {
             self.battle_ctx.levelup_banner_element = host_banner;
+        }
+        if host_cursor != pre_cursor && self.battle_ctx.turn_cursor == pre_cursor {
+            self.battle_ctx.turn_cursor = host_cursor;
+        }
+        // The third: the Spikefish flute's flee (`World::spikefish_outcome`)
+        // stores the run band's wait state and its countdown from inside
+        // the module, and the SM carries the escape outcome on
+        // `absorbed_seru` (`run::run_wait`).
+        if std::mem::take(&mut self.casting.module_flee) {
+            self.battle_ctx.action_state = vm::battle_action::ActionState::RunWait.as_byte();
+            self.battle_ctx.frame_timer = FLUTE_FLEE_WAIT_FRAMES;
+            self.battle_ctx.absorbed_seru = 1;
         }
         // The frame driver counts the timed message's hold down straight
         // after the SM step (`FUN_80046A20`, `jal 0x801E295C` then the

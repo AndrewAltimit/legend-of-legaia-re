@@ -2676,6 +2676,35 @@ Up" buff moves, and PROT 0942 is the module the spell pages.
 Ports: `legaia_engine_vm::cast_module_ticks::power_up_tick` and
 `all_stats_surge_tick`.
 
+### PROT 0925 (the Spikefish flute) flees, or skips the round
+
+Arm 8 of `FUN_801F6A00` carries the flute's whole outcome. With the
+no-escape byte `ctx[+0x287]` clear it stages the party's flee - the run
+band's own staging (members walk off at facing `0x800`, the group re-centred
+on `(0, 0x400)`), the reverse-angle camera, live HP floored at `1` - and
+stores `ctx[7] = 0x65` with `ctx[+0x6D8] = 0x3C` and the escape outcome, so
+the action SM leaves the summon band for the run band's wait and then the
+escape teardown. On a scripted fight none of that runs; the flute is a
+no-op there except for the arm's **round tail**, which runs on every fight
+(`0x801F79B4..0x801F7A88`):
+
+- every living party seat bumps the turn cursor `ctx[+0x1A]`, and a seat
+  still due an Item turn has the item refunded (`FUN_800421D4`);
+- the cursor is then decremented once, and seats `0..2` have their
+  initiative key `+0x16C` zeroed.
+
+The cursor moves by the living party, not by the members who still had a
+turn. Cast early in a round of a scripted fight, the flute pushes the cursor
+past the monsters still due to act: the round ends before they move, and
+the next round's picker (`FUN_801DABA4`, run at the round top before the
+round-end check in state `0x5A`) chooses their action afresh. A boss's
+charged move chosen the round before - an evolved Cort's Final Crisis - is
+lost that way, and Koru's four-turn strip counts a round in which Koru never
+acted. That is retail behaviour, and the port reproduces it:
+`cast_module_ticks::spikefish_round_tail` is the tail, `World::spikefish_outcome`
+the arm, and the action SM's write-back carries the module's cursor and flee
+stores over its own context (`World::step_battle`).
+
 ## Provenance
 
 Disassembly of the PROT 958/959/960 images (offsets above); the commit

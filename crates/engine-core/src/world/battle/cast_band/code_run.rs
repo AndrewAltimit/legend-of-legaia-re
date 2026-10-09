@@ -1,5 +1,8 @@
 use super::*;
 
+/// The Spikefish flute's band entry (spell `0x97`).
+const SPIKEFISH_ENTRY: u32 = 925;
+
 impl World {
     /// The engine slot of retail battle-pool slot `retail` - the inverse of
     /// [`World::retail_battle_pool_slot`].
@@ -1710,6 +1713,16 @@ impl World {
         {
             a.pass(&mut self.casting.module_cam.countdown);
         }
+        // PROT 0925's (the Spikefish flute's) outcome arm: on an ordinary
+        // fight it stages the party's flee, and on every fight its round
+        // tail moves the turn cursor by the living party
+        // ([`vm::cast_module_ticks::spikefish_round_tail`]).
+        if entry == SPIKEFISH_ENTRY
+            && phase_in == vm::cast_module_ticks::SPIKEFISH_OUTCOME_ARM
+            && ctx.phase != phase_in
+        {
+            self.spikefish_outcome(&mut ctx);
+        }
         self.casting.module_ctx_278 = ctx.ctx_278;
         self.casting.module_ring_angle = ctx.ctx_6d8;
         self.casting.module_phase = ctx.phase;
@@ -2524,5 +2537,46 @@ impl World {
         }
         self.battle_ctx.cast_readout_cursor = cursor;
         hit.applied
+    }
+}
+
+impl World {
+    /// PROT 0925's outcome arm (arm 8, `FUN_801F6A00`). With the no-escape
+    /// byte `ctx[+0x287]` clear (`0x801F7764`) the arm stages the party's
+    /// flee - the same staging, camera cut and HP floor the run band's
+    /// granted escape uses (`World::stage_party_flee`; the HP floor is
+    /// `0x801F7964..0x801F7984`) - and hands the action SM state `0x65` with
+    /// `ctx[+0x6D8] = 0x3C` and the escape outcome, which the step applies
+    /// after its write-back. On every fight it then runs the round tail.
+    ///
+    /// PORT: FUN_801F6A00 (arm 8: flee staging + round tail; the record-side
+    /// HP / MP write-back is the battle teardown's)
+    fn spikefish_outcome(&mut self, ctx: &mut vm::cast_module_ticks::CastModuleCtx) {
+        let party_n = usize::from(
+            self.party
+                .party_count
+                .min(vm::cast_module_ticks::FIRST_MONSTER_SEAT),
+        )
+        .min(self.actors.len());
+        if !self.battle.no_escape {
+            self.stage_party_flee();
+            for a in self.actors.iter_mut().take(party_n) {
+                if a.battle.hp == 0 {
+                    a.battle.hp = 1;
+                    a.battle.liveness = 1;
+                }
+            }
+            self.casting.module_flee = true;
+        }
+        let mut party: Vec<_> = (0..party_n as u8)
+            .map(|s| self.cast_actor_state(s))
+            .collect();
+        let refunds = vm::cast_module_ticks::spikefish_round_tail(ctx, &mut party);
+        for (a, view) in self.actors.iter_mut().zip(&party) {
+            a.battle.init_key = view.init_key;
+        }
+        for item in refunds {
+            let _ = self.party.inventory.add(item, 1);
+        }
     }
 }
