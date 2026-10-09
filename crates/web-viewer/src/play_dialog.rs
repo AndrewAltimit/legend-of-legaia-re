@@ -325,23 +325,15 @@ impl LegaiaRuntime {
             snap.scroll_px,
             snap.box_rows,
         ));
-        // Option-picker labels: CLUT-7 white at box_x + 0x10, 15-px pitch;
-        // the hand sprite marks the selection. Keep a text `>` marker only
-        // when the chrome atlas is missing (PROT.DAT-only load).
+        // Option-picker labels, through the builder the native window shares.
         if let Some((px, py, _, _)) = lay.picker {
-            for (i, opt) in snap.options.iter().enumerate() {
-                let selected = i == snap.cursor;
-                let label = if has_chrome {
-                    opt.clone()
-                } else {
-                    format!("{}{}", if selected { "> " } else { "  " }, opt)
-                };
-                texts.extend(ui::text_draws_for(
-                    &font.layout_ascii(&label),
-                    (px + 0x10, py + i as i32 * 0xF),
-                    ui::MENU_TEXT_WHITE,
-                ));
-            }
+            texts.extend(ui::dialog_picker_label_draws_for(
+                font,
+                &snap.options,
+                snap.cursor,
+                (px, py),
+                has_chrome,
+            ));
         }
         ui::scale_stage_text_draws(&mut texts, origin, scale);
 

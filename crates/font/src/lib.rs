@@ -544,6 +544,16 @@ impl Font {
     /// engine-side equivalent return value; this `layout` method is a superset
     /// that also emits the per-glyph positions for the renderer.
     pub fn layout(&self, text: &[u8]) -> Layout {
+        self.layout_padded(text, 0)
+    }
+
+    /// [`Self::layout`] with retail's per-call glyph padding `DAT_800740E8`
+    /// added to every printable byte's advance (the common tail of
+    /// `FUN_80036888`'s byte loop, `0x80036B9C`: `widths[c] + pad + 1`). The
+    /// control bytes and a `0xCE` sprite escape's own advance take no pad.
+    /// Menus and battle draw at `0`; the field dialog pager `FUN_801D84D0`
+    /// stores [`measure::DIALOG_GLYPH_PAD`] before each row (`0x801D97D8`).
+    pub fn layout_padded(&self, text: &[u8], glyph_pad: u32) -> Layout {
         let mut glyphs = Vec::new();
         let mut pen_x: i32 = 0;
         let mut pen_y: i32 = 0;
@@ -602,7 +612,7 @@ impl Font {
                             atlas_y: ay,
                         });
                     }
-                    pen_x = pen_x.saturating_add(self.advance_of(c) as i32);
+                    pen_x = pen_x.saturating_add((self.advance_of(c) + glyph_pad) as i32);
                 }
                 _ => {
                     // Unprintable / out-of-range bytes (0x01..0x1F minus
