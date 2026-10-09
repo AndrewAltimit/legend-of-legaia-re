@@ -1181,7 +1181,7 @@ fn the_idle_states_leave_the_action_framing() {
         ActionState::SummonSustain,
         ActionState::DoneCleanup,
         ActionState::DoneFadeDown,
-        ActionState::DoneMultiCast,
+        ActionState::DoneSeruAbsorb,
     ] {
         assert!(
             action_state_frames_the_action(s.as_byte()),
@@ -1670,8 +1670,8 @@ fn the_far_framing_follows_the_formation_after_it_reopens() {
     );
 }
 
-/// The two post-strike states hand the camera to case 7, the multi-cast
-/// continuation / idle hold to case 8, and the Done-cleanup pair to
+/// The two post-strike states hand the camera to case 7, the Seru-absorb
+/// banner hold / idle hold to case 8, and the Done-cleanup pair to
 /// whichever case its category fork picks - `FUN_801E295C`'s own arms.
 #[test]
 fn the_post_strike_states_arm_the_two_shot() {

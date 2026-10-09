@@ -38,8 +38,8 @@ fn learned(world: &World) -> Vec<u8> {
 fn a_killing_blow_on_a_seru_monster_stages_and_grants_its_spell() {
     let mut world = absorb_world(100, true);
     world.roll_seru_absorb(0, 1);
-    assert_eq!(world.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
-    world.learn_absorbed_seru(0, world.battle_ctx.multi_cast_gate);
+    assert_eq!(world.battle_ctx.absorbed_seru, 1, "Seru 1 staged");
+    world.learn_absorbed_seru(0, world.battle_ctx.absorbed_seru);
     assert_eq!(learned(&world), vec![0x81]);
 }
 
@@ -49,7 +49,7 @@ fn a_killing_blow_on_a_seru_monster_stages_and_grants_its_spell() {
 fn no_ra_seru_means_no_absorb() {
     let mut world = absorb_world(100, false);
     world.roll_seru_absorb(0, 1);
-    assert_eq!(world.battle_ctx.multi_cast_gate, 0);
+    assert_eq!(world.battle_ctx.absorbed_seru, 0);
 }
 
 /// A Seru the character already knows is not staged again.
@@ -58,7 +58,7 @@ fn a_known_seru_is_not_absorbed_twice() {
     let mut world = absorb_world(100, true);
     world.learn_absorbed_seru(0, 1);
     world.roll_seru_absorb(0, 1);
-    assert_eq!(world.battle_ctx.multi_cast_gate, 0);
+    assert_eq!(world.battle_ctx.absorbed_seru, 0);
     assert_eq!(learned(&world), vec![0x81]);
 }
 
@@ -68,15 +68,15 @@ fn a_known_seru_is_not_absorbed_twice() {
 fn only_a_party_blow_on_a_seru_can_absorb() {
     let mut world = absorb_world(100, true);
     world.roll_seru_absorb(1, 0);
-    assert_eq!(world.battle_ctx.multi_cast_gate, 0, "monster attacker");
+    assert_eq!(world.battle_ctx.absorbed_seru, 0, "monster attacker");
     let mut world = absorb_world(0, true);
     world.roll_seru_absorb(0, 1);
-    assert_eq!(world.battle_ctx.multi_cast_gate, 0, "0% chance");
+    assert_eq!(world.battle_ctx.absorbed_seru, 0, "0% chance");
     let mut world = absorb_world(100, true);
     world.actors[1].battle_monster_id = None;
     world.roll_seru_absorb(0, 1);
     assert_eq!(
-        world.battle_ctx.multi_cast_gate, 0,
+        world.battle_ctx.absorbed_seru, 0,
         "no record behind the target"
     );
 }
@@ -94,7 +94,7 @@ fn magic_boost_adds_thirty_points() {
         bits[5] |= 0x40; // word +0xF8, bit 0x4000
         rec.set_ability_bits(bits);
         world.roll_seru_absorb(0, 1);
-        landed += usize::from(world.battle_ctx.multi_cast_gate != 0);
+        landed += usize::from(world.battle_ctx.absorbed_seru != 0);
     }
     assert!((20..=110).contains(&landed), "~30% of 200, got {landed}");
 }
@@ -112,7 +112,7 @@ fn the_absorb_raise_carries_the_caption_line_until_its_unload() {
         suffix: "!".into(),
     });
     world.mode = SceneMode::Battle;
-    world.battle_ctx.multi_cast_gate = 1;
+    world.battle_ctx.absorbed_seru = 1;
     world.battle_ctx.active_actor = 0;
     // No spell row installed: the name degrades to the id label.
     let name = "Spell 0x81";

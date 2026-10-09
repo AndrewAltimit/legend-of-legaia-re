@@ -531,7 +531,7 @@ impl World {
     ///
     /// PORT: FUN_80050120 (arm 2's monster sink and its `ctx[+0x288]` latch)
     pub(super) fn tick_battle_defeat_sink(&mut self) {
-        if self.battle_ctx.multi_cast_gate != 0 {
+        if self.battle_ctx.absorbed_seru != 0 {
             return;
         }
         let lone_scripted =

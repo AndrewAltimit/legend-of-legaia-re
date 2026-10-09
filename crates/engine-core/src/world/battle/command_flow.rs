@@ -1525,7 +1525,7 @@ impl World {
             Pending::Run => {
                 // Roll the escape and arm the action SM's run band (category
                 // 5 -> RunBegin/RunWait/RunEscape, retail 0x64..0x66). The SM
-                // carries the roll outcome on `multi_cast_gate` (success
+                // carries the roll outcome on `absorbed_seru` (success
                 // floors downed party HP at 1 and tears the battle down
                 // `Escaped`; failure consumes the turn via the Done band).
                 // The roll is the retail `FUN_801E791C` formula (the writer of
@@ -1542,7 +1542,7 @@ impl World {
                     a.battle.action_category = 5; // Run band
                 }
                 self.battle_ctx.queued_action = 5;
-                self.battle_ctx.multi_cast_gate = u8::from(escaped);
+                self.battle_ctx.absorbed_seru = u8::from(escaped);
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
             }
             Pending::StandBy => {

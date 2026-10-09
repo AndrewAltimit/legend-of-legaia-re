@@ -127,7 +127,7 @@ impl World {
             })
             .unwrap_or(1);
         if known == 0 {
-            self.battle_ctx.multi_cast_gate = seru;
+            self.battle_ctx.absorbed_seru = seru;
             return true;
         }
         false

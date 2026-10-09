@@ -2119,6 +2119,12 @@ The seed lives in kernel-managed RAM, **not** at `0x8007AE5C` - that address app
 
 There is **one** seed. The executable carries no `srand` (`A(30h)`) thunk, and every `jal 0x80056798` on the disc - SCUS and every overlay alike - draws the same kernel stream. The overlays' own generators are separate words with their own arithmetic (the battle overlay's `FUN_801D0290`, the slot machine's pair), not reseeds of this one.
 
+#### The battle frame driver draws once a pass and discards it
+
+`FUN_80046A20`, the battle frame driver, calls the generator unconditionally on every pass (`jal 0x80056798` at `0x80046D2C`) and overwrites the result at `0x80046D34` without reading it. So the stream's position at every outcome roll - hit, damage, a monster's AI pick, a status roll - depends on how many driver passes ran before it, not only on which decisions were made. A capture from a state parked at the Begin prompt (`party_basic_attack_vs_gobu_gobu`, PCSX-Redux, a breakpoint counting `0x80056798` hits) drew exactly once per pass and from no other site: 150 draws over 300 idle vsyncs, one pass every 2 vsyncs, slowing to one every 3 to 6 vsyncs during the swing as the load-measured frame step rose.
+
+Three things therefore move a round's rolls after its turn order is fixed: how long the player waits before pressing Begin, the button skips that shorten a wait (`0x51`'s banner, `0x52`'s Seru-absorb banner, `0x65`'s failed-run message), and anything that changes the frame step or the passes a CD load takes. A few effect emitters add per-pass draws of their own while they run (the effect walker's UV mirror at `0x801E01D4`, Noa's tag `0x29` / `0x2D` clip arm at `0x8004D0EC`). The engine's battle tick has no counterpart for the discarded draw, so its stream drifts from retail's by one draw per pass.
+
 #### How the port draws it
 
 A caller tests the **low** bits of the result (`rand & 1` coin flips, `& 0xF` gates, `% n`) and divides it as a 15-bit quantity, so what matters is the shape, not the generator. The world's stream (`World::next_rng`) is a raw 32-bit LCG state; its low bit strictly alternates, its low nibble has period 16, and as an `i32` it is negative half the time. `World::next_rand` is the retail draw - the next state through `battle_formulas::bios_rand_shape`, `(state >> 16) & 0x7FFF`. The tile-board fill and the overworld region-encounter counter draw through it, and the ambient element channel shapes its own draws the same way.

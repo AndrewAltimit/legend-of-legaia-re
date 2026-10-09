@@ -877,7 +877,7 @@ into the item / magic / arts windows ([battle](../subsystems/battle.md#how-the-e
   (`BattleDrive::Action`'s `spare`): the victim at `1` HP dies to any swing,
   so a plain Attack ahead of the seat in initiative order made the kill on
   the wrong seat.
-- **An absorbed Seru.** A capture on the Done band's multi-cast continuation
+- **An absorbed Seru.** A capture on the Done band's Seru-absorb banner hold
   `0x52` carries the Seru the killing blow absorbed in `ctx[+0x269]`, and the
   grant before it already prepended spell `seru + 0x80` to the acting
   character's list - so the lifted save knows the spell, and the replayed

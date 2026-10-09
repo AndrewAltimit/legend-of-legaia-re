@@ -794,7 +794,7 @@ impl World {
                         s7 = 2;
                     }
                 }
-                if self.battle_ctx.multi_cast_gate == 0 {
+                if self.battle_ctx.absorbed_seru == 0 {
                     s7 = knockdown;
                 }
             } else if getup != 0 {

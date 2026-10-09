@@ -193,7 +193,7 @@ fn run_command_arms_the_run_band() {
         world.battle_ctx.action_state,
         legaia_engine_vm::battle_action::ActionState::Begin.as_byte()
     );
-    assert!(world.battle_ctx.multi_cast_gate <= 1, "roll outcome staged");
+    assert!(world.battle_ctx.absorbed_seru <= 1, "roll outcome staged");
 }
 
 #[test]
@@ -207,7 +207,7 @@ fn successful_run_escapes_the_battle_without_loot() {
     world.actors[0].battle.action_category = 5;
     world.battle_ctx.active_actor = 0;
     world.battle_ctx.queued_action = 5;
-    world.battle_ctx.multi_cast_gate = 1;
+    world.battle_ctx.absorbed_seru = 1;
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
     // Drive the live loop through Begin -> RunBegin -> RunWait (0x3C-frame
     // timer) -> RunEscape (battle_end Escaped -> finish_battle).
@@ -267,7 +267,7 @@ fn failed_run_consumes_the_turn_and_the_battle_continues() {
     world.actors[0].battle.action_category = 5;
     world.battle_ctx.active_actor = 0;
     world.battle_ctx.queued_action = 5;
-    world.battle_ctx.multi_cast_gate = 0; // roll failed
+    world.battle_ctx.absorbed_seru = 0; // roll failed
     world.battle_ctx.action_state = ActionState::Begin.as_byte();
     for _ in 0..0x100 {
         if matches!(

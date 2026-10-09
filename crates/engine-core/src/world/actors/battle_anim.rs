@@ -110,7 +110,7 @@ impl World {
             // this one; recompute it before the step, like the draw that
             // follows the tick in retail.
             let tween = self.battle_tween_target(i);
-            let seru_staged = self.battle_ctx.multi_cast_gate != 0;
+            let seru_staged = self.battle_ctx.absorbed_seru != 0;
             // The `>> 2` branch of the cursor advance is taken only by a
             // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
             // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other

@@ -12,14 +12,14 @@ pub(super) fn run_begin<H: BattleActionHost + ?Sized>(
     host.ui_element(0x43, 0);
     // PORT: FUN_801E295C case 0x64 (successful-escape branch). When the run
     // roll succeeded (retail tests `_DAT_8007726C != ctx + 0x189`; the port
-    // carries the outcome on `multi_cast_gate`, consumed later by RunWait),
+    // carries the outcome on `absorbed_seru`, consumed later by RunWait),
     // retail walks the party slots (`i < ctx[+0]`) and floors every actor's
     // live HP `+0x14C` at 1 - downed (and, per the published behaviour,
     // petrified) members leave the battle alive. `+0x14C` maps to
     // `BattleActor::liveness` here. Engines additionally clear the Stone
     // status via `status_effects::StatusEffectTracker::cure_stone_on_escape`
     // when the battle ends `Escaped`.
-    if ctx.multi_cast_gate != 0 {
+    if ctx.absorbed_seru != 0 {
         for slot in 0..host.party_count() {
             if let Some(actor) = host.actor_mut(slot)
                 && actor.liveness == 0
@@ -53,10 +53,10 @@ pub(super) fn run_wait<H: BattleActionHost + ?Sized>(
     // the 0x66 teardown (fade out + battle-end signal), a failed run routes
     // back to the Done band - the action is consumed and the battle
     // continues. The retail driver decides via a global the run roll set;
-    // the port carries the outcome on `multi_cast_gate` (non-zero = the
+    // the port carries the outcome on `absorbed_seru` (non-zero = the
     // escape succeeded).
-    if ctx.multi_cast_gate != 0 {
-        ctx.multi_cast_gate = 0;
+    if ctx.absorbed_seru != 0 {
+        ctx.absorbed_seru = 0;
         return transition(ctx, ActionState::RunEscape);
     }
     transition(ctx, ActionState::DoneCleanup)

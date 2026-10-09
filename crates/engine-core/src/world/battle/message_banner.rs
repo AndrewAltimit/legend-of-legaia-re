@@ -166,7 +166,7 @@ impl World {
     }
 
     /// The `0x59` line for the Seru staged in `ctx[+0x269]` (the engine's
-    /// `multi_cast_gate`) and the acting seat's character. `None` without a
+    /// `absorbed_seru`) and the acting seat's character. `None` without a
     /// staged Seru. Without the disc caption table the line degrades to the
     /// Seru's name alone rather than to invented prose.
     /// Spell `id`'s name as the banner composers copy it: the raw table
@@ -200,7 +200,7 @@ impl World {
     }
 
     fn absorb_banner_text(&self) -> Option<String> {
-        let seru = self.battle_ctx.multi_cast_gate;
+        let seru = self.battle_ctx.absorbed_seru;
         if seru == 0 {
             return None;
         }

@@ -74,7 +74,7 @@ fn a_killing_hit_off_the_apply_gate_rolls_no_absorb() {
     let mut w = absorb_duel();
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
     assert!(w.actors[1].battle.damage_accum >= 1, "the swing connected");
-    assert_eq!(w.battle_ctx.multi_cast_gate, 0);
+    assert_eq!(w.battle_ctx.absorbed_seru, 0);
 }
 
 /// The hit that lands the total takes the compare - the accumulated
@@ -84,7 +84,7 @@ fn the_hit_that_lands_the_total_rolls_the_absorb() {
     let mut w = absorb_duel();
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, false);
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
-    assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+    assert_eq!(w.battle_ctx.absorbed_seru, 1, "Seru 1 staged");
 }
 
 /// Seat monster clips on slot 1: idle (tag 0), high flinch (tag 2) at
@@ -127,7 +127,7 @@ fn an_absorbing_kill_flinches_a_monster_without_a_get_up() {
         seat_reaction_clips(&mut w, getup);
         w.actors[1].battle.damage_accum = 5;
         if absorbed {
-            w.battle_ctx.multi_cast_gate = 1;
+            w.battle_ctx.absorbed_seru = 1;
         }
         assert_eq!(
             w.melee_reaction_entry(0, 1, UDF, true, absorbed),
@@ -140,7 +140,7 @@ fn an_absorbing_kill_flinches_a_monster_without_a_get_up() {
     let mut w = absorb_duel();
     seat_reaction_clips(&mut w, false);
     w.land_melee_hit(0, 1, BASIC_ATTACK_COMMAND, 0, false, true);
-    assert_eq!(w.battle_ctx.multi_cast_gate, 1, "Seru 1 staged");
+    assert_eq!(w.battle_ctx.absorbed_seru, 1, "Seru 1 staged");
     assert_eq!(w.actors[1].battle_reaction_entry, Some(1), "flinch");
 }
 
