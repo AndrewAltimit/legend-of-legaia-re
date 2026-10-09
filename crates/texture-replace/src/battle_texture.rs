@@ -43,12 +43,12 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::disc::DiscPatcher;
 use legaia_asset::battle_char_assembly::CLUT_ENTRIES_PER_PALETTE;
 use legaia_asset::battle_texture_catalog::{
     self as catalog, BattleTextureBlock, BattleTextureSlot, ResolvedBlock,
 };
 use legaia_asset::item_names::ItemNameTable;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// The PROT entries that carry a player battle file.
 pub const PLAYER_FILE_ENTRIES: [u32; 4] = catalog::PLAYER_FILE_ENTRIES;

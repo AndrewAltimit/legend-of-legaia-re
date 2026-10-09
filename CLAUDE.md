@@ -244,6 +244,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/disc-patch`](crates/disc-patch/README.md) | - | The patcher's foundation: `DiscPatcher` same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN re-pack budgets. Re-exported by `legaia-patcher`. |
 | [`crates/translate`](crates/translate/README.md) | - | The language-pack pipeline behind `legaia-patcher translate`: pack schema + markup, export / import, string relocation, other-build alignment and the PAL lift. Re-exported as `legaia_patcher::translation`. |
 | [`crates/party-swap`](crates/party-swap/README.md) | - | The Party / Delilas battle-model swap kernels (rig permutation, pivot-anchored rest-pose bake, field form, win poses, movesets, enemy-anim remap) as pure transforms; disc writes stay in the patcher. Re-exported as `legaia_patcher::party_swap`. |
+| [`crates/texture-replace`](crates/texture-replace/README.md) | - | Image replacement modules (scene TIMs + palette contexts, party battle art, monster skins, save-slot portraits): decode, re-encode against the retail palettes and budget, write through `DiscPatcher`. Re-exported by `legaia-patcher` at the old paths. |
 
 **Track 2 - engine reimplementation (from-scratch Rust)**
 

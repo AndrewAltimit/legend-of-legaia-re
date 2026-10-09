@@ -279,6 +279,7 @@ legend-of-legaia-re/
 │   ├── disc-patch/               # Patcher foundation: same-size PROT edits, EDC/ECC, PPF writer, free-space ledger
 │   ├── translate/                # Language-pack pipeline behind `legaia-patcher translate`
 │   ├── party-swap/               # Party / Delilas battle-model swap kernels (pure transforms)
+│   ├── texture-replace/          # Texture / battle-art / monster-skin / save-icon replacement
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters

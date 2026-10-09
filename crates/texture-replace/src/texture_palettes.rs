@@ -35,7 +35,7 @@ use legaia_asset::ui_widgets::{
 use legaia_tim::multi_palette::{PaletteContext, own_palettes};
 use legaia_tim::{PixelMode, Tim};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// One rectangle of the texture and the palette the game draws it through.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,7 +193,7 @@ pub fn texture_palettes(patcher: &DiscPatcher, tim: &Tim) -> Result<TexturePalet
     if !is_system_ui_sheet(tim) {
         return Ok(TexturePalettes::default());
     }
-    let exe = crate::translation::lift::boot_exe_name(patcher)
+    let exe = legaia_translate::translation::lift::boot_exe_name(patcher)
         .unwrap_or_else(|_| "SCUS_942.54".to_string());
     let Some(scus) = patcher.read_named_file(&exe) else {
         return Ok(TexturePalettes::default());

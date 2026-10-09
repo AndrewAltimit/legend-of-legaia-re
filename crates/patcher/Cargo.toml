@@ -25,6 +25,7 @@ cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
 legaia-party-swap.workspace = true
+legaia-texture-replace.workspace = true
 legaia-translate.workspace = true
 legaia-disc-patch.workspace = true
 anyhow.workspace = true
