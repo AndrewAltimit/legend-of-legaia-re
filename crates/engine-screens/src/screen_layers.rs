@@ -171,10 +171,17 @@ pub fn compose_screen_prims(
         world_map_sky,
     } = host;
 
+    // The overworld sky band leads the under-text list: retail links it into
+    // the farthest bucket of the table (`FUN_801F73E4`, the first call of
+    // the terrain sweep), so the party HUD draws over it. Over the text it
+    // filled the panels' clear-depth pixels and hid the names behind the
+    // horizon on the native window (the page draws its HUD canvas over both
+    // lists, so only the native window showed it).
+    let mut under = world_map_sky;
     // The field scene's own ordering-table effects, sorted as one list
     // under the text: fog sheets, drop shadows, move strips, attached
     // lights and the screen-effect widgets.
-    let mut under = field_fog;
+    under.extend(field_fog);
     under.extend(drop_shadows);
     under.extend(move_strips);
     under.extend(field_lights);
@@ -237,7 +244,6 @@ pub fn compose_screen_prims(
     over.extend(fishing_line);
     over.extend(fishing_hud);
     over.extend(world_map_markers);
-    over.extend(world_map_sky);
     (under, over)
 }
 
@@ -281,10 +287,10 @@ mod tests {
             world_map_sky: tag(111),
         };
         let (under, over) = compose_screen_prims(&w, &menu, None, host);
-        assert_eq!(tags(&under), vec![1, 2, 3, 4, 5]);
+        assert_eq!(tags(&under), vec![111, 1, 2, 3, 4, 5]);
         assert_eq!(
             tags(&over),
-            vec![100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111]
+            vec![100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
         );
     }
 
