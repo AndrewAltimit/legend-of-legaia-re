@@ -69,9 +69,12 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     // action and not again.
     ctx.done_ui_torn_down = 0;
 
-    // Per-category pose: run → screen-shake; attack → pose 8; otherwise idle.
+    // Per-category pose: attack → pose 8; otherwise idle. The run arm
+    // (`0x801E5F00`) poses nothing: it turns the camera yaw `-= step * 2`,
+    // which the battle camera's idle orbit carries (the Done band's Run
+    // category resolves to the Menu phase, `done_band_phase`).
     match category {
-        ActionCategory::Run => host.screen_shake(0x500),
+        ActionCategory::Run => {}
         ActionCategory::Attack => host.pose(slot, Pose::Recover),
         _ => host.pose(slot, Pose::Idle),
     }

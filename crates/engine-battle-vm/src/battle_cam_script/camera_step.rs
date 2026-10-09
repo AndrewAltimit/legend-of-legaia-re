@@ -3,6 +3,19 @@
 
 use super::*;
 
+/// The magic-exit state (`0x2E`) whose exit pass carries the camera snap.
+const MAGIC_EXIT_STATE: u8 = 0x2E;
+/// The pitch at or above which the magic exit snaps (`slti v0,v0,0x191` at
+/// `0x801E4964`).
+const MAGIC_EXIT_PITCH_SNAP_AT: f32 = 401.0;
+/// The absolute eye Y the snap stores (`li v0,0x500` / `sw v0,0x40bc(v1)`).
+const MAGIC_EXIT_EYE_Y: f32 = 1280.0;
+/// The run band's wait state (`0x65`).
+const RUN_WAIT_STATE: u8 = 0x65;
+/// Eye-Z back-off per vsync of frame step on a granted flee's wait
+/// (`sll v1,v1,0x5` at `0x801E59B4`).
+const ESCAPE_EYE_Z_BACK_PER_VSYNC: f32 = 32.0;
+
 impl BattleCamera {
     /// New camera snapped to the entry phase's framing (a battle that opens
     /// on tutorial dialogue starts in the held close-up; any other battle
@@ -174,6 +187,17 @@ impl BattleCamera {
         }
         self.last_action_state = state;
         self.release_module_shot(state);
+        // The magic exit's camera write, on the pass that leaves `0x2E` for
+        // `0x50` (`0x801E4958..0x801E497C`): a pitch at or above `0x191`
+        // snaps to `0` and eye Y to the absolute `0x500`; below it the
+        // framing is left alone.
+        if prev == MAGIC_EXIT_STATE
+            && state == ACTION_DONE_STATE
+            && self.pose.pitch >= MAGIC_EXIT_PITCH_SNAP_AT
+        {
+            self.pose.pitch = 0.0;
+            self.pose.tr[1] = MAGIC_EXIT_EYE_Y;
+        }
         if state == 0x00 {
             self.action_yaw = 0;
             return;
@@ -1007,6 +1031,11 @@ impl BattleCamera {
         if self.escape_shot {
             self.glides.clear();
             self.step_module_shot();
+            // `0x65`'s escape arm backs the eye away, `-= 32 * step` on the
+            // eye-Z word `0x800840C0` a pass (`0x801E59A4..0x801E59BC`).
+            if self.last_action_state == RUN_WAIT_STATE {
+                self.pose.tr[2] -= ESCAPE_EYE_Z_BACK_PER_VSYNC * f32::from(self.frame_step);
+            }
             return;
         }
         // Yaw: the idle orbit owns it in the Menu phase unless the active

@@ -410,13 +410,16 @@ pub(super) fn magic_recovery<H: BattleActionHost + ?Sized>(
 }
 
 pub(super) fn magic_exit<H: BattleActionHost + ?Sized>(
-    host: &mut H,
+    _host: &mut H,
     _ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     if _ctx.magic_exit_gate != 0 {
         return stay(_ctx);
     }
-    host.screen_shake(0);
+    // The exit pass's camera write (`0x801E4958..0x801E497C`: pitch at or
+    // above `0x191` snaps to pitch `0`, eye Y `0x500`) is the battle
+    // camera's, applied on the `0x2E -> 0x50` edge
+    // (`BattleCamera::observe_action_state`).
     transition(_ctx, ActionState::DoneCleanup)
 }
 

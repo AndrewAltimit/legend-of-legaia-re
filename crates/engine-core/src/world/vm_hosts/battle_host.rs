@@ -750,11 +750,6 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             self.world.notify_art_used(roster, art_id);
         }
     }
-    fn screen_shake(&mut self, magnitude: u16) {
-        self.world
-            .pending_battle_events
-            .push(BattleEvent::ScreenShake { magnitude });
-    }
     fn duck_audio_level(&mut self, target_pct: u8) {
         self.world
             .pending_battle_events

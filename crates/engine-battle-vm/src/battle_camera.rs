@@ -45,10 +45,10 @@
 //! `0x800840B8`/`0x800840BC` are that camera's translation pair either way -
 //! see [`crate::battle_cam_script::BattleCamera::set_shake_amplitude`].
 //!
-//! ## `BattleActionHost::screen_shake` is not this routine's caller
+//! ## The magic-exit camera snap is not this routine's caller
 //!
-//! Worth stating because the host method's name invites the pairing, and a
-//! triage verdict was once written on it. The action SM's magic-exit arm
+//! Worth stating because the action SM once surfaced the snap as a
+//! `screen_shake` host event, and a triage verdict was written on that name. The action SM's magic-exit arm
 //! (`overlay_battle_action_801e295c.txt` `0x801E4938..0x801E497C`, gated on
 //! `ctx[+0x249] == 0`, the same gate the port's `magic_exit` reads) stamps the
 //! next action state and then does a **camera framing snap**, not a shake:
@@ -65,8 +65,9 @@
 //! close-up framings hold - written straight into the word, conditional on the
 //! pitch. [`apply_shake`]'s `amplitude` is a different quantity entirely: a
 //! `1..=0x15` shift count out of `_DAT_8007B630`, whose only retail writer is
-//! a field-VM opcode. Feeding one to the other is a category error, so
-//! routing the `ScreenShake` host event through this kernel would not wire it.
+//! a field-VM opcode. Feeding one to the other is a category error: the snap is
+//! the battle camera's own write on the `0x2E -> 0x50` edge
+//! (`battle_cam_script::BattleCamera::observe_action_state`).
 
 // REF: FUN_80021248 (the arming routine that signs this builder's records
 // and hands them to the per-frame walker)
@@ -243,8 +244,8 @@ pub fn build_camera_angle_tween(
 ///
 /// Stepped by [`crate::battle_cam_script::BattleCamera`] once per camera
 /// step; the amplitude reaches it from the field VM's `0x4C`/`8`/`4` opcode
-/// through the engine host. The battle-action `screen_shake` host event is
-/// **not** a caller of this routine; see the module note for why.
+/// through the engine host. The action SM's magic-exit camera snap is **not**
+/// a caller of this routine; see the module note for why.
 pub fn apply_shake(accum: &mut [i32; 2], offset: &mut [i32; 2], amplitude: u32, seed: &mut u32) {
     accum[0] -= offset[0];
     accum[1] -= offset[1];

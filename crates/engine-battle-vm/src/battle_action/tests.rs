@@ -16,7 +16,6 @@ enum Event {
     SpellSustain(u8, u8),
     ApplyDamage(u8, u8, u8, u8),
     ApplyArtStrike(ArtStrikeInfo),
-    ScreenShake(u16),
     Brightness(u8),
     BattleEnd(BattleEndCause),
     LoadCapture(u8),
@@ -214,9 +213,6 @@ impl BattleActionHost for RecHost {
     }
     fn character_ability_bits_high(&self, slot: u8) -> u32 {
         self.ability_bits_high.get(&slot).copied().unwrap_or(0)
-    }
-    fn screen_shake(&mut self, m: u16) {
-        self.record(Event::ScreenShake(m));
     }
     fn duck_audio_level(&mut self, p: u8) {
         self.record(Event::Brightness(p));
@@ -1447,14 +1443,6 @@ fn done_cleanup_attack_uses_recover_pose() {
     ctx.action_state = ActionState::DoneCleanup.as_byte();
     step(&mut host, &mut ctx);
     assert!(host.take().contains(&Event::Pose(1, Pose::Recover)));
-}
-
-#[test]
-fn done_cleanup_run_screen_shakes() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
-    ctx.action_state = ActionState::DoneCleanup.as_byte();
-    step(&mut host, &mut ctx);
-    assert!(host.take().contains(&Event::ScreenShake(0x500)));
 }
 
 /// `DoneCleanup`'s tail `jal`s the gauge re-arm (`FUN_801E93C8` at

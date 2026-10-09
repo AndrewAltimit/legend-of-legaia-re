@@ -146,7 +146,6 @@ fn battle_turn_emits_events_into_pending_queue() {
                 BattleEvent::SpellAnimSustain { .. } => "SpellAnimSustain",
                 BattleEvent::ApplyDamage { .. } => "ApplyDamage",
                 BattleEvent::ApplyArtStrike { .. } => "ApplyArtStrike",
-                BattleEvent::ScreenShake { .. } => "ScreenShake",
                 BattleEvent::DuckAudioLevel { .. } => "DuckAudioLevel",
                 BattleEvent::BattleEnd { .. } => "BattleEnd",
                 BattleEvent::TacticalArtLearned { .. } => "TacticalArtLearned",
