@@ -117,7 +117,9 @@ pub struct SceneInstance {
     /// [`Self::rot_y`]. The world exporter fills it from the placement's
     /// three authored angles (`legaia_engine_core::scene_assembly::draw_rotation_quat`),
     /// so a pitched or rolled record is not stood upright; the page export
-    /// session, which only has the page's yaw param, leaves it `None`.
+    /// session fills it the same way for a tilted draw
+    /// (`scene_export_add_instance_euler`) and leaves it `None` for the
+    /// yaw-only draws it receives as one angle.
     pub rotation: Option<[f32; 4]>,
     pub scale: f32,
 }

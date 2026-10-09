@@ -97,12 +97,19 @@ pub fn draw_rot_y_radians(rot_y: u16) -> f32 {
 ///
 // REF: FUN_80026988
 pub fn draw_rotation_quat(d: &EnvDraw) -> [f32; 4] {
+    placement_rotation_quat([d.rot_x, d.rot_y, d.rot_z])
+}
+
+/// [`draw_rotation_quat`] from a placement's three authored PSX angles
+/// `[rot_x, rot_y, rot_z]` alone - what the browser page's `.glb` export
+/// session holds for a draw (`scene_export_add_instance_euler`), so a
+/// page-baked glb and the native `export-glb` orient a tilted record alike.
+///
+// REF: FUN_80026988
+pub fn placement_rotation_quat(rot: [u16; 3]) -> [f32; 4] {
+    let r = |v| crate::field_env::rotate_euler(rot, v);
     // Columns of R are the rotated basis vectors.
-    let c = [
-        d.rotate([1.0, 0.0, 0.0]),
-        d.rotate([0.0, 1.0, 0.0]),
-        d.rotate([0.0, 0.0, 1.0]),
-    ];
+    let c = [r([1.0, 0.0, 0.0]), r([0.0, 1.0, 0.0]), r([0.0, 0.0, 1.0])];
     let f = [1.0f32, -1.0, 1.0];
     // m[i][j] = f_i * R[i][j] * f_j  (row i, column j).
     let m = |i: usize, j: usize| f[i] * c[j][i] * f[j];

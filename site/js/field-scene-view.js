@@ -325,6 +325,8 @@
             draw.model = placementModelEuler(
               draw.x, draw.y, draw.z,
               rx * A2R, (rots ? rots[i] & 0xFFF : 0) * A2R, rz * A2R, 1.0);
+            /* The raw record angles, for the .glb baker's tilted entry. */
+            draw.tilt = [rx, rots ? rots[i] & 0xFFF : 0, rz];
           }
           draws.push(draw);
           if (anim) this.animProps.push({ meshId: ms, i, slot: slots[i], anim, lastFrame: 0 });
@@ -607,8 +609,14 @@
             v.field_scene_mesh_flat_rgba());
           handles.set(d.meshId, mi);
         }
-        v.scene_export_add_instance(
-          mi, d.x, d.y || 0, d.z, d.rotY || 0, d.scale != null ? d.scale : 1.0);
+        const sc = d.scale != null ? d.scale : 1.0;
+        /* A tilted record (its own model matrix on screen) keeps its pitch /
+         * roll in the file: the yaw-only entry would stand it upright. */
+        if (d.tilt && typeof v.scene_export_add_instance_euler === 'function') {
+          v.scene_export_add_instance_euler(mi, d.x, d.y || 0, d.z, ...d.tilt, sc);
+        } else {
+          v.scene_export_add_instance(mi, d.x, d.y || 0, d.z, d.rotY || 0, sc);
+        }
       }
       return v.scene_export_finish() || new Uint8Array(0);
     }

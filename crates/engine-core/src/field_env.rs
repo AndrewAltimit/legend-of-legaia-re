@@ -163,17 +163,27 @@ impl EnvDraw {
     ///
     // REF: FUN_80026988
     pub fn rotate(&self, v: [f32; 3]) -> [f32; 3] {
-        let a = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
-        let (sx, cx) = a(self.rot_x).sin_cos();
-        let (sy, cy) = a(self.rot_y).sin_cos();
-        let (sz, cz) = a(self.rot_z).sin_cos();
-        let [x, y, z] = v;
-        // Rz, then Ry, then Rx: the product `Rx * Ry * Rz` applied to `v`.
-        let (x, y) = (x * cz - y * sz, x * sz + y * cz);
-        let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
-        let (y, z) = (y * cx - z * sx, y * sx + z * cx);
-        [x, y, z]
+        rotate_euler([self.rot_x, self.rot_y, self.rot_z], v)
     }
+}
+
+/// `Rx * Ry * Rz` of three authored PSX angles `[rot_x, rot_y, rot_z]`
+/// (`4096` = full revolution) applied to a direction: the rotation half of
+/// [`EnvDraw::place_point`], free of a draw so a caller holding only a
+/// placement's three angles composes the same matrix.
+///
+// REF: FUN_80026988
+pub fn rotate_euler(rot: [u16; 3], v: [f32; 3]) -> [f32; 3] {
+    let a = |v: u16| f32::from(v & 0x0FFF) * (std::f32::consts::TAU / 4096.0);
+    let (sx, cx) = a(rot[0]).sin_cos();
+    let (sy, cy) = a(rot[1]).sin_cos();
+    let (sz, cz) = a(rot[2]).sin_cos();
+    let [x, y, z] = v;
+    // Rz, then Ry, then Rx: the product `Rx * Ry * Rz` applied to `v`.
+    let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+    let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
+    let (y, z) = (y * cx - z * sx, y * sx + z * cx);
+    [x, y, z]
 }
 
 /// The rung(s) of the scene floor-height ladder one [`EnvDraw`]'s world Y was
