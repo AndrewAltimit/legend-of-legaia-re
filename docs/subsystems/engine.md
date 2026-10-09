@@ -101,7 +101,8 @@ extract      → iso, prot, lzs, asset, tim, tmd, xa, font
 disc-patch   → iso, prot, lzs, asset, xa  (DiscPatcher, PPF, space ledger)
 translate    → disc-patch, asset, art, font, lzs, prot  (language packs)
 party-swap   → asset, lzs, tim, tmd, bytes  (battle-model swap kernels)
-patcher      → disc-patch, translate, party-swap + the parser crates
+texture-replace → disc-patch, translate, asset, iso, lzs, tim  (image replacement)
+patcher      → disc-patch, translate, party-swap, texture-replace + the parser crates
 
 engine-battle-vm → asset, art               (battle action SM, formulas, battle camera, cast ticks; below engine-vm)
 engine-vm     → engine-battle-vm, asset, prot, art, anm  (VM layer; no GPU / audio deps)
