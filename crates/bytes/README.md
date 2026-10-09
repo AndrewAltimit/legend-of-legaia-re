@@ -32,6 +32,7 @@ out of scope here.
 
 Leaf crate with no dependencies of its own. Depended on by `legaia-asset`,
 `legaia-engine-core` and `legaia-patcher` - the crates that read the widest
-range of raw disc buffers - wherever a raw little-endian read out of one is needed. Other
+range of raw disc buffers - and by the crates split out of them, wherever a
+raw little-endian read out of one is needed. Other
 parser crates still carry their own private helpers; each is a candidate to
 fold in here.

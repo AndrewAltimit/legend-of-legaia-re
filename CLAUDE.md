@@ -216,7 +216,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: only `legaia-asset`, `legaia-engine-core`, `legaia-engine-battle` and `legaia-patcher` depend on it - the older per-format crates hand-roll their reads. |
+| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: `legaia-asset`, the engine and patcher crates and the crates split out of them depend on it, while the older per-format crates hand-roll their reads. |
 | [`crates/iso`](crates/iso/README.md) | `disc-extract` | PSX Mode2/2352 disc reader, ISO9660 walker, **sector write-back** (`write` module: EDC/ECC re-encode + `patch_file_logical`; `iso9660::find_file_in_image`). |
 | [`crates/prot`](crates/prot/README.md) | `prot-extract` | PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack. |
 | [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`) + `compress` re-packer (greedy LZSS the retail decoder accepts; for editing assets). |

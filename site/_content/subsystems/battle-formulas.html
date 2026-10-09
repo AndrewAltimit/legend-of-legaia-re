@@ -222,6 +222,9 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
     </tbody>
   </table>
   </div>
+  <h3 id="discarded-draw">The frame driver burns one draw a pass</h3>
+  <p>The battle frame driver <code>FUN_80046A20</code> calls <code>rand()</code> on every pass (<code>jal 0x80056798</code> at <code>0x80046D2C</code>) and overwrites the result at <code>0x80046D34</code> without reading it. So where the stream stands at a hit, damage, AI or status roll depends on how many driver passes ran before it, not only on which decisions were made. A breakpoint count from a state parked at the Begin prompt sees exactly one draw per pass and no other site: 150 draws over 300 idle vsyncs.</p>
+  <p>Three things therefore move a round&rsquo;s later rolls once its turn order is fixed: how long the player waits before pressing Begin, the button presses that cut a wait short (the victory banner, the Seru-absorb banner, the failed-run message), and anything that changes the <a href="battle-internals.html#frame-step">frame step</a> or how many passes a CD load takes. The port&rsquo;s battle tick has no counterpart for the discarded draw, so its stream drifts from retail&rsquo;s by one draw per pass.</p>
   <h3 id="ap-gauge">How the AP gauge fills</h3>
   <p>The 0..100 AP gauge that Super and Miracle Arts spend fills three ways, and nothing else in the battle code adds to it:</p>
   <ul class="bullets">
