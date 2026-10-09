@@ -394,6 +394,25 @@ impl SceneHost {
                 self.world
                     .set_actor_battle_action_clips(slot, Arc::new(clips));
             }
+            // ...and its idle loop, the clip the loader seats the monster
+            // on. The play hosts installed it from their render build
+            // (`World::install_monster_battle_form`), so a headless session's
+            // monster stood clip-less until the SM first posed it: its first
+            // walk began from another cursor, came into range a tick away
+            // from the window's, and the two runs of one fight diverged
+            // (`battle_gaza2_park_0x19_target_vahn`'s capture child never
+            // reached the phase its headless replay did).
+            let unposed = self
+                .world
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_animation.is_none());
+            if unposed
+                && let Ok(Some(idle)) = legaia_asset::monster_archive::idle_animation(&archive, id)
+                && let Some(player) = crate::battle_anim::MonsterAnimPlayer::new(&idle)
+            {
+                self.world.set_actor_battle_animation(slot, player);
+            }
         }
     }
 
