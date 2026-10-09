@@ -4436,7 +4436,12 @@ raises it for the acting member; and the item band's `0x3E` arm
 a party-wide one (`t2 == 8`), as the seed's plate routine does for a monster
 caster (see the roster-panel note above). A party
 member's attack on a monster therefore shows **no** readout at all; a monster's
-cast on a member shows that member's bar.
+cast on a member shows that member's bar. The openers test the target byte
+once, so a group cast raises no bar even after the band rewrites its `8` / `9`
+to a slot (`sb t2,0x1dd(s3)` at `0x801E42D0` / `0x801E431C`):
+`evolved_0x91_midcast`, Holy Eyes from a lone Vahn, holds `0` mid-cast and its
+handle list carries no bar. The port draws the bar only after an opener ran
+this action (`BattleState::readout_bar_glide`).
 A counterattack runs no seed of its own: the strike loop's swap hands the
 monster's action to the counterer, so the elements the monster's seed opened
 stay up - the bar for its party target, the counterer - and the combo cluster

@@ -903,6 +903,36 @@ fn arm_action(w: &mut crate::world::World, actor: u8, category: u8, target: u8) 
     let a = &mut w.actors[usize::from(actor)].battle;
     a.action_category = category;
     a.active_target = target;
+    // The action's record-7 openers, as the seed and the Item pre-arm run
+    // them: the seed for an Attack / Magic on a party seat, `0x3C` for a
+    // party member's item.
+    use legaia_engine_vm::battle_action::ActionCategory;
+    let pc = w.party.party_count;
+    let opened = ((category == ActionCategory::Attack.as_byte()
+        || category == ActionCategory::Magic.as_byte())
+        && target < pc)
+        || (category == ActionCategory::Item.as_byte() && actor < pc);
+    w.battle.readout_bar_glide =
+        opened.then(|| legaia_engine_vm::battle_commit_log::LogLaunch::new(false));
+}
+
+#[test]
+fn a_group_cast_rewritten_to_a_slot_raises_no_bar() {
+    // Holy Eyes from a lone Vahn: the seed reads the party code `8` and opens
+    // nothing; the band then rewrites the byte to slot `0`
+    // (`evolved_0x91_midcast`), which must not raise the bar mid-cast.
+    use legaia_engine_vm::battle_action::ActionCategory;
+    use legaia_engine_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    let mut w = battle_world(1);
+    arm_action(
+        &mut w,
+        0,
+        ActionCategory::Magic.as_byte(),
+        TARGET_PARTY_WIDE,
+    );
+    w.actors[0].battle.active_target = 0;
+    w.battle_ctx.action_state = 0x34;
+    assert_eq!(battle_readout_bar_slot(&w), None);
 }
 
 #[test]

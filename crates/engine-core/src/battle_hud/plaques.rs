@@ -47,6 +47,14 @@ pub fn battle_readout_bar_slot(world: &crate::world::World) -> Option<u8> {
             world.battle.counter_hud.filter(|s| *s < pc)
         }
         BattleHudPhase::Action => {
+            // Record 7 is opened at those edges and only there: the seed
+            // tests the target byte once. A group cast's byte is `8` / `9`
+            // at the seed (no bar) and the band later rewrites it to a slot
+            // (`sb t2,0x1dd(s3)` at `0x801E42D0` / `0x801E431C`), so the live
+            // byte is not the test - whether an opener ran this action is
+            // (`evolved_0x91_midcast`: Holy Eyes from a lone Vahn holds `0`
+            // mid-cast and the handle list carries no bar).
+            world.battle.readout_bar_glide.as_ref()?;
             let a = world.battle_ctx.active_actor;
             let actor = world.actors.get(a as usize)?;
             let party_target = {
