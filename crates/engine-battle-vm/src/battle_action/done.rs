@@ -576,6 +576,14 @@ pub(super) fn done_seru_absorb<H: BattleActionHost + ?Sized>(
     if ctx.frame_timer >= 0 {
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
     }
+    // The press skip: with the countdown still at or above the teardown
+    // threshold, a newly-pressed button (`_DAT_8007B874`, read at
+    // `0x801E63A8`) pins it one below it (`li v0,0x13` / `sh v0,0x2(s7)` at
+    // `0x801E63B4` / `0x801E63B8`) - the banner's last twenty frames still
+    // run, but the wait before them is cut.
+    if ctx.frame_timer >= DONE_SERU_ABSORB_TEARDOWN_BELOW && host.pad_word() != 0 {
+        ctx.frame_timer = DONE_SERU_ABSORB_TEARDOWN_BELOW - 1;
+    }
     let outcome = if ctx.frame_timer >= 0 {
         stay(ctx)
     } else {

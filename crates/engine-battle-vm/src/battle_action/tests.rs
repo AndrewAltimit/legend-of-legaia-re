@@ -4006,3 +4006,53 @@ fn the_gauge_extend_class_draws_its_camera_variant_in_spirit_fire() {
     step(&mut host, &mut ctx);
     assert_eq!(*host.rng_pos.borrow(), 0, "no draw off class 5");
 }
+
+/// State `0x52`'s press skip (`0x801E639C..0x801E63B8`): at or above the
+/// teardown threshold a newly-pressed button pins the countdown at `0x13`;
+/// below it the press does nothing.
+#[test]
+fn seru_absorb_hold_press_clamps_the_wait_to_the_teardown() {
+    use crate::battle_action::done::{DONE_SERU_ABSORB_FRAMES, DONE_SERU_ABSORB_TEARDOWN_BELOW};
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneSeruAbsorb.as_byte();
+    ctx.frame_timer = DONE_SERU_ABSORB_FRAMES;
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.frame_timer,
+        DONE_SERU_ABSORB_FRAMES - 1,
+        "idle pad: plain decrement"
+    );
+    host.pad_word = 0x40;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, DONE_SERU_ABSORB_TEARDOWN_BELOW - 1);
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.frame_timer,
+        DONE_SERU_ABSORB_TEARDOWN_BELOW - 2,
+        "below the threshold a press is a plain decrement"
+    );
+}
+
+/// State `0x65`'s press skip (`0x801E5978..0x801E59A0`): a failed run's
+/// wait ends on the press's own pass; a successful escape's ignores it.
+#[test]
+fn run_wait_press_skips_only_the_failed_run_message() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunWait.as_byte();
+    ctx.frame_timer = 0x3C;
+    ctx.absorbed_seru = 0; // run roll failed
+    host.pad_word = 0x40;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneCleanup.as_byte()
+    ));
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunWait.as_byte();
+    ctx.frame_timer = 0x3C;
+    ctx.absorbed_seru = 1; // escaped
+    host.pad_word = 0x40;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(ctx.frame_timer, 0x3B);
+}
