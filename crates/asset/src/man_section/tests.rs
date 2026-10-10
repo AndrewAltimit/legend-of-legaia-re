@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build a minimal MAN buffer with N0=1, N1=2, N2=1 and a custom

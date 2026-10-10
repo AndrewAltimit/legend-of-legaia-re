@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Synthesize a TMD-prefixed scene stream:

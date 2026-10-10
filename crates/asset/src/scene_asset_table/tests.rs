@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build a minimal valid scene asset table with caller-chosen type sequence.
