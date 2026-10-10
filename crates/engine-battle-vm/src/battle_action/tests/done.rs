@@ -225,7 +225,7 @@ fn the_done_band_still_leaves_after_the_menu_flag_clears_on_the_crossing_frame()
     }
     // Retail pins the countdown at the `0xC` floor rather than letting it
     // sink, so the tail still has twelve frames to run once the flag drops.
-    assert_eq!(ctx.frame_timer, super::done::DONE_MENU_HOLD_FRAMES);
+    assert_eq!(ctx.frame_timer, crate::battle_action::done::DONE_MENU_HOLD_FRAMES);
     ctx.menu_open = 0;
     let mut passes = 0;
     loop {
@@ -243,7 +243,7 @@ fn the_done_band_still_leaves_after_the_menu_flag_clears_on_the_crossing_frame()
     }
     assert_eq!(
         passes,
-        super::done::DONE_MENU_HOLD_FRAMES as usize,
+        crate::battle_action::done::DONE_MENU_HOLD_FRAMES as usize,
         "the floor's twelve frames still had to run"
     );
 }
@@ -262,7 +262,7 @@ fn the_seru_absorb_branch_reseeds_its_own_timer_and_then_ends_the_action() {
         out,
         StepOutcome::Transition { to, .. } if to == ActionState::DoneSeruAbsorb.as_byte()
     ));
-    assert_eq!(ctx.frame_timer, super::done::DONE_SERU_ABSORB_FRAMES);
+    assert_eq!(ctx.frame_timer, crate::battle_action::done::DONE_SERU_ABSORB_FRAMES);
 
     let mut passes = 0;
     loop {
@@ -278,7 +278,7 @@ fn the_seru_absorb_branch_reseeds_its_own_timer_and_then_ends_the_action() {
             other => panic!("unexpected {other:?}"),
         }
     }
-    assert_eq!(passes, super::done::DONE_SERU_ABSORB_FRAMES as usize);
+    assert_eq!(passes, crate::battle_action::done::DONE_SERU_ABSORB_FRAMES as usize);
     assert_eq!(ctx.absorbed_seru, 0, "the gate is consumed");
 }
 

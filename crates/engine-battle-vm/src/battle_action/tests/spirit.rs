@@ -28,7 +28,7 @@ fn spirit_seed_bumps_the_latch_and_folds_its_draw() {
 /// is level-triggered, not an edge).
 #[test]
 fn the_spirit_band_holds_its_clip_and_both_timers() {
-    use super::spirit::{SPIRIT_BAND_HOLD, SPIRIT_FLUSH_HOLD, SPIRIT_FLUSH_STEP};
+    use crate::battle_action::spirit::{SPIRIT_BAND_HOLD, SPIRIT_FLUSH_HOLD, SPIRIT_FLUSH_STEP};
     let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 0);
     host.actors[0].queued_anim_b = 0x10;
     ctx.frame_timer = -5;
