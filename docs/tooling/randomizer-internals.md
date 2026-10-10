@@ -948,7 +948,7 @@ Routines, names, the scratch record and the glyph buffer sit in the dead run
 (`0x801EB400..`). Both satisfy
 [where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live). No SCUS
 bytes, so this half composes with everything. Module
-[`legaia_patcher::super_art_menu`](../../crates/patcher/src/super_art_menu.rs).
+[`legaia_patcher::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
 
 #### Placement + exclusivity
 
@@ -971,7 +971,7 @@ contents are correct.
 
 **Verified by** the disc oracle `crates/patcher/tests/super_art_list_real.rs`
 (module
-[`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs)),
+[`legaia_patcher::super_art_list`](../../crates/arts-patch/src/super_art_list.rs)),
 which also checks every derived input against the curated walkthrough table,
 and by PCSX-Redux probes:
 
@@ -1201,7 +1201,7 @@ replacing the value retail computes. Seedless targeted edit; no Sony bytes.
   features; enforced in the CLI and the web patcher.
 
 **Verification state.** Module
-[`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs);
+[`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs);
 disc oracle `crates/patcher/tests/arts_ap_grant_real.rs`. The disc oracle proves
 where the bytes land. A live battle playtest (a configured art grants or costs
 what it says, admits at the right AP level, clamps at 100, the refund is not
@@ -1441,7 +1441,7 @@ counter stay zero on disc; the roll fills them per battle.
 **Verified by:**
 
 - unit tests in
-  [`legaia_patcher::oscillating_ap`](../../crates/patcher/src/oscillating_ap.rs)
+  [`legaia_patcher::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
   that execute every routine on the crate's R3000 model (guard, debit, list,
   roll against a fake `rand`, damage across every fall-through shape);
 - the disc oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently
