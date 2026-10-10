@@ -1039,6 +1039,7 @@ impl World {
                     // after the sweep never play.
                     channels[ci].ctx.flags &= !0x400;
                     let before = (channels[ci].ctx.world_x, channels[ci].ctx.world_z);
+                    let clip_words = (channels[ci].ctx.local_flags, channels[ci].ctx.field_6a);
                     let r = vm::field::step_with_caller(
                         &mut host,
                         &mut channels[ci].ctx,
@@ -1049,6 +1050,16 @@ impl World {
                     );
                     host.world.field_vm.executing_channel = None;
                     host.world.field_vm.executing_object = None;
+                    // A poke at a placed object's clip words reaches the
+                    // clip it already plays - no `A2` needs to follow.
+                    if channels[ci].object_bind {
+                        let c = &channels[ci].ctx;
+                        host.world.poke_object_prop_words(
+                            c.script_id,
+                            (clip_words.0, c.local_flags),
+                            (clip_words.1, c.field_6a),
+                        );
+                    }
                     // A poke that moved the actor (`A3 <id>` seat, `CC <id> 37`
                     // copy-from-player, ...) lands on retail's `+0x14`/`+0x18`
                     // at once; surface it now rather than at the slice's end,

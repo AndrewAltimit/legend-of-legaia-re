@@ -443,6 +443,9 @@ impl World {
                     self.npcs.rotate_legs.remove(&slot);
                     self.npcs.face_legs.insert(slot, ramp);
                 }
+                let object_words = target
+                    .filter(|&ci| channels[ci].object_bind)
+                    .map(|ci| (ci, channels[ci].ctx.local_flags, channels[ci].ctx.field_6a));
                 let result = {
                     let mut host = FieldHostImpl { world: self };
                     match target {
@@ -467,6 +470,16 @@ impl World {
                 };
                 self.field_vm.executing_channel = None;
                 self.field_vm.executing_object = None;
+                // A poke at a placed object's clip words reaches the clip it
+                // already plays (`World::poke_object_prop_words`).
+                if let Some((ci, flags, rate)) = object_words {
+                    let c = &channels[ci].ctx;
+                    self.poke_object_prop_words(
+                        c.script_id,
+                        (flags, c.local_flags),
+                        (rate, c.field_6a),
+                    );
+                }
                 match result {
                     FieldStepResult::Advance { next_pc } => {
                         let stalled = next_pc == pc;
