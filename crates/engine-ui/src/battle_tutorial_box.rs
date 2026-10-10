@@ -14,16 +14,23 @@
 //! `FUN_8003541C(1 + waits, 0xD, str, x, y, width, lines*14 - 4, 0x44 - waits)`
 //! (`a3 = x`, `sp+0x10 = y`, `sp+0x14 = w`, `sp+0x18 = h`). A rect the emitter
 //! goes out of its way to measure is a window, and the retail frame is the
-//! same gold double-line 9-slice + blue gradient skin the dialog reading box
-//! uses - so this module frames the prompt with
-//! [`crate::dialog_window_chrome_draws_for`] at the engine's rect, which
-//! inflates the centre rect by 8 px on every side exactly as the reading box
-//! does.
+//! class-0 frame the battle message banner wears - the opaque blue marble
+//! fill and the gold tile-set-0 border - around the centre rect inflated by
+//! 8 px on every side ([`crate::battle_hud_chrome::text_actor_frame_draws_for`], which carries
+//! the display-list evidence).
 //!
 //! That skin/rect pairing is what a retail capture of the drill prompt shows:
 //! style `0` puts the centre rect at `(0x10, 0x0E, w, 2*14 - 4)`, so the drawn
 //! footprint is `x 8 .. 24 + w`, `40` tall, with the text rows at the centre
 //! rect's origin on the 14-px pitch. All four of those hold in the capture.
+//!
+//! A waiting prompt is the same frame from another tile-set: retail draws
+//! the bottom explainer of `v0_1_battle_command_menu` with its fill tiles
+//! from texel `(128, 32)` and every sprite under CLUT `(48, 511)` - the
+//! whole set one skin row down, a near-black marble - where the intro above
+//! it samples `(128, 0)` under `(32, 511)`. The style byte (`0x44 - waits`)
+//! is what parts them. The port has only tile-set 0 in its atlas, so a
+//! waiting box wears the blue frame with the dialog pager's confirm hand.
 //!
 //! ## Coordinates
 //!
@@ -74,19 +81,19 @@ pub fn battle_tutorial_text_draws_for(
     out
 }
 
-/// Window chrome for a tutorial prompt: the gradient fill + gold 9-slice
-/// frame at the engine's centre `rect`, plus the page-advance hand on a box
-/// that waits for acknowledgement.
+/// Window chrome for a tutorial prompt: the class-0 frame (marble fill +
+/// gold border) around the engine's centre `rect`, plus the page-advance
+/// hand on a box that waits for acknowledgement.
 ///
 /// `rect` is in stage pixels; `stage_origin` / `stage_scale` are the host's
 /// stage transform, as for every other chrome builder.
 ///
 /// The advance hand is a **port affordance**, not a traced one: retail's
-/// waiting styles register a different text actor (slot `2`, priority `0x43`)
-/// rather than adding a marker sprite, and what that actor draws to signal the
-/// wait is not decoded. The hand is the engine's existing "press confirm" cue
-/// from the dialog pager, reused so a waiting box is distinguishable from one
-/// that dismisses itself.
+/// waiting styles register a different text actor (slot `2`, style byte
+/// `0x43`) rather than adding a marker sprite, and that actor signals the
+/// wait by its skin - the dark tile-set (see the module header). The hand is
+/// the engine's existing "press confirm" cue from the dialog pager, standing
+/// in for the skin the atlas does not carry.
 pub fn battle_tutorial_chrome_draws_for(
     rects: &SaveMenuAtlasRects,
     rect: (i32, i32, i32, i32),
@@ -94,7 +101,12 @@ pub fn battle_tutorial_chrome_draws_for(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    let mut out = dialog_window_chrome_draws_for(rects, rect, stage_origin, stage_scale);
+    let mut out = crate::battle_hud_chrome::text_actor_frame_draws_for(
+        rects,
+        rect,
+        stage_origin,
+        stage_scale,
+    );
     if waits_for_input {
         out.push(dialog_advance_hand_sprite(
             rects,

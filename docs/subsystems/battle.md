@@ -358,34 +358,53 @@ the `move s4, zero`. `s4` then picks the registered actor's sort key (`1 + s4`)
 and priority (`0x44 − s4`), so a waiting prompt is a *different* text actor
 from a self-dismissing one.
 
-**What the frame looks like.** A retail capture of the drill prompt (style `0`,
-two lines) shows the same gold double-line 9-slice frame and blue gradient
-interior the dialog reading box wears, sized to the text. The measured
-footprint agrees with the rect on every axis: centre rect `(0x10, 0x0E, w, 24)`
-inflated 8 px on each side gives an outer left edge of `8` and an outer height
-of `40`, and the text rows sit at the rect origin on the 14-px pitch. The port
-therefore frames the prompt with the reading box's own chrome builder at
+**What the frame looks like.** The frame is the class-0 frame the battle
+message banner wears, not the dialog reading box's. The display list of
+`v0_1_battle_command_menu` (the lesson intro over `Begin | Run`, centre rect
+`(16, 14, 279, 10)`) draws it as ten opaque `POLY_GT4` fill tiles sampling
+texel `(128, 0)` under CLUT `(32, 511)`, grey `0x40` at the top edge and `0x88`
+at the bottom, over `(8, 6)..(303, 32)`, with tile-set 0's gold edge sprites
+inside that rect - the left column at `(8, 10)`, `18` tall, the bottom run on
+row `28`. So the footprint is the centre rect inflated 8 px on each side, the
+fill is the opaque blue marble patch (`FUN_8002BDC4`) rather than the reading
+box's translucent gradient, and the text rows sit at the rect origin on the
+14-px pitch. Both hosts draw it through
+`engine-ui::battle_hud_chrome::text_actor_frame_draws_for` at
 `BoxStyle::box_rect` - see
-[`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs),
-drawn by both hosts through the 320x240 stage transform (the rect is in retail
-framebuffer pixels, not surface pixels). The confirm hand on a waiting box is
-a port affordance borrowed from the dialog pager - **retail draws nothing extra
-for the wait**, see below.
+[`engine-ui::battle_tutorial_box`](../../crates/engine-ui/src/battle_tutorial_box.rs) -
+on the 320x240 stage transform (the rect is in retail framebuffer pixels, not
+surface pixels). The timed-fight strip is the same kind of text actor and
+wears the same frame.
 
-**The waiting box and the self-dismissing one are the same drawing.** `s4` only
-reaches two of the registrar's arguments, and neither is visual. The emitter's
-tail passes `a1 = 0xD` unconditionally (`li a1,0xd` at `0x801F75F0`), so both
-boxes register under the same widget kind, and `FUN_80031D00` - the per-frame
-walker that actually draws a registered node - dispatches on that kind byte
-alone (`lbu v0,0x1c(s4)` at `0x80032170`, jump table `0x80010DC0`), never on the
-node's `+0x08` sort key. The two arguments `s4` does move are the key itself
-(`1 + waits`, list position only: `FUN_8003541C` compares it at `0x80035520` to
-decide whether to reuse an existing node, and `FUN_800319A8` unregisters by it)
-and the `0x44 - waits` byte at node `+0x1D`, which the draw tail hands to
-`gp+0x14C` as the frame-style selector - and `FUN_8002C69C` only branches on
-`0x31` / `0x33` / `0x34` / `0x35` (`0x8002C6E4..0x8002C768`), so `0x43` and
-`0x44` both take the same default chrome. Two further consequences fall out of
-the same read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
+**A waiting box wears the dark tile-set.** `s4` only reaches two of the
+registrar's arguments. The emitter's tail passes `a1 = 0xD` unconditionally
+(`li a1,0xd` at `0x801F75F0`), so both boxes register under the same widget
+kind, and `FUN_80031D00` - the per-frame walker that actually draws a
+registered node - dispatches on that kind byte alone (`lbu v0,0x1c(s4)` at
+`0x80032170`, jump table `0x80010DC0`), never on the node's `+0x08` sort key.
+The two arguments `s4` does move are the key itself (`1 + waits`:
+`FUN_8003541C` compares it at `0x80035520` to decide whether to reuse an
+existing node, and `FUN_800319A8` unregisters by it) and the `0x44 - waits`
+byte at node `+0x1D`, the frame-style selector the draw tail hands to
+`gp+0x14C`. That byte is visual: the same display list draws the waiting
+explainer under the intro (centre rect `(23, 194, 275, 10)`, style byte
+`0x43`) with its fill tiles from texel `(128, 32)` and every one of its
+sprites under CLUT `(48, 511)` - the whole tile-set one skin row down and one
+palette on, a near-black marble - where the intro's `0x44` samples `(128, 0)`
+under `(32, 511)`. Retail adds no marker sprite for the wait; the skin is the
+signal. The port's atlas carries tile-set 0 only, so its waiting box wears the
+blue frame and the dialog pager's confirm hand in the dark skin's place.
+
+The key decides how long a box stays. A self-dismissing prompt (key `1`) is
+never timed out: the next key-`1` registration reuses its node, and the only
+explicit removals are the hook's `FUN_800319A8(0)` / `FUN_800319A8(1)` pair on
+the suppressed path at flow state `0x5A` (`0x801F71BC..0x801F71D8`) and the
+teardown drain `FUN_800355F0`. `v0_1_battle_command_submenu` still shows the
+`[Begin]` arm's prompt over the category ring it named. The port counts a
+self-dismissing box down instead (`TUTORIAL_BOX_AUTO_FRAMES`), because its
+battle loop parks on any box in the queue.
+
+Two further consequences fall out of the registrar read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
 free `+0x18` for (`0x80031A30..0x80031A44`, alongside kinds `< 2` and `0x11`),
 because the string is the overlay's own, not heap; and kind `0x0D`'s slot in the
 *registration*-time table at `0x80010D38` points at `0x80031978`, which is
