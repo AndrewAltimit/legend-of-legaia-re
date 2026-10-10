@@ -252,7 +252,7 @@ holds the victim only until an arm reuses it** - its finale arm burns
 `$s1/$s3/$s4` (and even `$s2`) as GPU-packet constants.
 
 **Staging.** The module drives clips through the actor anim channel
-([battle.md](battle.md#one-staged-anim-channel-actor0x1da)): store the
+([battle.md](battle-actor-rendering.md#one-staged-anim-channel-actor0x1da)): store the
 action id to `+0x1DA` and bump the restage counter `+0x1DC`; the commit
 mirrors the id into `+0x1D9` (the *playing* id) and `+0x1DB`. `+0x1F4`
 counts clip loops while a staged clip repeats. Victim reactions are staged
@@ -569,7 +569,7 @@ Seru block `0x81..0x8B` fails the id test outright. The Item arm stores `0x3C`
 unconditionally, so an ordinary item use walks straight into the band - and
 does, on every driven item action measured. The door is an item, not a spell.
 Both halves in
-[`battle-action.md`](battle-action.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
+[`battle-action.md`](battle-action-helpers.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
 
 ### How a cue id becomes a file, a channel and a span
 

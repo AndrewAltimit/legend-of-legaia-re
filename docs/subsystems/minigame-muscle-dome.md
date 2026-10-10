@@ -361,7 +361,7 @@ The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to
 ## Arena backdrop (extraction 1225)
 
 The contest's 3D environment is an ordinary **battle backdrop** in the standard
-carrier shape ([`battle.md` § Battle background](battle.md#battle-background)),
+carrier shape ([`battle.md` § Battle background](battle-stage-camera.md#battle-background)),
 resident in the dome's own data file:
 
 - The `0977` door/init overlay loads the dome's data file by its dev path
@@ -793,7 +793,7 @@ the site panel's omission of the decal both agree with the mechanism.
 
 **The shell is drawn twice.** Like every battle stage, the arena is two
 backdrop actors over the one registered TMD
-([`battle.md` § Two actors, one registered mesh](battle.md#two-actors-one-registered-mesh)):
+([`battle.md` § Two actors, one registered mesh](battle-stage-camera.md#two-actors-one-registered-mesh)):
 copy A at raw coordinates, copy B half-turned about Y, which closes the
 `X >= 0` half-stage into the full ring. The half turn is the default arm of
 the `DAT_80078B50` mirror list: the dome contest leaves `_DAT_80084540` and
@@ -1000,7 +1000,7 @@ press); entry **ends by itself** the moment no command is affordable
 (`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
 committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`) -
 the party-wide commit confirm, which a one-fighter dome reaches straight off
-the entry ([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)). Begin
+the entry ([`battle.md`](battle-command-flow.md#the-commit-confirm-screen-0x6e)). Begin
 plays the round out; Reselect steps the member cursor back onto the fighter,
 whose ring reopens. The previous
 round's pennants persist in the bar when the input reopens and clear on
@@ -1045,7 +1045,7 @@ the SCUS arts-name table's own columns
 
 Still unpinned here: the review screen's piece decomposition (screenshot-read
 only). The Begin-Reselect screen's is packet-pinned in
-[`battle.md`](battle.md#the-commit-confirm-screen-0x6e). The pennant's cost law and spawn anchor are pinned
+[`battle.md`](battle-command-flow.md#the-commit-confirm-screen-0x6e). The pennant's cost law and spawn anchor are pinned
 [below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
 **Auto arm**.
 
@@ -1196,7 +1196,7 @@ and the action SM's state `0x00` - entered every round, through the flow's
 `0xFE` arm - runs `FUN_801F0450`, whose pool arm rebuilds a flagged Attack
 seat's queue from a weighted, AP-budgeted draw of the four direction commands
 and splices learned arts over it
-([`battle-action.md`](battle-action.md#the-routine-runs-every-round-and-auto-rebuilds-the-queue)).
+([`battle-action.md`](battle-action-helpers.md#the-routine-runs-every-round-and-auto-rebuilds-the-queue)).
 That reader is in the same battle overlay the dome runs; the dome-side effect
 is read off the disassembly, not captured.
 
@@ -1851,7 +1851,7 @@ From there the round is an ordinary battle:
 
 | Step | Where |
 |---|---|
-| End detection | The `0x5A` end-of-action gate of `FUN_801E295C` walks the actor table; with no combatant standing on a side it sets the battle-end signal `DAT_8007BD71 = 0xFE` (party wipe: cause `5`; monster wipe: cause `0`). See [battle.md](battle.md#party-wipe--the-game-over-overlay). |
+| End detection | The `0x5A` end-of-action gate of `FUN_801E295C` walks the actor table; with no combatant standing on a side it sets the battle-end signal `DAT_8007BD71 = 0xFE` (party wipe: cause `5`; monster wipe: cause `0`). See [battle.md](battle-round-loop.md#party-wipe--the-game-over-overlay). |
 | Exit routing | `FUN_80046A20` (SCUS) picks the next mode. With `_DAT_8007BAC0 & 0x100` set it stores `0x18` (mode 24 OTHER) at `0x80046E50` rather than the field's `0x2` at `0x80046E0C` - which is what returns a dome round to the arena. |
 
 **The turn counter is a counter, not a budget.** `ctx+0x28a` has exactly one

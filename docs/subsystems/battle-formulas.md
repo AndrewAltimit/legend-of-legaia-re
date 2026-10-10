@@ -1246,7 +1246,7 @@ HP/MP/AGL/SPD are copied unchanged in both. Both profiles boost - the raw record
 **SPD** (`+0x164`): `FUN_801DA780` seeds each actor's per-turn initiative key from it. It has a dedicated "Speed Up" buff (selector 7 sub 1) and is reset to its base each round (`FUN_80053CB8`: `+0x164 = +0x166`). Distinct from INT, which governs the hit/dodge roll rather than turn order, and from AGL, which is the per-round action gauge.
 
 The next-actor selector `recompute_battle_order` (`FUN_801daba4`) reads the seeded `+0x16C` keys: it picks the actor with the highest key after a dead-slot sweep that zeroes a fallen actor's unspent key, clamps its Spirit to 100 and hands back an item it had committed.
-The tiebreak is not an even `rand % tie_count`: the tie list starts at seat 0 and a seat that *raises* the maximum is entered twice, so the first seat above 0 to reach the top key wins `2 / (ties + 2)` of the `rand % (count + 1)` draw (`0x801DAC7C..0x801DAD60`). Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle.md#auto-resolve-vs-player-driven).
+The tiebreak is not an even `rand % tie_count`: the tie list starts at seat 0 and a seat that *raises* the maximum is entered twice, so the first seat above 0 to reach the top key wins `2 / (ties + 2)` of the `rand % (count + 1)` draw (`0x801DAC7C..0x801DAD60`). Ported as `World::next_combatant_by_initiative`; see [turn order in battle.md](battle-round-loop.md#auto-resolve-vs-player-driven).
 
 ##### Initiative key seeding (`FUN_801DA780`)
 
@@ -1453,7 +1453,7 @@ Missing HP raises *both* sides' scores (a hurt party escapes more easily, a hurt
 enemy pursues harder) and the party's SPD is weighted 1.5x the enemies'. Full
 decode - the outcome pointer, the accessory-bit fold over living wearers, the
 forced-flee battle flag and the success-side flee staging - lives in
-[battle-action.md § the escape roll](battle-action.md#the-escape-roll-fun_801e791c).
+[battle-action.md § the escape roll](battle-action-helpers.md#the-escape-roll-fun_801e791c).
 
 #### Monster escape roll - `FUN_801EC0DC`
 
@@ -1949,7 +1949,7 @@ the details of the four flow readers follow.
   (`World::battle_defeat_banner`). The two elements index the screen-element
   placement table, not a menu window table, and their records are
   byte-identical - see
-  [`battle.md`](battle.md#the-loss-window-is-the-result-windows-twin).
+  [`battle.md`](battle-round-loop.md#the-loss-window-is-the-result-windows-twin).
 - **The `0x100` bit at battle exit** (`FUN_80046A20`, once the results phase
   reaches `0x43` with `ctx+0xB` clear). `0x80046DF0` / `0x80046E38` pick the
   next game mode `_DAT_8007B83C`: `0x18` (the arena) with the bit, else `2`

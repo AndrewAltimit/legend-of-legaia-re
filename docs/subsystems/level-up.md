@@ -735,7 +735,7 @@ One thing the pair still gets wrong:
 Both surfaces now draw over the **battle**, on the results frame of the
 end-of-battle sequence and for as long as retail keeps them up - the
 sequencer `FUN_8004E568`'s timeline, the leader's victory pose and the exit
-gate are in [battle.md](battle.md#battle-end-retails-way---the-results-sequencer).
+gate are in [battle.md](battle-round-loop.md#battle-end-retails-way---the-results-sequencer).
 The earlier shape - XP granted after the mode had flipped back, so the
 windows landed on the returned field - is gone.
 

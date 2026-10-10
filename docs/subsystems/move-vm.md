@@ -449,7 +449,7 @@ A part seated by a list-0 callback - the battle action SM `FUN_80046A20` driving
 > live trace resolved that the **player** summon is drawn as an ordinary battle
 > actor via the per-object TRS-keyframe decoder `FUN_8004998C` (ported in
 > `engine-vm/anim_vm.rs`), with the move VM firing only as noise - see
-> [`battle-action.md`](battle-action.md#seru-magic-summon-overlay-dispatch). The
+> [`battle-action.md`](battle-action-helpers.md#seru-magic-summon-overlay-dispatch). The
 > move-VM stager records (extraction PROT 903..913) are real on-disc data and this driver
 > runs them faithfully opcode-for-opcode, but they aren't the player render
 > path.

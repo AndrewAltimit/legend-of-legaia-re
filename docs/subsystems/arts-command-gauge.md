@@ -132,7 +132,7 @@ keyed by the unswapped seat command `DAT_801F4B8C`) takes the seat's id
 `engine-core::arts_command_input::retail_chip_icons`, drawn by
 `engine-ui::arts_input` on both hosts.
 
-The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4).
+The **enemy analogue** is the AGL action-budget in `FUN_801E9FD4`: a monster fills its per-turn action queue by rolling candidate moves and paying each move's `+0x74` cost out of the per-round AGL gauge (`actor[+0x154]`), the same "wider cost = fewer commands" mechanic on the AI side - see [`battle-action.md` § Enemy AGL action-budget](battle-action-helpers.md#enemy-agl-action-budget-fun_801e9fd4).
 
 > A separate `+2` in the same case (`icon = DAT_801F4B94[i] + 2`, gated on an *empty* equip slot, `equip[cmd] == 0`) is an empty-slot icon tweak, **not** the class penalty - a fully-equipped off-class character still shows the widened arm via the `+0x74` cost above.
 
@@ -331,7 +331,7 @@ actor's AGL** - the same `actor + 0x154` gauge the enemy action budget spends.
 ```
 
 So the party command gauge and the [enemy AGL action
-budget](battle-action.md#enemy-agl-action-budget-fun_801e9fd4) are **one
+budget](battle-action-helpers.md#enemy-agl-action-budget-fun_801e9fd4) are **one
 mechanic, not two**: both fill a per-turn pool from `actor + 0x154` and both
 spend a per-action `+0x74` cost out of it. The party spends it on the direction
 commands of an Arts input; a monster spends it on swing records it rolls. The
@@ -354,7 +354,7 @@ entry ends either by itself once nothing is affordable or on the confirm mask
 ([`0x50` exits](#leaving-state-0x50)). The review screen's next press picks
 the target and commits the entry; **Begin | Reselect** (`0x6E`) is raised
 once for the whole party, after the last member that can act has committed
-([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)), so a party of one
+([`battle.md`](battle-command-flow.md#the-commit-confirm-screen-0x6e)), so a party of one
 reaches it straight off its arts entry and a party of three only after the
 third member.
 The entered sequence resolves through the `legaia-art` matcher family - an
