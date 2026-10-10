@@ -20,40 +20,59 @@
   </table>
 </section>
 
-<section class="doc-section">
-  <h2>Reference pages</h2>
+<section class="doc-section" id="code-and-memory">
+  <h2>Code and memory</h2>
+  <p>Where a routine or a variable lives in the running game.</p>
   <div class="card-grid">
     <a class="card" href="functions.html">
       <div class="card-title">Key functions</div>
-      <div class="card-body">The traced functions that matter, grouped by subsystem: boot, asset loader, the VMs, cutscenes, renderer, battle, menus, audio, world map. Explains the <code>FUN_80xxxxxx</code> naming and the overlay-window trap.</div>
+      <div class="card-body">The traced routines that matter, grouped by subsystem, with the <code>FUN_80xxxxxx</code> naming and the overlay-window trap explained.</div>
     </a>
     <a class="card" href="memory-map.html">
       <div class="card-title">PSX RAM map</div>
-      <div class="card-body">The 2 MB main RAM as a picture: where the executable loads, where overlays go, where the party's records, inventory and story flags live.</div>
+      <div class="card-body">The 2 MB of main RAM as a picture: executable, overlay windows, party records, inventory, story flags.</div>
     </a>
-    <a class="card" href="cheats.html">
-      <div class="card-title">Cheat databases</div>
-      <div class="card-body">GameShark codes as hardware-verified RAM addresses: encoding, parser, what each region pins, and the engine's cheat applier.</div>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/overlay-va-aliases.md" target="_blank" rel="noopener">
+      <div class="card-title">Overlay address aliases</div>
+      <div class="card-body">Addresses in the disassembly dumps that belong to no runtime image, and the image each one really sits in.</div>
     </a>
+    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
+      <div class="card-title">Builds + region differences</div>
+      <div class="card-body">The known builds across regions, demos and debug discs. <code>SCUS_942.54</code> is the North American build the project targets.</div>
+    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="names-and-labels">
+  <h2>Names and labels</h2>
+  <p>Human-readable names for the ids the disc uses, and the outside sources the binary records are checked against.</p>
+  <div class="card-grid">
     <a class="card" href="gamedata.html">
       <div class="card-title">Curated game-data tables</div>
       <div class="card-body">Arts, magic, items, equipment, enemies, shops, casino and fishing tables from public walkthroughs - the labels disc records are checked against.</div>
     </a>
+    <a class="card" href="cheats.html">
+      <div class="card-title">Cheat databases</div>
+      <div class="card-body">GameShark codes read as hardware-verified RAM addresses: the encoding, the parser, and what each region of codes pins.</div>
+    </a>
     <a class="card" href="music-tracks.html">
       <div class="card-title">Music tracks</div>
-      <div class="card-body">Every BGM cue across its four naming spaces - sound-test id, in-game context, OST title, proposed relocalization - and the disc join behind it.</div>
+      <div class="card-body">Every BGM cue across its four naming spaces - sound-test id, in-game context, OST title, relocalization - joined to the disc.</div>
     </a>
     <a class="card" href="scene-names.html">
       <div class="card-title">Scene names</div>
-      <div class="card-body">Every CDNAME scene id with its display name, the banner the game draws on entering it, and a contributor's in-game reading - plus why six slots crash when loaded.</div>
+      <div class="card-body">Every scene id with its display name, the banner the game draws on entering it, and where the labels mislead.</div>
     </a>
-    <a class="card" href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/reference/builds.md" target="_blank" rel="noopener">
-      <div class="card-title">Builds + region differences</div>
-      <div class="card-body">14 known builds across NA / JP / EU / demo / preview / debug. <code>SCUS_942.54</code> is the NA build the project targets.</div>
-    </a>
+  </div>
+</section>
+
+<section class="doc-section" id="research-state">
+  <h2>State of the research</h2>
+  <p>What is still being worked out, what is answered, and what has been ruled out.</p>
+  <div class="card-grid">
     <a class="card" href="open-rev-eng-threads.html">
       <div class="card-title">Open RE threads</div>
-      <div class="card-body">The live list of unsolved questions, each with the next step that would close it. Start here to contribute.</div>
+      <div class="card-body">The unsolved questions, each with the next step that would close it. Start here to contribute.</div>
     </a>
     <a class="card" href="re-settled-threads.html">
       <div class="card-title">Settled RE threads</div>
