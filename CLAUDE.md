@@ -206,7 +206,7 @@ How the runtime engine works.
 | [`music-tracks.md`](docs/reference/music-tracks.md) | Every BGM cue across its four naming spaces (sound-test id, in-game context, OST title, relocalization), joined to the disc. The `music_01` bank is **piecewise** in extraction space. Resolver `engine-core::music_labels`. |
 | [`scene-names.md`](docs/reference/scene-names.md) | The one scene-name table (`data/gamedata/scenes.toml`, `legaia_gamedata::scene_names`): display name, disc banner, in-game reading - and the labels that mislead. |
 | [`open-rev-eng-threads.md`](docs/reference/open-rev-eng-threads.md) | The live RE hunts (`open` / `partial` / `mostly resolved`), plus what an evidence grade means. Question-level companion to `port-catalog.py --dashboard`. |
-| [`re-settled-threads.md`](docs/reference/re-settled-threads.md) | Answered RE questions, each graded `disassembly` / `capture` / `decompiled-C` / `inference` by what its own evidence rests on. `decompiled-C` = the re-audit bucket. |
+| [`re-settled-threads.md`](docs/reference/re-settled-threads.md) | Answered RE questions, each graded `disassembly` / `capture` / `decompiled-C` / `inference` by what its own evidence rests on. Index page over the per-area pages in `docs/reference/re-settled-threads/`. `decompiled-C` = the re-audit bucket. |
 | [`re-do-not-re-walk.md`](docs/reference/re-do-not-re-walk.md) | Falsified hypotheses with their reasoning intact - the plausible readings of the bytes that turned out wrong. |
 | [`overlay-va-aliases.md`](docs/reference/overlay-va-aliases.md) | Phantom virtual addresses in `ghidra/scripts/funcs/`: real bytes and real disassembly under a VA that belongs to no runtime image. |
 
