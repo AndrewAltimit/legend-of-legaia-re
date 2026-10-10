@@ -1,16 +1,27 @@
 # Slot-B module image layout
 
-The 64 PROT entries `0903..=0966` are one file format wearing 64 different
-choreographies: the per-spell summon stagers and capture-class cast modules
-that timeshare the second overlay window at link base `0x801F69D8`.
-[`cast-module.md`](../subsystems/cast-module.md) is the *behaviour* page - the
-entry tables in PROT 0898, the `ctx+0x279` phase machine, the damage shape.
-This page is the *file* page: which bytes of an image are what, and how each
-region is recovered from the image alone.
+The 64 PROT entries `0903..=0966` are code overlays: the per-spell summon stagers and capture-class cast modules that take turns in the second overlay window ("slot B") at link base `0x801F69D8`. All 64 share one file layout - a jump table, MIPS code, then a band of spawn records that describe the effect parts the module puts on screen. This page is the *file* page: which bytes of an image are what, and how each region is recovered from the image alone. [`cast-module.md`](../subsystems/cast-module.md) is the *behaviour* page (the entry tables in PROT 0898, the `ctx+0x279` phase machine, the damage shape).
 
-Parser `legaia_asset::slot_b_module`; the spawn records it names are the same
-records [`cast_effect_pool`](../subsystems/cast-module.md#what-the-port-runs)
-stages, at a granularity the pool does not carry.
+Parser `legaia_asset::slot_b_module` (crate `overlay-images`). The spawn records it names are the same records [`cast_effect_pool`](../subsystems/cast-module.md#what-the-port-runs) stages, at a granularity the pool does not carry.
+
+| Fact | Value | Confidence |
+|---|---|---|
+| Entries | PROT `0903..=0966`, 64 images | Confirmed |
+| Link base | `0x801F69D8` | Confirmed |
+| Record shape | `[i16 model_sel][u16 reserved][move-VM bytecode]`, word-aligned | Confirmed (`reserved` is read by nothing: Unknown meaning) |
+| Record start | the pointer the module's own code passes in `$a2` to a spawn helper | Confirmed |
+| Record end | the next record's start; for the topmost, its program's terminator rounded up to 4 | Confirmed / Inferred (topmost) |
+| Chain stop | eight zero bytes | Confirmed |
+
+```mermaid
+flowchart TD
+    img["Slot-B image (file order, low to high)"] --> head["Head table: 0..256 in-image VAs (one switch's jump table)"]
+    img --> code["Code: tick phase machine, spawn stager, trampolines"]
+    img --> band["Spawn-record band"]
+    img --> tail["Inherited tail: another image's bytes"]
+    code -- "lui/addiu into $a2, jal FUN_80021B04 or FUN_80050ED4" --> band
+    band --> rec["record: model_sel, reserved, move-VM program"]
+```
 
 ## The regions
 
@@ -29,8 +40,8 @@ independent, and only the extent is a byte-accounting claim.
 
 ### The regions are not laid out head-to-tail
 
-The obvious reading - head table, then code, then everything above the last
-function is data - is wrong for at least two images. PROT 0943 (`cast_curse`)
+"Head table, then code, then everything above the last function is data" does
+not hold for at least two images. PROT 0943 (`cast_curse`)
 and PROT 0961 (`cast_dead_end_crisis`) both carry **framed code above their
 record band**: 0943's frame-matched partition is four bodies ending at file
 `+0xD98`, then records, then three more bodies at `+0x135C..+0x17E0`; 0961's is
@@ -78,9 +89,8 @@ seven 20-byte frameless leaves at `0x801F7630 + (i-1)*0x14`.
 
 The eight arms are one eight-step ramp on the victim actor: `actor[+0x0C]` (the
 tint blend) `0x200` .. `0x1000` against `actor[+0x21D]` (the anim rate) `7` .. `0`.
-The frame scan sees none of the seven, so the 140-byte run they occupy read as
-"the module's own data region" and was filed under a settled thread saying the
-band's un-dumped runs are not code. It is code: see
+The frame scan sees none of the seven, so the 140-byte run they occupy looks
+like data to a frame-only partition. It is code: see
 `ghidra/scripts/funcs/overlay_cast_water_crystals_0949_801f7630.txt` and its six
 siblings. When a band image's residue is being classified, read the dispatcher's
 `lui`/`addiu` table base and its `sltiu` bound before reading the frame
@@ -133,17 +143,15 @@ records. The four Rust structs that carry the halfword
 ### Resolving the pointer a spawn call is handed
 
 Retail does not always form the pointer as a `lui`/`addiu` pair in `$a2` just
-above the call, and a resolver that only reads that shape misses records the
-module plainly hands over. The walk
+above the call. The walk
 (`slot_b_module::a2_values`, mirrored by `slot_b_band._a2_values`) reads `$a2`
 backwards from the call's **delay slot**, over straight-line code, and follows
-three shapes the narrow rule did not:
+three further shapes:
 
 - **The delay slot.** `lui a2,hi; jal FUN_80021B04; addiu a2,a2,lo` completes
   the pair after the `jal` word. Reading only the words above the call left
   `$a2` holding the bare high half (`0x801F0000` / `0x80200000`), which lands
-  outside the image and was dropped as "a neighbour's record" - 52 of the 97
-  out-of-image drops the band used to report were this shape, not neighbours.
+  outside the image and looks like a neighbour's record.
 - **A saved-register copy.** `move a2,s0` (`addu a2,s0,$zero`) hands over a
   pointer formed earlier in a saved register; the walk follows the copy, and
   while it follows `s0`-`s8` it reaches up to 256 words back, because no call
@@ -159,10 +167,7 @@ three shapes the narrow rule did not:
 
 A last writer that is a load or any other instruction names nothing, and so
 does a call crossed while the followed register is caller-saved, the routine's
-`jr ra`, or its `addiu sp,sp,-N` prologue. Most of what the three shapes add
-is records the narrow rule merged into their neighbour's extent, now split at
-the pointer the module forms; the inherited-tail cuts the walk feeds do not
-move on any image. The sibling generic
+`jr ra`, or its `addiu sp,sp,-N` prologue. The sibling generic
 claim in `byte_account` (`claim_spawn_records`) follows the same three shapes
 and also treats an image-local wrapper that forwards its own argument as a
 spawn call - PROT 0980's `FUN_801D3FD0`, 0976's `FUN_801D6E04` and 0972's
@@ -172,13 +177,10 @@ the band has no internal `jal`.
 The spawn parser [`summon_overlay::parse`](../../crates/overlay-images/src/summon_overlay.rs),
 which the cast-effect pool and the summon scene graph are built from, reads its
 record pointers through this same walk and keeps the layout's record set, so it
-inherits the three shapes and the call-site filter. Its older private resolver
-read only the pair above the call: across the band it now names every record
-it named before plus the ones completed in a delay slot, staged in a saved
-register or loaded in a `switch` arm - PROT 0958, 0959 and 0960 go from 13,
-41 and 21 records to 14, 44 and 23 - and it stops naming five whose only call
-sits outside every framed body of the image, an inherited fragment's (three in
-PROT 0909, one each in 0939 and 0964).
+inherits the three shapes and the call-site filter: PROT 0958, 0959 and 0960
+resolve to 14, 44 and 23 records, and five records whose only call sits outside
+every framed body of the image are not named (three in PROT 0909, one each in
+0939 and 0964 - an inherited fragment's calls).
 
 ### The filters, and which of them retail exercises
 
@@ -224,10 +226,9 @@ takes that offset and drops every call site and every record target from there
 up. Over the band it removes a credited pointer on all six images - 0908,
 0910, 0920, 0943 and 0961 at offsets `0x26D8`, `0x26D8`, `0x1EF4`, `0x17E0`,
 `0x1DAC`, and 0945. The 0945 donor routine at `0x801F7F2C` completes each pair
-in the call's delay slot, so its three calls resolved to nothing until the walk
-read the delay slot ([above](#resolving-the-pointer-a-spawn-call-is-handed));
-now they resolve to three of the donor's records, which the cut drops like the
-others. The content end comes from `inherited_tail.py` when the other images
+in the call's delay slot ([above](#resolving-the-pointer-a-spawn-call-is-handed)),
+so its three calls resolve to three of the donor's records, which the cut drops
+like the others. The content end comes from `inherited_tail.py` when the other images
 are in hand, and from `slot_b_module::content_end` when only this one is.
 
 ### Bounding the highest record
@@ -256,7 +257,7 @@ only where it would otherwise have no bound at all - where it runs off the
 buffer or meets a halfword that is no opcode. That ordering cannot lose a HALT
 or an armed loop, because those return immediately.
 
-What it does is settle the four images the band used to leave open. Their
+It bounds four images that have no other terminator. Their
 highest records are byte-identical in two cases (PROT 0927 and 0966 carry the
 same record), all four open `model_sel = -1`, and in all four the last
 cleanly-decoded instruction is `0x09 0x0FFF`; above it sits either a word that
@@ -264,15 +265,12 @@ is no opcode or a zero run that does not tile at any opcode width. All four sit
 **below** the image's measured inherited tail, so they are the image's own
 bytes and not a donor's.
 
-Four details decide whether this reproduces the measured extents or misses
-them, and all four were needed:
+Five details decide whether this reproduces the measured extents or misses
+them:
 
 1. **Round the end up to 4.** The records are word-aligned, so a program whose
    last halfword lands mid-word is followed by one halfword of padding. Without
-   this step the walk misses by exactly 4 bytes on a large minority of records -
-   which is the "within four bytes for about three quarters" figure an earlier
-   reading of this page recorded as evidence that no static bound exists. The
-   miss was the alignment rule, not the absence of one.
+   this step the walk misses by exactly 4 bytes on a large minority of records.
 2. **HALT outranks the idle loop.** Most records that idle-loop still emit the
    record's `HALT` in the very next halfword, and the record ends after the
    `HALT`. So an armed loop ends the program only when a `HALT` does not follow
@@ -292,7 +290,7 @@ them, and all four were needed:
    below one, resumes there. Without it the walk ended field effect records
    at their guard and called the rest of the program residue.
 
-Under those four, chaining `[header][program]` from every record start
+Under those five, chaining `[header][program]` from every record start
 reproduces 1231 of the band's 1238 bounded record extents exactly (the band's
 own highest records are excluded from that count - their ends come from this
 very walk), no chain overruns a measured end, and every one of the 62 images
@@ -312,8 +310,8 @@ last instruction is non-terminating, which is the shape the rule was written
 for - stops **below** it on a handful, and steps **past** it on fourteen,
 before dying on a halfword that is no opcode. On those fourteen the widths
 mis-step somewhere inside the record, so by the time the walk fails it is
-reading the next record's bytes as operands. A page that says "every miss
-stalls below the end" is describing the first two groups only.
+reading the next record's bytes as operands. "Every miss stalls below the
+end" describes the claim, and the first two groups of the PC.
 
 That asymmetry is what makes the figure usable by the two consumers below. An
 over-claim would retire real code from the dump worklist; a stall only leaves
@@ -335,13 +333,12 @@ opens with eight zero bytes**, and twelve chained ones did, across PROT 0919,
 0932, 0933, 0934, 0944, 0947, 0948, 0950, 0957 and 0960 - every one of them
 the gap between an image's last record and its tail. So the chain stops at
 eight zero bytes, in both walkers (`legaia_asset::slot_b_module::parse_with_tail`
-and `scripts/ghidra-analysis/slot_b_band.py`, which now also carries the
-forever-`WAIT` fallback above). PROT 0944 is the worked case: its top record
+and `scripts/ghidra-analysis/slot_b_band.py`, which carries the same
+forever-`WAIT` fallback). PROT 0944 is the worked case: its top record
 ends at `0x1988` on a `0x09 0x0FFF`, zeros run to `0x199C`, and from there to
-the end the bytes are PROT 0942's records at the same file offsets. The old
-chain claimed fourteen records up to `0x1EC8`, which kept the tail cut 1412
-bytes too high; with the stop, both walkers cut 0944 at `0x199C` with 0942 as
-donor, which is also the cut the packer-buffer prediction makes from TOC order
+the end the bytes are PROT 0942's records at the same file offsets. Without the
+stop the chain claims fourteen records up to `0x1EC8`, 1412 bytes of the donor;
+with it, both walkers cut 0944 at `0x199C` with 0942 as donor, which is also the cut the packer-buffer prediction makes from TOC order
 alone ([`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer)).
 
 ## What this is for
@@ -356,10 +353,7 @@ Two instruments consume the claims.
   shape and takes them out of the **code** denominator
   ([disc-coverage.md](../tooling/disc-coverage.md#spawn_record_band-a-shape-a-parser-names)).
 
-The second one matters because the band's residue read as un-dumped code, and
-the reason it did is worth stating: `in_data_segment`'s second leg rejects a run
-holding a `lui $rt, 0x80xx`, and a record's move-VM bytecode is arbitrary bytes,
-so a long enough record band contains that word by accident. The statistic then
-scores the band as code, and several images' whole record bands were ranked as
-dump work. Eleven of the band's ranked dump-worklist rows were the record band
-in whole or in part, and four of those were nothing else.
+The second one matters because a record band otherwise scores as un-dumped
+code: `in_data_segment`'s second leg rejects a run holding a `lui $rt, 0x80xx`,
+and a record's move-VM bytecode is arbitrary bytes, so a long enough band
+contains that word by accident.
