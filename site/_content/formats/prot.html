@@ -151,7 +151,7 @@
 <section class="doc-section" id="deep-dive">
   <h2>Deep dive</h2>
   <details class="disclosure" id="a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">
-    <summary>History: the over-read entry size and the coordinates it mislabelled</summary>
+    <summary>Reading older coordinates: the over-read entry size</summary>
     <div class="disclosure-body">
       <p>The expression <code>toc[p+5] - toc[p+3] + 4</code> is not an entry's size: it expands to <code>size(p+1) + size(p+2) + 4</code>, the two entries that <em>follow</em> <code>p</code>. It overshoots for 931 of 1233 entries and falls short for the rest. Parsing over that window ran into neighbours' sectors. <code>Entry::declared_span_sectors</code> keeps the value for diagnostics only (<code>prot-extract list</code>, column <code>decl_span</code>, flag <code>OVR</code>).</p>
       <p>Every constant of the form "asset X at PROT <code>N</code> offset <code>K</code>" measured inside that window names real bytes but, when <code>K</code> ran past entry <code>N</code>'s end, the wrong owner. Re-keying changes no byte:</p>
@@ -164,7 +164,7 @@
         </tbody>
       </table>
       <p>Other artefacts of the over-read: the "prescript-prefixed asset table" (a neighbour's offset-0 table), inflated overlay self-pointer ratios (PROT 0901 has three, not nine), "shifted copy" claims between 0900 and 0901, and an <code>init.pak</code> detector that demanded <code>0x30000</code> bytes of a 75-sector entry. Two checks make a coordinate trustworthy: offset + length fits inside the entry, and the payload's own framing terminates inside it.</p>
-      <p>Older still: a Python proof-of-concept used <code>start_lba = toc[p+5] - toc[p+2]</code>, collapsing ~80% of entries onto the same low-LBA ranges; and "the boot loader transforms the TOC" is falsified - only the index space differs. Catalogue: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
+      <p>The falsified readings themselves are catalogued on <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
     </div>
   </details>
 </section>
