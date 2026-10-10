@@ -923,7 +923,7 @@ No SCUS bytes, so this half composes with everything. Verified live: Carl's
 Moves page opens with Tri-Somersault first, its coloured arrows and description
 on the selected row, the cursor and scroll walk all fifteen rows, and Noa's page
 slots Triple Lizard between Hurricane Kick and Vulture Blade. Module
-[`legaia_patcher::super_art_menu`](../../crates/patcher/src/super_art_menu.rs).
+[`legaia_patcher::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
 
 #### Placement + exclusivity
 
@@ -947,7 +947,7 @@ contents are correct; only that one caption string is stale.
 Seedless toggle, off by default; no Sony bytes (chain membership, AP costs,
 thresholds and inputs come out of the user's own `SCUS_942.54`, the trigger
 table from `legaia_art::SUPER_ARTS`). Module
-[`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs);
+[`legaia_patcher::super_art_list`](../../crates/arts-patch/src/super_art_list.rs);
 disc oracle `crates/patcher/tests/super_art_list_real.rs`, which also checks
 every derived input against the curated walkthrough table.
 
@@ -1190,7 +1190,7 @@ the in-game marker for "this art pays you". The number renderer draws digits
 only, so a literal `+`/`-` is not available without a further code injection.
 
 Seedless targeted edit; no Sony bytes. Module
-[`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs); disc
+[`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs); disc
 oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
 where the bytes land, not in-game behaviour** - a live battle playtest (a
 configured art grants or costs what it says, admits at the right AP level, clamps
@@ -1433,7 +1433,7 @@ refused). The side table and its counter stay zero on disc; the roll fills them
 per battle.
 
 Seedless toggle, off by default, in no preset. Module
-[`legaia_patcher::oscillating_ap`](../../crates/patcher/src/oscillating_ap.rs)
+[`legaia_patcher::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
 (unit tests execute every routine on the crate's R3000 model - guard, debit,
 list, roll against a fake `rand`, damage across every fall-through shape); disc
 oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently transcribed

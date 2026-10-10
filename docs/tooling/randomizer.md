@@ -1303,7 +1303,7 @@ byte, e.g. Gala's spirit-only Biron Rage, is skipped), then recompresses to fit.
 no menu display). A combo shared across characters (e.g. `UDU`) edits the
 matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
 current power tiers. Seedless targeted edit; no Sony bytes. Module
-[`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
+[`legaia_patcher::arts_power`](../../crates/arts-patch/src/arts_power.rs); disc oracle
 `crates/patcher/tests/arts_power_real.rs`. The web patcher exposes this (and the
 AP override below) as a per-art picker - "Tactical-Art overrides": choose the art
 by name, pick a per-hit damage tier or "no damage", and a note under the row
@@ -1317,7 +1317,7 @@ spells out any combo-sharing art the edit also reaches; the raw
 (`0x0C..=0x1F`, or `0` to disable the hits), sets every active per-strike byte of
 the named Super Art (hit count preserved), and is a same-size `record0` edit with
 no display copy to sync. Module
-[`legaia_patcher::super_art_power`](../../crates/patcher/src/super_art_power.rs);
+[`legaia_patcher::super_art_power`](../../crates/arts-patch/src/super_art_power.rs);
 disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: the fifteen
 Super Arts are options in the "Tactical-Art overrides" **picker**, in a per-
 character `... - Super Arts` group beside that character's regular arts. A Super

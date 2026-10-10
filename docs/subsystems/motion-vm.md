@@ -22,7 +22,7 @@ solid in the port as they are in retail.
 | Dispatch | 22-slot jump table `0x80010EE0`, index `(op & 0x7F) - 0x37` | 32-slot jump table `0x80010FE8`, ops `0x01..=0x20` |
 | Bytecode source | the payload pointer a field-VM halt-acquire writes to `+0x94` | MAN tail-section 1, read at `*(actor+0x80) + *(u16*)(actor+0x84)` |
 | Opcode table | [Opcodes](#opcodes) | [The op table](#the-op-table) |
-| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs) |
+| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
 
 ```mermaid
 flowchart TD
@@ -63,7 +63,7 @@ Three things that catch people out:
 The per-actor tick that gates and dispatches both VMs is itself two
 independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
 as `field_actor_plan` in
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs)).
+[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
 
 **Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
 gates the `FUN_801D79E8` pre-update) and not culled (`+0x10 & 2` clear).
@@ -391,7 +391,7 @@ scripted `0x3E` interact get the same behaviour.
 
 ## From-scratch port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 
@@ -709,7 +709,7 @@ PC; a blocked wander drops back to the pick phase.
 
 #### From-scratch port + wiring
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes all four walk ops alongside the facing ones, plus `0x17`. The
 collision service is the `AmbientBlocking` trait the host supplies, and
 `engine-core`'s implementation is the player box test above.
@@ -914,7 +914,7 @@ runs this tick per frame and `Camera::tick_globals` consumes the result.
 
 #### From-scratch port
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
 default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
 and carries the scheduler as `RampScheduler`; the other seventeen case bodies are in
@@ -1329,11 +1329,11 @@ in this repo's docs are both right about one field with two consumers.
 
 ### The whole table has one executing home
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 runs all twenty-four case bodies. They are split across two files for length
 only - the facing ramps, the walk ops, the waits, the restart and the ramp
 scheduler in `ambient_motion.rs`; `0x02`, `0x06`..`0x0C` and `0x0E`..`0x16` in
-[`ambient_motion_ops.rs`](../../crates/engine-vm/src/ambient_motion_ops.rs) as
+[`ambient_motion_ops.rs`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) as
 further `impl AmbientMotion` blocks. Nothing is stepped over by width.
 
 The per-tick op budget (`MAX_OPS_PER_TICK`) stays, but its job has changed:
