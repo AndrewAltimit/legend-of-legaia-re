@@ -136,6 +136,20 @@ fn stage_shell_mesh(
     (!vmesh.indices.is_empty()).then_some(BattleMesh { mesh: vmesh, flat })
 }
 
+/// One copy of the backdrop's drawn slot 1 - the object the backdrop draw
+/// turns about Y every frame (`BattleStageLayers`), so no second copy and no
+/// transform is baked in; the page draws it twice under
+/// [`LegaiaRuntime::play_battle_backdrop_spun_models`].
+fn stage_slot_mesh(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Option<BattleMesh> {
+    if objects.is_empty() {
+        return None;
+    }
+    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    let (vmesh, _oids, shading) = legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid(&tmd0, raw);
+    let flat = crate::packet_color::hybrid(&vmesh, &shading);
+    (!vmesh.indices.is_empty()).then_some(BattleMesh { mesh: vmesh, flat })
+}
+
 /// One page-uploadable battle mesh in the play page's scene-mesh shape.
 struct BattleMesh {
     mesh: legaia_tmd::mesh::VramMesh,
@@ -212,6 +226,10 @@ pub(crate) struct BattleRender {
     /// page uploads this for the fight and restores the field VRAM after.
     pub(crate) vram: legaia_tim::Vram,
     backdrop: Option<BattleMesh>,
+    /// The backdrop's drawn slot 1, one copy ([`stage_slot_mesh`]): the
+    /// object the backdrop draw spins, on a keeping stage the horizon mist
+    /// ribbon. `None` on a one-object draw list.
+    backdrop_spun: Option<BattleMesh>,
     /// The stage shell (TMD + raw bytes + second-copy transform) and the
     /// object list `backdrop` was built from
     /// (`SceneHost::battle_stage_object_indices`); a mid-fight change - the
@@ -451,6 +469,7 @@ impl LegaiaRuntime {
         }
 
         let mut backdrop = None;
+        let mut backdrop_spun = None;
         let mut shell = None;
         let mut ground = None;
         let mut grid_far = None;
@@ -480,7 +499,11 @@ impl LegaiaRuntime {
             // on: the native window's measurement, same kernel, same shell.
             fog_stage_luma =
                 legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
-            backdrop = stage_shell_mesh(tmd, raw, *second, &objects);
+            // Every slot but 1 is the baked shell; slot 1 is the spun copy
+            // (`SceneHost::battle_stage_layers`, the native window's split).
+            let layers = legaia_engine_core::scene::BattleStageLayers::split(&objects);
+            backdrop = stage_shell_mesh(tmd, raw, *second, &layers.fixed);
+            backdrop_spun = stage_slot_mesh(tmd, raw, &layers.spun);
             shell = Some(WebStageShell {
                 tmd: tmd.clone(),
                 raw: raw.clone(),
@@ -628,6 +651,7 @@ impl LegaiaRuntime {
         self.battle_render = Some(BattleRender {
             vram,
             backdrop,
+            backdrop_spun,
             shell,
             ground,
             grid_far,
@@ -663,7 +687,9 @@ impl LegaiaRuntime {
         if objects == sh.objects {
             return;
         }
-        br.backdrop = stage_shell_mesh(&sh.tmd, &sh.raw, sh.second, &objects);
+        let layers = legaia_engine_core::scene::BattleStageLayers::split(&objects);
+        br.backdrop = stage_shell_mesh(&sh.tmd, &sh.raw, sh.second, &layers.fixed);
+        br.backdrop_spun = stage_slot_mesh(&sh.tmd, &sh.raw, &layers.spun);
         sh.objects = objects;
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
         br.generation = self.battle_render_generation;
@@ -792,6 +818,12 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    fn battle_spun(&self) -> Option<&BattleMesh> {
+        self.battle_render
+            .as_ref()
+            .and_then(|b| b.backdrop_spun.as_ref())
+    }
+
     pub fn play_battle_backdrop_positions(&self) -> Vec<f32> {
         self.battle_render
             .as_ref()
@@ -830,6 +862,65 @@ impl LegaiaRuntime {
             .and_then(|b| b.backdrop.as_ref())
             .map(|m| m.flat.clone())
             .unwrap_or_default()
+    }
+
+    /// The backdrop's drawn slot 1, one copy, in the stage's scaled space -
+    /// empty when the draw list has no slot 1. The page draws it once per
+    /// model of [`Self::play_battle_backdrop_spun_models`].
+    pub fn play_battle_backdrop_spun_positions(&self) -> Vec<f32> {
+        self.battle_spun()
+            .map(|m| m.stage_positions())
+            .unwrap_or_default()
+    }
+
+    pub fn play_battle_backdrop_spun_uvs(&self) -> Vec<u8> {
+        self.battle_spun().map(|m| m.uvs()).unwrap_or_default()
+    }
+
+    pub fn play_battle_backdrop_spun_cba_tsb(&self) -> Vec<u16> {
+        self.battle_spun().map(|m| m.cba_tsb()).unwrap_or_default()
+    }
+
+    pub fn play_battle_backdrop_spun_indices(&self) -> Vec<u32> {
+        self.battle_spun()
+            .map(|m| m.mesh.indices.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn play_battle_backdrop_spun_flat_rgba(&self) -> Vec<u8> {
+        self.battle_spun()
+            .map(|m| m.flat.clone())
+            .unwrap_or_default()
+    }
+
+    /// This frame's two model matrices for the spun backdrop slot, copy A
+    /// then copy B, 16 column-major floats each: the slot's Y angle
+    /// (`World::battle_backdrop_slot_1_yaw`, wound by `FUN_80046A20`) under
+    /// each copy's transform
+    /// (`legaia_engine_core::scene::backdrop_slot_1_basis`, the per-object
+    /// turn of `FUN_8001ADA4`'s backdrop arm) - the native window's two
+    /// draws, with the page's stage Y flip composed on. Empty outside a fight
+    /// with a spun slot.
+    pub fn play_battle_backdrop_spun_models(&self) -> Vec<f32> {
+        let (Some(host), Some(br)) = (self.scene_host.host(), self.battle_render.as_ref()) else {
+            return Vec::new();
+        };
+        let (Some(_), Some(sh)) = (br.backdrop_spun.as_ref(), br.shell.as_ref()) else {
+            return Vec::new();
+        };
+        let yaw = host.world.battle_backdrop_slot_1_yaw();
+        let mut out = Vec::with_capacity(32);
+        for copy_b in [false, true] {
+            let r = legaia_engine_core::scene::backdrop_slot_1_basis(sh.second, yaw, copy_b);
+            // The page's stage model is the Y flip (`placementModelScaledY`
+            // at unit scale - the shell's own placement), so each model is
+            // `flip * basis`: row 1 negated.
+            out.extend_from_slice(&[
+                r[0][0], -r[1][0], r[2][0], 0.0, r[0][1], -r[1][1], r[2][1], 0.0, r[0][2],
+                -r[1][2], r[2][2], 0.0, 0.0, 0.0, 0.0, 1.0,
+            ]);
+        }
+        out
     }
 
     pub fn play_battle_ground_positions(&self) -> Vec<f32> {

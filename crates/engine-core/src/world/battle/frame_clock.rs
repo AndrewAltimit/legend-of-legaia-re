@@ -142,6 +142,55 @@ impl World {
         let _discarded = self.next_rand();
     }
 
+    /// The kept object 1's spin: on every pass `FUN_80046A20` adds half the
+    /// frame step to the backdrop draw's slot-1 Y angle while battle init's
+    /// keep-object-1 byte is up (`lbu v0,0x333(gp)` = `0x8007B64B`, then
+    /// `0x800891D2 += *0x1F800393 >> 1`, `0x80046D34..0x80046D5C`). The byte
+    /// is the one that keeps the object in the draw list, so the object the
+    /// region kept is the one that turns - nilboa's horizon mist ribbon
+    /// drifts round the arena at one unit a frame. A pass is one battle
+    /// frame, so the engine winds on the first tick of each
+    /// [`BattleFrameClock`] frame. The store sits right after the pass's
+    /// discarded `rand()` draw and nothing gates it but the byte.
+    ///
+    /// The angle has two references on the whole disc, this writer and the
+    /// backdrop draw's read, and no reset: it accumulates from boot, and a
+    /// stage that drops object 1 draws whatever sits in slot 1 at the angle
+    /// the last keeping fight left.
+    ///
+    // PORT: FUN_80046A20 (the slot-1 backdrop spin, 0x80046D34..0x80046D5C)
+    pub(in crate::world) fn tick_battle_backdrop_spin(&mut self) {
+        let frame = self.battle_frame_id();
+        if self.battle.backdrop_spin_frame == Some(frame) {
+            return;
+        }
+        self.battle.backdrop_spin_frame = Some(frame);
+        let keep = self
+            .encounters
+            .region_setup
+            .and_then(|s| s.keep_backdrop_object_1)
+            .unwrap_or(false);
+        if keep {
+            let step = u16::from(self.battle.frame_clock.step >> 1);
+            self.battle.backdrop_slot_1_yaw = self.battle.backdrop_slot_1_yaw.wrapping_add(step);
+        }
+    }
+
+    /// The backdrop draw's slot-1 Y angle this frame, in 4096ths of a turn
+    /// ([`Self::tick_battle_backdrop_spin`]). Both battle hosts turn their
+    /// slot-1 backdrop draws by it through
+    /// [`crate::scene::backdrop_slot_1_basis`].
+    pub fn battle_backdrop_slot_1_yaw(&self) -> u16 {
+        self.battle.backdrop_slot_1_yaw
+    }
+
+    /// Stamp the slot-1 angle directly, for a replay of a retail capture
+    /// whose RAM holds it (`0x800891D2`): the angle is time since boot spent
+    /// in keeping fights, which no seed replays.
+    pub fn seed_battle_backdrop_slot_1_yaw(&mut self, yaw: u16) {
+        self.battle.backdrop_slot_1_yaw = yaw;
+    }
+
     /// The battle frame step in vsyncs ([`Self::set_battle_frame_step`]).
     pub fn battle_frame_step(&self) -> u8 {
         self.battle.frame_clock.step
@@ -187,5 +236,44 @@ mod tests {
         c.set_step(11, 2);
         assert_eq!(c.frame_of(11), 6);
         assert_eq!(c.frame_of(13), 7);
+    }
+
+    #[test]
+    fn the_kept_object_spins_half_the_frame_step_a_battle_frame() {
+        let mut w = World::default();
+        w.seed_battle_backdrop_keep_object_1(true);
+        // Default step 2: one unit a two-vsync frame.
+        for _ in 0..20 {
+            w.tick_battle_backdrop_spin();
+            w.clock.display_frames += 1;
+        }
+        assert_eq!(w.battle_backdrop_slot_1_yaw(), 10);
+        // Step 3 still adds `3 >> 1 = 1`, once every three vsyncs.
+        w.set_battle_frame_step(3);
+        for _ in 0..30 {
+            w.tick_battle_backdrop_spin();
+            w.clock.display_frames += 1;
+        }
+        assert_eq!(w.battle_backdrop_slot_1_yaw(), 20);
+        // Step 1 adds nothing: `1 >> 1 = 0`.
+        w.set_battle_frame_step(1);
+        for _ in 0..8 {
+            w.tick_battle_backdrop_spin();
+            w.clock.display_frames += 1;
+        }
+        assert_eq!(w.battle_backdrop_slot_1_yaw(), 20);
+    }
+
+    #[test]
+    fn a_stage_that_drops_object_1_keeps_the_angle_it_was_left() {
+        let mut w = World::default();
+        w.seed_battle_backdrop_slot_1_yaw(0x1AD3);
+        w.seed_battle_backdrop_keep_object_1(false);
+        for _ in 0..40 {
+            w.tick_battle_backdrop_spin();
+            w.clock.display_frames += 1;
+        }
+        // No keep byte, no winding - and no reset either.
+        assert_eq!(w.battle_backdrop_slot_1_yaw(), 0x1AD3);
     }
 }

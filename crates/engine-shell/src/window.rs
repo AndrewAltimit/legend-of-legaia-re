@@ -88,6 +88,13 @@ pub struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_BATTLE_BACKDROP_YAW=<angle>`: the backdrop draw's slot-1 Y
+    /// angle the capture must show (`World::seed_battle_backdrop_slot_1_yaw`),
+    /// held on every battle frame. The angle is time spent in keeping fights
+    /// since boot, so this is its phase alignment - the backdrop twin of
+    /// [`Self::battle_orbit_yaw`]. Set by the retail-compare image channel
+    /// from the battle state's `0x800891D2`.
+    pub battle_backdrop_yaw: Option<u16>,
     /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
     /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
     /// starting the captured phase's glide where retail's stood
@@ -424,6 +431,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare_battle::PhaseGate::from_env(&v)),
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
+            battle_backdrop_yaw: std::env::var("LEGAIA_BATTLE_BACKDROP_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
@@ -1280,6 +1290,15 @@ struct PlayWindowApp {
     /// textured prims; leaving them out punches holes in the arena shell.
     /// `None` when the stage shell has no untextured prims.
     battle_stage_color_mesh: Option<usize>,
+    /// Mesh index of the backdrop's drawn slot 1, one copy
+    /// (`SceneHost::battle_stage_layers`): the object the backdrop draw
+    /// turns about Y every frame - on a stage that keeps object 1, the
+    /// horizon mist ribbon. Drawn twice a frame, once per backdrop copy,
+    /// under `backdrop_slot_1_basis`. `None` on a one-object draw list.
+    battle_stage_spun_mesh: Option<usize>,
+    /// The untextured half of [`Self::battle_stage_spun_mesh`], in
+    /// `color_meshes`.
+    battle_stage_spun_color_mesh: Option<usize>,
     /// The object list and second-copy transform the stage shell meshes were
     /// built from (`SceneHost::battle_stage_object_indices`). A mid-fight
     /// change - the evolved-Cort arrival's slot-0 rebind - rebuilds them

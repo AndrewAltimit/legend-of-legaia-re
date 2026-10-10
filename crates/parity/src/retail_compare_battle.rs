@@ -59,6 +59,10 @@ const STAGE_ID: u32 = 0x8007_B64A;
 /// Battle init's keep-object-1 byte: set, `FUN_800513F0` keeps the backdrop
 /// shell's object 1 (`0x80051ABC`).
 const KEEP_BACKDROP_OBJECT_1: u32 = 0x8007_B64B;
+/// The backdrop draw's slot-1 Y angle: the second row's `+2` of the per-slot
+/// angle table at `0x800891C8` (`FUN_8001ADA4`'s backdrop arm reads it,
+/// `FUN_80046A20` winds it while [`KEEP_BACKDROP_OBJECT_1`] is up).
+const BACKDROP_SLOT_1_YAW: u32 = 0x8008_91D2;
 /// Present-party list: pool slot -> roster character id (1-based; `4` is
 /// the AI-companion seat).
 const SEAT_CHARS: u32 = 0x8007_BD10;
@@ -214,6 +218,10 @@ pub struct RetailBattle {
     /// `0x8007B64B != 0` - battle init kept the backdrop shell's object 1
     /// (the region reader's long-layout `+8` bit 5).
     pub keep_backdrop_object_1: bool,
+    /// `0x800891D2` - the Y angle the backdrop draw turns its slot 1 by, in
+    /// 4096ths of a turn. Time spent in keeping fights since boot, so a
+    /// replay carries it over rather than winding its own.
+    pub backdrop_slot_1_yaw: u16,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
     /// Formation-cell ids, trimmed to the monster count.
@@ -1047,6 +1055,21 @@ impl RetailBattle {
             .then_some((self.frame_step, self.action_state))
     }
 
+    /// The slot-1 backdrop angle the **displayed** frame was drawn at. The
+    /// display scans out the frame built two game frames before the one the
+    /// RAM holds, and each pass winds the angle by half the frame step while
+    /// the keep byte is up (`FUN_80046A20`, `0x80046D34`), so the frame on
+    /// screen is two such steps behind [`Self::backdrop_slot_1_yaw`]. A stage
+    /// that drops object 1 does not wind, and shows the RAM's angle.
+    pub fn displayed_backdrop_slot_1_yaw(&self) -> u16 {
+        let wound = if self.keep_backdrop_object_1 {
+            2 * u16::from(self.frame_step >> 1)
+        } else {
+            0
+        };
+        self.backdrop_slot_1_yaw.wrapping_sub(wound)
+    }
+
     /// How the seed has to place the engine for this capture.
     pub fn seed_plan(&self) -> SeedPlan {
         if OPENING_FLOWS.contains(&self.flow) {
@@ -1395,6 +1418,7 @@ impl RetailBattle {
             scripted: game_anchors::u32_at(ram, PER_BATTLE_FLAGS) & 0x80 != 0,
             stage_variant: game_anchors::u8_at(ram, PER_BATTLE_FLAGS) & 0x1F,
             keep_backdrop_object_1: game_anchors::u8_at(ram, KEEP_BACKDROP_OBJECT_1) != 0,
+            backdrop_slot_1_yaw: game_anchors::u16_at(ram, BACKDROP_SLOT_1_YAW),
             monster_ids,
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))

@@ -1597,6 +1597,9 @@ impl World {
                 // The frame driver's discarded `rand()` draw, once a battle
                 // frame (`FUN_80046A20` `0x80046D2C`).
                 self.tick_battle_pass_draw();
+                // The kept object 1's spin, the next store on the same pass
+                // (`0x80046D34`).
+                self.tick_battle_backdrop_spin();
                 // Battle animation advance. This is SIMULATION, not
                 // presentation: its staged-clip end edge retires `ADVANCE_DONE`
                 // and converges the anim id pair - the pacing gate whose

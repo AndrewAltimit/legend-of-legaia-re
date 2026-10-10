@@ -311,6 +311,21 @@ fn stage_shell_meshes(
     (vmesh, cmesh)
 }
 
+/// One copy of the given backdrop objects, textured and untextured halves -
+/// the mesh of a slot the backdrop draw transforms per frame, so nothing is
+/// baked in ([`legaia_engine_core::scene::BattleStageLayers`]).
+fn stage_slot_meshes(
+    tmd: &legaia_tmd::Tmd,
+    raw: &[u8],
+    objects: &[usize],
+) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
+    let tmd0 = legaia_asset::battle_backdrop::objects_tmd(tmd, objects);
+    (
+        legaia_tmd::mesh::tmd_to_vram_mesh(&tmd0, raw),
+        legaia_tmd::mesh::tmd_to_color_mesh(&tmd0, raw),
+    )
+}
+
 /// The loaded battle-stage backdrop bundle `build_battle_stage` returns.
 pub(super) struct BattleStage {
     /// Scene + stage-dome textures resident - becomes the battle VRAM base.
@@ -474,6 +489,8 @@ impl PlayWindowApp {
         // it away with the monster meshes.
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_spun_mesh = None;
+        self.battle_stage_spun_color_mesh = None;
         self.battle_stage_shell = None;
         self.battle_stage_outdoor = false;
         self.session.host.world.fog_volume.battle_luma = None;
@@ -508,7 +525,13 @@ impl PlayWindowApp {
             // same measurement in `enter_battle_render`).
             self.session.host.world.fog_volume.battle_luma =
                 legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
-            let (vmesh, cmesh) = stage_shell_meshes(tmd, raw, *second, &objects);
+            // The shell proper is every slot but 1, baked with its second
+            // copy. Slot 1 is the object the backdrop draw turns about Y
+            // each frame (`BattleStageLayers`), so it is one copy of its
+            // own, drawn twice under the frame's angle.
+            let layers = self.session.host.battle_stage_layers(tmd.objects.len());
+            let (vmesh, cmesh) = stage_shell_meshes(tmd, raw, *second, &layers.fixed);
+            let spun = (!layers.spun.is_empty()).then(|| stage_slot_meshes(tmd, raw, &layers.spun));
             self.battle_stage_shell = Some((objects, *second));
             if !cmesh.is_empty()
                 && let Ok(cm) = r.upload_color_mesh_blended(
@@ -534,6 +557,33 @@ impl PlayWindowApp {
                 self.battle_stage_mesh = Some(self.meshes.len());
                 self.meshes.push(m);
                 self.scene_tmd_data.push((tmd.clone(), raw.clone()));
+                if let Some((o, oc)) = spun {
+                    if !o.indices.is_empty()
+                        && let Ok(om) = r.upload_vram_mesh(
+                            &o.positions,
+                            &o.uvs,
+                            &o.cba_tsb,
+                            &o.normals,
+                            &o.colors,
+                            &o.indices,
+                        )
+                    {
+                        self.battle_stage_spun_mesh = Some(self.meshes.len());
+                        self.meshes.push(om);
+                        self.scene_tmd_data.push((tmd.clone(), raw.clone())); // keep meshes/data aligned
+                    }
+                    if !oc.is_empty()
+                        && let Ok(cm) = r.upload_color_mesh_blended(
+                            &oc.positions,
+                            &oc.colors,
+                            &oc.indices,
+                            &oc.blend,
+                        )
+                    {
+                        self.battle_stage_spun_color_mesh = Some(self.color_meshes.len());
+                        self.color_meshes.push(cm);
+                    }
+                }
                 // Flat tiled ground grid under the actors (retail's
                 // `func_0x801d02c0` grid), textured from the constant
                 // retail page/CLUT/UV-window address - the scene battle
@@ -1157,6 +1207,8 @@ impl PlayWindowApp {
         self.battle_tex_slots_used = 0;
         self.battle_stage_mesh = None;
         self.battle_stage_color_mesh = None;
+        self.battle_stage_spun_mesh = None;
+        self.battle_stage_spun_color_mesh = None;
         self.battle_stage_shell = None;
         self.battle_ground_mesh = None;
         self.battle_ground_cue_far = None;
@@ -1471,7 +1523,16 @@ impl PlayWindowApp {
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
-        let (vmesh, cmesh) = stage_shell_meshes(&tmd, &raw, second, &objects);
+        // The split the entry build made (`SceneHost::battle_stage_layers`).
+        // The one mid-fight edit, the slot-0 rebind, leaves slot 1 holding
+        // the object it held, so the spun meshes stand; a list with no slot
+        // 1 drops them.
+        let layers = self.session.host.battle_stage_layers(tmd.objects.len());
+        if layers.spun.is_empty() {
+            self.battle_stage_spun_mesh = None;
+            self.battle_stage_spun_color_mesh = None;
+        }
+        let (vmesh, cmesh) = stage_shell_meshes(&tmd, &raw, second, &layers.fixed);
         match r.upload_vram_mesh(
             &vmesh.positions,
             &vmesh.uvs,

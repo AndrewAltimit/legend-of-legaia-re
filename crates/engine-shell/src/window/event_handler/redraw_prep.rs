@@ -130,6 +130,16 @@ impl PlayWindowApp {
         {
             cam.align_orbit_yaw(yaw);
         }
+        // The backdrop's slot-1 angle is a clock too
+        // (`LEGAIA_BATTLE_BACKDROP_YAW`): hold it on the capture's.
+        if let Some(yaw) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_backdrop_yaw)
+            && self.session.host.world.mode == SceneMode::Battle
+        {
+            self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

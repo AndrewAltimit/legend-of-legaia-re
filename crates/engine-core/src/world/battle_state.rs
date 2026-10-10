@@ -485,6 +485,14 @@ pub struct BattleState {
     /// [`crate::scene::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
+    /// The Y angle of the backdrop draw's slot 1, retail `0x800891D2` (the
+    /// second row of the per-slot angle table at `0x800891C8`), in 4096ths
+    /// of a turn. [`crate::world::World::tick_battle_backdrop_spin`] winds
+    /// it; nothing resets it, in retail or here, so it carries from one
+    /// fight to the next.
+    pub backdrop_slot_1_yaw: u16,
+    /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
+    pub backdrop_spin_frame: Option<u64>,
     /// Battle VRAM `MoveImage`s a stage module issued this frame, in order.
     /// Applied to the host's battle VRAM by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
@@ -795,6 +803,8 @@ impl BattleState {
             stage_id: 0,
             arrival: Default::default(),
             backdrop_rebound: false,
+            backdrop_slot_1_yaw: 0,
+            backdrop_spin_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),

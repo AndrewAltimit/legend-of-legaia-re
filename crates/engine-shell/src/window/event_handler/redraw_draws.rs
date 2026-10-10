@@ -1285,6 +1285,7 @@ impl<'m> DrawCtx<'_, 'm> {
             draws,
             clip_marks,
             nclip_marks,
+            color_draws,
             ..
         } = out;
         // Flat tiled ground grid (retail's func_0x801d02c0 grass)
@@ -1325,6 +1326,37 @@ impl<'m> DrawCtx<'_, 'm> {
                         max_ir0: grid::grid_cue_max_ir0(),
                     }),
             });
+        }
+        // The backdrop's drawn slot 1 - on a stage that keeps object 1,
+        // the horizon mist ribbon - once per backdrop copy, each under the
+        // frame's slot angle (`backdrop_slot_1_basis`, the per-object
+        // `FUN_8004629C` turn of `FUN_8001ADA4`'s backdrop arm). Same stage
+        // model and depth cue as the shell.
+        if in_battle
+            && let Some(w) = app.session.host.world.battle_backdrop_cue()
+            && let Some((_, second)) = app.battle_stage_shell.as_ref()
+        {
+            let yaw = app.session.host.world.battle_backdrop_slot_1_yaw();
+            let cue = (w > 0.0).then_some(legaia_engine_render::DrawCue {
+                far: [0.0; 3],
+                near_z: -1.0,
+                far_z: 0.0,
+                max_ir0: w,
+            });
+            for copy_b in [false, true] {
+                let rows = legaia_engine_core::scene::backdrop_slot_1_basis(*second, yaw, copy_b);
+                let basis = Mat4::from_mat3(glam::Mat3::from_cols_array_2d(&rows).transpose());
+                let mvp = cam * PlayWindowApp::battle_stage_model() * basis;
+                if let Some(mesh) = app.battle_stage_spun_mesh.and_then(|i| store.meshes.get(i)) {
+                    draws.push(SceneDraw { mesh, mvp, cue });
+                }
+                if let Some(mesh) = app
+                    .battle_stage_spun_color_mesh
+                    .and_then(|i| store.color_meshes.get(i))
+                {
+                    color_draws.push(ColorSceneDraw { mesh, mvp, cue });
+                }
+            }
         }
         // The camera the battle bodies' tint pass judges depth under
         // (`World::battle_actor_draw_plan`): the phase-scripted dome
