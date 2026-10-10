@@ -1,24 +1,57 @@
 # PSX TIM (texture)
 
-A standard PlayStation texture format. The format is well-documented externally; we don't reimplement the parser. Magic check: first u32 == `0x00000010`.
+TIM is the standard PlayStation texture file, and Legaia uses it unmodified. A TIM is not just pixels: it also says **where in video memory (VRAM) the pixels go**. Most Legaia textures are indexed - each pixel is a 4-bit or 8-bit index into a colour look-up table (CLUT, the palette), and the CLUT is a second block in the same file with its own VRAM position. The game uploads both blocks, and a polygon later picks its texture page and its palette by VRAM coordinate. That is why the placement fields matter as much as the pixel data, and why a texture exported through its own palette can look wrong.
+
+Implementation: [`crates/tim`](../../crates/tim/README.md) - `parse` (lenient), `parse_strict` (detection-grade), `decode_rgba8`, `encode`.
+
+## Layout
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `0x00` | u32 | `id` | Magic `0x00000010` | Confirmed |
+| `0x04` | u32 | `flags` | Bits 0..2 = pixel mode (`0` 4bpp, `1` 8bpp, `2` 16bpp, `3` 24bpp); bit 3 = CLUT block present | Confirmed |
+| `0x08` | block | CLUT block | Present only when flag bit 3 is set | Confirmed |
+| after it | block | image block | Always present | Confirmed |
+
+Both blocks share one header:
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u32 | `size` | Block length in bytes including this 12-byte header: `12 + w*h*2` | Confirmed |
+| `+0x04` | u16 | `fb_x` | VRAM x of the block's top-left, in 16-bit VRAM words | Confirmed |
+| `+0x06` | u16 | `fb_y` | VRAM y | Confirmed |
+| `+0x08` | u16 | `w` | Width in **16-bit VRAM words**, not pixels | Confirmed |
+| `+0x0A` | u16 | `h` | Height in rows | Confirmed |
+| `+0x0C` | `w*h*2` | data | CLUT: BGR555 entries. Image: packed indices or 16-bit texels | Confirmed |
+
+An image block's pixel width is `w * 4` at 4bpp and `w * 2` at 8bpp, because one VRAM word holds four or two indices. A CLUT entry is BGR555 with the top bit as the semi-transparency (STP) flag.
+
+The streaming-file TIMs all carry `flags = 8`: 4bpp indexed with a CLUT.
+
+## VRAM placement
+
+VRAM is one 1024x512 grid of 16-bit words that holds the framebuffers, every texture page and every palette. A TIM upload is two rectangle copies into it:
 
 ```
-u32  id          // 0x00000010
-u32  flags       // bits 0..2 = pixel mode (0=4bit, 1=8bit, 2=16bit, 3=24bit)
-                 // bit 3   = CLUT present
-[CLUT block if flag bit 3 set]
-[image block]
+VRAM, 1024 x 512 words
++------------------------------------------------------------------+
+| display + draw buffers          | texture pages                  |
+|                                 |   +----------+                 |
+|                                 |   | image    |  w words x h    |
+|                                 |   | block    |  at (fb_x,fb_y) |
+|                                 |   +----------+                 |
+|                                                                  |
+| CLUT rows (bottom band, y ~ 475..511)                            |
+| [16 or 256 BGR555 entries at the CLUT block's (fb_x, fb_y)]      |
++------------------------------------------------------------------+
+
+draw time:  texel index --> CLUT cell named by the primitive's CBA --> BGR555 colour
+            texture page named by the primitive's TSB (tpage)
 ```
 
-Each block has its own header `(u32 size, u16 dx, u16 dy, u16 w, u16 h)` followed by pixel data.
+The primitive names a **VRAM cell**, not a file: `CBA` (CLUT base address) selects the palette row and `TSB` the texture page. Whatever was uploaded there last is what the draw reads. See [`subsystems/shading.md`](../subsystems/shading.md) for the whole colour chain.
 
-In the extracted streaming files, all observed TIMs use **type 8** (4-bit indexed with CLUT). They're VRAM-ready textures.
-
-## VRAM emulation in the engine port
-
-`crates/engine-render` emulates a 1024×512 R16Uint VRAM page so per-prim CBA/TSB selectors plus 4/8/15bpp + CLUT decoding can be done in a fragment shader. The viewer uploads every sibling TIM into VRAM so multi-page meshes render with the correct CLUT bindings.
-
-Some character meshes reference CLUT rows that live in **different PROT entries** from their TMD source (the runtime asset chain stitches them together). The viewer's `--vram-extra-dir` flag is the workaround until the chain is fully traced for every scene type.
+`crates/engine-render` emulates the 1024x512 R16Uint VRAM page so per-primitive CBA/TSB selection and 4/8/15bpp CLUT decoding run in a fragment shader. Some meshes reference CLUT rows uploaded from **different PROT entries** than their TMD; the engine's scene loader uploads the whole scene's TIMs before drawing, and the standalone asset viewer takes `--vram-extra-dir` to pull in sibling TIMs when it is pointed at a single mesh.
 
 ## Multi-row CLUT blocks
 
@@ -27,7 +60,7 @@ The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (e
 | Source TIM | Layout | CLUT-row usage |
 |---|---|---|
 | **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap - not reachable through the per-PROT-entry walker. Constants in `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
-| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | Rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. The load screen's "Load" title is **not** here (an earlier "row 13" pin is falsified - see [`save-screen.md`](../subsystems/save-screen.md)); it is the dialog font. |
+| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | Rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. The load screen's "Load" title is **not** here, in row 13 or any other; it is drawn with the dialog font ([`save-screen.md`](../subsystems/save-screen.md)). |
 
 Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen) for the pinning method (PCSX-Redux save state → `extract_vram_from_sstate.py` → CLUT-row byte cross-reference against `PROT.DAT`).
 

@@ -1,20 +1,46 @@
 # XA-ADPCM streams
 
-CD-XA Mode 2 Form 2 audio sectors carrying the cutscene voice / BGM tracks. On-disc filenames are `XA1.XA` / `XA2.XA` / etc. (one or more per release).
+The `XA/XA*.XA` files hold the game's streamed audio: cutscene voice lines and streamed music. They are standard CD-XA: each file is a run of Mode 2 Form 2 sectors, and each sector carries a small tag saying which **channel** it belongs to. Several channels are interleaved sector by sector in one file, so the drive can play one channel while skipping the others. Decoding is two steps - split the sectors by channel, then decode each channel's ADPCM sound groups to PCM.
+
+Implementation: [`crates/xa`](../../crates/xa/README.md) - `demux.rs` (sector split), `lib.rs` (decoder), `encode.rs` (4-bit encoder for replacement audio).
+
+## At a glance
+
+| Property | Value | Confidence |
+|---|---|---|
+| Sector | 2352 bytes raw, Mode 2 Form 2 | Confirmed |
+| Audio per sector | 18 sound groups x 128 bytes = 2304 bytes | Confirmed |
+| Samples per sound group | 224 (4-bit: 8 units x 28) or 112 (8-bit: 4 units x 28) | Confirmed |
+| Channel key | `(file_no, ch_no)` from the sector subheader | Confirmed |
+| USA disc | 34 files, 316 channels, all 4-bit at 37.8 kHz | Confirmed |
+| Channel modes | 16-channel mono voice files (`XA4`, `XA6`) and 8-channel stereo music (`XA5`, `XA7`, `XA8`, `XA9`) | Confirmed |
 
 ## Sector layout
 
-Each on-disc XA sector is the standard PSX 2352-byte raw layout:
-
-```text
-+0x000  12 B  sync (00 + 10x FF + 00)
-+0x00C   4 B  header (MM SS FF mode)
-+0x010   8 B  CD-XA subheader (4 fields + duplicated copy):
-                  file_no, ch_no, submode, coding_info
-+0x018  2304 B  user data (18 sound groups × 128 B audio)
-              - 0x14 trailing bytes are padding
-+0x92C   4 B  EDC
 ```
+one raw sector, 2352 bytes
++------+--------+-----------+-------------------------------------------+-----+-----+
+| sync | header | subheader | 18 sound groups x 128 bytes               | pad | EDC |
+|  12  |   4    |     8     |                 2304                      | 20  |  4  |
++------+--------+-----------+-------------------------------------------+-----+-----+
+0x000  0x00C    0x010       0x018                                       0x918 0x92C
+
+one sound group, 128 bytes (4-bit mode)
++--------------------------+----------------------------------------------------+
+| 16 parameter bytes       | 28 lines x 4 bytes of sample nibbles               |
+| (filter, range per unit) | 8 sound units x 28 samples                         |
++--------------------------+----------------------------------------------------+
+0                          16                                                 128
+```
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `0x000` | 12 | sync | `00`, ten `FF`, `00` | Confirmed |
+| `0x00C` | 4 | header | `MM SS FF mode` | Confirmed |
+| `0x010` | 8 | subheader | `file_no, ch_no, submode, coding_info`, stored twice | Confirmed |
+| `0x018` | 2304 | audio | 18 sound groups | Confirmed |
+| `0x918` | 20 | padding | Unused tail of the 2324-byte Form 2 payload | Confirmed |
+| `0x92C` | 4 | EDC | Checksum | Confirmed |
 
 Submode bits relevant for audio detection:
 
@@ -30,8 +56,6 @@ Coding-info bits:
 | 0 (`0x01`) | stereo (vs mono) |
 | 2..=3 | sample rate (`00` = 37.8 kHz, `01` = 18.9 kHz) |
 | 4..=5 | bits/sample (`00` = 4-bit, `01` = 8-bit) |
-
-The 18 sound groups inside the user data are 128-byte CD-XA ADPCM blocks; see [the lib doc-comment](../../crates/xa/src/lib.rs) for the per-block layout (8 sound units, 28 lines × 4 bytes).
 
 ## Sound-group decode (4-bit)
 
@@ -78,20 +102,13 @@ The 8-bit mode (subheader `coding_info` bits 4..5 = `01`) uses the **same 128-by
 
 This yields 112 samples/group (4 × 28) vs the 4-bit path's 224. Select it with `legaia_xa::DecodeOptions { bits: BitsPerSample::Eight, .. }` (the demux path maps each channel's reported width automatically; the CLI exposes `--bits 8`). The whole NA corpus is 4-bit, so 4-bit is the default and the 8-bit path is exercised by synthetic unit tests (silence, full-byte sign-extension, the stereo split).
 
-## "Non-standard interleave" - what it is and isn't
+## Demuxing
 
-The earliest extracted-XA tooling truncated each on-disc sector to 2048 bytes (Form 1 mode), which silently:
+[`demux_disc_range`](../../crates/xa/src/demux.rs) reads raw 2352-byte sectors, parses each subheader, keeps the `AUDIO + FORM2` ones, and appends each sector's audio to one buffer per `(file_no, ch_no)`. Each buffer is then a clean concatenation of standard 128-byte sound groups.
 
-1. **Dropped 276 bytes per sector** of audio (Form 2 user data is 2324 B vs Form 1's 2048 B).
-2. **Collapsed every channel of the multiplexed stream into a single shuffled byte sequence**, because the per-sector `(file_no, ch_no)` subheader was discarded.
-
-The result was a stream where only ~10 % of 128-byte sound groups passed the standard XA validation rule `bytes 8..16 == bytes 0..8`. That's the "non-standard interleave" shorthand from earlier doc revisions - **not** a bespoke Legaia muxing scheme, just Form-1-truncation damage.
-
-The fix lives in [`crates/xa/src/demux.rs`](../../crates/xa/src/demux.rs) (function [`demux_disc_range`](../../crates/xa/src/demux.rs)). It reads raw 2352-byte sectors, parses each subheader, filters to `AUDIO + FORM2`, and splits the audio data into one buffer per `(file_no, ch_no)` tuple. After that step the per-channel buffer is a clean concatenation of standard 128-byte sound groups that the 4-bit ADPCM decoder handles directly.
-
-The `xa demux-disc-all` subcommand drives this across the whole disc - it walks
-the ISO9660 tree, finds every `*.XA`, and demuxes each at its own per-sector
-sample rate / channel mode read from the subheaders (no guessed global rate):
+The `xa demux-disc-all` subcommand drives this across the whole disc. It walks
+the ISO9660 tree, finds every `*.XA`, and demuxes each at the sample rate and
+channel mode read from its own subheaders (no guessed global rate):
 
 ```bash
 ./target/release/xa demux-disc-all \
@@ -101,24 +118,27 @@ sample rate / channel mode read from the subheaders (no guessed global rate):
 
 One WAV lands per `(file_no, ch_no)` channel under `extracted/xa_demux/`, named
 `<xa-stem>_fileN_chM.wav`. The single-file `xa demux-disc --lba --size` variant
-remains for targeting one entry by directory offset.
+targets one entry by directory offset. `legaia-extract` runs the demux
+automatically and writes the WAVs to `extracted/XA_WAV/`.
 
-Pacing is therefore **data-driven per track** - the whole point. A track that
-varies channel mode (the NA disc has 16-channel mono voice files like `XA4`/`XA6`
-alongside 8-channel stereo music like `XA5`/`XA7`/`XA8`/`XA9`) decodes each
-channel at its real width: the Form-1 `convert` path read a stereo track as mono
-and played it at 2× speed; the demux path reads `coding_info` and gets it right.
-Channels report their width via `coding_info`; the decoder handles both 4-bit
-and 8-bit, and any other (unexpected) width is skipped with a warning rather
-than mis-decoded.
+Pacing is data-driven per channel. The decoder handles 4-bit and 8-bit widths
+as each channel's `coding_info` reports them; any other width is skipped with a
+warning rather than mis-decoded.
 
-## What the older `extracted/XA/*.XA` files contain
+## "Non-standard interleave" - what it is and isn't
 
-The `extracted/XA/*.XA` files copied by the disc-extract step are the Form-1-truncated bytes - usable for byte-stable hashing only, not for decoding. The listenable per-channel WAVs are produced by the demux step; `legaia-extract` runs it automatically and writes them to `extracted/XA_WAV/` (or run `xa demux-disc-all` standalone).
+Legaia's XA files have no bespoke muxing scheme. The appearance of one comes from reading the sectors as Form 1, which keeps 2048 bytes of each and so:
+
+1. **drops 276 bytes of audio per sector** (Form 2 payload is 2324 bytes), and
+2. **collapses every channel into one shuffled byte sequence**, because the per-sector `(file_no, ch_no)` subheader is discarded.
+
+In that stream only about 10 % of 128-byte sound groups pass the standard XA validation rule `bytes 8..16 == bytes 0..8`, and a stereo track read as mono plays at 2x speed.
+
+The `extracted/XA/*.XA` files copied by the disc-extract step are exactly those Form-1-truncated bytes. They are usable for byte-stable hashing only, not for decoding.
 
 ## What's still open
 
-- **8-bit ADPCM mode is decoded but unexercised** (see "Sound-group decode (8-bit)" above). The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so nothing on the NA disc exercises it; the path is covered by synthetic unit tests and is wired through the demux/CLI/cutscene consumers (which map each channel's reported width). A JP/EU build that uses 8-bit would decode without code changes. **Not** yet verified bit-exact against a real 8-bit reference (no 8-bit source in the NA corpus).
+- **8-bit ADPCM mode is decoded but unexercised** (see "Sound-group decode (8-bit)" above). The NA corpus is **entirely 4-bit, 37.8 kHz** (`demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across 34 `*.XA` files), so nothing on the NA disc exercises it; the path is covered by synthetic unit tests and is wired through the demux/CLI/cutscene consumers (which map each channel's reported width). A disc that uses 8-bit would decode without code changes. The 8-bit path is **not** verified bit-exact against a real 8-bit reference, since the NA corpus has no 8-bit source.
 - **Which event plays which channel is not part of this format.** `demux-disc` emits one WAV per channel keyed by `(file_no, ch_no)`. The clip → channel routing is game logic: the voice-cue dispatchers and SCUS cue tables in [`audio.md`](../subsystems/audio.md#cd-xa-voice-clip-dispatchers-and-static-cue-census) and the movie channel selection in [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection). The extracted WAV filenames carry no scene labels.
 
 ## Provenance
@@ -129,7 +149,7 @@ The `extracted/XA/*.XA` files copied by the disc-extract step are the Form-1-tru
 | Subheader interpretation | [`crates/xa/src/demux.rs`](../../crates/xa/src/demux.rs) |
 | 4-bit ADPCM filter coefficients | [`crates/xa/src/lib.rs`](../../crates/xa/src/lib.rs) |
 | Sound-group decode (param + nibble layout, predictor) | bit-exact, sample-for-sample, against an external lossless reference decode of a real cutscene track; pinned by the disc-gated `xa_pcm_matches_reference` oracle in [`crates/xa/tests/pcm_reference.rs`](../../crates/xa/tests/pcm_reference.rs). |
-| Form-1-truncation diagnosis | direct comparison: 90 % of 128-byte groups in `extracted/XA/*.XA` failed the `bytes 8..16 == bytes 0..8` invariant before the demuxer was added. |
+| Form-1-truncation diagnosis | direct comparison: 90 % of 128-byte groups in the truncated `extracted/XA/*.XA` bytes fail the `bytes 8..16 == bytes 0..8` invariant; the demuxed channels pass. |
 
 ## See also
 

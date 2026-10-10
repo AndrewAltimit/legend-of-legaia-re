@@ -1,37 +1,53 @@
 # Legaia TMD (3D mesh)
 
-Legaia uses a custom variant of Sony's PSX TMD format. Magic is `0x80000002` instead of the standard `0x00000041`; pointer fields are byte-relative offsets that the runtime patches to absolute addresses on load. Implementation: `crates/tmd/src/lib.rs` + `crates/tmd/src/legaia_prims.rs`. Reverser context: `ghidra/scripts/funcs/{80026B4C, 800268DC, 8001F05C, 8002735C}.txt`.
+A TMD is a 3D model file: one or more **objects**, each with a vertex list, a normal list and a list of polygons (primitives). Legaia's TMD is a custom variant of Sony's format, so stock TMD tools do not read it. The magic is `0x80000002` instead of `0x00000041`, the pointer fields are byte offsets that the runtime patches into addresses on load, and - the part that matters most - primitives are stored in **groups** that share one 8-byte header, instead of carrying a header each. What the bytes of a primitive mean is decided by the group's `flags` word through a six-row descriptor table.
+
+Implementation: [`crates/tmd`](../../crates/tmd/README.md) - `lib.rs` (header, objects), `legaia_prims.rs` (group walker), `descriptor.rs` (the per-mode table), `mesh.rs` (mesh builders). Reverser context: `ghidra/scripts/funcs/{80026B4C, 800268DC, 8001F05C, 8002735C}.txt`.
+
+## Structure
+
+```mermaid
+flowchart TD
+    H["Header, 12 bytes<br/>id 0x80000002, flags, nobj"] --> O["Object table<br/>nobj x 28 bytes"]
+    O -->|"vert_top, n_vert"| V["Vertices<br/>8-byte SVECTOR each"]
+    O -->|"normal_top, n_normal"| N["Normals<br/>8-byte SVECTOR each"]
+    O -->|"prim_top, n_primitive"| P["Primitive section"]
+    P --> G["Group header, 8 bytes<br/>count, flags, olen, ilen, flag, mode"]
+    G --> R["count x primitive record<br/>ilen x 4 bytes each"]
+    R -->|"next group"| G
+    G -. "flags selects a row" .-> T["Descriptor table<br/>0x8007326C, 6 rows"]
+    T -. "shape + vertex-index offset" .-> R
+```
+
+All three `*_top` offsets are relative to the end of the header (file byte `0x0C`).
 
 ## Header (12 bytes)
 
-```
-u32 id        // ALWAYS 0x80000002 in Legaia. Bit 31 = FLIST_BIT
-              // (pointers are byte offsets relative to header end);
-              // low byte 0x02 = "Legaia TMD format version 2"
-u32 flags     // 0 on disc; runtime sets to 1 after pointer fixup
-u32 nobj      // number of objects
-```
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `0x00` | u32 | `id` | Always `0x80000002`. Bit 31 = `FLIST_BIT` (pointers are byte offsets relative to the header end); low byte `0x02` = format version 2 | Confirmed |
+| `0x04` | u32 | `flags` | `0` on disc; the runtime sets it to `1` after pointer fixup | Confirmed |
+| `0x08` | u32 | `nobj` | Number of objects | Confirmed |
 
-The `0x80000002` magic was confirmed via the dev string `"Model Version Err: %x"` in `FUN_80026B4C` - the registration function bails when `*tmd != 0x80000002`.
+The registration function `FUN_80026B4C` bails with the dev string `"Model Version Err: %x"` when `*tmd != 0x80000002`.
 
 ## Object table (28 bytes per object × nobj)
 
-```
-u32 vert_top      // byte offset from end of header (0x0C)
-u32 n_vert
-u32 normal_top    // byte offset from end of header
-u32 n_normal
-u32 prim_top      // byte offset from end of header
-u32 n_primitive   // SUM of all primitives across primitive-section groups
-i32 scale         // ALWAYS 0x00808080 in Legaia (Legaia-custom; standard
-                  // PSX uses signed log2 scale)
-```
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u32 | `vert_top` | Byte offset of the vertex array, from the end of the header | Confirmed |
+| `+0x04` | u32 | `n_vert` | Vertex count | Confirmed |
+| `+0x08` | u32 | `normal_top` | Byte offset of the normal array, from the end of the header | Confirmed |
+| `+0x0C` | u32 | `n_normal` | Normal count | Confirmed |
+| `+0x10` | u32 | `prim_top` | Byte offset of the primitive section, from the end of the header | Confirmed |
+| `+0x14` | u32 | `n_primitive` | **Sum** of `count` across all groups in the primitive section | Confirmed |
+| `+0x18` | i32 | `scale` | Always `0x00808080` in Legaia (standard PSX uses a signed log2 scale) | Confirmed |
 
-After `FUN_800268DC` runs at load time, `vert_top` / `normal_top` / `prim_top` are patched in-place to absolute RAM addresses. Static tools should NOT do this patch - they should use the offsets as `(ptr_base + offset)` where `ptr_base = 12` (HEADER_SIZE).
+After `FUN_800268DC` runs at load time, `vert_top` / `normal_top` / `prim_top` are patched in place to absolute RAM addresses. Static tools do not apply that patch: they use `ptr_base + offset` with `ptr_base = 12` (`HEADER_SIZE`).
 
-**The `flags` word is the relocation sentinel, and it makes the fixup idempotent.** `FUN_800268DC` early-returns when `flags == 1`, and sets `flags = 1` *before* walking the object table, so re-registering an already-relocated TMD is a no-op rather than a double-relocation. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet (`FUN_80024D78`), and the guard is what makes that safe. A TMD reached through that path while still unrelocated hands the renderer file-relative offsets in pointer slots - which is why the fixup runs there at all.
+**The `flags` word is the relocation sentinel, and it makes the fixup idempotent.** `FUN_800268DC` early-returns when `flags == 1`, and sets `flags = 1` *before* walking the object table, so re-registering an already-relocated TMD is a no-op rather than a double-relocation. Retail depends on this: an actor's per-object render table can be rebuilt from a TMD that may or may not have been relocated yet (`FUN_80024D78`), and the guard is what makes that safe.
 
-Two implications: a static tool must never write `flags`, since a `1` on disc would make the runtime skip a relocation the mesh still needs; and a from-scratch port that parses to typed offsets instead of patching pointers in place is structurally immune to the whole failure mode, so it should not reimplement the relocation.
+Two implications. A static tool must never write `flags`, since a `1` on disc would make the runtime skip a relocation the mesh still needs. And a port that parses to typed offsets instead of patching pointers in place has no relocation to get wrong, so it does not reimplement one.
 
 ## Vertex / normal data
 
@@ -43,22 +59,17 @@ pub struct Vector { pub x: i16, pub y: i16, pub z: i16, pub _pad: i16 }
 
 ## Primitive section
 
-The primitive section is a sequence of **groups**. Each group has an **8-byte header** followed by a fixed-stride array of prim data.
+The primitive section is a sequence of **groups**. Each group is an 8-byte header followed by a fixed-stride array of primitive records. There are no per-primitive sub-headers.
 
-```
-group header (8 bytes):
-  +0  u16 count          // how many primitives in this group
-  +2  u16 flags          // selects entry in per-mode table (see below)
-  +4  u8  olen           // PSX SDK "output length" (packet word count)
-  +5  u8  ilen           // PSX SDK "input length" -- per-prim WORD stride
-                         // per-prim byte stride = ilen * 4
-  +6  u8  flag           // PSX SDK flag byte (lighting / shading / etc)
-  +7  u8  mode           // PSX SDK mode byte (FT3/FT4/GT3/GT4/etc)
-prim data (count × ilen*4 bytes):
-  count × [ilen u32 words]
-```
-
-`n_primitive` in the OBJECT header is the **sum** of `count` across all groups in the object's primitive section.
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0` | u16 | `count` | Primitives in this group | Confirmed |
+| `+2` | u16 | `flags` | Selects the descriptor-table row and tri vs quad (below) | Confirmed |
+| `+4` | u8 | `olen` | PSX SDK "output length" (GPU packet word count) | Confirmed |
+| `+5` | u8 | `ilen` | PSX SDK "input length": the record stride in **words**. Byte stride = `ilen * 4` | Confirmed |
+| `+6` | u8 | `flag` | PSX SDK flag byte (lighting / shading) | Confirmed |
+| `+7` | u8 | `mode` | PSX SDK mode byte (FT3 / FT4 / GT3 / GT4 ...) | Confirmed |
+| `+8` | `count * ilen * 4` | records | The primitives | Confirmed |
 
 The per-prim layout depends on the prim type. The renderer (`FUN_8002735C`)
 treats the 8-byte-stride table at `0x8007326C` as a packed `{u32 first; u32
@@ -145,10 +156,10 @@ resolves the shape and the `vertex_offset` per group.
     `n_vertices` words for gouraud `GT*` (block at byte 12 for `GT3`, byte 16 for
     `GT4`). Here the block does end at the vertex-index offset.
 
-  The earlier walker assumed `block_start = vertex_offset - block_len`, which only
-  held for the byte1 = 3 rows; the byte1 = 0 rows then read `(cba, tsb)` from
-  geometry bytes and rendered as rainbow garbage (the Rim Elm decorative-plant
-  props). `texture_block_offset` fixes this while leaving rows 4/5 byte-identical.
+  `block_start = vertex_offset - block_len` therefore holds only for the
+  byte1 = 3 rows. Applied to the byte1 = 0 rows it reads `(cba, tsb)` from
+  geometry bytes and the prims render as rainbow garbage (the Rim Elm
+  decorative-plant props are the visible case).
 - **Colour block** (every row except the lit rows 0/1): a per-vertex RGB colour
   block (PSX `[R, G, B, code]` word; the 4th byte is the SDK GP0 command/code,
   not part of the colour - `0x20`/`0x24`/`0x28`/`0x2C`/`0x30`/`0x34`/`0x38`/`0x3C`,
@@ -234,8 +245,8 @@ engine's mesh builder keeps each lit corner's normal
 (`legaia_tmd::mesh::LitVertex`) for that shading.
 
 Mis-reading an untextured colour block as a texture block yields bogus `(cba,
-tsb)` and samples a random VRAM page - the historic "flat green tint / transparent
-hole". `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid` surfaces both (textured
+tsb)` and samples a random VRAM page, which shows as a flat green tint or a
+transparent hole. `legaia_tmd::mesh::tmd_to_vram_mesh_field_hybrid` surfaces both (textured
 UVs + untextured colours) for a hybrid render; see
 [`character-mesh.md` § Hybrid render](character-mesh.md#hybrid-render-textured--untextured-prims).
 
@@ -274,7 +285,9 @@ The per-prim data IS uniform 20 bytes (= `ilen*4`) - there are no per-prim sub-h
 | `FUN_80021B04` | Actor-spawn helper; builds per-actor OBJECT pointer table at `actor[0x44]+4` |
 | `FUN_80024D78` | Per-actor OBJECT-table rebuild |
 | `FUN_8001EBEC` | Per-frame OBJECT[10/11] swap (pose select for player TMDs) |
-| `FUN_8001E890` | "DATA_FIELD player loader" - calls `FUN_8003eb98(0x36C, …)` (PROT 876 = `player_data`) and the dev paths `data\field\player.lzs` / `h:\prot\all\data\field\player.lz`. The retail bytes the loader reads (PROT 876 = streaming-format VAB+TIM_LIST+SEQ; the dev `data\field\player.lzs` file is absent from the ISO9660 walk) **do not** carry the `[0..4]` character TMDs. Those come from PROT 0874 (`befect_data`) section 0 - see [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04). What this function *does* do that's still consumed at `DAT_8007C018[0..2]` is the post-install group-count cap (`entry[+0x08] = 10`) and the equipment-conditional patch dispatch into `FUN_8001EBEC`. |
+| `FUN_8001E890` | Field player loader; installs the character TMDs at `DAT_8007C018[0..4]` (below) |
+
+`FUN_8001E890` loads through `FUN_8003eb98(0x36C, …)` in retail, with the dev paths `data\field\player.lzs` / `h:\prot\all\data\field\player.lz` on the other branch (the dev file is absent from the ISO9660 walk). `0x36C` (876) is a raw-TOC index, so the entry is **extraction 0874** - the `player_data` block under the [+2 numbering shift](cdname.md#numbering-space), whose section 0 holds the `[0..4]` character TMDs ([`character-mesh.md`](character-mesh.md), [`world-map-overlay.md` § Disc-side source of `[0..4]`](world-map-overlay.md#disc-side-source-of-04)). Extraction 0876 is a streaming VAB + TIM_LIST + SEQ entry and carries no character mesh. After the install the function caps the group count (`entry[+0x08] = 10`) and dispatches the equipment-conditional patch into `FUN_8001EBEC`.
 
 The per-actor `OBJECT[i]` is a 28-byte struct copied into `actor[0x44][i+1]` from `tmd + 12 + i*28` - `sizeof(OBJECT) = 28`.
 
