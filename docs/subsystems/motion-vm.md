@@ -1,38 +1,62 @@
 # Per-actor motion VMs
 
-**Two** distinct per-actor bytecode VMs live under the field actor tick
-`FUN_8003BC08`: the pursue / patrol / face-target VM at `FUN_8003774C`
-(dispatched when actor `+0x10 & 0x400`) and the scripted-motion / flag VM at
-`FUN_80038158` (dispatched when `+0x10 & 0x80`, bytecode carried in MAN
-tail-section 1 - [below](#the-second-motion-vm---fun_80038158)). Both live in
-`SCUS_942.54`.
+How field actors move on their own. **Two** small bytecode VMs run under the
+per-actor field tick `FUN_8003BC08`, both in `SCUS_942.54`:
 
-The first drives **per-actor pursue / patrol / face-target** logic - NPC movement on
-the field, camera follow paths, and scripted "face the speaker" posing. The
-second drives scripted actor choreography and writes story flags.
+- the **pursue / patrol / face-target VM** `FUN_8003774C` - NPC walks along a
+  compass direction or toward a target, turning to face something, and
+  pre-baked camera paths;
+- the **scripted-motion VM** `FUN_80038158` - a villager's ambient wander and
+  scripted choreography (steps, facing ramps, tweens, teleports, waits), which
+  also sets and clears story flags.
 
-**Which function turns an NPC when the player talks to it is a different
-one.** That write is not this VM's `0x4C` ramp: it is a single `sh` in the
-dialog SM `FUN_80039B7C` - see
-[Talk-time facing is not this VM](#talk-time-facing-is-not-this-vm).
+Both are ported and live on both play hosts: villagers wander, turn and are
+solid in the port as they are in retail.
 
-Both are distinct from the other three members of
-[the runtime VM family](move-vm.md#the-runtime-vm-family) - the
-[actor VM](actor-vm.md), the [move VM](move-vm.md), and the
-[field VM](script-vm.md).
+## At a glance
 
-**What catches people out: the scripted VM has a static decoder alongside its
-interpreter.** `FUN_8003774C` is
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs).
-`FUN_80038158`'s interpreter is
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs),
-which runs the whole op table (bodies split for length into
-[`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs)).
-Because its bytecode arrives as MAN tail-section data rather than through the
-actor tick's own buffer, a *static* decode of the same bytes exists too -
-[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs),
-which answers which stream binds to which placement, at what wander pace, with
-what default-move harvest, without running anything.
+| | Pursue / patrol VM | Scripted-motion VM |
+|---|---|---|
+| Interpreter | `FUN_8003774C` | `FUN_80038158` |
+| Runs when | actor `+0x10 & 0x400` (the halt bit) | actor `+0x10 & 0x80` |
+| Dispatch | 22-slot jump table `0x80010EE0`, index `(op & 0x7F) - 0x37` | 32-slot jump table `0x80010FE8`, ops `0x01..=0x20` |
+| Bytecode source | the payload pointer a field-VM halt-acquire writes to `+0x94` | MAN tail-section 1, read at `*(actor+0x80) + *(u16*)(actor+0x84)` |
+| Opcode table | [Opcodes](#opcodes) | [The op table](#the-op-table) |
+| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs) |
+
+```mermaid
+flowchart TD
+    T["field actor tick FUN_8003BC08<br/>(once per game tick, per actor)"] --> PRE["pre-update FUN_801D79E8:<br/>visibility cull bit"]
+    PRE --> HA["height arm:<br/>Y from the sampled floor"]
+    HA --> G1{"+0x10 & 0x400?"}
+    G1 -->|yes| V1["FUN_8003774C<br/>pursue / patrol / face-target"]
+    HA --> G2{"+0x10 & 0x80?"}
+    G2 -->|yes| V2["FUN_80038158<br/>scripted motion + story flags"]
+    V1 --> Y1{"op result"}
+    Y1 -->|"0: leg running"| NEXT["next tick"]
+    Y1 -->|"1: done"| CL["clear halt bit 0x400,<br/>zero +0x54 cursor"]
+    V2 --> NEXT
+```
+
+The diagram is the orientation; [the driver section](#the-driver-fun_8003bc08)
+has the exact gates.
+
+Three things that catch people out:
+
+- **Talking to an NPC does not turn it through this VM.** That write is a
+  single `sh` in the dialog state machine `FUN_80039B7C` - see
+  [Talk-time facing is not this VM](#talk-time-facing-is-not-this-vm).
+- **The scripted VM has a static decoder beside its interpreter.** Because its
+  bytecode is MAN tail-section data, the same bytes can be decoded without
+  running them:
+  [`man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs)
+  answers which stream binds to which placement, at what wander pace, with
+  what default-move harvest. The scene loader uses it to seed the channels the
+  interpreter then ticks. It is not a second port.
+- **These are not the [actor VM](actor-vm.md), the [move VM](move-vm.md) or
+  the [field VM](script-vm.md).** See
+  [the runtime VM family](move-vm.md#the-runtime-vm-family) and the
+  [VM inventory](vm-inventory.md).
 
 ## The driver: `FUN_8003BC08`
 
