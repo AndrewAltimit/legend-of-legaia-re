@@ -1,55 +1,94 @@
 # Effect VM (battle effect cluster)
 
-The runtime that drives battle-spawn effects: spell casts, item-use animations, hit
-sparks. It lives in the battle overlay (`0898_xxx_dat`); the per-frame walker is
-`FUN_801E0080`, called once per battle frame by the draw tick `FUN_800480D8`
-(`jal 0x801e0080` at `0x80048128`, the per-frame global passes). Port:
-[`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs).
+The effect VM is the runtime behind battle-spawned 2D effects: hit sparks,
+dust, flame puffs, spell and item flashes. An effect is spawned by id at an
+actor's position; a fixed pool then releases its child sprites on a timed
+cadence, animates and moves each one, and draws it as a blended camera-facing
+quad. It lives in the battle overlay (PROT 0898) and reads its scripts from
+`efect.dat`.
 
-**What catches people out: this is the one member of
-[the runtime VM family](move-vm.md#the-runtime-vm-family) that is not a bytecode
-VM at all.** There is no central switch on a per-slot opcode byte; state
-transitions are inlined throughout 600+ instructions of the walker. It is named a
-"VM" for symmetry with its four siblings, but it is a per-slot **state machine**,
-and looking for its opcode table is a dead end - see
-[How it dispatches](#how-it-dispatches).
+**It is not a bytecode VM.** It is the one member of
+[the runtime VM family](move-vm.md#the-runtime-vm-family) with no opcode table:
+the per-slot "state" bytes are wait counters, and the lifecycle is a pair of
+countdown-driven cursor walks inlined through 600+ instructions of the walker.
+It is called a VM for symmetry with its four siblings.
 
-The port models the slot pool (`Pool`), the `MasterSlot` / `ChildSlot` /
-`EffectScript` data structures, ports the init (`Pool::init_head`) and spawn
-(`Pool::spawn`) APIs faithfully, and executes the full pass-1 algebra in
-`Pool::tick_retail` (master spawn cadence + child anim/motion walk) with the
-pass-2 per-child computation exposed as `Pool::child_billboards` (brightness
-envelope, atlas resolution, sprite scaling, UV-mirror corner order). The
-`EffectHost` trait supplies the RNG and the summon routing. The engine's live
-path runs this walker: `engine-core::World::tick_effects` sweeps
-`Pool::tick_retail` once per retail frame and `World::active_effect_sprites`
-is a direct mapping of `Pool::child_billboards`.
+This page also covers the effect geometry that does *not* come from the pool:
+the three procedural emitters behind the render dispatcher's draw kind 4
+(ribbon, sprite quad, ring / disc), which move-VM parts select.
 
-Three functions:
+## At a glance
 
-| Function | Span | Role |
+| What | Where |
+|---|---|
+| Init / pack fixup | `FUN_801DE914` (span `0x13C`), called from `FUN_800520F0` case `0xE` with `(0x1000, 0xA00)` |
+| Spawn API | `FUN_801DFDF0(byte effect_id, short* world_pos, ushort angle)` (span `0x288`) |
+| Per-frame walker | `FUN_801E0080` (span `0x978`), one `jal` on the disc: the battle draw tick `FUN_800480D8` at `0x80048128` |
+| Pool | `_DAT_8007BD30`, 5008 bytes: 16-byte head, 128 child slots, 32 master slots |
+| Ready flags | pool-ready byte `0x8007BD58` (entry guards); walker body runs only when `DAT_8007BD71 == 0xFF` |
+| Input data | [`efect.dat`](../formats/effect.md) (PROT entry 873): pack1 = effect-id scripts, pack0 = frame-batch animations, plus the inline sprite atlas |
+| Dumps | `overlay_battle_801e0088.txt` (walker), `overlay_battle_801dfdf8.txt` (spawn), `overlay_battle_action_801e0080.txt` |
+| Port | [`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs): `Pool`, `EffectCatalog`, `EffectHost` |
+| Engine drive | `World::tick_effects`, `World::active_effect_sprites` (`crates/engine-core/src/world/effects.rs`) |
+| Draw-kind-4 emitters | `engine-effects`: `effect_ribbon`, `effect_sprite_arm`, `effect_default_arm` |
+
+**Entry addresses.** Both the spawn API and the walker begin two words ahead
+of their stack prologue: `lui v0,0x8008` / `lbu v0,-0x42a8(v0)` load the
+pool-ready byte `0x8007BD58` first. Every `jal` on the disc names the entries
+`0x801DFDF0` and `0x801E0080`. Pages and dumps that cite `0x801DFDF8` /
+`0x801E0088` (`FUN_801DFDF8`, `FUN_801E0088`) name the prologue word of the
+same routines.
+
+Spawn ids `4` and `0x13` make a side call to the move-VM part spawner
+`0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the
+ordinary spawn path.
+
+## Lifecycle
+
+```mermaid
+flowchart TD
+    prod["Producers: anim effect arm, effect-script walk, move effect lists"] --> spawn["Spawn API FUN_801DFDF0"]
+    spawn --> master["Master slot: 1 of 32, 28 bytes"]
+    subgraph walker["Walker FUN_801E0080, once per battle frame"]
+        p1m["Pass 1: master wait reaches 0"] --> seed["Seed child from 14-byte pack1 record"]
+        seed --> child["Child slot: 1 of 128, 32 bytes"]
+        child --> p1c["Pass 1: child wait, 6-byte pack0 frame advance, motion step"]
+        p1c --> p2["Pass 2: brightness, size, UV corners"]
+    end
+    master --> p1m
+    p2 --> quad["GP0 0x2E semi-transparent quad into the OT"]
+    p1c -- "frame_cursor reaches frame_count" --> free["Slot freed"]
+```
+
+Pass 1 repeats `DAT_1F800393` times per call (the adaptive frame-skip factor,
+so effect time tracks wall-clock under frame skip). Pass 2 runs once per call.
+
+## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
+
+| Offset | Size | Contents |
 |---|---|---|
-| `0x801DE914` | 0x13C | Init / pack-fixup. Called from `FUN_800520F0` case `0xE` with `(id=0x1000, param=0xA00)`. |
-| `0x801DFDF0` | 0x288 | Public spawn-effect API: `(byte effect_id, short* world_pos, ushort angle)`. Pages that cite `0x801DFDF8` name its prologue word: the entry is two words earlier, where the pool-ready byte `0x8007BD58` is loaded, and every `jal` to the routine on the disc names `0x801DFDF0`. Ids `4` and `0x13` make a side call to `0x80050ED4` (descriptor `0x801F5D90` / `0x801F5CF8`) and then take the ordinary spawn path. |
-| `0x801E0080` | 0x978 | Per-frame walker (update + render). Like the spawn API, the entry is two words ahead of the prologue at `0x801E0088` - `lui v0,0x8008` / `lbu v0,-0x42a8(v0)` load the pool-ready byte `0x8007BD58` - and the disc's one `jal` to it names `0x801E0080`. Pages and dumps that cite `0x801E0088` name the prologue word. |
+| `+0x000` | 16 bytes | Head record set by init |
+| `+0x010` | 4096 bytes | 128 x 32-byte child slots: per-sprite render state |
+| `+0x1010` | 896 bytes | 32 x 28-byte master slots: per-effect-instance state |
+| `+0x1390` | - | End of pool (16 + 4096 + 896 = 5008 = `0x1390`) |
 
-The on-disc input format is the [runtime 2-pack wrapper](../formats/effect.md) (PROT entry 873, `data\battle\efect.dat`). Each pack0 entry is a frame-batch animation record; each pack1 entry is an effect-ID script.
+32 simultaneous effects at about 4 sprites each is the 128-child budget.
 
-## How it dispatches
+### Head record (16 bytes)
 
-There is no opcode byte anywhere: the "state" bytes are **wait counters**, and the only data consumed are the pack1 spawn records and the pack0 anim frames. The full lifecycle is extracted below - it is a pair of countdown-driven cursor walks, not a token dispatch.
+| Offset | Type | Field |
+|---|---|---|
+| `+0x0` | i16 | Motion scale: first init immediate, retail `0x1000` |
+| `+0x2` | i16 | Sprite scale: second init immediate, retail `0xA00` |
+| `+0x4` | u32 | Inline sprite-atlas base (8-byte entries) |
+| `+0x8` | u32 | pack0 pointer-table base (frame-batch animations) |
+| `+0xC` | u32 | pack1 pointer-table base (effect-id scripts) |
 
-## The extracted pass-1 state algebra
-
-Traced instruction-for-instruction from `overlay_battle_801e0088.txt` (walker) and `overlay_battle_801dfdf8.txt` (spawn). Every wait counter in the system is **5.3 fixed-point**: a frame count is stored `<<3` and decremented by 8 per logic frame (a value already `< 8` clamps to 0), so fractional catch-up ticks stay cheap.
-
-The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 1 (spawn cadence + child animation/motion) repeats `DAT_1F800393` times per call - the adaptive frame-skip factor, so effect time tracks wall-clock under frame skip - and a sweep that finds zero active masters and zero active children adds 4 to the sweep counter, skipping the remaining catch-up iterations (fully, at any retail frame-skip factor `<= 5`). Pass 2 (render) runs once per call.
-
-### Master slot lifecycle (28-byte stride, 32 slots at pool `+0x1010`)
+### Master slot (28 bytes, 32 slots at pool `+0x1010`)
 
 | Offset | Field | Behaviour |
 |---|---|---|
-| `+0` | `child_count` | Total spawn records (pack1 header byte 0). Doubles as the active flag - 0 = free slot. |
+| `+0` | `child_count` | Total spawn records (pack1 header byte 0). Doubles as the active flag: 0 = free slot. |
 | `+1` | `flags` | pack1 header byte 1 (bit 0 = randomized offsets, consumed at spawn time). |
 | `+2` | `spawn_cursor` | Records consumed so far. |
 | `+3` | `wait` | 5.3 wait counter. Non-zero: decrement by 8 and stop. Zero: run the spawn loop. |
@@ -58,257 +97,244 @@ The walker body runs only when the ready flag `DAT_8007BD71` reads `0xFF`. Pass 
 | `+0x14` | - | Never written by the spawn API; its copy into `child[+0x18]` is a dead lane. |
 | `+0x18` | `script_cursor` | pack1 `entry + 4`, advanced `+14` per record. |
 
-The spawn loop: seed the next free child slot from the current 14-byte record (allocation scans forward with a cursor that persists across masters within one sweep; on **pool exhaustion the record is still consumed** with no child - effects degrade rather than stall), then advance - `spawn_cursor += 1`, `script_cursor += 14`, `wait = record.delay << 3` - and repeat while the new wait is zero, so zero-delay records spawn as one burst. The wait store is a byte, so a delay `>= 32` frames wraps mod 32 (`sb` truncates the `<< 3`); the same truncation applies to the child frame delays below. When `spawn_cursor` reaches `child_count` the master frees itself (`+0` = 0) and forces `wait = 8` to exit the loop.
+### Child slot (32 bytes, 128 slots at pool `+0x10`)
 
-### Child slot lifecycle (32-byte stride, 128 slots at pool `+0x10`)
+| Offset | Field | Seeded with |
+|---|---|---|
+| `+0` | `frame_count` | pack0 byte 0. Doubles as the active flag. |
+| `+1` | `mirror` | `rand() % 4`: **random UV flip bits** (bit 0 = horizontal, bit 1 = vertical), consumed by pass 2. |
+| `+2` | `frame_cursor` | 0 |
+| `+3` | `wait` | First frame's delay `<< 3` |
+| `+4` / `+6` / `+8` | velocity x / y / z (i16) | The record's planar legs rotated by the master angle (`>> 12`); `vel_y` direct |
+| `+0xC` / `+0x10` / `+0x14` | position x / y / z (16.8) | Master origin; `y -= height << 8`; x / z offset by the rotated planar legs (`>> 4`) |
+| `+0x18` | - | Copy of `master[+0x14]` (dead lane) |
+| `+0x1C` | anim cursor | pack0 `entry + 2` |
 
-Seeding (walker pass 1, from the spawn record + master): `frame_count`(+0) = pack0 byte 0 (doubles as the active flag); `mirror`(+1) = `rand() % 4` - **random UV flip bits** for sprite variety (bit 0 = horizontal, bit 1 = vertical, consumed by pass 2); `frame_cursor`(+2) = 0; `wait`(+3) = first frame's delay `<<3`; velocity (+4/+6/+8 i16 x/y/z) = the record's planar legs rotated by the master angle (`>>12`) with `vel_y` direct; position (+0xC/+0x10/+0x14, 16.8) = master origin, `y -= height << 8`, x/z offset by the rotated planar legs (`>>4`); anim cursor (+0x1C) = pack0 `entry + 2`.
+<a id="the-extracted-pass-1-state-algebra"></a>
+<a id="how-it-dispatches"></a>
 
-Tick: `wait` non-zero → decrement by 8 plus one motion step. Zero → loop { advance one anim frame (`anim_cursor += 6`, `frame_cursor += 1`, `wait` = new frame's delay `<<3`; reaching `frame_count` retires the slot), then one motion step } while the new wait is zero. A motion step is `pos += vel * frame.speed * pool_scale_0 * 8 >> 15` per axis - with the retail init scalar `0x1000` at pool `+0` this reduces exactly to `pos += vel * frame.speed`.
+## Pass 1 - spawn cadence and child walk
 
-Retirement quirk: retiring zeroes both the active flag and the wait, but the frame-advance loop only tests the wait - so retail keeps consuming 6-byte strides past the batch end **on the already-retired slot** until it hits a non-zero byte in the delay position. The extra reads and motion steps touch only the dead slot (the next seed rewrites every field), so the port (`Pool::tick_retail`) breaks at retirement instead.
+Traced instruction-for-instruction from `overlay_battle_801e0088.txt` (walker)
+and `overlay_battle_801dfdf8.txt` (spawn). There is no opcode byte anywhere:
+the only data consumed are the pack1 spawn records and the pack0 anim frames.
 
-### Pass 2 - render
+- **Wait counters are 5.3 fixed-point.** A frame count is stored `<< 3` and decremented by 8 per logic frame; a value already `< 8` clamps to 0. Fractional catch-up ticks stay cheap.
+- **Byte truncation.** The wait store is a byte (`sb` truncates the `<< 3`), so a delay `>= 32` frames wraps mod 32. This applies to master delays and child frame delays alike.
+- **Idle early-out.** A sweep that finds zero active masters and zero active children adds 4 to the sweep counter, skipping the remaining catch-up iterations (fully, at any retail frame-skip factor `<= 5`).
 
-For each live child, one flat textured **semi-transparent quad** (9-word GPU packet, tag `0x09000000`, prim code `0x2E`):
+### Master tick
 
-- **Brightness envelope**: with `n = frame_count >> 3`, the modulation ramps in over the first eighth of the animation (`0x80 * (frame_cursor+1) / n`) then back out over the rest (`0x80 * (frame_count - frame_cursor) / (frame_count - n)`), clamped at `0x80` (neutral) and written as `r = g = b`.
-- **Size**: atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00` → ×10 texel size) is the **half**-extent: `FUN_800195A8` forms the corners as the view-space centre minus and plus it (`0x801E082C..0x801E0880` hand it over as `a1` / `a2`), so the quad spans twice the value. The quad is inserted into the OT at `_DAT_1F8003F4 + depth * 4`.
-- **UV corners**: base/extent from the 8-byte atlas entry, corner order swapped per the child's random mirror bits; CLUT from atlas `+4`, tpage from atlas `+6`.
+With `wait` at zero, the spawn loop:
 
-The semi-transparency is a property of the **prim code**, not of the atlas entry. `0x2E`
-is GP0 `0x20 | quad | textured | semi-transparent`, so every effect child blends,
-whatever page it names - and the page's own ABR bits then choose how. The `efect.dat`
-inline atlas's two entries name pages `0x25` (`(320,0)`, ABR `1` = `B + F`) and `0x66`
-(`(384,0)`, ABR `3` = `B + 0.25F`), both against CLUT rows 474/475 of the flame atlas.
+1. Seeds the next free child slot from the current 14-byte record. Allocation scans forward with a cursor that persists across masters within one sweep. On **pool exhaustion the record is still consumed** with no child: effects degrade rather than stall.
+2. Advances: `spawn_cursor += 1`, `script_cursor += 14`, `wait = record.delay << 3`.
+3. Repeats while the new wait is zero, so zero-delay records spawn as one burst.
 
-That matters to a port because the enable has nowhere to come from except the code byte:
-the atlas stores its page in a single byte, so a billboard builder that pushes the page
-verbatim into a TSB word can never set the port's prim-ABE bit, and the whole effect
-system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end (`0xC73F` =
-`(248, 200, 136)`) is a pale tan; drawn additively those texels are a glow over a dark
-arena, and drawn opaque they are solid tan blobs. Index `0` is `0x0000` and discards
-either way, so the blobs keep a puff-shaped silhouette - which is what made them read as
-stray geometry rather than as mis-blended sprites. Port: `EffectSprite::packet_tsb` in
-`engine-core` (`world/types.rs`), which the native window's billboard builder and the
-play page's battle and field FX builders all call, pinned by
-`packet_tsb_forces_the_prim_semi_enable` and a `SIM_PAIRS` row in
-`check-ui-host-drift.py`.
+When `spawn_cursor` reaches `child_count` the master frees itself (`+0 = 0`)
+and forces `wait = 8` to exit the loop.
 
-### The three render-mode-4 emitters, and which one the disc uses
+### Child tick
 
-The pool's quads are not the only primitive path an effect actor can take. The
-per-actor render dispatcher `FUN_8001ADA4` switches on `actor[+0x56]` (loaded at
-`0x8001AE60`), and its case `4` - multi-target - picks one of three emitters off
-the separate flag halfword `actor[+0x9E]`: `0x4000` selects `FUN_8002A5A4`,
-`0x2000` selects the battle overlay's random-walk **ribbon** builder
-`FUN_801CFA48` (lightning bolts, beams, whips; parser
-`legaia_engine_core::effect_ribbon`), and `& 0x6000 == 0` falls through to the
-default `FUN_80028158`.
+- `wait` non-zero: decrement by 8, plus one motion step.
+- `wait` zero: loop { advance one anim frame (`anim_cursor += 6`, `frame_cursor += 1`, `wait` = new frame's delay `<< 3`; reaching `frame_count` retires the slot), then one motion step } while the new wait is zero.
 
-All three arms carry shipped content. The selector halfword and the render mode
-are written by the **move VM** itself: op `0x42` (jump-table arm `0x80023F94`)
-sets `actor[+0x56] = 4`, `+0x5A = 2` and `+0x9E = op[1] | 0x2000` (`ori 0x2000`
-at `0x80023FBC`, `sh v0,0x1e(s1)` at `0x80023FC0`, where `s1 = actor + 0x80` from
-`addiu s1,s2,0x80` at `0x80023088`), and fills the ribbon's inputs - `+0x9C`,
-`+0xC8`, `+0xB4..+0xBA`, `+0xA8`, and two packed colour words at `+0xA0` /
-`+0xA4`. Op `0x23` (arm `0x800237D8`) is the `0x4000` sibling. The dispatcher
-hands the emitter `src = actor + 0x9C`, so the ribbon's "record" is the actor.
+A motion step is `pos += vel * frame.speed * pool_scale_0 * 8 >> 15` per axis.
+With the retail init scalar `0x1000` at pool `+0` this reduces exactly to
+`pos += vel * frame.speed`.
 
-An earlier census on this page swept stores at `+0x9E` / `+0x9C` and through a
-register formed as `actor + 0x80`, found none carrying `0x2000` or `0x4000`, and
-concluded the default arm was the only reachable one. Both stores above are that
-exact form, in the SCUS move VM, so the census missed its own target. Walking
-the disc's move programs through the engine's decoder at instruction boundaries
-finds op `0x42` five times, all in slot-B cast / summon images (PROT 0923, 0934
-twice, 0957, 0964), and none in the PROT 0898 move-FX prototypes or the field
-stager records. The captures agree on the other two arms: the 97 catalogued
-battle states hold 188 render-mode-4 nodes, 128 on the default emitter and 60 on
-the `0x4000` sprite arm; none holds a live ribbon.
+**Retirement overrun.** Retiring zeroes both the active flag and the wait, but
+the frame-advance loop tests only the wait. Retail therefore keeps consuming
+6-byte strides past the batch end **on the already-retired slot** until it
+meets a non-zero byte in the delay position. The extra reads and motion steps
+touch only the dead slot (the next seed rewrites every field), so
+`Pool::tick_retail` breaks at retirement instead.
 
-### The ribbon's draw
+## Pass 2 - render
 
-The emitter does not draw anything itself. It writes a **Legaia TMD object**
-into a scratch buffer (`*(0x8007B85C) + 0x5DC00`): the object header at
-`out + 0xC` (vertex top `out + 0x28`, `(steps + 2) * 6` vertices, no normals,
-the primitive block, `steps * 6` primitives), the step vertices, and one
-primitive group - `count = steps * 6`, flags `0x26` (the baked-colour `GT4`
-row), `ilen = 9`, mode `0x3C` (`0x801D000C..0x801D0024`). The render
-dispatcher then stores `out + 0xC` into every slot of the actor's model list
-`actor[+0x44]` (`0x8001B08C..0x8001B0B4`), so the ribbon is drawn as the
-actor's own model through the ordinary TMD path.
+For each live child, one flat textured **semi-transparent quad** (9-word GPU
+packet, tag `0x09000000`, prim code `0x2E`):
 
-Each step contributes six packets joining its six vertices to the next step's:
-a core strip between the `±1` pair in the core colour (`src[+4]`), stored
-**twice**; two inner flares out to the `±2` pair graded core to flare
-(`src[+8]`); two outer fringes out to the `±8` pair graded flare to black. Every
-packet samples the same 2x2 texel patch, UVs `(0..2, 0xF0..0xF2)` in texture
-page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84` (`(64, 510)`), and the
-chain ends in twenty zero words.
+- **Brightness envelope.** With `n = frame_count >> 3`, the modulation ramps in over the first eighth of the animation (`0x80 * (frame_cursor+1) / n`), then back out over the rest (`0x80 * (frame_count - frame_cursor) / (frame_count - n)`), clamped at `0x80` (neutral) and written as `r = g = b`.
+- **Size.** Atlas `w/h * pool_scale_1 >> 8` (retail init `0xA00`, so x10 texel size) is the **half**-extent: `FUN_800195A8` forms the corners as the view-space centre minus and plus it (`0x801E082C..0x801E0880` hand it over as `a1` / `a2`), so the quad spans twice the value. The quad is inserted into the ordering table at `_DAT_1F8003F4 + depth * 4`.
+- **UV corners.** Base / extent from the 8-byte atlas entry, corner order swapped per the child's mirror bits.
+- **Atlas fields.** `+4` is the CLUT (u16) and `+6` the tpage (byte): the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field. `0x7680` in that slot is a CLUT - CBA framebuffer `(0,474)`, an effect-CLUT row - not a tpage naming page `(0,0)` at 8bpp. A melee hit-spark capture confirms it: no prim samples page `(0,0)`, and the spark's quads sample the loaded effect pages.
 
-Both battle hosts draw the result: `World::active_effect_ribbons` rebuilds each
-live ribbon node's mesh every frame (`legaia_engine_core::effect_ribbon`) and
-the native part pass and the browser play page's FX frame compose it like a
-mesh part. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923); Ozma
-(`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
-not staged as scenes by the engine yet.
+### Blending comes from the prim code
 
-### The sprite arm's draw
+`0x2E` is GP0 `0x20 | quad | textured | semi-transparent`, so every effect
+child blends, whatever page it names. The page's own ABR bits then choose how.
+The `efect.dat` inline atlas's two entries name pages `0x25` (`(320,0)`, ABR
+`1` = `B + F`) and `0x66` (`(384,0)`, ABR `3` = `B + 0.25F`), both against
+CLUT rows 474 / 475 of the flame atlas.
 
-The `0x4000` arm (`jal 0x8002A5A4` at `0x8001B0E8`) builds one textured quad
-from the node's `+0x9C` block into the same scratch buffer, and case 4 then
-falls into the ordinary model draw at `0x8001B160` - so the quad is drawn
-like a mesh part: scaled by `+0x72 / 0x1000` when that is not `0x1000`
-(`0x8001B240..0x8001B2C4`), turned by the rotation banks, and handed to the
-prim dispatcher with the colour word `+0x74` and level `+0x78` (ABE and ABR
-ORed into the packet, the colour depth-cued toward the word's far colour).
-Its builder is SCUS code, so unlike the ribbon it draws in every mode.
+The atlas stores its page in a single byte, so a port that pushes the page
+verbatim into a TSB word never sets its prim-ABE bit and the whole effect
+system rasterises opaque. Flame CLUT row 474 is a fire ramp whose hot end
+(`0xC73F` = `(248, 200, 136)`) is a pale tan: additive, a glow over a dark
+arena; opaque, solid tan blobs with a puff silhouette (index `0` is `0x0000`
+and discards either way).
 
-The scale is seated by the spawn, not the record: `FUN_80021B04` stores its
-fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the
-part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
-`$a3` unchanged. Every seater passes `0x1000` at nearly every call: the battle
-stagers of the slot-B band (`0903..0966`) and PROT 0898's effect-prototype
-spawns load `li a3,0x1000`, as do the two ambient seaters. A few calls pass
-another immediate (`0x400`, `0x800`, `0x2000`) or forward a parent's `+0x72`.
-The engine seats every staged part at `0x1000`
-(`summon::SPAWN_RENDER_SCALE`, the ambient install likewise); its part set is
-keyed by record rather than by call, so those per-call scales are not carried.
+Port: `EffectSprite::packet_tsb` (`crates/engine-core/src/world/types.rs`),
+called by the native window's billboard builder and the play page's battle and
+field FX builders. Pinned by `packet_tsb_forces_the_prim_semi_enable` and a
+`SIM_PAIRS` row in `check-ui-host-drift.py`.
 
-Both hosts draw it: `engine-core::effect_sprite_arm` turns every live
-sprite-arm node of the summon, move-FX, effect-script and field ambient parts
-into a one-quad mesh, `World::active_effect_kind4_draws` lists them with the
-ribbons, and the native part pass and the browser play page's battle and field
-FX frames compose each like a part. The quad geometry is
-`baka_impact_fx::sprite_arm_quad`, the one Baka Fighter's impact flash draws
-through. `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports
-the slot-B images whose programs reach the arm and pins that each lands on the
-draw list as one quad.
+### The half-extent is a view-space quantity
 
-### The default arm's draw
+`FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix
+(`FUN_8003D344`, one `MVMVA`), forms the four corners by adding the
+half-extents to that already-transformed centre, then resets the rotation
+matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix
+multiplies the centre and never touches the half-extents.
 
-With neither bit set, case 4 calls `FUN_80028158(out, +0x9E, (s16)+0x9C +
-(((s16)+0xC8 >> 3) << 8), actor + 0x9C)` (`0x8001B128..0x8001B15C`) and falls
-into the same model draw as the sprite arm. The builder writes a Legaia TMD
-object at `out + 0xC` - no normals, one `GT4` group (`flags 0x26`, `ilen 9`,
-`mode 0x3C`, the ribbon's row) - and closes it with twenty zero words; it never
-clears the scratch block, so the words it does not write are the previous
-draw's. The move VM's op `0x13` is its setup op
-([move-vm.md](move-vm.md#draw-kind-4-setup-ops-0x13-0x23-0x42)); the battle
-ground shadow, the field battle-intro ring and Baka Fighter's floor disc call it
-directly ([renderer.md](renderer.md#the-ground-shadow)).
+In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`,
+a **4x uniform scale**. A port that offsets the corners in world space under
+the same scaled MVP applies the 4x to the half-extents as well: a 32-texel
+puff reaches 1280 view units either side instead of 320. The shared correction
+is `effect_billboard::world_half_extents(size, view_scale)`
+(`crates/render-kernels`, re-exported by `engine-ui`); the native window
+passes its `fx_scale` into `effect_sprite_corners`.
 
-Its arguments split as `count = packed & 0xFF`, `phase = packed >> 8` (a logical
-shift), and from `src`: the two colour words `+0x04` / `+0x08` (inner / outer),
-a UV rectangle `+0x0C..+0x12`, tpage / CLUT `+0x14` / `+0x16`, the inner / outer
-radius `+0x18` / `+0x1A` (negative clamped to zero), the inner / outer height
-`+0x1C` / `+0x1E`, and two in-plane scales `+0x20` / `+0x22` (`0x1000` = 1). The
-mode word splits three ways:
+### A battle billboard's centre is Y-flipped
 
-- `mode & 3` is the **plane** - which vertex component each of the builder's
-  three axes lands in: `0` XY-Z, `1` XZ-Y, `2` ZY-X, `3` ZX-Y
-  (`0x800283D8..0x800284A0`). Mode `1` lays a ring on the ground.
-- `(mode >> 3) & 0xF` is the **shape**, through the jump table at `0x80010BC0`
-  (shapes `0 / 4 / 5 / 6 / 7` share one setup arm, `1 / 3` another, `2` a
-  third). A shape `>= 8` skips the table and reads stack slots no path wrote.
-- `mode >> 8` is the **texture mode**, read only for shape `0`: every other
-  shape masks the mode to its low byte first (`0x800281F0`). Zero samples the
-  ribbon's fixed 2x2 patch (page `0x001F`, CLUT `0x7F84`, UVs
-  `(0..2, 0xF0..0xF2)`); `1..4` subdivide each column's quad four ways along
-  the radius and map `src`'s rectangle onto it (`1` / `4` polar, `2` / `3` the
-  rectangle as-is or turned), interpolating both the UVs and the corner
-  colours across the four. A tpage word carrying `0x4000` selects one of the
-  two 15-bit display pages (`0x100` / `0x110`, picked by the halfword at
-  `0x8007B74C`) - the frame itself as the texture.
+The pool integrates in raw PSX units, **Y down**: a spark climbing off the
+floor runs negative. The battle view-projection both hosts share
+(`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that
+cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up
+input. A billboard has no model matrix, so its centre is flipped before the
+corners are built (`effect_billboard::battle_billboard_centre`, called by both
+hosts). Without it, a spark rising past an actor's head projects the same
+height below its feet; dust at `y = 0` reads the same either way. The field
+cameras compose the world flip themselves and take the raw position.
 
-| shape | geometry |
+## Spawn sources
+
+### Catalog load
+
+The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via
+`EffectCatalog::from_efect_dat_bytes` (the 2-pack parser, see
+[`formats/effect.md`](../formats/effect.md)) and stays resident on
+`World::effect_catalog` across field / battle transitions. It carries the
+pack1 effect scripts and per-child descriptors, the pack0 animation batches,
+and the inline sprite atlas.
+
+### Producers
+
+| Producer | Retail | Port |
+|---|---|---|
+| Animation effect arm | `FUN_8004998C` at `0x8004A634..0x8004A81C` calls `FUN_801DFDF0(id, sp+0x10, actor+0x46)` (`ghidra/scripts/funcs/8004998c.txt`) | `BattleActionHost::ui_element` spawns at the acting actor's battle seat with its `facing_angle` |
+| Per-action effect-script walk | `FUN_801DEA50` -> `FUN_801DFDF0` ([`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)) | `World::route_battle_effect_spawns` -> `World::try_spawn_effect` |
+| Move-power effect-id lists | `+0x12` / `+0x16` lists dispatched by `FUN_801e09f8` | `World::spawn_move_fx` |
+| Per-move effect-list spawner | `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), 5-byte-stride list at `0x801F6470` | `engine-battle-vm::battle_cue_group::expand_cue_group` + `cue_group_for` |
+
+- **A spawn is seated at an actor, never the world origin.** The caller copies the owning actor's world position (`actor+0x34..0x3B` via `lwl` / `lwr`), offsets it by the per-effect planar legs rotated through the facing's sin / cos LUTs, and passes the facing halfword (`actor+0x46`) as the spawn angle.
+- **The effect-script walk has two record forms.** Its `0x80`-flagged records route into the pool. Its table-form records stage a `0x801F6324` prototype scene via `World::spawn_action_table_effect`: a small move-VM scene-graph in `World::casting.active_action_fx`, ticked by `World::tick_move_fx` and drawn through `World::active_move_fx_part_draws`.
+- **The last two producers share the bit-7 multiplex** ([`effect.md`](../formats/effect.md#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex)). The cue-group expander is reached from the action SM's item / spirit applier band; each expanded cue routes into `World::try_spawn_effect` / `World::spawn_action_table_effect` and its SFX byte into `World::audio.battle_sfx_cues`.
+- **`ui_element` raises do not spawn here.** `FUN_801D8DE8` is the HUD screen-element spawner and calls no effect routine ([`battle-action-helpers.md`](battle-action-helpers.md#fun_801dfdf8---effect-bundle-public-spawn-api)).
+
+### Effect ids have no names
+
+No string table maps an id to "fireball / thunder / heal". To name one, trace
+the call sites of `FUN_801DFDF0` in damage / battle-action code: each caller
+passes a literal byte for `effect_id`, which correlates with the action that
+triggered it (a Tactical Arts move, an item use, a spell cast).
+
+## Engine port
+
+| Retail | Port |
 |---|---|
-| `0` | a ring of `count` columns (at least three), an inner and an outer vertex each; an inner radius of zero makes a disc. `phase == 0` turns the ring half a column; `0 < phase < count` draws an open arc of `phase` quads over `count + 1` columns; otherwise the ring closes onto column 0. |
-| `1` | per column three inner / outer pairs at `+0`, `+phase`, `+2 phase`, plus a seventh vertex extrapolated half a step past the middle pair's outer one; three quads a column. |
-| `2` | per column three pairs; vertex 2 is moved to the origin and each column fans one quad to it. |
-| `3` | shape `1`'s vertices with two of its three quads degenerate. |
-| `4` | a ring whose radius each column jitters by `rand()` (`FUN_80056798`, three calls a column). |
-| `5` | as `4`, shifted so the first column's inner vertex sits at the origin, the height ramping from `+0x1C` to `+0x1E` across the columns. |
-| `6` | a ring whose outer vertex keeps the inner one's second coordinate. |
-| `7` | a ring whose inner vertices are offset so the column at angle `-phase - 0x800` pivots at the origin. |
+| Init `FUN_801DE914` | `Pool::init_head` |
+| Spawn `FUN_801DFDF0` | `Pool::spawn`, `Pool::spawn_by_ui_id` |
+| Walker pass 1 | `Pool::tick_retail` (master cadence + child anim / motion walk, with the `frame_skip` catch-up factor) |
+| Walker pass 2 | `Pool::child_billboards` (brightness envelope, atlas resolution, `sprite_scale` sizing, UV-mirror corner order) |
+| `rand()`, ids `4` / `0x13` side call | `EffectHost::next_random`, `is_summon_effect` / `handle_summon` |
 
-Walking all seven actor-list heads (`0x8007C34C..0x8007C368`) of the 98
-catalogued mednafen states finds 226 live default-arm nodes (and 122 sprite-arm
-nodes, no ribbon). They use modes `0x00`, `0x01`, `0x08`, `0x10`, `0x18` and
-`0x100` - shapes `0..3` and texture mode `1` - and none of shapes `4..7`. On the
-disc side, staging every slot-B image (`0903..0966`) through the port's summon
-spawner puts default-arm nodes in 61 of the 64 - all but PROT 0926, 0939 and
-0952 - with 3 to 42 live at once (42 in PROT 0923), where 15 of the 64 reach the
-sprite arm. This arm, not the sprite arm, is the bulk of the summons'
-procedural geometry (`effect_sprite_arm_carriers_real.rs` reports both).
+The GTE projection `FUN_800195A8` and the ordering-table insert stay with the
+renderer. `World::tick_effects` runs one `tick_retail` sweep per retail logic
+frame (`World::tick` calls it on the retail-frame sub-clock), and
+`World::active_effect_sprites` maps `child_billboards` one-for-one. This
+walker is the engine's only per-frame effect path.
 
-Port: `engine-core::effect_default_arm`. `build` transliterates the routine
-onto a byte buffer - every word retail stores, at the offset it stores it, with
-a record of which bytes it wrote - and `decode` reads the object back the way
-the TMD renderer reads it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs`
-holds it to the scratch blocks the save library captured: every one of the
-states' ground-shadow builds (`+0x62400`) reproduces byte for byte, whole or up
-to a later overwrite of its last four packets, and the dispatcher's block
-(`+0x5DC00`) reproduces for modes `0x0`, `0x1`, `0x10` and `0x100` from a live
-node's own arguments, and for `0x8` / `0x18` once the radii, heights and phase
-are read off the block itself - the part tick steps those channels after the
-draw, so a captured node has already moved one frame past the build it left. Both hosts draw every live default-arm
-node of the summon, move-FX, effect-script and field ambient parts through
-`World::active_effect_kind4_draws`, beside the ribbons and sprite-arm quads.
+Two deliberate port-side deltas, both invisible to retail behaviour: the
+retirement overrun is cut at retirement, and `master.field_14` (a retail dead
+lane) is bumped once per call per active master as an age counter for
+age-based render fades.
 
-## Lifetime + render bridge (engine port)
+### Render snapshots
 
-The algebra above is executed by `Pool::tick_retail` (pass 1: master spawn
-cadence over the catalog's pack1 records + child anim/motion walk over the
-pack0 frames, with the `frame_skip` catch-up factor) and `Pool::child_billboards`
-(pass 2: per-child brightness envelope, atlas resolution off the current
-frame, `sprite_scale` sizing, and the random UV-mirror corner order - the GTE
-projection `FUN_800195A8` and the OT insert stay with the renderer). The only
-host callback the faithful walker consumes is `EffectHost::next_random`. Two
-deliberate port-side deltas, both invisible to retail behaviour: the
-retirement-loop overrun is cut at retirement (see the quirk note above), and
-`master.field_14` - a retail dead lane - is bumped once per call per active
-master as an age counter for age-based render fades.
+- `World::active_effect_markers` - one coarse `EffectMarker` per effect still in its spawn phase (origin + age), plus the dev `debug_effects`. For hosts and tests that only need positions.
+- `World::active_effect_sprites` - the per-child billboard view: each child's integrated 16.8 position, its current pack0 frame's atlas rect + `tpage` / `clut`, the pass-2 size, the brightness envelope and the UV-mirror corner order.
 
-This walker is the engine's only per-frame effect path. `engine-core`'s
-`World::tick_effects` runs one `tick_retail` sweep per retail logic frame
-(`World::tick` gates it on the ~60 Hz retail-frame sub-clock, so the 5.3
-wait-counter cadence tracks retail wall-speed from the 100 Hz sim), and
-`World::active_effect_sprites` maps `child_billboards` one-for-one. The
-pre-algebra host-delegating shim (`Pool::tick` +
-`EffectHost::advance_state` / `accumulate_child_motion`, a fixed-lifetime
-countdown) is retired; the dev-only `World::spawn_debug_effect*` helpers
-keep a fixed budget, but they live outside the pool
-(`World::debug_effects`) so the walker never sees them.
+Both hosts draw each `EffectSprite` as a **camera-facing textured quad**: the
+native window through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the
+scene VRAM at the sprite's atlas page / CLUT / UV as a `SceneDraw`), the play
+page through the same shape in `web-viewer::play_battle_fx`.
+
+`World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in
+`play-window`). It is not a retail path; dev spawns keep a fixed budget and
+live outside the pool in `World::debug_effects`, so the walker never sees them.
+
+### The billboard outline is a diagnostic and defaults off on both hosts
+
+Each host carries a **tinted outline** builder: a flat rectangle around the
+quad, faded by animation age. Retail draws no such rectangle. The strips are
+untextured, carry no ABE bit and rasterise in the **opaque** pass, and the
+tint law `(80 + 175f, 200f, 255f)` for `f = 1 - age01` is red-dominant
+throughout, so enabled it draws a solid box around every effect sprite. The
+Rim Elm spar (`play-window --scene town01 --battle 4`) carries up to 25 live
+sprites in one frame.
+
+| Host | Builder | Gate | Default |
+|---|---|---|---|
+| native `play-window` | `effect_sprite_line_geometry` (`UploadedLines`) | env `LEGAIA_DIAG_FX=1` | off |
+| browser play page | `play_battle_fx` outline strips (hybrid-flat quads) | `LegaiaRuntime::set_battle_fx_outline(true)` | off |
+
+The gates differ because a WASM module has no process environment to read.
+When changing one, check that the other host reaches the same builder under
+the same condition ([`tooling/host-drift.md`](../tooling/host-drift.md)).
+
+### Reading a faint effect layer
+
+On `play-window --scene town01 --battle 4`, differencing two otherwise
+identical frames with the billboard draw suppressed shows a real in-frame
+delta (up to ~53 per channel, mean ~10 over the puff): spawn, projection,
+texel residency and the blend pass all work. It still does not look like much,
+for two data reasons:
+
+- Every effect the Rim Elm spar fires (`0x01`, `0x05`, `0x06`) resolves through pack0 anim batch `1` to atlas page **`0x66`** = `(384, 0)`, whose texpage bits carry **ABR 3 = `B + 0.25*F`**, under CLUT `0x76C0` = row 475 palette 0, a dark warm-grey ramp topping out at `(184, 144, 112)`. A quarter of a dark grey ramp over a bright tan floor is a few percent.
+- The bright effects are on the other pages. `0x25` = `(320, 0)` and `0x27` = `(448, 0)` are **ABR 1 = `B + F`**, the pages a retail melee-hit-spark capture draws from. They belong to other effect ids (`0x04`, `0x0B..0x0E`, `0x10..0x14`, `0x16`, `0x17`, `0x1C..0x1E`), which the spar's clips never request.
+
+Native diagnostics:
+
+| Env | Effect |
+|---|---|
+| `LEGAIA_DIAG_FX=1` | Logs each live sprite's world position, quad size, page / CLUT, brightness, projected NDC and a VRAM texel-residency verdict |
+| `LEGAIA_DIAG_NOFX=1` | Suppresses the billboard draw so two runs can be differenced |
+| `LEGAIA_DIAG_NOSEMI=1` | Turns the semi-transparency pass off, so a deferred fragment draws opaque instead of vanishing |
 
 ### Battle effects die with the battle
 
 Retail never tears an effect down one by one at a battle's end; it drops the
 whole actor pool. The mode initialiser `FUN_8001DCF8` calls the per-stage init
-`FUN_8001E1B4` (`jal` at `0x8001E020`) on every mode switch - into battle, back
-to the field, into the next scene - and that init re-seeds the 143-slot actor
-free stack (`FUN_800203EC` at `0x8001E324`) and re-pops the seven actor-list
-sentinels (`FUN_80020424` x7, `0x8001E32C..0x8001E364`), each left pointing at
-itself. Every effect actor still on a list - a move-FX part, an effect-script
-table-form record, a cast module's spawn record - is unlinked with no walk
-(`see ghidra/scripts/funcs/8001e1b4.txt`). The `efect.dat` pool needs no reset
-of its own on the way out: its walker is battle-overlay code behind the
-pool-ready byte, and the battle loader re-initialises it on the way in
-(`FUN_801DE914`, stage `0xE`).
+`FUN_8001E1B4` (`jal` at `0x8001E020`) on every mode switch. That init
+re-seeds the 143-slot actor free stack (`FUN_800203EC` at `0x8001E324`) and
+re-pops the seven actor-list sentinels (`FUN_80020424` x7,
+`0x8001E32C..0x8001E364`), each left pointing at itself. Every effect actor
+still on a list - a move-FX part, an effect-script table-form record, a cast
+module's spawn record - is unlinked with no walk (see
+`ghidra/scripts/funcs/8001e1b4.txt`). The `efect.dat` pool needs no reset on
+the way out: its walker is battle-overlay code behind the pool-ready byte, and
+the battle loader re-initialises it on the way in (`FUN_801DE914`, stage
+`0xE`).
 
 The port's `World` outlives every mode switch, and both play hosts draw the
 pool's billboards and the move-VM scene-graphs with no mode test, so it drops
-the same state by name: `World::teardown_battle_effects` runs at battle entry,
-at battle exit (`World::finish_battle`, or `World::resolve_game_over_hold` when
-a wipe holds the frozen frame) and at every scene load
-(`SceneHost::load_scene`). It resets the `efect.dat` pool and every
-battle-scoped member of `World::casting` - the summon / cast-module, move-FX
-and effect-script scene-graphs, the streak block and its trail texpage, the
-cast band's pending requests and stager - keeping only the installed
-cast-effect data pool. `World::battle_effect_residue` names whatever of that is
-still live; the soak harness's `effect_residue` detector and
-`engine-shell/tests/battle_effect_teardown_disc.rs` read it on the first frame
-past each exit and scene load.
+the same state by name:
+
+- `World::teardown_battle_effects` runs at battle entry, at battle exit (`World::finish_battle`, or `World::resolve_game_over_hold` when a wipe holds the frozen frame) and at every scene load (`SceneHost::load_scene`).
+- It resets the `efect.dat` pool and every battle-scoped member of `World::casting`: the summon / cast-module, move-FX and effect-script scene-graphs, the streak block and its trail texpage, the cast band's pending requests and stager. Only the installed cast-effect data pool is kept.
+- `World::battle_effect_residue` names whatever of that is still live. The soak harness's `effect_residue` detector and `engine-shell/tests/battle_effect_teardown_disc.rs` read it on the first frame past each exit and scene load.
 
 One teardown is earlier than the mode switch. The engine stages a cast
 module's spawn records as data and runs its tick body separately
@@ -317,177 +343,299 @@ nothing halts a record the module code would have halted, and many records are
 infinite loops. `World::step_battle` retires that scene when the action SM
 opens the next action (state `0x00`).
 
-### Catalog load
+## Effect textures and models
 
-The runtime effect catalog (PROT 0873 `efect.dat`) loads at scene entry via `EffectCatalog::from_efect_dat_bytes` (the 2-pack parser - see [`formats/effect.md`](../formats/effect.md)), staying resident on `World::effect_catalog` across field/battle transitions. So the effect-script walk's spawn requests (`FUN_801DEA50` → `FUN_801DFDF0`, routed by `World::route_battle_effect_spawns` into `World::try_spawn_effect`) resolve to real effect scripts. The action SM's `ui_element` raises do **not** spawn here: `FUN_801D8DE8` is the HUD screen-element spawner and calls no effect routine ([`battle-action.md`](battle-action-helpers.md#fun_801dfdf8---effect-bundle-public-spawn-api)). The catalog carries the pack1 effect scripts + per-child descriptors, the pack0 animation batches, and the inline sprite atlas.
+The retail `befect_data` block (CDNAME defines `872..875` -> extraction
+entries **870..873**) holds the four battle effect files - `etim.dat` (0870),
+`etmd.dat` (0871), `vdf.dat` (0872), `efect.dat` (0873) - pulled by
+`FUN_800520F0` at raw TOC indices `0x368..0x36B`. The verified
+case -> index -> entry map is in
+[`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data).
 
-A spawn is seated at an **actor**, never at the world origin: the retail spawn caller copies the owning actor's own world position (`actor+0x34..0x3B` via `lwl`/`lwr` into the position buffer), offsets it by the per-effect planar legs rotated through the facing's sin/cos LUTs, and passes the facing halfword (`actor+0x46`) as the spawn angle - `FUN_8004998C`'s effect arm at `0x8004A634..0x8004A81C` calling `FUN_801DFDF0(id, sp+0x10, actor+0x46)` (disassembly; see `ghidra/scripts/funcs/8004998c.txt`). The engine's `BattleActionHost::ui_element` mirrors this by spawning at the acting actor's battle seat with its `facing_angle`.
+### Two effect-texel pools
 
-A second producer feeds the same two spawn seams per battle frame: the per-action **effect-script walk** (`FUN_801DEA50`, see [`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)). Its `0x80`-flagged records route into the pool via `World::try_spawn_effect`; its table-form records stage a `0x801F6324` prototype scene via `World::spawn_action_table_effect` (a small move-VM scene-graph in `World::casting.active_action_fx`, ticked by `World::tick_move_fx` and drawn through `World::active_move_fx_part_draws`).
-
-### Render snapshots
-
-Two render-agnostic seams expose the live pool:
-
-- `World::active_effect_markers` - one coarse `EffectMarker` per effect still in its spawn phase (origin + age), plus the dev `debug_effects`. For hosts/tests that only need effect positions.
-- `World::active_effect_sprites` - the faithful per-child billboard view (the textured-quad path): a one-for-one mapping of `Pool::child_billboards` over the pool's live child slots - each child's integrated 16.8 position, its current pack0 frame's atlas rect + `tpage`/`clut`, the pass-2 sprite sizing (`atlas w/h * sprite_scale >> 8`), the retail brightness envelope, and the random UV-mirror corner order. `FUN_801E0088` pass 2, one GPU sprite primitive per child.
-
-Both hosts draw each `EffectSprite` as a **camera-facing textured quad**: the native window through the VRAM-mesh pipeline (`upload_vram_mesh`, sampling the scene VRAM at the sprite's atlas page/clut/uv as a `SceneDraw`, modulated by the pass-2 brightness with the mirror-resolved UV corner order), the play page through the same shape in `web-viewer::play_battle_fx`.
-
-Each host also carries a **tinted outline** builder - a flat rectangle around the quad, faded by animation age - and on both it is a diagnostic that is **off by default**, because retail draws no such rectangle. See [the outline is a diagnostic](#the-billboard-outline-is-a-diagnostic-and-defaults-off-on-both-hosts).
-
-`World::spawn_debug_effect` seats a synthetic marker by hand (the `E` key in `play-window`); it is not a retail path and lives outside the pool.
-
-#### The billboard outline is a diagnostic, and defaults off on both hosts
-
-The outline predates the battle-entry flame-atlas blit. It existed so a spawn stayed readable when its texels were not resident; with the atlas resident the textured quad draws on its own and the rectangle is only in the way.
-
-It is also not a faint marking. The strips are untextured, carry no ABE bit, and so rasterise in the **opaque** pass, and the tint law `(80 + 175f, 200f, 255f)` for `f = 1 - age01` is red-dominant at every point of a sprite's animation - pale rose at spawn, dark red at the end. What that draws is a solid red-ish box around every effect sprite in a fight; the Rim Elm spar (`play-window --scene town01 --battle 4`) carries up to 25 live sprites in one frame, so it is up to 25 boxes.
-
-The two gates are host-shaped, because a WASM module has no process environment to read:
-
-| host | builder | gate | default |
+| Pool | Contents | Residency | Engine upload |
 |---|---|---|---|
-| native `play-window` | `effect_sprite_line_geometry` (`UploadedLines`) | env `LEGAIA_DIAG_FX=1` | off |
-| browser play page | `play_battle_fx` outline strips (hybrid-flat quads) | `LegaiaRuntime::set_battle_fx_outline(true)` | off |
+| `etim.dat` = extraction 0870 | Three 64x256 4bpp TIMs targeting VRAM `(320,0)` / `(384,0)` / `(448,0)`, CLUT rows 474..476 | **Battle-only**: those columns hold town stage textures during a field scene | `scene::upload_flame_atlas_into_vram` on battle entry, into a throwaway VRAM copy that battle exit discards |
+| `player_data` section 2 (extraction 0874 section 2) | Eight TIMs at `fb_y=256+`; this is `player.lzs` section 2, the field-character texture pack ([`character-mesh.md`](../formats/character-mesh.md#textures-field-form)), not "etim" | **Field-resident** through battle | `scene::upload_effect_textures_into_vram` at scene entry |
 
-This is a worked example of the drift shape in [`tooling/host-drift.md`](../tooling/host-drift.md): the native gate landed on its own, the browser twin kept drawing, and a diff of the gating commit reads as complete because the file it touched is complete. The pairing to check is "does the other host reach the same builder under the same condition", not "was the builder edited".
+- The `fb(320,256)` / `fb(384,256)` pages match a `town01` field capture 256 rows byte-exact, and a mid-cast battle capture byte-matches the `(832..880, 256+)` tiles. The Gimard flame model samples this band (page `(832,256)`, CLUT row 478).
+- The field VRAM-parity oracle uploads image pages only (`upload_clut = false`), since retail uploads the CLUT rows at battle entry.
+- Full byte evidence: [`formats/effect.md`](../formats/effect.md#effect-texels-in-vram---pixel-verified).
 
-#### A battle billboard's centre is Y-flipped
+### Effect-model library
 
-The pool integrates in raw PSX units, **Y down**: a spark climbing off the floor runs negative. The battle view-projection both hosts share (`battle_cam_script::battle_vp`) carries a trailing `scale(1, -1, 1)` that cancels the per-model Y-flip every mesh draw carries, so it consumes Y-up input. A billboard has no model matrix, so its centre is flipped before the corners are built (`engine-ui::effect_billboard::battle_billboard_centre`, called by both hosts). Fed the raw position, a spark rising past an actor's head projected the same height below its feet - the Spirit charge's sparkles drew entirely off the bottom of the frame. Dust at `y = 0` reads the same either way, which is how the inversion survived. The field cameras compose the world flip themselves and take the raw position.
+`engine-core::scene::seed_effect_model_library_from_etmd` reads extraction
+0871 (`etmd.dat`, raw index `0x369`) at scene entry: an uncompressed 30-entry
+`asset::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
+registers all 30 into `World::global_tmd_pool[3..=32]`, the same
+`DAT_8007C018[3..=32]` window retail fills at battle init (`FUN_800520F0` ->
+`FUN_80026B4C`), overwriting the two trailing slots of the field character
+pack exactly as retail's load order does.
 
-#### Battle effect parts morph through `vdf.dat`
-
-The effect-script **table form** (`0x801F6324` prototypes, `World::spawn_action_table_effect`) stages move-VM parts like any other scene-graph. Two things decide whether they show:
-
-- **Their wait timers drain at retail's per-frame rate.** `FUN_80021DF4` subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame, so `WAIT_SET v` holds `v` frames. The scene-graph step `0x400` the summon scenes tick with expired every wait under 128 frames in one tick, so a `0x4F`-frame hold lived three ticks. The table-form scenes tick their waits with the channel delta instead.
-- **A part with op `0x0A` lanes draws morphed.** The lanes index the battle VDF pack `vdf.dat` (PROT 0872): battle init rebuilds the sub-entry table `0x80083E58` from index 0 (a mid-Spirit capture reads the append counter `0x8007B7EC` at the pack's 32 entries and table entry 12 equal to the pack's entry 12). The engine runs the ramp envelope `FUN_80020740` on these parts and both hosts draw `World::morphed_part_tmd` - the Spirit charge's prototypes `0x07` / `0x08` are small rest meshes that entry 12 grows into the aura cone.
-- **The lanes grow at `authored * DAT_1F80037D / 8` per frame.** Op `0x0A` scales each velocity by the rate byte `DAT_1F80037D` (`8`, planted by SCUS at boot), and the envelope adds it times the frame byte `DAT_1F800393` alone. The envelope runs from the part tick's tail (`FUN_800204F8`, `jal` at `0x80022EF4`), which the spawn's own first VM step does not reach, so a lane grows from the frame after the spawn. Both mid-Spirit captures that hold the aura read the lane at exactly `0x66` per elapsed frame (`0x2CA` seven frames in, `0xB28` at twenty-eight), so the cone takes `0x28` frames to open - a capture early in the charge shows it well short of full width.
-- **The model draw applies the part's render scale and colour word.** The draw at `0x8001B160` scales the mesh by `+0x72 / 0x1000` and hands the prim dispatcher the colour word `+0x74` and level `+0x78` (ABE / ABR ORed into every packet, each colour cued toward the word's far colour). The aura's op `0x0C` writes the additive word `0xC9000000` (far colour black) at level `0x1000`, and op `0x0D`'s level rate takes it to `0` over `0x20` frames and back to `0x1000` over the last `0x0B` - a fade in and a fade out.
-  The rates integrate in the part tick's motion block, whose rotation, scale and level channels the engine runs for every summon / move-FX part (`part_motion::level_block`; that is also what spins the cones at op `0x04`'s `0x222` a frame). Both hosts draw every part that is not a plain rest mesh through `World::part_draw_vram_mesh`.
-
-#### The quad half-extent is a view-space quantity, so the battle camera scale must be divided back out
-
-`FUN_800195A8` transforms the sprite **centre** through the GTE camera matrix (`FUN_8003D344`, one `MVMVA`), then forms the four corners by adding the half-extents to that *already-transformed* view-space centre, then resets the rotation matrix to identity with `TRX/TRY/TRZ = 0` before the `RTPT`. The camera matrix therefore multiplies the centre and never touches the half-extents.
-
-In battle that matrix carries retail's base matrix `0x8007BF10` = `16384 * I`, a **4x uniform scale**. A port that offsets the corners in *world* space and draws the quad under the same scaled MVP puts the half-extents through the 4x a second time, so every battle effect sprite comes out exactly `BATTLE_WORLD_SCALE` too large - a 32-texel puff reaching 1280 view units either side instead of 320. The shared correction is `engine-ui::effect_billboard::world_half_extents(size, view_scale)`; the native window passes its `fx_scale` (the same factor it composes into `fx_cam`) into `effect_sprite_corners`.
-
-#### "The spawns fire and nothing appears" is mostly the atlas, not the pipeline
-
-Measured on `play-window --scene town01 --battle 4` by differencing two otherwise byte-identical frames with the billboard draw suppressed: the layer contributes a real, in-frame delta (up to ~53 per channel, mean ~10 over the puff), so the spawn, the projection, the texel residency and the semi-transparent blend pass are all working. What it does *not* look like is a visible effect, for two data reasons worth knowing before re-opening that thread:
-
-- Every effect the Rim Elm spar fires (`0x01`, `0x05`, `0x06`) resolves through pack0 anim batch `1` to atlas page **`0x66`** = `(384, 0)`, whose texpage bits carry **ABR 3 = `B + 0.25*F`**, under CLUT `0x76C0` = row 475 palette 0 - a dark warm-grey ramp topping out at `(184, 144, 112)`. A quarter of a dark grey ramp added over a bright tan arena floor is a few percent.
-- The bright effects are the other pages. `0x25` = `(320, 0)` and `0x27` = `(448, 0)` are **ABR 1 = `B + F`**, and those are the pages a retail melee-hit-spark capture shows the spark drawing from. They belong to other effect ids (`0x04`, `0x0B..0x0E`, `0x10..0x14`, `0x16`, `0x17`, `0x1C..0x1E`), which the spar's clips never request.
-
-So a battle whose only live effect is the walk-clip dust reads as an empty effect layer even when the layer is correct. `LEGAIA_DIAG_FX=1` on the native window logs each live sprite's world position, quad size, page/CLUT, brightness, projected NDC and a VRAM texel-residency verdict, which separates "behind the eye" / "off-screen" / "texels absent" / "drawing but faint" in one line. `LEGAIA_DIAG_NOFX=1` suppresses the billboard draw so two runs can be differenced, and `LEGAIA_DIAG_NOSEMI=1` turns the semi-transparency blend pass off so a deferred fragment draws opaque instead of vanishing.
-
-**Two effect-texel pools, both pixel-verified.** The retail `befect_data` block (CDNAME defines `872..875` → extraction entries **870..873**) holds the four battle effect files - `etim.dat` (0870), `etmd.dat` (0871), `vdf.dat` (0872), `efect.dat` (0873) - pulled by `FUN_800520F0` at raw TOC indices `0x368..0x36B`; see the verified case→index→entry map in [`formats/effect.md`](../formats/effect.md#battle-effect-cluster-befect_data). The texels effects sample come from two pools:
-
-- **`etim.dat` = extraction 0870** (three 64×256 4bpp TIMs targeting VRAM `(320,0)`/`(384,0)`/`(448,0)`, CLUTs rows 474..476) is byte-verified loaded at battle and is **battle-only** - those columns hold town stage textures during a field scene, so uploading it at field entry would clobber field rendering. The engine uploads it on **battle entry** (`scene::upload_flame_atlas_into_vram`, called from the play-window battle-render setup into a throwaway VRAM copy that battle exit discards).
-- **The `player_data` §2 band (extraction 0874 §2** - previously mislabeled "etim" here; it is `player.lzs` section 2, the field-character texture pack, see [`formats/character-mesh.md`](../formats/character-mesh.md#textures-field-form)**)**: eight TIMs at `fb_y=256+` whose pages are **field-resident** through battle (the `fb(320,256)`/`fb(384,256)` pages match a `town01` field capture 256 rows byte-exact, and a mid-cast battle capture byte-matches the `(832..880, 256+)` tiles). The Gimard flame model samples *this* band (page `(832,256)`, CLUT row 478). The engine uploads it at scene entry (`scene::upload_effect_textures_into_vram`); the field VRAM-parity oracle uploads image-pages-only (`upload_clut = false`) since retail uploads the CLUT rows at battle entry.
-
-Full byte evidence: [`formats/effect.md` § Effect texels in VRAM](../formats/effect.md#effect-texels-in-vram---pixel-verified).
-
-The **3D-model render path** is wired: `World::active_effect_models` snapshots each dev-spawned model effect (`EffectModel` = global-TMD-pool index + world position + age, from the pool-external `World::debug_effects` exerciser - the production effect-id → model selection is the move/art-VM path, `World::spawn_move_fx`), and the native host (`play-window`) builds a textured `legaia_tmd` VRAM mesh for it through the standard mesh pipeline, drawing it at the effect origin with the `etim` texels resident.
-
-**The real effect-model library (extraction 0871, `etmd.dat`, raw index `0x369`) is loaded.**
-`engine-core::scene::seed_effect_model_library_from_etmd` reads entry 0871 (an
-uncompressed 30-entry `asset::pack` of Legaia TMDs spanning the entry's
-*extended* footprint) at scene entry and registers all 30 into
-`World::global_tmd_pool[3..=32]` - the same `DAT_8007C018[3..=32]` window
-retail fills at battle init (`FUN_800520F0` → `FUN_80026B4C`), overwriting the
-two trailing slots of the field character pack exactly as retail's load order
-does. Gimard's *Tail Fire* is `GIMARD_TAIL_FIRE_MODEL_INDEX = 26` (pack entry
-23); the `F`-key dev spawn in `play-window` draws it from the loaded library,
+Gimard's *Tail Fire* is `GIMARD_TAIL_FIRE_MODEL_INDEX = 26` (pack entry 23).
+The `F`-key dev spawn in `play-window` draws it from the loaded library,
 falling back to the field-character-pack preview mesh
-(`ETMD_TAIL_FIRE_MODEL_INDEX`, the flame-like auxiliary TMD of extraction
-0874 §0) only when the library isn't resident.
+(`ETMD_TAIL_FIRE_MODEL_INDEX`, the flame-like auxiliary TMD of extraction 0874
+section 0) only when the library is not resident.
 
-**Summon animation - render path RESOLVED (live trace); CLUT cycling falsified.** The model geometry is retail-accurate and the static flame renders with the correct baked row-478 CLUT.
+`World::active_effect_models` snapshots each dev-spawned model effect
+(`EffectModel` = global-TMD-pool index + world position + age, from
+`World::debug_effects`); `play-window` builds a textured `legaia_tmd` VRAM
+mesh for it and draws it at the effect origin. The production effect-id ->
+model selection is the move / art-VM path, `World::spawn_move_fx`.
 
-- **The flame motion is geometric, not palette.** Two animation-distinct Tail Fire frames have a **byte-identical** CLUT band (VRAM rows 470..499) while the framebuffer differs ~21% (this **falsifies** the earlier "fire flicker = CLUT cycling" reading).
-- **A live PCSX-Redux trace of a player Gimard *Burning Attack* cast pinned what draws the summon.** Across all three phases `FUN_801F7088` fired **0×**, the move VM `FUN_80023070` stayed at noise level, and the **battle per-actor draw `FUN_80048A08`** ran in exact lockstep with the per-object rigid-TRS keyframe decoder `FUN_8004998C` → cluster-A `FUN_80043390`.
-- **The draw's rate is the live actor count, not a large per-frame number.** Re-measured with `scripts/pcsx-redux/autorun_enemy_move_render_path.lua` on the catalogued `gimard_burning_attack` state (400 vsyncs): `FUN_80048A08` = 213, `FUN_8004998C` = 213, `FUN_80023070` = 11, `FUN_801F7088` = 0, and the draw never exceeds **2** per rendered frame - Vahn solo against one monster. The same probe reads 6 per frame in a 3-vs-3 (`rim_elm_queen_bee_battle`) and 2 in a 1-vs-1 (`rim_elm_gimard_victory`), i.e. one call per live actor. The "35-64×/frame" figure an earlier revision carried for this address does not reproduce on its own state.
-- **So the player summon is posed exactly like an enemy monster body** (per-object rigid TRS keyframes), and the faithful render is the **battle TRS-keyframe draw already ported in `engine-vm/anim_vm.rs`** (`FUN_80048A08` / `FUN_8004998C`) - *not* a move-VM scene-graph and *not* `FUN_801F7088` (which is the world-map top-view tile renderer aliasing the same `0x801Fxxxx` band).
-- **The summon stager overlays (extraction PROT 903..913) *do* contain real move-VM part records** (recovered under the corrected link base `0x801F69D8` by `legaia_asset::summon_overlay` - superseding the wrong-link-base "PROT 905 has zero `jal 0x80023070` → no move VM" reading, where the `jal` actually lives in the SCUS stager `FUN_80021B04`, not inside the overlay), and the engine drives them as a **stand-in** (`summon::SummonScene`); but the live trace shows that scene-graph is not the player summon's per-frame render path.
-- **The enemy move is a different move, and it is settled.** The player summon `0x81` performs *Burning Attack*; the enemy Gimard's boss move is *Tail Fire*, spell id `0x27` in the SCUS spell table. It seats the move-FX module PROT 0900 in slot B and renders as a single move-VM part-actor in `DAT_801C90F0` ticked by `FUN_80021DF4` → `FUN_80023070` - the overlay/move-VM path, not the TRS one. See [`battle-action.md`](battle-action-helpers.md#enemy-fire-tail---move-vm-part-not-the-widget-path). The tick chain itself is measurable in any battle: in both captures above `FUN_80023070`'s per-frame hits equal the part pool's live-slot count, with `FUN_80021DF4` 1:1 beside it.
+## The three render-mode-4 emitters, and which one the disc uses
 
-See [`battle-action.md`](battle-action-helpers.md#seru-magic-summon-overlay-dispatch) and the [`re-settled-threads.md`](../reference/re-settled-threads.md) "Seru-magic summon visual" row for the full reconciliation.
+The pool's quads are not the only primitive path an effect actor can take. The
+per-actor render dispatcher `FUN_8001ADA4` switches on `actor[+0x56]` (loaded
+at `0x8001AE60`), and its case `4` - multi-target - picks one of three
+emitters off the separate flag halfword `actor[+0x9E]`:
 
-This is distinct from the 2D billboard path here:
+| `+0x9E` bits | Emitter | Builds | Move-VM setup op |
+|---|---|---|---|
+| `0x4000` | `FUN_8002A5A4` (SCUS) | one textured quad | `0x23` (arm `0x800237D8`) |
+| `0x2000` | `FUN_801CFA48` (battle overlay) | random-walk **ribbon**: lightning bolts, beams, whips | `0x42` (arm `0x80023F94`) |
+| `& 0x6000 == 0` | `FUN_80028158` (SCUS) | ring / disc / fan family | `0x13` |
 
-- `World::active_effect_sprites` builds billboards from the `efect.dat` atlas. An earlier reading held that its `0x7680` field was a tpage sampling VRAM **page (0,0), 8bpp** - falsified by the pass-2 consumer.
-- That `0x7680` is the atlas entry's **CLUT**, not its tpage - the `+4`/`+6` fields are CLUT (u16) / tpage (byte), the reverse of an earlier reading (the emit at `~0x801E0980` writes `atlas[4..5]` into the primitive's CLUT field and `atlas[6]` into its tpage field). `0x7680` decodes as CBA fb `(0,474)`, an effect-CLUT row, *not* page `(0,0)`.
-- Confirmed from a melee hit-spark battle capture: no prim samples page (0,0)/8bpp/`0x7680`, and the spark draws as textured quads sampling the loaded effect pages (PROT 870 flame atlas `(320,0)`/`(448,0)`, effect-band CLUTs).
-- The engine's `SpriteAtlasEntry` reads the fields in the correct order, so `active_effect_sprites` yields the real effect page + CLUT and the billboards sample the resident PROT 870 / `etim` texels. The faithful per-frame cadence ([pass-1 algebra](#the-extracted-pass-1-state-algebra)) is executed by `Pool::tick_retail`, with the pass-2 computation exposed as `Pool::child_billboards` - and the `engine-core` snapshot `active_effect_sprites` maps those live child slots directly (the earlier uniform-loop stand-in is gone).
+The dispatcher hands the emitter `src = actor + 0x9C`, so the emitter's
+"record" is the actor. The selector and the draw kind are written by the
+**move VM**: op `0x42` sets `actor[+0x56] = 4`, `+0x5A = 2` and
+`+0x9E = op[1] | 0x2000` (`ori 0x2000` at `0x80023FBC`, `sh v0,0x1e(s1)` at
+`0x80023FC0`, where `s1 = actor + 0x80` from `addiu s1,s2,0x80` at
+`0x80023088`), and fills the ribbon's inputs: `+0x9C`, `+0xC8`,
+`+0xB4..+0xBA`, `+0xA8`, and two packed colour words at `+0xA0` / `+0xA4`.
+Operand detail:
+[move-vm.md](move-vm.md#draw-kind-4-setup-ops-0x13-0x23-0x42).
 
-### The floating value readout rides the same atlas
+**All three arms carry shipped content.**
 
-The numeral a landed hit throws is not an effect-pool child, but it samples the
-same texture page: `etim.dat`'s third TIM, page `(448, 0)`, through the
+- Op `0x42` appears five times in the disc's move programs, all in slot-B cast / summon images (PROT 0923, 0934 twice, 0957, 0964), and nowhere in the PROT 0898 move-FX prototypes or the field stager records.
+- The 97 catalogued battle states hold 188 render-mode-4 nodes: 128 on the default emitter, 60 on the `0x4000` sprite arm, no live ribbon.
+- Walking all seven actor-list heads (`0x8007C34C..0x8007C368`) of the 98 catalogued mednafen states finds 226 live default-arm nodes and 122 sprite-arm nodes, no ribbon.
+- Staging every slot-B image (`0903..0966`) through the port's summon spawner puts default-arm nodes in 61 of the 64 (all but PROT 0926, 0939 and 0952), 3 to 42 live at once (42 in PROT 0923); 15 of the 64 reach the sprite arm. The default arm is the bulk of the summons' procedural geometry (`effect_sprite_arm_carriers_real.rs` reports both).
+
+Both hosts draw every live kind-4 node of the summon, move-FX, effect-script
+and field ambient parts through `World::active_effect_kind4_draws`, composed
+like a mesh part by the native part pass and the browser play page's battle
+and field FX frames.
+
+### The ribbon's draw
+
+The emitter draws nothing itself. It writes a **Legaia TMD object** into a
+scratch buffer (`*(0x8007B85C) + 0x5DC00`):
+
+- the object header at `out + 0xC` (vertex top `out + 0x28`, `(steps + 2) * 6` vertices, no normals, then the primitive block of `steps * 6` primitives);
+- the step vertices;
+- one primitive group: `count = steps * 6`, flags `0x26` (the baked-colour `GT4` row), `ilen = 9`, mode `0x3C` (`0x801D000C..0x801D0024`).
+
+The render dispatcher then stores `out + 0xC` into every slot of the actor's
+model list `actor[+0x44]` (`0x8001B08C..0x8001B0B4`), so the ribbon is drawn
+as the actor's own model through the ordinary TMD path.
+
+Each step contributes six packets joining its six vertices to the next step's:
+
+| Packets | Span | Colour |
+|---|---|---|
+| core strip, stored **twice** | the `±1` pair | core colour `src[+4]` |
+| two inner flares | out to the `±2` pair | core to flare (`src[+8]`) |
+| two outer fringes | out to the `±8` pair | flare to black |
+
+Every packet samples the same 2x2 texel patch, UVs `(0..2, 0xF0..0xF2)` in
+texture page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84`
+(`(64, 510)`), and the chain ends in twenty zero words.
+
+Port: `engine-effects::effect_ribbon` (re-exported from `legaia_engine_core`).
+`World::active_effect_ribbons` rebuilds each live ribbon node's mesh every
+frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923). Ozma
+(`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
+not staged as scenes by the engine.
+
+### The sprite arm's draw
+
+The `0x4000` arm (`jal 0x8002A5A4` at `0x8001B0E8`) builds one textured quad
+from the node's `+0x9C` block into the same scratch buffer. Case 4 then falls
+into the ordinary model draw at `0x8001B160`, so the quad is drawn like a mesh
+part:
+
+- scaled by `+0x72 / 0x1000` when that is not `0x1000` (`0x8001B240..0x8001B2C4`);
+- turned by the rotation banks;
+- handed to the prim dispatcher with the colour word `+0x74` and level `+0x78` (ABE and ABR ORed into the packet, the colour depth-cued toward the word's far colour).
+
+Its builder is SCUS code, so unlike the ribbon it draws in every mode.
+
+**The scale is seated by the spawn, not the record.** `FUN_80021B04` stores
+its fourth argument at `+0x72` (`sh s4,0x72(s0)` at `0x80021DAC`) before the
+part's first move-VM run, and the pool wrapper `FUN_80050ED4` forwards its own
+`$a3` unchanged. Nearly every seater passes `0x1000`: the battle stagers of
+the slot-B band (`0903..0966`) and PROT 0898's effect-prototype spawns load
+`li a3,0x1000`, as do the two ambient seaters. A few calls pass another
+immediate (`0x400`, `0x800`, `0x2000`) or forward a parent's `+0x72`. The
+engine seats every staged part at `0x1000` (`summon::SPAWN_RENDER_SCALE`, the
+ambient install likewise); its part set is keyed by record rather than by
+call, so those per-call scales are not carried.
+
+Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
+into a one-quad mesh. The quad geometry is
+`engine-minigames::baka_impact_fx::sprite_arm_quad`, the one Baka Fighter's
+impact flash draws through.
+`crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports the
+slot-B images whose programs reach the arm and pins that each lands on the
+draw list as one quad.
+
+### The default arm's draw
+
+With neither bit set, case 4 calls `FUN_80028158(out, +0x9E, (s16)+0x9C +
+(((s16)+0xC8 >> 3) << 8), actor + 0x9C)` (`0x8001B128..0x8001B15C`) and falls
+into the same model draw as the sprite arm. The builder writes a Legaia TMD
+object at `out + 0xC` - no normals, one `GT4` group (`flags 0x26`, `ilen 9`,
+`mode 0x3C`, the ribbon's row) - and closes it with twenty zero words. It
+never clears the scratch block, so the words it does not write are the
+previous draw's.
+
+Besides move-VM op `0x13`, three callers reach it directly: the battle ground
+shadow, the field battle-intro ring and Baka Fighter's floor disc
+([renderer.md](renderer.md#the-ground-shadow)).
+
+**Arguments.** `count = packed & 0xFF`, `phase = packed >> 8` (a logical
+shift). From `src`:
+
+| `src` offset | Field |
+|---|---|
+| `+0x04` / `+0x08` | inner / outer colour words |
+| `+0x0C..+0x12` | UV rectangle |
+| `+0x14` / `+0x16` | tpage / CLUT |
+| `+0x18` / `+0x1A` | inner / outer radius (negative clamped to zero) |
+| `+0x1C` / `+0x1E` | inner / outer height |
+| `+0x20` / `+0x22` | two in-plane scales (`0x1000` = 1) |
+
+**The mode word splits three ways.**
+
+- `mode & 3` is the **plane**: which vertex component each of the builder's three axes lands in. `0` XY-Z, `1` XZ-Y, `2` ZY-X, `3` ZX-Y (`0x800283D8..0x800284A0`). Mode `1` lays a ring on the ground.
+- `(mode >> 3) & 0xF` is the **shape**, through the jump table at `0x80010BC0` (shapes `0 / 4 / 5 / 6 / 7` share one setup arm, `1 / 3` another, `2` a third). A shape `>= 8` skips the table and reads stack slots no path wrote.
+- `mode >> 8` is the **texture mode**, read only for shape `0`: every other shape masks the mode to its low byte first (`0x800281F0`).
+
+Texture modes:
+
+| Value | Sampling |
+|---|---|
+| `0` | The ribbon's fixed 2x2 patch (page `0x001F`, CLUT `0x7F84`, UVs `(0..2, 0xF0..0xF2)`) |
+| `1` / `4` | Each column's quad subdivided four ways along the radius, `src`'s rectangle mapped polar |
+| `2` / `3` | Same subdivision, the rectangle as-is or turned |
+
+Modes `1..4` interpolate both the UVs and the corner colours across the four
+sub-quads. A tpage word carrying `0x4000` selects one of the two 15-bit
+display pages (`0x100` / `0x110`, picked by the halfword at `0x8007B74C`): the
+frame itself as the texture.
+
+| Shape | Geometry |
+|---|---|
+| `0` | A ring of `count` columns (at least three), an inner and an outer vertex each; an inner radius of zero makes a disc. `phase == 0` turns the ring half a column; `0 < phase < count` draws an open arc of `phase` quads over `count + 1` columns; otherwise the ring closes onto column 0. |
+| `1` | Per column three inner / outer pairs at `+0`, `+phase`, `+2 phase`, plus a seventh vertex extrapolated half a step past the middle pair's outer one; three quads a column. |
+| `2` | Per column three pairs; vertex 2 is moved to the origin and each column fans one quad to it. |
+| `3` | Shape `1`'s vertices with two of its three quads degenerate. |
+| `4` | A ring whose radius each column jitters by `rand()` (`FUN_80056798`, three calls a column). |
+| `5` | As `4`, shifted so the first column's inner vertex sits at the origin, the height ramping from `+0x1C` to `+0x1E` across the columns. |
+| `6` | A ring whose outer vertex keeps the inner one's second coordinate. |
+| `7` | A ring whose inner vertices are offset so the column at angle `-phase - 0x800` pivots at the origin. |
+
+The live default-arm nodes in the catalogued states use modes `0x00`, `0x01`,
+`0x08`, `0x10`, `0x18` and `0x100` - shapes `0..3` and texture mode `1` - and
+none of shapes `4..7`.
+
+**Port.** `engine-effects::effect_default_arm` (re-exported from
+`engine-core`). `build` transliterates the routine onto a byte buffer - every
+word retail stores, at the offset it stores it, with a record of which bytes
+it wrote - and `decode` reads the object back the way the TMD renderer reads
+it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs` holds it
+to the scratch blocks the save library captured:
+
+- every ground-shadow build (`+0x62400`) reproduces byte for byte, whole or up to a later overwrite of its last four packets;
+- the dispatcher's block (`+0x5DC00`) reproduces for modes `0x0`, `0x1`, `0x10` and `0x100` from a live node's own arguments;
+- modes `0x8` / `0x18` reproduce once the radii, heights and phase are read off the block itself. The part tick steps those channels after the draw, so a captured node has already moved one frame past the build it left.
+
+## Battle effect parts morph through `vdf.dat`
+
+The effect-script **table form** (`0x801F6324` prototypes,
+`World::spawn_action_table_effect`) stages move-VM parts like any other
+scene-graph. Four things decide how they show:
+
+- **Wait timers drain at retail's per-frame rate.** `FUN_80021DF4` subtracts `DAT_1F800393 * DAT_1F80037D` from `+0x54` per frame, so `WAIT_SET v` holds `v` frames. The table-form scenes tick their waits with that channel delta, not the `0x400` scene-graph step the summon scenes use (under which a `0x4F`-frame hold lasts three ticks).
+- **A part with op `0x0A` lanes draws morphed.** The lanes index the battle VDF pack `vdf.dat` (PROT 0872): battle init rebuilds the sub-entry table `0x80083E58` from index 0. A mid-Spirit capture reads the append counter `0x8007B7EC` at the pack's 32 entries and table entry 12 equal to the pack's entry 12. The engine runs the ramp envelope `FUN_80020740` on these parts and both hosts draw `World::morphed_part_tmd`. The Spirit charge's prototypes `0x07` / `0x08` are small rest meshes that entry 12 grows into the aura cone.
+- **The lanes grow at `authored * DAT_1F80037D / 8` per frame.** Op `0x0A` scales each velocity by the rate byte `DAT_1F80037D` (`8`, planted by SCUS at boot), and the envelope adds it times the frame byte `DAT_1F800393` alone. The envelope runs from the part tick's tail (`FUN_800204F8`, `jal` at `0x80022EF4`), which the spawn's own first VM step does not reach, so a lane grows from the frame after the spawn. Both mid-Spirit captures that hold the aura read the lane at exactly `0x66` per elapsed frame (`0x2CA` seven frames in, `0xB28` at twenty-eight), so the cone takes `0x28` frames to open.
+- **The model draw applies the part's render scale and colour word.** The draw at `0x8001B160` scales the mesh by `+0x72 / 0x1000` and hands the prim dispatcher the colour word `+0x74` and level `+0x78` (ABE / ABR ORed into every packet, each colour cued toward the word's far colour). The aura's op `0x0C` writes the additive word `0xC9000000` (far colour black) at level `0x1000`; op `0x0D`'s level rate takes it to `0` over `0x20` frames and back to `0x1000` over the last `0x0B` - a fade in and a fade out.
+
+The rates integrate in the part tick's motion block, whose rotation, scale and
+level channels the engine runs for every summon / move-FX part
+(`engine-effects::part_motion::level_block`; that is also what spins the cones
+at op `0x04`'s `0x222` a frame). Both hosts draw every part that is not a
+plain rest mesh through `World::part_draw_vram_mesh`.
+
+## What draws a summon
+
+The 2D pool above is not what draws a Seru-magic summon, and neither is a
+move-VM scene-graph.
+
+- **The player summon is posed like an enemy monster body.** A live PCSX-Redux trace of a player Gimard *Burning Attack* cast shows the **battle per-actor draw `FUN_80048A08`** in exact lockstep with the per-object rigid-TRS keyframe decoder `FUN_8004998C` -> cluster-A `FUN_80043390`. The faithful render is the battle TRS-keyframe draw ported in `engine-vm/anim_vm.rs`.
+- **Measured rates.** `scripts/pcsx-redux/autorun_enemy_move_render_path.lua` on the catalogued `gimard_burning_attack` state (400 vsyncs): `FUN_80048A08` = 213, `FUN_8004998C` = 213, `FUN_80023070` = 11, `FUN_801F7088` = 0. The draw never exceeds **2** per rendered frame (Vahn solo against one monster); the same probe reads 6 per frame in a 3-vs-3 (`rim_elm_queen_bee_battle`) and 2 in a 1-vs-1 (`rim_elm_gimard_victory`): one call per live actor.
+- **Not `FUN_801F7088`.** That address is the world-map top-view tile renderer aliasing the same `0x801Fxxxx` band.
+- **The flame motion is geometric, not palette.** Two animation-distinct Tail Fire frames have a **byte-identical** CLUT band (VRAM rows 470..499) while the framebuffer differs ~21%. The static flame renders with the baked row-478 CLUT.
+- **The stager overlays hold real move-VM part records.** Extraction PROT 903..913, recovered under the link base `0x801F69D8` by `legaia_asset::summon_overlay`. The `jal 0x80023070` that runs them lives in the SCUS stager `FUN_80021B04`, not inside the overlay. The engine drives them as a **stand-in** (`summon::SummonScene`).
+- **The enemy move is a different move.** The player summon `0x81` performs *Burning Attack*; the enemy Gimard's boss move is *Tail Fire*, spell id `0x27` in the SCUS spell table. It seats the move-FX module PROT 0900 in slot B and renders as a single move-VM part actor in `DAT_801C90F0` ticked by `FUN_80021DF4` -> `FUN_80023070`. In both captures above `FUN_80023070`'s per-frame hits equal the part pool's live-slot count, with `FUN_80021DF4` 1:1 beside it. See [`battle-action-helpers.md`](battle-action-helpers.md#enemy-fire-tail---move-vm-part-not-the-widget-path).
+
+Full reconciliation:
+[`battle-action-helpers.md`](battle-action-helpers.md#seru-magic-summon-overlay-dispatch)
+and the [`re-settled-threads.md`](../reference/re-settled-threads.md)
+"Seru-magic summon visual" row.
+
+## The floating value readout rides the same atlas
+
+The numeral a landed hit throws is not an effect-pool child, but it samples
+the same texture page: `etim.dat`'s third TIM, page `(448, 0)`, through the
 sub-palette at VRAM `(48, 476)` (CBA `0x7703`, tpage `0x27`). The sheet's
-layout - ten 24x24 digit cells in strip order `1234567890`, plus the `DAMAGE` /
-`HIT` / `TOTAL` labels - is in
+layout - ten 24x24 digit cells in strip order `1234567890`, plus the `DAMAGE`
+/ `HIT` / `TOTAL` labels - is in
 [`formats/effect.md`](../formats/effect.md#the-battle-value-readouts-glyph-sheet-lives-here-too).
 
-The geometry is read out of retail's own display list. Both frame arenas of the
-`battle_melee_hit_spark` capture carry the same two-digit run, so the pair is an
-animation: the run's horizontal **centre** holds while the cell **grows**
-toward its 1:1 24-px size, and the run **rises** to a fixed screen row `y = 32`.
-Cell pitch is the drawn width plus one; the quads are `0x2C` at colour
-`0x808080`, so retail neither modulates nor fades the numeral. Port:
-`engine-vm::battle_value_readout::value_cells`.
+The geometry is read out of retail's own display list. Both frame arenas of
+the `battle_melee_hit_spark` capture carry the same two-digit run, so the pair
+is an animation: the run's horizontal **centre** holds while the cell
+**grows** toward its 1:1 24-px size, and the run **rises** to a fixed screen
+row `y = 32`. Cell pitch is the drawn width plus one. The quads are `0x2C` at
+colour `0x808080`, so retail neither modulates nor fades the numeral. Port:
+`engine-battle-vm::battle_value_readout::value_cells`.
 
-Placing it is a **host** job, not a HUD-builder job: the seat is the struck
-actor's projected screen position, which only the layer holding the camera
-knows. Both hosts project the actor under the FX camera and emit the cells as
-screen-space VRAM quads through one builder, `engine-ui::battle_numerals`
-(retail's own texels, since the battle loader has already made the atlas
-resident). Before the battle VRAM exists a host falls back to
-`engine-ui::battle_value_readout_draws_for`, the dialog-font fallback - retail's
-cells and pitch, different letterforms. `engine-ui`'s HUD builder draws the
-popup queue only under `LEGAIA_DIAG_HUD`.
-
-## Pool layout (`_DAT_8007BD30`, 5008 bytes total)
-
-```
-+0x000  16 bytes   table-head record set by init
-+0x010  4096 bytes 128 × 32-byte child slots - per-sprite render state
-+0x1010 896 bytes  32 × 28-byte master slots - per-effect-instance state
-+0x1390            end of pool (16 + 4096 + 896 = 5008 = 0x1390)
-```
-
-32 max simultaneous effects × ~4 sprites avg = 128-child sprite pool.
+Placing it is a **host** job: the seat is the struck actor's projected screen
+position, which only the layer holding the camera knows. Both hosts project
+the actor under the FX camera and emit the cells as screen-space VRAM quads
+through one builder, `battle_numerals` (`crates/render-kernels`, re-exported
+by `engine-ui`), using retail's own texels. Before the battle VRAM exists a
+host falls back to `engine-ui::battle_value_readout_draws_for`: retail's cells
+and pitch in the dialog font. `engine-ui`'s HUD builder draws the popup queue
+only under `LEGAIA_DIAG_HUD`.
 
 ## Side-band streaming-effect handler (`0x801F17F8`)
 
-Called from `FUN_800520F0` case `0xFF`. Streams two specific runtime-only files via `FUN_800558FC`:
+Called from `FUN_800520F0` case `0xFF`. Streams two runtime-only files via
+`FUN_800558FC`:
 
 - `data\battle\summon.dat` - selected when `_DAT_8007BD24[0x26B] & 0x80 != 0`.
-- `data\battle\readef.dat` - opposite branch.
+- `data\battle\readef.dat` - the opposite branch.
 
-**Resolved**: in retail `FUN_800558FC` ignores the path string and consumes its
-fourth argument as a retail TOC index - `summon.dat` = `0x37F`, `readef.DAT` =
-`0x380`, which are **extraction entries 893 / 894** (the retail in-RAM TOC keeps
-the PROT.DAT 8-byte header, so retail index = extraction index + 2). Each file
-is an exact array of `0x10800`-byte slots (103 / 78) carrying per-special-attack
-CLUT rows + 4bpp texture pages and summon-creature actor records. Byte-verified
-RAM↔disc and VRAM↔disc in a mid-cast save state. Full format + verification:
+`FUN_800558FC` ignores the path string and consumes its fourth argument as a
+retail TOC index: `summon.dat` = `0x37F`, `readef.DAT` = `0x380`, which are
+**extraction entries 893 / 894** (the retail in-RAM TOC keeps the PROT.DAT
+8-byte header, so retail index = extraction index + 2). Each file is an exact
+array of `0x10800`-byte slots (103 / 78) carrying per-special-attack CLUT rows
++ 4bpp texture pages and summon-creature actor records, byte-verified RAM to
+disc and VRAM to disc in a mid-cast save state. Format:
 [`summon-readef.md`](../formats/summon-readef.md); parser
 `legaia_asset::summon_readef`.
 
-## Effect-ID → human effect name mapping
-
-Effect IDs are anonymous; no string table maps id → "fireball / thunder / heal". To name effects, trace call sites of `FUN_801DFDF8` in damage / battle-action code (in town/level-up overlays). Each caller passes a literal byte for `effect_id`; correlate with the action that triggered it (a Tactical Arts move, an item use, a spell cast).
-
-Two producers of the 2D-pool spawn wrapper `FUN_801DFDF0` are confirmed: the move-power `+0x12`/`+0x16` effect-id lists dispatched by `FUN_801e09f8`, and the per-move effect-list spawner `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), which walks a 5-byte-stride list at `0x801F6470` through the same bit-7 multiplex. See [`effect.md` § the bit-7 multiplex](../formats/effect.md#how-a-move-reaches-this-2d-pool---the-bit-7-multiplex).
-
-Both are ported and live: the list dispatch as `engine-core`'s move-FX spawn path (`World::spawn_move_fx`), the cue-group expander as `engine-vm::battle_cue_group::expand_cue_group` (+ `cue_group_for`, the `FUN_800402f4` site selection), reached from the action SM's item/spirit applier band with each expanded cue routed into `World::try_spawn_effect` / `World::spawn_action_table_effect` and its SFX byte into `World::audio.battle_sfx_cues`.
-
 ## See also
 
-**Reference** -
 [efect.dat format](../formats/effect.md) ·
 [Battle action SM](battle-action.md) ·
-[Move-table VM](move-vm.md)
+[Move-table VM](move-vm.md) ·
+[Cast modules](cast-module.md) ·
+[Renderer](renderer.md)
