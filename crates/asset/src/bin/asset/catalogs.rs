@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::RenderTier;
-use crate::common::*;
+use crate::cli_io::*;
 use anyhow::Result;
 use legaia_asset::{battle_texture_catalog, tim_catalog, tim_deep_catalog, tim_scan, tmd_scan};
 use legaia_prot::cdname;
@@ -41,7 +41,7 @@ pub(crate) fn tmd_scan_cmd(
     let mut tmds_written = 0usize;
 
     for path in &entries {
-        let raw = crate::common::read_input(path)?;
+        let raw = crate::cli_io::read_input(path)?;
         let scan = tmd_scan::scan_entry(&raw);
         if scan.hits.is_empty() && only_hits {
             continue;
@@ -145,7 +145,7 @@ pub(crate) fn tim_scan_cmd(
     let mut tims_written = 0usize;
 
     for path in &entries {
-        let raw = crate::common::read_input(path)?;
+        let raw = crate::cli_io::read_input(path)?;
         let scan = tim_scan::scan_entry(&raw);
         if scan.hits.is_empty() && only_hits {
             continue;
@@ -421,7 +421,7 @@ pub(crate) fn tim_render_distinct_cmd(prot: &Path, out: &Path, tier: RenderTier)
     use std::collections::HashMap;
 
     std::fs::create_dir_all(out)?;
-    let prot_bytes = crate::common::read_input(prot)?;
+    let prot_bytes = crate::cli_io::read_input(prot)?;
 
     let want_raw = matches!(tier, RenderTier::Raw | RenderTier::Both);
     let want_deep = matches!(tier, RenderTier::Deep | RenderTier::Both);

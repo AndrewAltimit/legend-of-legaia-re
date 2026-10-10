@@ -61,7 +61,7 @@ pub(crate) fn shop_stock_cmd(
         }
     }
 
-    let scus_bytes = crate::common::read_input(scus)?;
+    let scus_bytes = crate::cli_io::read_input(scus)?;
     let names = item_names::ItemNameTable::from_scus(&scus_bytes).ok_or_else(|| {
         anyhow::anyhow!(
             "no item-name table at VA {:#x} in {} - is this SCUS_942.54?",

@@ -8,7 +8,7 @@ use legaia_asset::boot_overlay as boot;
 use legaia_asset::minigame_art;
 use legaia_asset::minigame_slot_scene as slot;
 
-use crate::common::write_rgba_png;
+use crate::cli_io::write_rgba_png;
 
 /// Print the boot path's overlay / side-band resolution table.
 ///
