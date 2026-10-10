@@ -20,7 +20,7 @@
 <section class="doc-section" id="status">
   <h2>Where it stands</h2>
   <p>The port plays the game. From a cold New Game it runs the opening, the towns and dungeons, random and boss battles, the pause menu, shops and inns, the five minigames, the movies and the save screen, on both the native window and the browser page, with sound. A segmented <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/full-game-ladder.md" target="_blank" rel="noopener">full-game ladder</a> seeds the engine at each story milestone from a retail save and drives it to the next with pad input only, from the opening to the credits crawl; every segment of it clears.</p>
-  <p>What is still rough is honest to name:</p>
+  <p>What is still rough:</p>
   <ul class="bullets">
     <li><strong>It is not frame-identical to retail.</strong> The <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">retail comparison corpus</a> scores the engine against every catalogued save state and ranks the gaps worst first. Game state - scene, position, party, flags, bag, enemy roster - matches almost everywhere. The rendered frame is where the distance is: field, world-map and menu frames sit close to retail&rsquo;s, and the frame in the middle of a battle is the furthest off.</li>
     <li><strong>The ladder proves the route, not every room.</strong> It drives the critical path. Optional content, rare script branches and long unscripted play are covered by a seeded <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md" target="_blank" rel="noopener">soak harness</a> that hunts panics, softlocks and stalled scripts.</li>
