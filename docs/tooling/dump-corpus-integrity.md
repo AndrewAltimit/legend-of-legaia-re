@@ -1,24 +1,34 @@
 # Dump-corpus integrity
 
-**An `overlay_0897_` filename prefix is not evidence of base correctness. Only
-the `[overlay_0897 base=0x801CE818]` header tag is - and even a tagged dump may
-have gaps.**
+**An `overlay_0897_` filename prefix is not evidence of base correctness. Only the `[overlay_0897 base=0x801CE818]` header tag is - and even a tagged dump may have gaps.**
 
-That sentence is the whole page. Everything below bounds the damage and shows
-how to re-measure it.
+The function dumps in `ghidra/scripts/funcs/` are the evidence most of these docs cite, and a dump can be wrong *as a file* while looking perfectly healthy. A Ghidra dump prints instruction addresses derived from the load base the program was imported at. Get that base wrong and every address in the dump is off by a constant, while the instruction text stays plausible. The dump then cites a function at a virtual address (VA) where that function does not exist, and reads as authoritative while doing so.
 
-A Ghidra dump in `ghidra/scripts/funcs/` prints instruction addresses derived
-from the load base Ghidra was given when the program was imported. Get that
-base wrong and every address in the dump is wrong by a constant, while the
-instruction text stays perfectly plausible. Nothing in the dump looks broken.
-It cites a function at a VA where that function does not exist, and it reads as
-authoritative while doing so.
+This page lists the ways a dump misleads, how the sweep `check-dump-base-integrity.py` measures them, and what to do instead: **read the bytes of the extracted image, not the dump's metadata.**
 
-This is the dump-level sibling of
-[call-target integrity](call-target-integrity.md). That page's subject is a
-decoded `jal` target, which is a property of the bytes and survives a wrong
-base. This page's subject is the *printed address*, which is a property of the
-base and does not survive it at all.
+It is the dump-level sibling of [call-target integrity](call-target-integrity.md). That page's subject is a decoded `jal` target, which is a property of the bytes and survives a wrong base. This page's subject is the *printed address*, which is a property of the base and does not.
+
+```mermaid
+flowchart LR
+    dump["dump: opening instructions"] --> canon["canon(): base-independent tokens"]
+    images["extracted images (SCUS + overlays)"] --> index["token index over every image"]
+    canon --> lookup{"where do the bytes live?"}
+    index --> lookup
+    lookup -->|"at the printed VA"| match["MATCH"]
+    lookup -->|"at a constant delta"| shifted["SHIFTED: wrong import base"]
+    lookup -->|"in no image"| nf["NOT_FOUND: unverifiable"]
+    dump -->|"under 10 instructions"| short["SHORT: no verdict"]
+```
+
+| A dump can be... | Looks like | Section |
+|---|---|---|
+| Mis-based | Every address off by a constant, text plausible | [The shift clusters](#the-shift-clusters) |
+| An interior slice | A file named for an address inside another function | [Printed VAs resolved](#printed-vas-resolved-against-the-extracted-images), [three tells](#three-cheap-tells-that-a-dump-is-not-a-function) |
+| Data decoded as code | Opcodes the CPU lacks, 4-byte-spaced "entries" | [PROT 0900's head window](#prot-0900s-head-window-0x801f69d80x801f6a84), [region windows](#region-window-dumps-are-not-addresses) |
+| Gapped or truncated | Correct base, missing instructions | [Tagged is necessary, not sufficient](#tagged-is-necessary-not-sufficient), [the remedy](#the-remedy) |
+| Unreadable to tools | Whole and correct, but no address column or a non-standard marker | [A complete dump can still read as no evidence](#a-complete-dump-can-still-read-as-no-evidence-at-all) |
+| Not a dump at all | A citation pointer or recorded negative | [Not every file in `funcs/` is a dump](#not-every-file-in-funcs-is-a-dump) |
+| Better than the prose about it | A caveat quoting an old `size=` | [A caveat outlives the dump](#a-caveat-outlives-the-dump-it-was-written-against) |
 
 ## Why the filename cannot be trusted
 
@@ -48,112 +58,27 @@ Default pass, 10-instruction signature:
 | `NOT_FOUND` | Bytes are in no extracted image. | Unresolved - see below. Not known-bad. |
 | `SHORT` | Fewer than 10 instructions; too short to sign. | No verdict either way. |
 
-The four counts are deliberately **not** quoted here. They are state over a
-gitignored corpus that changes whenever anyone adds a dump, and a stale count in
-a committed doc reads as a fact - which is the failure this page exists to
-prevent, applied to itself. Roughly three quarters of the corpus resolves
-`MATCH`, and `SHIFTED` is dominated by two clusters ([below](#the-shift-clusters)).
-Run the sweep for the numbers.
+The class counts are not quoted here: they are state over a gitignored corpus that changes whenever a dump is added. `SHIFTED` is dominated by two clusters ([below](#the-shift-clusters)). Run the sweep for the numbers.
 
-### `canon()` must fold register spellings, not just mnemonics
+**Threshold.** Lowering the threshold trades coverage for certainty. At `--min-insns 4` most of `SHORT` lands in `MATCH`, but a 4-instruction signature also matches *ambiguously*. Treat a multi-hit resolution as weaker than a single-hit one. The cluster counts move with the threshold; the conclusions do not.
 
-The sweep compares Ghidra's rendering against capstone's, so every spelling the
-two disassemblers disagree on has to be folded or the comparison fails on
-identical machine code. Mnemonics are the obvious case. **Registers are the one
-that bites**: the two name r30 differently - Ghidra `s8`, capstone `fp` - and
-every function that saves a frame pointer touches r30.
+### `NOT_FOUND` is unverifiable, not wrong
 
-Left unfolded, such a dump can never match any image, and it lands in
-`NOT_FOUND`. That is the dangerous direction, because `NOT_FOUND` reads as
-"this dump is of an overlay we never extracted" - a fact about the game -
-when it is really a fact about the comparison. A quieter sibling rides along:
-register names carry digits (`s7`, `a1`), so an immediate extractor run over
-the raw operand string picks those digits up as operand values, and a register
-spelled two ways then perturbs the immediate list as well as the register list.
-Both are handled - `s8`/`s9`/`r30` fold to one name, and register tokens are
-stripped before immediates are read - and together they account for roughly a
-quarter of the corpus.
+This is the class most likely to be over-discarded, so state it plainly: **a
+`NOT_FOUND` dump is not a bad dump.** The sweep can only resolve bytes against
+images that were extracted statically from `PROT.DAT`. Much of the corpus was
+dumped from *live RAM captures* - mednafen and PCSX-Redux save states - of
+overlays that have never been statically extracted, or of runtime-mutated
+memory that no longer matches its on-disc form. Those dumps have no source
+image to resolve against and land here by construction.
 
-A third folding gap survives in the *positive* direction and is worth naming
-because it produces a near-miss rather than a miss: the two disassemblers render
-`break`'s code field differently (Ghidra prints the 10-bit code, capstone the
-full 20-bit immediate, e.g. `break 6` against `break 0x1800`). A window whose
-only disagreement is a `break` operand is a match; anything that compares
-canonicalised tokens should treat a lone `break`-immediate mismatch as noise
-rather than evidence of different code.
+Some of them carry `base=0x801C0000` in their own header tag, which is the same
+suspect base as the `+0xE818` cluster below - so a fraction of `NOT_FOUND` is
+probably mis-based too. It cannot be shown statically either way. Treat
+`NOT_FOUND` as "unproven", verify against a capture before relying on its
+addresses, and do not delete it.
 
-The **COP2 (GTE) family** is the same failure one register file over, and it is
-the one that hit hardest, because it disagrees about what the operands *are*
-rather than about a sub-field:
-
-| Word | Ghidra | capstone |
-|---|---|---|
-| `0x488F0800` | `mtc2 t7,0x800` | `mtc2 $t7, $at, 0` |
-| `0x48280030` | `cop2 0x280030` | not decoded - `skipdata` emits `.byte` |
-
-Ghidra renders the cop2 destination as an immediate (`rd << 11`); capstone
-renders the same field as a GPR *name* and appends a zero selector; and for the
-`cop2 <25-bit function>` form - every GTE operation - capstone declines the word
-entirely. Unfolded, a window is unresolvable as soon as it contains one GTE op,
-which is every geometry routine in the game. The world-map bulk-terrain emitter
-`overlay_world_map_render_0901_801f7644` agreed on 18 of 24 tokens and
-disagreed on all 6 of its COP2 words.
-
-The fold keeps the GPR both sides really do spell the same way and drops the
-cop2 register / function field on both sides; the byte side reads the family
-straight out of the encoding (primary opcode `0x12`) instead of asking capstone.
-It moves 17 dumps out of `NOT_FOUND` (66 → 49) - 16 to `MATCH` and one, a `0896`
-window, to `SHIFTED`.
-
-That fold keys on the primary opcode `0x12` and on the five mnemonics
-`cop2`/`mtc2`/`mfc2`/`ctc2`/`cfc2`, and the COP2 **load/store** pair matches
-neither test, so it survived the first pass and kept the whole geometry family
-in `NOT_FOUND` anyway:
-
-| Word | Ghidra | capstone |
-|---|---|---|
-| `0xCAA20000` | `lwc2 v0,0x0(s5)` | `lwc2 $2, ($s5)` |
-
-`lwc2` is opcode `0x32` and `swc2` is `0x3A`, and their `rt` field is a COP2
-*data* register that Ghidra spells with the GPR ABI name of the same number
-while capstone prints the number. The generic path then reads `v0` as a
-register on one side and `2` as an *immediate* on the other, so the two tokens
-disagree in both fields at once. Every GTE routine loads its vertices this way,
-so the whole world-map render family read as "no extracted image holds these
-bytes" - a claim about the disc - when it was a claim about the comparison. The
-fix folds `rt` out on both sides and canonicalises only `offset(base)`, which
-the two disassemblers do spell the same way. Over a 4372-file corpus it moves
-13 dumps out of `NOT_FOUND` (52 → 39), all to `MATCH`, and six of those are the
-`overlay_world_map_top_ext_*` leaves, which the byte attribution then places in
-`world_map_render` (PROT 0901) - the image whose span they print inside.
-
-A third divergence in the same family survived both COP2 folds because it is
-not a COP2 instruction at all. `sub $rd, $zero, $rt` is what the compiler emits
-to negate a register, and capstone renders it through the `neg`/`negu` alias
-while Ghidra prints `sub`. `negu` was folded to `SUBU` and `sub` was not, so a
-window carrying one negation matched nothing - and unlike a mis-based dump, that
-failure has no tell. PROT 0900's own head window, dumped out of PROT 0900's own
-image at PROT 0900's own base, read as "no extracted image holds these bytes at
-this VA or anywhere". Folding `sub` alongside `subu` (as `add` already sits with
-`addu`) moves twelve more dumps to a 0-token match, and with them the finding
-that the minigame RAM captures - baka_fighter, dance, debug_menu, fishing,
-slot_machine, muscle_dome - all caught **summon_render (PROT 0900)** resident in
-slot B.
-
-The generalisable point: **a resolver's negative class is where its own bugs
-accumulate**, because a false negative there looks like missing data rather
-than a broken comparison. Validate any change to `canon()` against a dump known
-to be correctly based - a tagged one whose bytes you can confirm by hand -
-before trusting the counts. A sweep that cannot resolve a dump it should is
-indistinguishable, from the outside, from a corpus that genuinely lacks the
-image.
-
-Lowering the threshold trades coverage for certainty. At `--min-insns 4` the
-`SHORT` class roughly halves and most of it lands in `MATCH` - but a
-4-instruction signature also matches *ambiguously*, so part of that growth is
-the method resolving dumps it should have declined. Treat a multi-hit resolution
-as weaker than a single-hit one. The clusters below shift with the threshold for
-exactly this reason: the counts move, the conclusion does not.
+A large `NOT_FOUND` class is a prompt to suspect the comparison before the corpus: see [what `canon()` must fold](#what-canon-must-fold).
 
 ### A capture with no static image is not automatically unattributable
 
@@ -178,26 +103,6 @@ already keyed on, which is what makes the cross-check cheap.
 The residual caution is the one worth keeping: a capture's slot B is whatever
 the emulator held at that instant, so this settles slot A and says nothing
 about the rest of the image.
-
-### `NOT_FOUND` is unverifiable, not wrong
-
-This is the class most likely to be over-discarded, so state it plainly: **a
-`NOT_FOUND` dump is not a bad dump.** The sweep can only resolve bytes against
-images that were extracted statically from `PROT.DAT`. Much of the corpus was
-dumped from *live RAM captures* - mednafen and PCSX-Redux save states - of
-overlays that have never been statically extracted, or of runtime-mutated
-memory that no longer matches its on-disc form. Those dumps have no source
-image to resolve against and land here by construction.
-
-Some of them carry `base=0x801C0000` in their own header tag, which is the same
-suspect base as the `+0xE818` cluster below - so a fraction of `NOT_FOUND` is
-probably mis-based too. It cannot be shown statically either way. Treat
-`NOT_FOUND` as "unproven", verify against a capture before relying on its
-addresses, and do not delete it.
-
-The class is now small enough to enumerate, which is itself the useful check:
-when it was large, it was hiding a resolver bug rather than describing the
-corpus.
 
 ## The shift clusters
 
@@ -233,8 +138,7 @@ independent confirmation of what
 argues on other grounds and what
 [call-target integrity](call-target-integrity.md) found from the resolve-rate
 seam: PROT 0896's footprint runs into its neighbour, so dumps taken at its
-widely-cited base are reading field-overlay code. `0x801CE818 - 0x5818 =
-0x801C9000`, the over-read base. PROT 0896's own link base remains unrecovered.
+widely-cited base are reading field-overlay code. `0x801CE818 - 0x5818 = 0x801C9000`, the over-read base.
 
 The seam is measurable rather than inferred, and it is two hops deep. Against
 the extracted images, `0896_bat_back_dat.BIN[0x9000:]` equals
@@ -245,7 +149,7 @@ bytes, and re-keying an `overlay_0896_*` printed VA runs:
 
 | `printed - 0x801C0000` | Owner | True VA |
 |---|---|---|
-| `< 0x9000` | PROT 0896 itself | unrecoverable - 0896's link base is still unknown |
+| `< 0x9000` | PROT 0896 itself | `printed + 0x14DF0` - 0896's base is `0x801D4DF0` in [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml), recovered from its own call graph. This build never loads the image. |
 | `0x9000 ..< 0x2E000` | field (PROT 0897) | `printed + 0x5818` |
 | `>= 0x2E000` | battle_action (PROT 0898) | `printed - 0x1F7E8` |
 
@@ -264,10 +168,7 @@ jal-recovered base) whose prints are 0896's **own** bytes at
 the untagged law would mis-read them as `+0x5818` field code. Pick the program
 from the header tag or the bytes before applying any row.
 
-**`+0xD018` is a third mis-based batch, seen through an over-read tail.** It was
-settled the way this page proposed: extract PROT 0971 (now mapped as
-`debug_menu` at `0x801CE818`, see
-[static-overlay-pipeline.md](static-overlay-pipeline.md)) and re-run the sweep.
+**`+0xD018` is a third mis-based batch, seen through an over-read tail.** PROT 0971 is `debug_menu` at `0x801CE818` ([static-overlay-pipeline.md](static-overlay-pipeline.md)).
 
 The whole `overlay_0971` program was imported at `0x801C0000`, so its true delta
 is the same `+0xE818` as the field batch. Only two of its dumps report that,
@@ -281,6 +182,133 @@ The generalisable form: **a reported delta is relative to whichever image the
 resolver matched.** Where entry footprints overlap, the same mis-based batch
 splits across histogram rows, and the rows are not independent findings. Read a
 delta together with the image named beside it.
+
+## The remedy
+
+Disassemble from the extracted image, not from the dump:
+
+```
+image:       extracted/overlays/overlay_field_0897.bin
+base:        0x801CE818
+file offset: va - 0x801CE818
+```
+
+For other overlays take the base from
+[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml); for the
+always-resident executable use `extracted/SCUS_942.54`, text base `0x80010000`,
+file offset `0x800 + va - 0x80010000`.
+[`disasm-overlay-fn.py`](../../scripts/ghidra-analysis/disasm-overlay-fn.py)
+does this directly. Validate any new base by disassembling one known anchor and
+comparing against a `MATCH` dump before trusting the rest.
+
+Its walk ends the body at a `jr ra` or an outbound `j` only once nothing already
+walked branches **past** it. Neither half of that rule is safe alone, and each
+fails silently in the opposite direction: stopping at the first `j` truncates
+any routine that jumps forward to a shared epilogue, and stopping at the first
+`jr ra` truncates any routine with an early-exit arm. A walk that ends any other
+way - the instruction cap, the end of the input, an explicit `--max-size` -
+prints an `INCOMPLETE BODY` marker, because an instruction count that is really
+a lower bound is indistinguishable from a whole body once it is quoted
+somewhere else.
+
+### The frontier rule needs an upper bound, or it fails the other way
+
+Unbounded, the frontier rule is worse than the truncating rules it replaces. One
+forward branch whose target lies beyond the routine drags the frontier past
+every `jr ra` in between, and the walk swallows a run of functions into a single
+body. Measured against
+[`repair_truncated_dumps.py`](../../ghidra/scripts/repair_truncated_dumps.py):
+a 68-byte routine became a 20060-byte one, and a 4-byte jump-table slot became a
+32256-byte one.
+
+That failure is loud in *size* and silent in *correctness*, and it does more
+damage than the truncation it fixes, for two reasons. A rebuild deletes the
+function entries inside its span, so real entries disappear from the project.
+And every address inside the merged body then reports as an interior of it -
+including addresses that are documented function entries - so the fiction
+manufactures phantom-interior verdicts at exactly the rate it swallows
+functions.
+
+Two bounds close it, and both are needed:
+
+- **A prologue after a return is a boundary.** A `jr ra` whose delay slot is
+  followed by `addiu sp,sp,-N` ends the body whatever the frontier says: a
+  function cannot push a frame twice without popping, so that frame belongs to
+  the next routine. Used as an *end* test right after a return, this does not
+  hit the trap that a routine may begin a few instructions before its frame -
+  that trap is about the *entry*.
+- **A budget on crossed returns.** A return not followed by a prologue is either
+  a frameless leaf's end or a genuine early exit, and locally the two are
+  indistinguishable. So the walk counts them and refuses past a small budget,
+  because a body whose every return but the last is an "early exit" is far more
+  likely to be several routines. A refusal is cheaper than a merged body.
+
+The status string carries the crossed-return count into the verdict, so a body that used its budget is visible rather than merely plausible. Callers test it with a prefix match, not equality: **a status string that both carries detail and is compared exactly breaks on the first detail.**
+
+## Re-running the sweep
+
+```bash
+scripts/ghidra-analysis/check-dump-base-integrity.py
+scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
+scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 4
+scripts/ghidra-analysis/check-dump-base-integrity.py --emit-base-csv /tmp/b.csv
+scripts/ghidra-analysis/check-dump-base-integrity.py --audit-dumpers
+scripts/ghidra-analysis/check-dump-base-integrity.py --check
+scripts/ghidra-analysis/check-dump-base-integrity.py --update-baseline
+```
+
+`--check` is the gateable form the pre-commit hook runs. A bare sweep exits
+non-zero whenever any dump is SHIFTED, and the corpus has a standing
+population of those - catalogued on this page - so it reports a fact, not a
+regression, and could gate nothing. `--check` compares against the SHIFTED
+**set** recorded in `scripts/ghidra-analysis/dump-base-baseline.json` and fails
+only on a dump that is newly mis-based.
+
+A set and not a count, deliberately. The corpus grows every time an overlay is
+imported, so a count ratchet would fire on healthy growth and stay silent when
+a mis-based dump replaced a sound one. `NOT_FOUND` stays outside the ratchet
+for the reason given above - it grades UNVERIFIABLE, not known-bad, and gating
+on it would fail every capture-derived dump. Both inputs are gitignored, so
+the check reports `SKIPPED` and passes where they are absent.
+
+`--emit-base-csv` is the form a re-dump pass needs: per dump, the printed VA,
+the VA the bytes resolve to, the delta, and the image. **A re-dump has to be
+told which program to run against, and the filename is not evidence of that -
+this is.** Feeding a phantom printed VA back into Ghidra dumps whatever
+unrelated routine sits there, which is how a mis-based citation acquires a
+second, freshly-generated dump backing it up.
+
+Exit status is non-zero when any dump is `SHIFTED`. It needs `extracted/`
+populated ([extraction.md](extraction.md)) and `capstone`; it reads only
+gitignored, disc-derived inputs and prints no game data beyond instruction
+mnemonics.
+
+The per-dump list is not reproduced here; `--list-shifted` regenerates it in about a minute.
+
+Run it after importing any program at a base recovered from call targets rather
+than a documented anchor, and after changing `static-overlays.toml` - the two
+cases where a base can be self-consistently wrong.
+
+## What `canon()` must fold
+
+The sweep compares Ghidra's rendering against capstone's, so every spelling the two disassemblers disagree on has to be folded, or the comparison fails on identical machine code. An unfolded spelling sends the dump to `NOT_FOUND`, which reads as "this dump is of an overlay nobody extracted" - a fact about the game - when it is a fact about the comparison.
+
+| Divergence | Ghidra | capstone | Fold |
+|---|---|---|---|
+| Register r30 | `s8` | `fp` | `s8` / `s9` / `r30` fold to one name. Every function that saves a frame pointer touches r30. |
+| Digits in register names | `s7`, `a1` | same | Register tokens are stripped before immediates are read, or the digits are picked up as operand values. |
+| `break` code field | the 10-bit code (`break 6`) | the full 20-bit immediate (`break 0x1800`) | A lone `break`-immediate mismatch is noise, not different code. |
+| COP2 moves, word `0x488F0800` | `mtc2 t7,0x800` (destination as an immediate, `rd << 11`) | `mtc2 $t7, $at, 0` (a GPR *name* plus a zero selector) | Keep the GPR both sides spell alike; drop the cop2 register field on both sides. |
+| COP2 function, word `0x48280030` | `cop2 0x280030` | not decoded - `skipdata` emits `.byte` | The byte side reads the family straight from the encoding (primary opcode `0x12`; mnemonics `cop2` / `mtc2` / `mfc2` / `ctc2` / `cfc2`). |
+| COP2 load/store, word `0xCAA20000` | `lwc2 v0,0x0(s5)` | `lwc2 $2, ($s5)` | `lwc2` is opcode `0x32`, `swc2` is `0x3A`. Their `rt` is a COP2 *data* register: Ghidra spells it with the GPR ABI name of that number, capstone prints the number. Fold `rt` out; canonicalise only `offset(base)`. |
+| Register negation, `sub $rd, $zero, $rt` | `sub` | the `neg` / `negu` alias | `sub` folds with `subu`, as `add` sits with `addu`. |
+
+What the COP2 and `sub` folds make resolvable:
+
+- Every geometry routine contains GTE (COP2) operations and loads its vertices with `lwc2`. Unfolded, the whole world-map render family is unresolvable: `overlay_world_map_render_0901_801f7644`, the bulk-terrain emitter, agrees on 18 of 24 tokens and disagrees on all 6 of its COP2 words. The `overlay_world_map_top_ext_*` leaves resolve into `world_map_render` (PROT 0901), the image whose span they print inside.
+- A window carrying one register negation matches nothing, with no tell - unlike a mis-based dump. PROT 0900's own head window, dumped from its own image at its own base, is such a window. With the fold in place, the minigame RAM captures (`baka_fighter`, `dance`, `debug_menu`, `fishing`, `slot_machine`, `muscle_dome`) all resolve as holding **summon_render (PROT 0900)** resident in slot B.
+
+**A resolver's negative class is where its own bugs accumulate**, because a false negative there looks like missing data rather than a broken comparison. Validate any change to `canon()` against a dump known to be correctly based - a tagged one whose bytes can be confirmed by hand - before trusting the counts.
 
 ## Two false positives of the method
 
@@ -309,34 +337,11 @@ on one machine and silently mis-attributes every dump taken from it. **Delete
 and regenerate `extracted/overlays/` after any change to
 `static-overlays.toml`.** A filename that disagrees with the map is the tell.
 
-### Measured: what a stale extraction directory actually looked like
+### What a stale extraction directory looks like
 
-The trap above is not hypothetical. A regeneration of a working checkout - 15
-images on disk against 25 map rows - produced this:
+A local `extracted/overlays/` that predates map corrections fails in three ways at once: some images are byte-identical to a fresh extraction, some are absent entirely, and some carry the **wrong identity** - a file whose name says one overlay and whose bytes are another's (a `dance_*` filename holding a summon module, `overlay_slot_machine_0973` holding PROT 0975). The last class fails in the same shape as a mis-based dump: **plausible bytes under a wrong label**. Someone porting from such a file finds valid MIPS and ports the wrong system, and no `fmt`, `clippy`, doc or test gate can catch it, because the result is internally consistent.
 
-- **10 images byte-identical** to the fresh extraction. The bytes on disk were
-  never the problem.
-- **15 images absent entirely**, including `overlay_world_map_render_0901.bin`
-  and `overlay_battle_tutorial_0967.bin` - both needed by live analysis, both
-  re-extracted by hand at the time rather than being noticed as missing.
-- **5 images carrying the wrong identity**: `overlay_dance_dark_eclipse_0927`
-  held summon Juggernaut, `overlay_dance_hells_music_0907` held summon Nighto,
-  `overlay_dance_ultimate_rave_0924` held the stager, `overlay_summon_gimard_0905`
-  held `summon_stager_x83` (gimard is 0903), and `overlay_slot_machine_0973` held
-  0975.
-
-The mis-identified five are the dangerous class, and they fail in the same shape
-as a mis-based dump: **plausible bytes under a wrong label**. Anyone porting the
-dance minigame would have opened `overlay_dance_dark_eclipse_0927.bin`, found
-valid MIPS, and ported summon code into the dance module. No gate in this
-repository can catch that - not `fmt`, not `clippy`, not the doc gates, not the
-tests, because the resulting code is internally consistent and merely wrong about
-what game system it implements.
-
-`asset overlay verify <PROT.DAT>` is the cheap check: it re-extracts from the
-disc and asserts every committed fingerprint reproduces. If it passes while the
-local directory disagrees, the map and the disc are fine and the *directory* is
-stale. Run it before any work that reads `extracted/overlays/` in bulk.
+`asset overlay verify <PROT.DAT>` is the cheap check: it re-extracts from the disc and asserts every committed fingerprint reproduces. If it passes while the local directory disagrees, the map and the disc are fine and the *directory* is stale. Run it before any work that reads `extracted/overlays/` in bulk.
 
 ## The five hand-verified dumps
 
@@ -351,18 +356,11 @@ Confirmed instruction-by-instruction against `overlay_field_0897.bin` at base
 | `801dba20.txt` | - | - | - | Not a dump of `FUN_801DBA20` at all; its own header reads `entry=801db7f4`. |
 | `overlay_0897_801dbec4.txt` | `lw a0,-0x3c9c(v0)` | `addiu v0,v0,-1` | - | Prefix disagrees with the bytes. |
 
-`FUN_801e0b1c` is the instructive one. It was cited in committed docs and in a
-port tag as the tile-board procedural fill. There is no function at that
-address; there is not even an instruction boundary worth naming. The citation
-survived because the dump looked complete and its filename looked specific.
+`0x801E0B1C` is the instructive one: a dump that looks complete under a specific-looking filename, at an address where no function - not even a meaningful instruction boundary - exists. The routine it was once read as (the tile-board procedural fill) is not there.
 
 ## Printed VAs resolved against the extracted images
 
-A second hand-verified batch, resolved the same way: take the dump's opening
-instruction stream, find those exact words in an extracted overlay image, and
-report the VA the bytes actually occupy. Every row below is a **printed** VA
-that had a dump but no real function entry behind it - the reason each one sat
-in the corpus looking like unported work.
+Each row is resolved by taking the dump's opening instruction stream, finding those exact words in an extracted overlay image, and reporting the VA the bytes occupy. Every row is a **printed** VA that has a dump but no function entry behind it, which is why each reads as unported work in a worklist.
 
 The pattern generalises: a mis-based print and a genuine interior fragment are
 indistinguishable from the dump alone, and both are common enough that "there
@@ -389,7 +387,7 @@ function lives there.
 | `0x801E158C` | `overlay_0897_801e158c` | field (0897) `0x801EFDA4` | `+0xE818`. Opens in a delay slot (`_nop`) and exits `j 0x801EFEA0`, a VA outside its own printed window. |
 | `0x801E175C` | `overlay_0897_801e175c` | field (0897) `0x801EFF74` | `+0xE818`. |
 | `0x801E22C4` | `overlay_0897_801e22c4` | field (0897) `0x801F0ADC` | `+0xE818`. A real entry with a prologue - a five-case state machine on `s16 arg[+0x54]` through the jump table at `0x801CF734` - printed at a VA no runtime image uses. |
-| `0x801E5134` | `overlay_0897_xxx_dat_801e5134` | battle-action (0898) `0x801CE94C` | `- 0x167E8`. An earlier `+0xE818` reading ("field `0x801F394C`") resolved against the pre-correction over-read field image; 0897's own content ends at `0x801F3818`, so the bytes are 0898 file `+0x134`. The *other* dump at this printed VA, `overlay_0897_801e5134`, is print-correct field code - two programs, one VA, two owners. |
+| `0x801E5134` | `overlay_0897_xxx_dat_801e5134` | battle-action (0898) `0x801CE94C` | `- 0x167E8`. Not field `0x801F394C` (`+0xE818`): 0897's own content ends at `0x801F3818`, so the bytes are 0898 file `+0x134`. The *other* dump at this printed VA, `overlay_0897_801e5134`, is print-correct field code - two programs, one VA, two owners. |
 | `0x801EC370` | `overlay_0897_801ec370` | field (0897) `0x801FAB88` | `+0xE818`. The dump's own body jumps from `0x801EC394` straight to `0x801ED920`, i.e. it splices two disjoint regions - a second reason not to read its addresses. |
 | `0x801E6A7C` | `overlay_0896_801e6a7c` (cite of `FUN_801E66D8`) | field (0897) via `+0x5818` | The enclosing dump `overlay_0896_801e66d8` is itself `SHIFTED +0x5818`, so the cited interior VA is phantom twice over. |
 | `0x801E8B34` | `overlay_0896_801e8b34` (cite of `FUN_801E8B10`) | field (0897) via `+0x5818` | Same shape; enclosing dump resolves to `0x801EE328`. |
@@ -532,11 +530,7 @@ addresses that stop being consecutive.
 | `801e1d94` → `801e1e20` | Hides the whole sub-2 arm of the collision-grid wall paint. |
 | ends before `0x801e3624` | Hides the function epilogue itself. |
 
-Those are precisely the addresses two separate audited claims turned on, and
-reading the dump alone produced a wrong mechanism for both: a "shared continue
-label" that is in fact the function epilogue, and a flat 7-byte operand width
-for an op that is 6 bytes in two of its four arms. Both were settled only by
-disassembling the image directly.
+Reading the dump alone gives a wrong mechanism at both of the first two: the hidden hop reads as a "shared continue label" when it is the function epilogue, and the hidden arm makes an op look like a flat 7-byte operand width when it is 6 bytes in two of its four arms. Disassembling the image directly settles both.
 
 So a tag proves the *base*. It does not prove *completeness*.
 
@@ -577,29 +571,12 @@ returns true and has established nothing - the extent's placement still rests on
 the dump's filename. A window's usable length is therefore its **non-`nop`**
 count, and the `zero_window` class is what falls below the floor on that count.
 
-Two shapes of false credit came out of the corpus when the guard was added, and
-the second is the one to remember, because "the window is all zeros" is the easy
-case to imagine and it was not the expensive one:
+Two shapes of false credit the guard removes:
 
-- an all-`nop` window read as `identical` across two images that agreed about
-  nothing but being empty;
-- a 24-instruction window carrying **one** non-`nop` word - a lone `0x00000004`
-  in a run of zeros - read as `unique`, crediting one image with a 20 KB extent
-  that is over nine-tenths zero fill.
+- an all-`nop` window read as `identical` across two images that agree about nothing but being empty;
+- a 24-instruction window carrying **one** non-`nop` word - a lone `0x00000004` in a run of zeros - read as `unique`, crediting one image with a 20 KB extent that is over nine-tenths zero fill.
 
-The guard runs *after* the link-time-table check, which is evidence from
-outside the window and survives a window with no signal.
-[`disc-coverage.py`](disc-coverage.md) applies the same rule to the dump as a
-whole: a body that opens with a run of `nop`s is rejected as
-`zero_window_head`, because nothing at its entry corroborates its printed base.
-
-The byte account lacked the rule for one path: an extent no re-encoding
-confirms, credited because its filename names the image. Two dumps entered by
-that door - `FUN_801D84B4` as dumped from the fishing (`0972`) and the Baka
-Fighter (`0976`) images, both opening on eight or more `nop`s, neither holding a
-frame prologue or a `jr ra` - and together credited over 22 KB of data as code.
-It refuses a fill-headed label credit now
-([`byte-accounting.md`](byte-accounting.md#a-dump-that-opens-on-fill-is-not-code-either)).
+The guard runs *after* the link-time-table check, which is evidence from outside the window and survives a window with no signal. [`disc-coverage.py`](disc-coverage.md) applies the same rule to the dump as a whole: a body that opens with a run of `nop`s is rejected as `zero_window_head`, because nothing at its entry corroborates its printed base. The byte account refuses a fill-headed label credit for the same reason ([`byte-accounting.md`](byte-accounting.md#a-dump-that-opens-on-fill-is-not-code-either)): `FUN_801D84B4` as dumped from the fishing (`0972`) and Baka Fighter (`0976`) images opens on eight or more `nop`s, with no frame prologue and no `jr ra`, and would otherwise credit over 22 KB of data as code.
 
 ### Other data signatures find nothing more
 
@@ -634,30 +611,13 @@ used.
 
 ### The residue is the finding
 
-Roughly two thirds of ambiguous extents attribute to exactly one image, and a
-further fifth attribute to *no* image because the print is mis-based. What is
-left splits three ways, and only one of the three is anything like a dump defect:
+Most ambiguous extents attribute to exactly one image, and a further share attribute to *no* image because the print is mis-based. What is left splits three ways, and only the first is anything like a dump defect:
 
 - a few-instruction window that no image's own content reproduces at that VA;
-- bytes that are in no extracted image at any VA, which needs an **extraction**
-  rather than a dump - most were taken from live RAM captures of overlays never
-  extracted statically;
-- two dumps at one extent resolving to different images, which is several
-  routines sharing a range and is an answer rather than a gap.
+- bytes that are in no extracted image at any VA, which needs an **extraction** rather than a dump - most were taken from live RAM captures of overlays never extracted statically;
+- two dumps at one extent resolving to different images, which is several routines sharing a range and is an answer rather than a gap.
 
-That corrects a claim this page used to make - that the residue was dominated by
-dump defects and was "repaired by re-dumping". Re-dumping repairs almost none of
-it. The mistake is worth keeping visible because of how it was made: the residue
-had been *described* from the classes' names rather than counted from the CSV,
-and the names are suggestive enough that nobody re-derived them.
-
-**The floor was not the binding constraint; the header parser was.** Lowering the
-signature floor from eight instructions to five moves a handful of extents, which
-is what this page measured and reported. What it did not test was whether the
-instrument was seeing the whole corpus: a private, over-strict header regex was
-dropping real dumps before any of this ran, so their extents had no attribution
-row at all and read as unresolvable ambiguity. Repairing the parser moved several
-times what any floor change did.
+Re-dumping repairs almost none of the residue. Count it from the CSV rather than reading it off the class names, which are suggestive enough to mislead.
 
 ### One floor cannot serve two questions
 
@@ -669,11 +629,7 @@ length is opposite:
 | does *this* image's own content reproduce this window at *this* VA? | fixed-offset comparison against a handful of candidates | mild: a short window that matches several returns `identical`, which credits each and is honest |
 | do these bytes appear at *any* offset in *any* image? | a search over millions of positions - how a mis-based print is identified | severe: a short signature has millions of chances to match by accident |
 
-One floor was applied to both. For the search that is right; for the at-VA test
-it discards evidence for a risk that test does not run. Splitting them - three
-instructions at a VA, eight to search - resolves most of the `short` residue while
-leaving `misbased` (the only *positive* claim about where bytes live) on the
-stronger evidence it needs.
+So the floors are split: three instructions for the at-VA test, eight for the search. One shared floor is right for the search, and for the at-VA test it discards evidence for a risk that test does not run. The split resolves most of the `short` residue while leaving `misbased` (the only *positive* claim about where bytes live) on the stronger evidence it needs.
 
 The split is set from a control rather than from judgement, which is the part
 worth copying: run
@@ -729,43 +685,6 @@ about the file looks incomplete.
 `ghidra/scripts/*.py` still carry each of the three. Repairing dumps without
 repairing the script that wrote them regenerates the defect on the next run.
 
-## A caveat outlives the dump it was written against - the first instance
-
-Every failure above is a dump that is *wrong now*. This one is a dump that was
-right, got better, and left a false claim behind it in the source tree. The
-generalisation, the other two known instances and the checker are
-[below](#a-caveat-outlives-the-dump-it-was-written-against); this section is the
-case that found the class.
-
-A dump's statistics - `size=`, the instruction count, where the printed
-disassembly stops - are properties of the **extraction**, not of the function.
-When a dump is short, the honest response is to write a caveat against it and
-withhold whatever the missing window would have carried. That is what happened
-to the field-to-battle transition tick: a note recorded that its dump reported
-752 bytes / 188 instructions and stopped on a branch delay slot rather than a
-`jr ra`, and three things were deliberately left unported as decompiled-C-only
-on that basis - a completion arm, a game-mode write, and a per-style fade.
-
-The dump was later re-extracted by an extent walker that reports its own
-completeness, and now covers the whole 1528-byte body ending on a real `jr ra`.
-Nothing about the function changed. But **nothing re-reads a caveat when its
-underlying dump improves**, so the note kept asserting a truncation that had
-stopped existing, and kept three ports withheld for a reason that was no longer
-true. The tell was visible in the dump's own header the whole time: the numbers
-the caveat quoted were not the numbers in the file.
-
-The shape generalises past this one function. A caveat that quotes a dump's
-statistics is a claim with an expiry date, and the corpus is regenerated far
-more often than the prose that cites it. Two habits contain it:
-
-- **Quote the header, and say you are quoting it.** A caveat that names the
-  exact `size=` / `extent=` it was written against can be checked against the
-  file in one command; one that says "the dump is truncated" cannot.
-- **Re-read the caveat when the dump is regenerated,** not only when the claim
-  is challenged. A re-dump that *lengthens* a body is invisible to every gate
-  in this repo - coverage goes up, nothing goes red, and the stale caveat is
-  the only thing left pointing at work that no longer needs withholding.
-
 ## The disc-denominated gap list finds header-less dumps for free
 
 [`disc-coverage.py`](disc-coverage.md) builds each image's covered set from the
@@ -789,8 +708,7 @@ carries the whole claim.
 
 ## Not every file in `funcs/` is a dump
 
-The corpus stores answers as well as dumps, and three kinds of answer are not
-defective dumps however a shape sweep grades them:
+The corpus stores answers as well as dumps, and three kinds of answer are not defective dumps however a shape sweep grades them:
 
 | Shape | What it is |
 |---|---|
@@ -798,20 +716,9 @@ defective dumps however a shape sweep grades them:
 | `NOFUNC_RECORD` | `== NOFUNC <addr> ==`, or a `--- PSEUDO-DISASSEMBLY WINDOW` section. A recorded negative, and a window explicitly not a function body. |
 | `NOT_A_DUMP` | An analysis script's output whose filename happens to end `_<addr>.txt`. |
 
-A pointer stub is the corpus doing the *right* thing with an interior address:
-the alternative is a dump file whose name asserts an entry point that does not
-exist. Counting it as a defect therefore penalises the one handling that avoids
-the defect it is being counted as. Nearly a fifth of what a cited-only shape
-sweep once called defective was this - the instrument scoring the corpus's own
-good work against it.
+A pointer stub is the corpus doing the *right* thing with an interior address: the alternative is a dump file whose name asserts an entry point that does not exist. A shape sweep that counts stubs as defects penalises the one handling that avoids the defect.
 
-The same lesson applies to the header regex that finds those files. **A parser's
-strictness is a claim about the corpus, and an over-strict one manufactures a
-gap** - and this one was made independently by every instrument here, because
-each carried its own regex.
-
-The corpus spells all four header fields more than one way, having been written
-by a dozen dump scripts over a long period:
+**A parser's strictness is a claim about the corpus, and an over-strict one manufactures a gap.** The corpus spells all four header fields more than one way, having been written by a dozen dump scripts:
 
 | Field | Spellings in the corpus |
 |---|---|
@@ -820,214 +727,41 @@ by a dozen dump scripts over a long period:
 | label | one token (`FUN_801cf098`); several (`slot-4 handler FUN_80044434`) |
 | extent | `size=N bytes, M instructions`; the same with a trailing parenthetical or extra field; `size=N bytes` alone; `min=<VA> max=<VA>` instead |
 
-Accepting only the bare-VA spelling dropped 54 real function dumps; `(entry=…,
-label=…)` dropped 20 more; a size line with no instruction count dropped 6. Every
-one of those files was complete and correct.
+A regex that accepts only one spelling per field silently drops complete, correct dumps - the bare-VA-only form, a missing `(entry=..., label=...)` arm and a size line without an instruction count each drop real function dumps - and their extents then read as unresolvable. And such rejects are **not** "the ones that report `0 instructions` and hold only decompiled C": files of that shape pass the header regex.
 
-The number those rejects produced was then *explained* wrongly, and that is the
-part that survived review: the coverage report described them as "typically the
-ones that report `0 instructions` and hold only decompiled C". Not one of them
-reported `0 instructions` - the files that do were passing the regex and being
-credited - and three of several hundred were C-only. **A plausible explanation
-attached to a number nobody re-derived is how a measurement defect becomes a
-documented fact.**
+[`dump_header.py`](../../scripts/ghidra-analysis/dump_header.py) is the one parser, imported by `disc-coverage.py` and `attribute-dump-extents.py`. Import it rather than writing another regex. It rejects with a **named class** rather than a bare failure, so a caller can separate the corpus storing an answer - pointer stubs, recorded negatives, data windows, analysis output - from a dump that cannot evidence its own extent.
 
-[`dump_header.py`](../../scripts/ghidra-analysis/dump_header.py) is now the one
-parser, imported by `disc-coverage.py` and `attribute-dump-extents.py`. Import
-it rather than writing a fifth regex. It also rejects with a **named class**
-rather than a bare failure, so a caller can separate the corpus storing an
-answer - pointer stubs, recorded negatives, data windows, analysis output, four
-fifths of what is excluded - from a dump that genuinely cannot evidence its own
-extent.
+## The instruments have no oracle
 
-## Every instrument in this chain has had a defect that made a number look better
+Code that is wrong eventually crashes or draws the wrong pixel; a counter that is wrong just prints a plausible number in a plausible format. Each shape below has occurred somewhere in this measurement chain, and each made a number look better or worse without an error:
 
-Worth stating as a standing caution rather than a grievance, because the pattern
-repeats and it has one shape. The measurement layer over this corpus has
-produced more defects than the code it measures, and none of them announced
-itself: each returned a plausible number, in a plausible format, with no error.
+| Stage | Defect shape | Tell |
+|---|---|---|
+| Dumper | Names its output after the address *requested*, while Ghidra resolves the function *containing* it - the file asserts an entry point that does not exist. | The resolved `entry=` is always **below** the requested address. |
+| Function walker | Stops at the first unconditional `j`, or the first `jr ra`. | A body far shorter than its routine. |
+| Function walker, unbounded | Merges a run of routines into one body and mints a phantom interior for every entry it swallows. | A body far larger than its neighbours ([the frontier rule](#the-frontier-rule-needs-an-upper-bound-or-it-fails-the-other-way)). |
+| Canonicaliser | Leaves one operand spelling unfolded. | The mismatch lands in `NOT_FOUND`, the class that reads as missing data. |
+| Shape sweep | Counts pointer stubs and recorded negatives as defective dumps. | The "defect" count tracks the corpus's own correct handling. |
+| Status string | Grows a parenthetical while a caller still compares it with `!=`. | Successful walks reported as failures. |
+| Audit | Applies a test that can refute one kind of claim to a list holding two kinds ([`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim)). | Rows of the other kind re-raise on every run. |
+| Entry test | Reads a prologue as a boundary, when a routine can begin a few instructions before its frame. | An "entry" a few words inside a routine. |
 
-The catalogued ones span every stage. A dumper names its output after the
-address *requested* while Ghidra resolves the one *containing* it, so a file
-asserts an entry point that does not exist - the signature is that the resolved
-entry is always **below** the requested address, which nothing else produces.
-A function walker stops at the first unconditional `j` and reports a 259-
-instruction body as 85. Its replacement, unbounded, merges a run of routines
-into one body and mints a phantom interior for every entry it swallows. A
-canonicaliser leaves one operand spelling unfolded and the mismatch lands in the
-class that reads as missing data. A shape sweep counts pointer stubs and
-recorded negatives as defective dumps, so the corpus's own correct handling of
-an interior address scores against it. A status string grows a parenthetical
-while its caller still compares it with `!=`. An audit applies a test that can
-only refute one kind of claim to a list containing two kinds, and re-raises
-every row of the other kind forever. An entry test reads a prologue as a
-boundary when a routine can begin a few instructions before its frame.
+The defences are structural: cross-check one instrument against another built on different evidence; prefer an error landing in a class that is *loud* over one that is small; and look first at any negative or "unverifiable" class, because that is where a broken comparison and a genuine absence look the same from outside.
 
-Two of those were introduced *by* a repair pass, which is the part worth
-sitting with: fixing a measurement defect is itself a measurement change, and it
-lands in the same blind spot as the defect it fixes. A repair pass therefore
-needs its own undo - `repair_truncated_dumps.py` grew a `+addr` restore mode for
-exactly this, because the rebuild that over-reached had already deleted the
-function entries that proved it wrong.
+Fixing a measurement defect is itself a measurement change, and it lands in the same blind spot as the defect it fixes. A repair pass therefore needs its own undo: `repair_truncated_dumps.py` has a `+addr` restore mode because a rebuild that over-reaches deletes the function entries that would prove it wrong.
 
 ### A repair pass cannot be its own control
 
-The entry/interior verdict a repair pass reports is read out of the same Ghidra
-database the pass has been rewriting, so the two are not independent and no
-amount of care makes them so. What *is* available is the sign of the bias: a
-rebuild merges bodies and therefore manufactures interiors, a restore splits
-them and therefore manufactures entries. Count both, and the direction of the
-error follows - a pass dominated by restores under-reports interiors, and its
-interior count is a floor rather than an estimate.
-
-State the direction alongside the number. "126 of 314, and the bias runs
-downward" is a usable claim; "126 of 314" from a mutated database is not, and
-re-deriving it on a fresh import is the only way to remove the qualifier
-rather than merely to restate it.
-
-The common factor is not carelessness, it is that **a measurement instrument has
-no oracle**. Code that is wrong eventually crashes or renders the wrong pixel;
-a counter that is wrong just prints. So the defences are structural: cross-check
-one instrument against another built on different evidence, prefer the class an
-error would land in being *loud* over it being small, and treat any negative or
-"unverifiable" class as the place to look first, because that is where a broken
-comparison and a genuine absence are indistinguishable from the outside.
-
-## The remedy
-
-Disassemble from the extracted image, not from the dump:
-
-```
-image:       extracted/overlays/overlay_field_0897.bin
-base:        0x801CE818
-file offset: va - 0x801CE818
-```
-
-For other overlays take the base from
-[`static-overlays.toml`](../../crates/asset/data/static-overlays.toml); for the
-always-resident executable use `extracted/SCUS_942.54`, text base `0x80010000`,
-file offset `0x800 + va - 0x80010000`.
-[`disasm-overlay-fn.py`](../../scripts/ghidra-analysis/disasm-overlay-fn.py)
-does this directly. Validate any new base by disassembling one known anchor and
-comparing against a `MATCH` dump before trusting the rest.
-
-Its walk ends the body at a `jr ra` or an outbound `j` only once nothing already
-walked branches **past** it. Neither half of that rule is safe alone, and each
-fails silently in the opposite direction: stopping at the first `j` truncates
-any routine that jumps forward to a shared epilogue, and stopping at the first
-`jr ra` truncates any routine with an early-exit arm. A walk that ends any other
-way - the instruction cap, the end of the input, an explicit `--max-size` -
-prints an `INCOMPLETE BODY` marker, because an instruction count that is really
-a lower bound is indistinguishable from a whole body once it is quoted
-somewhere else.
-
-### The frontier rule needs an upper bound, or it fails the other way
-
-The rule above is stated as a fix for two truncating rules, and read that way it
-invites an unbounded frontier. Unbounded, it is worse than what it replaces. One
-forward branch whose target lies beyond the routine drags the frontier past
-every `jr ra` in between, and the walk swallows a run of functions into a single
-body. Measured against
-[`repair_truncated_dumps.py`](../../ghidra/scripts/repair_truncated_dumps.py):
-a 68-byte routine became a 20060-byte one, and a 4-byte jump-table slot became a
-32256-byte one.
-
-That failure is loud in *size* and silent in *correctness*, and it does more
-damage than the truncation it fixes, for two reasons. A rebuild deletes the
-function entries inside its span, so real entries disappear from the project.
-And every address inside the merged body then reports as an interior of it -
-including addresses that are documented function entries - so the fiction
-manufactures phantom-interior verdicts at exactly the rate it swallows
-functions.
-
-Two bounds close it, and both are needed:
-
-- **A prologue after a return is a boundary.** A `jr ra` whose delay slot is
-  followed by `addiu sp,sp,-N` ends the body whatever the frontier says: a
-  function cannot push a frame twice without popping, so that frame belongs to
-  the next routine. Used as an *end* test right after a return, this does not
-  hit the trap that a routine may begin a few instructions before its frame -
-  that trap is about the *entry*.
-- **A budget on crossed returns.** A return not followed by a prologue is either
-  a frameless leaf's end or a genuine early exit, and locally the two are
-  indistinguishable. So the walk counts them and refuses past a small budget,
-  because a body whose every return but the last is an "early exit" is far more
-  likely to be several routines. A refusal is cheaper than a merged body.
-
-The status string carries the crossed-return count into the verdict, so a body
-that used its budget is visible rather than merely plausible. And the callers
-test it with a prefix match, not equality - an earlier version compared
-`status != "complete"` against a status that had grown a parenthetical, and
-reported five *successful* walks as incomplete. **A status string that both
-carries detail and is compared exactly is a bug waiting for the first detail.**
-
-## Re-running the sweep
-
-```bash
-scripts/ghidra-analysis/check-dump-base-integrity.py
-scripts/ghidra-analysis/check-dump-base-integrity.py --list-shifted
-scripts/ghidra-analysis/check-dump-base-integrity.py --min-insns 4
-scripts/ghidra-analysis/check-dump-base-integrity.py --emit-base-csv /tmp/b.csv
-scripts/ghidra-analysis/check-dump-base-integrity.py --audit-dumpers
-scripts/ghidra-analysis/check-dump-base-integrity.py --check
-scripts/ghidra-analysis/check-dump-base-integrity.py --update-baseline
-```
-
-`--check` is the gateable form the pre-commit hook runs. A bare sweep exits
-non-zero whenever any dump is SHIFTED, and the corpus has a standing
-population of those - catalogued on this page - so it reports a fact, not a
-regression, and could gate nothing. `--check` compares against the SHIFTED
-**set** recorded in `scripts/ghidra-analysis/dump-base-baseline.json` and fails
-only on a dump that is newly mis-based.
-
-A set and not a count, deliberately. The corpus grows every time an overlay is
-imported, so a count ratchet would fire on healthy growth and stay silent when
-a mis-based dump replaced a sound one. `NOT_FOUND` stays outside the ratchet
-for the reason given above - it grades UNVERIFIABLE, not known-bad, and gating
-on it would fail every capture-derived dump. Both inputs are gitignored, so
-the check reports `SKIPPED` and passes where they are absent.
-
-`--emit-base-csv` is the form a re-dump pass needs: per dump, the printed VA,
-the VA the bytes resolve to, the delta, and the image. **A re-dump has to be
-told which program to run against, and the filename is not evidence of that -
-this is.** Feeding a phantom printed VA back into Ghidra dumps whatever
-unrelated routine sits there, which is how a mis-based citation acquires a
-second, freshly-generated dump backing it up.
-
-Exit status is non-zero when any dump is `SHIFTED`. It needs `extracted/`
-populated ([extraction.md](extraction.md)) and `capstone`; it reads only
-gitignored, disc-derived inputs and prints no game data beyond instruction
-mnemonics.
-
-The per-dump list is deliberately not reproduced here. It is operational state
-over a gitignored corpus that changes whenever anyone adds a dump, so a table
-committed today would rot into a second source of exactly the wrong claims this
-page exists to prevent. `--list-shifted` regenerates it in about a minute.
-
-Run it after importing any program at a base recovered from call targets rather
-than a documented anchor, and after changing `static-overlays.toml` - the two
-cases where a base can be self-consistently wrong.
+The entry/interior verdict a repair pass reports is read out of the same Ghidra database the pass has been rewriting, so the two are not independent. What is available is the sign of the bias: a rebuild merges bodies and therefore manufactures interiors, a restore splits them and therefore manufactures entries. Count both, and the direction of the error follows - a pass dominated by restores under-reports interiors, and its interior count is a floor rather than an estimate. State the direction alongside the number; re-deriving it on a fresh import is the only way to remove the qualifier.
 
 ## A caveat outlives the dump it was written against <a id="a-caveat-outlives-the-dump-it-was-written-against"></a>
 
-The [first instance](#a-caveat-outlives-the-dump-it-was-written-against---the-first-instance)
-above is one case of a class worth stating on its own: a dump's **header changes
-under a claim already written about it**, and nothing re-reads the claim. It is
-the second failure family on this page - everything before that section is about
-a dump's *addresses* being wrong.
+<a id="a-caveat-outlives-the-dump-it-was-written-against---the-first-instance"></a>
+Everything above is about a dump being wrong *now*. This is the other failure family: a dump's **header changes under a claim already written about it**, and nothing re-reads the claim.
 
-The corpus is not immutable. Re-extract a dump with a better extent walker and
-it gets longer - which is progress everywhere except in the sentences that
-described the old one. Those keep asserting a truncation or an emptiness that
-is no longer there, while still reading as evidence-backed prose, because they
-quote a number.
+A dump's statistics - `size=`, the instruction count, where the printed disassembly stops - are properties of the **extraction**, not of the function. The corpus is not immutable: re-extract a dump with a better extent walker and it gets longer. That is progress everywhere except in the sentences that described the old one, which keep asserting a truncation or an emptiness that is no longer there while still reading as evidence-backed, because they quote a number.
 
-The failure only bites in one direction, and it is the expensive one. A dump
-that grows makes a *permissive* claim look stale but harmless; it makes a
-**restrictive** one actively suppressive. "The dump reports `size=1 bytes, 0
-instructions`, so this is data - do not open a port row for it" is a decision
-not to work on something, recorded once, never revisited, and invisible to
-every worklist afterwards. Three known instances:
+The failure bites in one direction. A dump that grows makes a *permissive* claim look stale but harmless; it makes a **restrictive** one suppressive. "The dump reports `size=1 bytes, 0 instructions`, so this is data - do not open a port row for it" is a decision not to work on something, recorded once and invisible to every worklist afterwards. Three known instances:
 
 | Claim as written | What the dump reports now | Did the verdict survive? |
 |---|---|---|
@@ -1035,10 +769,12 @@ every worklist afterwards. Three known instances:
 | `0x8005BA38` is "**not a function**", `size=1 bytes, 0 instructions` | 44 bytes, 11 instructions - a complete `RotTransPers` | No. See [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#measurement-readings). |
 | `0x8003D38C` is a Ghidra split, evidenced by `size=1 bytes, 0 instructions` | 56 bytes, 14 instructions | **Yes** - it is one instruction past the real entry `0x8003D388`. Right verdict, evidence that had evaporated. |
 
-That third row is why the remedy is *restate*, not *reopen*. A verdict reached
-partly from the C, or from the shape of the surrounding code, can be perfectly
-correct while the statistic it cited stops being true. Re-derive it from the
-current disassembly and say what you now see.
+The third row is why the remedy is *restate*, not *reopen*. A verdict reached partly from the C, or from the shape of the surrounding code, can be correct while the statistic it cited stops being true. Re-derive it from the current disassembly and say what is there now.
+
+Two habits contain the class:
+
+- **Quote the header, and say you are quoting it.** A caveat that names the exact `size=` / `extent=` it was written against can be checked against the file in one command; one that says "the dump is truncated" cannot.
+- **Re-read the caveat when the dump is regenerated,** not only when the claim is challenged. A re-dump that *lengthens* a body is invisible to every other gate - coverage goes up, nothing goes red, and the stale caveat is the only thing still pointing at work that no longer needs withholding.
 
 ### Checking it
 
