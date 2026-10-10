@@ -1,23 +1,96 @@
 # Field / event script VM
 
-The bytecode interpreter that drives Legaia's overworld scripting - NPC movement, dialog triggers, cutscene sequencing, story-flag manipulation. Lives in PROT entry **`0897_xxx_dat`** (the town/field overlay), at `FUN_801DE840`. 19 992 bytes / 4998 instructions / 334 `jal` sites over 93 distinct targets - one of the largest functions in the corpus, though not the largest (the dance overlay's `FUN_801F90DC` is 22 288 bytes / 5541 instructions).
+The field VM is the bytecode interpreter behind everything scripted outside battle: NPC movement, cutscene sequencing, doors and warps, story-flag logic, music cues, shops, minigame entry. Every actor in a field scene (the player, each NPC, each door, the scene's own "system" channel) owns a script context, and the VM runs each context's script a slice per frame. If a scene does something, one of these scripts told it to.
 
-It has **43 opcodes** (`0x21..0x4F`, with gaps) over a byte stream, plus a
-`0x5x`/`0x6x`/`0x7x` default route. Port:
-[`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs). This is the
-biggest of Legaia's five runtime VMs - see
-[the runtime VM family](move-vm.md#the-runtime-vm-family) for how it relates to the
-other four, and don't confuse it with the [move VM](move-vm.md), which it *invokes*
-via op `0x22` `EXEC_MOVE`.
+In retail it is one function, `FUN_801DE840`, in the town/field code overlay (PROT entry **`0897_xxx_dat`**; an *overlay* is code the game loads into RAM at `0x801C0000+` rather than keeping in the main executable `SCUS_942.54`). It decodes **43 opcodes** (`0x21..0x4F`, with a gap at `0x27..0x2A`) plus a `0x5x` / `0x6x` / `0x7x` route for the story-flag bank. The function is 19 992 bytes / 4998 instructions / 334 `jal` sites over 93 distinct targets - one of the largest in the corpus (the dance overlay's `FUN_801F90DC` is larger, at 22 288 bytes).
 
-> **Why "field/event"?** Each running script has its own context (a struct passed around as `ctx_ptr`); contexts can target the player, NPCs, the camera, or "system" channels. The same VM drives both the per-frame field tick and event/cutscene sequences.
+The Rust port is [`legaia_engine_vm::field`](../../crates/engine-vm/src/field.rs): `step` executes one instruction per call and returns a `StepResult`, with every side effect routed through the `FieldHost` trait that `engine-core` implements. Every opcode has an executing arm, and both play hosts (native and browser) run scenes, cutscenes and conversations through it. The side-effect-free static decoder is `legaia_asset::field_disasm` ([tool](#disassembler-tool-asset-field-disasm)).
 
-**What catches people out:** the on-disc carrier is the **scene MAN**, not
-`scene_event_scripts` - see [the next section](#on-disc-form-the-scene-man---not-scene_event_scripts).
-The VM's longest-tail opcode, `0x4C` `MENU_CTRL`, is large enough to have its own
-page: [`script-vm-menuctrl.md`](script-vm-menuctrl.md).
+Three things catch people out:
 
-The decompiled source is at `ghidra/scripts/funcs/overlay_0897_801de840.txt`. References to `func_0x80xxxxxx` are calls into `SCUS_942.54`; `FUN_801xxxxx` are sister functions inside the 0897 overlay.
+- The scripts live in the **scene MAN** (the per-scene script / actor-placement asset), not in the `scene_event_scripts` entries - see [on-disc form](#on-disc-form-the-scene-man---not-scene_event_scripts).
+- **Field dialogue has no opcode.** Text sits between instructions and a separate state machine shows it - see [field dialogue](#field-dialogue-has-no-opcode).
+- The dispatcher is documented from its **disassembly**: the decompiled C turns intra-function jump labels into fake calls - see the [label catalogue](#intra-function-label-catalogue).
+
+This is the biggest of Legaia's five runtime VMs ([the runtime VM family](move-vm.md#the-runtime-vm-family)). It *invokes* the [move VM](move-vm.md) through op `0x22` `EXEC_MOVE`; do not confuse the two. Its longest opcode, `0x4C` `MENU_CTRL`, has its own page: [`script-vm-menuctrl.md`](script-vm-menuctrl.md).
+
+Provenance: `ghidra/scripts/funcs/overlay_0897_801de840.txt`. In that dump `func_0x80xxxxxx` are calls into `SCUS_942.54` and `FUN_801xxxxx` are sister functions inside the 0897 overlay.
+
+## Dispatch at a glance
+
+One call to `FUN_801DE840` executes one instruction and returns the new program counter (PC). The loop is in the caller: a runner re-enters the dispatcher until the script yields for the frame.
+
+```mermaid
+flowchart TD
+    RUN["Runner slice, once per frame per context"] --> FETCH["Fetch byte at buffer + pc"]
+    FETCH --> EXT{"Bit 0x80 set?"}
+    EXT -- "yes" --> RES["Resolve target id byte<br/>FUN_8003C83C"]
+    RES -- "no such actor" --> SKIP["Return pc + 1"]
+    RES -- "target halted" --> WAIT["Return the entry PC<br/>same op re-runs next frame"]
+    RES -- "ok" --> DEC
+    EXT -- "no" --> DEC{"Decode byte & 0x7F"}
+    DEC -- "0x21..0x4F" --> ARM["Opcode arm<br/>may sub-dispatch on an operand"]
+    DEC -- "0x5x / 0x6x / 0x7x" --> FLAG["System flag SET / CLEAR / TEST"]
+    ARM -- "done" --> ADV["PC-delta exit<br/>return pc + width, or a jump target"]
+    ARM -- "condition not met" --> WAIT
+    FLAG --> ADV
+    ADV --> STOP{"Runner stop test:<br/>op was 0x21, PC did not move,<br/>or next byte below 0x20"}
+    WAIT --> STOP
+    SKIP --> STOP
+    STOP -- "no" --> FETCH
+    STOP -- "yes" --> YIELD["Yield: context resumes next frame"]
+```
+
+- **Fetch / target.** A set high bit makes the instruction *cross-context*: the next byte names another actor's context and the op acts on it. Detail: [top-level dispatch](#top-level-dispatch).
+- **PC-delta exit.** Every arm leaves through a shared epilogue, adding its own width to the PC register `s8` (usually in a branch-delay slot). Detail: [label catalogue](#intra-function-label-catalogue).
+- **Wait.** An arm that cannot complete (a busy flag, a walk in flight, a load not settled) restores the entry PC, so the same instruction polls again next frame. There is no separate "blocked" state.
+- **Yield.** The runner, not the dispatcher, ends the frame's slice. Detail: [per-frame scheduling](#per-frame-scheduling).
+
+## Opcode table
+
+One row per opcode byte. "Enc" is the non-extended encoding (the cross-context form adds one target byte after the opcode). Detail sections follow in [opcode reference](#opcode-reference).
+
+| Op | Name | Enc | Effect | Detail |
+|---|---|---|---|---|
+| `0x21` | (stop marker) | 1 | PC += 1; an executed `0x21` ends the runner's slice and the interaction. | [markers](#shared-nop-cluster) |
+| `0x22` | `EXEC_MOVE` | `22 move_id` | Start move-table playback (an animation clip) on the context. | [0x22-0x26](#0x22-0x26-action--control-flow) |
+| `0x23` | `MOVE_TO` | `23 x z` | Teleport the context to a tile. | [0x22-0x26](#0x22-0x26-action--control-flow) |
+| `0x24` / `0x25` | (spawn-section marker) | 1 | PC += 1; a record opening on one gets its spawn section pre-run at scene load. | [markers](#shared-nop-cluster) |
+| `0x26` | `JMP_REL` | `26 lo hi` | Unconditional relative jump (16-bit wrap). | [0x22-0x26](#0x22-0x26-action--control-flow) |
+| `0x2B` / `0x2C` / `0x2D` | `LFLAG_SET` / `_CLR` / `_TST` | `op bit` | Set / clear / wait on a bit of the per-context word `+0x62` (also the clip-control word). | [flags](#0x2b-0x33-flag-manipulation-triplets) |
+| `0x2E` / `0x2F` / `0x30` | `GFLAG_SET` / `_CLR` / `_TST` | `op bit` | Same on the 32-bit scratchpad word `_DAT_1F800394`. | [flags](#0x2b-0x33-flag-manipulation-triplets) |
+| `0x31` / `0x32` / `0x33` | `CFLAG_SET` / `_CLR` / `_TST` | `op bit` | Same on the context flag word `+0x10` (halt, engage, collision class). | [flags](#0x2b-0x33-flag-manipulation-triplets) |
+| `0x34` | `EFFECT` | 2..13 + block | Nibble-dispatched: colour fade setup, attached light, capture-and-yield, effect-record spawn. | [0x34](#0x34-effect-nibble-dispatched) |
+| `0x35` | `BGM` | `35 lo hi sub` | Music control: start, pause, resume, release timer, swap-commit. | [0x35](#0x35-bgm) |
+| `0x36` | `SOUND_CUE` | `36 sel:u16 arg:u16` | XA voice clip, SFX cue, side-band sound-bank request / wait / teardown. | [0x36](#0x36-sound_cue) |
+| `0x37` / `0x41` | `YIELD` (glide step) | `op b0 b1` | Park the script; the walk kernel glides the actor along a compass axis. | [motion ops](#0x37--0x41--0x47-yield-family-motion-ops) |
+| `0x38` | `CAM_CFG` | `38 op0 op1` | Set actor facing from the compass table, optionally with a halt-acquire. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x39` | `GIVE_ITEM` | `39 item_id` | Add one item to the inventory (the chest path). | [0x39](#0x39-give_item) |
+| `0x3A` | `ADD_MONEY` | `3A b0 b1 b2` | Signed 24-bit gold delta, clamped. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x3B` | `SET_ITEM_COUNT` | `3B slot count` | Write one count byte (base `0x80084340`) and refresh the inventory display. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x3C` / `0x3D` | `PARTY_ADD` / `PARTY_REMOVE` | `op char_id` | Add / remove a party member. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x3E` | `SCRIPTED_BATTLE` / `WARP` | `3E op0 op1` | `op0 < 100` or `0xFF`: start a scripted battle. `op0 >= 100`: enter a minigame. | [battle](#0x3e-scripted-battle-op0--100), [warp](#0x3e-warp-mode-24-minigame-door-warp) |
+| `0x3F` | `SCENE_CHANGE` | `3F idx:i16 len name.. x z dir` | Change scene by name, with entry tile and facing. | [0x3F](#0x3f-scene_change-named-warp) |
+| `0x40` | `DATA_BLOCK` | `40 len ..` | Skip `len` inline data bytes. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x42` | `COND_JMP` | `42 mode op1 lo hi` | Jump on a flag bit or on a held pad direction / button. | [0x37-0x42](#0x37-0x42-yield-sound-rpg-state-dialog-jump) |
+| `0x43` | `ACTOR_CTRL` | `43 sub ..` | 22 sub-ops: arc jump, camera-register ramps, face setup, eased move, shutter, screen widgets, VRAM copy. | [0x43](#0x43-actor_ctrl---sub-dispatcher) |
+| `0x44` | `SPAWN_RECORD` | `44 index` | Spawn a MAN partition-2 record as a new context. | [0x44](#0x44-spawn_record) |
+| `0x45` | `CAMERA` | 2 / 4 / 20 / 5+ | Configure, load, save or apply a staged camera shot. | [0x45](#0x45-camera-arm-widths) |
+| `0x46` | `VIEW_WINDOW` | `46 a b` or `46 24 n0 n1 f0 f1` | Set the camera's visible-tile window. Not fog. | [0x44-0x4F](#0x44-0x4f-record-spawn--camera--render--state--move-block) |
+| `0x47` | `YIELD` (walk to tile) | `47 x z mode` | Park the script; the walk kernel walks the actor to a tile. | [motion ops](#0x37--0x41--0x47-yield-family-motion-ops) |
+| `0x48` | (no-op) | 1 | PC += 1. | [markers](#shared-nop-cluster) |
+| `0x49` | `STATE_RESUME` | `49 sub ..` | Open a sub-screen (shop, name entry, code lock, tile board, ...) and wait for it. | [0x49](#0x49-state_resume) |
+| `0x4A` | `WAIT_FRAMES` | `4A lo hi` | Wait that many display frames. | [0x44-0x4F](#0x44-0x4f-record-spawn--camera--render--state--move-block) |
+| `0x4B` | `ANIMATE` | `4B count base ..` | Arm vertex-morph lanes. | [0x44-0x4F](#0x44-0x4f-record-spawn--camera--render--state--move-block) |
+| `0x4C` | `MENU_CTRL` | `4C op0 ..` | 16 sub-dispatchers selected by the high nibble of `op0`. | [`script-vm-menuctrl.md`](script-vm-menuctrl.md) |
+| `0x4D` | `BBOX_TEST` | `4D x0 z0 x1 z1 lo hi` | Skip ahead unless the context stands inside a tile box. | [0x44-0x4F](#0x44-0x4f-record-spawn--camera--render--state--move-block) |
+| `0x4E` | `INVENTORY_CMP` | `4E sub ..` | Compare-and-skip on HP / MP / level / gold / coins / random / slot table. | [0x4E](#0x4e-inventory_cmp) |
+| `0x4F` | `SCENE_REGISTER_WRITE` | `4F b0 b1 b2` | Write three scene-struct halfwords. | [0x44-0x4F](#0x44-0x4f-record-spawn--camera--render--state--move-block) |
+| `0x5x` / `0x6x` / `0x7x` | `SysFlag` SET / CLEAR / TEST | `op idx` (+ `lo hi` on TEST) | Story-flag bank at `0x80085758`; TEST carries a jump. | [fourth flag bank](#default-case-extension-opcodes---the-fourth-flag-bank) |
+
+Two stream elements are not opcodes but sit between them: a `0x1F` text segment and a `0x27..0x2A` picker - see [text segments and pickers](#text-segments-and-pickers-are-strides-of-the-stream).
+
+The rest of the page, in order: [on-disc form](#on-disc-form-the-scene-man---not-scene_event_scripts), [scheduling](#per-frame-scheduling), [dispatch](#top-level-dispatch) and [context struct](#context-struct), the [opcode reference](#opcode-reference), the [story-flag bank](#default-case-extension-opcodes---the-fourth-flag-bank) and its census, [BGM lookup](#bgm-lookup-table), [helpers](#helper-functions), [overlay support functions](#overlay-0897-command--submenu-support-functions), [field dialogue](#field-dialogue-has-no-opcode), [decompile quirks](#decompile-quirks-worth-knowing), the [disassembler](#disassembler-tool-asset-field-disasm) and [FMV triggers](#fmv-trigger-sites---exhaustive-backward-sweep).
 
 ## On-disc form: the scene MAN - NOT `scene_event_scripts`
 
@@ -34,18 +107,15 @@ records `1..` are per-actor interaction scripts. The engine mirrors this:
 `World::load_field_script_at`. These MAN scripts disassemble cleanly as
 field-VM (~8% linear-walk error on the retail town MANs).
 
-The heading is a warning, not a nicety: any census of a field-VM opcode must
-read the MAN, and one aimed at `scene_event_scripts` measures the wrong thing.
-Those entries carry **move-VM prescripts**, so a correct reader of them
-reports zero field-VM opcodes. Such a census can still come back non-zero, and
-the way it does is worth recognising, because the failure is invisible from
-inside the instrument: a scene block's prescript entry is one sector, and read
-under the superseded declared-span PROT entry size (`toc[p+5] - toc[p+3] + 4`,
-which measures entry `p`'s two *successors*) its window ran past itself into
-the block's bundle - so the bundle MAN's field-VM opcodes were reported under
-the prescript's name. With entry sizes corrected to `toc[p+3] - toc[p+2]` the
-over-read is gone and the count is zero. See [`prot.md`](../formats/prot.md);
-the worked case is the `0x4C 0xD8` synchronous-spawn census in
+Any census of a field-VM opcode must read the MAN. The `scene_event_scripts`
+entries carry **move-VM prescripts** (below), so a correct reader of them
+reports zero field-VM opcodes. A non-zero count there is an entry-size
+artifact: under the superseded declared-span PROT entry size
+(`toc[p+5] - toc[p+3] + 4`) a one-sector prescript entry over-reads into the
+block's bundle and reports the bundle MAN's opcodes under the prescript's
+name. With entry size `toc[p+3] - toc[p+2]` the count is zero. See
+[`prot.md`](../formats/prot.md); the worked case is the `0x4C 0xD8`
+synchronous-spawn census in
 [`script-vm-menuctrl.md`](script-vm-menuctrl.md#where-0x4c-0xd8-occurs-on-the-disc).
 
 ### Record headers are per-partition; the record index space is flat
@@ -121,26 +191,23 @@ byte-consistent):
 
 Disc-gated pin: `engine-core/tests/field_npc_placements_disc.rs`.
 
-> **The `scene_event_scripts` / `scene_v12_table` prescript is a MOVE-VM stager
-> table, not field-VM bytecode.** The `[u16 count][u16 offsets[count]]` prescript
-> (offset 0, or `+0x800` behind the v12 header) was long assumed to carry
-> field-VM scripts because its records open with `0xFFFF 0x0000`. It does not:
-> the records are **move-VM (`FUN_80023070`) records in the summon-stager format**
-> `[i16 model_sel][u16 reserved][move-VM bytecode]` - the `0xFFFF 0x0000` lead is
-> `model_sel = -1` (a transform/pivot node) + the zero `reserved` halfword, and the `0x0008`
-> terminator is move-VM opcode `0x08` (Halt). The runtime chain: the field VM
-> itself (`FUN_801DE840`) calls the installer **`FUN_800252EC(id)`**, which
-> resolves `record = _DAT_8007b8d0 + offsets[id]` and hands it to the part-stager
-> **`FUN_80021B04`** (`actor[+0x48] = record`, `actor[+0x70] = 2` PC, tick fn
-> `FUN_80021DF4`); the move VM `FUN_80023070` then runs `record+4` each frame. So
-> the prescript is the *per-scene* sibling of the summon stagers (same record
-> format, same consumer). See `legaia_asset::scene_event_scripts`
-> (`move_stager_records` + module note) and the disc-gated tests
-> `scene_event_records_word_aligned_real` + `prescript_move_stager_records_real`
-> (78 entries / 1855 records, 100 % valid stager-kind leads). The engine's field
-> VM correctly does not run these as field-VM scripts; the genuine per-scene
-> field-VM *scripts* are in the scene MAN (`FUN_8003A1E4`), and they are what spawn
-> from this stager table (see [`field-locomotion.md`](field-locomotion.md)).
+**The `scene_event_scripts` prescript is a move-VM stager table, not field-VM
+bytecode.** Its `[u16 count][u16 offsets[count]]` records are **move-VM
+(`FUN_80023070`) records in the summon-stager format**
+`[i16 model_sel][u16 reserved][move-VM bytecode]`: the `0xFFFF 0x0000` lead is
+`model_sel = -1` (a transform/pivot node) plus the zero `reserved` halfword,
+and the `0x0008` terminator is move-VM opcode `0x08` (Halt). The field VM
+reaches them through the installer **`FUN_800252EC(id)`**, which resolves
+`record = _DAT_8007b8d0 + offsets[id]` and hands it to the part-stager
+**`FUN_80021B04`** (`actor[+0x48] = record`, `actor[+0x70] = 2` PC, tick fn
+`FUN_80021DF4`); the move VM then runs `record+4` each frame. So the prescript
+is the per-scene sibling of the summon stagers: same record format, same
+consumer. Parser `legaia_asset::scene_event_scripts` (`move_stager_records`);
+disc-gated tests `scene_event_records_word_aligned_real` and
+`prescript_move_stager_records_real` (78 entries / 1855 records, 100 % valid
+stager-kind leads). Where the prescript sits relative to the `.PCH` sidecar:
+[`scene-v12-table.md`](../formats/scene-v12-table.md); what the scripts spawn
+from it: [`field-locomotion.md`](field-locomotion.md).
 
 The `asset-viewer field <scene>` subcommand drives this end-to-end -
 it loads a scene, finds the event-script entry, ticks the VM frame-by-frame
@@ -191,9 +258,9 @@ does not: `0x8003AD18` enters the loop only when that first opcode is `0x24` or
 2016, clears the two story-flag banks, and 32 instructions later stops the BGM
 again on a first visit, all before anything is drawn; the body that follows is
 a 20-instruction loop of player bbox tests choosing the scene's camera
-parameters. An engine that steps the system script one instruction per frame
-plays half a second of a track retail never lets you hear and tracks the
-camera zones at 3 Hz. Port: `World::step_field_frame_slice`.
+parameters. Stepping the system script one instruction per frame is therefore
+wrong on both counts: the track would be audible and the camera zones would
+update at 3 Hz. Port: `World::step_field_frame_slice`.
 
 The same install slice runs over every **placement** record (`FUN_8003A1E4`,
 same `0x24`/`0x25` first-opcode gate), and its consequence for actors is
@@ -221,8 +288,7 @@ MAN resident. `kor5`'s `P1[2]` `SET 0x619` shows both halves in captures: set
 at the card-boot entry, then cleared by `P2[4]` and never re-set across two
 post-battle reloads.
 
-Three consequences worth stating plainly, because they retire the intuition
-that long cutscenes need catching up:
+Three consequences:
 
 - **No budget, no round-robin.** Contexts are not time-sliced against each
   other; the list length is the only bound. A live capture of the opening
@@ -393,10 +459,7 @@ is the `+0x26 -> +0x5A` copy, not a set. A cross-context op runs on the
 caller's slice against the target's context. So a cutscene that pokes, walks
 or places a townsperson never runs that townsperson's talk body: `dolk2`'s
 Noa (`P1[2]`) would set `0x2FE`, and the `town01` opening's `P1[10]` /
-`P1[11]` `0x20A` / `0x23D`, if it did. An engine that stepped every addressed
-placement set all three; one that stepped every placement ran talk bodies
-nobody had touched (`vell` `P1[3]`'s spawn walked the player away, a `koin1`
-placement opened its lines).
+`P1[11]` `0x20A` / `0x23D`, if it did.
 
 ## Top-level dispatch
 
@@ -477,7 +540,14 @@ Per-script state, passed as `ctx_ptr`. Offsets identified so far:
 
 | Op | Encoding | Effect |
 |---|---|---|
-| 0x21 / 0x24 / 0x25 / 0x48 | 1 byte | PC += 1. Four distinct opcode bytes share one handler - likely reserved/historical. |
+| 0x21 / 0x24 / 0x25 / 0x48 | 1 byte | PC += 1. Four opcode bytes share one handler. |
+
+The dispatcher does nothing with them, but the *runners* read three of the
+four as markers: an executed `0x21` ends the slice and the engagement, and a
+record whose first opcode is `0x24` / `0x25` gets its spawn section pre-run at
+scene load ([per-frame scheduling](#per-frame-scheduling)). `0x48` has no
+marker role on this page's evidence; the dialog-end classifier steps over it
+like `0x24` / `0x25`.
 
 ### 0x22-0x26 (action / control flow)
 
@@ -598,45 +668,37 @@ full projected span and `FUN_801E3984` halves it through the `0x1000` entry of
 its cosine table (`0x801F2904`), so the radius is the extent itself, not half
 of it.
 
-The catalogued retail state `drake_castle_to_worldmap` (`dolk`, retail
-SCUS) holds the `dolk` mask live: one actor ticked by `FUN_801E4470` (callback
-word `+0x0C`) on the player, extents `(0x1000, 0x1000)`, `+0x74 = 0`,
-`+0x88 = 0x909060`, `+0x5A = 2`, offset `(0, -0x60, 0)`, no keyframe script -
-the engine's spawn of the same op matches every field. The frame's packets
-put the rim at `201` px round `(153, 93)` with `H = 768` (`_DAT_8007B6F4`) and
-`vz = 15635`, exactly `H * ext / vz`; so the ring reaches the screen corners
-and the rim-colour fills darken everything beyond it. `FUN_801E4470` rebuilds
-the field view matrix (`FUN_800172C0`) immediately before the call, so `vz` is
-the parent point's eye depth in the scaled view, and `H` is the live GTE `H`.
+Two retail states pin the law, each holding one `FUN_801E4470` actor
+(callback word `+0x0C`) on the player with `+0x74 = 0`, `+0x5A = 2`, offset
+`(0, -0x60, 0)` and no keyframe script; in both the engine's spawn of the same
+op matches every field:
+
+| State (scene) | Extents | `+0x88` | Rim in the frame's packets | `H`, `vz` |
+|---|---|---|---|---|
+| `drake_castle_to_worldmap` (`dolk`) | `(0x1000, 0x1000)` | `0x909060` | `201` px round `(153, 93)` | `768`, `15635` |
+| `cave01_attached_light` (`cave01`, `P1[0]`'s `B4 F8 11 80 80 20 00 0C 00 0C 60 00 00 00`) | `(0xC00, 0xC00)` | `0x808020` | `180` px round `(155, 116)` | `512`, `8710` |
+
+Both rims equal `H * ext / vz` exactly (`512 * 0xC00 / 8710 = 180`; a
+world-unit reading of the extents would give `1080` px). In `dolk` the ring
+reaches the screen corners and the rim-colour fills darken everything beyond
+it. `FUN_801E4470` rebuilds the field view matrix (`FUN_800172C0`) immediately
+before the call, so `vz` is the parent point's eye depth in the scaled view
+and `H` is the live GTE `H` (`_DAT_8007B6F4`).
 
 `World::field_light_draws` projects the same way: the engine's eye space is the
 `1x` reduction of retail's (`tr_eye / S`), so the extents divide by the same
-`S` before the `H / z` scale. Fed the state's own camera globals with the
-player at the state's position, the engine puts the rim at `201` px round
+`S` before the `H / z` scale. Fed the `dolk` state's own camera globals with
+the player at the state's position, the engine puts the rim at `201` px round
 `(154, 94)`, within a pixel of the packets. Both hosts draw the pool beneath
 the party HUD, as the capture's frame shows it, sorted in one ordering-table
 list with the fog sheets and move strips (the page's single screen-prim pass;
-the native window's `under_overlay` list).
-Pinned, retail side and engine side, by
-`crates/engine-core/tests/attached_light_retail_capture_disc.rs`.
-
-A second scene at a second extent holds the same law. `cave01_attached_light`
-(retail SCUS, tile-poked in from `s3_rimelm_freeroam` through `map01`'s cave
-portal) carries one `FUN_801E4470` actor on the player built by `cave01`
-`P1[0]`'s `B4 F8 11 80 80 20 00 0C 00 0C 60 00 00 00`: extents
-`(0xC00, 0xC00)`, `+0x74 = 0`, `+0x88 = 0x808020`, `+0x5A = 2`, offset
-`(0, -0x60, 0)`, no script, and the engine's spawn matches every field. Its
-rim is `180` px round `(155, 116)` with `H = 512` and `vz = 8710`
-(`512 * 0xC00 / 8710 = 180`); the world-unit reading would give `1080` px.
-Pinned by `crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
-The rim scan there accepts a colour match only behind a well-formed
-ordering-table tag (word count `5`, a RAM link): in `cave01` the rim colour's
-bytes also occur outside the frame's packets, and an unfiltered scan reads a
-rim tens of thousands of pixels wide. `jiji`'s one attached-light site
-(`P1[0]` `+0x73`, a white `B4 F8 11 FF FF FF ...`) did not spawn on either of
-two retail entries from `map02` (story flag `0x2AD` set as the card left it,
-then cleared by a poke): no `FUN_801E4470` actor in the lists, so that scene
-stays unpinned.
+the native window's `under_overlay` list). Pinned, retail side and engine
+side, by `crates/engine-core/tests/attached_light_retail_capture_disc.rs` and
+`crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
+`jiji`'s one attached-light site (`P1[0]` `+0x73`, a white
+`B4 F8 11 FF FF FF ...`) is unpinned: it did not spawn on two retail entries
+from `map02` (story flag `0x2AD` set as the card left it, then cleared by a
+poke), and no `FUN_801E4470` actor sat in the lists.
 
 #### 0x35 BGM
 
@@ -755,11 +817,10 @@ at PC). Otherwise bit 15 of `sel` picks the arm:
 
 #### The stream gates on op 0x36
 
-Two globals ride on top of that sub-switch, and both arms consult them - which is
-what an earlier reading of this section got wrong on both halves. It said the gate
-covered subs `0`/`2`/`3` and that `_DAT_8007B868` only skipped the bit-15-**set**
-arm. The disassembly at `0x801E030C..0x801E0444` says subs `0`/`1`/`2`, with sub
-`3` ungated, and puts the same gate on the bit-15-**clear** arm.
+Two globals ride on top of that sub-switch, and both the bit-15-set and the
+bit-15-clear arms consult them (disassembly `0x801E030C..0x801E0444`): the
+gate covers subs `0`/`1`/`2`, leaves sub `3` ungated, and also sits on the
+bit-15-**clear** arm.
 
 `_DAT_8007BABC` / `_DAT_8007BAA0` are a **request / acknowledge pair** for the
 variable `vab_01` side-band bank ([audio.md](audio.md#vab-slots---one-installer-twelve-records)
@@ -849,8 +910,7 @@ walk cycle (Mei: clip 61 walking, 60 idle). Engine port:
 `CutsceneTimeline::npc_walks` for an NPC (the record runs on) and
 `CutsceneTimeline::walk_wait` for the player (the record parks), over the
 motion-VM glide (`engine-core`), with the NPC anim cue surfaced from
-`exec_move`. Dropping the walk playout is what left
-Mei out of the conversation frame for the whole beat.
+`exec_move`.
 
 A walk is exclusive. The park leaves the target's halt bit `0x400` set until
 the kernel lands it, and the dispatcher prologue (`0x801DE90C..0x801DE944`)
@@ -863,8 +923,7 @@ first leg ends. `dolk2`'s post-Caruban beat runs P2[12] to P2[15] at once, and
 both P2[12] (`C7 F8 48 53 23`) and P2[15] (`C7 F8 46 4C 33`) walk the player;
 the second walk starts only when the first lands. The engine keeps the same
 rule for the modal timeline and the helper contexts
-(`FieldVmState::halted_elsewhere`); without it the two walks pulled against
-each other and left the party inside a wall.
+(`FieldVmState::halted_elsewhere`).
 
 The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
 (op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
@@ -904,8 +963,11 @@ placement 28) at the top of the shrine stairs and `B7 3F 00 84` walks her
 
 #### 0x39 GIVE_ITEM
 
-`[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path - the **granted** item is this single inline operand byte, **not** a per-scene table. `FUN_800421D4` is the inventory adder, so the earlier `PLAY_SFX` label was wrong. (`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund;
-the live give-item is inlined in the dispatcher here.) NB the chest's announcement *text* ("There is a {item}…") names the item from a **separate** `0xC2 <id>` MES item-name token (display only), distinct from this give operand - editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
+`[39, item_id]` - adds one of inline item `item_id` to the inventory: `func_0x8004313C()` (select the active inventory window/page bounds) then `func_0x800421D4(item_id, 1)` (the capacity-checked add-item-by-id primitive). PC advances by 2 (`addiu s8,s8,0x2` at `0x801E044C`; `lbu a0,0(s6)` reads the inline id at `0x801E0450`). This is the **treasure-chest item-give** path: the granted item is this single inline operand byte, not a per-scene table, and the op is not a sound op.
+
+`FUN_801D71F0` is not a second add-item site: that VA is a mis-based print of the equip applier [`FUN_801E5A08`](field-menu.md#manual-equip-applier-fun_801e5a08), whose `FUN_800421D4` call is a refund.
+
+The chest's announcement *text* ("There is a {item}...") names the item from a **separate** `0xC2 <id>` MES item-name token (display only). Editing one without the other makes the on-screen message disagree with what lands in the bag (see [randomizer.md](../tooling/randomizer.md)).
 
 #### 0x3F SCENE_CHANGE (named warp)
 
@@ -1065,9 +1127,9 @@ hosts use): a running timeline alone is not enough. `garmel`'s Songi taunt
 a host that switched to the per-slot fallbacks with nothing staged framed an
 invented low shot across the room.
 
-Reading that `s16` as an absolute jump target is what kept `urudre2` one-way in
-the port: the room's only door record carries `45 C0 00 00` about `0x670` bytes
-before its `0x3F` -> `map01` tail, and a target of zero restarted the record.
+The APPLY `s16` is a glide trigger, never a jump target. `urudre2`'s only door
+record carries `45 C0 00 00` about `0x670` bytes before its `0x3F` -> `map01`
+tail; read as a jump, a target of zero would restart the record.
 
 ### 0x43 ACTOR_CTRL - sub-dispatcher
 
@@ -1108,9 +1170,8 @@ sub-A / sub-B are 10** (`+1` each for the extended `0x80` header, which the
 prologue at `0x801DE948` has already added to `s8`). See
 `ghidra/scripts/funcs/overlay_0897_801de840.txt`.
 
-The port read `+3` / `+7` as an absolute resume PC and yielded to it, which
-sent `urudre2` `P2[9]` backwards to body `0x00A0` on every arrival - its
-`C3 2B 0A 76 70 50 00 32 00 A0` names `Y = -160`, not `PC = 160`.
+`urudre2` `P2[9]`'s `C3 2B 0A 76 70 50 00 32 00 A0` therefore names
+`Y = -160`, not `PC = 160`.
 
 If halt was *not* acquired: `j 0x801DEE4C`, which restores `s8` from the
 invocation's entry PC (`s4`) instead of advancing.
@@ -1161,9 +1222,8 @@ cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
 the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
 halt it can see - an arc still in flight on that actor
 (`World::script_arc_target_halted`, the `FieldHost::op43_arc_target_halted`
-hook) - and the VM returns `Halt` at the op on any refusal; it previously
-advanced past the op, skipping the jump. The acquire's other clause (an NPC
-target with no `+0x94` owner) is not modelled.
+hook) - and the VM returns `Halt` at the op on any refusal. The acquire's
+other clause (an NPC target with no `+0x94` owner) is not modelled.
 
 **Retail capture of a player arc.** `town01`'s walk-on tiles `(30..32, 19)`
 spawn `P2[12..14]`, each a player arc `C3 F8 01 <x> 10 60 00 18 00` (sub-`1`,
@@ -1229,8 +1289,8 @@ crosses the zone. Ports: `engine-core::register_ramp` (spawn + record) +
 `World::tick_register_ramps` (the handler) + `Camera::tick_globals` (the
 consumer).
 
-The earlier reading - "sound register ramp" writing four target values over a
-`ticks` duration with a `curve` - is falsified; see
+Not a "sound register ramp" writing four target values over a `ticks`
+duration with a `curve`; see
 [re-do-not-re-walk.md](../reference/re-do-not-re-walk.md).
 
 #### 0x43 sub-0x10..0x15 - screen-widget family + VRAM blit
@@ -1255,18 +1315,16 @@ bounds-checks the sub-op (`< 0x16`) and jumps through the 22-entry JT at
 On disc the family is exclusive to the **ten** ending-sequence scenes
 (`edteien`, `edbylon`, `edbalden`, `edlast`, `edretoin`, `edkorout`,
 `edson`, `edstati3`, `edbubu`, `eddoman`), all but one site in partition-2
-(cutscene-timeline) records. The last two were missing from the earlier list of
-eight, and the count is now a measurement rather than a reading: decoding every
-partition record of every MAN carrier of every CDNAME scene (124 scenes, 103
-MAN carriers) finds 311 **widget** sub-op sites among 1081 decoded op-`0x43`
-sites. The disc-gated test `crates/engine-core/tests/screen_fx_widgets.rs`
-re-runs that census and **prints** it, asserting only that each spawn sub-op is
-carried by some scene and reaches a draw list - the count and the ten-scene
-list are not pinned by an assertion, so quote them as a measurement, not as a
-gate. The
-single exception to "partition-2" is one sub-`0x11` site a linear walk decodes
-in `edlast` partition-1; a partition record whose `pc0` desyncs decodes phantom
-instructions, so treat that one as unconfirmed. The choreography:
+(cutscene-timeline) records. Decoding every partition record of every MAN
+carrier of every CDNAME scene (124 scenes, 103 MAN carriers) finds 311
+**widget** sub-op sites among 1081 decoded op-`0x43` sites. The disc-gated
+test `crates/engine-core/tests/screen_fx_widgets.rs` re-runs that census and
+**prints** it, asserting only that each spawn sub-op is carried by some scene
+and reaches a draw list - so the count and the ten-scene list are a
+measurement, not a gate. The single exception to "partition-2" is one
+sub-`0x11` site a linear walk decodes in `edlast` partition-1; a partition
+record whose `pc0` desyncs decodes phantom instructions, so treat that one as
+unconfirmed. The choreography:
 mask-to-black (`0x11` with the degenerate rect `[0x20,0x20,0x20,0x20]`) →
 fullscreen photo panel (`0x13`, every retail record `[0,0,0x140,0xE0,
 0x200,0]` - the >0x100-wide two-page split is exercised by every use) →
@@ -1375,7 +1433,7 @@ Live-probe-pinned: the opening chain's `opdeene` / `opstati` / `opurud` entry
 scripts launch their prologue timelines this way (`44 23` / `44 21` / `44 32`). See
 [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned).
 
-The earlier `COUNTER` reading of this opcode is superseded.
+The opcode is not a counter.
 
 #### `0x49` STATE_RESUME
 
@@ -1465,9 +1523,10 @@ shared compare:
 | 10 / 11 | gold / coin u32 compare (9 bytes) |
 | 12..=15 | fall through |
 
-The old "5..8 absolute jump" and "4 rand = next PC" readings were the collapsed
-decomp switch ([threads doc](../reference/open-rev-eng-threads.md), op-0x4E
-details). Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`.
+Sub-ops 5..8 are not absolute jumps and sub-op 4 is not "rand = next PC";
+both readings come from the collapsed decomp switch
+([threads doc](../reference/open-rev-eng-threads.md), op-0x4E details).
+Ported: `field_disasm::decode_subops` + `engine-vm` `flow::op_4e`.
 
 ### 0x4C MENU_CTRL - outer-nibble dispatch
 
@@ -1503,7 +1562,7 @@ The three SCUS dispatchers all operate on the **same bitfield array based at `0x
 
 - The disassembly of `FUN_8003ce64` (TEST) is `lui v1,0x8008; addiu v1,v1,0x4140` (`v1 = 0x80084140`) then `lbu v1, 0x1618(v0)` with `v0 = (idx >> 3) + v1`, i.e. the byte address is `0x80084140 + 0x1618 + (idx >> 3)` = `0x80085758 + (idx >> 3)`. Each does `index >> 3` to pick the byte and `0x80 >> (index & 7)` to pick the bit.
 - So the `0x5x/0x6x/0x7x` opcode space encodes a 12-bit operand: the low 4 bits of the opcode plus the next operand byte form an 8-bit (1-byte) flag index - but with the "extended" prefix bit (0x80) preserved into the high bits, the addressable space is 12-bit, suggesting per-script-context banks within the same array.
-- (An earlier draft mislabeled the base as `DAT_80086D70` by double-counting the `0x1618` displacement onto `0x80085758`; the Ghidra symbol `DAT_80085758` is itself `0x80084140 + 0x1618`, and the array is indexed directly from there - no further `+0x1618`.)
+- The base is `0x80085758` itself: the Ghidra symbol `DAT_80085758` is `0x80084140 + 0x1618`, and the array is indexed directly from there. The `0x1618` displacement is not applied a second time (which would give `0x80086D70`).
 
 This is a **fourth flag bank** (per-script local at `ctx[+0x62]`, 32-bit globals at `_DAT_1F800394`, ctx flag word at `ctx[+0x10]` are the other three). It is **not** a wholly separate region: base `0x80085758` falls inside the story-flag RAM window `0x80085600..0x80085800` (at `+0x158`) and the bank extends past `0x80085800` (flag indices up to ~`0xFFF` reach `0x80085758 + 0x1FF`). In a retail SC save block the bank therefore lives at SC offset `0x1618` (= `0x200 + (0x80085758 - 0x80084340)`, via the `SAVE_GAME_DATA_RAM_BASE` formula in `crates/save`), overlapping the story-flag bitmap (`SC 0x14C0`, 512 bytes) and continuing to the inventory array (`SC 0x1818`). Seeding the engine's `World::flags.system_flags` from `sc_block[0x1618..0x1818]` reproduces the live bank as of the save.
 Note this bank is **not** sufficient on its own to drive a scene's collision: see [`field-locomotion.md`](field-locomotion.md) - the `0x4C` nibble-7 wall paints reached through it are story-conditional collision *deltas*, not the base walkable grid.
@@ -1710,21 +1769,20 @@ corpus. When that does not hold, one MAN reached through two scenes' windows
 inflates every count over it by an amount no assertion inside the census can
 see.
 
-That is what the superseded declared-span entry size produced. A scene block
-whose CDNAME window is a subset of its neighbour's, with no asset-table bundle
-of its own, would over-read into the neighbour's bundle and present the
-neighbour's MAN as a second "dev copy" under its own name. `gameover_data` is
-that case, and the copy it appeared to hold was `town01`'s MAN. With the entry
-size corrected the block resolves no MAN, and the Rim Elm renditions gating the
-opening one-shot `0x225` are the three real ones (`town01` / `town0b` /
-`town0c`), each a distinct PROT entry at a distinct start LBA. The property
-itself is asserted disc-wide by `no_two_man_carriers_share_bytes_disc_wide`.
+The superseded declared-span entry size broke exactly this. A scene block with
+no asset-table bundle of its own (`gameover_data`) over-read into its
+neighbour's bundle and presented `town01`'s MAN as a second copy under its own
+name. With the entry size corrected the block resolves no MAN, and the Rim Elm
+renditions gating the opening one-shot `0x225` are the three real ones
+(`town01` / `town0b` / `town0c`), each a distinct PROT entry at a distinct
+start LBA. The property is asserted disc-wide by
+`no_two_man_carriers_share_bytes_disc_wide`.
 
 **Decode-coherence flag.** The census walker desyncs inside unframed Shift-JIS dialogue and inline data tables, where text bytes alias the `0x50..=0x7F` flag ops
 (the full-width digit run `82 54 82 4F` aliases `SysFlag.Set idx=0x482`; a repeating full-width `ＥＸＩＴ` label table aliases `64 82` clears).
 Every census site therefore carries `GFlagSite::clean`: `true` only when at least `CLEAN_RESYNC_INSNS` instructions decoded error-free between the walker's last decode error (or record start) and the site.
 The CLI prints `DESYNCED?` on non-clean rows - treat those as byte noise until verified by hand disasm or a live capture.
-This falsified the earlier "`0x482` set by the `other7` pool / cleared by the `edbalden`/`eddoman` epilogue variants" reading: all 37 of `0x482`'s census sites are non-clean text aliases, while the live-confirmed `0x142` writer arms decode clean.
+`0x482` is the worked case: all 37 of its census sites are non-clean text aliases (it is neither set by the `other7` pool nor cleared by the `edbalden`/`eddoman` epilogue variants), while the live-confirmed `0x142` writer arms decode clean.
 
 ### Native flag-bank writers: the minigame result toggle `0x50A` + the `0x5D6` negative
 
@@ -1733,7 +1791,7 @@ The script censuses cover script-op operand spaces only. The bank's helpers are 
 **`0x50A` is the "won the last minigame session" result toggle of the Sol game-hall venues.** Its writers:
 
 - **Muscle Dome** (PROT 0977, dev module `other6`; the file carries the mastering path `h:\prot\field\koin1\efect.dat`, pinning `koin1` as its host scene). The post-match settle routine CLEARs `0x50A` (`jal` at `0x801CE818`-based VA `0x801D0FF8`, file `0977+0x27E8`) and re-SETs it (`0x801D101C`) iff the win global `0x801D1ADC` is set - the overlay's `WIn on` / `WIn off` debug strings label exactly this pair. The same routine mirrors the battle-victory low flag `0x35`, SETs the per-class victory latches `0x130`/`0x131`/`0x132`, pays prize gold from the table at `0x801D1860`, and past round 13 grants item `0xCD` once, gated on flag `0x6CB`.
-- **The dance overlay** (PROT 0980 - one image, not three. The "0978/0979/0980 dance variants" reading came from the superseded entry-size expression: 0978's `0xE000` footprint over-read into 0979 from `+0x1000` and into 0980 from `+0x5000`, so the same dance code printed under three labels. The three entries are three different overlays - 0978 `field_back_read` at slot-B base `0x801F69D8`, 0979 `field_battle_intro` and 0980 `dance` at the slot-A base - each with its own row in `crates/asset/data/static-overlays.toml`). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal.
+- **The dance overlay** (PROT 0980). Session setup SETs `0x50A` unconditionally (`0x801CF968`, file `0980+0x1150`) after decoding the song select from flags `0x133`/`0x134`/`0x135` (alt `0x428`) and clearing the three; the result path CLEARs it (`0x801CFF10`) when the performance misses its score goal. There is one dance image, not three "0978/0979/0980 variants": 0978 is `field_back_read` at slot-B base `0x801F69D8`, 0979 `field_battle_intro` and 0980 `dance` at the slot-A base, each with its own row in `crates/asset/data/static-overlays.toml`. The same code prints under all three labels only when 0978's footprint is over-read under the superseded entry-size expression.
 
 The venue linkage closes the loop. `koin1` is the whole coin-games venue, not
 one game's antechamber - its scripts carry three distinct mode-24 door-warps,
@@ -1753,9 +1811,9 @@ named *Sol casino*: they are two doors off the same room.
 
 On return from mode 24 the venue scene re-enters and its gates re-evaluate: `koin1 P2[9]` (C2=`[0x50A]`, spawns while set) is the returned-victorious beat, `P2[10]` (C1=`[0x50A]`) the default arrangement, and `koin3`'s `P2[9]`/`P2[10]` clean TESTs branch the same way. This is why the script census correctly reports no script writer: the writers are native code, resident only while the minigame overlay occupies slot A. Anchor test: `man_variant_carrier_census_disc.rs::koin_gates_0x50a_writer_less_0x5d6_self_latched` (`0x50A` stays *script*-writer-less).
 
-**`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) is a script self-latch**, and the earlier "no writer in any enumerable space" verdict was a walk that stopped at the record's first text segment. `koin4` P1[15] sets the flag it gates on: behind the "If you have money, go inside / and buy something." line sit `48` (a one-byte no-op) and `55 D6`, followed by a coherent cross-context actor run - the same shape as the town01 P2[3] latch and flag 549. Its P2[3] twin carries the same block. The native-space sweep below still stands as a *negative* for native writers; what it cannot settle is script space, which is where the writer turned out to be.
+**`0x5D6` (the `koin4` C1 gate + `P1[15]` dialog/position variant) is a script self-latch.** `koin4` P1[15] sets the flag it gates on: behind the "If you have money, go inside / and buy something." line sit `48` (a one-byte no-op) and `55 D6`, followed by a coherent cross-context actor run - the same shape as the town01 P2[3] latch and flag 549. Its P2[3] twin carries the same block. A walk that stops at the record's first text segment never reaches it. The sweep of the other spaces is a negative for native writers:
 
-- Script ops: two clean SETs (`koin4` P1[15] and P2[3]) plus the two `P1[15]` TESTs. The earlier raw scan looked for the LE operand bytes `D6 05`, which is not how a flag op encodes its id - the op is `55 D6`, opcode then operand.
+- Script ops: two clean SETs (`koin4` P1[15] and P2[3]) plus the two `P1[15]` TESTs. A flag op encodes as opcode then operand (`55 D6`), so a raw scan for the little-endian id bytes `D6 05` finds nothing.
 - Native code: zero constant-operand call sites disc-wide. Every computed-operand site is bounded elsewhere: the dispatcher's own `0x5x`/`0x6x`/`0x7x` arms (script space),
   the move-VM overlay-extension flag sub-ops `0x13`/`0x14`/`0x1C`/`0x1D` (operand = u16 at op `+4` in the move-record stream; disc-wide scan of that space is negative for both flags),
   the motion-VM op-7/8 census (negative), the party-select family (`0x10`+`n`, `n` in `0..=2`, at `0x801D2B1C`/`0x801D2E80`),
@@ -1793,85 +1851,87 @@ that one-shots itself via `54 C0`; P2[14] SETs `0x4C1`, retiring the whole famil
 (SJIS name `セット`) re-applies the door-open visuals on entry by branching on `0x4BE`/`0x4BF`. All
 sites are census-clean (`--system-flag-census`, scenes `jouina`/`jouind`/`jouine`).
 
-**Width blindness is the desync's second face.** A missing/wrong sub-op *width* in the disassembler desyncs
-the walk even in clean non-dialogue code, and a site hidden that way looks identical to "no writer exists".
-Flag `549` (`0x225`, the Rim Elm opening one-shot) was exactly this: town01 `P2[3]` SETs it from its own
-script bytes (`52 25` at body `+0x3`, the record its own C1 gates - the `P2[50]`/`0x142` self-latch shape),
-but the preceding `4C ED` op (`_DAT_8007BA66` write, retail `param_2 + 3`) had no width in the disassembler,
-so the walk mis-read `ED 01 52` as a phantom Clear and swallowed the SET. Caught live first (reader-watch
-script-PC capture: SET `ra 0x801E3598`, `vm` offset `+0xF`), then fixed statically: the whole `4C 0xE_` sub-op
-width family is now pinned from the retail dispatcher's `param_2 + N` advances (subs 4/5/7/8/9/A/B/C/D/E),
-and the last two delay-slot-hidden legs (sub-0/3) from the raw asm: both arms (`0x801E306C` / `0x801E3108`,
-case targets confirmed against the outer-0xE jump table at VA `0x801CF008`) advance +3 - sub-0 through the
-`addiu s8,s8,0x3` entry at `0x801E00B8`, sub-3 there or in the `j 0x801E00BC` branch-delay slot. Neither is
-a halt (the decompile's `goto LAB_801e00bc` folds both entries into the no-advance label). Anchor
-`flag_549_writer_is_the_rim_elm_p2_3_self_latch`. Before trusting any "flag F has no script writer" verdict,
-confirm the ops *around* the expected site decode with known widths.
+**Sub-op widths the static walk depends on.** A missing or wrong sub-op
+*width* in the disassembler desyncs a linear walk even in clean non-dialogue
+code, and a site hidden that way looks identical to "no writer exists". Before
+trusting any "flag F has no script writer" verdict, confirm the ops *around*
+the expected site decode with known widths. A sub-op family whose width
+depends on the sub must be decoded per-sub, and the executing VM
+(`legaia-engine-vm`, which decodes the raw stream and never consults the
+disassembler) is the reference when the two disagree. A width defect in
+`legaia_asset::field_disasm::decode_subops` is static-walker-only: it corrupts
+the `LinearWalker` consumers (`scene_destinations`, `scene_bgm_starts`,
+`scene_fmv_triggers`, `scene_stager_installs`, `boss_stager_placements`, the
+door randomizer's MAN edits) and leaves runtime behaviour alone.
 
-Width blindness also comes at **whole-nibble granularity**: the disassembler once had no decoder at all for
-`0x4C` outer nibbles `9`/`A`/`C`/`D`/`F`, so every record crossing one (e.g. the `CC 06 A1 ..` extended
-nibble-A conditional jumps that pepper the jou-castle door records) desynced exactly like the `4C ED` case,
-hiding thousands of clean flag sites and minting phantom ones from the resync garbage. All sixteen outer
-nibbles now decode (`legaia_asset::field_disasm::decode_subops`), with widths mirrored from the executing
-VM's `menu_ctrl` port (itself pinned from the retail dispatcher's `param_2 + N` advances); nibble `B` is
-genuinely undefined in retail (no `case 0xb` - the default arm halts) and stays a decode error. The pinned
-spine-flag verdicts are unchanged under the full-width walk: `0x482` stays all-alias, and the koin gates
-`0x50A`/`0x5D6` still have no script writer disc-wide.
+The `0x4C` widths pinned from the raw asm (overlay base `0x801CE818`; the
+port's mirror is the VM's `menu_ctrl` module):
 
-**Width blindness's third face is a *wrong* width in an already-decoded arm.** The `0x4C` nibble-8
-sub-widths are pinned from the raw asm of the nibble-8 switch (same overlay, base `0x801CE818`): sub-1
-(actor model+anim set) advances `+9` unconditionally (`addiu fp,fp,9` at `0x801E1FC4`), sub-3 (rect tile
-fill) `+7` (exit `addiu fp,fp,7` at `0x801E2130`), sub-5/E/F (halt-acquire) `+5` on acquire (`li s7,5` at
-`0x801E21B8`, `addu fp,fp,s7` in the `beqz` delay slot at `0x801E21D4` - only the predicate-failure path
-halts), sub-6 `+15` (`addiu fp,fp,0xf` in the `jal` delay slot at `0x801E21E8`), sub-0 `+3`, sub-C `+4` -
-matching the executing VM's `menu_ctrl/nibble_8.rs` port. A sub-1 width one byte over is what the
-`vozz P1[7]` `.byte 0x05` decode error was: each `CC 0B 81 ..` op swallowed its follower's lead byte,
-minting a phantom `Clear 0x400` where the retail stream reads the op's 10-byte extended form followed by
-`35 64 00 05` (a BGM op) / `4A 1E 00` (WaitFrames). Under the pinned widths those followers decode in
-place, the phantom rows disappear, and the spine verdicts above hold row-identical (`549`/`0x142` site
-sets unchanged; `0x482` all-alias; `0x50A`/`0x5D6` writer-less, `0x50A` gaining one more clean koin3 TEST
-reader and still no writer).
+| Sub-op | Advance | Evidence |
+|---|---|---|
+| `4C E4/E5/E7/E8/E9/EA/EB/EC/ED/EE` | per sub | The dispatcher's `param_2 + N` advances. `4C ED` (`_DAT_8007BA66` write) is `+3`. |
+| `4C E0` / `4C E3` | +3 | Arms `0x801E306C` / `0x801E3108` (outer-`0xE` jump table at VA `0x801CF008`). Sub-0 leaves through the `addiu s8,s8,0x3` entry at `0x801E00B8`, sub-3 there or in the `j 0x801E00BC` branch-delay slot. Neither is a halt: the decompile's `goto LAB_801e00bc` folds both entries into the no-advance label. |
+| `4C 80` | +3 | Nibble-8 switch. |
+| `4C 81` (actor model + anim set) | +9, unconditional | `addiu fp,fp,9` at `0x801E1FC4`. |
+| `4C 83` (rect tile fill) | +7 | Exit `addiu fp,fp,7` at `0x801E2130`. |
+| `4C 85` / `8E` / `8F` (halt-acquire) | +5 on acquire | `li s7,5` at `0x801E21B8`, `addu fp,fp,s7` in the `beqz` delay slot at `0x801E21D4`. Only the predicate-failure path halts. |
+| `4C 86` | +15 | `addiu fp,fp,0xf` in the `jal` delay slot at `0x801E21E8`. |
+| `4C 8C` | +4 | Nibble-8 switch. |
+| `4C 70` / `4C 71` | 6 bytes | Collision-grid wall paint, `FUN_801DE840` case 7. Sub-0 (`byte &= 0x0F`, clear walls) and sub-1 (`byte \|= 0xF0`, block all four sub-cells) ignore the mask and carry only the four range bytes. |
+| `4C 72` / `4C 73` | 7 bytes | Sub-2 (`&= ~(mask << 4)`) and sub-3 (`\|= mask << 4`) consume a trailing mask byte. |
 
-**Width blindness's fourth face is a *variable*-width arm read as fixed.** The `0x4C` **nibble-7**
-collision-grid wall paint has **two** operand shapes (`FUN_801DE840` case 7): sub-0 (`byte &= 0x0F`, clear
-walls) and sub-1 (`byte |= 0xF0`, block all four sub-cells) ignore the mask, so they carry only the four
-range bytes and are **6-byte** ops; sub-2 (`&= ~(mask << 4)`) and sub-3 (`|= mask << 4`) consume a trailing
-mask byte and are **7-byte** ops. Reading a fixed 7 for all four subs makes every sub-0/sub-1 paint swallow
-its follower's lead byte, so a linear walk desyncs the moment it crosses one. Rim Elm's scene-entry script
-is the case that exposes it: `town0c` `P1[0]` runs three sub-0 clears in a row, and past the first the walk
-minted phantom `SysFlag.Test` rows with absurd operands (indices `24`/`280`, jump deltas of `~7000` in a
-`0x242`-byte record) and hid the record's real gate logic. Under the pinned widths the record reads clean
-and the Rim Elm gate becomes legible (below). The executing VM (`legaia-engine-vm`, field `menu_ctrl`
-nibble 7) always advanced by the correct per-sub widths - it decodes the raw stream and never consulted the
-disassembler - so this was a **static-walker-only** defect: it corrupted `scene_destinations`,
-`scene_bgm_starts`, `scene_fmv_triggers`, `scene_stager_installs`, `boss_stager_placements` and the door
-randomizer's MAN edits (all `LinearWalker` consumers), while runtime behaviour was unaffected. Fixed in
-`legaia_asset::field_disasm::decode_subops`; the general lesson is that a sub-op family whose *width
-depends on the sub* must be decoded per-sub, and the executing VM's port is the reference when the two
-disagree.
+All sixteen `0x4C` outer nibbles decode in the disassembler except `B`, which
+is undefined in retail (no `case 0xb`; the default arm halts) and stays a
+decode error.
+
+What each width protects, as worked cases:
+
+- **`4C ED` and flag 549** (`0x225`, the Rim Elm opening one-shot). `town01`
+  `P2[3]` SETs it from its own script bytes (`52 25` at body `+0x3`, the record
+  its own C1 gates - the `P2[50]`/`0x142` self-latch shape). Without a width
+  for the preceding `4C ED`, the walk reads `ED 01 52` as a phantom Clear and
+  swallows the SET. Live confirmation: SET at `ra 0x801E3598`, VM offset
+  `+0xF`. Anchor test `flag_549_writer_is_the_rim_elm_p2_3_self_latch`.
+- **Nibble `A` and the castle doors.** The `CC 06 A1 ..` extended nibble-A
+  conditional jumps pepper the jou-castle door records; a walk with no nibble-A
+  decoder desyncs on every one, hides clean flag sites and mints phantom ones
+  from the resync garbage.
+- **`4C 81` and `vozz` `P1[7]`.** Each `CC 0B 81 ..` is the op's 10-byte
+  extended form followed by `35 64 00 05` (a BGM op) / `4A 1E 00`
+  (WaitFrames). A width one byte over swallows the follower's lead byte and
+  mints a phantom `Clear 0x400`.
+- **Nibble 7 and `town0c` `P1[0]`**, which runs three sub-0 clears in a row. A
+  fixed 7-byte read mints phantom `SysFlag.Test` rows with absurd operands
+  (indices `24`/`280`, jump deltas of `~7000` in a `0x242`-byte record) and
+  hides the record's real gate logic (below).
+
+Under the pinned widths the spine verdicts hold: `0x482` stays all-alias,
+`0x50A` stays script-writer-less (with its clean `koin3` TEST readers), and
+`0x5D6` is the `koin4` self-latch
+([above](#native-flag-bank-writers-the-minigame-result-toggle-0x50a--the-0x5d6-negative)).
+
 
 #### Rim Elm's gate paints are carried by an *object* record, not an entry script
 
-The gate the width fix made legible is not carried the same way in every
-rendition. `town0c` holds it twice - once in its scene-entry `P1[0]` and again
-in `P0[20]` - but `town01` holds it **only** in `P0[20]`, and that is not an
-entry script at all. It is the gate object's own record, bound by the `.MAP`
-gate-0 kind-1 trigger at tile `(23, 43)` and executed by the scene-init bind
-prologue (`FUN_8003A55C`), which runs a bound record whose first opcode is
-`0x24`/`0x25` through this VM until it yields, stalls, or reaches a dialog byte
-(the loop conditions tabulated just below).
+The Rim Elm gate is not carried the same way in every rendition. `town0c`
+holds it twice - once in its scene-entry `P1[0]` and again in `P0[20]` - but
+`town01` holds it **only** in `P0[20]`, and that is not an entry script. It is
+the gate object's own record, bound by the `.MAP` gate-0 kind-1 trigger at
+tile `(23, 43)` and executed by the scene-init bind prologue (`FUN_8003A55C`),
+which runs a bound record whose first opcode is `0x24`/`0x25` through this VM
+until it yields, stalls, or reaches a dialog byte (the loop conditions are
+listed below).
 
-The consequence for a port is concrete: an engine that applies nibble-7 deltas
-only from the entry script leaves `town01`'s south gate sealed in every story
-state, because the record that opens it is reached through the object-bind
-path. The paints themselves, their `327`/`321` branch and the resulting grid
-are in [`world-map.md`](world-map.md#the-drake-round-trip-rim-elm---map01---cave01);
+So nibble-7 deltas must be applied from the object-bind path as well as the
+entry script; an engine that applies them only from the entry script leaves
+`town01`'s south gate sealed in every story state. The paints themselves,
+their `327`/`321` branch and the resulting grid are in
+[`world-map.md`](world-map.md#the-drake-round-trip-rim-elm---map01---cave01);
 `engine-core/tests/south_gate_disc.rs` pins all three states off the disc.
 
-One more nibble-7 pin, this time on the *interpreter* side: **none of the four
-paints ends the dispatch slice** - but not for the reason previously recorded
-here. There is **no label-call idiom in the nibble-7 arms at all**. All four
-subs perform an ordinary `return`, and they do not share an advance:
+**None of the four paints ends the dispatch slice.** There is no label-call
+idiom in the nibble-7 arms: all four subs perform an ordinary `return`, with
+two different advances:
 
 | Sub | Exit | Net |
 |---|---|---|
@@ -1880,12 +1940,12 @@ subs perform an ordinary `return`, and they do not share an advance:
 | 2 (`0x801e1d9c`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
 | 3 (`0x801e1e20`) | `j 0x801e3624` / `addiu fp,fp,7` | `return pc + 7` |
 
-`0x801e3624` is not a "shared continue label" - it is `move v0,fp` falling
-straight into the **function epilogue** at `0x801e3628` (`lw ra,0x104(sp)` …
-`jr ra`). `0x801df8dc` is `j 0x801e3628; move v0,fp`, i.e. the same epilogue
-one hop earlier. So every nibble-7 paint genuinely leaves `FUN_801de840`.
+`0x801e3624` is `move v0,fp` falling straight into the **function epilogue**
+at `0x801e3628` (`lw ra,0x104(sp)` ... `jr ra`), not a shared continue label.
+`0x801df8dc` is `j 0x801e3628; move v0,fp`, the same epilogue one hop earlier.
+So every nibble-7 paint leaves `FUN_801de840`.
 
-The slice continues anyway because the **caller loops**. In the pre-run
+The slice continues because the **caller loops**. In the pre-run
 `FUN_8003a1e4` the `jal 0x801de840` at `0x8003a4b8` sits inside a loop that
 re-enters on the returned PC and breaks on only three conditions:
 
@@ -1897,16 +1957,13 @@ re-enters on the returned PC and breaks on only three conditions:
   comparison, so wide-flag opcodes with the high bit set still continue.
 
 A paint is none of those, so retail keeps executing the same record in the
-same call - the conclusion is unchanged, only its mechanism. Modelling
-sub-0/1 as a yield broke the scene-entry install pre-run one op after a paint
-(the ropeway `P1[30]` NPC's `23 2A 70` seat two ops past its clear-paint never
-ran, leaving it parked while retail seats it at `(5440,14400)`). The tail's
-`FUN_8003cf04(actor_list, FUN_801dd9d4)` lookup (its hit gets actor
-`flags |= 8`) is not yet modelled.
+same call. A paint modelled as a yield breaks the scene-entry install pre-run
+one op later: the ropeway `P1[30]` NPC's `23 2A 70` seat sits two ops past its
+clear-paint, and retail seats it at `(5440,14400)`. The executing port
+(`legaia-engine-vm`, field `menu_ctrl` nibble 7) returns `Advance` with the
+6/7 split. Not modelled: the tail's `FUN_8003cf04(actor_list, FUN_801dd9d4)`
+lookup, whose hit gets actor `flags |= 8`.
 
-The executing port (`legaia-engine-vm`, field `menu_ctrl` nibble 7) already
-returned the correct `Advance` with the correct 6/7 split; it was the prose
-and the port's own explanatory comment that carried the false mechanism.
 
 ### The two actor-list leaves the VM keys on `+0x0C`
 
@@ -1920,9 +1977,8 @@ whole vocabulary, and they differ only in their tail:
 | `FUN_8003CF04` | walk `+0x00`; skip `+0x0C != handler`; skip `+0x10 & 8`; return the first survivor, `0` on exhaustion | **finder**. The kill-bit skip is what stops a find-or-spawn API adopting an actor retired earlier the same frame. |
 | `FUN_8003CF40` | walk `+0x00`; `+0x10 \|= 8` on every `+0x0C == handler`; no return value | **retire sweep**. Not a registration of any kind - it writes nothing but the flag word. |
 
-That matters for the two ops long labelled "register callback", `4C 9F` and
-`4C 87` - but they do not sweep the same handler, and pairing them on one
-address was itself wrong. Each arm is five instructions that load
+`4C 9F` and `4C 87` are both retire sweeps, not "register callback" ops, and
+they sweep different handlers. Each arm is five instructions that load
 `_DAT_8007C34C` and one handler VA and jump to the shared exit `0x801E2DC4`
 (`jal 0x8003CF40` with `addiu s8,s8,2` in its delay slot), and the VA is where
 they differ: `4C 9F` at `0x801E2548` forms `LAB_801DA930`, while `4C 87` at
@@ -1948,61 +2004,77 @@ either sweep marked is invisible to the open's find.
 Ports: `engine-core::World::{find_actor_by_handler, retire_actors_by_handler}`,
 over the handler identity `engine-core::actor_handler::ActorHandler`.
 
-**ASCII text aliases survive the `clean` tag - outside a framed segment.** A `0x1F <text> 0x00` dialogue
-line is one decoded stride to the walk ([above](#text-segments-and-pickers-are-strides-of-the-stream)), so
-its letters mint nothing; what follows applies to text the walk *lands in* - unframed prose, a data table,
-a record the walk entered mid-op. The US build's text is plain ASCII, and the wide
-flag ops land exactly on the letter ranges: `Set` leads `0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` =
-`a..g`, `Test` leads `0x71..0x77` = `q..w`, each followed by one operand byte. So common English bigrams
-mint flag ops - `ta` = `Test 0x461`, `s,` = `Test 0x32C`, `Sp` = `Set 0x370` - and because every such
-2-byte pair *decodes* without error, a run of prose keeps the walker's error counter at zero and the
-resulting sites carry `clean=true`. The `DESYNCED?` tag catches text only when a non-decodable byte
-happens to precede the site within the resync window. Triage rules that follow from this:
+**ASCII text aliases survive the `clean` tag - outside a framed segment.** A
+`0x1F <text> 0x00` dialogue line is one decoded stride to the walk
+([above](#text-segments-and-pickers-are-strides-of-the-stream)), so its
+letters mint nothing. The problem is text the walk *lands in*: unframed prose,
+a data table, a record entered mid-op. The US build's text is plain ASCII and
+the wide flag ops land exactly on the letter ranges - `Set` leads
+`0x53..0x57` = `S..W`, `Clear` leads `0x61..0x67` = `a..g`, `Test` leads
+`0x71..0x77` = `q..w`, each followed by one operand byte. Common English
+bigrams therefore mint flag ops (`ta` = `Test 0x461`, `s,` = `Test 0x32C`,
+`Sp` = `Set 0x370`), and because every such pair *decodes* without error a run
+of prose keeps the walker's error counter at zero: the sites carry
+`clean=true`. `DESYNCED?` catches text only when a non-decodable byte happens
+to precede the site within the resync window. Triage rules:
 
-- A flag whose **operand byte is outside printable ASCII** (`< 0x20` or `> 0x7E`) cannot be minted by
-  dialogue - its census rows are trustworthy as sites (e.g. `0x382`, `0x3EF`, `0x304`, `0x5DC`).
-- A flag whose operand byte is a letter/punctuation needs the site's *context window* checked in the
-  record disasm (`--disasm-record`): trust sites embedded in choreography ops (`Camera`, `WaitFrames`,
-  `SceneFade`, `4C`-family, `ExecMove`, emitter runs, or a `JmpRel` branch-arm boundary); reject sites
-  whose neighbours decode as further letter-pair flag ops or `.byte` errors.
-- Mirrored runs are self-proving: a `Set` run over a flag band whose exact mirror `Clear` run appears in
-  the same record (the rikuroa `0x281..0x287`+`0x142` pairs) is real even when the census tags it
+- A flag whose **operand byte is outside printable ASCII** (`< 0x20` or
+  `> 0x7E`) cannot be minted by dialogue - its census rows are trustworthy as
+  sites (e.g. `0x382`, `0x3EF`, `0x304`, `0x5DC`).
+- A flag whose operand byte is a letter / punctuation needs the site's
+  *context window* checked in the record disasm (`--disasm-record`): trust
+  sites embedded in choreography ops (`Camera`, `WaitFrames`, `SceneFade`,
+  `4C`-family, `ExecMove`, emitter runs, or a `JmpRel` branch-arm boundary);
+  reject sites whose neighbours decode as further letter-pair flag ops or
+  `.byte` errors.
+- Mirrored runs are self-proving: a `Set` run over a flag band whose exact
+  mirror `Clear` run appears in the same record (the rikuroa
+  `0x281..0x287`+`0x142` pairs) is real even when the census tags it
   `DESYNCED?` - the clean tag is conservative in both directions.
 
-Hand-checks that applied these rules: the "chapter-wide readers" the census reports for `0x32C` (~50
-scenes) and `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue - both flags are real but
-scene-local (see [re-settled-threads](../reference/re-settled-threads.md#region-story-flag-gate-families));
-the Nivora successor gate `0x370` shows the context-window rule cutting **both ways inside one record**
-(`doman` variant `P1[15]`): three `Sp` = `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected),
-but the fourth, at MAN offset `0x06397` (`+0x3018`), sits in a choreography run (`WaitFrames` / `MoveTo` /
-`Effect` / `4C CD`) with a loop-back `JmpRel` to the record's gate-test head - and the head's own
-`Test 0x370 -> +0x301E` jump target lands on the very next op after that `JmpRel`, so both sites decode
-on the same op grid: this is the **genuine writer** (the Dr. Usha briefing self-latch; pinned by
-`man_variant_carrier_census_disc.rs::flag_0x370_writer_is_the_doman_p1_15_usha_latch` - the earlier
-"writer-less, the candidate is Space-Bomb prose" verdict predated the nibble-width pinning and
-adjudicated a prose sibling, not this site); and the once-reported `Clear 0x400`
-inside `vozz P1[7]` was the nibble-8 sub-1 width bug above - under the pinned width the bytes are the
-op's own operand tail and its `35` BGM follower, and the census row disappears entirely.
+Worked cases for these rules:
 
-**The census self-identifies the ASCII prose aliases.** Every site also carries `GFlagSite::text_alias`
-(CLI marker `TEXT-ALIAS?`, on both the census and `--gflag-partition` rows): `true` when the site's raw
-operand byte is printable ASCII **and** the surrounding `TEXT_ALIAS_WINDOW` (16 bytes each side)
-contains a consecutive printable-ASCII run of at least `TEXT_ALIAS_MIN_RUN` (10) bytes **and** the
-window puts two lowercase letters side by side - the sentence signature prose always has and bytecode
-does not. This mechanizes the triage rules: the `ta`/`Sp`/`s,` bigram rows carry the marker even where
-they decode error-free (`clean=true`), while the runtime-pinned real sites with printable operands stay
-unmarked. The three conditions each carry weight: the town01 `P2[3]` `52 25` self-latch and the rikuroa
-`51 42`/`61 42` ladders render as printable byte-streams themselves (`R.R.R.QB`) but break the run every
-1-5 bytes on a non-printable operand (run length beats printable *density*), and the `0x527..0x52E`
-one-hot selector clears (`65 27 65 28 ..`) sustain a 16-byte printable run but alternate op/operand so
-they never form an adjacent lowercase pair. Like `clean`, the marker is triage, not suppression -
-non-printable operands are alias-immune by construction, mirrored Set/Clear runs stay self-proving, and
-a marked row means "check the record disasm", not "discard". The split it produces on a mixed flag is
-the point: `0x527`'s census population is real one-hot ladder sites (unmarked, clean) *plus* the `e'`
-prose bigram (marked), separated row by row. The advisory direction also occurs: two **runtime-pinned
-real** `0x142` sites (the dolk `P1[26]` Clear and the dolk2 variant-carrier `P1[1]` Set) sit inside
-dialogue-adjacent bytecode and carry the marker - exactly the "check by hand" case, and why the marker
-never suppresses a row.
+- The "chapter-wide readers" the census reports for `0x32C` (~50 scenes) and
+  `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue. Both flags
+  are real but scene-local (see
+  [re-settled-threads](../reference/re-settled-threads.md#region-story-flag-gate-families)).
+- The Nivora successor gate `0x370` shows the context-window rule cutting
+  **both ways inside one record** (`doman` variant `P1[15]`). Three `Sp` =
+  `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected). The fourth,
+  at MAN offset `0x06397` (`+0x3018`), sits in a choreography run
+  (`WaitFrames` / `MoveTo` / `Effect` / `4C CD`) with a loop-back `JmpRel` to
+  the record's gate-test head, and the head's own `Test 0x370 -> +0x301E` jump
+  target lands on the very next op after that `JmpRel`, so both sites decode
+  on the same op grid. That one is the **genuine writer**: the Dr. Usha
+  briefing self-latch, pinned by
+  `man_variant_carrier_census_disc.rs::flag_0x370_writer_is_the_doman_p1_15_usha_latch`.
+- `vozz P1[7]` carries no `Clear 0x400`: under the pinned nibble-8 sub-1 width
+  those bytes are the op's own operand tail and its `35` BGM follower.
+
+**The census marks the prose aliases itself.** Every site also carries
+`GFlagSite::text_alias` (CLI marker `TEXT-ALIAS?`, on both the census and
+`--gflag-partition` rows), `true` when all three hold:
+
+- the site's raw operand byte is printable ASCII;
+- the surrounding `TEXT_ALIAS_WINDOW` (16 bytes each side) contains a
+  consecutive printable-ASCII run of at least `TEXT_ALIAS_MIN_RUN` (10) bytes;
+- the window puts two lowercase letters side by side - the sentence signature
+  prose always has and bytecode does not.
+
+Each condition carries weight. The town01 `P2[3]` `52 25` self-latch and the
+rikuroa `51 42`/`61 42` ladders render as printable byte-streams themselves
+(`R.R.R.QB`) but break the run every 1-5 bytes on a non-printable operand (run
+length beats printable *density*). The `0x527..0x52E` one-hot selector clears
+(`65 27 65 28 ..`) sustain a 16-byte printable run but alternate op / operand,
+so they never form an adjacent lowercase pair.
+
+Like `clean`, the marker is triage, not suppression: a marked row means "check
+the record disasm", not "discard". On a mixed flag it splits row by row -
+`0x527`'s census population is real one-hot ladder sites (unmarked, clean)
+plus the `e'` prose bigram (marked). It also fires on real sites: two
+**runtime-pinned** `0x142` sites (the dolk `P1[26]` Clear and the dolk2
+variant-carrier `P1[1]` Set) sit inside dialogue-adjacent bytecode and carry
+the marker.
 
 ### The `0x527..0x531` scene-transition scratch band
 
@@ -2105,11 +2177,11 @@ So:
 - `bgm_id ≥ 2000`: global - lives at PROT `_DAT_8007BC64 + bgm_id - 2000`. The global pool is the **`music_01` bank**, whose pool order is the **debug sound-test order** - so `2000 + i` plays sound-test track `i` and every global id resolves to a curated human name. Pinned by the per-scene op-`0x35` census joining ids to their scenes' known music (`town01` starts `2016` = "Rim Elm theme"). The physical bank is piecewise in extraction space (a 2-entry gap); the resolver `legaia_engine_core::music_labels::prot_entry_for_bgm_id` owns the id→entry map. See [music-tracks](../reference/music-tracks.md#the-disc-side-join-the-music_01-bank-in-sound-test-order).
 - `bgm_id < 2000`: **not** a scene-block entry. The block index `current_scene + 6 + id` is only the change-test index; the load arm replaces it with `*(0x8007BC64) + 2` - extraction `990`, global slot `2`, the track id `2002` plays - and parks the id in `gp+0x728`, whose only reader is the `WARNING BGM NO %d` debug print. Retail stages no scene bank. Engine: `SCENE_LOCAL_BGM_FALLBACK_ID`. Detail and captures: [`audio.md`](audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank).
 
-An older reading had a scene-local id load PROT `current_scene + 6 + id` from the scene's own block; it read the stored index as the loaded one and missed the overwrite. There is no separate BGM index in `SCUS_942.54`.
+The stored index is not the loaded one: a scene-local id does **not** load PROT `current_scene + 6 + id` from the scene's own block. There is no separate BGM index in `SCUS_942.54`.
 
 ## Helper functions
 
-A growing set of small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they get from-scratch ports in [`crates/engine-vm/src/field_helpers.rs`](../../crates/engine-vm/src/field_helpers.rs) instead of host hooks. The dispatcher arms call into them directly.
+The small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they are ported as plain functions in [`crates/engine-vm/src/field_helpers.rs`](../../crates/engine-vm/src/field_helpers.rs) instead of host hooks. The dispatcher arms call into them directly.
 
 | Helper                  | Original          | Source dump                              | Used by                                    |
 |-------------------------|-------------------|------------------------------------------|--------------------------------------------|
@@ -2121,17 +2193,15 @@ A growing set of small leaf helpers in the dispatcher's call graph are pure arit
 | `load_u32_le`           | `FUN_8003CED8`    | `ghidra/scripts/funcs/8003ced8.txt`      | 32-bit immediate decoding                  |
 | `tile_center`           | inline (multi-arm) | dispatcher lines 6534, 7202, 7790, …    | `0x4C nE sub-3/4`, MOVE_TO, dialog spawn   |
 
-**`packet_length(buf)`** - measures one variable-length packet of the in-game text encoding. Walks `buf` until any byte `<= 0x1E` (terminator); bytes `>= 0x1F` count as 1 each; bytes whose top nibble is `0xC` consume the next byte unconditionally and count as 2 (escape sequence). The returned count does *not* include the terminator. The dispatcher adds the opcode-prefix bytes and terminator separately when computing the PC delta.
+Behaviour worth knowing beyond the signatures:
 
-**`party_flag_test(idx, flags)`** - reads bit `idx` of a packed bit array. Bit ordering is MSB-first per byte (bit 7 of `flags[0]` is index 0). Returns `0xFF` when set, `0` otherwise. Out-of-range indices return `0` (the original would read uninitialised bytes; engine callers have already validated bounds by the time they reach this helper). The dispatcher exposes the trigger-flag bank to `0x4C nC sub-5/6` via the `op4c_n_c_party_flag_test(flag_idx)` host hook (the dispatcher reads the index via `load_u16_le` then asks the host whether that bit is set), so the helper itself ends up referenced both directly (sub-1) and indirectly (sub-5/6 via the host).
+- **`packet_length(buf)`** measures one variable-length packet of the in-game text encoding. It walks `buf` until any byte `<= 0x1E` (terminator); bytes `>= 0x1F` count as 1; bytes whose top nibble is `0xC` consume the next byte unconditionally and count as 2 (escape sequence). The count excludes the terminator; the dispatcher adds the opcode-prefix bytes and terminator itself when computing the PC delta.
+- **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_n_c_party_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
+- **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field_helpers.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
+- **`load_u16_le` / `load_u24_le` / `load_u32_le`** assemble little-endian values from sequential bytes and return 0 for missing bytes. The 24-bit form pairs with `sign_extend_24(value)` for the opcodes that take a signed 24-bit immediate (`0x4C nE sub-5`).
+- **`tile_center(b)`** is the grid-byte to world-coordinate conversion: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. Retail inlines it in nine dispatcher arms (`0x4C nE sub-3/4`, `MOVE_TO` at op `0x23`, the scene-change entry tile at op `0x3F`, the position-broadcast `0x4C nC sub-F`, ...).
 
-**`small_table_search(needle, table, lo, hi)`** - searches `table[i * 2]` (stride 2, low byte of each short) for `needle` across indices `[lo, hi)`. Returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field_helpers.rs) (`0x100`) on miss. Negative bounds or `lo >= hi` produce `SEARCH_NOT_FOUND` without scanning.
-
-**`load_u16_le(buf)` / `load_u24_le(buf)` / `load_u32_le(buf)`** - the LE byte-load family. Each helper assembles its result from sequential bytes (`b0 | (b1 << 8) | …`) and returns 0 for missing bytes (matching the dispatcher's `try_get`-style operand reads). The 24-bit version is paired with `sign_extend_24(value)` for the few opcodes (notably `0x4C nE sub-5`'s XP-add) that need a signed 24-bit immediate.
-
-**`tile_center(b)`** - the field VM's grid-byte → world-coord conversion. Formula: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. The original inlines this conversion in nine separate dispatcher arms (most prominently `0x4C nE sub-3/4` for camera-anchored teleport / bbox queries, MOVE_TO at op 0x23, the scene-change entry tile at op 0x3F, and the position-broadcast `0x4C nC sub-F`). Lifting it to a shared helper avoids the closure-per-arm pattern that drift-prone copy-paste produces; an arm needing the conversion calls the helper rather than inlining its own copy.
-
-Tests live alongside the ports in `field_helpers.rs`, covering escape sequences, terminator placement, bit ordering, search bounds, LE byte assembly across short / full-width / over-long buffers, and tile-center high-bit and zero-input edge cases.
+Unit tests sit beside the ports in `field_helpers.rs`.
 
 ## Overlay-0897 command / submenu support functions
 
@@ -2303,41 +2373,43 @@ painter is `FUN_801F1890` (the three-line panel), and the sub-menu's idle and
 confirm both install `FUN_801F1B64` (the single label). Port:
 `legaia_engine_vm::baka_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
 
-Both install sites are read from the dispatchers' own instructions, not from
-their decompiled C: the coin counter builds `a0 = 0x801F3360` and calls
-`FUN_801E9B3C` at `0x801F0CC0` (its other two installs, at `0x801F0BC8` and
-`0x801F0FF0`, both take `0x801F3340`), and the sub-menu installs `0x801F3294`
-at `0x801F1E98` and `0x801F32A4` at `0x801F1EF8`. Walking those descriptors as
+The install sites, read from the dispatchers' own instructions: the coin
+counter builds `a0 = 0x801F3360` and calls `FUN_801E9B3C` at `0x801F0CC0`
+(its other two installs, at `0x801F0BC8` and `0x801F0FF0`, both take
+`0x801F3340`), and the sub-menu installs `0x801F3294` at `0x801F1E98` and
+`0x801F32A4` at `0x801F1EF8`. Walking those descriptors as
 `[i16 op][i16 window][u32]` gives window `11` for the coin counter's confirm
 and window `16` for both sub-menu entries - records whose `+0x18` painters are
-`0x801F1890` and `0x801F1B64`. The tables themselves are read the same way,
-from the entry's own bytes.
+`0x801F1890` and `0x801F1B64`.
 
 ### The actor-band command loops (`FUN_801F71E0` / `FUN_801F5748`)
 
 `FUN_801F71E0` (1070 instr) and `FUN_801F5748` (2777 instr, overlay base `0x801CE818`, contains `switchD_801D2830`) iterate the per-actor pointer band based at `0x801C9370` (`= 0x801D0000 - 0x6C90`), touching command fields `+0x1D9`, `+0x1DF` (the [move-power](../formats/move-power.md) action id), `+0x249`, `+0x24D` and the HP field `+0x14C`. They are large, global-entangled queue/command processors.
 
-**Neither is a portable entry, and "documented, not ported" was the wrong verdict for both.** The "confirm the owning overlay first" caveat was answered, and the answer removes the addresses rather than assigning them: `0x801F71E0` is a `bne` target inside PROT 0967's tutorial-message routine (scope row `worklist_interior`), and `0x801F5748` is a phantom VA of PROT 0897's own `0x25000` over-read - file `+0x26F30` is PROT 0898's battle dispatcher `FUN_801D0748` printed at the field base (scope row `worklist_misbased_print`). What the *body* above describes is real code; what is not real is the pair of entry points it was filed under.
+**Neither address is a portable entry.** The body above is real code; the two
+entry points it is filed under are not.
 
-`0x801F71E0` is exactly that alias. The body above is the field-overlay
-occupant, with its own `addiu sp,sp,-0x40` prologue. In **PROT 0967** loaded at
-its own base `0x801F69D8` the same VA is not an entry at all - it is a `bne`
-target inside the tutorial-message routine, and the `lui`/`lw` halves of one
-address load straddle it
-([`functions/battle.md`](../reference/functions/battle.md#801f71e0-is-a-label-not-an-entry)).
-Neither reading generalises past its own image.
+- `0x801F71E0`: the field-overlay occupant carries its own
+  `addiu sp,sp,-0x40` prologue, but in **PROT 0967** loaded at its own base
+  `0x801F69D8` the same VA is a `bne` target inside the tutorial-message
+  routine, with the `lui`/`lw` halves of one address load straddling it (scope
+  row `worklist_interior`;
+  [`functions/battle.md`](../reference/functions/battle.md#801f71e0-is-a-label-not-an-entry)).
+  Neither reading generalises past its own image.
+- `0x801F5748`: a phantom VA of PROT 0897's own `0x25000` over-read. File
+  `+0x26F30` is PROT 0898's battle dispatcher `FUN_801D0748` printed at the
+  field base (scope row `worklist_misbased_print`).
 
-> **These rows are mostly VA-aliased or truncated, not standalone field-VM
-> entries.** The direct `overlay_0897_<addr>.txt` dump at many of these VAs is a
-> mis-based slice - a 1-instruction stub carrying only decompiled C, or a
-> fragment of an unrelated function - while the real body lives in another
-> overlay image (the `battle_action(898)` / `dance(980)` captures) or in a
-> better-based field capture (`overlay_cutscene_dialogue_*` /
-> `overlay_cutscene_mapview_*`, which the classifier confirms *are* the field
-> overlay 0897). Always check `classify-worklist.py --explain` and read the
-> body-bearing dump before treating one as a field-VM function; a filename
-> prefix is not evidence of base correctness
-> (see [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)).
+> **Most rows in the table are VA-aliased or truncated, not standalone
+> field-VM entries.** The direct `overlay_0897_<addr>.txt` dump at many of
+> these VAs is a mis-based slice (a 1-instruction stub carrying only
+> decompiled C, or a fragment of an unrelated function), while the real body
+> lives in another overlay image (the `battle_action(898)` / `dance(980)`
+> captures) or in a better-based field capture (`overlay_cutscene_dialogue_*`
+> / `overlay_cutscene_mapview_*`, which the classifier confirms *are* the
+> field overlay 0897). Check `classify-worklist.py --explain` and read the
+> body-bearing dump first; a filename prefix is not evidence of base
+> correctness ([`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)).
 
 ### The decimal-string expansion tail family
 
@@ -2388,11 +2460,9 @@ not a table pointer.
 
 #### The seeding loop, and what it really seeds
 
-The loop is real and its store order was transcribed correctly; only its owner
-and its destination were wrong. It belongs to PROT 0898's `FUN_801D3894`
-(prologue `addiu sp,sp,-0x38`), which carries thirteen loops of this family -
-one per HUD layout it installs - of which `0x801D3FC0` is the one the dump
-picked up:
+The loop belongs to PROT 0898's `FUN_801D3894` (prologue
+`addiu sp,sp,-0x38`), which carries thirteen loops of this family - one per
+HUD layout it installs - of which `0x801D3FC0` is the one the dump picked up:
 
 ```text
 0x801D3FAC  addiu a0,zero,0xaa
@@ -2447,15 +2517,13 @@ field captures.
 
 ### The passive-ability indicator HUD (`FUN_801D095C`)
 
-`801D095C` was filed alongside `801D0D38` as "the money/counter variant",
-clamping three values to `9,999,999` and drawing them from the save-scan base
-`&DAT_80084140` at stride `0x414`. **That reading is falsified.** The body at
+`801D095C` is not a money / counter variant of `801D0D38`. The body at
 field-overlay file offset `0x2144` contains no clamp, no `0x80084140`, no
 stride-`0x414` walk and no number drawer. Its thirteen calls are the global
 ability bit-test `FUN_800431D0`, the icon sprite `FUN_8002C488`, and one GTE
 three-point transform `FUN_8005BA68`.
 
-What it actually draws is the small badge column that floats above the
+It draws the small badge column that floats above the
 player's head while an accessory passive is active. Three stack points share
 the player's X (`+0x14`) and Z (`+0x18`) and lift Y (`+0x16`) by three
 fractions of the player's height half-word `+0x72` - `(h*13)>>9`, `h>>6` and
@@ -2512,11 +2580,12 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    executing the control bytecode between text segments (story-flag tests,
    `SET`/`CLEAR`, scene changes) and pausing at each `0x1F` segment to show a
    box, applying a menu choice's relative jump (`FUN_80038050`) so the branch
-   handler's side effects run before its reply. Gated by `World::toggles.use_vm_dialogue`
-   (default `false` at the engine-core level so unit-test worlds keep the simple
-   path; the shell's `play-window` sets it **on by default**, with
-   `--simple-dialogue` opting back into the simplified `OwnedDialogPanel`
-   typewriter). See [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
+   handler's side effects run before its reply. Gated by
+   `World::toggles.use_vm_dialogue`: off in a bare `World` (unit-test worlds
+   keep the simple path) and set on by both play hosts - native `play-window`,
+   where `--simple-dialogue` opts back into the simplified `OwnedDialogPanel`
+   typewriter, and the browser play page. See
+   [`formats/mes.md`](../formats/mes.md#dialog-window-pager---fun_801d84d0).
 
    Interaction records are **resident conversation drivers**: each story-state
    branch exits by jumping to a shared tail that loops back to the top selector
@@ -2530,11 +2599,9 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    only on a frame **after** the one it opened on - retail opens the menu in
    one dialog-SM state (`0x11` / `0x12`) and reads the choice in the next -
    so a confirm held or mashed through the prompt's typewriter cannot pick
-   option 0 unseen. On Tetsu's Rim Elm record that unseen pick is "I want to
-   hear about Biron", which re-enters the same speech: from the pad it read
-   as a conversation with no exit, and the disc-gated
-   `npc_conversation_terminates` oracle reported the record as a looping
-   non-menu because the menu never survived a frame.
+   option 0 unseen (on Tetsu's Rim Elm record that pick is "I want to hear
+   about Biron", which re-enters the same speech). Oracle: the disc-gated
+   `npc_conversation_terminates`.
 
 ### The interaction cursor: one record, two consecutive scripts
 
@@ -2574,30 +2641,29 @@ segment so the walk can never desync inside message bytes and read an ASCII `!`
 as a terminator).
 
 **The port applies it to every placement, talk NPCs included.** Entering a
-talk record at `script_pc0` re-ran its spawn section on every talk - its seat
-pokes, and any story-flag write it carries - then tripped the terminator and
-fell through to the first line, skipping the record's own segment-selection
+talk record at `script_pc0` would re-run its spawn section on every talk - its
+seat pokes, and any story-flag write it carries - then trip the terminator and
+fall through to the first line, skipping the record's own segment-selection
 prologue. `kor5`'s `P1[2]` is the flag-write case: its spawn section is `0x25`,
-`SET 0x619`, a `CamCfg`, `0x21`, so every talk re-latched a flag retail writes
-only at scene load. The two entry points are `placement_interaction_record`
-(cursor, the interaction dispatch) and `placement_inline_prologue`
-(`script_pc0`, for whole-record disc sweeps).
+`SET 0x619`, a `CamCfg`, `0x21`, a flag retail writes only at scene load. The
+two entry points are `placement_interaction_record` (cursor, the interaction
+dispatch) and `placement_inline_prologue` (`script_pc0`, for whole-record disc
+sweeps).
 
-The inn regression that once kept talk NPCs on `script_pc0` was the runner,
-not the cursor. `retock`'s innkeeper opens its interaction with `CC F8 85`, a
-halt-acquire on the player. Retail's acquire for sub `5` is the arm at
-`0x801E2148..0x801E21DC` (jump table `0x801CEF48`, entries `5`, `0xE` and `0xF`
-all point there; `0x801E1ECC..0x801E1F54`, cited here before, is the same-shaped
-arm of sub `0`, `4C 80`). It halts the target and, for the player target, the
-caller too, then advances by its width in `s7`; `s7 = 0` is the refusal,
-`beqz s7, 0x801DEE4C` at `0x801E21D0`. The runner hands such an op the record's
-own context as the target's stand-in, and the halt bit it left there turned each
-later cross-context op into a `Halt`, ending the stay before its gold gate. The
-runner keeps the caller's halt state across a cross-context op. The acquire's
-own refusal is for a target that already carries `0x400` while the scene word
-`*(_DAT_801C6EA4) + 8` is `0` (`0x801E2168..0x801E218C`), the same test the
-dispatcher's halted-target early-out makes (`0x801DE90C..0x801DE940`, which also
-lets a caller whose `+0x50` is `0xFB` through).
+**The halt-acquire that opens a talk.** `retock`'s innkeeper opens its
+interaction with `CC F8 85`, a halt-acquire on the player. Retail's acquire
+for sub `5` is the arm at `0x801E2148..0x801E21DC` (jump table `0x801CEF48`,
+entries `5`, `0xE` and `0xF` all point there; `0x801E1ECC..0x801E1F54` is the
+same-shaped arm of sub `0`, `4C 80`). It halts the target and, for the player
+target, the caller too, then advances by its width in `s7`; `s7 = 0` is the
+refusal, `beqz s7, 0x801DEE4C` at `0x801E21D0`. The refusal is for a target
+that already carries `0x400` while the scene word `*(_DAT_801C6EA4) + 8` is
+`0` (`0x801E2168..0x801E218C`), the same test the dispatcher's halted-target
+early-out makes (`0x801DE90C..0x801DE940`, which also lets a caller whose
+`+0x50` is `0xFB` through). The engine's runner hands such an op the record's
+own context as the target's stand-in and keeps the caller's halt state across
+a cross-context op, so the halt bit left there does not turn each later
+cross-context op into a `Halt` and end an inn stay before its gold gate.
 
 **Where retail ends it (capture).** `retock_innkeeper_talk_open`, a Cross
 cadence, exec-BPs on the arm's entry and on `0x801E21D0`
@@ -2609,13 +2675,12 @@ runs until the next Cross on the innkeeper; that talk's first VM step executes
 the loop-back to `+0x28`, the two selector tests, and the acquire at `+0x30`,
 which **succeeds** (`s7 = 5`, target the player, caller the innkeeper): both
 take `0x400`, the cursor advances to `+0x36`, and the second conversation opens
-there. So the talk ends at the page close before the loop-back, and a failing
-acquire plays no part - the earlier reading that "the acquire fails once the
-window has closed" is falsified. It also misread its gate: the scene word
+there. So the talk ends at the page close before the loop-back; the acquire
+does not fail once the window has closed. The scene word
 `*(_DAT_801C6EA4) + 8` reads `0` on every sampled vsync of both conversations,
-consistent with its one documented use (non-zero only while a placement's spawn
-section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it is not
-a modal-window flag.
+consistent with its one documented use (non-zero only while a placement's
+spawn section is pre-run, [above](#0x43-sub-01ab---scripted-arc-jump)), so it
+is not a modal-window flag.
 
 **What ends the halt (capture).** The two `0x400` bits the acquire set are
 cleared by the walk kernel `FUN_8003774C`, which the same bit dispatches
@@ -2686,21 +2751,18 @@ modelled: a talk that ends on a raw `0x21` keeps its entry (retail's cursor
 moves past the `0x21`), and prop-bound records (doors, cupboards) run their tail
 through, since only NPC talks are captured.
 
-An earlier engine model drove `0x3F → open_dialog(text_id, inline, …)`, which is
-wrong twice over: `0x3F` is the named scene-change, and field dialogue is the
-interaction-driven actor-text pipeline above, not an inline-text opcode. (The
-`0x4C` nibble-5 sub-3/4 op - `FUN_801d65d8` - is an actor-script wait/sync,
-**not** the dialog open/poll an earlier note assumed.)
+Two ops are easy to mistake for a dialog opener and are not: `0x3F` is the
+named scene-change, and `4C 53` / `4C 54` (`FUN_801D65D8`) are polls a script
+waits on ([the wait join](#the-wait-join-at-0x801e28c4)), not an open.
 
-**Engine wiring (re-grounded).** The from-scratch engine now matches this:
-`World::trigger_field_interact` (the interaction probe and the walk-touch
-post) opens the interacted actor's inline dialogue from `World::npcs.dialog`
-(the per-actor inline interaction-script text, keyed by `slot` = the actor's
-MAN record index, populated at field-scene entry), via the host's
-`open_dialog` primitive. An earlier port routed op `0x3E` with `op0 < 100`
-here too, which opened dialogue where retail starts a fight. `0x3F` is now a **live named
-scene-change** (`host.scene_transition_named` → `SceneHost::tick`), no longer a
-dialog opener. The dialog-dismiss gate stays on the `0x4C` nibble-5 sub-4 poll.
+**Engine wiring.** `World::trigger_field_interact` (the interaction probe and
+the walk-touch post) opens the interacted actor's inline dialogue from
+`World::npcs.dialog` (the per-actor inline interaction-script text, keyed by
+`slot` = the actor's MAN record index, populated at field-scene entry). Op
+`0x3E` with `op0 < 100` does not come here; it starts a fight
+(`World::trigger_scripted_battle`). `0x3F` is a live named scene-change
+(`host.scene_transition_named` → `SceneHost::tick`). The dialog-dismiss gate
+is the `0x4C` nibble-5 sub-4 poll.
 
 **Option-choice effects run to completion.** A MES-embedded option picker's
 confirm advances the PC to `Picker::jump_target(choice)` and keeps stepping, so
@@ -2715,18 +2777,19 @@ discs and translation packs.
 
 ## Connection to other crates
 
+- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
+- [`crates/asset`](../../crates/asset/README.md) - `legaia_asset::field_disasm`, the static decoder ([below](#disassembler-tool-asset-field-disasm)), and `man_section` / `man_edit`, the MAN parser and relocator.
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
-- [`crates/mes`](../formats/mes.md) - field **dialogue** has no dedicated opcode (see [§ Field dialogue](#field-dialogue-has-no-opcode)): it is the **actor's inline interaction-script MES text**, shown by the per-frame actor-dialog SM (`FUN_80039b7c`) + pager (`FUN_801D84D0`), triggered by the touch / button-press interaction (no opcode). The text `crates/mes` parses is that inline `0x1F`/glyph stream. (Opcode `0x3F` is the named scene-change, not a dialog opener.)
-- [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 plays 3D animations via `func_0x800252EC` - likely the ANM consumer.
-- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - destination for the from-scratch Rust port. Adds a `field_vm` module sister to the existing actor VM. Reuses the `Host` trait pattern.
+- [`crates/mes`](../formats/mes.md) - parses the inline `0x1F` / glyph text stream that field dialogue shows (see [§ Field dialogue](#field-dialogue-has-no-opcode)).
+- [`crates/anm`](../formats/anm.md) - opcode `0x34` sub-op 3 spawns an effect record through `func_0x800252EC`; the buffer's offset-table layout matches the ANM container shape.
 
 ## Decompile quirks worth knowing
 
 - **`switchD_801e00f4::default()` is misleading**. Ghidra renders the function-epilogue tail block as a synthetic function call; in the original asm, opcodes that "fall through to default" actually advance `param_2` via the `addiu s8, s8, N` instruction in the **MIPS branch-delay slot** of the `j 0x801df09c` jump. So 0x39, 0x3B, 0x44, 0x4C and friends DO advance the PC - just not in a way the C-level decompile makes obvious. Always check the raw asm before deciding "this opcode doesn't advance".
-- **`LAB_801df09c`** is just `j 0x801e3628; move v0, s8` - return `s8` unchanged. Most callsites jump there with an `addiu s8, s8, N` in the **delay slot of the j**, supplying the per-callsite PC delta. **`code_r0x801df098`** is the *preceding* instruction `addiu s8, s8, 0x2` - jumping there gives PC += 2 with no per-callsite delta. **`switchD_801e0f24::caseD_4`** has its entry at `0x801df098` and so always does PC += 2 then return.
-- **`LAB_801e00b8` = `addiu s8, s8, 0x3; j 0x801e00bc`**. **`LAB_801e00bc` = `j epilogue`** with no advance, used by paths that already incremented `s8` upstream.
+- The individual exit labels (`0x801df098`, `0x801df09c`, `0x801e00b8`, `0x801e00bc`, ...) and the PC delta each supplies are tabulated in the [label catalogue](#intra-function-label-catalogue) below.
 - **0x42 mode 0 jump-take target** is `pc + 3 + LE_u16(operand[2..4])` (non-extended), found via the join point `LAB_801e35fc: return iVar18 + uVar31 + iVar24` - not the obvious `pc + 2 + delta`.
-- **Relative-jump deltas wrap at 16 bits.** Each script's PC is stored as a signed 16-bit value (`*(short *)(ctx + 0x9e)`), so every relative branch (`0x26` JMP_REL, the `0x7x` flag-TEST conditional jump, `0x42` COND_JMP, the `0x4E` compare jumps) computes `(base + delta) mod 0x10000`. A delta with the high bit set is a **backward** jump, e.g. `0xFFFE` = -2 - the per-frame "park here" wait loop idiom (`[21] [26 FE FF]` ping-pongs two bytes until a story flag flips a guarded TEST). Computing `base + delta` in a wider int without the 16-bit truncation turns every backward jump into a `+0xFFxx` forward overrun, the "PC runs away to 0x10102" symptom that derails a script after its first wait loop. The from-scratch port models this with a `rel_jump(base, lo, hi)` helper that wraps in `u16`.
+- **Relative-jump deltas wrap at 16 bits.** Each script's PC is stored as a signed 16-bit value (`*(short *)(ctx + 0x9e)`), so every relative branch (`0x26` JMP_REL, the `0x7x` flag-TEST conditional jump, `0x42` COND_JMP, the `0x4E` compare jumps) computes `(base + delta) mod 0x10000`. A delta with the high bit set is a **backward** jump, e.g. `0xFFFE` = -2 - the per-frame "park here" wait loop idiom (`[21] [26 FE FF]` ping-pongs two bytes until a story flag flips a guarded TEST). Computing `base + delta` in a wider int without the 16-bit truncation turns every backward jump into a `+0xFFxx` forward overrun ("PC runs away to 0x10102"). The port's `rel_jump(base, lo, hi)` helper wraps in `u16`.
+
 ### Intra-function label catalogue
 
 `FUN_801de840` is a ~19.5 KB function. Several `iVar = FUN_801xxxxx(); return iVar;` patterns in its C decompile look like calls into separate helpers but are actually **intra-function `j` targets** that Ghidra promoted to fake function names. Each label is a `addiu s8, s8, N; j epilogue` block (or a small variant); calling "into" it just supplies the PC delta and falls through to the dispatcher's tail.
@@ -2802,7 +2865,7 @@ stated in pitfall 2 above - performed at the *correct* base.
 
 ## Disassembler tool: `asset field-disasm`
 
-`asset field-disasm` ([`field_disasm_cli.rs`](../../crates/asset/src/bin/asset/field_disasm_cli.rs)) is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `crate::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps.
+`asset field-disasm` ([`field_disasm_cli.rs`](../../crates/asset/src/bin/asset/field_disasm_cli.rs)) is a CLI that walks a field-VM bytecode buffer and prints one mnemonic per encoded instruction. The decoder mirrors the *width* logic of `legaia_engine_vm::field::step` without executing host calls or mutating ctx state, so it's safe to point at any byte buffer - it stays linear, recovers from unknown sub-ops one byte at a time, and never follows jumps. For "does any shipped scene issue op X" questions use the disc-wide census instead: [`field-op-census.md`](../tooling/field-op-census.md).
 
 It is a subcommand group of the `asset` binary, which ships in release archives
 (`cargo build --release`; or `cargo run -p legaia-asset --bin asset -- field-disasm …`).
@@ -2824,7 +2887,7 @@ asset field-disasm scene-event-scripts <PATH> [--summary]
 asset field-disasm scan-prot --prot <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
 
-The library exposes `legaia_engine_vm::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` for downstream tooling. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
+The library is `legaia_asset::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` (re-exported as `legaia_engine_vm::field_disasm`). `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 > **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
 > structure.** The `0xFFFF 0x0000` lead is the stager-record header
