@@ -372,6 +372,9 @@ NATIVE_HUD = "crates/engine-shell/src/window/hud.rs"
 NATIVE_DEV_MENU = "crates/engine-shell/src/window/dev_menu.rs"
 WEB_PLAY_DEV_MENU = "crates/web-viewer/src/play_dev_menu.rs"
 WEB_PLAY_MENU = "crates/web-viewer/src/play_menu.rs"
+WEB_PLAY_MENU_INPUT = "crates/web-viewer/src/play_menu/input.rs"
+WEB_PLAY_MENU_OPEN_CLOSE = "crates/web-viewer/src/play_menu/open_close.rs"
+WEB_PLAY_MENU_SUB_SCREEN_DRAWS = "crates/web-viewer/src/play_menu/sub_screen_draws.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
 # The occlusion-fade tunables are the one paired set whose web half is a
@@ -950,7 +953,7 @@ SIM_PAIRS: list[dict[str, object]] = [
                 "crates/engine-shell/src/window/menu_draws.rs",
                 "field_menu_sub_draws",
             ),
-            "web": ("crates/web-viewer/src/play_menu.rs", "build_config"),
+            "web": ("crates/web-viewer/src/play_menu/panel_draws.rs", "build_config"),
         },
         "mode": "symbols_all",
         "symbols": ["screen_model"],
@@ -1141,7 +1144,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "overlay without it. Both sites must call both",
         "sites": {
             "native": (NATIVE_TITLE_SAVE, "save_select_overlay"),
-            "web": (WEB_PLAY_MENU, "build_save_select"),
+            "web": (WEB_PLAY_MENU_SUB_SCREEN_DRAWS, "build_save_select"),
         },
         "mode": "symbols_all",
         "symbols": ["overlay_model", "save_select_overlay_draws"],
@@ -1461,7 +1464,7 @@ SIM_PAIRS: list[dict[str, object]] = [
             # test-only unmounted wrapper over it, so the row follows the
             # body that still declares the kind.
             "native": (NATIVE_SAVE_HELPERS, "disk_save_rack_with_card"),
-            "web": (WEB_PLAY_MENU, None),
+            "web": (WEB_PLAY_MENU_INPUT, None),
         },
         "mode": "pattern_same",
         "pattern": r"SaveRack::(\w+)",
@@ -1515,7 +1518,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "sites": {
             "native_window": (NATIVE_REDRAW, "handle_redraw"),
             "native_boot": (NATIVE_BOOT, "tick"),
-            "web": (WEB_PLAY_MENU, "play_menu_open"),
+            "web": (WEB_PLAY_MENU_OPEN_CLOSE, "play_menu_open"),
         },
         "mode": "symbols_all",
         "symbols": ["press_field_menu"],
@@ -1528,7 +1531,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "picker here would be back to two menus",
         "sites": {
             "native": (NATIVE_BOOT_CUTSCENE, "open_menu_row_from_title"),
-            "web": (WEB_PLAY_MENU, "open_play_menu_unpressed"),
+            "web": (WEB_PLAY_MENU_OPEN_CLOSE, "open_play_menu_unpressed"),
         },
         "mode": "symbols_all",
         "symbols": ["open_field_menu"],
