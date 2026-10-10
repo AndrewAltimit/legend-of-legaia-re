@@ -1,34 +1,43 @@
 # Spell table
 
-The battle-action state machine resolves a cast's MP cost, name, and target
-shape from a static table inside `SCUS_942.54`. The table is referenced
-through two interleaved base pointers that view the same 12-byte records:
+A static table in `SCUS_942.54` with one 12-byte record per spell id. It gives every cast its MP cost, target shape, display name and menu description, and its first two bytes route the cast to the battle code that performs it. Party Seru magic, Ra-Seru summons and named monster attacks all share this one id space, which is also the id space the [move-power table](move-power.md) is keyed by. It carries **no damage value**: a summon's damage comes from battle state ([below](#per-spell-damage-power-is-not-static-data---it-is-caster-state-derived)).
 
-| Base | Doc | Field read |
-|---|---|---|
-| `DAT_800754C8` | [battle-action states `0x28` / `0x3C`](../subsystems/battle-action.md) | stats (`+3` = MP cost) |
-| `DAT_800754D0` | same | `name_ptr` (the stats base shifted `+8`) |
+| Fact | Value |
+|---|---|
+| Stats base | `DAT_800754C8 + id * 0xC` |
+| Name-pointer base | `DAT_800754D0 + id * 0xC` (the same records, viewed at `+8`) |
+| Extent | 190 records, ids `0x00..=0xBD`; ends exactly where the description-pointer table `0x80075DB0` begins |
+| Readers | battle-action SM `FUN_801E295C` states `0x28` / `0x3C` ([battle-action.md](../subsystems/battle-action.md)); menu info window `FUN_801D2E74` |
+| Parser | `legaia_asset::spell_names` (crate `game-tables`); CLI `asset spell-names <SCUS> [--json]` |
+| Engine mirror | `legaia_engine_core::retail_magic` |
+| Confidence | Confirmed (byte-pinned against the executable; disc-gated `spell_names_real`, `spell_catalog_disc`) |
 
-Both step by `0xC` per spell id, so record `id` lives at `DAT_800754C8 +
-id*0xC`.
+```mermaid
+flowchart LR
+    id["spell id (actor +0x1DF)"] --> rec["record = 0x800754C8 + id*0xC"]
+    rec -- "+0 class" --> band{"cast class"}
+    band -- "0x32" --> summon["summon band, PROT 903.. module"]
+    band -- "0x14" --> plain["plain cast band"]
+    band -- "0x63" --> cap["capture class: PROT 935 + byte +1"]
+    rec -- "+3" --> mp["MP cost"]
+    rec -- "+2" --> tgt["target shape"]
+    rec -- "+4" --> desc["description via 0x80075DB0"]
+    rec -- "+8" --> name["name pointer"]
+```
 
-The table holds **190 records, ids `0x00..=0xBD`**. Record `0xBD`'s last word
-ends exactly where the description-pointer table `0x80075DB0` begins, so the
-extent is pinned by its neighbour rather than by where the values stop looking
-plausible - see [Reading past the extent](#reading-past-the-extent) for what a
-higher id resolves to.
+What a higher id resolves to is in [Reading past the extent](#reading-past-the-extent).
 
 ## Record layout (12 bytes, stride `0xC`)
 
-| Offset | Type | Field |
-|---|---|---|
-| `+0` | u8 | **cast-class** byte (see below) |
-| `+1` | u8 | sub-index within the class - the **cast-module key** (see below) |
-| `+2` | u8 | target shape (see below) |
-| `+3` | u8 | **MP cost** |
-| `+4` | u8 | info-window **description index** (see below; `0` = none) |
-| `+5..+8` | - | padding (zero) |
-| `+8` | u32 | `name_ptr` - pointer to the display-name C-string |
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0` | u8 | cast class | selects the battle-action band ([below](#cast-classes-record-byte-0)) | Confirmed |
+| `+1` | u8 | sub-index | within the class; the cast-module key for capture-class casts | Confirmed |
+| `+2` | u8 | target shape | side + single / all ([below](#target-shape-2)) | Confirmed |
+| `+3` | u8 | MP cost | deducted from actor `+0x150` | Confirmed |
+| `+4` | u8 | description index | into `u32 string_ptr[]` at `0x80075DB0`; `0` = none | Confirmed |
+| `+5` | 3 | padding | zero for every record | Confirmed |
+| `+8` | u32 | `name_ptr` | pointer to the display-name C string | Confirmed |
 
 A player Seru spell's display name opens with an **icon escape** (`0xCE`, an
 operand, a space) before the ASCII name - not a colour control. The operand
@@ -43,6 +52,8 @@ drops the escape from `name`; the port's banner composer puts it back as `^X`
 (`World::spell_banner_name`), which `engine-ui::battle_hud_chrome` expands.
 
 ### The `+1` byte has two readers, and one of them is not the pager
+
+The battle-action commit also copies the `+0` / `+1` pair into `actor[+0x1E8]` / `[+0x1E9]` for every non-Item category (`0x801E3B70..0x801E3CB0`), where it selects the cue group an executing cast expands to ([battle-action.md](../subsystems/battle-action.md)). The two readers below are the ones that dispatch a module on `+1`.
 
 The pager `FUN_8003EC70(record[+1] + 0x28)` is the reader this page's
 capture-class section describes. The **second** reader is the battle image's
@@ -123,9 +134,7 @@ Decision, 955 the White Shield band) are exactly the cells above with no
 damage spells. Two identities this map settles: **0957** heads with the
 string table `Dies / Puera / Both / Damage / Recover` - Death Game's roulette
 outcome labels, not a summon-effect descriptor - and **0965** is the Doomsday
-module (its earlier "shifted sibling of the battle-tutorial overlay 0967"
-reading was an entry-size over-read artifact; the corrected entries share no
-content).
+module (it shares no content with the battle-tutorial overlay 0967).
 
 ### Description index (`+4`) and the `0x80075DB0` pointer table
 
@@ -135,10 +144,9 @@ resolves each spell's description by reading the `+4` byte and indexing a
 flat `u32 string_ptr[]` array at `0x80075DB0`; index `0` means "no
 description" (the internal enemy-attack tiers `0x00..=0x24` carry `0`).
 The strings use the MES `0x7C` line-break token; the retail shape for the
-player block is two lines - a title line then an effect line. (This byte
-was previously recorded as an "animation id"; the summon effect/animation
-is actually dispatched by `spell_id - 0x81` - see the summon section
-below - and the menu decompile pins `+4` as the description index.)
+player block is two lines - a title line then an effect line. The byte is
+not an animation id: the summon effect / animation is dispatched by
+`spell_id - 0x81` (see the summon section below).
 Parser: `legaia_asset::spell_names` (`SpellEntry::desc`).
 
 ### Name field (record `+8`) - a pointer into NUL-padded slack
@@ -186,10 +194,11 @@ either coordinate is one write, not two - which is a trap for anything that
 enumerates "every spell id" and a shortcut for nothing, since ids that far up
 name no cast.
 
-`legaia_asset::spell_names` sweeps a full 256 ids, so `asset spell-names`
-prints the aliased rows too: `Spin Combo`, `Hurricane Kick`, `Mirage Lancer`
-and their description strings all appear above `0xD4`. They are Tactical Art
-names read through the wrong table, not spells.
+`legaia_asset::spell_names` stops at the extent (`SPELL_COUNT = 190`). A reader
+that sweeps a full 256 ids prints the aliased rows too: `Spin Combo`,
+`Hurricane Kick`, `Mirage Lancer` and their description strings all appear
+above `0xD4`. They are Tactical Art names read through the wrong table, not
+spells.
 
 ### Target shape (`+2`)
 
@@ -253,9 +262,8 @@ named exactly like a party caster: the AI spell picker (`FUN_801E9FD4`,
 `overlay_0898`) reads a **global** spell id from the monster record's
 magic-attack array at [`+0x21..=+0x23`](../subsystems/battle.md) (values `> 1`
 are live), writes it into the live actor at `+0x1DF`, and the battle-action SM
-prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). So the enemy spell name
-*is* in this shared table after all - just keyed by the record's global id, not
-the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md);
+prints `&DAT_800754D0 + id*0xC` (`0x27` → `Tail Fire`). The enemy spell name
+is in this shared table, keyed by the record's global id, not the local entry id. Decoder: [`legaia_asset::spell_names`](../../crates/asset/README.md);
 CLI `asset spell-names <SCUS> [--json]`.
 
 ### The hardcoded special-cast switch (the second selection mechanism)
@@ -334,8 +342,7 @@ three casters share one body, and which cast fires is a function of the id the
 formation seats. The name the banner prints then comes from this table at that
 resolved id, exactly as it does for a party caster.
 
-(The `0xC5` MES substitution table at `DAT_80075EC4`, once mistaken for a
-spell-name source, is the [Tactical Arts name
+(The `0xC5` MES substitution table at `DAT_80075EC4` is the [Tactical Arts name
 table](art-data.md#arts-name-table-dat_80075ec4) - per-character art names, no
 spells.)
 
@@ -362,162 +369,44 @@ the save-state pin recorded in `legaia_engine_core::capture_observations::seru_c
 
 ### Per-spell damage power is not static data - it is caster-state-derived
 
-There is **no per-spell magic-power / multiplier field anywhere in this table**,
-and it isn't a separate static array either. Verified bytes + trace:
+There is **no per-spell power or multiplier field in this table**, and no separate static per-spell array either. A summon's magnitude comes from the caster's and the summon body's battle stats.
 
-- Record bytes `+5..+8` are zero for every spell; `+0`/`+1` are the
-  class/sub-index category selectors, not a power scalar. The whole player Seru
-  block `0x81..=0x8b` shares `cat = 0x32`, `sub = 0` - so the SCUS table cannot
-  even *distinguish* Gimard (weakest) from Nova; their damage must live
-  elsewhere.
-- State `0x28` of the action SM (`overlay_0898_801e295c.txt` case `0x28`) reads
-  only `+3` (MP, deducted from actor `+0x150`), `+0` (`'c'` capture flag), and
-  the name pointer. No power read.
-- The per-summon effect/animation is dispatched by **`(spell_id - 0x81)`**:
-  state `0x29` sets `_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[spell_id - 0x81]`
-  and calls `func_0x8003ec70(spell_id - 0x79, 0)`. Each summon's damage is
-  produced inside that effect script (the `efect.dat` battle-effect path), not a
-  scalar table.
-- The static attack-vs-defense kernel `FUN_801ec3e4` (line 2582:
-  `power = stat[+0x164] + (stat[+0x158]*4)/5 + buff`) is **melee/arts only** - it
-  returns early unless the action-queue head is in `0xC..=0x1F` (line 2552,
-  `0x13 < *param_2 - 0xc`), which magic (`ActionConstant::Magic = 0x02`) never
-  enters.
+What the table and its readers do carry:
 
-**Resolved by static disassembly of the summon overlays (PROT 0900 + 0903..0915).**
-The jump table `FUN_801f2d68` reads (`jr *(0x801F69D8 + state*4)`, `state < 7`)
-resolve to PROT **0900** file offset 0 - the resident **render** overlay (pinned to
-load at `0x801F69D8`). Those five entries are staggered entry points into one
-per-frame routine that lerps move-VM anim banks (`FUN_8003ce9c`/`ce64`/`ceb8`) and
-emits GPU display-list packets into scratchpad `0x1F800314`. It contains **no
-`mult`/`div`, no `actor+0x14c` write, no power read** - so the long-standing "the
-magnitude is in this jump table" hypothesis is **falsified**. The JT is animation /
-rendering only.
+- Record bytes `+5..+8` are zero for every spell, and `+0` / `+1` are class selectors. The whole player block `0x81..=0x8b` shares class `0x32`, so the table cannot distinguish Gimard from Nova.
+- State `0x28` of the action SM (`overlay_0898_801e295c.txt` case `0x28`) reads only `+3` (MP), `+0` (the `'c'` capture test) and the name pointer.
+- State `0x29` dispatches the per-summon effect by `spell_id - 0x81`: it sets `_DAT_8007ba2c = (&PTR_s_re_check_801f6734)[spell_id - 0x81]` and calls `func_0x8003ec70(spell_id - 0x79, 0)`.
+- The attack-vs-defence kernel `FUN_801ec3e4` (`power = stat[+0x164] + (stat[+0x158]*4)/5 + buff`) is melee / arts only: it returns early unless the action-queue head is in `0xC..=0x1F`, which magic (`ActionConstant::Magic = 0x02`) never enters.
+- The jump table `FUN_801f2d68` reads (`jr *(0x801F69D8 + state*4)`, `state < 7`) resolves to PROT **0900** file offset 0, the resident render overlay. Its five entries are staggered entry points into one per-frame routine that lerps move-VM anim banks (`FUN_8003ce9c` / `ce64` / `ceb8`) and emits GPU packets into scratchpad `0x1F800314`. It holds no `mult` / `div`, no `actor+0x14c` write and no power read: animation and rendering only.
 
-The magnitude is applied by the module's **tick body** - the routine PROT 0898's
-`0x801CF4EC` table names, not the spawn stager. Eight of the eleven player Seru
-modules reach a damage wrapper and two of them heal; the split is not the one
-this page carried, and the "same function that spawns the body parts" reading
-came from a census taken over the stagers alone
-([`functions/battle.md`](../reference/functions/battle.md#801dd0ac)).
+The magnitude is applied by each summon module's **tick body** - the routine PROT 0898's `0x801CF4EC` table names, not the spawn stager ([`functions/battle.md`](../reference/functions/battle.md#801dd0ac)). Across the player Seru modules (PROT 0903..0915):
 
-- **Damage** (PROT 0903, 0904, 0906, 0908, 0909, 0910, 0912, 0913, plus
-  0914/0915) computes the amount with the shared battle kernel
-  **`FUN_801dd0ac`** (`a0` = a baked per-module move-type constant `0x10..0x12`,
-  `a1 = 7`, `a2` = target slot), clamps it against the target's HP, adds it to
-  the damage-popup accumulator at `actor+0x10`, then stores `HP = curHP - amount`
-  (`subu`). For the summon path (`param_2 == 7`) the attacker roll is
-  `rand % (INT@+0x168 + 1) + HP@+0x14c + DAT_801C9370[ctx+0x13]_INT@+0x168 * 2`
-  minus a defender-mitigation term (`FUN_801dd0ac` returns `roll - mitigation`) -
-  i.e. **caster/summon battle-state-derived, not a static per-spell scalar.**
-  PROT 0910 is the one that keeps its damage in a callee (`0x801F81DC`), so a
-  per-function census reads its tick as damage-free.
-- **Heal** is **two** modules with **two** different formulas, both reading the
-  caster's per-magic **level** byte - fetched from the `0x80084140` character
-  record by a 32-slot search that matches the cast spell id (`actor+0x1df`)
-  against the id list at `+0x705` and reads the parallel byte at `+0x729`:
-  **Vera** (PROT 0905, spell `0x83`) restores `level * 0x20 + 0xE0`, clamped
-  against `maxHP - curHP` with a **signed** compare, skipping a dead or
-  `+0x16E & 4` actor, and stores the amount **negated** into the popup word
-  `+0x10` (`0x801F7C50`..`0x801F7D0C`); **Orb** (PROT 0911, spell `0x89`)
-  restores `(level << 6) + 0x1C0` over the party row with an **unsigned** clamp
-  (`0x801F7AD8`..`0x801F7AF4`), and at level 3 and above also clears status bits.
-  The single inline formula `(power_byte << 5) + 0xe0` this page used to give for
-  five modules is Vera's alone - and its input is a magic **level**, not a power
-  byte.
-- **Neither**: PROT 0907 (Nighto) reaches no wrapper and computes no amount -
-  it zeroes `+0x14C` outright on a kill roll, or sets the confuse bits.
+| Modules | Behaviour |
+|---|---|
+| 0903, 0904, 0906, 0908, 0909, 0910, 0912, 0913 (plus 0914 / 0915) | **Damage** through the shared kernel `FUN_801dd0ac` (`a0` = a baked per-module move-type constant `0x10..0x12`, `a1 = 7`, `a2` = target slot). The amount is clamped against the target's HP, added to the damage-popup accumulator `actor+0x10`, then `HP = curHP - amount`. PROT 0910 keeps its damage in a callee (`0x801F81DC`). |
+| 0905 Vera (`0x83`) | **Heal** `level * 0x20 + 0xE0`, clamped against `maxHP - curHP` with a signed compare, skipping a dead or `+0x16E & 4` actor; stored negated into the popup word `+0x10` (`0x801F7C50..0x801F7D0C`). |
+| 0911 Orb (`0x89`) | **Heal** `(level << 6) + 0x1C0` over the party row with an unsigned clamp (`0x801F7AD8..0x801F7AF4`); at level 3 and above it also clears status bits. |
+| 0907 Nighto | **Neither**: zeroes `+0x14C` outright on a kill roll, or sets the confuse bits. |
 
-`FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads
-a 26-byte-stride per-move power table at **`0x801F4F5C`** - that is where a genuine
-per-move "power" scalar lives, but it feeds melee/arts, not summon magic. The kernel reads
-the record's `+0` signed-16-bit field and uses `(i16)power >> 2` as the attacker-roll
-modulus (`sll 0x10` then `sra 0x12`); the same `+0` is also read at full, half and eighth
-scale within that one kernel. (`0x801F3990` is an interior address of `FUN_801DD0AC` under
-the aliased `overlay_0897` mapping, not a second reader.)
-
-`param_1` is **not** the raw move id - it is looked up through a 128-byte **id → index
-map** at `0x801F4E63` (immediately before the table): the setup site passes
-`param_1 = map[actor[+0x1df]]` (`overlay_battle_action_801e09f8`). The map covers move ids
-`0x00..=0x7F` and resolves ids `0x04..=0x74` to power indices `0x01..=0x2b` (a `0x00` entry
-= the unused record 0, `0xFF` = a no-record sentinel); the full resolution is
-`power_table[map[move_id]]`.
-
-Both the table and the map are **static overlay data, pinned on disc**: the
-`0x801F4E63..0x801F69D8` window is byte-identical across two unrelated battle save states (a
-full-party Gobu Gobu fight and the Tetsu-tutorial command menu), and the bytes live in
-**PROT entry 0898** (the battle-action overlay, `overlay_0898`) - both the table window and
-the `FUN_801dd0ac` code body map with one consistent base, so the table is at a fixed
-raw-entry file offset (`0x26744`; the map at `0x2664B`). Parser `legaia_asset::move_power`
-(`asset move-power <PROT-0898.BIN>` prints `idx → power / counter / sfx ← move id`); the
-disc-gated `move_power_real` test pins the decoded powers + the id→index map. The clean
-26-byte structure runs 44 indices (index 0 unused) before the region transitions to other
-overlay data (a float/transform table, then the `data\battle\summon.DAT` / `readef.DAT`
-filename strings). Decoded record fields, each code-traced to a battle-action reader: `+0x00`
-`i16` power; `+0x04` `u16` an action-timing counter (seeded at `ctx+0x6c6`, decremented by
-the SM); `+0x0d` `u8` a sound / voice cue id (handed to the cue dispatcher `FUN_8004fcc8`).
-The rest of the record - the `+0x02` strike Y offset, the `+0x08` homing speed, the `+0x0a`
-impact-effect selector, the `+0x0e` / `+0x12` / `+0x16` effect-id lists, and the `+0x0c`
-designer tag no instruction reads - is decoded field by field in
-[`move-power.md` § Record layout](move-power.md#record-layout-26-bytes).
-
-**What the records are.** Because the move id (`actor[+0x1df]`) is the *same id space* this
-spell table is indexed by, joining the two labels every record: power records `0x10..=0x2b`
-(move ids `0x25..=0x74`) are the **named monster special-attacks** - every one resolves to a
-non-empty spell-table name (Fire Breath `0x25`, the enemy-Gimard *Tail Fire* `0x27`, … the
-late-game attacks at `0x61..=0x74`); this is their physical/special-attack *power*, distinct
-from the *name* this table carries. Power records `0x01..=0x0f` (move ids `0x04..=0x1f`, all
-`< 0x24`) are the unnamed **internal enemy-attack tiers** (escalating-power triplets - the
-ids this table leaves nameless). The disc-gated `move_power_real` test pins that named /
-unnamed boundary against the live spell table (no Sony name strings embedded).
+`level` is the caster's per-magic level byte: a 32-slot search of the `0x80084140` character record matches the cast spell id (`actor+0x1df`) against the id list at `+0x705` and reads the parallel byte at `+0x729`.
 
 #### The full damage-roll chain (three stages)
 
-The damage a summon deals is the `attacker_roll - defender_roll` margin after a
-three-stage pipeline, all of it now byte-traced:
+The damage a summon deals is the `attacker_roll - defender_roll` margin after three stages. Stat names follow the port's kernels; the actor field behind "AGL" is `+0x168` and "HP" is `+0x14c`.
 
-1. **Roll** - `FUN_801dd0ac` builds an attacker roll
-   (`rand % (summon_AGL + 1) + summon_HP + caster_AGL*2`) and a defender roll
-   (`rand % ((target_AGL >> 1) + 1) + (target_HP >> 8) + (target_DEFa >> 4) +
-   (target_DEFb >> 4) + target_AGL*2`).
-2. **Scale** - `FUN_801dd864` scales the attacker roll by the element-affinity
-   percent from the 8×8 byte matrix at `0x801F53E8`, then the attacker/defender
-   status-weaken bits (`+0x16e & 1` → 9/10, `& 2` → 7/10; defender guard
-   `+0x1de == 4` doubles its roll first), and - summon only - the caster's
-   magic-power byte (`SC + 0x729`, matched on the spell-id at `+0x705`):
-   `roll += roll*(power_byte − 1) >> 3`. `FUN_801dd0ac` then re-rolls the
-   attacker as `defender_roll + rand % ((summon_AGL >> 1) + 1) + summon_HP`
-   whenever the scaled attacker has not already overwhelmed the defender.
-3. **Finish** - `FUN_801ddb30` applies the per-element resistance bits (from the
-   defender's SC ability words `+0x6bc`/`+0x6c0`), a `rand % 9 + 8` floor, the
-   9999 cap, the spirit-gauge fill, the damage-popup accumulator, MP drain, and
-   the per-element stat-debuff for the active field type
-   (`*(DAT_801c9358 + 0x1d)`).
+1. **Roll** - `FUN_801dd0ac`, summon branch (`param_2 == 7`), builds an attacker roll `rand % (summon_AGL + 1) + summon_HP + caster_AGL*2` (the caster term is `DAT_801C9370[ctx+0x13]`'s `+0x168`) and a defender roll `rand % ((target_AGL >> 1) + 1) + (target_HP >> 8) + (target_DEFa >> 4) + (target_DEFb >> 4) + target_AGL*2`.
+2. **Scale** - `FUN_801dd864` scales the attacker roll by the element-affinity percent from the 8x8 byte matrix at `0x801F53E8`, then by the status-weaken bits (`+0x16e & 1` → 9/10, `& 2` → 7/10; a defender guard `+0x1de == 4` doubles its roll first), and - summon only - by the caster's magic level byte: `roll += roll*(level - 1) >> 3`. `FUN_801dd0ac` then re-rolls the attacker as `defender_roll + rand % ((summon_AGL >> 1) + 1) + summon_HP` whenever the scaled attacker has not already overwhelmed the defender.
+3. **Finish** - `FUN_801ddb30` applies the per-element resistance bits (the defender's ability words `+0x6bc` / `+0x6c0`), a `rand % 9 + 8` floor, the 9999 cap, the spirit-gauge fill, the damage-popup accumulator, MP drain, and the per-element stat debuff for the active field type (`*(DAT_801c9358 + 0x1d)`).
 
-The bounded, state-free arithmetic of stages 1 + 2 is ported as pure kernels in
-[`legaia_engine_vm::battle_formulas`](../subsystems/battle-formulas.md)
-(`summon_attacker_roll` / `summon_defender_roll` / `summon_predamage` /
-`apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` /
-`heal_summon_amount`). Stage 3 reads ~20 battle globals and mutates live battle
-state, so it stays the coupled tail of the live battle context rather than a
-pure kernel. See the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in
-[`reference/functions.md`](../reference/functions.md).
+Stages 1 and 2 are pure kernels in [`legaia_engine_vm::battle_formulas`](../subsystems/battle-formulas.md) (`summon_attacker_roll` / `summon_defender_roll` / `summon_predamage` / `apply_element_affinity` / `apply_status_weaken` / `apply_magic_power` / `heal_summon_amount`). Stage 3 reads about twenty battle globals and mutates live battle state, so it lives in the battle context. The summon roll runs in the live battle (`World::player_summon_predamage`), so the `base_power` figures in `legaia_engine_core::retail_magic` are not what a cast deals. `FUN_801dd0ac` is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`; see also the `FUN_801dd0ac` / `FUN_801dd864` / `FUN_801ddb30` rows in [`reference/functions.md`](../reference/functions.md).
 
-So the "missing per-spell power scalar" the engine wanted largely **does not exist for
-summons**: the game derives summon magnitude from caster/summon battle stats
-(`FUN_801dd0ac`) or, for recovery summons, from a per-character magic-power byte. The
-genuine per-move power scalar that *does* exist - the `0x801F4F5C` table - feeds the
-arts/physical branch and is now located + parsed off the disc (`legaia_asset::move_power`,
-above). The `FUN_801dd0ac` summon roll is wired into the live battle
-(`World::player_summon_predamage`), so the `base_power` figures in
-`legaia_engine_core::retail_magic` are not what a cast deals.
-(Method: capstone disassembly of the extracted PROT 0900 / 0903..0915 overlays +
-byte-matching the resident table against the in-RAM battle save states; `FUN_801dd0ac`
-itself is dumped at `ghidra/scripts/funcs/overlay_battle_action_801dd0ac.txt`.)
+#### Where a per-move power scalar does exist
 
-The mirror lives at `legaia_engine_core::retail_magic` (`SERU_MAGIC` +
-`retail_seru_magic_catalog`); the Seru that teach these ids are wired in
-`legaia_engine_core::seru_learning::SeruRegistry::retail`.
+`FUN_801dd0ac`'s **non-summon** branch (`param_2 != 7`, the arts / physical path) reads the 26-byte-stride [move-power table](move-power.md) at `0x801F4F5C` (PROT 0898 file offset `0x26744`), through the 128-byte id → index map at `0x801F4E63` (file `0x2664B`): `power_table[map[actor[+0x1df]]]`. That page owns the record layout and the map.
+
+Because the move id is this table's id space, joining the two labels every power record. Records `0x10..=0x2b` (move ids `0x25..=0x74`) are the **named monster special attacks** - each resolves to a non-empty name here. Records `0x01..=0x0f` (move ids `0x04..=0x1f`) are the unnamed **internal enemy-attack tiers**. The disc-gated `move_power_real` test pins that boundary against the live spell table.
+
+The engine mirror of the player block is `legaia_engine_core::retail_magic` (`SERU_MAGIC` + `retail_seru_magic_catalog`); the Seru that teach these ids are wired in `legaia_engine_core::seru_learning::SeruRegistry::retail`.
 
 ## See also
 
