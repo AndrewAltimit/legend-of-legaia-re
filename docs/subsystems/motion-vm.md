@@ -129,8 +129,12 @@ move publishes `-Y` into `+0x8E` and the arm writes it back), the snap is
 a host places it, and the glide is `World::tick_field_npc_heights`, which
 steps `rotate_toward_clamped` per actor tick for a slot whose flag word
 carries `0x2000` - on the disc that is almost only a partition-2 cutscene's
-cross-context `0x31` poke. The engine does not cull, so no NPC holds on
-bit `1`.
+cross-context `0x31` poke. The cull is ported too
+(`World::field_npc_culled`, `field_actor_culled` in
+`engine-core::world::field_npc_cull`): the glide runs behind it over the
+camera view the hosts publish, so an off-window glider keeps the Y it had, and
+under the visible-tile crop both hosts skip the culled NPC's draw
+([renderer](renderer.md)).
 
 **Dispatch arm** - skipped whole when the global suppress bit
 `_DAT_1F800394 & 0x400` is set. Otherwise four routines fire on their own
