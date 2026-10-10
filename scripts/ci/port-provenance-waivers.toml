@@ -1035,19 +1035,6 @@ member.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/actors.rs:8002519c"
-reason = """
-FUN_8002519C is the 328-byte SCUS actor-list iterator; it forms 0x80021DF4 (the
-per-actor tick it compares each node's +0x0C against) and calls 0x80017B94 /
-0x800204A4 / 0x80024DFC / 0x800250D4. Its module siblings are the battle seat and
-loader routines, which is a port-partition fact: the engine keeps the actor pool
-and the seats in one module while retail splits the walker from the handlers it
-dispatches. The finding's own lift line confirms the identity rather than
-disputing it - 0x80021DF4 is also formed by FUN_801D7518, tagged in
-field_actor_kernels.rs, which is the same tick from the field side.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world/battle/initiative.rs:80051d84"
 reason = """
 FUN_80051D84's first two tests are `lw v1,-0x42dc(v1)` then `lbu v0,0x287(v1)`
@@ -1327,21 +1314,6 @@ wrapper's own body forms neither.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-core/src/world/actors.rs:801d01b0"
-reason = """
-Correct tag, read against the disassembly. The 491-instruction body of
-FUN_801D01B0 (overlay_dialog_801d01b0.txt and five byte-identical captures;
-the overlay_0897 dump at this VA is a 10-instruction fragment) carries the
-base-step selector `field_base_step` reproduces: `li s4,0x8` at 0x801D0334,
-the forced-slow byte `lbu -0x4958` (0x8007B6A8) -> `li s4,0x5`, the run mask
-`0x80084140+0x59C` AND the held pad, the XOR against the Field Move word
-`+0x58C` -> `li s4,0xc`, the debug-turbo `li s4,0x18` arm, and the
-`mult s4,+0x72` at 0x801D056C. The orphan reading is file placement:
-`world/actors.rs` otherwise holds battle actor ports (FUN_800402F4,
-FUN_8004998C, ...), none of which touch the field pad controller's globals.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-core/src/world/battle/locomotion.rs:8004998c"
 reason = """
 Correct tag, read against the disassembly (8004998c.txt). The cited span is
@@ -1411,4 +1383,19 @@ zero`) whose words equal field 0897's 0x801D5AE0 lead modulo relocation
 exists to keep the catalog from counting it as fresh work; the tag sits on
 the minigame overlays' own copy, the one PROT 0972's ground-height solver
 FUN_801D6028 calls (`jal` at 0x801D6168 and 0x801D6198).
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/battle/cast_band.rs:801e9fd4"
+reason = """
+Correct tag, read against the disassembly. `monster_cast_clip` reproduces the
+generic magic pick inside the 2114-instruction monster action picker
+(overlay_battle_action_801e9fd4.txt): `li s2,0x2` at 0x801EA4A0 opens the entry
+walk, `lw 0x4c(v0)` / `lbu 0x0(v0)` / `li v0,0x23` / `bne` at
+0x801EA4C0..0x801EA4D0 is the tag-0x23 filter, `lbu 0x21(v1)` at 0x801EA4E8
+reads magic slot `s1 - 1`, the `0x800754C8` stride-12 `+3` read at
+0x801EA504..0x801EA514 is the MP-cost gate, and 0x801EA53C..0x801EA544 store
+the entry index to `+0x1E7` / `+0x1E0` and the spell id to `+0x1DF`. The orphan
+reading is file placement: the picker's other ports live in the monster-AI
+modules, while this one kernel sits beside the cast band that consumes `+0x1E0`.
 """
