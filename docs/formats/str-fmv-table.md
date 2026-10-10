@@ -113,7 +113,7 @@ rects' width and height from the STR **sector header**'s own `+0x10` / `+0x12` (
 
 This table is **static initialised data** in the cutscene overlay (PROT 0970), not a runtime-built structure, so it decodes straight from the disc: `legaia_asset::fmv_dispatch::FmvTable::from_str_overlay` reads it (per-`fmv_id` path + frame range + dimensions), pinned by the disc-gated `fmv_dispatch_real` test. The windowed-cutscene player uses the frame range to seek to the right segment (`cutscene_av::fmv_segment_window`).
 
-An earlier reading used a 64-byte stride (a `sll v0,v0,6` transcription error), pairing wrong slot halves - it concluded `MV2`/`MV5` were never referenced and slots 5..11 pointed at cut files. The disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`; under the 32-byte stride every movie on the disc is dispatched. That reading is **superseded**. The engine resolver `legaia_engine_core::cutscene::fmv_index_to_str_filename` mirrors the corrected nine-slot map; the disc-parsed `FmvTable` remains the authoritative source.
+The stride is 32 bytes, not 64: the disc bytes and the resident RAM capture both encode `sll v0,v0,0x5`, and under that stride every movie on the disc is dispatched (a 64-byte reading pairs wrong slot halves and leaves `MV2` / `MV5` unreferenced). The engine resolver `legaia_engine_core::cutscene::fmv_index_to_str_filename` mirrors the nine-slot map; the disc-parsed `FmvTable` remains the authoritative source.
 
 `_DAT_8007BA78` is a `s16` written by the field-VM FMV-trigger op (`0x4C 0xE2 lo hi …`); see [`cutscene.md`](../subsystems/cutscene.md#field-vm-fmv-trigger-op) for the full opcode trace.
 
@@ -172,8 +172,8 @@ One trigger op per scene; no other scene MAN carries one. `fmv_id 0` (the `MV1.S
 a poll-tier playthrough capture observes `taiku` entering StrInit (game mode `0x1A`) with `_DAT_8007BA78 = 5` and, exactly per the slot-5 hand-off, returning to
 mode 2 with **no** scene-name write - play resumes in `taiku` itself. What remains only a byte match is the *carrier*: the raw `4C E2` candidate inside
 `taiku`'s uncompressed scene structures (outside partition 1) is the matching suspect for where the op lives. The same captures also observe the `garmel` → 2
-and `dohaty` → 4 firings at mode `0x1A` with their documented `map01` / `map02` returns. The earlier reading that the `town0d` / `uru` / `jouine` triggers are
-vestigial pointers at cut movies is **superseded** - under the correct table stride they play `MV4` / `MV5` / `MV6`.
+and `dohaty` → 4 firings at mode `0x1A` with their documented `map01` / `map02` returns. The `town0d` / `uru` / `jouine` triggers play `MV4` / `MV5` / `MV6`; they are
+not vestigial pointers at cut movies.
 
 ## Rust API
 

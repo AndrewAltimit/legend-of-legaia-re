@@ -78,7 +78,7 @@ The over-read's other legacy is a **naming** one, and it is the family to check 
 
 Two properties make the corrected form checkable, and both are asserted by the disc-gated tests for those modules: the offset plus the asset's length must fit inside the entry, and a payload's own framing (a streaming chunk chain, a descriptor count in the header) must terminate inside it rather than run to the buffer end. A constant that needs a wider buffer than its entry is naming the wrong entry.
 
-> **Historical note.** An earlier Python proof-of-concept used `start_lba = toc[p+5] - toc[p+2]`. That subtraction actually computes a size in sectors and was misinterpreted as the start LBA - under that math `start_lba` collapsed to a small relative offset within "block 0" of the file, and ~80% of PROT entries ended up reading the SAME few low-LBA byte ranges. Anything written using that formula's outputs is artefacted; trust only post-`toc[p+2]` extractions.
+> **Not `toc[p+5] - toc[p+2]`.** That subtraction is a size in sectors, not a start LBA: used as one, it collapses to a small offset inside the file's first block and about 80% of entries read the same few low-LBA byte ranges. Any output produced with it is artefacted.
 
 ## In-RAM TOC
 

@@ -274,10 +274,9 @@ matches these two entries and nothing else - the per-scene banks do not match
 because in a scene bundle record 0 sits inside the prescript container rather
 than at offset 0 of the PROT entry.
 
-The zero-trailer test is the whole discriminator, and it used to be spelled as
-"the `u32` at `+4` is under `0x100`". That is the same predicate read through
-the superseded `u32 v` column: a category byte can never exceed `0xFF`, so the
-bound could only ever fail on a non-zero trailer.
+The zero-trailer test is the whole discriminator. "The `u32` at `+4` is under
+`0x100`" is the same predicate: a category byte can never exceed `0xFF`, so
+the bound can only fail on a non-zero trailer.
 
 ## See also
 

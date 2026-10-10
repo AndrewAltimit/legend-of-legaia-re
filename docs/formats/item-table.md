@@ -38,8 +38,7 @@ at the window origin and the `+8` string (staged CLUT 7) one text row below
 (`WY + 0x10`) - see `ghidra/scripts/funcs/overlay_menu_801d0f1c.txt` and
 [`../subsystems/field-menu.md`](../subsystems/field-menu.md#items-screen).
 Consumables carry an effect sentence, accessories their class word, and many
-equipment ids share an empty / `Best:`-class slot (the "shared type string"
-this field was previously described as). Descriptions use the MES `0x7C`
+equipment ids share an empty / `Best:`-class slot. Descriptions use the MES `0x7C`
 line-break token; `legaia_asset::item_names` decodes it to `'\n'`.
 
 The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing

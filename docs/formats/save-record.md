@@ -273,8 +273,8 @@ is the **next-level XP threshold** - the "next" readout on the status screen. (T
 displayed level itself is read from `+0x130`, above, not derived from `+0x0`.)
 Confirmed live: a randomized ROM that wrote a level-10 XP value into `+0x4` showed
 it as "next level: 11195" while *experience* stayed `0`, leaving the derived level
-at 1 (the earlier note that "the level-up logic reads +0x4 as XP" conflated the
-threshold the applier reads with the cumulative XP it reads it against). The
+at 1 (`+0x4` is the threshold the applier reads, `+0x0` the cumulative XP it
+compares against it). The
 starting-level randomizer therefore seeds `+0x0`, not `+0x4`.
 
 The runtime accessor in [`legaia_save::CharacterRecord`] is

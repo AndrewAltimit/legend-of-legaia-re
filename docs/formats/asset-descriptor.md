@@ -48,10 +48,8 @@ semantics, is on
 
 ## The format is on the disc as a top-level entry
 
-An earlier revision of this page recorded that "strictly scanning all 1233 PROT
-entries against this format finds zero hits", and read that as the container
-existing only after an LZS chain had been decoded. That is **falsified**: the
-sweep above finds 105 top-level carriers, which is the same corpus
+The container does not exist only behind an LZS chain: the sweep above finds
+105 top-level carriers, which is the same corpus
 [`scene-bundles.md`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
 classes as `scene_asset_table` plus the `lzs_container` shapes
 (`parse_player_lzs`) - the scene bundles, `player.lzs`-style character/effect

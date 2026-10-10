@@ -173,12 +173,11 @@ texture (deduped by fingerprint) to a local PNG, and `scripts/asset-investigatio
 lays them into indexed contact sheets for review. Those PNGs are decoded pixel
 data and stay local - only the resulting fingerprint→label table is committed.
 
-> **Note:** an earlier revision tried to derive an "NPC palette" label
-> *structurally* from the CLUT load position `fb=(0, 479)`. That is unsound:
-> nearly every 256×256 4bpp scene/field texture page parks its CLUT in that
-> same bottom VRAM band (see [NPC palettes](npc-palette.md)), so the rule
-> conflated floors / walls / terrain with NPC colour tables. Labels are now
-> content-keyed observations, not a CLUT heuristic.
+> **Note:** an "NPC palette" label cannot be derived structurally from the
+> CLUT load position `fb=(0, 479)`: nearly every 256×256 4bpp scene / field
+> texture page parks its CLUT in that same bottom VRAM band (see
+> [NPC palettes](npc-palette.md)), so the rule conflates floors / walls /
+> terrain with NPC colour tables. Labels are content-keyed observations.
 
 ## Encoding: PNG -> TIM (texture replacement)
 

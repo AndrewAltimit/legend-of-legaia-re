@@ -104,11 +104,9 @@ correctly-sized entry that terminator is followed only by zero
 padding, so the walk reaches **every** TIM chunk the entry owns.
 Nothing is left cold-loaded.
 
-An earlier revision of this page said `0006_town01.BIN` had a
-"two-list" shape - chunks at `0x3840` / `0xba64`, a zero-padded gap,
-then `0x16c24` / `0x1ee48` - whose second list the battle-init
-dispatch never reached. That is falsified: the second pair is PROT
-entry **0007**'s own tail, seen through the superseded over-reading
+`0006_town01.BIN` has no "two-list" shape. The chunks at `0x3840` /
+`0xba64` are its own; the pair at `0x16c24` / `0x1ee48` past a zero-padded
+gap is PROT entry **0007**'s tail, seen through the superseded over-reading
 entry-size expression, and `FUN_8001FE70` reaches it when it walks
 entry 0007. See
 [`scene-bundles.md`](scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape).

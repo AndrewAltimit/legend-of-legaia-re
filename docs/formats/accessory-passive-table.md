@@ -13,10 +13,10 @@ There is **no separate per-accessory effect record**. The static side is a
 **64-slot passive-effect index space** (`0x00..=0x3F`): one index = one
 effect, and an equipped item's index becomes a **bit position** in the
 per-character ability bitfield. The accessory's index is the descriptor's
-`+3` byte - the byte previously documented as a "constant `0x41` (`'A'`)
-marker", which is in fact this index's **no-passive sentinel** on consumable
-rows. Likewise the equip record's `+5` byte - previously "constant `0x40`" -
-is the equipment-side index slot, carrying the sentinel on every retail row.
+`+3` byte; the `0x41` (`'A'`) that consumable rows carry there is this
+index's **no-passive sentinel**, not a marker. Likewise the equip record's
+`+5` byte is the equipment-side index slot, carrying the sentinel `0x40` on
+every retail row.
 
 ## Indexing (Ghidra-traced)
 
