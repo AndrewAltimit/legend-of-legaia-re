@@ -1147,6 +1147,16 @@ impl<'m> DrawCtx<'_, 'm> {
             let Some(pose) = w.field_npc_draw_pose(d.slot, d.spawn) else {
                 continue;
             };
+            // Retail's actor cull (`FUN_801D79E8`) under the visible-tile
+            // crop, the gate the placed-object pass asks too.
+            if !legaia_engine_core::field_view_window::npc_actor_visible(
+                w,
+                self.view_cells.as_ref(),
+                d.slot,
+                d.spawn,
+            ) {
+                continue;
+            }
             // A tilted slot takes the full `Rx * Ry * Rz` composer the
             // placed-object pass uses (`placement_rotation`); an untilted
             // one keeps the yaw-only matrix.

@@ -310,6 +310,33 @@ pub fn placed_actor_visible(
         )
 }
 
+/// The field-NPC gate a host applies per draw while the visible-tile crop is
+/// on: `true` = draw placement `slot` (spawned at `spawn`). The same cull as
+/// [`placed_actor_visible`], at the NPC's live position and the placement
+/// radius `+0x58 = 0` ([`World::field_npc_culled`]).
+///
+/// A placement NPC is a field actor ticked by `FUN_8003BC08`, so the
+/// visibility cull `FUN_801D79E8` rewrites its `+0x10` bit 1 every tick and
+/// the actor draw walk `FUN_8001ADA4` skips it while the bit is up
+/// (`flags & 0xA`, `0x8001AE4C..0x8001AE58`). In the `conc_field_card_boot`
+/// capture the placements that read bit 1 set (`+0x10 = 0x08020886`)
+/// include two standing past the window's far edge, which retail's frame
+/// does not show and which the engine drew at the top of the screen.
+///
+/// REF: FUN_801D79E8, FUN_8001ADA4
+pub fn npc_actor_visible(
+    world: &World,
+    cells: Option<&ViewCells>,
+    slot: u8,
+    spawn: (i16, i16),
+) -> bool {
+    if cells.is_none() {
+        return true;
+    }
+    let (x, z) = world.npcs.positions.get(&slot).copied().unwrap_or(spawn);
+    !world.field_npc_culled(x, z)
+}
+
 /// The terrain-list gate a host applies per draw: `true` = draw it. With no
 /// crop this frame (`cells = None`) every draw is drawn.
 pub fn terrain_draw_visible(cells: Option<&ViewCells>, key: CellKey) -> bool {

@@ -670,6 +670,32 @@ impl FieldActors {
         out
     }
 
+    /// Per catalog entry: `1` = the actor cull hides it this frame under the
+    /// visible-tile crop `cells` ([`legaia_engine_core::field_view_window::npc_actor_visible`],
+    /// the gate the native window's NPC pass asks). Empty while no crop
+    /// applies.
+    pub fn culled(
+        &self,
+        host: &SceneHost,
+        cells: Option<&legaia_engine_core::field_view_window::ViewCells>,
+    ) -> Vec<u8> {
+        let (Some(n), Some(_)) = (self.npcs.as_ref(), cells) else {
+            return Vec::new();
+        };
+        n.pack
+            .entries
+            .iter()
+            .map(|e| {
+                u8::from(!legaia_engine_core::field_view_window::npc_actor_visible(
+                    &host.world,
+                    cells,
+                    e.placement.index as u8,
+                    (e.placement.world_x, e.placement.world_z),
+                ))
+            })
+            .collect()
+    }
+
     /// `[r, g, b, ir0, ...]` per catalog entry: the actor's op-`4C 81` draw
     /// tint as a constant cue (`World::field_npc_draw_tint`), zeros for an
     /// untinted actor. Empty while no entry is tinted.
