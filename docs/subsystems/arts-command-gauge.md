@@ -472,7 +472,7 @@ The randomizer's **arts AP override** (`--arts-ap-grant` / `--arts-ap-cost`) det
 
 **Placement.** The battle overlay is packed: the move-power window `0x801F4E63..0x801F69D8` is the only large zero run and it is runtime-indexed. The detour routines go into the verified-dead SCUS arenas `shiny_seru::ARENA1_VA` (guard + debit) and `ARENA2_VA` (refund), with the config table in the rodata gap `SCUS_GAP_VA`, all reached from the 0898 detours by `j`. The [shiny-Seru](../tooling/randomizer.md#shiny-seru) feature uses the same bytes, so the arts AP override and `--shiny-seru` are mutually exclusive, enforced in the CLI and the web patcher. All four site words plus the `t6` character read are byte-verified against the extracted 0898 image; an unrecognized build is refused.
 
-Port: [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs).
+Port: [`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs).
 
 ## If the Astral Sword is forced onto another character
 

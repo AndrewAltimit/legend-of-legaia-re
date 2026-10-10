@@ -373,7 +373,7 @@ Every VM is ported handler by handler: the handler is dumped from Ghidra, writte
 |---|---|---|---|
 | Field / event VM | `FUN_801DE840`, 43 opcodes | `engine-vm/src/field.rs`, `FieldHost` | [script-vm](script-vm.md) |
 | Move VM | `FUN_80023070`, 71 opcodes + 61 `0x2F` sub-opcodes (`FUN_801D362C`) | `engine-vm/src/move_vm.rs` | [move-vm](move-vm.md) |
-| Motion VMs | `FUN_8003774C`, `FUN_80038158` | `engine-vm/src/motion_vm.rs` | [motion-vm](motion-vm.md) |
+| Motion VMs | `FUN_8003774C`, `FUN_80038158` | `engine-motion-vm/src/motion_vm.rs` | [motion-vm](motion-vm.md) |
 | Effect VM | `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080` | `engine-vm/src/effect_vm.rs` | [effect-vm](effect-vm.md) |
 | Actor VM (window widgets) | `FUN_801D6628`, 13 opcodes | `engine-vm/src/lib.rs` | [actor-vm](actor-vm.md) |
 | Battle action SM | `FUN_801E295C` | `engine-battle-vm/src/battle_action.rs`, `BattleActionHost` | [battle-action](battle-action.md) |
