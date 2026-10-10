@@ -90,7 +90,8 @@ prot         → iso (conceptual)
 lzs          ← (none)
 game-tables  → bytes  (SCUS / overlay static tables)
 battle-models → game-tables, lzs, prot, tim, tmd, bytes  (battle model formats + glTF)
-asset        → game-tables, battle-models, lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
+overlay-images → lzs, bytes  (code-overlay images: detection, static extraction map, slot-B layout, resident tables)
+asset        → game-tables, battle-models, overlay-images, lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
 tmd          → tim
 tim          ← (none)
 xa           → iso

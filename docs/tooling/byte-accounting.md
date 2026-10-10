@@ -871,7 +871,7 @@ claims nothing, and the record must start outside code and below the inherited
 tail.
 
 The slot-B band has the spawn half of this in
-[`slot_b_module`](../../crates/asset/src/slot_b_module.rs), whose `$a2` walk
+[`slot_b_module`](../../crates/overlay-images/src/slot_b_module.rs), whose `$a2` walk
 follows the same three shapes - the delay slot, a saved-register copy and
 `switch` arms into one call
 ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)) -
@@ -1039,7 +1039,7 @@ A module lays its spawn records back to back and hands only some of them to a
 spawn call; the rest are reached by a route the static walk does not see. A
 run the pointer-credited records leave unclaimed is read as a chain - each
 record ends where its move-VM program stops
-([`move_program_end`](../../crates/asset/src/slot_b_module.rs)) and the next
+([`move_program_end`](../../crates/overlay-images/src/slot_b_module.rs)) and the next
 opens there - and it is claimed only when **both** ends are structural: it
 starts at a credited record's end (or at the first word above code or another
 claim, when it sits below a credited record), and it lands exactly on a
@@ -1071,7 +1071,7 @@ window halfword indexes the field overlay's own 27-record descriptor table at
 resolved the way a spawn record's is, `switch` arms included, which is what
 reaches most of the pause menu's programs: their `lui`/`addiu` sits in the
 delay slot of a `j` to one shared call, outside the eight-word window
-[`widget_script::scan`](../../crates/asset/src/widget_script.rs) reads. Each
+[`widget_script::scan`](../../crates/overlay-images/src/widget_script.rs) reads. Each
 interpreter is image-local, so each row applies to its own entry alone - at any
 other image the same `jal` word names whatever that image holds at the VA.
 

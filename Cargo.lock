@@ -1247,6 +1247,7 @@ dependencies = [
  "legaia-lzs",
  "legaia-mdec",
  "legaia-mes",
+ "legaia-overlay-images",
  "legaia-prot",
  "legaia-seq",
  "legaia-tim",
@@ -1761,6 +1762,18 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-overlay-images"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-bytes",
+ "legaia-lzs",
+ "serde",
+ "sha2",
+ "toml",
 ]
 
 [[package]]

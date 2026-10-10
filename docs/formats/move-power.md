@@ -533,7 +533,7 @@ args intact (the Ghidra C decomp drops them; the disassembly preserves
 So each `0x801f6324` record is **byte-identical to a summon part record**
 (`+0x00 i16 model_sel`, `+0x02 u16 reserved`, `+0x04` move-VM bytecode) and reuses
 the same stager, move VM, and `DAT_8007C018` TMD-pool bridge - see
-[`legaia_asset::summon_overlay`](../../crates/asset/src/summon_overlay.rs).
+[`legaia_asset::summon_overlay`](../../crates/overlay-images/src/summon_overlay.rs).
 `move_power::parse_effect_proto_records` decodes the whole table to part records
 (VA → file offset via `BATTLE_OVERLAY_BASE` / `EffectAuxTables::proto_record_offset`),
 the helper `World::spawn_move_fx` uses. Every one of the 54 unique records drives

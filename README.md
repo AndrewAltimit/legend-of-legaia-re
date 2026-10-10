@@ -258,6 +258,7 @@ legend-of-legaia-re/
 │   ├── asset/                    # Asset dispatcher, streaming, bundle detectors, categorize
 │   ├── game-tables/              # Static SCUS / overlay data tables (items, equipment, spells, ...), re-exported by asset
 │   ├── battle-models/            # Monster archive, player battle files, equipment assembly, glTF export
+│   ├── overlay-images/           # Code-overlay images: detection, static extraction map, slot-B layout, resident tables
 │   ├── tim/                      # PSX TIM parser + PNG exporter + software VRAM model
 │   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder

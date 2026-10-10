@@ -160,7 +160,7 @@
 //! ## What the records are (cross-referenced against the spell table)
 //!
 //! The move id (`actor[+0x1df]`) the id → index map is keyed on is the **same id
-//! space as the SCUS spell-name table** ([`crate::spell_names`], `DAT_800754C8`),
+//! space as the SCUS spell-name table** (`legaia_game_tables::spell_names`, `DAT_800754C8`),
 //! which the enemy name lookup also indexes by `actor[+0x1df]`. Joining the two
 //! labels every record:
 //!

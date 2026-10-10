@@ -1,0 +1,17 @@
+[package]
+name = "legaia-overlay-images"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_overlay_images"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-bytes.workspace = true
+legaia-lzs.workspace = true
+serde.workspace = true
+sha2.workspace = true
+toml.workspace = true

@@ -169,7 +169,7 @@ spawn call - PROT 0980's `FUN_801D3FD0`, 0976's `FUN_801D6E04` and 0972's
 `FUN_801D7A5C` move `$a3` into `$a2`; no band image has such a wrapper, since
 the band has no internal `jal`.
 
-The spawn parser [`summon_overlay::parse`](../../crates/asset/src/summon_overlay.rs),
+The spawn parser [`summon_overlay::parse`](../../crates/overlay-images/src/summon_overlay.rs),
 which the cast-effect pool and the summon scene graph are built from, reads its
 record pointers through this same walk and keeps the layout's record set, so it
 inherits the three shapes and the call-site filter. Its older private resolver

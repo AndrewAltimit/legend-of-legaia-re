@@ -223,6 +223,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/asset`](crates/asset/README.md) | `asset` | The format hub: dispatcher, DATA_FIELD streaming, pack format, bundle detectors, `categorize`, and the side-effect-free field-VM disassembler `field_disasm`. |
 | [`crates/game-tables`](crates/game-tables/README.md) | - | The static data tables parsed straight out of `SCUS_942.54` and the overlay images (items, equipment, spells, level-up, steal, element affinity, mode / FMV / SFX / XA tables). Re-exported by `legaia-asset`. |
 | [`crates/battle-models`](crates/battle-models/README.md) | - | Battle model formats and their glTF export: the monster archive, player battle files + equipment assembly, `"ME"` archives, face animation, battle textures / palettes, the summon side-band, the `.glb` builders. Re-exported by `legaia-asset`. |
+| [`crates/overlay-images`](crates/overlay-images/README.md) | - | The code-overlay image formats: MIPS-overlay and pointer-table detectors, the static-overlay extraction map, the slot-B cast / summon module layout and spawn records, and the tables resident in the battle and menu overlays (move power, window descriptors, window scripts). Re-exported by `legaia-asset`. |
 | [`crates/tmd`](crates/tmd/README.md) | `tmd` | Legaia TMD parser + primitive walker + OBJ-with-faces export. |
 | [`crates/tim`](crates/tim/README.md) | `tim` | PSX TIM parser + PNG exporter + PNG-to-TIM encoder (texture replacement). |
 | [`crates/xa`](crates/xa/README.md) | `xa` | XA-ADPCM decoder + WAV exporter. |

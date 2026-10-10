@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>The specialised code behind cutscenes, the world map, menu screens and minigames - loaded when that mode starts, gone when it ends. Every loading pause between modes is an overlay swap.</dd>
     <dt>Magic / marker</dt><dd>No header - the blob begins with a MIPS function prologue (<code>addiu sp, sp, -X</code> = <code>0x27BDFFxx</code>)</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0901..=0969</code> range (extraction index), 14-37 KB each; loads into the overlay window <code>0x801C0000..0x80200000</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::mips_overlay::detect</code> (<code>crates/asset/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
+    <dt>Parser</dt><dd><code>legaia_asset::mips_overlay::detect</code> (<code>crates/overlay-images/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
     <dt>Confidence</dt><dd>Inferred - a shape heuristic with zero false positives over the corpus, not a loader trace; each blob's load base comes from the asset chain that pulls it in.</dd>
     <dt>Used by</dt><dd><a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>, <a href="../tooling/overlay-capture.html">Overlay capture</a></dd>
   </dl>
@@ -95,7 +95,7 @@ if let Some(m) = mips_overlay::detect(buf) {
   <table>
     <thead><tr><th>Claim</th><th>Evidence</th><th>Where</th></tr></thead>
     <tbody>
-      <tr><td>Prologue shape identifies code</td><td>Zero false positives over every PROT entry; every match disassembles as MIPS from byte 0</td><td><code>crates/asset/src/mips_overlay.rs</code>, categorize sweep</td></tr>
+      <tr><td>Prologue shape identifies code</td><td>Zero false positives over every PROT entry; every match disassembles as MIPS from byte 0</td><td><code>crates/overlay-images/src/mips_overlay.rs</code>, categorize sweep</td></tr>
       <tr><td>Overlay window <code>0x801C0000..0x80200000</code></td><td>Load targets of the overlay loader; RAM map</td><td><a href="../reference/memory-map.html">Memory map</a>, <a href="../subsystems/boot.html">Boot sequence</a></td></tr>
       <tr><td>Per-blob load bases</td><td>Statically recovered from the loader constants and cross-checked against captures</td><td><code>crates/asset/data/static-overlays.toml</code>, <a href="../tooling/static-overlay-pipeline.html">static overlay pipeline</a></td></tr>
       <tr><td>Address attestation rules</td><td>Byte-match of each dumped body against every image</td><td><code>scripts/ghidra-analysis/classify-worklist.py</code>, <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/dump-corpus-integrity.md"><code>docs/tooling/dump-corpus-integrity.md</code></a></td></tr>

@@ -2,7 +2,7 @@
 
 Sister format to [MIPS overlay code](mips-overlay.md). Same family of disc-resident overlay code blobs, but the first chunk is a function/jump-table header instead of an `addiu sp, sp, -X` prologue.
 
-Implementation: `crates/asset/src/overlay_ptr_table.rs`.
+Implementation: `crates/overlay-images/src/overlay_ptr_table.rs`.
 
 ## Layout
 

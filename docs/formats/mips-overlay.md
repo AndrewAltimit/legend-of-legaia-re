@@ -2,7 +2,7 @@
 
 Static disc copies of runtime overlays - small subsystem code blobs that load into the `0x801C0000+` overlay window. Distinct from the major full-scene overlays (title / town / battle / options); these are smaller specialised blobs from the `0901..=0969_xxx_dat` PROT range.
 
-Implementation: `crates/asset/src/mips_overlay.rs`.
+Implementation: `crates/overlay-images/src/mips_overlay.rs`.
 
 ## Layout
 
