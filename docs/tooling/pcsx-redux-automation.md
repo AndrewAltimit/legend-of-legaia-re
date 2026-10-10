@@ -912,7 +912,7 @@ The current sibling `.ppf` is `randomize --oscillating-ap` (seed 7). It
 rewrites SCUS only at the battle-loader setup hook `0x80051A20`, the
 arts-list read-out `0x800344D8` and the four arenas, and PROT 0898 at the
 damage site `0x801EDA10` and the guard / debit / refund sites
-([`oscillating_ap.rs`](../../crates/patcher/src/oscillating_ap.rs)).
+([`oscillating_ap.rs`](../../crates/arts-patch/src/oscillating_ap.rs)).
 
 ### Verdicts on capture-graded claims
 

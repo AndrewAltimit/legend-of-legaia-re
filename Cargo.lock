@@ -1235,6 +1235,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-arts-patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-code-hooks",
+ "legaia-disc-patch",
+ "legaia-iso",
+ "legaia-lzs",
+]
+
+[[package]]
 name = "legaia-asset"
 version = "0.1.0"
 dependencies = [
@@ -1843,6 +1856,7 @@ dependencies = [
  "clap",
  "encoding_rs",
  "legaia-art",
+ "legaia-arts-patch",
  "legaia-asset",
  "legaia-bytes",
  "legaia-code-hooks",

@@ -75,7 +75,7 @@ SITES = [
     (0x8007AE00, 0x100, "SCUS arena 1"),
     # Found by `scan`, not by a feature's own hook list: what a build rewrites
     # beyond its hook sites. The arts-name glyph strings are the arts
-    # randomizer's display half (crates/patcher/src/arts.rs, glyph_patches;
+    # randomizer's display half (crates/arts-patch/src/arts.rs, glyph_patches;
     # the pool runs from the first record's +8 pointer to the last string);
     # arena 2 and the victory mouth-table padding are shiny-seru's current and
     # earlier layouts (crates/disc-patch/src/space_ledger.rs, shiny_seru.rs); the

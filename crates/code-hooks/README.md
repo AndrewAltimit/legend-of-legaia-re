@@ -42,10 +42,11 @@ files were written against.
 
 What stays in `legaia-patcher`: the `apply` layer that sequences every edit
 onto a disc, the randomizer's data shuffles, and the hook mods that reach into
-those - the Tactical Arts family (`arts_ap_grant`, `oscillating_ap`,
-`super_art_*`), `enemy_ally` / `charm_fix`, `custom_items` and the Delilas
-dome. Their builders use `mips` and `mips_sim` from here through the patcher's
-crate-private re-exports. The disc-gated oracles (`crates/patcher/tests`) stay
+those - `enemy_ally` / `charm_fix`, `custom_items` and the Delilas dome.
+Their builders use `mips` and `mips_sim` from here through the patcher's
+crate-private re-exports. The Tactical Arts hooks (`arts_ap_grant`,
+`oscillating_ap`, `super_art_*`) sit in
+[`legaia-arts-patch`](../arts-patch/README.md), which builds on this crate. The disc-gated oracles (`crates/patcher/tests`) stay
 with the patcher too, since they drive hooks through `apply`.
 
 ## Visibility

@@ -680,7 +680,7 @@ AP override and `--shiny-seru` are mutually exclusive** - enforced in the CLI an
 the web patcher. All four site words plus the `t6` character read are
 byte-verified against the extracted 0898 image; an unrecognized build is
 refused, not corrupted.
-Port: [`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs).
+Port: [`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs).
 
 ## If the Astral Sword is forced onto another character
 
