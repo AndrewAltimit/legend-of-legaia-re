@@ -482,16 +482,39 @@ is bit 5 of byte `+8` of the field scene's encounter-region record
 (`801DA09C`..`801DA0AC` in the field battle-intro overlay), the same byte whose
 low 5 bits pick the stage variant. Set, it keeps object 1.
 
-A kept object 1 is drawn **over** the shell. Retail has no depth buffer, so
-coverage is ordering-table order. `nivora_duel_pre_megaton_press` (stage `638`,
-extraction 641, keep bit set) draws object 1 - twelve quads, the horizon mist
-ribbon, a ring of radius about `2330..2580` and height `614` - as five additive
-`POLY_FT4` (tpage `0x2D`, CLUT `0x77C1`) after every shell packet and before
-the first combatant: floor grid, shell, ribbon, actors. The whole band shows,
-`60` rows tall on the left copy and `100` on the mirrored one. The port draws
-the shell and its kept object as one depth-tested mesh, so the wall hides the
-part of the ribbon behind it: on that capture the band is about half as tall
-and missing from the mirrored copy's side.
+**Slot 1 of the draw list turns.** `FUN_8001ADA4`'s backdrop arm (draw
+kind 3, `0x8001AF04`) post-rotates the composed matrix about Y ahead of each
+object's prim walk, through `FUN_8004629C`, by a per-**slot** angle from the
+table at `0x800891C8` (`lh a0,0x2(s1)` at `0x8001AFEC` / `0x8001B004`, `s1`
+stepping `8` a slot; a reflected copy negates the angle first, `0x8001AFF4`).
+The table has two references on the whole disc: that read, and one store in
+the battle frame driver. On every pass, while the keep byte `0x8007B64B` is
+up, `FUN_80046A20` adds half the frame step to slot 1's angle
+(`0x800891D2 += *0x1F800393 >> 1`, `0x80046D34..0x80046D5C`). Nothing resets
+it.
+
+So the object a region keeps is the object that turns. On `nilboa`'s stage
+(`638`, extraction 641) object 1 is twelve additive quads (group flags
+`0x22`, the flat-textured leaf `FUN_80044DC8`; tpage `0x2D`, CLUT `0x77C1`) -
+an arc of horizon mist, radius about `2330..2580`, height `614` - and it
+drifts round the arena at one 4096th of a turn a frame. Where the band
+stands in a capture is the angle its RAM holds: `nivora_duel_pre_megaton_press`
+reads `1494`, `nivora_duel_pre_plasma_strike` `6867` (the draw masks it to
+`0xFFF`). Drawn at the authored angle the arc sits on the far side of the
+ring, a third the height and half missing; turned by the captured angle it
+lands on retail's packets. A stage that drops object 1 never winds the angle
+but still draws whatever sits in slot 1 - object 2 of a four-object dome -
+at the angle the last keeping fight left.
+
+The ribbon needs no special place in the ordering table. Its quads are
+linked at their own mean depth like every other backdrop packet, and a
+depth-tested mesh draws the same band once the arc stands where retail's
+does.
+
+The spin is `World::tick_battle_backdrop_spin` (once a battle frame) and
+`legaia_engine_core::scene::backdrop_slot_1_basis`; both play hosts draw
+slot 1 as one unbaked copy, twice a frame, under that basis
+(`SceneHost::battle_stage_layers`).
 
 #### Port
 
@@ -694,7 +717,9 @@ same screen X. Retail opens every fight there and orbits out of it. **The port
 does not**: it opens on the azimuth the field camera left, moved off the seat
 axis by `battle_entry_yaw`. This is a port judgement, carried by
 `BattleCamInputs::entry_yaw`, which `battle_cam_inputs` fills from
-`World::locomotion.camera_azimuth`.
+`World::locomotion.camera_azimuth`. The sparring fight is the exception and
+keeps retail's zero: its sweep, its name hold and its caption close-up are
+all framed on it.
 
 <a id="the-battle-entry-sweep"></a>
 
@@ -728,6 +753,14 @@ labels and their `ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` /
 `0x0B`, which the frame driver reaches only past the sweep (`0x80046EF8` /
 `0x80047014`), so the port neither shows nor drains them until the sweep is
 over (`World::battle_entry_sweeping`).
+
+The sparring fight keeps the whole of retail's order. The side-band arms
+Tetsu's caption on the flow reading `0x14`, which retail reaches only past
+the sweep and the name hold, so the port holds that fight's first round
+start - and the battle loop with it - until both are done
+(`World::sparring_open_held`): `s5_tetsu_battle`, caught under the sweep at
+flow `0x00`, shows the bare arena, and `v0_1_battle_start_tetsu`, at `0x14`,
+the caption over the close-up.
 
 ### Menu framings (cases 9, 0, 1, 3)
 

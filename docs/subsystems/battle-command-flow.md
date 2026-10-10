@@ -789,9 +789,14 @@ never timed out: the next key-`1` registration reuses its node, and the only
 explicit removals are the hook's `FUN_800319A8(0)` / `FUN_800319A8(1)` pair on
 the suppressed path at flow state `0x5A` (`0x801F71BC..0x801F71D8`) and the
 teardown drain `FUN_800355F0`. `v0_1_battle_command_submenu` still shows the
-`[Begin]` arm's prompt over the category ring it named. The port counts a
-self-dismissing box down instead (`TUTORIAL_BOX_AUTO_FRAMES`), because its
-battle loop parks on any box in the queue.
+`[Begin]` arm's prompt over the category ring it named. The port's battle
+loop parks on any box in its queue, so a self-dismissing box still holds it
+for a dwell (`TUTORIAL_BOX_AUTO_FRAMES`, or until Cross) that retail's does
+not; but when the box leaves the queue it stays on screen as the standing
+prompt (`BattleState::tutorial_standing`) until the next self-dismissing
+emission replaces it, the flow-`0x5A` unregister frees it under a waiting
+box, or the teardown drains it. Both hosts draw it with the queue's front
+group (`World::battle_tutorial_boxes_on_screen`).
 
 Two further consequences fall out of the registrar read: kind `0x0D` is one of the three kinds `FUN_800319A8` refuses to
 free `+0x18` for (`0x80031A30..0x80031A44`, alongside kinds `< 2` and `0x11`),
