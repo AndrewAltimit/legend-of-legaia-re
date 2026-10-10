@@ -18,6 +18,15 @@ separate controller (`FUN_801d01b0`, see
 also reads the pad, but its per-cell tile-actor rendering and procedural fill
 set it apart.
 
+| At a glance | |
+|---|---|
+| Installed by | field-VM op `0x49` sub-op `0x05`, a fixed 14-byte inline header (`_DAT_8007b450`) |
+| Controller | walk state machine `FUN_801ef2b0` in the field overlay (PROT 0897), 15 states, jump table `0x801CF65C` |
+| Cells | `width x height` bytes, heap-allocated and filled procedurally; `2` = wall |
+| Drawing | one field actor per cell value, repositioned and drawn per cell |
+| On the retail disc | no scene installs one |
+| Port | `legaia_engine_minigames::tile_board` + `World::tick_tile_board`; see [Port notes](#port-notes) |
+
 ```mermaid
 stateDiagram-v2
     [*] --> Init: op 49 05 installs header
@@ -386,18 +395,19 @@ one.
 
 #### Address note: there is no `FUN_801e0b1c`
 
-The procedural fill was once cited as `FUN_801e0b1c`. **That address is not a
-function.** The dump filed under that name was produced against the field
-overlay loaded at base `0x801C0000` instead of its correct base `0x801CE818`,
-so every address in it is short by exactly `0xE818`:
-`FUN_801e0b1c + 0xE818 = 0x801EF334`. At VA `0x801e0b1c` the field overlay
-actually holds `addiu v0,v0,-5`, part of an unrelated operand-nibble table
-lookup. `0x801EF334` is not a function entry either - it is an **interior label
-of `FUN_801ef2b0`** (the walk SM), promoted to a fake `FUN_` entry by the
-label-call idiom. Likewise `FUN_801E0F3C`, once cited for the board renderer,
-is the same `+0xE818` print of the [render tail](#the-render-tail-0x801efea0)
-`0x801EFEA0`, and `overlay_0897_801e0f3c.txt` is a second print of its
-instructions.
+Two addresses that appear in dump filenames are not functions:
+
+- **`0x801e0b1c`** (the procedural fill). The dump filed under that name was
+  produced with the field overlay loaded at base `0x801C0000` instead of its
+  correct base `0x801CE818`, so every address in it is short by exactly
+  `0xE818`: `0x801e0b1c + 0xE818 = 0x801EF334`. At VA `0x801e0b1c` the overlay
+  actually holds `addiu v0,v0,-5`, part of an unrelated operand-nibble table
+  lookup. `0x801EF334` is not a function entry either - it is an **interior
+  label of `FUN_801ef2b0`** (the walk SM), promoted to a fake `FUN_` entry by
+  the label-call idiom.
+- **`0x801E0F3C`** (the board renderer). The same `+0xE818` print of the
+  [render tail](#the-render-tail-0x801efea0) `0x801EFEA0`;
+  `overlay_0897_801e0f3c.txt` is a second print of its instructions.
 
 The walk SM's extent is `0x801ef2b0..0x801f03ec`: the epilogue at
 `0x801F03E8` (`jr ra` / `addiu sp,sp,0x48`, unwinding the
