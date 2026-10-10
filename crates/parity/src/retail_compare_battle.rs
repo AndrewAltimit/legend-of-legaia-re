@@ -186,8 +186,11 @@ pub struct Combatant {
 }
 
 /// One pool slot as the capture held it: the live pair `+0x34` / `+0x38`,
-/// the body pair `+0x3C` / `+0x40` and the current clip `+0x1D9`.
-pub type CapturedActor = ([i16; 2], [i16; 2], u8);
+/// the body pair `+0x3C` / `+0x40`, the current clip `+0x1D9` and - for a
+/// monster seat - the size class its record carries (`+0x1F` through the
+/// record-pointer table `0x801C9348[slot - 3]`, the byte the range law
+/// `FUN_8004E2F0` reads).
+pub type CapturedActor = ([i16; 2], [i16; 2], u8, u8);
 
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
@@ -1456,6 +1459,16 @@ impl RetailBattle {
                             [h(0x34), h(0x38)],
                             [h(0x3C), h(0x40)],
                             game_anchors::u8_at(ram, p + 0x1D9),
+                            if slot >= 3 {
+                                let rec = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
+                                if in_ram(rec) {
+                                    game_anchors::u8_at(ram, rec + 0x1F)
+                                } else {
+                                    0
+                                }
+                            } else {
+                                0
+                            },
                         )
                     })
                 })
@@ -2237,20 +2250,24 @@ pub fn run_engine_battle(
         let world = &session.host.world;
         for (slot, a) in world.actors.iter().enumerate() {
             let pool = if slot < pc { slot } else { 3 + (slot - pc) };
-            let Some((live, body, clip)) = battle.captured.get(pool).copied().flatten() else {
+            let Some((live, body, clip, size)) = battle.captured.get(pool).copied().flatten()
+            else {
                 continue;
             };
             if slot >= pc + usize::from(battle.monster_count) {
                 continue;
             }
             t.push_str(&format!(
-                " | slot {slot}: retail {live:?} body {body:?} facing {:?} clip {clip:#04X}, engine ({}, {}) body {:?} facing {} clip {:#04X}",
+                " | slot {slot}: retail {live:?} body {body:?} facing {:?} clip {clip:#04X} size {size}, engine ({}, {}) body {:?} facing {} clip {:#04X} size {:?}",
                 battle.facing.get(pool).copied().flatten(),
                 a.move_state.world_x,
                 a.move_state.world_z,
                 a.battle.seat,
                 a.battle.facing_angle & 0xFFF,
-                world.battle_current_anim(slot)
+                world.battle_current_anim(slot),
+                a.battle_monster_id
+                    .and_then(|id| world.tables.monster_catalog.get(id))
+                    .map(|d| d.size_class)
             ));
         }
     }

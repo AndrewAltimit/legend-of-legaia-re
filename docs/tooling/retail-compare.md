@@ -1504,7 +1504,7 @@ Two environment switches open up a battle state's `camera` channel:
 
 | Switch | Adds |
 |---|---|
-| `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading and clip |
+| `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
 
 The first says which component of a framing misses its endpoint and which
@@ -2153,6 +2153,33 @@ every pass, so it moves with the phase of both clips):
   camera reads exact on both sides; what moves the frame is Tetsu's idle
   clip, sampled at whatever phase of its loop that elapsed time lands on.
   The capture holds no word that pins the idle phase.
+- **An approach that ends a step later.** `player_steal_skeleton_pre` is
+  captured in `0x1E` with Vahn on `(-195, -214)`, where his approach ended,
+  and the seed stands him there. The range law
+  ([battle-action](../subsystems/battle-action.md)) measures his live pair
+  against the skeleton's **body** pair and, for a size class of `3` or
+  more, against `size << 4` - `352` for the skeleton's `22` (both sides
+  read the same class). On the capture's own pose the metric reads `361`
+  (Vahn's `+43` reach offset over the `318` to body `(20, 20)`): out of
+  range, in a state only an in-range check enters. Retail's check passed
+  with the two at least nine units nearer - on another pose of the
+  skeleton, or before the separation pass moved them - and the capture
+  does not say which; nothing re-tests the pair inside the loop. The engine's check runs against the idle pose the seed stands
+  the skeleton in (`359`), fails, and its walk clip takes one step, `42`
+  units, before the strike loop. From the nearer ground the strike band's
+  heading is `463` against `484` and the case-7 yaw endpoint twenty units
+  off, outside the origin alignment, so the channel scores the ease's
+  start.
+- **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
+  is the midpoint of two body pairs, and at the capture's accumulator
+  (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body
+  `(318, -63)`, the pose the engine's clip shows between its sixth and
+  seventh tick; the engine's ninth has lunged on to `(252, -67)`. Retail's
+  pair is the one its draw stored the pass before
+  ([battle-action](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
+  so the SM reads a pose one pass old, where the port refreshes the pair
+  from the newest pose at the head of each tick. One capture does not fix
+  the lag to a frame, so the port's refresh stands.
 - **An idle loop restarts the accumulator.**
   `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
   idle clip, the skeleton dead and the steal caption up. A looping clip's
