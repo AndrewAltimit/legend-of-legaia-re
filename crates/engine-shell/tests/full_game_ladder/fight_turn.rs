@@ -1,0 +1,639 @@
+//! The fighter's turn: the pad for the current battle surface, the battle
+//! loop that drives a fight to its end, and the battle diagnostics.
+
+use super::*;
+
+/// The pad mask a player presses this frame in a battle - every one a pad
+/// press through the engine's own battle menus, no engine call:
+///
+/// - a member who is down, or in danger, gets the revive or heal
+///   [`wanted_item`] picks, aimed at that member (the ring's up arm);
+/// - otherwise a member with an affordable damaging Seru spell casts the
+///   strongest one (the right arm);
+/// - otherwise it attacks through the `Command` chip, entering the longest
+///   art its command pool pays for ([`arts_plan`]);
+/// - a random encounter on a pad travel leg is fled (the round prompt's
+///   Run) unless the fight forbids running;
+/// - message boxes and results screens are paged with Cross.
+///
+/// A sparring tutorial validates each commit against its lesson, so there
+/// the hand keeps to the lesson: the up arm (using the first item) for the
+/// Items lesson, the down arm for Spirit, `Auto` for the attack lesson and
+/// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
+/// that lesson's wrong-lesson rewind).
+pub(super) fn fight_pad(session: &BootSession) -> u16 {
+    use legaia_engine_core::arts_command_input::ArtsInputPhase;
+    use legaia_engine_core::battle_input::CommandPhase;
+    use legaia_engine_core::battle_magic::SpellPhase;
+    use legaia_engine_core::battle_tutorial::TutorialLesson;
+    use legaia_engine_core::inventory_use::InventoryUseState;
+    let w = &session.host.world;
+    if !w.battle.tutorial_boxes.is_empty() {
+        return PadButton::Cross.mask();
+    }
+    let lesson = w.battle.tutorial.as_ref().map(|t| t.lesson());
+    if let Some(menu) = w.battle.item_menu.as_ref() {
+        if lesson == Some(TutorialLesson::Items) {
+            return match &menu.state {
+                InventoryUseState::Browsing { .. } if !menu.filtered_items.is_empty() => {
+                    PadButton::Cross.mask()
+                }
+                InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+                _ => PadButton::Circle.mask(),
+            };
+        }
+        let listed = |i: usize| {
+            menu.filtered_items
+                .get(i)
+                .and_then(|&k| menu.items.get(k))
+                .copied()
+        };
+        let actor = w
+            .battle
+            .command
+            .as_ref()
+            .map_or(w.battle_ctx.active_actor, |c| c.actor);
+        // A race against a timed finisher spends no turn on a heal, here as
+        // at the command menu.
+        let heal_want = if racing_a_finisher(w) && !race_heal(w, actor) {
+            None
+        } else {
+            wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
+        };
+        let want = heal_want
+            .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
+            .or_else(|| {
+                wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            })
+            .or_else(|| {
+                (!finisher_round(w))
+                    .then(|| {
+                        wanted_power_item(
+                            w,
+                            (0..menu.filtered_items.len()).filter_map(listed),
+                            actor,
+                        )
+                    })
+                    .flatten()
+            });
+        return match &menu.state {
+            InventoryUseState::Browsing { cursor } => match want {
+                Some((id, _)) if listed(*cursor) == Some(id) => PadButton::Cross.mask(),
+                Some(_) => PadButton::Down.mask(),
+                None => {
+                    let key = (actor, party_hp_key(w));
+                    NO_ITEM.with(|n| n.borrow_mut().insert(key));
+                    PadButton::Circle.mask()
+                }
+            },
+            // The session seeds the cursor on the first ally the item helps;
+            // the hand steps it to the one it chose, and remembers the aim so
+            // the round's later members count the heal as coming.
+            InventoryUseState::TargetSelect { cursor, .. } => {
+                let aim = want.map(|(_, t)| t);
+                let on = menu.targets.get(*cursor).map(|t| t.slot);
+                if aim.is_none() || on == aim {
+                    if let Some(slot) = on {
+                        ITEM_TARGET.with(|t| {
+                            if let Some(a) = t.borrow_mut().get_mut(usize::from(actor)) {
+                                *a = Some(slot);
+                            }
+                        });
+                    }
+                    PadButton::Cross.mask()
+                } else {
+                    PadButton::Down.mask()
+                }
+            }
+            _ => PadButton::Circle.mask(),
+        };
+    }
+    if let Some(m) = w.battle.spell_menu.as_ref() {
+        return match &m.phase {
+            SpellPhase::Select { cursor } => match wanted_spell(w, m) {
+                Some(i) if i == usize::from(*cursor) => PadButton::Cross.mask(),
+                Some(_) => PadButton::Down.mask(),
+                None => {
+                    NO_MAGIC.with(|n| n.borrow_mut().insert(m.actor));
+                    PadButton::Circle.mask()
+                }
+            },
+            _ => PadButton::Cross.mask(),
+        };
+    }
+    if let Some(arts) = w.battle.arts_input.as_ref() {
+        return match &arts.phase {
+            ArtsInputPhase::Entering => {
+                // The hyper-arts lesson's drill is `[High] [Low] [High]` -
+                // Vahn's Somersault, `Up Down Up` - checked at the entry's
+                // confirm.
+                let plan = if lesson == Some(TutorialLesson::HyperArts) {
+                    use legaia_art::queue::Command;
+                    [Command::Up, Command::Down, Command::Up]
+                        .map(Command::as_byte)
+                        .to_vec()
+                } else {
+                    arts_plan(w, arts)
+                };
+                if arts.buffer.len() < plan.len() && plan.starts_with(&arts.buffer) {
+                    direction_mask(plan[arts.buffer.len()])
+                } else {
+                    PadButton::Cross.mask()
+                }
+            }
+            _ => PadButton::Cross.mask(),
+        };
+    }
+    if let Some(cmd) = w.battle.command.as_ref() {
+        let heal = || {
+            if racing_a_finisher(w) && !race_heal(w, cmd.actor) {
+                return false;
+            }
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_item(w, bag.into_iter()).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        // A Miracle Art the live pool pays for outdamages any summon the
+        // hand can cast (Koru: ~2000 against Aluru's ~1300).
+        let magic =
+            || !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !miracle_ready(w, cmd.actor);
+        let drink = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_mp_item(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        let fury = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            (wanted_fury_item(w, bag.clone().into_iter(), cmd.actor).is_some()
+                || (!finisher_round(w)
+                    && wanted_power_item(w, bag.into_iter(), cmd.actor).is_some()))
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        return match &cmd.phase {
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
+                PadButton::Up.mask()
+            }
+            CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
+                PadButton::Down.mask()
+            }
+            // The foe's heavy round is due: the Spirit stance halves it.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_guard(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
+            CommandPhase::Menu { .. } if lesson.is_none() && guard_before_heal(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
+            // Evil Seru Magic can come this round: the stance.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && wants_evil_magic_guard(w, cmd.actor) =>
+            {
+                PadButton::Down.mask()
+            }
+            CommandPhase::Menu { .. } if lesson.is_none() && heal() => PadButton::Up.mask(),
+            // Out of MP for its best spell in a boss fight: a drink.
+            CommandPhase::Menu { .. } if lesson.is_none() && drink() => PadButton::Up.mask(),
+            // A boss too big for spells and short strings: the turn that buys
+            // a Miracle Art every round after.
+            CommandPhase::Menu { .. } if lesson.is_none() && fury() => PadButton::Up.mask(),
+            // One party-wide hit from death with nothing to heal: the stance.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_aoe_guard(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
+            // A solo duel builds its gauge between Arts turns.
+            CommandPhase::Menu { .. } if lesson.is_none() && duel_wants_spirit(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
+            // A duel's damage is its Arts; a summon spends the turn and the
+            // MP for less.
+            CommandPhase::Menu { .. } if lesson.is_none() && magic() && !solo_duel(w) => {
+                PadButton::Right.mask()
+            }
+            CommandPhase::AttackMode { .. }
+                if lesson.is_none() || lesson == Some(TutorialLesson::HyperArts) =>
+            {
+                PadButton::Right.mask()
+            }
+            // A random encounter on a pad travel leg is fled: the prompt's
+            // Right takes Run. A lone member worn down by a string of fights
+            // wipes on whichever one the RNG happens to deal - a finding
+            // about the route, not the port. A fight that forbids running
+            // (`no_escape`) is fought. A member low enough to want a heal
+            // takes it first: monster swings play their own clips and roll
+            // their own power bytes, so a failed run under a full enemy
+            // round can now take a worn member from half HP to zero. But a
+            // heal does not win a race the foes are winning: once the last
+            // round took half of what the party still holds, the turn spent
+            // healing is a turn under another such round, and the run is
+            // the better draw (`vozz`'s three-monster F4 after a caught Run:
+            // a Healing Leaf a round into ~250 a round, two members down).
+            // Two runs that failed (two finished rounds of a fight the hand
+            // only ever fled) and nothing to heal with make running a third
+            // time the worse draw against foes the party can beat: a lone
+            // chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six
+            // rounds running and fell at the last.
+            CommandPhase::RoundPrompt { .. }
+                if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
+                    && !w.battle.no_escape
+                    && (!heal() || losing_race(w))
+                    && !runs_failing(w) =>
+            {
+                PadButton::Right.mask()
+            }
+            CommandPhase::RoundPrompt { .. }
+            | CommandPhase::Menu { .. }
+            | CommandPhase::AttackMode { .. }
+            | CommandPhase::CommitConfirm { .. } => PadButton::Left.mask(),
+            CommandPhase::Targeting { .. } => PadButton::Cross.mask(),
+            _ => 0,
+        };
+    }
+    // Between command sessions (intro, victory banner, results): page on.
+    PadButton::Cross.mask()
+}
+
+/// One line of battle state for a stall report.
+pub(super) fn battle_snapshot(session: &BootSession) -> String {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let hp = |i: usize| format!("{}/{}", w.actors[i].battle.hp, w.actors[i].battle.max_hp);
+    let party: Vec<String> = (0..n).map(hp).collect();
+    // The engine seats monsters right behind the party, not at retail's
+    // fixed seat 3 - a lone fighter's opponent sits in slot 1.
+    let mobs: Vec<String> = (n..w.actors.len())
+        .filter(|&i| w.actors[i].battle.max_hp > 0)
+        .map(hp)
+        .collect();
+    let formation = w.battle.active_formation.as_ref().map_or_else(
+        || "F-".to_string(),
+        |f| {
+            let ids: Vec<String> = f.slots.iter().map(|s| s.monster_id.to_string()).collect();
+            format!("F{}[{}]", f.formation_id, ids.join(","))
+        },
+    );
+    let phase = w.battle.command.as_ref().map_or_else(
+        || "no command session".to_string(),
+        |c| format!("{:?}", c.phase),
+    );
+    let phase: String = phase.chars().take(60).collect();
+    let clip = |s: String| s.chars().take(90).collect::<String>();
+    let sm = w.battle_ctx.action_state;
+    let sm_name = legaia_engine_vm::battle_action::ActionState::from_byte(sm)
+        .map_or_else(|| "?".to_string(), |s| format!("{s:?}"));
+    format!(
+        "{formation} party[{}] mobs[{}] action SM ctx[7]=0x{sm:02X} {sm_name} actor {} boxes {} phase {phase}; driven {} end {:?} victory {} flow {} round {}",
+        party.join(" "),
+        mobs.join(" "),
+        w.battle_ctx.active_actor,
+        w.battle.tutorial_boxes.len(),
+        w.battle.player_driven,
+        w.battle.end,
+        w.battle.victory.is_some(),
+        clip(format!("{:?}", w.battle.flow)),
+        clip(format!("{:?}", w.battle.round_flow)),
+    )
+}
+
+/// The party a traced battle starts with: each member's level, MP, equipment
+/// and spell list, and the bag's battle-usable items.
+pub(super) fn party_dump(session: &BootSession) {
+    let w = &session.host.world;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    for i in 0..n {
+        let slot = w.party_roster_slot(i);
+        let Some(m) = w.party.roster.members.get(slot) else {
+            continue;
+        };
+        let list = m.spell_list();
+        let spells: Vec<String> = list.ids[..(list.count as usize).min(list.ids.len())]
+            .iter()
+            .map(|&id| match w.tables.spell_catalog.get(id) {
+                Some(d) => format!("{id:#x} {} mp{} {:?}", d.name, d.mp_cost, d.effect),
+                None => format!("{id:#x} ?"),
+            })
+            .collect();
+        let a = &w.actors[i].battle;
+        eprintln!(
+            "    [party] #{i} char {:?} lv {} hp {}/{} mp {} equip {:?} spells [{}]",
+            a.character,
+            m.level(),
+            a.hp,
+            a.max_hp,
+            a.mp,
+            m.equipment(),
+            spells.join("; ")
+        );
+    }
+    for i in 0..n {
+        let ch = legaia_engine_core::battle_arts::character_for_slot(w.party_roster_slot(i) as u8);
+        let mut arts: Vec<String> = w
+            .tables
+            .art_records
+            .iter()
+            .filter(|((c, _), _)| *c == ch)
+            .map(|((_, a), r)| {
+                let cmds: Vec<u8> = r.commands.iter().map(|c| c.as_byte()).collect();
+                format!(
+                    "{:#x} {:?} {cmds:?} pw{}",
+                    a.as_byte(),
+                    r.name,
+                    r.power.len()
+                )
+            })
+            .collect();
+        arts.sort();
+        eprintln!("    [arts] #{i} {ch:?}: {}", arts.join("; "));
+    }
+    let bag: Vec<String> = w
+        .party
+        .inventory
+        .iter()
+        .filter(|(_, c)| **c > 0)
+        .filter_map(|(&id, &c)| {
+            let e = w.tables.item_catalog.get(id)?;
+            e.usable_in_battle
+                .then(|| format!("{id:#x} {} x{c} {:?}", e.name, e.effect))
+        })
+        .collect();
+    eprintln!("    [party] bag: {}", bag.join("; "));
+}
+
+/// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
+/// walking mode came back.
+pub(super) fn drain_battle(session: &mut BootSession) -> Option<Run> {
+    // A fight's frames come off the pad segment's budget only past the
+    // battle allowance: the deadline moves ahead of the fight by the most
+    // it may need, and the unused part is taken back.
+    let lent = if pad_hand() {
+        PAD_BATTLE_LEFT
+            .with(std::cell::Cell::get)
+            .min(BATTLE_TICKS_CAP as u64)
+    } else {
+        0
+    };
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_add(lent)));
+    let start = session.frames;
+    let r = fight_battle(session);
+    let used = session.frames.saturating_sub(start).min(lent);
+    PAD_DEADLINE.with(|d| d.set(d.get().saturating_sub(lent - used)));
+    PAD_BATTLE_LEFT.with(|l| l.set(l.get().saturating_sub(used)));
+    r
+}
+
+pub(super) fn fight_battle(session: &mut BootSession) -> Option<Run> {
+    NO_ITEM.with(|n| n.borrow_mut().clear());
+    NO_MAGIC.with(|n| n.borrow_mut().clear());
+    DUEL_SPIRIT_ROUND.with(|d| d.set(None));
+    BIGGEST_HIT.with(|b| b.set(0));
+    ROUND_LOSS.with(|r| r.set([0; 3]));
+    ROUND_HISTORY.with(|h| h.borrow_mut().clear());
+    AOE_HIT.with(|a| a.set(0));
+    CHARGE_SEEN.with(|c| c.set(false));
+    let mut guarded = [false; 3];
+    let mut was_window = false;
+    ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
+    let party_hp = |s: &BootSession| -> Vec<u16> {
+        let w = &s.host.world;
+        let n = w.party.party_count.clamp(1, 3) as usize;
+        (0..n).map(|i| w.actors[i].battle.hp).collect()
+    };
+    let mut party_prev = party_hp(session);
+    let mut prev = 0u16;
+    // The element of a boss (a fight that forbids running): its record's
+    // `+0x1D`, read while its seat is still filled.
+    let boss_element = {
+        let w = &session.host.world;
+        w.battle
+            .no_escape
+            .then(|| {
+                w.actors
+                    .iter()
+                    .filter_map(|a| a.battle_monster_id)
+                    .find_map(|id| w.tables.monster_catalog.get(id))
+                    .map(|d| d.element)
+            })
+            .flatten()
+    };
+    let boss = boss_monster_id(&session.host.world);
+    let trace = std::env::var_os("LEGAIA_FGL_TRACE").is_some();
+    if trace {
+        eprintln!("    [battle] start: {}", battle_snapshot(session));
+        party_dump(session);
+    }
+    let trace_hits = trace && std::env::var_os("LEGAIA_FGL_TRACE_HITS").is_some();
+    let hp_all =
+        |s: &BootSession| -> Vec<u16> { s.host.world.actors.iter().map(|a| a.battle.hp).collect() };
+    let mut last_cmd: [String; 3] = Default::default();
+    let mut hp_prev = hp_all(session);
+    let foe_hp = |s: &BootSession| -> u32 {
+        let w = &s.host.world;
+        let n = w.party.party_count.clamp(1, 3) as usize;
+        w.actors
+            .iter()
+            .skip(n)
+            .map(|a| u32::from(a.battle.hp))
+            .sum()
+    };
+    let mut foe_prev = foe_hp(session);
+    let mut foe_dropped_at = 0usize;
+    let mut spent = 0usize;
+    for t in 0..BATTLE_TICKS_CAP {
+        spent = t;
+        if t >= BATTLE_TICKS && t - foe_dropped_at > BATTLE_STALL_TICKS {
+            break;
+        }
+        if pad_budget(session).is_err() {
+            break;
+        }
+        // A press is an edge: alternate the wanted mask with neutral.
+        let want = fight_pad(session);
+        let pad = if prev == 0 { want } else { 0 };
+        prev = pad;
+        session.host.world.set_pad(pad);
+        if let Err(e) = session.tick() {
+            return Some(Run::Error(format!("{e:#}")));
+        }
+        if foe_charged(&session.host.world) {
+            CHARGE_SEEN.with(|c| c.set(true));
+        }
+        let foe_now = foe_hp(session);
+        if foe_now < foe_prev {
+            foe_dropped_at = t;
+        }
+        foe_prev = foe_now;
+        let party_now = party_hp(session);
+        // A command window opening ends the stretch the foes had.
+        let window = session.host.world.battle.command.as_ref().is_some_and(|c| {
+            matches!(
+                c.phase,
+                legaia_engine_core::battle_input::CommandPhase::RoundPrompt { .. }
+            )
+        });
+        let mut run = ROUND_LOSS.with(std::cell::Cell::get);
+        for (i, p) in session
+            .host
+            .world
+            .battle
+            .round_flow
+            .pending
+            .iter()
+            .enumerate()
+            .take(3)
+        {
+            if matches!(
+                p,
+                Some(legaia_engine_core::battle_round::PendingPartyAction::Spirit)
+            ) {
+                guarded[i] = true;
+            }
+        }
+        if window && !was_window {
+            ROUND_HISTORY.with(|h| h.borrow_mut().push(run.iter().sum()));
+            if run.iter().filter(|&&l| l > 0).count() >= 2 {
+                // A member that took the hit in the Spirit stance took half
+                // of it: the hit itself is twice what it lost (Jette's Evil
+                // Seru Magic, 612 a guarded member, 1224 the next round
+                // unguarded - read as 612, the heal limit let the party sit
+                // at 1130 into a hit that dropped all three).
+                let peak = run
+                    .iter()
+                    .zip(guarded)
+                    .map(|(&l, g)| if g { l * 2 } else { l })
+                    .max()
+                    .unwrap_or(0);
+                AOE_HIT.with(|a| a.set(a.get().max(peak)));
+            }
+            if trace_hits {
+                eprintln!(
+                    "    [round] t={t} history {:?} due {} aoe {} hp {:?} mode {} foe mp {:?}",
+                    ROUND_HISTORY.with(|h| h.borrow().clone()),
+                    big_round_due(),
+                    AOE_HIT.with(std::cell::Cell::get),
+                    party_hp(session),
+                    session.host.world.battle.monster_ai_state.mode_flags,
+                    session
+                        .host
+                        .world
+                        .actors
+                        .iter()
+                        .skip(session.host.world.party.party_count.clamp(1, 3) as usize)
+                        .map(|a| a.battle.mp)
+                        .filter(|&m| m > 0)
+                        .collect::<Vec<_>>(),
+                );
+                last_cmd = Default::default();
+            }
+        }
+        was_window = window;
+        if window {
+            run = [0; 3];
+            guarded = [false; 3];
+        }
+        for (i, (a, b)) in party_prev.iter().zip(&party_now).enumerate().take(3) {
+            run[i] += u32::from(a.saturating_sub(*b));
+            BIGGEST_HIT.with(|h| h.set(h.get().max(run[i])));
+        }
+        ROUND_LOSS.with(|r| r.set(run));
+        party_prev = party_now;
+        if trace_hits {
+            let w = &session.host.world;
+            for (i, p) in w.battle.round_flow.pending.iter().enumerate() {
+                if let Some(p) = p {
+                    let s: String = format!("{p:?}").chars().take(70).collect();
+                    if last_cmd[i] != s {
+                        eprintln!("    [commit] t={t} actor {i}: {s}");
+                    }
+                    last_cmd[i] = s;
+                }
+            }
+            let hp_now = hp_all(session);
+            if hp_now != hp_prev {
+                let who = w.battle_ctx.active_actor;
+                let what = last_cmd.get(usize::from(who)).cloned().unwrap_or_default();
+                let n = w.party.party_count.clamp(1, 3) as usize;
+                let gauges: Vec<u16> = (0..n).map(|i| w.actors[i].battle.spirit_gauge).collect();
+                eprintln!(
+                    "    [hit] t={t} actor {who} ({what}) sm 0x{:02X} hp {:?} -> {:?} mob mp {} mode {} shield {} gauges {gauges:?}",
+                    w.battle_ctx.action_state,
+                    &hp_prev[..n + 1],
+                    &hp_now[..n + 1],
+                    w.actors.get(n).map_or(0, |a| a.battle.mp),
+                    w.battle.monster_ai_state.mode_flags,
+                    w.battle.monster_ai_state.flag_bd84,
+                );
+                hp_prev = hp_now;
+            }
+        }
+        if trace && std::env::var_os("LEGAIA_FGL_TRACE_BATTLE").is_some() && t % 1000 == 0 {
+            eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
+        }
+        let w = &session.host.world;
+        if w.game_over_hold || w.game_over {
+            if trace {
+                eprintln!("    [battle] wiped after {t} ticks");
+            }
+            // A boss fight (no running) lost: what the next attempt prepares
+            // for is the foe's element. The wiped party's game-over screen
+            // re-enters this loop with the monsters gone; it does not erase
+            // what beat them.
+            if trace {
+                eprintln!("    [battle] lost to a boss of element {boss_element:?}");
+            }
+            if boss_element.is_some() {
+                LOST_TO_ELEMENT.with(|l| l.set(boss_element));
+            }
+            let aoe = AOE_HIT.with(std::cell::Cell::get);
+            if let Some(id) = boss
+                && aoe > 0
+                && let Some(parity) = ROUND_HISTORY.with(|h| {
+                    // The stretch the wipe ended is a round too: the hit
+                    // that finished the party lands in it.
+                    let mut h = h.borrow().clone();
+                    h.push(ROUND_LOSS.with(std::cell::Cell::get).iter().sum());
+                    alternating_heavy_parity(&h)
+                })
+            {
+                if trace {
+                    eprintln!(
+                        "    [battle] learned: boss {id} hits party-wide ({aoe}) on stretch parity {parity}"
+                    );
+                }
+                LEARNED_CADENCE.with(|l| l.set(Some((id, parity, aoe))));
+            }
+            return Some(Run::Battle(format!(
+                "party wiped: {}",
+                battle_snapshot(session)
+            )));
+        }
+        if w.mode != SceneMode::Battle {
+            if trace {
+                eprintln!(
+                    "    [battle] ended after {t} ticks: {}",
+                    battle_snapshot(session)
+                );
+            }
+            return None;
+        }
+    }
+    Some(Run::Battle(format!(
+        "battle unresolved after {spent} ticks: {}",
+        battle_snapshot(session)
+    )))
+}
