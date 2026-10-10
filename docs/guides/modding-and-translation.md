@@ -4,7 +4,40 @@
 extras, and a full community-translation toolchain. Everything is built on
 same-size in-place sector edits with the EDC/ECC re-encoded, so patched images
 stay valid discs. Commands use the bare `./tool` form (source builds live at
-`target/release/`).
+`target/release/`). The randomizer and the language packs also run in the
+browser, on the project site's ROM patcher page - same code, compiled to
+WebAssembly, and nothing is uploaded.
+
+```mermaid
+flowchart LR
+    src["Your USA .bin<br/>(read-only)"]
+    tool["legaia-patcher<br/>randomize / translate import / tim-replace / monster-block"]
+    ppf["PPF patch + manifest<br/>(safe to share)"]
+    bin["Patched .bin + .cue<br/>(local play only)"]
+    check["legaia-patcher verify<br/>on the recipient's own dump"]
+    play["An emulator, a console, or the port"]
+
+    src --> tool
+    tool --> ppf
+    tool --> bin
+    ppf --> check --> play
+    bin --> play
+```
+
+| Task | Section |
+|---|---|
+| Randomize a disc and share the seed | [1](#1-randomize-onto-a-scratch-copy), [2](#2-the-region-guard), [3](#3-share-and-verify-a-patch) |
+| Rebalance one monster by hand | [4](#4-hand-edit-one-monster-stats--element--name) |
+| Replace a texture | [4b](#4b-replace-a-texture) |
+| Translate the game | [5](#5-translate-the-game) |
+| Read a memory-card save | [6](#6-inspect-saves) |
+| Look up game data or cheat codes | [7](#7-look-things-up-without-a-disc), [8](#8-cheat-databases) |
+
+A patched USA image also boots in the port (`legaia-engine` accepts it like
+the retail disc). The port reads the disc's data, so data edits - drops,
+steals, encounters, chests, doors, shops, starting items - take effect there; mods that work by injecting
+MIPS code into the game's executable only run where that executable runs, on
+an emulator or a console.
 
 Two safety properties to rely on:
 

@@ -1,10 +1,28 @@
 # Playing and viewing
 
-`legaia-engine` is the from-scratch engine reimplementation: point it at your
-disc and it boots a scene, renders it, and takes pad input.
-`asset-viewer` is its museum-mode sibling for browsing individual assets. Both
-ship in the release archive; commands use the bare `./tool` form (source
-builds live at `target/release/`).
+`legaia-engine` is the port: point it at your disc and you are playing Legend
+of Legaia - title screen, New Game or a save, towns, the world map, battles,
+menus, minigames, cutscenes. `asset-viewer` is its museum-mode sibling for
+browsing individual assets. Both ship in the release archive; commands use the
+bare `./tool` form (source builds live at `target/release/`).
+
+There are two ways to play, and they run the same engine:
+
+| Host | Start it | Input | Notes |
+|---|---|---|---|
+| Native window | `./legaia-engine` ([the launcher](#0-the-launcher)), or `play-window` | Keyboard | wgpu renderer; every flag on this page |
+| Browser play page | The project site's play page, or [a local build](#10-run-the-browser-version-locally) | Keyboard or gamepad | Nothing to install; also runs in VR over WebXR |
+
+On this page:
+
+- Play: [the launcher](#0-the-launcher), [booting a scene](#1-boot-the-engine),
+  [picking a scene, and cheats](#2-pick-a-scene), [FMVs](#3-play-the-fmvs),
+  [minigames](#4-start-a-minigame-from-a-live-scene), [audio](#5-what-you-hear),
+  [saves and config](#6-saves-and-config-live-next-to-you).
+- Tools: [record and replay](#7-record-and-replay-a-session),
+  [the asset viewer](#8-browse-assets-interactively),
+  [script disassembly](#9-read-the-games-scripts),
+  [the browser build](#10-run-the-browser-version-locally).
 
 Every subcommand accepts the disc directly via `--disc` - no extraction step
 required to play. Without `--disc`, tools read an `extracted/` tree
@@ -98,25 +116,29 @@ reports with the `standard` mapping), by position: bottom / right / left /
 top face buttons are Cross / Circle / Square / Triangle, bumpers L1 / R1,
 triggers L2 / R2, back / start Select / Start, and both the d-pad and the
 left stick drive the d-pad. Key Config (Select on the Options screen) rebinds keys only. The native window
-has no gamepad support yet.
+reads the keyboard only.
 
-In-window extras: left-mouse drag orbits the camera around your character
+**Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
-double-click puts the framing back to retail - all three are locked while a
-cutscene has the camera. `T` cycles the coarse
-camera-distance preset, `R` toggles precise free-angle movement (an opt-in
-enhancement - retail-style movement is the default), `I` toggles enhanced
-lighting (on by default and remembered: a time-of-day mood, real lights at the
-scene's lamps and glowing props, the Genesis Tree glowing; off is the game's
-own baked shading), `F8` cycles its time of day (auto, day, dusk, night), `Y`
-toggles its shadow-casting point lights (`--no-dyn-shadows` starts with them
-off), `F1` shows
-the engine's diagnostic text rows (off by default), `F2` mutes audio, `F3`
-swaps the field camera for the wide debug orbit, `F4` toggles the
-camera-occlusion fade (on by default: walls between the camera and your
-character dissolve to a dither so you can always see yourself;
-`--no-occlusion-fade` starts with it off), `F9` toggles the volumetric ground
-fog (on by default; `--no-volumetric-fog` starts with it off).
+double-click puts the framing back to retail. All three are locked while a
+cutscene has the camera.
+
+**Window toggles.** These are the port's enhancements and conveniences; each
+enhancement has a retail-faithful off position
+([what each one does](../subsystems/engine.md#fidelity-and-enhancements)).
+
+| Key | Toggle | Default | Start-up flag |
+|---|---|---|---|
+| `I` | Enhanced lighting: a time-of-day mood, real lights at lamps and glowing props; off is the game's own baked shading | on, remembered | `--no-dynamic-lighting` |
+| `F8` | Lighting time of day: auto, day, dusk, night | auto | - |
+| `Y` | Shadows cast by the enhanced point lights | on | `--no-dyn-shadows` |
+| `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on | `--no-occlusion-fade` |
+| `F9` | Volumetric ground fog | on | `--no-volumetric-fog` |
+| `R` | Precise free-angle movement | off (retail-style movement), remembered | - |
+| `T` | Camera distance preset: retail, far, farther | far, remembered | - |
+| `F3` | Wide debug orbit camera | off | - |
+| `F2` | Mute audio | off | `--no-audio` |
+| `F1` | The engine's diagnostic text rows | off | - |
 
 A handful of keys are development hand-triggers rather than player controls:
 `N` opens the name-entry screen for the lead character, and `F5`, `F`, `G`,
