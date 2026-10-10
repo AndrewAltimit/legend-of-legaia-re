@@ -1,4 +1,3 @@
-
 /// A formatted card holds no saves, every frame's XOR checksum is right,
 /// and a save written into it lands in block 1 and reads back.
 #[test]
