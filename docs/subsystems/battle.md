@@ -53,19 +53,19 @@ Every index in this section is a **raw TOC** index - the space the loader's own 
 
 ```mermaid
 sequenceDiagram
-    participant L as "Loader FUN_800520F0"
-    participant CD as "PROT.DAT"
-    participant T as "Runtime tables"
-    L->>CD: "states 2/4/6: stage pack raw 0x367 / 0x36D"
-    L->>CD: "state 0x8: etim (raw 0x368)"
-    L->>CD: "state 0xB: etmd + vdf (raw 0x369 + 0x36A, one read)"
-    L->>T: "state 0xC: vdf pointers -> 0x80083E58"
-    L->>T: "state 0xC: tmd_register etmd -> DAT_8007C018[3..]"
-    L->>CD: "state 0xC: efect.dat (raw 0x36B)"
-    L->>T: "state 0xE: effect 2-pack init FUN_801DE914"
-    L->>CD: "states 0xE/0x10: stage overlay if stage id != 0"
-    L->>L: "state 0x11: wait on FUN_8003DE7C"
-    L->>T: "state 0xFF: side-band handler 0x801F17F8"
+    participant L as Loader FUN_800520F0
+    participant CD as PROT.DAT
+    participant T as Runtime tables
+    L->>CD: states 2/4/6: stage pack raw 0x367 / 0x36D
+    L->>CD: state 0x8: etim (raw 0x368)
+    L->>CD: state 0xB: etmd + vdf (raw 0x369 + 0x36A, one read)
+    L->>T: state 0xC: vdf pointers -> 0x80083E58
+    L->>T: state 0xC: tmd_register etmd -> DAT_8007C018[3..]
+    L->>CD: state 0xC: efect.dat (raw 0x36B)
+    L->>T: state 0xE: effect 2-pack init FUN_801DE914
+    L->>CD: states 0xE/0x10: stage overlay if stage id != 0
+    L->>L: state 0x11: wait on FUN_8003DE7C
+    L->>T: state 0xFF: side-band handler 0x801F17F8
 ```
 
 | State | What it does |
