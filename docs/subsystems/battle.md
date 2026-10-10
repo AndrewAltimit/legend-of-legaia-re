@@ -1483,6 +1483,22 @@ That byte is bit 5 of byte `+8` of the field scene's encounter-region record
 whose low 5 bits pick which of a scene's stage variants to use. Set, it keeps
 object 1.
 
+**A kept object 1 is drawn over the shell, not into it.** Retail has no
+depth buffer, so what a kept object covers is its place in the ordering
+table. `nivora_duel_pre_megaton_press` (stage `638`, extraction 641, the
+region's keep bit set) draws object 1 - twelve quads, the horizon mist
+ribbon, a ring of radius about `2330..2580` and height `614` - as five
+additive `POLY_FT4` (tpage `0x2D`, CLUT `0x77C1`) in the chain right after
+every shell packet of the frame and before the first combatant: floor grid,
+shell, ribbon, actors. The ribbon's quads stand partly behind the cave
+wall they belong to, and the whole band shows, `60` rows tall on the left
+copy and `100` on the mirrored one. Projecting object 1's vertices through
+the capture's camera lands on those packets, so its place is the mesh's own
+- only the order is special. The port draws the shell and its kept object
+as one depth-tested mesh, so the wall hides the part of the ribbon behind
+it: on that capture the band is about half as tall and missing from the
+mirrored copy's side.
+
 #### Port
 
 `legaia_asset::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
