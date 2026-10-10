@@ -572,16 +572,19 @@ impl BattleCamera {
         let target = self.glides.front().map_or(self.pose, |g| g.target);
         let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
         let mut mask = 0u8;
+        // Both angles keep the engine's own unwrap: each lands on the live
+        // angle's representative nearest its current value (retail's words
+        // are masked to 12 bits; the summon close-up's pitch runs negative).
+        let nearest = |from: f32, to: f32| {
+            let d = (to - from).rem_euclid(4096.0);
+            from + if d > 2048.0 { d - 4096.0 } else { d }
+        };
         if ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE {
-            self.pose.pitch = live.pitch;
+            self.pose.pitch = nearest(self.pose.pitch, live.pitch);
             mask |= 1;
         }
         if ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
-            // Keep the engine's own unwrap: land on the live angle's
-            // representative nearest the current one.
-            let d = (live.yaw - self.pose.yaw).rem_euclid(4096.0);
-            let d = if d > 2048.0 { d - 4096.0 } else { d };
-            self.pose.yaw += d;
+            self.pose.yaw = nearest(self.pose.yaw, live.yaw);
             mask |= 2;
         }
         for k in 0..3 {

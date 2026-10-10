@@ -2105,8 +2105,10 @@ pub fn run_engine_battle(
     // reached on its own stream. Where the engine heads for retail's
     // endpoint, start it from retail's live value, so the channel scores the
     // framing rather than that history (`BattleCamera::align_glide_origin`;
-    // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`).
-    if (matches!(driven, Some(Some(_))) || seed.is_some() && phase_tick.is_some())
+    // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`). Pad drives
+    // only: a replayed cast's close-ups and module shots measured worse
+    // aligned (`flute_spikefish_midcast` image `.910` to `.828`).
+    if matches!(driven, Some(Some(_)))
         && let Some(cam) = session.host.world.battle.camera.as_mut()
     {
         cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
