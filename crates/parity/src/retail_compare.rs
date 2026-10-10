@@ -252,6 +252,13 @@ pub struct RetailObs {
     pub bgm_sounding: bool,
     /// `_DAT_8007B854 != 0`.
     pub fog_gate: bool,
+    /// The visible-tile window, scratchpad `0x1F8003E8..EB` as signed tile
+    /// offsets `[near X, near Z, far X, far Z]`
+    /// (`docs/formats/encounter.md`): the field primer's stamp, or whatever
+    /// op `0x46` or a camera-region record has since written over it. Set by
+    /// [`RetailObs::seat_view_window`] from the state's scratchpad, on a
+    /// field state only - `None` when the state carries no scratchpad.
+    pub view_window: Option<[i8; 4]>,
     /// The live game-state window lifted as a save.
     pub save: Option<legaia_save::SaveFile>,
     /// The field party HUD's idle countdown `_DAT_801F348C` (field-overlay
@@ -429,6 +436,7 @@ impl RetailObs {
             bgm_sounding: game_anchors::u16_at(ram, BGM_PLAYING) != 0
                 && game_anchors::u16_at(ram, BGM_SLOT + 6) != 0,
             fog_gate,
+            view_window: None,
             save,
             hud_countdown: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| rd16(ram, HUD_COUNTDOWN)),
@@ -694,6 +702,18 @@ impl RetailObs {
     }
 }
 
+impl RetailObs {
+    /// Read the visible-tile window off a state's 1 KiB scratchpad image
+    /// (index `0` = `0x1F800000`). Field states only: the overworld draws
+    /// through its own terrain pass and a battle leaves the bytes stale.
+    pub fn seat_view_window(&mut self, scratchpad: Option<&[u8]>) {
+        self.view_window = (self.class == StateClass::Field)
+            .then(|| scratchpad?.get(0x3E8..0x3EC))
+            .flatten()
+            .map(|b| [b[0] as i8, b[1] as i8, b[2] as i8, b[3] as i8]);
+    }
+}
+
 /// Read a library state of either emulator. `scus` is `SCUS_942.54`, which a
 /// PCSX-Redux state needs for its RAM anchor search.
 pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
@@ -709,6 +729,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
             };
             let mut obs = RetailObs::from_ram(ram, frame);
             obs.seat_scroll_rects(ram, gpu.vram_bytes());
+            obs.seat_view_window(st.scratch_ram().ok());
             Ok(obs)
         }
         _ => {
@@ -718,6 +739,7 @@ pub fn read_retail(entry: &CorpusEntry, scus: &[u8]) -> Result<RetailObs> {
                 .and_then(|g| Frame::from_vram_display(&g.vram, g.display_crop_rect()));
             let mut obs = RetailObs::from_ram(st.main_ram(), frame);
             obs.seat_scroll_rects(st.main_ram(), gpu.as_ref().map(|g| g.vram.as_slice()));
+            obs.seat_view_window(st.scratchpad());
             Ok(obs)
         }
     }
@@ -739,6 +761,13 @@ pub struct EngineObs {
     pub bgm_held: bool,
     /// The engine's fog-pool gate (`World::fog.gate`).
     pub fog_gate: bool,
+    /// The zone camera's visible-tile window (`ZoneFollow::view_window`).
+    pub view_window: [i8; 4],
+    /// The same window as the decoration pass holds it between its clamp and
+    /// its epilogue (`field_view_window::view_cells`, `FUN_801F7088` steps
+    /// 1-2): clipped against the walk-region box around the focus. `None`
+    /// before the camera has published a cull view.
+    pub view_window_in_pass: Option<[i8; 4]>,
     pub save: legaia_save::SaveFile,
     /// On a menu-class seed: the sub-screen the engine's pause menu reached
     /// (the open row's retail id, `0x01` on the root list, `0x13` for the
@@ -1062,6 +1091,14 @@ fn sample_engine(
         bgm_id,
         bgm_held: director.held,
         fog_gate,
+        view_window: session.camera.zone.view_window,
+        view_window_in_pass: session
+            .host
+            .world
+            .npcs
+            .cull_view
+            .as_ref()
+            .map(|v| legaia_engine_core::field_view_window::view_cells(v).window),
         save,
         menu_subscreen,
         script: None,
@@ -1942,6 +1979,43 @@ mod tests {
         settled.settle_on_loaded_scene(&cdname);
         assert_eq!(settled.scene, "doman");
         assert_eq!(settled.pending_scene, None);
+    }
+
+    /// The visible-tile window is the four signed scratchpad bytes at
+    /// `0x3E8`, read on a field state only.
+    #[test]
+    fn the_view_window_comes_off_the_scratchpad_of_a_field_state() {
+        let mut pad = vec![0u8; 0x400];
+        pad[0x3E8..0x3EC].copy_from_slice(&[0xF8, 0xFA, 6, 10]);
+        let mut field = RetailObs::from_ram(&field_run_ram("town01", 0), None);
+        assert_eq!(field.class, StateClass::Field);
+        field.seat_view_window(Some(&pad));
+        assert_eq!(field.view_window, Some([-8, -6, 6, 10]));
+        field.seat_view_window(None);
+        assert_eq!(field.view_window, None);
+        let mut overworld = RetailObs::from_ram(&field_run_ram("map01", 0), None);
+        assert_eq!(overworld.class, StateClass::WorldMap);
+        overworld.seat_view_window(Some(&pad));
+        assert_eq!(overworld.view_window, None);
+    }
+
+    /// The page mark's displayed frame: the RAM's frame taken back over the
+    /// two-frame display lag, and none while no page waits or an automatic
+    /// press counts down.
+    #[test]
+    fn the_page_mark_frame_is_taken_back_by_the_display_lag() {
+        let at = |va: u32| (va & 0x1F_FFFF) as usize;
+        let mut ram = field_run_ram("town01", 0);
+        assert_eq!(retail_page_mark(&ram), None, "no page waits");
+        ram[at(0x801F_2734)] = 0x19;
+        ram[at(0x801C_6004)] = 1;
+        ram[at(0x801C_6014)] = 9;
+        assert_eq!(retail_page_mark(&ram), Some(1));
+        // One vsync into the frame: the screen still shows the other one.
+        ram[at(0x801C_6014)] = 1;
+        assert_eq!(retail_page_mark(&ram), Some(0));
+        ram[at(0x8007_3F00)] = 5;
+        assert_eq!(retail_page_mark(&ram), None, "an automatic press hides it");
     }
 
     #[test]

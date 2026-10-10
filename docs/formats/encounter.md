@@ -599,9 +599,13 @@ Provenance: `ghidra/scripts/funcs/overlay_fishing_801daa50.txt` (clamp), `overla
 
 Across a real `map01` → `town0c` door the scene-name word flips at vsync 37, while the window keeps the previous scene's values for 78 more vsyncs and is re-stamped at vsync 115 to `(-7, -6, 5, 7)`. The incoming scene stamps the window on its own beat, so a frame drawn in between uses the window of the scene the player has left.
 
+The entry stamp itself is the field draw-context primer `FUN_801DE37C`, which stores the constants `(-8, -6, 6, 10)` (`0x801DE3BC..0x801DE3DC`; the engine's `FIELD_DEFAULT_VIEW_WINDOW`). The `(-7, -6, 5, 7)` the poll reads fits that window one column in on each X side and three rows in on the far Z side - the form the decoration pass holds between its clamp and its epilogue (step 2 above) - rather than a second stamp.
+
+**A poll can read the clipped form.** A vsync poll or a save state lands on an emulator frame boundary, and on a game frame two or three vsyncs long that boundary can fall inside the render pass, where the four bytes hold the window clipped against the region box. The retail comparison corpus scores both forms ([`retail-compare.md`](../tooling/retail-compare.md#channels)): of its field states, most hold the stored window the engine holds, and the rest (`mei_house_door_pcsx`, `rimelm_wall_press_left`, `ending_vignette_biron`, `uru_field_run`, `retona_field_card_boot`, `retock_inn_stay_prompt`) hold exactly the clip `field_view_window::view_cells` computes at their focus.
+
 For a port:
 
-- Re-stamping on field entry is right, but the value differs: retail's entry stamp here is `(-7, -6, 5, 7)`, while the engine's `FIELD_DEFAULT_VIEW_WINDOW` is `(-8, -6, 6, 10)`.
+- Re-stamping on field entry with the primer's constants is right; the scene's own writers (a camera-region record's mask-kind side-write, op `0x46`) then replace it.
 - A fixture for this has to cross a scene. A Rim Elm house door does not: an intra-town interior is an intra-scene warp.
 
 ## What this doesn't tell us

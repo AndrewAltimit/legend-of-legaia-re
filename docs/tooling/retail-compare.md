@@ -196,6 +196,7 @@ records the label as `pending_scene` in the detail
 | headings | `actor + 0x26` | the player's, and every field-actor-ticked (`FUN_8003BC08`) node's keyed by its flat record `+0x50` ([below](#the-facing-channel)) |
 | BGM track word | `0x8007BAC8` | written by op `0x35`'s start arms |
 | fog-pool gate | `0x8007B854` | written only by op `0x4C` nibble 3 ([field-ambient-fx](../subsystems/field-ambient-fx.md#mechanism-4---the-ambient-particle-emitter)) |
+| visible-tile window | scratchpad `0x1F8003E8..EB` | four signed tile offsets ([encounter](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)); read off the state's scratchpad image, not main RAM |
 | party / flags / bag / gold | `0x80084140`, `0x1A18` bytes | the live game-state window |
 | displayed frame | VRAM + display registers | [below](#the-image-channel) |
 
@@ -414,6 +415,13 @@ engine verdict:
   parked on its install-pass PC (`+0x9F`) and the frame clears black; the
   seed's settle window ran the loop before the resume, the engine cleared
   brown, and the semi-transparent sea (`(B + F) / 2`) blended into it.
+
+  So is the dialogue page mark, the two-frame "press" icon at a waiting
+  box's rim (`FUN_8002B994` kind 1). Which frame is up is vsyncs since the
+  box first waited, sixteen a frame; the state's frame index and timer
+  (`0x801C6004` / `0x801C6014`), taken back by the two-frame display lag,
+  go to the child as `LEGAIA_SEAT_PAGE_MARK` (`retail_page_mark`) and are
+  seated on the frame it captures (`World::seat_page_mark_frame`).
 
   The `cort_evolved_pre_battle` walls that still read differently are not
   a scroller's: they sample texture page `(512, 0)` through CLUT
@@ -1374,6 +1382,7 @@ measured channels.
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
 | `fog_gate` | 1 when the engine's fog-pool gate equals retail's |
+| `view_window` | field class only: fraction of the four visible-tile window bytes equal to the zone camera's, or to the form the decoration pass clips them to at the engine's focus - a capture can land inside the pass ([encounter](../formats/encounter.md#the-window-is-not-cleared-with-the-scene)) |
 | `party` | fraction of equal fields over retail's roster: HP / MP current and max, level, the eight equipment bytes |
 | `flags` | 1 - differing bits / bits set on either side, over the whole story-flag bitmap |
 | `inventory` | fraction of non-empty bag slots equal, slot for slot, plus gold |
