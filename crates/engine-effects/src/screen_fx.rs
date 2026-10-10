@@ -155,11 +155,23 @@ pub struct Screen {
 /// Hardcoded right edge of every widget draw (retail literal `0x140`).
 pub const SCREEN_W: i16 = 0x140;
 
+/// The field's draw-area Y offset, scratch `0x1F80038A`: the field draws
+/// into a `320 x 224` area four rows down its buffer, and the word holds
+/// that `4` in every field-run frame. The image panel and the letterbox
+/// take it off their script-space Y (`lhu a1,0x76(s1)` ... `subu v0,v0,a1`
+/// at `0x801F86C0` / `0x801F86E4` in the panel handler) - their operands are
+/// buffer rows, the packets draw-area rows.
+pub const FIELD_DRAW_Y_OFFSET: i16 = 4;
+
 impl Default for Screen {
+    /// The field's screen. `height` is the port's `240`-row logical screen
+    /// rather than retail's `228` (`0x1F80038E`), so a mask or a letterbox
+    /// band that runs to the bottom edge also covers the rows the port draws
+    /// below retail's area.
     fn default() -> Self {
         Screen {
             x0: 0,
-            y_off: 0,
+            y_off: FIELD_DRAW_Y_OFFSET,
             height: 240,
         }
     }
@@ -1214,6 +1226,25 @@ mod tests {
         // a=100,b=50,t=5,D=10: e=250, e/D=25, +25*5=375, /10=37 -> 87.
         assert_eq!(interp(100, 0, 15, 20, InterpMode::EaseInOut), 87);
         assert_eq!(interp(100, 0, 20, 20, InterpMode::EaseInOut), 100);
+    }
+
+    /// The image panel's operands are buffer rows: on the field's screen
+    /// the quad sits the draw-area offset above its script Y
+    /// (`0x801F86C0..0x801F86E4`).
+    #[test]
+    fn the_panel_draws_the_draw_area_offset_above_its_script_row() {
+        let mut rec = vec![0u8; 0xd];
+        rec[1..3].copy_from_slice(&16i16.to_le_bytes());
+        rec[3..5].copy_from_slice(&100i16.to_le_bytes());
+        rec[5..7].copy_from_slice(&140i16.to_le_bytes());
+        rec[7..9].copy_from_slice(&82i16.to_le_bytes());
+        let mut p = PanelWidget::spawn(&rec).unwrap();
+        let (q, second) = p.tick(1, &Screen::default());
+        assert!(second.is_none());
+        assert_eq!((q.left, q.top, q.right, q.bottom), (16, 96, 155, 177));
+        // A caller that hands a zero offset gets the script row back.
+        let (q, _) = p.tick(1, &screen());
+        assert_eq!(q.top, 100);
     }
 
     // -- mask widget (FUN_801F811C / FUN_801F8D4C) -------------------------
