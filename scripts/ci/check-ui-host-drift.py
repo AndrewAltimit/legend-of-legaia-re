@@ -903,7 +903,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "(`MuscleDomeSurface::frame`, held as `muscle_surface`)",
         "sites": {
             "native": (
-                "crates/engine-shell/src/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames/muscle_dome.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_frame"),
@@ -917,7 +917,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "never a host-side orbit framing",
         "sites": {
             "native": (
-                "crates/engine-shell/src/window/minigames.rs",
+                "crates/engine-shell/src/window/minigames/muscle_dome.rs",
                 "refresh_muscle_dome_gpu",
             ),
             "web": (WEB_PLAY_ARENA, "play_mg_muscle_scene_vp"),
@@ -1388,7 +1388,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hall's tilted video walls inside the back wall: the page drew brick "
         "where the window drew the dancer screens, with every tier green",
         "sites": {
-            "native": (NATIVE_MINIGAMES, "build_dance_venue_gpu"),
+            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "build_dance_venue_gpu"),
             "web": (WEB_MINIGAMES_DANCE, "append_draw"),
         },
         "mode": "symbols_all",
@@ -1402,7 +1402,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`frame` from a draw that also runs on idle frames, and its round "
         "intro framed a different fighter than the window's",
         "sites": {
-            "native": (NATIVE_MINIGAMES, "refresh_muscle_dome_gpu"),
+            "native": ("crates/engine-shell/src/window/minigames/muscle_dome.rs", "refresh_muscle_dome_gpu"),
             "web": (WEB_PLAY_ARENA_SURFACE, "play_mg_muscle_scene_frame"),
         },
         "mode": "symbols_all",
@@ -3667,6 +3667,11 @@ def check_enum_coverage(
 HOTKEY_SOURCES = [
     "crates/engine-shell/src/window/event_handler/keyboard.rs",
     "crates/engine-shell/src/window/minigames.rs",
+    "crates/engine-shell/src/window/minigames/baka_fighter.rs",
+    "crates/engine-shell/src/window/minigames/dance.rs",
+    "crates/engine-shell/src/window/minigames/fishing.rs",
+    "crates/engine-shell/src/window/minigames/muscle_dome.rs",
+    "crates/engine-shell/src/window/minigames/slot_machine.rs",
 ]
 
 # Where a shared (i.e. not hotkey-only) caller may live: the engine crates the
