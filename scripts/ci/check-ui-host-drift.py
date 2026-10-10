@@ -522,7 +522,7 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 # `None` means the whole file is the site, which is right when a host's
 # injection is a call made from a place the pairing should not pin.
 NATIVE_BOOT = "crates/engine-session/src/boot.rs"
-NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_select_helpers.rs"
+NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_rack_disk.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
 # The minigame session enter / exit / tick methods of the frame tick.
 NATIVE_MINIGAME_SESSIONS = "crates/engine-core/src/world/frame_tick/minigame_sessions.rs"

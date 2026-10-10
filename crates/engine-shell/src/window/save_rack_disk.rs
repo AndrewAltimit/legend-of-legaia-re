@@ -1,8 +1,6 @@
-//! Extracted from `window.rs` (mechanical split; behavior-preserving).
-//!
-//! Save-select / load-screen helpers: the save-directory scanner, the
-//! per-slot info-view builder, the info-panel slide-in offset, and the
-//! owned-string flavour of the renderer's `SlotInfoView`.
+//! The disk-backed save rack behind the save-select / load screens: the
+//! two card ports, the save-directory scanner, slot file read / write, the
+//! per-slot snapshot, and a mounted memory-card image in port two.
 
 use super::*;
 
