@@ -796,7 +796,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "kernel `fog_volume::stage_luminance` and stores it on the world",
         "sites": {
             "native": (
-                "crates/engine-shell/src/window/battle.rs",
+                "crates/engine-shell/src/window/battle/scene_entry.rs",
                 "enter_battle_render",
             ),
             "web": ("crates/web-viewer/src/play_battle_render.rs", "enter_battle_render"),
@@ -932,7 +932,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "host, only the style inputs shared. Both arms must build the "
         "emitter through `BattleIntro::arm_for_battle`",
         "sites": {
-            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
             "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
         },
         "mode": "symbols_all",
@@ -1041,7 +1041,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "row index and drew the default style. Both sites must read "
         "`SceneHost::battle_intro_style_inputs`",
         "sites": {
-            "native": (NATIVE_BATTLE, "arm_battle_intro"),
+            "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
             "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
         },
         "mode": "symbols_all",
