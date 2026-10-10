@@ -1,15 +1,18 @@
 # Cheat databases
 
-Third-party GameShark / Pro-Action-Replay cheat code dumps for
-*Legend of Legaia* (NTSC-U) are an unusually rich source of
-ground-truth RAM addresses for reverse-engineering work. This page
-documents:
+Published GameShark / Pro-Action-Replay cheat codes for *Legend of Legaia*
+(NTSC-U) are labelled `(address, value)` writes into the running game, which
+makes them ground-truth RAM addresses: "Infinite HP (Vahn)" names the cell that
+holds Vahn's HP. The project parses two public cheat databases, classifies every
+code by the RAM region it targets, and can apply them to the Rust engine to
+check that the engine's state lives where retail's does.
 
-1. the encoding rules for the two formats we ingest,
-2. how `crates/cheats` parses + classifies them,
-3. the citations the rest of the docs use to anchor offsets, and
-4. the runtime applier (`legaia-engine play-window --cheat-file`)
-   that validates our memory map against retail behaviour.
+| Section | Covers |
+|---|---|
+| [Format 1](#format-1---gameshark-text-dump) / [Format 2](#format-2---mednafen-cht) | The two input encodings |
+| [Parser + classifier](#parser--classifier) | `crates/cheats` API and the `cheat-tool` CLI |
+| [Citation table](#citation-table-per-category) | What the codes pin, per RAM region |
+| [Runtime applier](#runtime-applier) | `legaia-engine play-window --cheat-file` |
 
 The data files live under [`data/cheats/`](../../data/cheats/) and
 are committed to the repo. They contain no Sony-owned bytes - just
@@ -109,7 +112,7 @@ cargo run -p legaia-cheats --bin cheat-tool -- offset-table data/cheats/legaia-n
 
 ## Citation table (per category)
 
-What the cheat database tells us about each category. The `Detail`
+What the cheat database pins in each category. The `Detail`
 column is the [`ClassifiedAddress::detail`] string the classifier
 emits.
 
@@ -186,8 +189,11 @@ Mini-game scratch RAM. The fishing minigame uses
 `0x801D9168 / 0x801D9274 / 0x801D9298 / 0x801D91CC` for tension /
 casting power / life / fish ID; baka fighter at
 `0x801DBFC4 / 0x801DBFF0 / 0x801DC06C`; dance points at
-`0x801D53CC`; slot machine at `0x801D3CAC`. None of these are wired
-into the engine yet - they're recorded as citations only.
+`0x801D53CC`; slot machine at `0x801D3CAC`. These are cells inside
+the mini-game overlay images, so they are recorded as citations and are not in
+the applier's `ram_map` registry (the engine's mini-game sessions keep their own
+state). The one mini-game cell the applier maps is the fishing point pool
+`0x8008444C`.
 
 ### FieldVmCollision
 
@@ -210,7 +216,7 @@ stat-leak issues.
 ### CodePatch
 
 A handful of cheats patch running code rather than a RAM cell. The classifier
-flags these so we can tell them apart. Three write `0x2400` to an instruction's
+flags these so they can be told apart. Three write `0x2400` to an instruction's
 **upper** halfword (`addr % 4 == 2`), rendering it `addiu $zero, $zero, imm` -
 the GameShark `nop` idiom:
 
@@ -228,8 +234,8 @@ One is a different shape and does not write `0x2400` at all:
   (`slti r2,r2,100` / `addiu r3,99` / `sb`); shortening the displacement makes
   the clamp always run.
 
-These are all useful Ghidra anchors; the patched instruction
-addresses give us callsite hints the LUI+ADDIU resolver wouldn't.
+These are useful Ghidra anchors: a patched instruction address is a
+call-site hint that an address-reference query does not surface.
 
 ## Runtime applier
 
@@ -269,7 +275,7 @@ either:
 
 - [`docs/formats/save-record.md`](../formats/save-record.md) - full
   record offset table that the cheat citations anchor.
-- [`docs/reference/memory-map.md`](memory-map.md) - newly-pinned
-  globals from the cheat database.
+- [`docs/reference/memory-map.md`](memory-map.md) - the RAM map the
+  cheat-pinned globals sit in.
 - [`crates/cheats/README.md`](../../crates/cheats/README.md) -
   parser + CLI reference.
