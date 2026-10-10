@@ -1,69 +1,87 @@
 # Actor / sprite VM
 
-The simplest of Legaia's five runtime VMs: a small fixed-width bytecode VM -
-and what it drives is the **menu overlay's UI windows**. `FUN_801D6628` is
-the window-widget script interpreter: each instruction names a window by its
-descriptor-table id and opens, closes, snaps or slides it. There is no
-cross-context targeting and no subroutine call.
+The simplest of Legaia's runtime VMs, and despite the historical name it does
+not drive actors: `FUN_801D6628` is the **menu overlay's window-widget script
+interpreter**. Each fixed-width instruction names a UI window by its
+descriptor-table id and opens, closes, snaps or slides it. The shop and menu
+screens' window choreography is written in it. There is no cross-context
+targeting, no branching and no subroutine call.
 
-It lives in the **menu overlay** (PROT 0899, slot-A base `0x801CE818`) at
-**`FUN_801D6628`**, with a **13-opcode** dispatch table at `0x801CED70`
-(`see ghidra/scripts/funcs/overlay_menu_801d6628.txt`; an earlier
-title-screen-overlay attribution predates the menu-overlay base recovery -
-the save-UI / shop capture inventories resolve the same image, and the
-interpreter's own base materialisation `lui 0x801e / addiu 0x4738` at
-`0x801D6658` lands on the menu window descriptor table). Port:
-[`legaia_engine_vm`](../../crates/engine-vm/src/lib.rs) (this was the first VM
-ported, and its `Host`-trait shape is the pattern the other VM ports follow).
+This page also documents three things that are *not* this VM but touch actor
+records and have no better home: the per-actor **anim tick** `FUN_80021DF4`
+(SCUS), the overloaded `actor[+0x4C]` pointer, and a few field-overlay actor
+families.
 
-**What catches people out: this page covers two different things.** The actor VM
-proper is one of them; the other is the per-actor *anim tick* `FUN_80021DF4`, a
-separate `SCUS_942.54` function documented [below](#per-actor-anim-tick---fun_80021df4).
-They are related only in that both touch actor records. In particular the actor VM
-does **not** consume `actor[+0x4C]` - see
-[Spawn-record consumption](#spawn-record-consumption-actor0x4c-is-overloaded).
+## At a glance
 
-For how this VM relates to the other four, see
-[the runtime VM family](move-vm.md#the-runtime-vm-family).
+| | |
+|---|---|
+| Interpreter | `FUN_801D6628`, menu overlay (PROT 0899, slot-A base `0x801CE818`); see `ghidra/scripts/funcs/overlay_menu_801d6628.txt` |
+| Dispatch | 13-slot jump table at `0x801CED70` |
+| Instruction | 4 bytes: `[opcode u8][window u8][operand u16 LE]`; a zero opcode ends the program |
+| Programs | data in the menu overlay ([`window-script.md`](../formats/window-script.md)) |
+| Operates on | the window descriptor table `0x801E4738` (`window * 0x10`, [field-menu.md](field-menu.md)) and the live window list at `gp+0x148` |
+| Port | [`legaia_engine_vm`](../../crates/engine-vm/src/lib.rs) (`run`, `Host` trait), hosted by `engine-menus::menu_widget::MenuWidgetState`; live on both play hosts |
 
-## Overview
-
-The VM is a one-shot command-list interpreter: `FUN_801D6628(&program)`
-walks fixed 4-byte instructions `[opcode u8][window u8][operand u16 LE]`
-until a zero opcode byte, then returns the terminator pointer. Per
-instruction it computes `0x801E4738 + window * 0x10` - the menu **window
-descriptor table** ([field-menu.md](field-menu.md), parser
-`legaia_asset::menu_windows`) - and reads the record's `x`/`y` halfwords as
-the instruction's default coordinates. Side-effects go to the live window
-list (the `0x5C`-stride linked list at `gp+0x148`, descriptor id at `+0x8`)
-through the SCUS window helpers: lookup `FUN_80035334`, create
-`FUN_800326AC`, start-slide `FUN_800357FC` (copies the node's current
-`+0xA`/`+0xC` into the motion sub-object's source, writes the target and
-sets `+0x20 = 1`), snap `FUN_800358C0` (writes source and target alike and
-clears `+0x20`), begin-close `FUN_80035978` (`+0x20 = -1`), close-all
-`FUN_80035A4C`, and immediate destroy `FUN_800319A8` (frees the node's
-buffers and unlinks it). Motion is target-based - the VM installs slide
-targets; the per-frame window walker animates them. (This list used to name
-`FUN_800357FC` a position write and `FUN_800358C0` the slide - the reverse
-of their tails at `0x80035874` / `0x80035938` - and `FUN_80035A4C` a global
-tick.)
+```mermaid
+flowchart TD
+    C["caller passes a program pointer<br/>(e.g. shop picker FUN_801DAFD4)"] --> F["fetch 4-byte instruction"]
+    F --> Z{"opcode == 0?"}
+    Z -->|yes| R["return terminator pointer"]
+    Z -->|no| D["descriptor = 0x801E4738 + window * 0x10<br/>read home x / y"]
+    D --> J["jump table 0x801CED70"]
+    J --> H["SCUS window helper:<br/>create, slide, snap, close, destroy"]
+    H --> F
+    H -.-> W["per-frame window walker<br/>animates the slide targets"]
+```
 
 ## Opcodes
 
-The 13 jump-table slots (`0x801CED70`) decode to: open and slide home
-(`0x01`), open and slide to a packed position (`0x02`), style-byte write
-(`0x03`), begin-close (`0x04`), close-all (`0x05`), motion-word clear
-(`0x06`), immediate destroy (`0x08`), open and snap to a packed position or
-home (`0x09`), and a destroy / re-create / snap-back-in-place composite
-(`0x0A`); slots `0x07` and `0x0B..=0x0D` fall through as no-ops (helper
-names as in the overview above, read off the arms at `0x801D66A8..0x801D6850`). Full opcode table + Rust port:
-`crates/engine-vm/src/lib.rs`, whose `Host` methods carry the helpers'
-meaning (`slide_to`, `snap_to`, `begin_close`, `close_all`, `destroy`); the
-menu window list (`engine-core::menu_widget::MenuWidgetState`) keeps each
-window's live position, slide source and target, and the `+0x20` motion word
-those helpers write. The world-map panel interpreter `FUN_801E9B3C` calls the
-same helpers from the same arm layout (ops `1` / `2` slide, `9` / `10`
-snap; [`world-map.md`](world-map.md)).
+Read off the arms at `0x801D66A8..0x801D6850`.
+
+| Op | Effect | Helper |
+|---|---|---|
+| `0x00` | End of program | - |
+| `0x01` | Open the window if absent, slide it to its home position | `FUN_800326AC`, `FUN_800357FC` |
+| `0x02` | Open if absent, slide to the packed operand position | `FUN_800326AC`, `FUN_800357FC` |
+| `0x03` | Write the window's style byte | - |
+| `0x04` | Begin close (`+0x20 = -1`) | `FUN_80035978` |
+| `0x05` | Close all windows | `FUN_80035A4C` |
+| `0x06` | Clear the motion word `+0x20`, if the window exists | - |
+| `0x07` | No-op (falls through to the default arm) | - |
+| `0x08` | Destroy the window immediately (free buffers, unlink) | `FUN_800319A8` |
+| `0x09` | Open if absent, snap to the packed operand position, or home when the operand is 0 | `FUN_800326AC`, `FUN_800358C0` |
+| `0x0A` | Destroy, re-create and snap back in place | `FUN_800319A8`, `FUN_800326AC`, `FUN_800358C0` |
+| `0x0B..=0x0D` | No-ops | - |
+
+The helpers, all in SCUS, act on the live window list (a `0x5C`-stride linked
+list at `gp+0x148`, descriptor id at node `+0x8`):
+
+| Helper | Role |
+|---|---|
+| `FUN_80035334` | look a window up by descriptor id |
+| `FUN_800326AC` | create |
+| `FUN_800357FC` | **start a slide**: copy the node's current `+0xA` / `+0xC` into the motion sub-object's source, write the target, set `+0x20 = 1` (tail at `0x80035874`) |
+| `FUN_800358C0` | **snap**: write source and target alike and clear `+0x20` (tail at `0x80035938`) |
+| `FUN_80035978` | begin close (`+0x20 = -1`) |
+| `FUN_80035A4C` | close all |
+| `FUN_800319A8` | destroy now |
+
+Motion is target-based: the VM installs slide targets and the per-frame
+window walker animates them. The interpreter's own base materialisation
+(`lui 0x801e / addiu 0x4738` at `0x801D6658`) is what ties it to the menu
+window descriptor table.
+
+In the port, the `Host` methods carry the helpers' meaning (`slide_to`,
+`snap_to`, `begin_close`, `close_all`, `destroy`), and `MenuWidgetState` keeps
+each window's live position, slide source and target, and the `+0x20` motion
+word. The world-map panel interpreter `FUN_801E9B3C` calls the same helpers
+from the same arm layout (ops `1` / `2` slide, `9` / `10` snap;
+[`world-map.md`](world-map.md)).
+
+For how this VM relates to the others, see
+[the runtime VM family](move-vm.md#the-runtime-vm-family) and the
+[VM inventory](vm-inventory.md).
 
 ## Where the programs live
 
@@ -79,7 +97,7 @@ resolution is per-boot, not per-scene.
 The engine wiring mirrors the retail chain end to end:
 `World::install_menu_overlay_tables` (both hosts call it with the real
 PROT 0899 bytes) resolves the programs
-(`engine-core::menu_widget::MenuWidgetScripts`) and seeds the window home
+(`menu_widget::MenuWidgetScripts`) and seeds the window home
 positions from the descriptor table; `MenuRuntime::tick` runs the shop
 open script (`DAT_801E4E38`) on the picker entry edge and the slide-away
 script (`DAT_801E4E54`) on the Sell transition - the transitions retail's
@@ -90,7 +108,7 @@ Disc-gated pins: `crates/asset/tests/widget_script_real.rs`,
 
 ## Why it's separate from the field VM
 
-The actor VM is a fixed-width 13-opcode dispatcher tailored to window choreography. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families, and far richer ctx state. They serve different layers of the engine - UI widgets at the presentation level, scripts at the gameplay-event level - and were almost certainly written by different people on the dev team.
+The actor VM is a fixed-width 13-opcode dispatcher tailored to window choreography. The field VM (`FUN_801DE840`) is a 43-opcode variable-length dispatcher with cross-context targeting, halt-acquire semantics, sub-dispatcher families and far richer context state. They serve different layers: UI widgets at the presentation level, scripts at the gameplay-event level.
 
 ## Per-actor anim tick - `FUN_80021DF4`
 
@@ -159,33 +177,29 @@ ambient-motion direction resolver (`REF` in `engine-vm::ambient_motion`, see
 cutscene/menu-overlay dumps land mid-`FUN_801D5944` / `FUN_801D7B40`, so those
 dumps are interior slices, not the owning entry.
 
-**`FUN_801C6C78` is not an installer, despite an earlier row here saying so.**
-Its own 441-instruction disassembly (`0x801C6C78..0x801C7358`) writes exactly one
-global - `0x8007AA14`, via 17 copies of `sw t0,-0x55ec(at)` - and has no store to
-`DAT_8007B9D8` under any addressing form, absolute or `gp`-relative. The
-`_DAT_8007b9d8 = 2` that produced the row exists only in the *decompiled* half of
-`overlay_0896_801c6c78.txt`, and it is `FUN_801D6704`'s own store, pulled in
+**`FUN_801C6C78` is not an installer.** Its 441-instruction disassembly
+(`0x801C6C78..0x801C7358`) writes exactly one global - `0x8007AA14`, via 17
+copies of `sw t0,-0x55ec(at)` - and has no store to `DAT_8007B9D8` under any
+addressing form. A `_DAT_8007b9d8 = 2` appears only in the *decompiled* half
+of `overlay_0896_801c6c78.txt`: it is `FUN_801D6704`'s own store, pulled in
 because Ghidra decompiled past the function into the field-overlay bytes that
-PROT 0896's footprint over-reads. The same C body cites strings (`MAP_NAME`,
-`field_read_size`) and unreachable blocks (`0x801D6844`, `0x801D6854`) that all
-belong to the field scene loader.
+PROT 0896's footprint over-reads (the same C body cites `MAP_NAME`,
+`field_read_size` and blocks `0x801D6844` / `0x801D6854`, all the field scene
+loader's).
 
-The offsets close exactly, which is what makes this diagnosable rather than a
-guess. PROT 0896 dumps are printed at `0x801C5818` and PROT 0897 at `0x801CE818`,
-`0x9000` apart, and 0896's bytes from file offset `0x9000` on *are* 0897's. So
-for any 0896 file offset `X >= 0x9000` the printed VA `0x801C5818 + X` equals the
-field overlay's true VA `0x801CE818 + (X - 0x9000)` - the over-read region prints
-correct addresses by accident, which is precisely why the spliced-in code looked
-legitimate. `FUN_801C6C78` itself sits at file offset `0x1460`, *below* that
-seam, so its bytes are PROT 0896's own head at a base that is unrecovered
-([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)) - the
-label `0x801C6C78` is not a runtime VA. It also falls inside the window
+Why the spliced code prints plausible addresses: PROT 0896 dumps are printed
+at `0x801C5818` and PROT 0897 at `0x801CE818`, `0x9000` apart, and 0896's
+bytes from file offset `0x9000` on *are* 0897's. So for a 0896 file offset
+`X >= 0x9000` the printed VA `0x801C5818 + X` equals the field overlay's true
+VA. `FUN_801C6C78` itself sits at file offset `0x1460`, below that seam, in
+PROT 0896's own head at an unrecovered base
+([`static-overlays.toml`](../../crates/asset/data/static-overlays.toml)), so
+`0x801C6C78` is not a runtime VA. It also falls inside the window
 [`call-target-integrity.md`](../tooling/call-target-integrity.md#scope-the-overlay_0896-window-below-0x801ce818)
-marks untrustworthy, and it shows the documented signature: 18 of its 42 `jal`s
-target `0x8002CDD0` and `0x8002D988`, the two non-enterable addresses that page
-names. Separately, PROT 0896's head is a Japanese-build options menu the USA
-build never runs (`crates/engine-core/src/options.rs`), so even a correct reading
-of it would not describe a retail mode.
+marks untrustworthy: 18 of its 42 `jal`s target `0x8002CDD0` and
+`0x8002D988`, the two non-enterable addresses that page names. PROT 0896's
+head is a Japanese-build options menu the USA build never runs
+(`crates/engine-core/src/options.rs`).
 
 The menu family drops the floor to `1` on entry and writes the saved value back from `DAT_801EF19C` on exit, which is why the field floor survives a pause-menu round trip.
 
@@ -221,11 +235,11 @@ The `crates/engine-vm` constants `ACTOR_RECORD_PTR_OFFSET`, `ACTOR_DISPATCH_BYTE
 
 | Byte | Mnemonic | Handler block | Notes |
 |---|---|---|---|
-| `0x01` | `Plain` | none - no `== 1` test exists anywhere in the function | Common stages only (pre-update, default movement, late-update): plain kinematics with no keyframe / path / SFX / damp / spline arm. The earlier "pose-snap variant with a to-be-found handler block" reading is retired - the comparison ladder tests `2/6`, `5`, `3`, `3\|\|5`, `7`, `4`, `6` and never `1`. `see ghidra/scripts/funcs/80021df4.txt`. |
+| `0x01` | `Plain` | none - no `== 1` test exists anywhere in the function | Common stages only (pre-update, default movement, late-update): plain kinematics with no keyframe / path / SFX / damp / spline arm. The comparison ladder tests `2/6`, `5`, `3`, `3\|\|5`, `7`, `4`, `6` and never `1`, so there is no pose-snap handler block to find. `see ghidra/scripts/funcs/80021df4.txt`. |
 | `0x02` | `KeyframeAlt` | shares with `0x06` at `0x80021E90..` | Per-bone keyframe-style. |
 | `0x03` | `Path` | `0x800226E8..0x800228A0` | Integrates `+0x96..+0x9A` into `+0x90..+0x94` and hands them to the CLUT-cell HSV cycler `FUN_80019D50`; skips the default motion block. |
-| `0x04` | `VramScroll` | `0x80022CBC..0x80022EE4` | VRAM texture-rect wrap-scroll on the actor's `+0xD0` rect: StoreImage band (`0x80022D68`) → MoveImage remainder (`0x80022DB0`) → LoadImage at the far edge (`0x80022DE8`); countdown `+0xC6` drains by `*(0x1F800393)`, reloads from `+0xC4`, step `+0xCC/+0xCE`. Installer: move-VM op `0x1E` (body `0x80023694`, `+0x5A = 4` + seven u16 operands); op `0x45` (`0x8002409C`) is the dispatch-`7` sibling. The "damping / spring-decay" label was a decompiled-C-era reading; the call order is read from the instructions. NB the 0874 atlas residue is **not** this mechanism - it is a field-VM `4C 60` face-frame stamp ([character-mesh.md](../formats/character-mesh.md#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim)). |
-| `0x05` | `PathAlt` | `0x80021FB4..0x800226D8` | The positional SFX emitter (the `bne` at `0x80021FAC`); skips the default motion block. `0x800228B8..0x80022B80`, which this row once named, is that default block - the code `0x03` and `0x05` branch *past* (`0x800228A8` / `0x800228B0`). |
+| `0x04` | `VramScroll` | `0x80022CBC..0x80022EE4` | VRAM texture-rect wrap-scroll on the actor's `+0xD0` rect: StoreImage band (`0x80022D68`) → MoveImage remainder (`0x80022DB0`) → LoadImage at the far edge (`0x80022DE8`); countdown `+0xC6` drains by `*(0x1F800393)`, reloads from `+0xC4`, step `+0xCC/+0xCE`. Installer: move-VM op `0x1E` (body `0x80023694`, `+0x5A = 4` + seven u16 operands); op `0x45` (`0x8002409C`) is the dispatch-`7` sibling. Not damping / spring decay: the call order is read from the instructions. NB the 0874 atlas residue is **not** this mechanism - it is a field-VM `4C 60` face-frame stamp ([character-mesh.md](../formats/character-mesh.md#runtime-scroll-cell-residue-why-a-live-vram-dump-can-differ-from-the-tim)). |
+| `0x05` | `PathAlt` | `0x80021FB4..0x800226D8` | The positional SFX emitter (the `bne` at `0x80021FAC`); skips the default motion block (`0x800228B8..0x80022B80`, which codes `0x03` and `0x05` branch *past* at `0x800228A8` / `0x800228B0`). |
 | `0x06` | `Keyframe` | `0x80021EA0..0x80021FA4` and `0x80022F00..0x80023040` | The dominant path. Per-bone keyframe interpolation; **fully ported in [`legaia_anm::AnimPlayer`]**. |
 | `0x07` | `Spline` | `0x80022C30..0x80022CB8` | Spline / curve-driven variant. |
 
@@ -276,37 +290,31 @@ Diffing the actor pool (`0x801C9594..0x801C9F7F`, 0x60-byte stride per anim slot
 | `FUN_800495C8` (animation envelope sampler) | Reads `*(int *)(actor + 0x4C) + 4` as a per-bone curve walker (4-byte header skip; per-record byte ranges describe interpolation envelopes). |
 | `FUN_8003A1E4` (foreground actor spawner) and `FUN_801DE840` (field VM) | Both read `*(ushort *)(actor[+0x4C] + 2)` as an animation-period u16 (modulo target for the current frame index). Matches the case-`0x06` writer's `puVar15[2..3] = 1`. |
 
-### Implications for the from-scratch port
+### What this means for the port
 
-1. **The actor VM at `FUN_801D6628` is *not* a consumer of `actor[+0x4C]`.** That function is a per-frame command-list interpreter walking an *external* 4-byte-stride bytecode stream (passed in as `param_1`); it dispatches each command through a 13-entry jump table at `0x801CED70` and routes side-effects to actor records *looked up by the slot byte* (`param_1[+1]`), not by following `actor[+0x4C]`.
-2. **No PC-bootstrap entry is needed.** The earlier framing - "the actor VM starts by resetting PC to 0 of the spawn record" - doesn't apply: VDF-spawned actors are driven by the vertex-pool render pipeline (`actor[+0x90]`), not by ticking their `+0x4C` body bytes as actor-VM opcodes.
-3. **`Actor::spawn_record` in `legaia_engine_core` is a retention/observation slot.** Mirroring the retail `actor[+0x4C] = VDF_body_ptr` write keeps the bytes alive for diagnostic inspection but doesn't need to be fed back into any from-scratch VM tick. The downstream consumer that *would* matter is the per-actor vertex-pool allocator (mirror of `FUN_801D77F4`'s second pass) - already wired in the host hook, with the "stride mystery" (12-byte first-pass cursor vs `vertex_count*8` second-pass cursor) still open.
-4. **`legaia_engine_vm::actor` does *not* need an `entry_with_spawn_record` constructor.** The 13-opcode dispatcher consumes an external command list, not the VDF body. The host hook already mirrors the retail spawn-time writes; no further VM-side dispatch on the VDF body bytes happens in retail.
+1. **The actor VM is not a consumer of `actor[+0x4C]`.** `FUN_801D6628` walks an *external* 4-byte-stride program passed in as its argument and addresses windows by the instruction's id byte. VDF-spawned actors are driven by the vertex-pool render pipeline (`actor[+0x90]`); nothing ticks their `+0x4C` body bytes as opcodes, so no PC-bootstrap entry exists or is needed.
+2. **`Actor::spawn_record` in `legaia_engine_core` is a retention slot.** It mirrors the retail `actor[+0x4C] = VDF_body_ptr` write and keeps the bytes available for inspection. The consumer that matters is the per-actor vertex-pool allocator (the mirror of `FUN_801D77F4`'s second pass), which the host hook implements. One detail of that allocator is open: the first pass advances a 12-byte cursor while the second advances `vertex_count * 8`.
 
-### VDF body header (Q2 from the actor-spawn handoff)
+### VDF body layout
 
-The memory note's "live snapshot" at `0x8011A2FC` shows what looks like a 16-byte header at the top of body 0:
+`FUN_801D77F4`'s walker reads `*body = record_count`, then steps 12-byte records starting 4 bytes in, each beginning `[u32 group_idx]`. A live body at `0x8011A2FC` reads:
+
 ```
 +0x00  02 00 00 00     <- record_count = 2
 +0x04  0b 00 00 00     <- record 0: group_idx = 0x0B
-+0x08  00 00 00 00     <- record 0: trailing 8 bytes...
-+0x0C  0f 00 00 00     <- record 0: trailing 8 bytes...
-+0x10  00 00 4a 00     <- record 1: group_idx = 0x0000004A (or trailing bytes of record 0?)
-+0x14  c6 ff 00 00
-+0x18  04 00 0d 00
-+0x1C  e5 ff 00 00
-...
++0x08  00 00 00 00     <- record 0, bytes 4..7
++0x0C  0f 00 00 00     <- record 0, bytes 8..11
++0x10  00 00 4a 00     <- record 1 starts here
 ```
 
-Read against `FUN_801D77F4`'s walker - `*puVar11 = record_count`, `puVar10 = puVar11 + 1` then `*puVar10 = group_idx`, advances `puVar10 += 12` bytes per record - the first u32 is the record count and the records start 4 bytes in. The "16-byte header" framing was off-by-12. The actor VM does **not** skip any metadata header before dispatch because **the actor VM never dispatches on this buffer at all** (per Implication 1 above).
+There is no 16-byte header: the only prefix is the 4-byte count.
 
 ## Field-spawned sprite-tick actors
 
 Two field-overlay (PROT 0897) pool-actor families hang off a parent actor's
 `+0x90` back-link on the shared actor list - the same list the
 [field VM](script-vm.md#per-frame-scheduling) walks - rather than being
-actor-VM opcode handlers themselves. They are two families, not one: an
-earlier reading grouped both as "attached sprites".
+actor-VM opcode handlers themselves. They are two distinct families.
 
 `FUN_801D25EC` is the **scripted arc** spawner, reached only from the field
 VM's op `0x43` sub-0/1/A/B: given a source actor, a landing `xyz`, an apex
@@ -341,8 +349,7 @@ same template `0x801F227C`, the same field writes, but four arguments
 and it returns the new actor rather than continuing into a second stage.
 `FUN_801D25EC` inlines this identical body and then keeps going.
 
-"Seeds the midpoints" understates what `+0x3C/+0x3E/+0x40` are. `+0x3C`
-and `+0x40` are plain midpoints of the X and Z endpoints, but `+0x3E` is a
+`+0x3C` and `+0x40` are plain midpoints of the X and Z endpoints, but `+0x3E` is a
 **quadratic-Bézier control point**, computed from the arc-height argument:
 
 ```
@@ -376,7 +383,7 @@ side-buffers a freshly loaded actor record does not carry.
   retired on load rather than revived. The middle one is the field-overlay
   **colour tween** ([`functions/renderer.md`](../reference/functions/renderer.md#801ddc20)):
   the materialisation is `lui v0,0x801e; addiu v0,v0,-0x23e0`, which is
-  `0x801DDC20`. An earlier reading of `0x801E1C20` would need `addiu v0,v0,0x1c20`.
+  `0x801DDC20` (not `0x801E1C20`, which would need `addiu v0,v0,0x1c20`).
 - Every actor gets `+0x10 |= 0x10000`.
 - An actor whose `+0x10` carries `0x800` receives a `0x9C`-byte block from
   the general allocator `FUN_80017888` into `+0x44`, has its OBJECT table
