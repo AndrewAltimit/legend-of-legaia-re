@@ -7,7 +7,8 @@ written from the routine's disassembly (the decompiled C in
 plus the format notes in `docs/subsystems/`, with no static-recompiled bytes
 from the original executable. The sections below cover the VMs proper; the rest of
 the crate is the SCUS and overlay leaf kernels those VMs sit among; the
-battle-side VMs are re-exported from `legaia-engine-battle-vm`.
+battle-side VMs are re-exported from `legaia-engine-battle-vm` and the two
+motion VMs from `legaia-engine-motion-vm`.
 
 The side-effect-free field-VM disassembler this crate re-exports from
 `legaia-asset` (`field_disasm`) has its CLI on the `asset` binary:
@@ -116,24 +117,15 @@ the dispatch table is ported in `move_vm_overlay_ext.rs`.
 
 ## `motion_vm` - `FUN_8003774C` / `FUN_80038158`
 
-Retail carries **two** per-actor motion VMs and both are ported.
-`motion_vm` is `FUN_8003774C`: pursue / patrol / face-target, the NPC
-movement, camera follow paths and "face the speaker" cinematic posing.
-Each script entry is `1 + N` bytes, with bit `0x80` of the op byte selecting a
-target actor first (`0xF8` = self, `0xFB` = linked); dispatch is a 22-entry
-jump table at `0x80010EE0` indexed by `(op & 0x7F) - 0x37`.
+Retail carries **two** per-actor motion VMs and both are ported: `motion_vm`
+(`FUN_8003774C`, pursue / patrol / face-target) and `ambient_motion`
+(`FUN_80038158`, the scripted-motion VM over MAN tail-section 1). They live in
+[`legaia-engine-motion-vm`](../engine-motion-vm/README.md), a crate below this
+one, and are re-exported here at their old paths
+(`legaia_engine_vm::motion_vm`, `legaia_engine_vm::ambient_motion`,
+`legaia_engine_vm::ambient_motion_ops`).
 
-`ambient_motion` is the second one, `FUN_80038158` - the scripted-motion VM
-whose bytecode arrives as MAN tail-section 1 (`legaia_asset::man_motion`). It
-runs the whole 32-slot table: the idle facing ramps, the walk ops, the waits,
-the story-flag writes, the bit ops, the teleport, the model swap and the three
-scalar tweens. The op bodies split across two files for length only - the
-walks, waits, ramps and the ramp scheduler here, the rest in
-`ambient_motion_ops` as further `impl AmbientMotion` blocks - and nothing is
-stepped over by width. Its two rotate ops both aim at the same eight-point
-compass LUT the walk ops snap to, so every ambient turn ends on a compass
-point. Without it an engine NPC holds one heading forever where a retail one
-slowly looks around. `motion_pause` is the sibling kick (`FUN_8003C9AC`) a
+`motion_pause` is the sibling kick (`FUN_8003C9AC`) a
 field interaction and a partition-2 record spawn both end with: it rewrites
 every moving-class actor's requested move to its standing move. It is a clip
 request, not a halt - the motion VM keeps running, and a walker its ops send

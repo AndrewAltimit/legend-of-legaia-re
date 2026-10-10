@@ -2828,6 +2828,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "render-kernels",
     REPO / "crates" / "engine-vm",
     REPO / "crates" / "engine-battle-vm",
+    REPO / "crates" / "engine-motion-vm",
     REPO / "crates" / "web-viewer",
 ]
 
@@ -3677,6 +3678,7 @@ SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-system" / "src",
     REPO / "crates" / "engine-vm" / "src",
     REPO / "crates" / "engine-battle-vm" / "src",
+    REPO / "crates" / "engine-motion-vm" / "src",
     REPO / "crates" / "engine-ui" / "src",
     REPO / "crates" / "render-kernels" / "src",
     REPO / "crates" / "web-viewer" / "src",
@@ -4448,6 +4450,7 @@ ENGINE_API_CRATES = (
     "engine-minigame-scenes",
     "engine-vm",
     "engine-battle-vm",
+    "engine-motion-vm",
     "engine-ui",
     "render-kernels",
     "engine-audio",

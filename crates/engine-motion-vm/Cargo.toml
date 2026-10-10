@@ -1,0 +1,13 @@
+[package]
+name = "legaia-engine-motion-vm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_motion_vm"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-asset.workspace = true
+legaia-engine-battle-vm.workspace = true

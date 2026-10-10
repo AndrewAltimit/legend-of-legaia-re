@@ -1543,6 +1543,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-motion-vm"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-battle-vm",
+]
+
+[[package]]
 name = "legaia-engine-render"
 version = "0.1.0"
 dependencies = [
@@ -1681,6 +1689,7 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-engine-battle-vm",
+ "legaia-engine-motion-vm",
  "legaia-lzs",
  "legaia-prot",
  "serde_json",

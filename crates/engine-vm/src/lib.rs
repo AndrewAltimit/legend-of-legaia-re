@@ -88,8 +88,8 @@
 
 pub mod actor_alloc;
 pub mod actor_tick;
-pub mod ambient_motion;
-pub mod ambient_motion_ops;
+pub use legaia_engine_motion_vm::ambient_motion;
+pub use legaia_engine_motion_vm::ambient_motion_ops;
 pub mod anim_vm;
 pub mod baka_hub_actors;
 pub use legaia_engine_battle_vm::battle_action;
@@ -180,7 +180,7 @@ pub mod menu;
 pub mod menu_actor_seed;
 pub mod menu_input;
 pub mod motion_pause;
-pub mod motion_vm;
+pub use legaia_engine_motion_vm::motion_vm;
 pub mod move_buffer;
 pub mod move_ext_strip;
 pub use legaia_engine_battle_vm::move_no_effect_guard;

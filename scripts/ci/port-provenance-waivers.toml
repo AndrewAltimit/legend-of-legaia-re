@@ -1118,7 +1118,7 @@ identity is pinned separately in battle-action.md's queue-builder section.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-vm/src/motion_vm.rs:8003d038"
+key = "module-orphan:crates/engine-motion-vm/src/motion_vm.rs:8003d038"
 reason = """
 Eleven instructions, two data addresses, no callee - too small to corroborate.
 FUN_8003D038 reads DAT_801C6470 + param*4 and, unless the byte is 0x8C, writes

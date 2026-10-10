@@ -378,7 +378,7 @@ recognisable: match the mechanism, apply the same fix.
 | `801d0e54` | `engine-battle-vm/src/battle_intro_tiles.rs` | STALE-TAG | Same shape: `step_tile` cited `tick_tile_grid`, which by then read `WIRED, without a draw`. |
 | `801d1a20` | `engine-battle-vm/src/battle_intro_swirl.rs` | STALE-TAG | Same shape: `swirl_band_draw` cited `tick_swirl`, likewise already `WIRED, without a draw`. |
 | `801e1934` | `engine-menus/src/card_flow.rs` | FALSE-EDGE | `save_title_digits` renamed `block_title_digits`; the live copy is `legaia_save::card::save_title_digits`, which the browser card rack writes through. A duplicate free-function name across two crates, never receiver-gated. Its own caller `save_block_summary` has no non-test call site. |
-| `8003cda8` | `engine-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
+| `8003cda8` | `engine-motion-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the
