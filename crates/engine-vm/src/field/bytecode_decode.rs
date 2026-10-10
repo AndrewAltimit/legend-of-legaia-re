@@ -1,4 +1,4 @@
-//! Field VM standalone bytecode helpers (coordinate decode, relative jumps,
+//! Field VM standalone bytecode decoders (coordinate decode, relative jumps,
 //! MES-shape walker, extended-opcode peek). Split out of `field.rs`.
 
 /// Inspect the byte at `pc`. If the opcode there has the extended bit (0x80)

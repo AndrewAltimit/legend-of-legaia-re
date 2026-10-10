@@ -131,7 +131,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
         // and used the `+0x40` tile-centre formula for all four
         // corners).
         4 => {
-            use crate::field::helpers::rel_jump;
+            use crate::field::bytecode_decode::rel_jump;
             if operand + 7 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }

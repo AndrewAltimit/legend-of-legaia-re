@@ -2,13 +2,13 @@
 
 use super::*;
 
-mod nibble_3_4;
-mod nibble_5_6_7;
-mod nibble_8;
-mod nibble_9_a;
-mod nibble_c;
-mod nibble_d;
-mod nibble_e;
+mod actor_pool_and_reflections;
+mod actor_scene_writes;
+mod dialog_vram_wall_paint;
+mod floor_ladder_and_flag_jump;
+mod particle_gate_and_ramps;
+mod party_state;
+mod scene_writes_and_emitters;
 
 /// Sub-op of `0x4C` outer nibble 1 that clones an actor
 /// (`0x801CEEA0` table slot 4 -> `0x801E0E80`).
@@ -79,17 +79,100 @@ pub(super) fn op_4c<H: FieldHost>(
                 next_pc: pc + header_size + 1,
             }
         }
-        3 => nibble_3_4::op_4c_n3(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        4 => nibble_3_4::op_4c_n4(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        5 => nibble_5_6_7::op_4c_n5(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        6 => nibble_5_6_7::op_4c_n6(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        7 => nibble_5_6_7::op_4c_n7(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        8 => nibble_8::op_4c_n8(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        9 => nibble_9_a::op_4c_n9(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        0xA => nibble_9_a::op_4c_na(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        0xC => nibble_c::op_4c_nc(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        0xD => nibble_d::op_4c_nd(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
-        0xE => nibble_e::op_4c_ne(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
+        3 => particle_gate_and_ramps::op_4c_n3(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        4 => particle_gate_and_ramps::op_4c_n4(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        5 => dialog_vram_wall_paint::op_4c_n5(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        6 => dialog_vram_wall_paint::op_4c_n6(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        7 => dialog_vram_wall_paint::op_4c_n7(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        8 => actor_pool_and_reflections::op_4c_n8(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        9 => floor_ladder_and_flag_jump::op_4c_n9(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        0xA => floor_ladder_and_flag_jump::op_4c_na(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
+        0xC => {
+            actor_scene_writes::op_4c_nc(host, ctx, bytecode, pc, opcode, header_size, operand, op0)
+        }
+        0xD => party_state::op_4c_nd(host, ctx, bytecode, pc, opcode, header_size, operand, op0),
+        0xE => scene_writes_and_emitters::op_4c_ne(
+            host,
+            ctx,
+            bytecode,
+            pc,
+            opcode,
+            header_size,
+            operand,
+            op0,
+        ),
         // Outer nibble 0xF - only `op0 == 0xFF` is valid; falls
         // through to the default arm (PC += 2). Other sub-ops in
         // this nibble print SUB_CMD_0F_ERROR and also fall through.

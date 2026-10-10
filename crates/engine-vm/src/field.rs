@@ -69,7 +69,7 @@
 //! hands it to `func_0x8003CF04(_DAT_8007C34C, FUN_801DD9D4)` as the actor-list
 //! search predicate ([`host::FieldHost::op43_mark_actor_flag_8`], whose default
 //! body is empty, and the `0x801DF8D8` tail note in
-//! `step::menu_ctrl::nibble_5_6_7` that says the lookup is not modelled). The
+//! `step::menu_ctrl::dialog_vram_wall_paint` that says the lookup is not modelled). The
 //! routine's own 69 instructions are a **per-actor GPU-primitive emitter** -
 //! it stages a `0x05000000` header plus a `0x28808080` flat-colour packet at
 //! `_DAT_1F8003A0`, copies `actor[+0xB8/+0xBA/+0xBC]` in as RGB, and walks the
@@ -85,14 +85,14 @@
 
 #![allow(clippy::too_many_arguments)]
 
+mod bytecode_decode;
 mod ctx;
-mod helpers;
 mod host;
 mod types;
 
+pub use bytecode_decode::peek_extended;
+use bytecode_decode::{grid_to_world, rel_jump, walk_mes_bytecode};
 pub use ctx::*;
-pub use helpers::peek_extended;
-use helpers::{grid_to_world, rel_jump, walk_mes_bytecode};
 pub use host::*;
 pub use types::*;
 
