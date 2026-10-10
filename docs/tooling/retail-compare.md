@@ -403,7 +403,10 @@ started from:
   seat does not cross - is installed from its first opcode at the settle
   tick, ungated, as the modal timeline (a concurrent context when another
   timeline holds that slot). The record replays its own staging: its
-  `MoveTo`s, camera beats and pokes run from the top. The system flags
+  `MoveTo`s, camera beats and pokes run from the top. It is installed
+  earlier when retail's system script says the record took the player
+  before the scene's per-frame body ever ran
+  ([below](#a-record-that-took-the-player-at-the-install-pass)). The system flags
   the record set in the straight-line run that ends on the gate PC (from
   its last jump, picker or flag test) are cleared first: retail executed
   that run to stand where it was captured, so its latches are already in
@@ -465,6 +468,35 @@ started from:
 `play-window` takes the same gate as `LEGAIA_SCRIPT_GATE`, with the same
 resume and paging, so the image channel frames the phase the state
 channels scored; it is handed only when the headless run met the gate.
+
+### A record that took the player at the install pass
+
+The scene system script's context (tick `FUN_801DA51C`) is on the same actor
+lists, and its PC `+0x9E` is where the entry script's last pass parked. The
+system SM runs no pass while a record holds the player
+([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)),
+so in a capture inside a cutscene that PC is the pass the record interrupted.
+The opening's records interrupt the first one: `town01`'s system context sits
+on `+0x9F` through `rim_elm_zoom_intro`, `vahn_walks_out` and
+`name_input_ui`, and `map01`'s on `+0x13F` in `s2_rimelm_town01` - in both the
+PC right after the install slice's last `0x21`, with the per-frame loop
+(`town01` from `+0xA3`, `map01` from `+0x143`) never entered.
+
+A resume at the settle tick runs that loop sixty times first, with a free
+player at the seat, and the loop's first pass selects a region there: it
+raised `0x19D` / `0x19E` in `town01` and `0x528` in `map01`, bits no retail
+state of the opening holds, and picked the cave-brown clear colour under
+`rim_elm_zoom_intro`. So the seed carries the system PC on the gate
+(`ScriptGate::system_pc`, the `:s<pc>` tail of `LEGAIA_SCRIPT_GATE`) and
+starts the record on the first tick the engine's own system script stands
+on it (`ScriptGate::drive_resume`), before the next pass. The record's
+latches are then left to the replay rather than raised at the settle tick.
+
+Only an install park is taken early. A park inside the loop - one a later
+jump comes back to, `retail_compare_script::loops_back_to` - is a PC the
+engine first stands on the tick *before* its own first pass, and retail's
+body has run there: `rikuroa_post_caruban` and the `garmel` captures hold
+the selector bit that pass raises, and keep the settle-tick resume.
 
 What the replay exposes is the engine's own record execution, and two
 shapes it has shown are worth knowing:
@@ -1501,10 +1533,12 @@ The same pass picks the frame's clear colour. `town01`'s entry loop sets
 tile box `[0, 0 .. 44, 55]` and black elsewhere
 ([script-vm-menuctrl](../subsystems/script-vm-menuctrl.md#0x4c-nibble-1-sub-3---the-field-clear-colour)).
 `rim_elm_zoom_intro` holds black with the player at `(3456, 5632)`, inside
-that box, because the opening record carried the player there after the
-loop's last pass; the seed's pass at the seat (the one that raises `0x19D`)
-picks brown, and the brown shows through the semi-transparent sea. It is the
-selector's seeding limit, on the clear colour.
+that box, because the opening record took the player before the loop ran a
+pass at all. A seed that ran the loop at the seat picked brown, which showed
+through the semi-transparent sea; the opening states now start their record
+at the install pass
+([above](#a-record-that-took-the-player-at-the-install-pass)), and the
+selector bit and the colour stay down as retail's do.
 
 ### A pre-fight flag runs the entry's post-battle branch
 
@@ -1689,12 +1723,14 @@ overworld ([above](#the-corpus)), where the word, the gate and the camera
 agree; scored under the label, every one of those channels had compared the
 overworld against the town.
 
-One bit still differs on `s2_rimelm_town01`: the engine holds flag `0x528`,
-retail none of `0x526..0x531`. That band is the entry script's own: each
-pass of `map01`'s per-frame body clears `0x527..0x52E` and sets `0x528` while
-the player stands in the map, so the engine's freshly entered `map01` raises
-it, while retail's state is a door already under way with the band down. It
-is the same capture timing as the word and the gate, on the flag bank.
+`s2_rimelm_town01` also holds none of `0x526..0x531`, the band `map01`'s
+per-frame body owns (each pass clears `0x527..0x52E` and sets `0x528` while
+the player stands in the map). Its install slice clears the band
+(`+0x36..+0x44`) and the opening's walk record takes the player before the
+body runs once - the system context is parked on `+0x13F` - so the band stays
+down for the whole walk to the door. The seed starts that record at the
+install pass for the same reason
+([above](#a-record-that-took-the-player-at-the-install-pass)).
 
 ### A held track
 

@@ -907,7 +907,12 @@ pub fn run_engine_with(
                     || t < 5
                     || std::env::var_os("LEGAIA_RC_SCRIPT_TRACE_ALL").is_some())
             {
-                eprintln!("script gate t={t}: {}", g.trace(&session.host.world));
+                eprintln!(
+                    "script gate t={t}: sys pc {} (retail {:?}) {}",
+                    session.host.world.field_pc,
+                    retail.scripts.system_pc,
+                    g.trace(&session.host.world)
+                );
             }
             if g.met(&session.host.world) {
                 if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() {
@@ -916,7 +921,7 @@ pub fn run_engine_with(
                 met_at = Some(t);
                 break;
             }
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK && !g.resumed_early.get() {
                 // The record's own latches, held back from the entry, are
                 // retail's state again once the entry has run - the
                 // settle-window sample included; a resume takes them back
@@ -941,9 +946,7 @@ pub fn run_engine_with(
                         .seed_ambient_walker(w.flat, w.x, w.z, w.heading);
                 }
             }
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
-                && crate::retail_compare_script::resume_record(&mut session.host, g)
-            {
+            if g.drive_resume(&mut session.host, t) {
                 resumed = true;
             }
         }

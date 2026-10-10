@@ -370,6 +370,10 @@ impl PlayWindowApp {
             // same drive the headless seed runs.
             if self.tick_no == legaia_parity::retail_compare_script::SCRIPT_RESUME_TICK
                 && let Some(sc) = self.screenshot.as_ref()
+                && !sc
+                    .script_gate
+                    .as_ref()
+                    .is_some_and(|g| g.resumed_early.get())
             {
                 for &idx in &sc.seat_latches {
                     self.session.host.world.system_flag_set(idx);
@@ -381,11 +385,16 @@ impl PlayWindowApp {
                 .and_then(|sc| sc.script_gate.clone());
             let gate_pad = match &gate {
                 Some(g) => {
-                    if self.tick_no == legaia_parity::retail_compare_script::SCRIPT_RESUME_TICK {
-                        legaia_parity::retail_compare_script::resume_record(
-                            &mut self.session.host,
-                            g,
-                        );
+                    g.drive_resume(&mut self.session.host, self.tick_no);
+                    // `g` is this tick's copy: carry the early-resume mark
+                    // back to the capture's own gate.
+                    if g.resumed_early.get()
+                        && let Some(own) = self
+                            .screenshot
+                            .as_ref()
+                            .and_then(|sc| sc.script_gate.as_ref())
+                    {
+                        own.resumed_early.set(true);
                     }
                     g.advance_pad(&self.session.host.world, self.tick_no)
                 }
