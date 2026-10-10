@@ -11,7 +11,28 @@ loads a save state, arms a set of breakpoints, captures N VSyncs of
 data, and writes a CSV / snapshot file. A wrapper shell script
 launches the emulator headless with the right flags.
 
-This page documents the pattern, the harness, and the catalogue.
+```mermaid
+flowchart LR
+    run["run_probe.sh"] --> stage["stage disc in a private dir (no stray .ppf)"]
+    stage --> emu["PCSX-Redux: interpreter + debugger"]
+    emu --> boot["WAIT_BOOT: count vsyncs"]
+    boot --> load["load save state, arm breakpoints"]
+    load --> cap["capture N vsyncs: hits to CSV"]
+    cap --> done["final snapshot, PCSX.quit"]
+    done --> an["probe.py / offline analysis"]
+```
+
+This page documents the pattern, the harness, and the catalogue. Three traps
+apply to every probe and are worth knowing before reading a result:
+
+- **A save state replays the RAM of the disc that booted it.** Disc edits are
+  masked until the game re-loads them; verify from a cold boot or a memory-card
+  load ([patched-disc taint](#patched-disc-taint)).
+- **PCSX-Redux applies a `.ppf` sitting beside the image it is handed**, logging
+  only `[+ppf]`. The runner stages the disc to prevent it
+  ([the harness](#the-harness)).
+- **Both `-interpreter` and `-debugger` are required** for Lua breakpoints to
+  fire ([why PCSX-Redux](#why-pcsx-redux)).
 
 ## Contents
 
@@ -168,9 +189,8 @@ The wrapper:
    one you named. PCSX-Redux's `PPF::load` (`src/cdrom/ppf.cc`) replaces the
    image path's extension with `.ppf` and applies that file whenever it
    exists, logging only `[+ppf]`; the randomizer CLI writes its `.ppf`
-   beside its input disc by default, so a patch file sitting beside the
-   retail `.bin` patched every probe that named the retail path - the
-   runner's own default `--iso` included, until it staged. A patch reaches a
+   beside its input disc by default, so without staging, a patch file sitting beside the
+   retail `.bin` patches every probe that names the retail path. A patch reaches a
    run only through `--ppf PATH` (staged as `disc.ppf`). The banner names
    the source image and any sibling `.ppf` it bypassed, and the runner warns
    if the log still shows `[+ppf]` without `--ppf`.
@@ -1678,8 +1698,7 @@ bash scripts/pcsx-redux/run_probe.sh --fast \
     --lua scripts/pcsx-redux/autorun_state_poll.lua
 ```
 
-The earlier `run_world_map_probe.sh` / `run_fast_probe.sh` /
-`run_dump_slot4.sh` wrappers were folded into this one runner.
+
 
 ### Memory-card capture tier
 
