@@ -1,19 +1,128 @@
 # Battle command flow and stage overlays
 
-## The battle open flow - `ctx[+0x06]` from the intro timer to the first swing
+Before any action runs, the player has to be asked what to do. This page covers that half of a battle: the command-flow state machine in `FUN_801D0748` that walks the intro, the round prompt, the command ring and its sub-screens, and hands a fully committed round to the [action state machine](battle-action.md). It also covers the three stage overlays that hook that flow: the sparring-tutorial prompt machine (extraction PROT 967) and the two Cort boss-stage modules (968 / 969).
 
-The battle command UI is **not one menu**. `FUN_801D0748` walks the flow byte
-`ctx[+0x06]` through three separate selection surfaces, each a small cluster of
-plate chips around a D-pad glyph, and none of them is a scrolling list.
-The whole sequence is readable off the disc: the dispatcher's state chain is a
-binary-search `beq` ladder at `0x801D0C84`, and every chip's seat and label
-comes from the [screen-element placement table](battle-hud.md#the-widget-class-table---where-every-chrome-sprite-comes-from)
-plus the two string pools below.
+The port runs the same flow on both play hosts: round prompt, direct-commit D-pad ring, commit log, commit-confirm screen, the tutorial boxes read off the user's disc, and both boss-stage phase machines.
 
-### The state chain
+## At a glance
 
-Each row is `ctx[+0x06]`, the arm's entry, and what it does. Addresses are in
-PROT entry `0898` at base `0x801CE818`.
+| Item | Value |
+|---|---|
+| Driver | `FUN_801D0748`, battle overlay (PROT 0898, base `0x801CE818`); 2781 instructions |
+| State byte | `ctx[+0x06]` (context pointer `_DAT_8007BD24`). Dispatch is a comparison tree at `0x801D0C84..0x801D0DC8`, not a jump table |
+| Hand-off to the action SM | `0xFE` stores `ctx[+0x06] = 0xFF`, `ctx[+0x07] = 0` |
+| Hand-back from the action SM | its `0xFF` arm stores `ctx[+0x06] = 0x14` and bumps the round index `ctx[+0x28A]` |
+| Input word | `s2`, the **packed** pad: Left `0x8000`, Right `0x2000`, Down `0x4000`, Up `0x1000`; confirm mask `_DAT_800846D0`, cancel mask `_DAT_800846D4` |
+| Command-step helper | `FUN_801D388C(step)` (window choreography per step), cursor step `FUN_801D32BC` |
+| Next-member scans | `FUN_801DB81C` (from the current member), `FUN_801DBA04` (from zero) |
+| Stage overlays | 967 tutorial hook `FUN_801F6B70`; 968 arrival `FUN_801F69F4`; 969 form transition `FUN_801F69D8`; all ticked by the SCUS side-band `FUN_80056208` |
+| Port | `engine-menus::battle_input`, `engine-core::battle_flow` / `battle_tutorial` / `battle_stage_module` / `battle_sideband`, `engine-ui::battle_command_ui` |
+
+```mermaid
+stateDiagram-v2
+    state "0x00 init" as S00
+    state "0x0A / 0x0B intro timer" as S0A
+    state "0x0C stage module owns the frame" as S0C
+    state "0x14 round start" as S14
+    state "0x1E Begin / Run prompt" as S1E
+    state "0x28 command ring" as S28
+    state "0x32 run confirm" as S32
+    state "0x3C item window" as S3C
+    state "0x46 magic window" as S46
+    state "0x78 Auto / Command prompt" as S78
+    state "0x50 arts entry" as S50
+    state "0x5A target cursor" as S5A
+    state "0x6E commit confirm" as S6E
+    state "0xFE round armed" as SFE
+    state "action SM runs the round" as ACT
+    [*] --> S00
+    S00 --> S0A
+    S0A --> S14: timer expired
+    S0A --> SFE: back attack
+    S0A --> S0C: Cort arrival
+    S0C --> S0A: module hands back 0x0B
+    S14 --> S1E
+    S1E --> S28: Begin
+    S1E --> S32: Run
+    S32 --> S1E: cancel
+    S32 --> SFE: confirmed
+    S28 --> S3C: Up, Item
+    S28 --> S46: Right, magic
+    S28 --> S78: Left, Attack
+    S28 --> S6E: Down, Spirit on the last member
+    S28 --> S1E: cancel on the first member
+    S78 --> S5A: Auto
+    S78 --> S50: Command
+    S50 --> S5A
+    S5A --> S28: next member
+    S5A --> S6E: last member
+    S3C --> S28
+    S46 --> S28
+    S6E --> S28: Reselect
+    S6E --> SFE: Begin
+    SFE --> ACT
+    ACT --> S14: round over
+    ACT --> [*]: battle-end signal
+```
+
+The item and magic windows commit through their own target sub-cursors (`0x5B..0x5E`, `0x64..0x67`), which return to the ring for the next member or raise `0x6E` after the last; the diagram folds those into the window states.
+
+<a id="the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing"></a>
+
+## Flow states
+
+### The command-flow byte `ctx[+0x06]` - what the hook table indexes
+
+`ctx[+0x06]` is the cursor of the menu half of the battle, `FUN_801D0748`; the action SM's cursor is `ctx[+0x07]`. Both are byte cursors over the same context struct and their value spaces collide: `ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target confirm. The tutorial hook table ([below](#the-sparring-tutorial-prompt-machine-overlay-967)) is indexed by `ctx[+0x06]`.
+
+`FUN_801D0748` has no jump table. It dispatches through a binary-search `beq` / `slti` comparison tree at `0x801D0C84..0x801D0DC8`, and the only `jr` in its 2781 instructions is the `jr ra` at `0x801D32B4`. Its live cases are exactly the 22 constants on this page; everything else falls to the default at `0x801D3290`.
+
+Below `0x1E` the command flow is battle entry and turn setup: `0x00` init,
+`0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start (which opens
+the top menu and falls into `0x1E`). From `0x1E` up it is the player's command
+selection, and the states are regular decimal multiples of ten:
+
+| `ctx[+0x06]` | Handler | On screen | Leaves to |
+|---|---|---|---|
+| `0x1E` = 30 | `0x801D102C` | `[Begin]` / `[Escape]` turn prompt | `0x28`, `0x32`, `0x6E` |
+| `0x28` = 40 | `0x801D1188` | Action-category menu | `0x1E`, `0x3C`, `0x46`, `0x50`, `0x5A`, `0x6E`, `0x78` |
+| `0x32` = 50 | `0x801D10F8` | Flee confirm | `0x1E`, `0xFE` |
+| `0x3C` = 60 | `0x801D17DC` | Item window | `0x28`, `0x5B`, `0x5D`, `0x64` |
+| `0x46` = 70 | `0x801D19F8` | Magic window | `0x28`, `0x5C`, `0x5E`, `0x65`, `0x67` |
+| `0x50` = 80 | `0x801D1D84` | Arts command-entry screen | `0x28`, `0x5A`, `0x78` |
+| `0x5A` = 90 | `0x801D21CC` | Target cursor | `0x28`, `0x50`, `0x6E`, `0x78` |
+| `0x64` = 100 | `0x801D2A00` | Target confirm (item window's own) | `0x28`, `0x3C`, `0x6E` |
+| `0x6E` = 110 | `0x801D3024` | All members committed - begin | `0x1E`, `0x28`, `0xFE` |
+| `0x78` = 120 | `0x801D16E8` | Auto / Command attack-mode prompt | `0x28`, `0x50`, `0x5A` |
+
+The "Leaves to" column is the exhaustive set of `sb <reg>,0x0(s3)` stores inside each handler's address range (`s3 = ctx+6`, loaded at `0x801D0780`), resolved by constant propagation. Every handler can also fall through without storing (stay put). State `0x46` never stores `0x6E`.
+
+Two edges live only in branch delay slots. State `0x28`'s Left/Attack arm does reach `0x50`
+directly: `0x801D15F4 beq s0,v0,0x801D1650` with `0x801D15F8 _li v0,0x50` in the
+slot, and `0x801D1650 sb v0,0x0(s3)` has that branch as its only predecessor -
+so option `_DAT_800846C4 == 2` goes straight to the arts screen rather than
+through the `0x78` prompt. State `0x46` reaches `0x5E` the same way
+(`0x801D1C5C bne` / `_li v0,0x5e` in the slot / `0x801D1CDC sb`), which is what
+supplies the `0x5E` the sub-cursor run `0x5B..0x5E` needs.
+
+Above the selection band sit the per-window target sub-cursors. They are two
+disjoint runs, `0x5B..0x5E` and `0x64..0x67` - there is no case for
+`0x5F..0x63`, so the sub-cursors are not one contiguous `0x5B..=0x67` range. `0xFE` is a real dispatched case ("round armed - run the
+action SM"). `0xFF` (idle) is **not**: no comparison tests for it, so it reaches
+the default at `0x801D3290` like every other unlisted value - idle by falling
+through rather than by being handled.
+
+That band is what pins the tutorial's table. Its nine live slots are exactly
+these ten states **minus the magic window** - the sparring fight teaches attacks,
+items, spirit and hyper arts, and never magic. Engine mirror
+[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
+carries that cross-check as a test.
+
+<a id="the-state-chain"></a>
+
+### Entry and prompt states
+
+Addresses are in PROT entry 0898 at base `0x801CE818`.
 
 | `ctx[+0x06]` | Arm | Behaviour |
 |---|---|---|
@@ -33,118 +142,68 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
 
-### Flow `0x0C` is the boss stage module's baton
+### The round loop - what re-arms `0x1E`
 
-The evolved-Cort fight is the one battle whose intro leaves `ctx[+0x06]` on a value
-the ladder above has no arm for, and the byte that unsticks it is written from
-**outside the battle overlay**. `scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua`
-watches the byte from the pre-battle field state; the sequence is:
+`0x14` is the round-start arm and the **only** writer of `0x1E`:
 
-| vsync | Event |
-|---|---|
-| 291 | game mode reaches `0x15`; `_DAT_8007BD24` = `0x800EB654` |
-| 444 | `0x80051C94` (battle init) writes `0x00` |
-| 507 | `0x801D0DDC` writes `0x0A` |
-| 510 | `0x801D0DE4` writes `0x0B`, then `0x801D0E0C` writes `0x0C` in the same frame |
-| 631 | loader-B tracker `0x8007BC4C` goes `0x05` -> `0x49`; slot B's head matches the in-fight state |
-| 3717 | `0x801F713C` (`ra = 0x800564A0`, tracker `0x49`) writes `0x0B`; `0x801D0EB8` writes `0x14` the same frame |
-| 3719 | `0x801D0ED4` writes `0x1E` - the state the in-fight capture is parked on |
-
-Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditionally
-and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
-
-**No input moves it.** The probe sits pad-free through the park and then holds each
-of the ten pad buttons for 60 vsyncs, twice around; across ~1450 vsyncs of held
-buttons the byte takes no write at all. The gate is a clock, not a press.
-
-**The module that holds the baton is PROT 0968**, the stage overlay for this fight
-(loader-B id `0x49`; extraction index = id + `0x37F`), and the probe catches it
-paging into slot B *during* the park, after the flow byte is already `0x0C`. It is
-ticking the whole time: its entry `0x801F69F4` re-seeds `ctx[+0x6D6] = 0x100` every
-tick, which is exactly the constant `256` the probe reads off the intro timer while
-parked. Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289]`**
-(`lbu a0,0x289(v1)`, `sltiu v1,a0,7`, `jr`), and that phase byte is observed walking
-`0` through `6` - roughly 500 vsyncs a phase - while the flow byte holds `0x0C`. Phase 0's arm advances only once the
-camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
-`0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
-SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
-skips the standard composer for this formation. The module walks the phase byte
-itself: the side-band's stage-2 arm (`0x80056480..0x800564A0`) only ticks it, and
-its `0x289` writes (`0x800562E8`, `0x8005640C`) belong to the stage-1 arm.
-
-**The hand-back is a single store.** A scan of the whole 0968 image for
-`sb ?,0x6(?)` finds exactly one, at `0x801F713C`, in the last phase arm
-(`0x801F70D8`):
-
-```
-801F70E4  lbu  v1,0x7f(s3)        ; s3 = 0x1F800314 -> the scratchpad frame-step byte
-801F70E8  lw   v0,0x73f8(a0)      ; a0 = 0x801F0000 -> module-local countdown 0x801F73F8
-801F70F0  subu v0,v0,v1           ; countdown -= dt
-801F70F4  bgtz v0,0x801F71D4      ; still positive -> keep waiting
-801F7120  sb   zero,-0x49b6(v0)   ; stage id 0x8007B64A = 0
-801F7128  sh   zero,0x6d6(v1)     ; intro timer = 0
-801F712C  sb   zero,0x289(v1)     ; phase = 0
-801F7138  addiu v0,zero,0xb
-801F713C  sb   v0,0x6(v1)         ; ctx[+0x06] = 0x0B
+```text
+801d0ec4  lw    v1,-0x42dc(s0)      ; ctx
+801d0ecc  sw    v0,0x880(v1)        ; highlight cursor = 0x8000 (the Left arm)
+801d0ed0  jal   0x801d88cc          ; per-round actor sweep
+801d0ed4  _sb   s5,0x0(s3)          ; ctx[+0x06] = 0x1E   (s5 = 0x1E at 0x801D0C98)
+801d0ee4  jal   0x801d388c          ; open the prompt window (a0 = a1 = 0)
+801d0ef4  lbu   v0,0x28a(v0)        ; round index
+801d0efc  beq   v0,zero,0x801d0f0c  ; round 0 only: the tutorial arm below
 ```
 
-The same block clears the stage id `0x8007B64A` (the `2` that paged this module in,
-`966 + id` in extraction space), which is the module signing off. The write is
-witnessed live at the row above: **3207 vsyncs** - about 53 s of game time - after
-the `0x0C` park, with no input at any point, `ra` naming SCUS `0x800564A0` as the
-caller that ticks the module (the side-band pass `FUN_80056208`). So it hands the flow back as `0x0B` - a value the ladder
-*does* have an arm for - with the intro timer already zeroed, and `0x0B` expires on its next tick into
-`0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
-`cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it
-is the "a stage module owns this frame" parking value, and what it waits on is that
-module's own multi-phase intro, ending on the dt countdown at `0x801F73F8`.
+The store is unconditional - no arm of `0x14` skips it - so **every round the
+player is given starts on `Begin` / `Run`**, and the ring `0x28` is only ever
+entered from `0x1E`'s confirm at `0x801D108C`. 
 
-Two cautions for anyone re-running this. Exec breakpoints on slot-B VAs are **not**
-attributable on their own - the same addresses are live code in whichever module is
-resident. The run demonstrates it: the breakpoint at `0x801F713C` fires six times,
-five of them in the first thirteen vsyncs while the 0900 co-resident still held the
-slot, and only the sixth is a write to the flow byte. Read those hits beside the
-tracker column, and take the data side (the phase byte, the timer constant, the
-tracker) plus the image scan as the load-bearing evidence. And the intro is long:
-the park outlasts a 3400-vsync capture window, so a run that ends early reads as
-"stuck forever" - which is what an earlier reading of this state concluded.
+`0x14` is reached from two different state machines:
 
-**The countdown is in battle-frame units, not vsyncs.** Every phase arm drains
-the module word `0x801F73F8` by the frame step `*(0x1F800393)` and re-arms it with
-an immediate: `0x80` (phase 0's exit, `0x801F6B84`), then `+0x100` three times
-(`0x801F6CC8`, `0x801F6E00`, `0x801F6F30`), `+0x1E0` (`0x801F6FDC`) and `+0xB4`;
-phase 0 itself waits on the camera word `0x800840BC` climbing `4 * step` a pass
-to `0xC00`. That is about 2000 units from residency to hand-back. The same
-probe extended with a phase-change log (pad-free, from `cort_evolved_pre_battle`)
-times each phase in vsyncs:
+- **Battle open.** The intro timer `0x0B` runs down and branches on the
+  back-attack byte: `ctx[+0x290] == 1` stores `0xFE` (the party loses its
+  first round outright), anything else stores `0x14`
+  (`0x801D0E68..0x801D0EB8`).
+- **Every later round.** The *action* SM's `ctx[+0x07] == 0xFF` arm, jump-table
+  slot `0xFF` of `0x801CED44`. Its whole body is two writes:
 
-| Phase | Starts at vsync | Lasts | Countdown units | Step read |
-|---|---|---|---|---|
-| 0 | 291 (mode `0x15`; the module pages in near 631) | 624 | camera `1280 -> 0xC00` | 4 |
-| 1 | 915 | 283 | `0x80` | 3-4 |
-| 2 | 1198 | 944 | `0x100` | 4 |
-| 3 | 2142 | 660 | `0x100` | 4 |
-| 4 | 2802 | 256 | `0x100` | 4 |
-| 5 | 3058 | 479 | `0x1E0` | 4 |
-| 6 | 3537 | 181 | `0xB4` | 2 |
+```text
+801e67e8  lui   a0,0x8008
+801e67ec  lw    v1,-0x42dc(a0)
+801e67f0  li    v0,0x14
+801e67f4  sb    v0,0x6(v1)          ; ctx[+0x06] = 0x14  -> next round's prompt
+801e6800  lbu   v0,0x28a(v1)
+801e6808  addiu v0,v0,0x1
+801e680c  jal   0x801f45a4
+801e6810  _sb   v0,0x28a(v1)        ; ctx[+0x28A] += 1   (the round index)
+```
 
-Phases 4 to 6 run at exactly one unit a vsync. Phases 1 to 3 - the drop, the
-descent trail and the landing, which spawn records every eighth frame - run at a
-quarter to a half of that: the step the module reads stays at `4` while a pass
-takes up to fifteen vsyncs, so the countdown spans more vsyncs than it has units.
-That is frame lag in the capture, not a different count. The port runs the same
-arithmetic at one unit a tick (`battle_stage_module::arrival_tick`), so its
-arrival hands back after about 2000 ticks where this capture took about 3400
-vsyncs from mode `0x15`.
+`ctx[+0x07] = 0xFF` is stored at `0x801E67E4`, on the arm where the per-round
+action cursor has passed every living actor. So the two bytes hand the round
+back and forth: the flow SM ends a round by arming `0xFE` -> `0xFF`, and the
+action SM ends it by arming `0x14`.
+
+`0x801E67E8` is reached only through the `jr v0` at `0x801E2AAC`, so decompiled C that does not resolve the table omits the round bump ([`battle-action.md`](battle-action.md#0xff-is-the-round-boundary-not-the-battles-end)). That `+0x28A` is the round index rather than some other
+counter is corroborated by `0x14`'s own second reader: under
+`_DAT_8007BD0C == 0xB6` (the Muscle Dome match) `0x801D0F94..0x801D0FA4` draws
+`4 - ctx[+0x28A]`, the rounds remaining.
+
+## Command surfaces
+
+The battle command UI is **not one menu**. `FUN_801D0748` walks the flow byte
+`ctx[+0x06]` through three separate selection surfaces, each a small cluster of
+plate chips around a D-pad glyph, and none of them is a scrolling list.
+The whole sequence is readable off the disc: the dispatcher's state chain is a
+binary-search `beq` ladder at `0x801D0C84`, and every chip's seat and label
+comes from the [screen-element placement table](battle-hud.md#the-widget-class-table---where-every-chrome-sprite-comes-from)
+plus the two string pools below.
 
 ### Each surface is a D-pad map
 
 There is no face-button map. Every chip is seated on a **D-pad arm** and its
-`s2` test is the **packed direction mask** for that arm (packed = byte-swapped
-against the raw BIOS word - the trap
-[`s2` is not the pad](#s2-is-not-the-pad-and-how-a-command-commits) catalogues;
-an earlier revision of this table read the same masks raw and attributed the
-arms to Triangle / Square / Circle / Cross). That is why a **D-pad glyph** sits
+`s2` test is the **packed direction mask** for that arm (packed = byte-swapped against the raw BIOS word; read raw, the masks look like face buttons - see [below](#s2-is-not-the-pad-and-how-a-command-commits)). That is why a **D-pad glyph** sits
 at the centre of each cluster (`FUN_801DB8F4(x, y)`, the textured-quad emitter,
 drawn every frame of all three states). Capture cross-check from the
 `cort_evolved_battle_first_menu` state
@@ -176,233 +235,6 @@ attack-mode prompt, and option `0x800846C4` decides whether that prompt is shown
 (`0`), skipped straight to auto-target (`1`), or skipped straight to the
 directional entry (`2`).
 
-### The ring's cancel steps back a member
-
-The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the
-four arms from `0x801D12C0`), and it forks on the step counter `ctx[+0x1F]` -
-how many members the cursor has walked past this round, reset to `0xFF` and
-stepped once by the round reset `FUN_801D88CC`:
-
-- counter `0`: `FUN_801D388C(2)` and `ctx[+0x06] = 0x1E` - the round's first
-  member goes back to `Begin | Run` (`0x801D11D8..0x801D11E4`);
-- otherwise `FUN_801D388C(0x10)` (`0x801D1278`), whose case body ends in
-  `FUN_801D32BC(1)` (`0x801D4010`): the cursor scans down to the previous
-  member with `+0x14C != 0` and no `+0x16E & 0xF84` bit, and the flow stays
-  on `0x28` - now that member's ring. If the member it lands on had
-  committed an item (`+0x1DE == 1`), the copy its commit consumed goes back
-  through `FUN_800421D4(+0x1DF, 1)` (`0x801D12AC`).
-
-Nothing clears the landed member's commit: the ring simply takes its next
-choice over the old one. The commit-confirm screen `0x6E` has the other
-backward entry - its cancel or `Reselect` (the Right arm) keys cue `0x23`,
-re-scans with `FUN_801DBA04` and re-enters `0x28` through
-`FUN_801D388C(0x21)`, whose body steps back with the same `FUN_801D32BC(1)`
-(`0x801D3040..0x801D30C8`, `0x801D4750`).
-
-The port runs the ring's cancel as `World::step_back_battle_command` over the
-ported cursor step (`legaia_engine_vm::battle_cursor_pose::step_actor_cursor`),
-dropping the landed member's typed commit and its Spirit stance and refunding
-an item. It stages no `0x6E` screen - the last commit begins the round - so the
-`Reselect` entry has no seat.
-
-### Where the words come from
-
-Two pools, and which one a label lives in follows from who writes it into the
-placement record's `+0x14` payload pointer. Parser
-`legaia_asset::battle_ui_strings`; the coordinates are pinned, never the text.
-
-| Chip | Record | Source |
-|---|---|---|
-| `Begin` | 0/1/2 | `SCUS_942.54` `0x8007B688`, static on the disc |
-| `Run` | 3/4/5 | `SCUS_942.54` `0x8007B684`, static |
-| `Item` | 8 | `SCUS_942.54` `0x8007B67C`, static |
-| `Attack` | 9 | `SCUS_942.54` `0x8007B674`, static |
-| magic | 10 | overlay, written at runtime - see below |
-| `Spirit` | 11 | overlay `0x801F4B98`, written by `0x801D8F98` |
-| `Auto` | 85 | `SCUS_942.54` `0x8007B658`, static |
-| `Command` | 84 | `SCUS_942.54` `0x8007B660`, static |
-| `Reselect` | 19/20/21 | `SCUS_942.54` `0x800152D4`, static |
-
-Each disc-static record's seats are the pinned rects the packet walk already
-measured: record 1 lives at `(104, 88)` and record 4 at `(180, 88)` with content
-width `36`, which is exactly `CLUSTER_TOP_LEVEL`; records 8..=11 sit at
-`(204, 34)` / `(160, 66)` / `(248, 66)` / `(204, 98)` with width `48`, which is
-`CLUSTER_COMMAND`'s four arms.
-
-**The magic arm is not labelled `Magic`.** `0x801D8F30` reads the acting slot's
-character id out of `DAT_8007BD10 + ctx[+0x13]` and indexes a 10-byte-stride run
-at `0x801F4B9E`, so the word on the chip is the character's **Ra-Seru**: `Meta`
-(Vahn), `Terra` (Noa), `Ozma` (Gala). Index `4` of the same run is a single `-`,
-which the `ctx[+0x25F + slot]` gate above it selects for a character with no
-Ra-Seru magic - the disc's own instance of the "an unavailable command keeps its
-plate and draws a dash" law.
-
-### The formation banner
-
-`FUN_801D9D3C`'s arm at `0x801DA234` reads `ctx[+0x290]` and picks the line it
-stores into placement record 67 before the intro timer runs:
-
-| `ctx[+0x290]` | Line | Consequence |
-|---|---|---|
-| `0` | none - the draw at `0x801DA2E4` is skipped | ordinary round |
-| `1` back attack | `0x801F4D10` | `0x0B` jumps to `0xFE`: the party enters **no** command that round |
-| `2` pre-emptive | `0x801F4CD8` / `0x801F4CF8` | ordinary round; the monsters sit it out |
-
-The singular / plural pick at `0x801DA274` tests the byte at `DAT_8007BD10 + 1`
-(present-party slot 1), so a party with nobody there gets the shorter line. The
-name is substituted into the `0xC1` token by `FUN_8003CBF8`, whose operand is
-`DAT_8007BD10[0] - 1` - the party **leader**, not the acting member.
-
-Record 67's role here is only to *hold* that pointer: the draw at `0x801DA2E4`
-passes the line to `FUN_8003541C` with immediates, never through the record, and
-the same string is re-raised from record 67 proper once the intro is over. The
-whole intro surface - the enemy-name labels this line sits above, their seats
-and their lifetime - is
-[the battle-intro enemy-name banner](battle-hud.md#the-battle-intro-enemy-name-banner).
-
-### Port
-
-`engine-core::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
-/ `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
-seating for each; `engine-core::battle_open` composes the banner and
-`World::raise_battle_open_banner` queues it onto the shared battle message box
-(retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
-`World::arm_round_open_prompt`, keyed on the flow byte parking at
-`BattleFlowState::TurnPrompt` - which the round boundary and battle entry both
-set, and which a mid-round reopen does not. The ambush's lost round is already
-the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
-
-The port follows retail's **direct-commit press**: a direction press takes the
-chip drawn on that side of the screen in the same frame, no confirm. The map is
-spatial, mirroring retail's own per-arm dispatch: on the ring Up commits
-`Item`, Left `Attack`, Right the magic arm, Down `Spirit`
-(`battle_input::ring_seat`), and on both two-chip prompts Left is always the
-left chip and Right the right chip (`battle_input::pair_seat`). Cross
-additionally commits whatever the cursor rests on - the route a scripted
-harness that cannot aim a direction drives - and Circle keeps its back-out /
-outright-`Run` roles. `engine-shell`'s
-`direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
-the drawn seating.
-
-### The command-flow byte `ctx[+0x06]` - what the hook table indexes
-
-The hook key is **not** the action SM's `ctx[+0x07]`. It is `ctx[+0x06]`, the
-cursor of the *other* battle state machine: the menu half, `FUN_801D0748`. Both
-are byte cursors over the same context struct, and their value spaces collide -
-`ctx[7] == 0x64` is `RunBegin`, `ctx[6] == 0x64` is target confirm.
-
-**They do not share a dispatch shape, and it is worth not carrying the opposite
-forward.** `FUN_801D0748` has no jump table at all: it dispatches `ctx[+0x06]`
-through a binary-search `beq`/`slti` comparison tree at
-`0x801D0C84..0x801D0DC8`, and the only `jr` in its 2781 instructions is the
-`jr ra` at `0x801D32B4`. The `jr`-table shape belongs to the tutorial hook
-`FUN_801F6B70` (`jr v0` at `0x801F6BF8`) and to the action SM `FUN_801E295C`,
-not to the menu SM. Reading the menu half as table-driven invents a dense index
-space it does not have - its live cases are exactly the 22 constants below,
-everything else falling to the default at `0x801D3290`.
-
-Below `0x1E` the command flow is battle entry and turn setup: `0x00` init,
-`0x0A`/`0x0B` the intro timer at `ctx[+0x6D6]`, `0x14` turn start (which opens
-the top menu and falls into `0x1E`). From `0x1E` up it is the player's command
-selection, and the states are regular decimal multiples of ten:
-
-| `ctx[+0x06]` | Handler | On screen | Leaves to |
-|---|---|---|---|
-| `0x1E` = 30 | `0x801D102C` | `[Begin]` / `[Escape]` turn prompt | `0x28`, `0x32`, `0x6E` |
-| `0x28` = 40 | `0x801D1188` | Action-category menu | `0x1E`, `0x3C`, `0x46`, `0x50`, `0x5A`, `0x6E`, `0x78` |
-| `0x32` = 50 | `0x801D10F8` | Flee confirm | `0x1E`, `0xFE` |
-| `0x3C` = 60 | `0x801D17DC` | Item window | `0x28`, `0x5B`, `0x5D`, `0x64` |
-| `0x46` = 70 | `0x801D19F8` | Magic window | `0x28`, `0x5C`, `0x5E`, `0x65`, `0x67` |
-| `0x50` = 80 | `0x801D1D84` | Arts command-entry screen | `0x28`, `0x5A`, `0x78` |
-| `0x5A` = 90 | `0x801D21CC` | Target cursor | `0x28`, `0x50`, `0x6E`, `0x78` |
-| `0x64` = 100 | `0x801D2A00` | Target confirm (item window's own) | `0x28`, `0x3C`, `0x6E` |
-| `0x6E` = 110 | `0x801D3024` | All members committed - begin | `0x1E`, `0x28`, `0xFE` |
-| `0x78` = 120 | `0x801D16E8` | Auto / Command attack-mode prompt | `0x28`, `0x50`, `0x5A` |
-
-**How to read the "Leaves to" column.** It is the exhaustive set of
-`sb <reg>,0x0(s3)` stores inside each handler's address range (`s3 = ctx+6`,
-loaded at `0x801D0780`), resolved by constant propagation over the `li` / `move`
-/ `clear` that feed the stored register - not a per-branch narration. Every
-handler can also fall through without storing, which is the implicit "stay put".
-One earlier reading does not survive that sweep: state `0x46` never stores
-`0x6E` - that was a nested-`if` rendering, not a store.
-
-A sweep of this kind has to read **branch delay slots**, or it under-counts. Two
-edges live only there. State `0x28`'s Left/Attack arm does reach `0x50`
-directly: `0x801D15F4 beq s0,v0,0x801D1650` with `0x801D15F8 _li v0,0x50` in the
-slot, and `0x801D1650 sb v0,0x0(s3)` has that branch as its only predecessor -
-so option `_DAT_800846C4 == 2` goes straight to the arts screen rather than
-through the `0x78` prompt. State `0x46` reaches `0x5E` the same way
-(`0x801D1C5C bne` / `_li v0,0x5e` in the slot / `0x801D1CDC sb`), which is what
-supplies the `0x5E` the sub-cursor run `0x5B..0x5E` needs.
-
-Above the selection band sit the per-window target sub-cursors. They are two
-disjoint runs, `0x5B..0x5E` and `0x64..0x67` - there is no case for
-`0x5F..0x63`, and treating the sub-cursors as one contiguous `0x5B..=0x67` range
-invents five states. `0xFE` is a real dispatched case ("round armed - run the
-action SM"). `0xFF` (idle) is **not**: no comparison tests for it, so it reaches
-the default at `0x801D3290` like every other unlisted value - idle by falling
-through rather than by being handled.
-
-That band is what pins the tutorial's table. Its nine live slots are exactly
-these ten states **minus the magic window** - the sparring fight teaches attacks,
-items, spirit and hyper arts, and never magic. Engine mirror
-[`engine-core::battle_flow`](../../crates/engine-core/src/battle_flow.rs), which
-carries that cross-check as a test.
-
-### The round loop - what re-arms `0x1E`
-
-`0x14` is the round-start arm and the **only** writer of `0x1E`:
-
-```text
-801d0ec4  lw    v1,-0x42dc(s0)      ; ctx
-801d0ecc  sw    v0,0x880(v1)        ; highlight cursor = 0x8000 (the Left arm)
-801d0ed0  jal   0x801d88cc          ; per-round actor sweep
-801d0ed4  _sb   s5,0x0(s3)          ; ctx[+0x06] = 0x1E   (s5 = 0x1E at 0x801D0C98)
-801d0ee4  jal   0x801d388c          ; open the prompt window (a0 = a1 = 0)
-801d0ef4  lbu   v0,0x28a(v0)        ; round index
-801d0efc  beq   v0,zero,0x801d0f0c  ; round 0 only: the tutorial arm below
-```
-
-The store is unconditional - no arm of `0x14` skips it - so **every round the
-player is given starts on `Begin` / `Run`**, and the ring `0x28` is only ever
-entered from `0x1E`'s confirm at `0x801D108C`. A port that opens its command
-surface on the ring is not one frame early, it is a different machine.
-
-`0x14` is reached from two different state machines:
-
-- **Battle open.** The intro timer `0x0B` runs down and branches on the
-  back-attack byte: `ctx[+0x290] == 1` stores `0xFE` (the party loses its
-  first round outright), anything else stores `0x14`
-  (`0x801D0E68..0x801D0EB8`).
-- **Every later round.** The *action* SM's `ctx[+0x07] == 0xFF` arm, jump-table
-  slot `0xFF` of `0x801CED44`. Its whole body is two writes:
-
-```text
-801e67e8  lui   a0,0x8008
-801e67ec  lw    v1,-0x42dc(a0)
-801e67f0  li    v0,0x14
-801e67f4  sb    v0,0x6(v1)          ; ctx[+0x06] = 0x14  -> next round's prompt
-801e6800  lbu   v0,0x28a(v1)
-801e6808  addiu v0,v0,0x1
-801e680c  jal   0x801f45a4
-801e6810  _sb   v0,0x28a(v1)        ; ctx[+0x28A] += 1   (the round index)
-```
-
-`ctx[+0x07] = 0xFF` is stored at `0x801E67E4`, on the arm where the per-round
-action cursor has passed every living actor. So the two bytes hand the round
-back and forth: the flow SM ends a round by arming `0xFE` -> `0xFF`, and the
-action SM ends it by arming `0x14`.
-
-**Read this one off the jump table, not off the decompiler's flow analysis.**
-Nothing inside `FUN_801E295C` branches to `0x801E67E8` - it is reached only
-through the `jr v0` at `0x801E2AAC` - so a pass that does not resolve the table
-reports `Removing unreachable block (ram,0x801E67E8)` and drops the round bump
-from the C entirely. That `+0x28A` is the round index rather than some other
-counter is corroborated by `0x14`'s own second reader: under
-`_DAT_8007BD0C == 0xB6` (the Muscle Dome match) `0x801D0F94..0x801D0FA4` draws
-`4 - ctx[+0x28A]`, the rounds remaining.
-
 ### `s2` is not the pad, and how a command commits
 
 Every handler in `FUN_801D0748` tests `s2`, and `s2` is built two different ways
@@ -410,10 +242,7 @@ before the state switch runs.
 
 The masks are **packed** throughout - byte-swapped against the raw BIOS word
 (`engine-core::world_map_panel_host::packed_pad`), so the four directions are
-Left `0x8000`, Right `0x2000`, Down `0x4000`, Up `0x1000`. Read raw they look
-like face buttons, which in turn makes the confirm and cancel masks look
-unreachable; the same trap is catalogued in
-[`arts-command-gauge.md`](arts-command-gauge.md).
+Left `0x8000`, Right `0x2000`, Down `0x4000`, Up `0x1000`. Read raw they look like face buttons ([`arts-command-gauge.md`](arts-command-gauge.md) notes the same).
 
 **With a selection widget up** (`_DAT_800846C8 != 0` and `ctx[+0x275] != 0`), the
 pre-dispatch block at `0x801D07FC..0x801D0AC0` walks a highlight rather than
@@ -474,6 +303,35 @@ arming the next surface is a soft-lock, and it does not have to be the command
 itself that breaks - see the readout desync in
 [`battle-action.md`](battle-action-exit-gates.md#the-0x51-exit-gate-and-the-hp-bar-settle-invariant).
 
+### The ring's cancel steps back a member
+
+The cancel mask is the ring handler's first test (`0x801D11B4`, ahead of the
+four arms from `0x801D12C0`), and it forks on the step counter `ctx[+0x1F]` -
+how many members the cursor has walked past this round, reset to `0xFF` and
+stepped once by the round reset `FUN_801D88CC`:
+
+- counter `0`: `FUN_801D388C(2)` and `ctx[+0x06] = 0x1E` - the round's first
+  member goes back to `Begin | Run` (`0x801D11D8..0x801D11E4`);
+- otherwise `FUN_801D388C(0x10)` (`0x801D1278`), whose case body ends in
+  `FUN_801D32BC(1)` (`0x801D4010`): the cursor scans down to the previous
+  member with `+0x14C != 0` and no `+0x16E & 0xF84` bit, and the flow stays
+  on `0x28` - now that member's ring. If the member it lands on had
+  committed an item (`+0x1DE == 1`), the copy its commit consumed goes back
+  through `FUN_800421D4(+0x1DF, 1)` (`0x801D12AC`).
+
+Nothing clears the landed member's commit: the ring simply takes its next
+choice over the old one. The commit-confirm screen `0x6E` has the other
+backward entry - its cancel or `Reselect` (the Right arm) keys cue `0x23`,
+re-scans with `FUN_801DBA04` and re-enters `0x28` through
+`FUN_801D388C(0x21)`, whose body steps back with the same `FUN_801D32BC(1)`
+(`0x801D3040..0x801D30C8`, `0x801D4750`).
+
+The port runs the ring's cancel as `World::step_back_battle_command` over the
+ported cursor step (`legaia_engine_vm::battle_cursor_pose::step_actor_cursor`),
+dropping the landed member's typed commit and its Spirit stance and refunding
+an item. It stages no `0x6E` screen - the last commit begins the round - so the
+`Reselect` entry has no seat.
+
 ### The commit-confirm screen (`0x6E`)
 
 Every commit site above stores `0x6E` instead of `0x28` once `FUN_801DB81C`
@@ -519,9 +377,7 @@ Retail also keeps a **commit log** up through the whole command phase - see
 count). Both hosts draw it through `battle_hud::battle_command_chips`
 (`CommandChipPhase::CommitConfirm`) and the shared chip cluster
 `legaia_engine_ui::battle_command_ui::CLUSTER_COMMIT_CONFIRM`, with the chip
-words read off the disc. The arts entry no longer carries a `Begin | Reselect`
-of its own: that was this party-wide screen modelled per member, which put it
-after every member's arts and after no one's Magic or Item.
+words read off the disc. 
 
 ### The commit log
 
@@ -595,77 +451,60 @@ sub-screen backed out of in), and every row carries the offset as
 (records `0x0C` / `0x0E`) and whether an Item row carries a target are
 inferred from the ring's arm order, not read off a commit arm.
 
-### How the engine raises the flow state
+### Where the words come from
 
-The engine splits what `FUN_801D0748` does in one machine across a
-[`battle_input::BattleCommandSession`](../../crates/engine-menus/src/battle_input.rs)
-plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
-each frame by `battle_flow::flow_state_for` (an open submenu wins over the
-command phase). The round around them is retail's own two bands - every
-member commits before anyone acts, and the commits execute in initiative
-order - see [the two bands](battle-round-loop.md#auto-resolve-vs-player-driven). Three points
-differ from retail and are deliberate:
+Two pools, and which one a label lives in follows from who writes it into the
+placement record's `+0x14` payload pointer. Parser
+`legaia_asset::battle_ui_strings`; the coordinates are pinned, never the text.
 
-- **Round prompt.** `World::open_battle_command` builds the session **already
-  on** `CommandPhase::RoundPrompt` whenever the flow byte says the round is
-  opening (battle entry leaves it `Idle`; the round boundary parks it on
-  `TurnPrompt`), matching retail's unconditional `0x14 -> 0x1E` store. It has
-  to be the phase the session is constructed in rather than one applied on a
-  later tick: `battle_command.is_some()` is the only edge a host or a test
-  has, so a prompt that lands one frame behind it is a prompt nothing sees -
-  and `Run` lives on that prompt and on no other surface. A session reopened
-  mid-round (a submenu backed out of) finds the flow on a window state and
-  opens on the ring, which is where retail's own cancel arms land.
-- **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
-  routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
-  no engine hook point yet.
-- **Every commit meets the `110` validator.** The handler reads the category
-  off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
-  four committing surfaces reaches it with its own byte: the Attack target
-  confirm with `3`, the arts entry's target confirm with `3`, Spirit with
-  `4`, and the item window's use with `1` (`World::tick_battle_item_menu`,
-  checked before the copy is consumed). A surface that skipped the validator
-  leaves its lesson unaccepted forever and the spar never ends - the item
-  window once did, and so did the arts entry, which is the only way to
-  perform the hyper-arts lesson's Somersault.
-- **The arts entry raises its own two states.** The entry opens on `80`;
-  leaving it (the confirm, or the press that exhausts the gauge) is retail's
-  `0x50 -> 0x5A`, which `World::tick_battle_arts_input` raises as `90` with
-  the entered arrows written into the hook's command buffer as the gauge's
-  swing bytes; the review's cancel is `0x5A -> 0x50` and re-raises `80`.
-- **Unresolved surfaces can rewind too.** The target cursor (`90`) and the
-  attack-mode prompt (`120`) carry wrong-lesson rewinds; the engine honours
-  them as it does a resolved commit's, by reopening the command menu.
-- **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
-  sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
-  for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
-  commit hook *accepts* the taught category - one lesson per successful player
-  turn, which is the same observable cadence.
+| Chip | Record | Source |
+|---|---|---|
+| `Begin` | 0/1/2 | `SCUS_942.54` `0x8007B688`, static on the disc |
+| `Run` | 3/4/5 | `SCUS_942.54` `0x8007B684`, static |
+| `Item` | 8 | `SCUS_942.54` `0x8007B67C`, static |
+| `Attack` | 9 | `SCUS_942.54` `0x8007B674`, static |
+| magic | 10 | overlay, written at runtime - see below |
+| `Spirit` | 11 | overlay `0x801F4B98`, written by `0x801D8F98` |
+| `Auto` | 85 | `SCUS_942.54` `0x8007B658`, static |
+| `Command` | 84 | `SCUS_942.54` `0x8007B660`, static |
+| `Reselect` | 19/20/21 | `SCUS_942.54` `0x800152D4`, static |
 
-The recomposition has to run on the frame a window **opens**, not only while
-the command session is unresolved: the resolution that hands off to a submenu
-consumes the session, and a byte synced only from the session stayed on the
-surface the player left (`0x28`, or `0x78` for the arts entry) for as long as
-the window was up. Retail stores the window's own state as it opens - `0x50`
-at `0x801D1738`, in the delay slot of the arts preseed `jal FUN_801DA34C` -
-and the engine syncs it at the same point
-(`World::tick_battle_command`).
+Each disc-static record's seats are the pinned rects the packet walk already
+measured: record 1 lives at `(104, 88)` and record 4 at `(180, 88)` with content
+width `36`, which is exactly `CLUSTER_TOP_LEVEL`; records 8..=11 sit at
+`(204, 34)` / `(160, 66)` / `(248, 66)` / `(204, 98)` with width `48`, which is
+`CLUSTER_COMMAND`'s four arms.
 
-A queued box parks the whole battle tick (`World::live_battle_tick` returns
-early), which is the port of retail returning before it reads the flow state
-while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
-rewind exit discards the action and reopens the command menu.
+**The magic arm is not labelled `Magic`.** `0x801D8F30` reads the acting slot's
+character id out of `DAT_8007BD10 + ctx[+0x13]` and indexes a 10-byte-stride run
+at `0x801F4B9E`, so the word on the chip is the character's **Ra-Seru**: `Meta`
+(Vahn), `Terra` (Noa), `Ozma` (Gala). Index `4` of the same run is a single `-`,
+which the `ctx[+0x25F + slot]` gate above it selects for a character with no
+Ra-Seru magic - the disc's own instance of the "an unavailable command keeps its
+plate and draws a dash" law.
 
-**No host arms it.** `World::enter_battle` consumes the disc's own one-shot
-system-flag arm (above), so the native window and the browser play page both
-show the boxes in the fight retail shows them in, with no scene name, flag or
-environment variable in the condition. `World::prime_battle_tutorial` is a
-debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
-force and enter a fight) is `play-window`'s hand-testing knob on top of it -
-neither is the port. Browser oracle:
-`crates/web-viewer/tests/battle_tutorial_page.rs`.
+### The formation banner
 
-The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
+`FUN_801D9D3C`'s arm at `0x801DA234` reads `ctx[+0x290]` and picks the line it
+stores into placement record 67 before the intro timer runs:
+
+| `ctx[+0x290]` | Line | Consequence |
+|---|---|---|
+| `0` | none - the draw at `0x801DA2E4` is skipped | ordinary round |
+| `1` back attack | `0x801F4D10` | `0x0B` jumps to `0xFE`: the party enters **no** command that round |
+| `2` pre-emptive | `0x801F4CD8` / `0x801F4CF8` | ordinary round; the monsters sit it out |
+
+The singular / plural pick at `0x801DA274` tests the byte at `DAT_8007BD10 + 1`
+(present-party slot 1), so a party with nobody there gets the shorter line. The
+name is substituted into the `0xC1` token by `FUN_8003CBF8`, whose operand is
+`DAT_8007BD10[0] - 1` - the party **leader**, not the acting member.
+
+Record 67's role here is only to *hold* that pointer: the draw at `0x801DA2E4`
+passes the line to `FUN_8003541C` with immediates, never through the record, and
+the same string is re-raised from record 67 proper once the intro is over. The
+whole intro surface - the enemy-name labels this line sits above, their seats
+and their lifetime - is
+[the battle-intro enemy-name banner](battle-hud.md#the-battle-intro-enemy-name-banner).
 
 ## Battle target picker
 
@@ -687,13 +526,97 @@ The **enemy** row is not a slot-order walk. Each picker row carries the slot's b
 
 A sweep reaches the action SM as retail's target-group code, not a sentinel: the live command flow writes `+0x1DD = 8` for the party and `9` for the enemy row (absolute numbering, mirrored for a monster caster), and a self-target writes the caster's own slot - the values `FUN_801E295C`'s cast-begin split (`sltiu v0,t2,0x8` at `0x801E433C`) and self-skip (`beq v0,t2` at `0x801E4350`) decode.
 
-### The sparring-tutorial prompt machine (overlay 967)
+## Port
 
-What overlay 967 *does* is emit the in-battle "how to fight" boxes of the Tetsu
-sparring fight. The hook table and every prompt string address are resident in
-967, and neither the battle-scene script, MES text, nor the battle overlay
-`0898` carries them - which is why porting the battle SM alone never produces
-the boxes.
+### Phases and input map
+
+`engine-core::battle_input` carries the three phases (`CommandPhase::RoundPrompt`
+/ `Menu` / `AttackMode`) and `engine-ui::battle_command_ui::ChipPhase` the
+seating for each; `engine-core::battle_open` composes the banner and
+`World::raise_battle_open_banner` queues it onto the shared battle message box
+(retail's `ctx[+0x6B2]` surface). The round-scoped prompt is armed from
+`World::arm_round_open_prompt`, keyed on the flow byte parking at
+`BattleFlowState::TurnPrompt` - which the round boundary and battle entry both
+set, and which a mid-round reopen does not. The ambush's lost round is already
+the `ctx[+0x290]` side lockout in `World::reseed_initiative`.
+
+The port follows retail's **direct-commit press**: a direction press takes the
+chip drawn on that side of the screen in the same frame, no confirm. The map is
+spatial, mirroring retail's own per-arm dispatch: on the ring Up commits
+`Item`, Left `Attack`, Right the magic arm, Down `Spirit`
+(`battle_input::ring_seat`), and on both two-chip prompts Left is always the
+left chip and Right the right chip (`battle_input::pair_seat`). Cross
+additionally commits whatever the cursor rests on - the route a scripted
+harness that cannot aim a direction drives - and Circle keeps its back-out /
+outright-`Run` roles. `engine-shell`'s
+`direction_presses_land_on_the_chip_drawn_on_that_side` holds the map equal to
+the drawn seating.
+
+### How the engine raises the flow state
+
+The engine splits what `FUN_801D0748` does in one machine across a
+[`battle_input::BattleCommandSession`](../../crates/engine-menus/src/battle_input.rs)
+plus host-owned Item / Magic / Arts submenus, so the flow byte is *recomposed*
+each frame by `battle_flow::flow_state_for` (an open submenu wins over the
+command phase). The round around them is retail's own two bands - every
+member commits before anyone acts, and the commits execute in initiative
+order - see [the two bands](battle-round-loop.md#auto-resolve-vs-player-driven). Where the engine differs from retail, deliberately:
+
+- **Round prompt.** `World::open_battle_command` builds the session **already
+  on** `CommandPhase::RoundPrompt` whenever the flow byte says the round is
+  opening (battle entry leaves it `Idle`; the round boundary parks it on
+  `TurnPrompt`), matching retail's unconditional `0x14 -> 0x1E` store. The session is constructed in that phase (not switched on a later tick) because `battle_command.is_some()` is the only edge a host has, and `Run` lives on that prompt alone. A session reopened
+  mid-round (a submenu backed out of) finds the flow on a window state and
+  opens on the ring, which is where retail's own cancel arms land.
+- **Target confirm.** `CommandPhase::Confirmed` is the Attack path, which retail
+  routes `0x5A → 0x28` for the next member or `0x5A → 0x6E` after the last; state `100` is the item window's own target step and has
+  no engine hook point yet.
+- **Every commit meets the `110` validator.** The handler reads the category
+  off the active actor (`lbu v1,0x1de(v0)` at `0x801F70E0`), so each of the
+  four committing surfaces reaches it with its own byte: the Attack target
+  confirm with `3`, the arts entry's target confirm with `3`, Spirit with
+  `4`, and the item window's use with `1` (`World::tick_battle_item_menu`,
+  checked before the copy is consumed). A surface that skipped the validator would leave its lesson unaccepted and the spar would never end.
+- **The arts entry raises its own two states.** The entry opens on `80`;
+  leaving it (the confirm, or the press that exhausts the gauge) is retail's
+  `0x50 -> 0x5A`, which `World::tick_battle_arts_input` raises as `90` with
+  the entered arrows written into the hook's command buffer as the gauge's
+  swing bytes; the review's cancel is `0x5A -> 0x50` and re-raises `80`.
+- **Unresolved surfaces can rewind too.** The target cursor (`90`) and the
+  attack-mode prompt (`120`) carry wrong-lesson rewinds; the engine honours
+  them as it does a resolved commit's, by reopening the command menu.
+- **Lesson counter.** Retail shares `ctx[+0x28A]` with the action SM, where the
+  sparring fight's scripted `case 0xFF` bumps it. The engine has no script driver
+  for that fight, so `BattleTutorial::pending_advance` bumps the lesson when the
+  commit hook *accepts* the taught category - one lesson per successful player
+  turn, which is the same observable cadence.
+
+The recomposition has to run on the frame a window **opens**, not only while
+the command session is unresolved: the resolution that hands off to a submenu
+consumes the session. Retail stores the window's own state as it opens - `0x50`
+at `0x801D1738`, in the delay slot of the arts preseed `jal FUN_801DA34C` -
+and the engine syncs it at the same point
+(`World::tick_battle_command`).
+
+A queued box parks the whole battle tick (`World::live_battle_tick` returns
+early), which is the port of retail returning before it reads the flow state
+while `FUN_801D9BBC` reports a box up (`ctx[+0x6B2]`). A hook that takes the
+rewind exit discards the action and reopens the command menu.
+
+**No host arms it.** `World::enter_battle` consumes the disc's own one-shot
+system-flag arm (above), so the native window and the browser play page both
+show the boxes in the fight retail shows them in, with no scene name, flag or
+environment variable in the condition. `World::prime_battle_tutorial` is a
+debug force, and `LEGAIA_BATTLE_TUTORIAL` (`0` suppress / `1` force / `now`
+force and enter a fight) is `play-window`'s hand-testing knob on top of it -
+neither is the port. Browser oracle:
+`crates/web-viewer/tests/battle_tutorial_page.rs`.
+
+The `asset-viewer battle-scene` subcommand drives the engine-side composite end-to-end: loads the same battle bundle TMDs, builds an `engine-core::World` in `SceneMode::Battle`, spawns 3 party + 5 monster actor slots, and ticks the [battle-action state machine](battle-action.md) per frame. HUD shows the current `ActionState` (decoded into the named variant), queued action, per-slot liveness, transition counts, and any `BattleEndCause` the SM emits. Triangle cycles `queued_action`; Cross re-seeds at `ActionState::Begin`.
+
+## The sparring-tutorial prompt machine (overlay 967)
+
+Overlay 967 emits the in-battle "how to fight" boxes of the Tetsu sparring fight. The hook table and every prompt string are resident in 967; the battle-scene script, the MES text and the battle overlay 0898 carry none of them.
 
 **Who fights the spar.** Retail has no party override for it. Battle init
 seats one actor per non-zero id in the present-party list `DAT_8007BD10`
@@ -710,19 +633,7 @@ that never address it. No disc patch is needed for the randomizer: no
 `legaia-patcher` feature edits the party composition, so a patched disc
 reaches the spar with the retail party.
 
-**The machine's exclusivity is byte-anchored.** `FUN_801F6B70` is entry 967 file
-`+0x198`, and `0x801F69D8 + 0x198` reproduces the printed VA exactly, so the
-needle can be taken straight out of the image rather than hand-assembled.
-Searching for it across all 1233 `PROT` entries, `SCUS_942.54`, `DMY.DAT` and
-the extracted overlay images returns **one** physical copy - at five needle
-lengths from 48 bytes to the whole 2316-byte body, and including a 116-byte
-interior window that contains no `lui`, `j` or `jal` and would therefore still
-match a copy relinked at a different base. (The other two hits are that copy
-seen twice more: the static-overlay-pipeline duplicate, byte-identical to the
-entry, and the entry's own bytes inside `PROT.DAT` at its LBA. PROT 0967 is
-stored raw - the sector slice equals the extracted file - and every row in
-`static-overlays.toml` is `form = "raw"`, so no code image on this disc hides
-inside LZS.)
+**The machine exists in one place.** `FUN_801F6B70` is entry 967 file `+0x198` (`0x801F69D8 + 0x198`). A search across all 1233 PROT entries, `SCUS_942.54`, `DMY.DAT` and the extracted overlay images finds one physical copy, at five needle lengths from 48 bytes to the whole 2316-byte body, including a 116-byte interior window with no `lui`, `j` or `jal` that would match a copy relinked at another base. PROT 0967 is stored raw, as is every row of `static-overlays.toml` (`form = "raw"`), so no code image on the disc hides inside LZS.
 
 **The prompt pool is not exclusive, and its neighbour is why.** All 28 string
 pointers the machine forms land inside 967's own `0x1800`-byte image, in a
@@ -747,10 +658,7 @@ if idx >= 0x5B      -> no-op             // sltiu 0x5b @ 0x801F6BD8
 goto table[idx]                          // jr v0 @ 0x801F6BF8
 ```
 
-The `ctx[0x6B0]` clear is written first here on purpose: it lives in the
-**branch delay slot** of the suppression test, so it executes on both paths -
-including the suppressed one. Ghidra's C prints it after the guard, which is the
-reordered-store artifact.
+The `ctx[0x6B0]` clear sits in the branch delay slot of the suppression test, so it executes on both paths (decompiled C prints it after the guard).
 
 Only **nine** of the 91 slots are live - flow states `30, 40, 50, 60, 80, 90,
 100, 110, 120`; the other 82 point at the shared no-op tail `0x801F718C`. The
@@ -907,7 +815,7 @@ screen at once. The engine's queue carries a dispatch **group** per box
 (`World::battle_tutorial_boxes_on_screen`), a non-waiting member counts
 itself down inside it, and the waiting member holds the group until Cross.
 
-#### The opening caption - the SCUS side-band, not overlay 967
+### The opening caption - the SCUS side-band, not overlay 967
 
 The first thing the sparring fight says is not a 967 prompt. It is the
 caption at SCUS `0x80078CB4` (label `BattleUiLabel::SparringIntro`, read off
@@ -945,7 +853,7 @@ its drain removes the caption and opens the round. The hold also selects the
 battle camera's Dialogue close-up, which is the `FUN_801D829C` aim above. A
 world with no caption text skips the hold.
 
-#### How the sparring fight ends - the `ctx[+0x6B4]` countdown
+### How the sparring fight ends - the `ctx[+0x6B4]` countdown
 
 `FUN_801F7628` stores `ctx[+0x6B4] = rate * 360` (`x3`, `x15`, `x8` of the
 game-speed byte `DAT_1F80037D`, `0x801F7648..0x801F7660`), raises the hold
@@ -997,7 +905,7 @@ retail's 360-vsync hold after a wrong-lesson box and its synthetic Cancel are
 not reproduced. Not staged either: the `FUN_801D829C` camera aim at party
 seat 0 (`0x801F7368`).
 
-### What the two boss-stage modules do (overlays 968 / 969)
+## What the two boss-stage modules do (overlays 968 / 969)
 
 Both modules are **one function over the whole of their own code**, and each is
 a phase machine on the battle context's `ctx[+0x289]` byte driving the **first
@@ -1040,7 +948,7 @@ blanks all four leading actor slots (`+0x04 = 0`, `+0x21C = 0xFF`) and sets
 both model records' `+0x78 = 0x1000`. Phase `3` waits out the countdown and
 calls `FUN_8003ED04(0)`.
 
-#### The arrival re-dresses the arena
+### The arrival re-dresses the arena
 
 The evolved-Cort stage (`jouine`, variant 2, PROT 693) is a two-object shell,
 and battle init's object edit leaves the two backdrop actors drawing object 0
@@ -1104,6 +1012,89 @@ teardown. While a module runs it owns the frame and the camera globals
 boss-name banner is drawn by both hosts through
 `battle_hud::battle_stage_banner`. Not staged: the in-image spawn records
 (every one is a meshless `model_sel = -1` part), the two SCUS move-VM effect
-trees at the hand-back, the render-node words, the `FUN_80058490` rect push
-and the CD-XA stop; the form transition still draws its battle-RNG values, so
+trees at the hand-back, the render-node words and the CD-XA stop; the form transition still draws its battle-RNG values, so
 the stream stays retail's.
+
+### Flow `0x0C` is the boss stage module's baton
+
+The evolved-Cort fight is the one battle whose intro leaves `ctx[+0x06]` on `0x0C`, a value the comparison tree has no arm for. The byte that releases it is written from outside the battle overlay, by the stage module. `scripts/pcsx-redux/autorun_w4d_cort_flow_writer.lua` watches the byte from the pre-battle field state:
+
+| vsync | Event |
+|---|---|
+| 291 | game mode reaches `0x15`; `_DAT_8007BD24` = `0x800EB654` |
+| 444 | `0x80051C94` (battle init) writes `0x00` |
+| 507 | `0x801D0DDC` writes `0x0A` |
+| 510 | `0x801D0DE4` writes `0x0B`, then `0x801D0E0C` writes `0x0C` in the same frame |
+| 631 | loader-B tracker `0x8007BC4C` goes `0x05` -> `0x49`; slot B's head matches the in-fight state |
+| 3717 | `0x801F713C` (`ra = 0x800564A0`, tracker `0x49`) writes `0x0B`; `0x801D0EB8` writes `0x14` the same frame |
+| 3719 | `0x801D0ED4` writes `0x1E` - the state the in-fight capture is parked on |
+
+Both `0x0A`-arm stores run on the same pass - the arm writes `0x0B` unconditionally
+and the `0xB5` branch **overwrites** it with `0x0C`, it does not choose between them.
+
+**No input moves it.** Holding each of the ten pad buttons for 60 vsyncs, twice around, produces no write to the byte; the gate is a clock.
+
+**The module that holds the baton is PROT 0968**, the stage overlay for this fight
+(loader-B id `0x49`; extraction index = id + `0x37F`), which pages into slot B during the park, after the flow byte is already `0x0C`. Its entry `0x801F69F4` re-seeds `ctx[+0x6D6] = 0x100` every tick (the `256` read off the intro timer while parked). Its head is a **7-word jump table at `0x801F69D8` indexed by `ctx[+0x289]`**
+(`lbu a0,0x289(v1)`, `sltiu v1,a0,7`, `jr`), and that phase byte is observed walking
+`0` through `6` - roughly 500 vsyncs a phase - while the flow byte holds `0x0C`. Phase 0's arm advances only once the
+camera word `0x800840BC` passes `0xC00` - a dt-driven zoom-in - and then fires cue
+`0x20A` through `FUN_8004FCC8`; a later arm spawns its own centred banner through the
+SCUS text-actor spawner `FUN_8003541C` at `0x801F7098`, which is *why* the `0x0A` arm
+skips the standard composer for this formation. The module walks the phase byte
+itself: the side-band's stage-2 arm (`0x80056480..0x800564A0`) only ticks it, and
+its `0x289` writes (`0x800562E8`, `0x8005640C`) belong to the stage-1 arm.
+
+**The hand-back is a single store.** A scan of the whole 0968 image for
+`sb ?,0x6(?)` finds exactly one, at `0x801F713C`, in the last phase arm
+(`0x801F70D8`):
+
+```
+801F70E4  lbu  v1,0x7f(s3)        ; s3 = 0x1F800314 -> the scratchpad frame-step byte
+801F70E8  lw   v0,0x73f8(a0)      ; a0 = 0x801F0000 -> module-local countdown 0x801F73F8
+801F70F0  subu v0,v0,v1           ; countdown -= dt
+801F70F4  bgtz v0,0x801F71D4      ; still positive -> keep waiting
+801F7120  sb   zero,-0x49b6(v0)   ; stage id 0x8007B64A = 0
+801F7128  sh   zero,0x6d6(v1)     ; intro timer = 0
+801F712C  sb   zero,0x289(v1)     ; phase = 0
+801F7138  addiu v0,zero,0xb
+801F713C  sb   v0,0x6(v1)         ; ctx[+0x06] = 0x0B
+```
+
+The same block clears the stage id `0x8007B64A` (the `2` that paged this module in,
+`966 + id` in extraction space), which is the module signing off. The write lands 3207 vsyncs (about 53 s) after the `0x0C` park with no input, `ra` naming SCUS `0x800564A0`, the side-band pass `FUN_80056208` that ticks the module. It hands the flow back as `0x0B` - a value the ladder
+*does* have an arm for - with the intro timer already zeroed, and `0x0B` expires on its next tick into
+`0x14`, which sets `0x1E` unconditionally. That is exactly where the in-fight capture
+`cort_evolved_battle_first_menu` sits. Flow `0x0C` is therefore not a dead state: it
+is the "a stage module owns this frame" parking value, and what it waits on is that
+module's own multi-phase intro, ending on the dt countdown at `0x801F73F8`.
+
+Caveats for re-running the probe: exec breakpoints on slot-B addresses are not attributable on their own, because the same addresses are live code in whichever module is resident (the breakpoint at `0x801F713C` fires five times in the first thirteen vsyncs while the 0900 co-resident holds the slot); read hits beside the loader-B tracker. And the park outlasts a 3400-vsync capture window, so a short run reads as "stuck forever".
+
+**The countdown is in battle-frame units, not vsyncs.** Every phase arm drains
+the module word `0x801F73F8` by the frame step `*(0x1F800393)` and re-arms it with
+an immediate: `0x80` (phase 0's exit, `0x801F6B84`), then `+0x100` three times
+(`0x801F6CC8`, `0x801F6E00`, `0x801F6F30`), `+0x1E0` (`0x801F6FDC`) and `+0xB4`;
+phase 0 itself waits on the camera word `0x800840BC` climbing `4 * step` a pass
+to `0xC00`. That is about 2000 units from residency to hand-back. The same
+probe extended with a phase-change log (pad-free, from `cort_evolved_pre_battle`)
+times each phase in vsyncs:
+
+| Phase | Starts at vsync | Lasts | Countdown units | Step read |
+|---|---|---|---|---|
+| 0 | 291 (mode `0x15`; the module pages in near 631) | 624 | camera `1280 -> 0xC00` | 4 |
+| 1 | 915 | 283 | `0x80` | 3-4 |
+| 2 | 1198 | 944 | `0x100` | 4 |
+| 3 | 2142 | 660 | `0x100` | 4 |
+| 4 | 2802 | 256 | `0x100` | 4 |
+| 5 | 3058 | 479 | `0x1E0` | 4 |
+| 6 | 3537 | 181 | `0xB4` | 2 |
+
+Phases 4 to 6 run at exactly one unit a vsync. Phases 1 to 3 - the drop, the
+descent trail and the landing, which spawn records every eighth frame - run at a
+quarter to a half of that: the step the module reads stays at `4` while a pass
+takes up to fifteen vsyncs, so the countdown spans more vsyncs than it has units.
+That is frame lag in the capture, not a different count. The port runs the same
+arithmetic at one unit a tick (`battle_stage_module::arrival_tick`), so its
+arrival hands back after about 2000 ticks where this capture took about 3400
+vsyncs from mode `0x15`.
