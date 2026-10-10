@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn ctx_with(phase: u8, actors: u8, monsters: u8) -> CastModuleCtx {
