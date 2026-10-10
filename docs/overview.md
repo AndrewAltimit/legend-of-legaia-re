@@ -89,7 +89,7 @@ flowchart TD
     end
     subgraph port["The port"]
         kernels["World-free kernels<br/>engine-battle, engine-field, engine-menus, engine-dialog,<br/>engine-effects, engine-system, engine-minigames, engine-fishing"]
-        vm["engine-vm + engine-battle-vm"]
+        vm["engine-vm<br/>over engine-battle-vm + engine-motion-vm"]
         core["engine-core: World + scene host"]
         audio["engine-audio: SPU + sequencer"]
         session["engine-session: BootSession"]
@@ -108,7 +108,7 @@ flowchart TD
     end
     subgraph mod["Disc patcher"]
         dp["disc-patch"]
-        layers["translate, code-hooks, texture-replace, party-swap"]
+        layers["translate, code-hooks, arts-patch,<br/>texture-replace, party-swap, delilas-party"]
         patcher["patcher: legaia-patcher"]
         dp --> layers --> patcher
     end
@@ -125,7 +125,7 @@ On the presentation side, `engine-ui` builds renderer-agnostic draw lists over t
 
 The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu / winit / cpal dependency, which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
 
-**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement) and `code-hooks` (MIPS code injection) split out of it.
+**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement) `code-hooks` (MIPS code injection), `arts-patch` (the Tactical Arts mods) and `delilas-party` (the play-as-Delilas mod) split out of it.
 
 Build and test:
 

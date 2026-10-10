@@ -205,7 +205,7 @@ A Cargo workspace; each crate has a one-page `README.md`. [`CLAUDE.md`](CLAUDE.m
 | `crates/extract` | `legaia-extract`, the one-shot pipeline. |
 | `crates/engine-*`, `render-kernels` | The port: simulation (`engine-core`, `engine-vm` and the kernels split out of them), rendering, audio, and the `legaia-engine` binary (`engine-shell`). |
 | `crates/asset-viewer`, `web-viewer` | The native viewer, and the WASM build behind the site. |
-| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `texture-replace`, `party-swap` | `legaia-patcher` and the layers under it. |
+| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `arts-patch`, `texture-replace`, `party-swap`, `delilas-party` | `legaia-patcher` and the layers under it. |
 | `crates/mednafen`, `pcsxr`, `parity` | Emulator save-state readers and the retail parity oracles. |
 | `crates/gamedata`, `cheats`, and `data/` | Curated, non-Sony reference tables. |
 | `docs/`, `site/` | The technical reference, and the project site's sources. |

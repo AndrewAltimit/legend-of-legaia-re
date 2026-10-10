@@ -1316,7 +1316,7 @@ sequencer's slot count.
 bytes, so the per-frame kernel `FUN_80018DB0` that writes them is a **rumble**
 cadence, not an audio one - see the
 [`80018DB0` row](../reference/functions/audio.md) and
-[`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+[`re-settled-threads.md`](../reference/re-settled-threads/audio.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
 
 Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
 `8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,

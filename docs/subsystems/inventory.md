@@ -142,7 +142,7 @@ Three unrelated boundaries get called "divided inventory". Only the first is the
 
 `FUN_800421D4` scans for a matching id, then for the first free slot. Its id store precedes the bound check. On a completely full window the scan exits at `i == end` and the id byte lands one slot past the window, at `0x80085958 + gp[+0x2D4]*2`: `0x80085A58` (`end = 128`) or `0x80085B58` (`end = 256`). Only the count store is guarded.
 
-This is the core of the arbitrary-code-execution reachability thread, which is settled: the write primitive is real and normal play cannot reach it. Reasoning and grades are in [`re-settled-threads.md`](../reference/re-settled-threads.md#full-window-item-add-oob-reachability). Two cautions:
+This is the core of the arbitrary-code-execution reachability thread, which is settled: the write primitive is real and normal play cannot reach it. Reasoning and grades are in [`re-settled-threads.md`](../reference/re-settled-threads/title-boot-overlays.md#full-window-item-add-oob-reachability). Two cautions:
 
 - An exec probe at `pc = 0x800422BC` fires on **every** successful add, before the guard. A hit there is not out-of-bounds evidence by itself.
 - `0x800859E8` (SC `+0x18A8`) is not "the first key-item slot". That reading assumed the 72-slot page was the window.

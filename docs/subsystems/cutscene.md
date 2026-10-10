@@ -1482,7 +1482,7 @@ Eight scenes stage a non-zero roll, from a `10`-unit (0.9 deg) lean to `-660` (-
 Juggernaut interiors `juui1` / `juui2`, which carry the two steepest tilts. Each such beat
 carries the full nine-slot mask and holds the same tilt across the beats of its shot. Per-scene
 values are on
-[`re-settled-threads.md`](../reference/re-settled-threads.md#does-any-retail-shot-author-a-non-zero-camera-roll);
+[`re-settled-threads.md`](../reference/re-settled-threads/rendering-camera.md#does-any-retail-shot-author-a-non-zero-camera-roll);
 the executing oracle is `crates/engine-core/tests/thread_camera_roll_execution.rs`.
 
 Engine side: `Camera::roll`, the shared op-`0x45` decode `camera_view::cutscene_view`, the

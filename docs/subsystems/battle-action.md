@@ -1523,7 +1523,7 @@ The state byte dispatches through a 256-entry `jr` jump table at `0x801CED44` wi
 
 Every other value (`0x07`, `0x21`-`0x27`, `0x39`-`0x3B`, `0x41`-`0x45`, `0x49`-`0x4F`, `0x53`-`0x59`, `0x5B`-`0x63`, `0x6C`-`0x6D`, `0x72`-`0xFC`, and the low-band gaps) has no case body: its table slot is the shared post-switch epilogue (the knockback / shove settle at `0x801E6814`), a safe no-op. No path in the dumped battle-overlay corpus writes any of them into `ctx[7]`, with one exception: `0x67` is written by case `0x66` and has no body - the terminal hold after a successful escape.
 
-Still open: every `0x51` park captured so far needed an external HP write to set up; the live-caught retail park is the `0x19` class. Both are written up in [`battle-action-exit-gates.md`](battle-action-exit-gates.md), with the settled thread in [`re-settled-threads.md`](../reference/re-settled-threads.md#endless-camera-orbit---the-0x19-attack-approach-park).
+Still open: every `0x51` park captured so far needed an external HP write to set up; the live-caught retail park is the `0x19` class. Both are written up in [`battle-action-exit-gates.md`](battle-action-exit-gates.md), with the settled thread in [`re-settled-threads.md`](../reference/re-settled-threads/battle.md#endless-camera-orbit---the-0x19-attack-approach-park).
 
 `FUN_801E7250` (the `0x51` HP-bar settle check: it freezes the `ctx[+0x6D8]` countdown while any relevant actor's live HP `+0x14C` differs from its displayed value `+0x172`) and `FUN_801E7824` (the `0x68` captured-monster takedown: queued anim from the monster record, HP pair and facing zeroed, retarget to `8`, run-UI banner opened) are both ported in `crates/engine-battle-vm/src/battle_action/`.
 

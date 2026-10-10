@@ -116,7 +116,7 @@ the live per-delta counts; what is stable is the delta and its reading.
 | `+0x5818` | `overlay_0896_*` | Same field-overlay bytes, reached at PROT 0896's over-read base. |
 | `+0xD018` | `overlay_0971` | The same mistake again, read through an over-read tail - see below. |
 | `+0x9818` / `+0xD818` | `overlay_0978_*` | One `0x801C0000` import of 0978's over-read footprint; the delta names the stratum - `+0xD818` = field_battle_intro (0979) bytes, `+0x9818` = **dance** (0980) bytes. |
-| `+0xE818` / `+0xA018` | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key). |
+| `+0xE818` / `+0xA018` | `overlay_0977_*` | Same shape for 0977's footprint: `+0xE818` = 0977's own code, `+0xA018` = the 0979 stratum. Per-dump resolution: [re-settled-threads.md](../reference/re-settled-threads/title-boot-overlays.md#prot-0977--0978-extraction--the-dump-re-key). |
 
 The `+0xE818` mistake is not confined to the field overlay. `overlay_0899_xxx_dat_*`
 dumps take the same delta into the *menu* overlay, so the base error travels with

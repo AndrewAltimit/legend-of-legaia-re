@@ -252,7 +252,7 @@ loaders' `jal` sites, with the `a0` setup decoded, finds 16 call sites.
   of extraction entry **0895**, the boot `init.pak`.
 - Param **1** has no producer, so extraction entry 0896 is unreachable from any
   static loader call
-  ([re-settled-threads.md](../reference/re-settled-threads.md#prot-0896-bat_back_dat-identity)).
+  ([re-settled-threads.md](../reference/re-settled-threads/title-boot-overlays.md#prot-0896-bat_back_dat-identity)).
 
 ### INIT handlers that stage an overlay
 

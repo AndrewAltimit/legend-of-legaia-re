@@ -1796,7 +1796,7 @@ neither census would have to be set by a direct call to the SET helper
   SJIS digits and an `EXIT` label table - flagged by the census
   decode-coherence check in `man_variant_carrier_census_disc.rs`), and a byte
   write-watch across the whole post-Zeto beat sees it never flip
-  ([re-settled-threads.md](../reference/re-settled-threads.md#spine-flag-0x482-drake-mist-wall-writer)).
+  ([re-settled-threads.md](../reference/re-settled-threads/battle.md#spine-flag-0x482-drake-mist-wall-writer)).
   The `map01` `P2[34..36]` C1 block therefore never latches; the engine
   leaves the gate as authored.
 

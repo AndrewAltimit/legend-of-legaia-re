@@ -176,7 +176,7 @@ is byte-identical. The Battle leg follows: a New Game cold boot reaches
 `SceneMode::Battle` for the opening Rim Elm training fight and converges on
 the retail anchors that bracket the transition (the derivation is the
 "Scripted Tetsu encounter → Battle" row in
-[`re-settled-threads.md`](../reference/re-settled-threads.md#scripted-tetsu-encounter--battle-v01-oracle-battle-leg)).
+[`re-settled-threads.md`](../reference/re-settled-threads/battle.md#scripted-tetsu-encounter--battle-v01-oracle-battle-leg)).
 
 ## Critical-path replay: the game-denominated sibling
 
@@ -215,7 +215,7 @@ wall arms (`field_dir_blocked` and `field_actor_dir_blocked`) separately -
 "the player stopped here" and "the engine says every useful direction is a
 wall" are different findings and the bare tile cannot tell them apart. The
 first run's stall is written up as
-[Rim Elm's south gate](../reference/re-settled-threads.md#rim-elms-south-gate);
+[Rim Elm's south gate](../reference/re-settled-threads/field.md#rim-elms-south-gate);
 it found a defect every seated oracle is blind to, and its first two
 diagnoses were both wrong, which is the argument for making a stall
 self-describing rather than a bare failure.

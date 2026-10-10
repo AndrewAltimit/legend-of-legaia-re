@@ -41,6 +41,7 @@ flowchart BT
     FMT["format crates<br/>iso prot lzs tim tmd vab xa seq mes anm art font save"]
     ASSET["asset<br/>+ game-tables, battle-models, overlay-images"]
     EBV["engine-battle-vm"]
+    EMV["engine-motion-vm"]
     EVM["engine-vm"]
     EB["engine-battle"]
     EFISH["engine-fishing"]
@@ -64,7 +65,8 @@ flowchart BT
 
     ASSET --> FMT
     EBV --> ASSET
-    EVM --> EBV
+    EMV --> EBV
+    EVM --> EMV
     EB --> EVM
     EFISH --> EVM
     ESYS --> EVM
@@ -101,7 +103,7 @@ flowchart BT
 
 The shape to read off it:
 
-- **The VM layer is at the bottom of the engine stack.** `engine-battle-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait.
+- **The VM layer is at the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait.
 - **A ring of `World`-free kernel crates sits above it** (`engine-battle`, `engine-fishing`, `engine-minigames`, `engine-system`, `engine-dialog`, `engine-menus`, `engine-field`, `engine-effects`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
 - **`engine-core` is where they meet.** It owns `World` and `SceneHost`, implements the per-VM `Host` traits, and re-exports the kernel crates at their historical `legaia_engine_core::` paths.
 - **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it.
@@ -128,9 +130,12 @@ Internal dependencies as declared in each crate's `Cargo.toml`.
 | `party-swap` | `asset`, `lzs`, `tim`, `tmd`, `bytes` | Battle-model swap kernels. |
 | `texture-replace` | `disc-patch`, `translate`, `asset`, `iso`, `lzs`, `tim` | Image replacement. |
 | `code-hooks` | `disc-patch`, `asset`, `lzs` | MIPS encoders, simulator, hook mods. |
-| `patcher` | the five above + the parser crates | The `legaia-patcher` CLI. |
+| `arts-patch` | `code-hooks`, `disc-patch`, `asset`, `art`, `iso`, `lzs` | Tactical Arts mods: combo randomizer, art power, AP hooks, Super Art list. |
+| `delilas-party` | `party-swap`, `arts-patch`, `code-hooks`, `texture-replace`, `translate`, `disc-patch` | The play-as-Delilas mod. |
+| `patcher` | the seven above + the parser crates | The `legaia-patcher` CLI. |
 | `engine-battle-vm` | `asset`, `art` | Battle action SM, formulas, battle camera, cast ticks. |
-| `engine-vm` | `engine-battle-vm`, `asset`, `art`, `anm` | The VM layer; no GPU or audio deps. |
+| `engine-motion-vm` | `engine-battle-vm`, `asset` | The two per-actor motion VMs. |
+| `engine-vm` | `engine-battle-vm`, `engine-motion-vm`, `asset`, `art`, `anm` | The VM layer; no GPU or audio deps. |
 | `engine-battle` | `engine-vm`, `asset`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
 | `engine-fishing` | `engine-vm`, `asset`, `tmd` | Fishing rules engine. |
 | `engine-minigames` | `engine-fishing`, `engine-vm`, `asset`, `save` | Minigame rules engines. |

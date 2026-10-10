@@ -1276,7 +1276,7 @@ are **libcd**, not libgpu: `FUN_8005C42C` is the LBA to BCD-MSF conversion,
 `gp+0x8E8` / `gp+0x964` pair are load counters, and `_DAT_8007B876 & 1` is
 the read-in-progress flag, not a display mode. Full contract in
 [`boot.md`](boot.md) § the CD-read API; the `FUN_8005C034` identity is in
-[`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+[`re-settled-threads.md`](../reference/re-settled-threads/audio.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
 See `ghidra/scripts/funcs/8003daa8.txt`.
 
 ### The battle backdrop is built by a different mesh builder on each host

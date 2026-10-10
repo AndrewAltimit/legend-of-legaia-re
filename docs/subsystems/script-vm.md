@@ -2037,7 +2037,7 @@ Worked cases for these rules:
 - The "chapter-wide readers" the census reports for `0x32C` (~50 scenes) and
   `0x461` (~30 scenes) are the `s,` / `ta` bigrams in NPC dialogue. Both flags
   are real but scene-local (see
-  [re-settled-threads](../reference/re-settled-threads.md#region-story-flag-gate-families)).
+  [re-settled-threads](../reference/re-settled-threads/field.md#region-story-flag-gate-families)).
 - The Nivora successor gate `0x370` shows the context-window rule cutting
   **both ways inside one record** (`doman` variant `P1[15]`). Three `Sp` =
   `53 70` sites are the "Time**Sp**ace Bomb" dialogue (rejected). The fourth,
