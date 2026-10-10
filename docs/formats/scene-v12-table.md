@@ -194,7 +194,8 @@ Two consequences:
 
 <a id="the-0x800219xx-lead-resolved---fun_80021934-stages-the-lzs-not-the-pch"></a>
 
-The `_DAT_8007B85C` reader near `0x800219xx` is **`FUN_80021934`** (real entry 3 instructions before the `0x80021940` prologue; `see ghidra/scripts/funcs/80021940.txt`): the **scene-transition streaming actor**, a 5-state SM (state at `actor+0x1A`, jump table `0x80010760`) that pre-streams the *next* scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle during the transition fade. `_DAT_8007B85C` never holds the `.PCH`.
+The `_DAT_8007B85C` reader near `0x800219xx` is **`FUN_80021934`** (real entry 3 instructions before the `0x80021940`
+prologue; `see ghidra/scripts/funcs/80021940.txt`): the **scene-transition streaming actor**, a 5-state SM (state at `actor+0x1A`, jump table `0x80010760`) that pre-streams the *next* scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle during the transition fade. `_DAT_8007B85C` never holds the `.PCH`.
 
 - It is **not** a game-mode handler. Its only corpus reference is the handler word of the 24-byte spawn descriptor at `0x80070734` (the system-actor descriptor family at `0x800705FC..0x80070763`, just below the mode table at `0x8007078C`; layout `[+4 0xFFFF0000][+8 handler][+0xC flags]`). `FUN_8001FD44` (the named scene-change packet) spawns it via the pool spawner `FUN_80020DE0` (`actor+0x0C` = handler, `actor+0x1A` zeroed; `see ghidra/scripts/funcs/8001fd44.txt`, `80020de0.txt`). The five `FUN_8001FD44` call sites all live in the field overlay 0897 (field-VM op `0x3F` at `0x801DEB14` plus four controller sites).
 - **Case 0** seeds a 70-frame countdown (`gp+0x710 = 0x46`); cases 1 / 3 poll stream progress (`FUN_8003DE7C(1)`).

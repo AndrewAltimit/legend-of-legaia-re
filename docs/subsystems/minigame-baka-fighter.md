@@ -999,7 +999,8 @@ The port keeps one implementation (`engine-minigames::other_game_overlay::step_s
 The statically extracted Baka Fighter overlay stops at `0x801DC818` and cannot hold any `0x801F....` address. Dumps named `overlay_baka_fighter_801f....txt` are a [dump-corpus artifact](../tooling/dump-corpus-integrity.md): the Ghidra programs are RAM-derived captures in which those addresses belong to resident **field-overlay** code (PROT 0897, base `0x801CE818`). The same byte-identical dumps exist under the dance / fishing / slot-machine / debug-menu names.
 
 - `FUN_801F6D48`, `FUN_801F159C`, `FUN_801F0ADC` and `FUN_801F20B0` byte-match the field overlay at the same VA (classifier image `field(897)`). The `0x801F1138`-`0x801F2200` cluster is instruction-for-instruction the field overlay's, and the field overlay's own two tables name these routines.
-- The minigame-named dumps of `FUN_801F0ADC` are truncated at 46 instructions; `overlay_0897_801f0adc.txt` carries the whole discontiguous 264-instruction body.
+- The minigame-named dumps of `FUN_801F0ADC` are truncated at 46 instructions;
+  `overlay_0897_801f0adc.txt` carries the whole discontiguous 264-instruction body.
 - `field_subsystem_enter.rs` diagnoses the same artifact at `FUN_801F1278`.
 
 `FUN_801F159C` is the family's dispatcher: the resume / close half of the field VM's op-`0x49` submode, whose enter half is `FUN_801F1278` ([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)). The family is ported as `engine-vm::baka_hub_actors`, hosted by `engine-core::field_submode_screen`.
