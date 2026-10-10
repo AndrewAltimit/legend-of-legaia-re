@@ -1,20 +1,41 @@
 # PSX Mode2/2352 disc geometry
 
-The Legend of Legaia disc is a standard PlayStation Mode2/Form1 CD. Sectors are 2352 bytes; only the 2048-byte user-data slice is meaningful for ISO9660 / file content.
+The Legend of Legaia disc is a standard PlayStation CD-ROM XA disc. Every sector on it is 2352 raw bytes, and a `.bin` image is those sectors back to back. Game files (the executable, `PROT.DAT`, `CDNAME.TXT`) sit in **Form 1** sectors, where 2048 bytes are file data and the rest is addressing and error correction. Streamed audio and video (`XA/`, `MOV/`) use **Form 2** sectors, which trade the error-correction bytes for a larger payload. Above the sectors sits an ordinary ISO9660 filesystem, so every file is found by name.
 
-Implementation: `crates/iso/src/raw.rs`.
+Implementation: [`crates/iso`](../../crates/iso/README.md) - `raw.rs` (sector reads), `iso9660.rs` (filesystem walk), `write.rs` (EDC/ECC re-encode), `relayout.rs` (whole-disc relayout).
 
 ## Sector layout
 
-| Bytes | Meaning |
-|---|---|
-| 0..12 | Sync pattern `00 FF FF FF FF FF FF FF FF FF FF 00` |
-| 12..16 | Header (M:S:F address + mode byte) |
-| 16..24 | Subheader (file/channel/submode/coding) |
-| 24..2072 | **User data** (2048 bytes) |
-| 2072..2352 | EDC + ECC error correction |
+A sector's logical block address (LBA) is its index in the image: sector `lba` starts at image byte `lba * 2352`.
 
-The `iso` crate's `RawDisc::read_sector(lba)` returns just the 2048-byte user data slice. `read_user_data(lba, count, buf)` reads a contiguous run.
+```
+Mode 2 Form 1 (data files)                         2352 bytes
++------+--------+-----------+----------------------+-----+---------------+
+| sync | header | subheader |      user data       | EDC |  ECC (P + Q)  |
+|  12  |   4    |     8     |        2048          |  4  |      276      |
++------+--------+-----------+----------------------+-----+---------------+
+0      12       16          24                     2072  2076        2352
+
+Mode 2 Form 2 (XA audio, STR video)
++------+--------+-----------+--------------------------------------+-----+
+| sync | header | subheader |              payload                 | EDC |
+|  12  |   4    |     8     |               2324                   |  4  |
++------+--------+-----------+--------------------------------------+-----+
+0      12       16          24                                     2348
+```
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `0x000` | 12 | sync | `00 FF FF FF FF FF FF FF FF FF FF 00` | Confirmed |
+| `0x00C` | 4 | header | Minute:second:frame address in BCD (`lba + 150` frames), then the mode byte (`2`) | Confirmed |
+| `0x010` | 8 | subheader | `file, channel, submode, coding`, stored twice. Submode bit `0x20` marks Form 2 | Confirmed |
+| `0x018` | 2048 | user data (Form 1) | The bytes ISO9660 and every file parser see | Confirmed |
+| `0x818` | 4 | EDC (Form 1) | Checksum over `0x010..0x818` | Confirmed |
+| `0x81C` | 276 | ECC (Form 1) | P parity at `0x81C`, Q parity at `0x8C8`; computed with the header treated as zero | Confirmed |
+| `0x018` | 2324 | payload (Form 2) | XA sound groups or STR video; no ECC | Confirmed |
+| `0x92C` | 4 | EDC (Form 2) | Checksum over `0x010..0x92C` | Confirmed |
+
+`RawDisc::read_sector(lba)` returns the 2048-byte user-data slice, `read_user_data(lba, count, buf)` reads a contiguous run, and `read_raw_sector(lba)` returns all 2352 bytes (what the XA demuxer needs).
 
 ```rust
 const SECTOR_SIZE: usize = 2352;
@@ -22,16 +43,15 @@ const USER_DATA_OFFSET: usize = 24;
 const USER_DATA_SIZE: usize = 2048;
 ```
 
-# ISO9660 walk
+## ISO9660 walk
 
-Implementation: `crates/iso/src/iso9660.rs`.
+The filesystem is standard ISO9660:
 
-Standard ISO9660:
-- Primary Volume Descriptor at LBA 16.
+- Primary Volume Descriptor (PVD) at LBA 16.
 - Root directory record at PVD offset 156.
-- Each directory record begins with a length byte; records pad to even lengths.
+- Each directory record begins with a length byte; records pad to even lengths. The extent LBA is at record offset `+2` and the byte size at `+10`.
 
-The walker is iterative (not recursive) and yields stable-sorted file paths. The Legend of Legaia (USA) disc produces 45 files:
+The walker is iterative (not recursive) and yields stable-sorted file paths. The USA disc holds 45 files:
 
 ```
 CDNAME.TXT  DMY.DAT  PROT.DAT  SCUS_942.54  SYSTEM.CNF
@@ -39,15 +59,21 @@ MOV/MV1.STR ... MV6.STR
 XA/XA1.XA  ... XA34.XA
 ```
 
-`MOV/MV*.STR` are PSX MDEC video streams - the **Iki** bitstream rather than STRv2; decoder in [`crates/mdec`](../../crates/mdec/README.md).
-`XA/XA*.XA` are XA-ADPCM audio in standard CD-XA Mode 2 Form 2. `crates/xa` demuxes them per `(file_no, ch_no)` straight off the raw 2352-byte sectors; the "non-standard interleave" the earliest tooling saw was Form-1-truncation damage, not a bespoke muxing scheme ([`xa.md`](xa.md#non-standard-interleave---what-it-is-and-isnt)).
-`PROT.DAT` is the main asset archive - see [PROT.DAT TOC](prot.md).
-`SCUS_942.54` is the executable. Reverse-engineering instructions: [`tooling/ghidra.md`](../tooling/ghidra.md).
+| File | What it is | Page |
+|---|---|---|
+| `SCUS_942.54` | The executable | [`tooling/ghidra.md`](../tooling/ghidra.md) |
+| `PROT.DAT` | The main asset archive | [`prot.md`](prot.md) |
+| `DMY.DAT` | Developer fixtures in the same container shape | [`dmy.md`](dmy.md) |
+| `CDNAME.TXT` | Name map for `PROT.DAT` indices | [`cdname.md`](cdname.md) |
+| `MOV/MV*.STR` | MDEC video in the **Iki** bitstream, not STRv2 | [`crates/mdec`](../../crates/mdec/README.md) |
+| `XA/XA*.XA` | XA-ADPCM audio in standard Form 2 sectors, demuxed per `(file_no, ch_no)` | [`xa.md`](xa.md) |
+
+The XA files need the raw 2352-byte sectors: an extraction that keeps only the 2048-byte Form 1 slice truncates every sound sector ([`xa.md`](xa.md#non-standard-interleave---what-it-is-and-isnt)).
 
 ## Full-ISO relayout
 
-Growing a file (specifically `PROT.DAT`) by whole sectors - the operation the
-official PAL discs did at mastering to fit longer localized dialog - requires
+Growing a file (specifically `PROT.DAT`) by whole sectors - what the official PAL
+discs do to fit longer localized dialog - requires
 shifting every file after it and rewriting each on-disc LBA reference. Implemented
 in [`legaia_iso::relayout`](../../crates/iso/src/relayout.rs) (generic ISO9660 +
 ECMA-130; embeds no game bytes).
