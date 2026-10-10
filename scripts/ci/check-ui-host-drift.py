@@ -377,6 +377,9 @@ WEB_PLAY_MENU_OPEN_CLOSE = "crates/web-viewer/src/play_menu/open_close.rs"
 WEB_PLAY_MENU_SUB_SCREEN_DRAWS = "crates/web-viewer/src/play_menu/sub_screen_draws.rs"
 WEB_PLAY_SHOP = "crates/web-viewer/src/play_shop.rs"
 WEB_RUNTIME = "crates/web-viewer/src/runtime.rs"
+WEB_RUNTIME_DISC_LOAD = "crates/web-viewer/src/runtime/disc_load.rs"
+WEB_RUNTIME_FRAME = "crates/web-viewer/src/runtime/frame.rs"
+WEB_RUNTIME_SCENE_SETUP = "crates/web-viewer/src/runtime/scene_setup.rs"
 # The occlusion-fade tunables are the one paired set whose web half is a
 # plain script rather than a wasm crate - the browser play page holds them
 # in its GLSL module. `const NAME = <value>;` parses identically either way,
@@ -692,7 +695,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "returns",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/runtime.rs", "tick_world_effects"),
+            "web": ("crates/web-viewer/src/runtime/frame.rs", "tick_world_effects"),
         },
         "mode": "symbols_all",
         "symbols": ["spawn_pending_move_fx"],
@@ -735,7 +738,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "display. Both entries ask `World::arm_picker_world_map_debug`",
         "sites": {
             "native": ("crates/engine-shell/src/window/run.rs", "cmd_play_window_with_record"),
-            "web": ("crates/web-viewer/src/runtime.rs", "enter_field_core"),
+            "web": ("crates/web-viewer/src/runtime/scene_setup.rs", "enter_field_core"),
         },
         "mode": "symbols_all",
         "symbols": ["arm_picker_world_map_debug"],
@@ -851,7 +854,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "install through `ClutWalkAnim::install`",
         "sites": {
             "native": ("crates/engine-shell/src/window/field_render/terrain.rs", "resolve_ocean_anim"),
-            "web": (WEB_RUNTIME, "rebuild_render_state"),
+            "web": (WEB_RUNTIME_SCENE_SETUP, "rebuild_render_state"),
         },
         "mode": "symbols_all",
         "symbols": ["ClutWalkAnim::install"],
@@ -1216,7 +1219,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "direct-entry sites must run `Camera::reset_for_scene_entry`",
         "sites": {
             "native": (NATIVE_BOOT, "enter_field_live"),
-            "web": (WEB_RUNTIME, "enter_field_core"),
+            "web": (WEB_RUNTIME_SCENE_SETUP, "enter_field_core"),
         },
         "mode": "symbols_all",
         "symbols": ["reset_for_scene_entry"],
@@ -1480,7 +1483,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "crates' boot paths and neither is reached by the other's tests",
         "sites": {
             "native": (NATIVE_BOOT, "enter_field_live"),
-            "web": (WEB_RUNTIME, "load_disc"),
+            "web": (WEB_RUNTIME_DISC_LOAD, "load_disc"),
         },
         "mode": "symbols_all",
         "symbols": ["set_steal_table"],
@@ -3922,7 +3925,7 @@ FRAME_PATHS: dict[str, dict] = {
         "splice": True,
     },
     "web": {
-        "path": WEB_RUNTIME,
+        "path": WEB_RUNTIME_FRAME,
         # The page's per-animation-frame entry. Its `return`s hand control
         # back to the JS that reads the draw lists, so they are the same
         # shape as the native `continue`s.
