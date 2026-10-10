@@ -1300,9 +1300,25 @@ cutscene face-at or rotate, a talk snap - so a remaining miss is a leg the
 engine wrote differently or not at all. The phase gate
 samples on the first frame the engine's record reaches retail's PC, which is
 not always the frame retail is on: a record that sits on an op waiting for a
-turn to land compares the engine's turn mid-ramp against retail's landed one
-(`new_game_cutscene_intro_a`'s flat 8, held at `B3 08 0A` behind a 40-frame
-`B8 08 86 28`).
+turn to land compares the engine's turn mid-ramp against retail's landed one.
+`new_game_cutscene_intro_a` is held on `opdeene` `P2[18]` `+0x6F6`
+(`B3 05 0A`, the wait on flat 5's compass walk `C1 05 00 C4`) behind flat 8's
+40-vsync `B8 08 86 28`, and the capture itself says how long retail has sat
+there: flat 5's walk cursor `+0x54` reads `54` of its `128`, with the turn
+long landed. The gate aligns the two on the shot instead - the record's
+4800-vsync camera glide, `939` vsyncs in on both sides - and on that clock the
+engine's record reaches the walk `925` vsyncs after the glide starts where
+retail's reached it after `885`, so the engine is sampled `15` vsyncs into
+the turn. The forty vsyncs are the engine's record running long, and the
+state brackets where: flat 8's looping clip `4` (bound by `A2 08 04` at
+`+0x58E`, cursor `+0x68 = 144`) puts that bind about `401` vsyncs after the
+glide starts, a dozen *later* than the engine's `388` - the `0x4A` waits
+rounding up to retail's three-vsync frame. Retail therefore makes up some
+fifty vsyncs between `+0x58E` and `+0x6EE`, where the only time that is not a
+`0x4A` wait is the four end-latch spins on flat 5 (`AD 05 08` after clips
+`8`, `9`, `8` reversed and `7`; `30`, `60`, `29` and `60` engine ticks by
+`FUN_800204F8`'s step and wrap over the scene bank's frame counts). Which of
+them retail clears sooner is not pinned.
 
 ## The image channel
 
@@ -1486,7 +1502,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the image child lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
+| retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
@@ -1689,12 +1705,13 @@ behind:
 The engine follows the same rule (`ZoneFollow`'s gate in
 `Camera::zone_follow_tick`), but the seat is an arrival and its snap pins the
 focus on the seat. So the corpus reads retail's focus pair whenever it is not
-`-player` (`RetailObs::seat_focus`) and hands it to the image child as
-`LEGAIA_SEAT_FOCUS`, which the snap lands after its clamp; the ease then
-leaves it until the player moves, and the frame looks where retail's looked.
-The headless seed does not take it, so the `camera` channel's focus part
-keeps reporting the miss - it is history the seat cannot replay, not a
-compose the engine got wrong.
+`-player` (`RetailObs::seat_focus`) and seats it with the position: the
+headless seed arms it on the zone camera (`ZoneFollow::seat_focus_after_snap`)
+and the image child takes it as `LEGAIA_SEAT_FOCUS`, and in both the snap
+lands it after its clamp. The ease then leaves it until the player moves, so
+the `camera` channel and the frame both look where retail's looked. It is
+history the seat cannot replay, exactly as the camera parameter block is -
+what the channel still scores is the pose the engine composes around it.
 
 The same gate leaves the **rest** of the pose half-eased.
 `town01_npc16_dialogue_first_page` was poked to `(3456, 3072)` and stepped

@@ -867,6 +867,13 @@ pub fn run_engine_with(
             Some(block) => session.camera.zone.arm_arrival_over(block),
             None => session.camera.zone.arm_arrival(),
         }
+        // A focus retail left behind (a poked or script-carried player the
+        // follow ease never ran for) is walk history like the block: the
+        // snap lands it, as the image child's `LEGAIA_SEAT_FOCUS` does, and
+        // the engine's own ease leaves it until the player moves.
+        if let Some(focus) = retail.seat_focus {
+            session.camera.zone.seat_focus_after_snap(focus);
+        }
     }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
