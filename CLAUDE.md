@@ -112,7 +112,7 @@ How the runtime engine works.
 
 | Doc | Covers |
 |---|---|
-| [`engine.md`](docs/subsystems/engine.md) | From-scratch Rust port architecture and boundaries. |
+| [`engine.md`](docs/subsystems/engine.md) | The port as it is: what works, crate layering, the hosts on one engine, the fidelity-vs-enhancement model with current defaults, the legal boundary. |
 | [`boot.md`](docs/subsystems/boot.md) | Boot sequence; PROT TOC into `0x801C70F0`. |
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
 | [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). No culling of the port's own: what drops geometry is retail's (visible-tile crop at retail framing, actor cull, per-prim rejects); the clip volume holds the whole scene (`SCENE_FAR`). |
@@ -135,7 +135,7 @@ How the runtime engine works.
 | [`move-vm-overlay-ext.md`](docs/subsystems/move-vm-overlay-ext.md) | The move VM's `0x2F` `OVERLAY_EXT` opcode and its 61 overlay-resident sub-opcodes (`FUN_801D362C`, dispatch JT `0x801CE868`). Split out of `move-vm.md`. |
 | [`motion-vm.md`](docs/subsystems/motion-vm.md) | The two per-actor motion VMs: `FUN_8003774C` (pursue / patrol / face-target) and `FUN_80038158` (scripted motion + story-flag writes, bytecode in MAN tail-section 1). |
 | [`vm-inventory.md`](docs/subsystems/vm-inventory.md) | Census of every VM-shaped subsystem (a bytecode dispatcher or a per-entity state-byte `switch`): what is decoded, ported, and reached by a live caller. "Five VMs" is an orientation, not the full list. |
-| [`cutscene.md`](docs/subsystems/cutscene.md) | STR game modes 26/27; MDEC decoder algorithm (VLC → IDCT → BT.601 YCbCr→RGBA); XA audio sync; `play-str` loop. |
+| [`cutscene.md`](docs/subsystems/cutscene.md) | STR movies (game modes 26/27, Iki-bitstream MDEC decode, XA sync, `play-str`), the in-engine scripted opening / ending timelines on the field VM, and the field-to-battle transition. |
 | [`battle.md`](docs/subsystems/battle.md) | Battle scene loader; actor pointer table; the two boss-stage modules (PROT 0968 / 0969). |
 | [`battle-action.md`](docs/subsystems/battle-action.md) | Battle action state machine at `FUN_801E295C`. |
 | [`battle-formulas.md`](docs/subsystems/battle-formulas.md) | Damage / MP-cost / accuracy / escape / RNG kernels. A physical hit is *Offense Value - Defense Value*, with equipment folded in at swing time. Mirror `engine-vm::battle_formulas`. |
