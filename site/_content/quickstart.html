@@ -14,14 +14,17 @@
     <span class="num">4</span><span class="layer">Mod your copy</span><span class="desc">Randomize, translate, or hand-edit a scratch copy and share a PPF patch.</span><span class="crate"><a href="#mod">below</a></span>
     <span class="num">5</span><span class="layer">Dig into the code</span><span class="desc">Stand up Ghidra in Docker for static analysis of the executable and overlays.</span><span class="crate"><a href="#ghidra">below</a></span>
   </div>
-  <p class="hint">One rule shapes everything: <strong>the project ships no Sony-owned bytes.</strong> Every tool
-  works on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of the USA release,
-  <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is.</p>
+  <aside class="callout">
+    <p class="callout-title">Bring your own disc</p>
+    <p>One rule shapes everything: <strong>the project ships no Sony-owned bytes.</strong> Every tool
+    works on a disc image <em>you</em> supply - a raw Mode 2/2352 <code>.bin</code> dump of the USA release,
+    <code>SCUS-94254</code>. A <code>.cue</code> sheet is accepted anywhere a disc image is.</p>
+  </aside>
 </section>
 
 <section class="doc-section" id="no-install">
   <h2>0 · No install required</h2>
-  <p>If you only want to explore, stay in the browser. The <a href="viewer.html">asset viewer</a>,
+  <p>If you only want to play or explore, stay in the browser. The <a href="viewer.html">asset viewer</a>,
   <a href="media.html">media browser</a>, <a href="play.html">play page</a> and
   <a href="tooling/rom-patcher.html">ROM patcher</a> are the same Rust code compiled to WebAssembly;
   they read your disc image locally and never upload it. The steps below are for the native toolchain.</p>
@@ -84,7 +87,7 @@ cargo test --workspace --release</code></pre>
   <p>Nothing needs extracting first: every subcommand accepts the disc directly with <code>--disc</code>.</p>
   <h3>Boot the engine</h3>
 <pre><code>./legaia-engine play-window --disc "/path/to/Legend of Legaia (USA).bin"</code></pre>
-  <p>This opens Rim Elm in a 960&times;720 window with field rendering, music, NPC scripts, dialog and the gameplay loop: walking rolls the scene's own random encounters, a battle opens the command menu, and a win returns you to the field with XP, gold and drops. Arrows are the D-pad; <kbd>Z</kbd> is Cross and <kbd>Esc</kbd> quits. The full key table, save/load, the scene list and the enhancement toggles are in the <a href="guides/playing-and-viewing.html">playing-and-viewing guide</a>.</p>
+  <p>This opens Rim Elm in a 960&times;720 window with field rendering, music, NPC scripts, dialog and the gameplay loop: walking rolls the scene's own random encounters, a battle opens the command menu, and a win returns you to the field with XP, gold and drops. Arrows are the D-pad; <kbd>Z</kbd> is Cross and <kbd>Esc</kbd> quits. Add <code>--boot-ui</code> to start at the title screen and its New Game / save-select flow instead, or <code>--scene &lt;name&gt;</code> to enter any other scene directly. The full key table, save/load, the scene list and the enhancement toggles are in the <a href="guides/playing-and-viewing.html">playing-and-viewing guide</a>.</p>
   <h3>Open the desktop asset viewer</h3>
   <p><code>asset-viewer</code> has a subcommand per asset class - <code>prot</code> (archive browser), <code>tim</code>, <code>tmd</code>, <code>stage</code>, <code>vab</code>, <code>seq</code>, <code>field</code> (scene runner), <code>dialog</code>, <code>battle-scene</code>, <code>world</code>. The <a href="viewer.html">browser build</a> covers most of the same ground.</p>
 <pre><code>./asset-viewer prot extracted/PROT.DAT

@@ -67,7 +67,7 @@
   --done:          #46c98d;
   --mostly:        #77b851;
   --partial:       #c19a4d;
-  --open:          #b56b6b;
+  --open:          #c57878;
   --planned:       #8a93a1;
 
   /* Surfaces that used to be literals, tokenised so the light theme can
@@ -1312,7 +1312,7 @@ pre:hover .copy-btn { opacity: 1; }
 .card-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .card-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .card-grid.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.card-grid.compact { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 0.6rem; }
+.card-grid.compact { grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)); gap: 0.6rem; }
 @media (max-width: 1000px) {
   .card-grid.cols-3, .card-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1466,7 +1466,9 @@ dd.status-open    { color: var(--open); }
   border-radius: 3px;
   font-weight: 600;
 }
-.layers-diagram .layer-title { font-weight: 600; font-size: 1.05rem; color: var(--text); }
+.layers-diagram .layer-title { font-weight: 600; font-size: 1.05rem; color: var(--text-bright); }
+.layers-diagram a.layer-title::after { content: " \2192"; color: var(--text-dim); font-weight: 400; }
+.layers-diagram a.layer-title:hover { color: var(--accent); text-decoration: none; }
 .layers-diagram .layer-body  { padding-left: 2.5rem; }
 .layers-diagram .layer-crate {
   font-family: var(--font-mono);
