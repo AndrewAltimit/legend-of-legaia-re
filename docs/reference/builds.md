@@ -1,6 +1,23 @@
 # Builds + region data
 
-External research from public unused-content wikis, GameHacking.org, and GameFAQs save-state guides - distilled into the technical bits useful for cross-region testing and runtime validation.
+The known builds of *Legend of Legaia* and what differs between them, plus the
+build-level facts that are handy when testing against a running game: the debug
+flags and their pad chords, the developer menus, and the RAM cells that
+published cheat codes poke. The project's anchor build is the North American
+retail disc, `SCUS-94254`; every address on this page is that build's unless a
+column says otherwise.
+
+Sources are public cheat-code databases and save-state guides, cross-checked
+against the disassembly where a row cites a function or an instruction address.
+`PROT` is the disc's main archive (`PROT.DAT`); an *overlay* is a code image the
+game loads from it into RAM at runtime.
+
+| If you want | Go to |
+|---|---|
+| Which discs exist, and how their executables differ | [Known builds](#known-builds) |
+| How to switch on the debug menu and what it offers | [Debug flags](#debug-flags), [Debug input bindings](#debug-input-bindings), [Developer menus](#developer-menus) |
+| What a `CDNAME.TXT` block label covers | [CDNAME subsystem semantics](#cdname-subsystem-semantics) |
+| Cheat-pinned RAM cells | [Dispatch RAM addresses](#dispatch-ram-addresses-gamehackingorg), [Mini-game state regions](#mini-game-state-regions), [Character struct](#character-struct) |
 
 ## Region enum
 
@@ -10,7 +27,7 @@ External research from public unused-content wikis, GameHacking.org, and GameFAQ
 |---|---|---|
 | `Region::Na` | `SCUS-94254` | NA retail; anchor build for this project. Default. |
 | `Region::Jp` | `SCPS-10059`, `SCPS-91246` | JP retail + "PlayStation The Best" reissue. RAM addresses shifted by `+0x1B90` relative to NA. |
-| `Region::Eu` | `SCES-01752`, `SCES-01944–47` | EU EN + FR/DE/IT/ES localisations. Same binary layout as NA; MES tables swapped. |
+| `Region::Eu` | `SCES-01752`, `SCES-01944–47` | EU EN + FR/DE/IT/ES localisations. Same `PROT.DAT` layout as NA with the text swapped; the executables differ in battle spoils and stat boost (see [Known builds](#known-builds)). No address shift is applied. |
 
 `Region::from_product_code(code)` maps a disc ID prefix to the right variant.  
 `Region::translate_addr(na_addr)` applies the per-region shift to an NA-anchor address.
@@ -68,7 +85,7 @@ Only the *byte* `0x8007B98F` has no accessor of its own - it is reached as the h
 byte of the word at `0x8007B98C`. Published GameShark codes additionally prove all
 three are runtime-writable by external POKE.
 
-The 0x1B90-byte build shift between JP and NA addresses is consistent with same-data, different-binary-layout. Implies the JP and NA executables have the same RAM-resident layout, just relocated.
+The `0x1B90`-byte shift between the JP and NA addresses of the debug-menu byte is what `Region::translate_addr` applies: the two executables are read as sharing one RAM-resident layout, relocated. That rests on the published cheat pair, not on a JP disassembly.
 
 ## Debug input bindings
 
@@ -168,26 +185,32 @@ executable.
 
 ## CDNAME subsystem semantics
 
-| Block range | Likely contents |
-|---|---|
-| 0..864 | Stage / field entries (towns, dungeons, world maps, cutscenes) - keyed by map name |
-| 865..868 | `battle_data` - battle subsystem core |
-| 869 | `monster_data` |
-| 870..871 | `sound_data` |
-| 872..875 | `befect_data` (battle effects) |
-| 876 | `player_data` |
-| 877..890 | `sound_data2` |
-| 891..892 | `level_up` (XP / leveling tables) |
-| 893 | `monster_se` (monster sound effects) |
-| 894 | `card_data` (menu / inventory UI) |
-| 895..896 | `bat_back_dat` (battle backgrounds) |
-| 897..971 | `xxx_dat` - mini-game cluster |
-| 972..973 | `move_program_no` |
-| 974..979 | `other_game` |
-| 980..989 | `monster_test` (debug fixture) |
-| 990..1071 | `music_test` / `music_01` (sequence + bank data) |
-| 1072..1194 | `vab_01` (VAB instrument banks) |
-| 1195..1232 | `other1`/4/5/6/7 - minigame fields |
+The block labels of `CDNAME.TXT` past the per-scene blocks. The numbers are the
+file's own `#define` values, which are raw in-RAM TOC indices: the extraction
+entry (the `NNNN` in a `PROT entry NNNN` citation) is the define **minus 2**
+([`cdname.md`](../formats/cdname.md#numbering-space)). A label is a hint, not a
+verdict - several blocks hold something other than what their name suggests.
+
+| `#define` range | Label | Extraction entries | What the entries hold |
+|---|---|---|---|
+| 0..864 | per-scene names | - | Stage / field blocks (towns, dungeons, world maps, cutscenes), one block per scene name |
+| 865..868 | `battle_data` | 863..866 | The four player battle files `PLAYER1..4` ([`battle-data-pack.md`](../formats/battle-data-pack.md)) |
+| 869 | `monster_data` | 867 | Monster archive: stat records, meshes, animations |
+| 870..871 | `sound_data` | 868..869 | Sound-driver data |
+| 872..875 | `befect_data` | 870..873 | Battle effects `etim` / `etmd` / `vdf` / `efect` ([`effect.md`](../formats/effect.md)) |
+| 876 | `player_data` | 874 | Player character pack ([`character-mesh.md`](../formats/character-mesh.md)) |
+| 877..890 | `sound_data2` | 875..888 | Sound-driver data |
+| 891..892 | `level_up` | 889..890 | Level-up block; entry 890 is the title TIM |
+| 893 | `monster_se` | 891 | Monster sound effects |
+| 894 | `card_data` | 892 | Memory-card screen kanji font |
+| 895..896 | `bat_back_dat` | 893..894 | `summon.dat` / `readef.DAT` battle side-band ([`summon-readef.md`](../formats/summon-readef.md)) |
+| 897..971 | `xxx_dat` | 895..969 | Code overlays: boot `init.pak` (895), the field / battle / menu images (897..899), the slot-B band (900..966) and the battle stage modules (967..969) |
+| 972..973 | `move_program_no` | 970..971 | STR / MDEC movie player (970) and the debug-menu overlay (971) |
+| 974..979 | `other_game` | 972..977 | Mini-game overlays: fishing (972), dev modules (973 / 974), slot machine (975), Baka Fighter (976), Muscle Dome hub (977) |
+| 980..989 | `monster_test` | 978..987 | More overlays, among them FIELD BACK READ (978), dance (980) and the world-map top view (981) |
+| 990..1071 | `music_test` / `music_01` | 988..1069 | BGM sequences + banks ([`music-tracks.md`](music-tracks.md)) |
+| 1072..1194 | `vab_01` | 1070..1192 | VAB instrument banks |
+| 1195..1232 | `other1` / `4` / `5` / `6` / `7` | 1193..1230 | Mini-game and contest assets (e.g. the ringside stills at 1221 / 1222) |
 
 ## Dispatch RAM addresses (GameHacking.org)
 
@@ -197,7 +220,7 @@ PSX RAM (KSEG0, `0x80000000` base). Useful as runtime-tracing anchors.
 |---|---|
 | `0x80084540` | Current map ID (writable; "Map Modifier" / "View Credits" use this) |
 | `0x8007B6F4` | "Small maps" debug mode flag |
-| `0x8007B7C0` | **Previous-frame button mask** - what the `D0` / `E0` conditional codes compare against. `FUN_8001822C` loads it, XORs it against the fresh mask into the edge words `0x8007B7C4` / `0x8007B874`, then stores the fresh mask back (`0x80018510..0x80018548`). Not a dispatch selector; the "debug-dispatch trigger" reading is superseded. |
+| `0x8007B7C0` | **Previous-frame button mask** - what the `D0` / `E0` conditional codes compare against. `FUN_8001822C` loads it, XORs it against the fresh mask into the edge words `0x8007B7C4` / `0x8007B874`, then stores the fresh mask back (`0x80018510..0x80018548`). Not a dispatch selector. |
 | `0x8007B450` | Debug-dispatch parameter slot - sub-action within the trigger's mode |
 | `0x800422F4` | **Not a RAM cell** - a `bne r2, r0, +2` inside SCUS's inventory-add clamp (`slti r2,r2,100` / `addiu r3,99` / `sb`). The "99 quantity" cheat writes `0001`, shortening the displacement so the clamp always runs. See [`cheats.md`](cheats.md). |
 
@@ -307,7 +330,7 @@ Character-name discrepancies between JP and NA scripts:
 - Noa (NA) = Noah (JP)
 - Tetsu (NA) = Todd (JP)
 
-Will matter when extracting MES tables and comparing across regions.
+They matter when comparing MES text across regions.
 
 ## Unused content
 
