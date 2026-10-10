@@ -1,7 +1,7 @@
 # legaia-engine-audio
 
-`cpal`-backed audio output for the engine reimplementation track. Two
-layers:
+The port's audio: every note of music, sound effect and voice clip both play
+hosts produce comes through this crate. Two layers:
 
 1. A from-scratch PSX **SPU** model - 24 voices, 512 KB SPU RAM, ADSR
    envelopes, libspu-shaped transfer engine.

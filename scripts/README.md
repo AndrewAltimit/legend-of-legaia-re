@@ -6,8 +6,7 @@ capture. This is a **map** of the layout - each script carries its own usage
 header (`--help` or a top-of-file comment block).
 
 A map that omits things is worse than no map, because a reader treats absence
-as evidence: this page once described itself as the layout while leaving out a
-hard pre-commit gate. Every gate and every committed data artifact is listed
+as evidence. Every gate and every committed data artifact is listed
 below. One-off probes under `asset-investigation/` are grouped by subject
 rather than enumerated, and that is the only place a name may be missing.
 

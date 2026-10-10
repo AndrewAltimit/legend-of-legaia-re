@@ -74,11 +74,9 @@ skipped N prim(s) (M/N kept)
   missing texture-page data for K prim(s) across tpages [t0, t1, ...]
 ```
 
-Primitive-section walks are also lenient: a single malformed group near
-the end of an object's prim section no longer hides every valid group
-that came before it, so multi-object TMDs render every part of the
-model that walks cleanly instead of cutting off at the first error
-boundary.
+Primitive-section walks are lenient: a malformed group near the end of an
+object's prim section does not hide the valid groups before it, so a
+multi-object TMD renders every part of the model that walks cleanly.
 
 For offline diagnostics the same targeted-upload + per-prim verdict
 logic is also exposed by the `tmd` CLI: `tmd prims <input> --vram-dir
@@ -90,8 +88,8 @@ PNG so collisions are obvious without firing up the GUI.
 ### `stage` - wireframe stage geometry
 
 Renders the 12-byte-prefix + 8-byte u16 quad records identified by
-`legaia_asset::stage_geom`, using the `Lines` pipeline added to
-`legaia-engine-render` for this view. `stage-scan` (in the `asset` CLI)
+`legaia_asset::stage_geom`, through `legaia-engine-render`'s `Lines`
+pipeline. `stage-scan` (in the `asset` CLI)
 finds candidate entries; this viewer renders one. OBJ export is
 supported via `asset stage` proper.
 

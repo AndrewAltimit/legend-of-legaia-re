@@ -50,9 +50,9 @@ with the patcher too, since they drive hooks through `apply`.
 
 ## Visibility
 
-`mips` and `mips_sim` were crate-private in the patcher. They are `pub` here
-because their callers now sit on both sides of a crate boundary; the patcher
-re-exports them `pub(crate)`, so its own public surface is unchanged.
+`mips` and `mips_sim` are `pub` here because their callers sit on both sides
+of the crate boundary. The patcher re-exports them `pub(crate)`, so they are
+not part of its public surface.
 
 ## See also
 
