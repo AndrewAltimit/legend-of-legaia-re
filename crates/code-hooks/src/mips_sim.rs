@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-pub(crate) struct Cpu {
+pub struct Cpu {
     pub r: [u32; 32],
     pub pc: u32,
     /// The multiply / divide result pair.
@@ -13,6 +13,12 @@ pub(crate) struct Cpu {
     pub lo: u32,
     pub mem: HashMap<u32, u8>,
     pub steps: usize,
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Cpu {

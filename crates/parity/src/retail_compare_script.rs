@@ -31,6 +31,8 @@ const ACTOR_LIST_MAX: usize = 512;
 /// `FUN_8003BC08`, the field actor tick that routes an engaged context to
 /// the script runner.
 const FIELD_ACTOR_TICK: u32 = 0x8003_BC08;
+/// `FUN_801DA51C`, the scene system script's tick.
+const SYSTEM_SCRIPT_TICK: u32 = 0x801D_A51C;
 /// The engaged bit.
 const ENGAGED: u32 = 0x100;
 /// `FUN_801DC0BC`, the cutscene camera mover's tick: progress `+0x9C`
@@ -74,6 +76,9 @@ pub struct RetailScripts {
     /// ([`crate::retail_compare_battle::display_lag_vsyncs`]): the field
     /// double-buffers the same way the battle does.
     pub display_lag: u16,
+    /// The scene system script's PC (`+0x9E` of the node ticked by
+    /// `FUN_801DA51C`): where the entry script's last pass parked.
+    pub system_pc: Option<usize>,
 }
 
 fn in_ram(p: u32) -> bool {
@@ -121,6 +126,10 @@ impl RetailScripts {
             }
             let base = game_anchors::u32_at(ram, node + 0x90);
             if !in_ram(base) {
+                continue;
+            }
+            if tick == SYSTEM_SCRIPT_TICK && out.system_pc.is_none() {
+                out.system_pc = usize::try_from(game_anchors::i16_at(ram, node + 0x9E)).ok();
                 continue;
             }
             let head = bytes_at(ram, base, RECORD_HEAD_LEN);
@@ -272,6 +281,15 @@ pub struct ScriptGate {
     /// runs, so a park retail holds on that tail is never a PC the engine
     /// holds.
     pub retire_watch: std::cell::Cell<(bool, bool)>,
+    /// Where retail's scene system script is parked
+    /// ([`RetailScripts::system_pc`]). The system SM runs no pass while a
+    /// record holds the player, so this is the last pass it ran before the
+    /// gate's record took over - and the pass after which the seed starts a
+    /// record the engine is not running ([`Self::drive_resume`]).
+    pub system_pc: Option<usize>,
+    /// Set once [`Self::drive_resume`] has started the record ahead of
+    /// [`SCRIPT_RESUME_TICK`].
+    pub resumed_early: std::cell::Cell<bool>,
 }
 
 impl ScriptGate {
@@ -285,6 +303,8 @@ impl ScriptGate {
             op: s.op,
             glide_left: scripts.glide_left,
             retire_watch: std::cell::Cell::new((false, false)),
+            system_pc: scripts.system_pc,
+            resumed_early: std::cell::Cell::new(false),
         })
     }
 
@@ -305,13 +325,14 @@ impl ScriptGate {
         Some(g)
     }
 
-    /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>]` -
-    /// `LEGAIA_SCRIPT_GATE` for `play-window`.
+    /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>][:s<system pc>]`
+    /// - `LEGAIA_SCRIPT_GATE` for `play-window`.
     pub fn to_env(&self) -> String {
         let hex: String = self.head.iter().map(|b| format!("{b:02x}")).collect();
         let glide = self.glide_left.map(|g| format!(":{g}")).unwrap_or_default();
+        let system = self.system_pc.map(|p| format!(":s{p}")).unwrap_or_default();
         format!(
-            "{}:{hex}:{}:{}:{}{glide}",
+            "{}:{hex}:{}:{}:{}{glide}{system}",
             self.flat_index, self.pc, self.wait, self.op
         )
     }
@@ -324,10 +345,14 @@ impl ScriptGate {
         let pc = it.next()?.parse().ok()?;
         let wait = it.next()?.parse().ok()?;
         let op = it.next()?.parse().ok()?;
-        let glide_left = match it.next() {
-            Some(g) => Some(g.parse().ok()?),
-            None => None,
-        };
+        let mut glide_left = None;
+        let mut system_pc = None;
+        for tail in it {
+            match tail.strip_prefix('s') {
+                Some(p) => system_pc = Some(p.parse().ok()?),
+                None => glide_left = Some(tail.parse().ok()?),
+            }
+        }
         if hex.is_empty() || hex.len() % 2 != 0 {
             return None;
         }
@@ -343,7 +368,47 @@ impl ScriptGate {
             op,
             glide_left,
             retire_watch: std::cell::Cell::new((false, false)),
+            system_pc,
+            resumed_early: std::cell::Cell::new(false),
         })
+    }
+
+    /// The per-tick resume drive both seeds run: start the gate's record
+    /// when no engine context runs it ([`resume_record`]), at
+    /// [`SCRIPT_RESUME_TICK`] - or earlier, on the first tick the engine's
+    /// system script stands on the PC retail's is parked on.
+    ///
+    /// The early leg is what keeps the entry script's history retail's. The
+    /// system SM `FUN_801DA51C` runs no pass while a record holds the
+    /// player, so a record that took the player straight after the install
+    /// pass leaves the system context parked there for the whole cutscene:
+    /// `town01`'s opening record holds it on `+0x9F` and `map01`'s on
+    /// `+0x13F`, the PC after each install's last `0x21`, and neither scene's
+    /// per-frame body has run once. A seed that waited out the settle window
+    /// first ran that body with a free player at the seat, and it raised the
+    /// region selector there (`0x19D` / `0x19E` in `town01`, `0x528` in
+    /// `map01`) and picked the clear colour - bits and a backdrop the retail
+    /// state does not hold. A park inside the per-frame loop
+    /// ([`loops_back_to`]) keeps the settle-tick resume: retail's body has
+    /// run there, and the engine first stands on that PC the tick before
+    /// its own first pass. Returns `true` on the tick a context was
+    /// installed.
+    pub fn drive_resume(&self, host: &mut legaia_engine_core::scene::SceneHost, tick: u64) -> bool {
+        if self.resumed_early.get() {
+            return false;
+        }
+        if tick == SCRIPT_RESUME_TICK {
+            return resume_record(host, self);
+        }
+        let early = tick < SCRIPT_RESUME_TICK
+            && self.system_pc == Some(host.world.field_pc)
+            && !loops_back_to(&host.world.field_bytecode, host.world.field_pc)
+            && self.context(&host.world).is_none();
+        if early && resume_record(host, self) {
+            self.resumed_early.set(true);
+            return true;
+        }
+        false
     }
 
     /// A dialog box with its page typed and the prompt glyph on: a page
@@ -598,6 +663,28 @@ impl ScriptGate {
             None => all.into_iter().find(|c| c.head == self.head),
         }
     }
+}
+
+/// Whether a script parked on `pc` can come back to it: some jump decoded in
+/// straight-line order after `pc` targets `pc` or an earlier byte. A system
+/// script's per-frame loop closes that way (`map01`'s `26 84 FF` at `+0x1BD`
+/// back to the `0x21` at `+0x142`), while the park after its install pass
+/// (`+0x13F`) has only forward jumps ahead of it.
+pub fn loops_back_to(bytecode: &[u8], pc: usize) -> bool {
+    use legaia_asset::field_disasm::{InsnInfo, decode};
+    let mut at = pc;
+    while let Ok(i) = decode(bytecode, at) {
+        if i.size == 0 {
+            break;
+        }
+        if let InsnInfo::JmpRel { target, .. } = i.info
+            && target <= pc
+        {
+            return true;
+        }
+        at += i.size;
+    }
+    false
 }
 
 /// Ticks after the seed at which a record the engine is not running is
@@ -899,6 +986,16 @@ mod tests {
     }
 
     #[test]
+    fn a_loop_park_is_told_from_an_install_park() {
+        // 21 | 26 03 00 (-> +5) | 21 | 25 | 26 FD FF (-> +4)
+        let body = [0x21, 0x26, 0x03, 0x00, 0x21, 0x25, 0x26, 0xFD, 0xFF];
+        // Parked after the install `21`: every jump ahead lands past it.
+        assert!(!loops_back_to(&body, 1));
+        // Parked after the loop's `21`: the tail jump comes back.
+        assert!(loops_back_to(&body, 5));
+    }
+
+    #[test]
     fn a_script_gate_round_trips_through_its_env_form() {
         let g = ScriptGate {
             flat_index: 13,
@@ -908,6 +1005,8 @@ mod tests {
             op: 0x4A,
             glide_left: None,
             retire_watch: std::cell::Cell::new((false, false)),
+            system_pc: Some(159),
+            resumed_early: std::cell::Cell::new(false),
         };
         assert_eq!(ScriptGate::from_env(&g.to_env()), Some(g.clone()));
         let g = ScriptGate {

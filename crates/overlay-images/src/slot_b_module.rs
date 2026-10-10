@@ -709,7 +709,7 @@ fn is_record_padding(bytes: &[u8], p: usize) -> bool {
 }
 
 /// `true` when `sel` is a value `FUN_80021B04` dispatches on.
-pub(crate) fn dispatchable_model_sel(sel: i16) -> bool {
+pub fn dispatchable_model_sel(sel: i16) -> bool {
     sel == crate::summon_overlay::MODEL_SEL_TRANSFORM_NODE
         || (0..LIBRARY_MESH_SEL_MAX).contains(&sel)
         || sel == RENDER_NODE_MODE_A

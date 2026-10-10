@@ -128,6 +128,9 @@ pub struct FrameClock {
     /// [`Self::play_time_seconds`] - the high-water mark
     /// [`crate::world::World::tick_play_clock`] deltas against.
     pub play_clock_high_water: u32,
+    /// The previous [`crate::world::World::tick_play_clock`] reading, which a
+    /// stalled host's gap is measured against.
+    pub play_clock_last: Option<f64>,
     /// A replay's retail battle frame step and the action-SM state it takes
     /// effect in (`World::seed_battle_frame_step`): `(step, state)`. Not a
     /// retail field - retail measures its step per frame
@@ -156,6 +159,7 @@ impl FrameClock {
             display_frames: 0,
             play_clock_origin: None,
             play_clock_high_water: 0,
+            play_clock_last: None,
             battle_frame_step_seed: None,
         }
     }

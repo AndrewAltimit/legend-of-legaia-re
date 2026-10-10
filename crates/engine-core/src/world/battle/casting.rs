@@ -20,7 +20,7 @@ use super::*;
 ///
 /// Which spells land on the bypass wrapper is a census over every
 /// capture-class module, kept with the disc patcher that retargets those
-/// thirteen `jal` words (`crates/patcher/src/jewel_fix.rs`, whose module header
+/// thirteen `jal` words (`crates/code-hooks/src/jewel_fix.rs`, whose module header
 /// carries the per-module table): Guilty Cross, Bloody Horns, Terio Punch,
 /// Bull Charge, Blazing Slash, Megaton Press, Plasma Strike. Spells that share
 /// one of those modules but whose dispatched tick either carries no damage call

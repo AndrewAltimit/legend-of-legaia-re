@@ -4,7 +4,10 @@ The engine's menu, title and memory-card front end, minus `World`: the item
 and equipment catalogs, the inventory-use and spell-menu sessions, the SCUS
 list-row model every pause-menu list window shares, the menu overlay's widget
 choreography and tables, the title and boot screens, the card write flow and
-`bu` I/O layer, and the field dialog pager's presentation kernels. Free of
+`bu` I/O layer. The field dialog pager and the spawned script contexts'
+state sit one crate down, in
+[`legaia-engine-dialog`](../engine-dialog/README.md), and are re-exported
+here at their old paths. Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
@@ -80,16 +83,12 @@ link into a dependent crate.
   (the menu overlay's sub-screen dispatcher and its routed-id table), and the
   two pages it reaches without `World`: `status_screen` and `list_order`; see
   [`docs/subsystems/save-screen.md`](../../docs/subsystems/save-screen.md).
-- **Dialog presentation** - `dialog` (the pager panel `OwnedDialogPanel`
-  over a scene MES message or an inline segment, and `SceneMes`, the scene's
-  resolved MES container), `dialog_window` (the pager's row window and
-  scroll), `dialog_pacing` (typewriter reveal), `dialog_picker_slide` (how a
-  picker enters) and `text_balloon` (the `4C E1` one-line balloon).
-- **Spawned script contexts** - `inline_dialogue` (the resumable state of an
-  actor's inline interaction script run through the field VM) and
-  `cutscene_timeline` (the spawned partition-2 record context, the modal
-  cutscene timeline). The stepping of both stays on engine-core's `World`,
-  which holds the field host borrow; these modules hold the state.
+- **Dialog presentation + spawned script contexts** - `dialog`,
+  `dialog_window`, `dialog_pacing`, `dialog_picker_slide`, `text_balloon`,
+  `inline_dialogue` and `cutscene_timeline` are re-exports of
+  [`legaia-engine-dialog`](../engine-dialog/README.md), which holds the
+  pager and the context state. The stepping of both contexts stays on
+  engine-core's `World`, which holds the field host borrow.
 - **Inn** - `inn` (the rest confirmation and HP / MP restore session; see
   [`docs/subsystems/inn.md`](../../docs/subsystems/inn.md)).
 

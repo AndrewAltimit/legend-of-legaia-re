@@ -454,6 +454,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn summon_stager_tick(&mut self) -> bool {
         self.world.summon_stager_tick()
     }
+    /// The homing slots the move's effect-script terminator seeded.
+    ///
+    /// REF: FUN_801E09F8
+    fn effect_child_slots(&self) -> ([u8; 4], [u8; 4]) {
+        self.world.homing_child_slots()
+    }
     /// `FUN_801DC0A0(actor, case)`: the cast-effect driver's camera script.
     /// The case's shot goes to the battle camera when the magic band's
     /// `0x2A..=0x2D` arms made the call (they arm no `FUN_801D5854` case),

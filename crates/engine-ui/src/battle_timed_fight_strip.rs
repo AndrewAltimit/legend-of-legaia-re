@@ -108,7 +108,12 @@ pub fn timed_fight_strip_chrome_draws(
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
-    dialog_window_chrome_draws_for(rects, TIMED_FIGHT_STRIP_RECT, stage_origin, stage_scale)
+    crate::battle_hud_chrome::text_actor_frame_draws_for(
+        rects,
+        TIMED_FIGHT_STRIP_RECT,
+        stage_origin,
+        stage_scale,
+    )
 }
 
 #[cfg(test)]

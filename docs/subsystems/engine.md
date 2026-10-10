@@ -37,6 +37,7 @@ The port draws a hard line between the retail-faithful mode and everything layer
 | `World::npcs.animate` (`--no-live-npcs` disables) | **on** in `play-window`, the browser play page and the headless `BootSession` | Publishes the villagers' ambient tail-section-1 wander ([motion-vm](motion-vm.md#from-scratch-port--wiring)); off holds them on their seats. A placement's own `0x4C 0x51` ops are seats, never a patrol ([motion-vm](motion-vm.md#field-npc-walking)). Scripted walks run regardless, and no setting steps a placement's script outside its engaged window. |
 | `World::locomotion.run_button_mask` | **retail + one alternate** | Which pad buttons invert the Field Move option. Defaults to retail's `Cross \| R1` (the config word `0x800846DC` = `0x48`, which retail seeds once and never exposes) plus **Square**, the port's historical binding, kept so it does not break under anyone's hands. A host wanting the retail set exactly assigns `FIELD_RUN_BUTTON_MASK_RETAIL`. Which *key* produces each button is the binding table (`legaia-engine config set --binding W=R1`), not this mask. See [field-locomotion](field-locomotion.md#base-step-selection-walk--run). |
 | `World::toggles.reduce_flashing` (`OptionsState::reduce_flashing`) | **on** | Photosensitivity guard: slew-limits the applied luminance channels of the ambient CLUT-cell palette cyclers ([field-ambient-fx](field-ambient-fx.md#photosensitivity-guard)). Retail's koin3 dance floor strobes bright/black at 15 Hz - far past the 3-flashes-per-second guideline - so the safe presentation is the default; off restores the retail-exact palette steps. Presentation-only: the move-VM simulation is identical either way. |
+| `OptionsState::bgm_volume` / `sfx_volume` (`legaia-options.toml` keys; no in-game row) | `8` / `8` = unity | Engine-only music and sound-effect levels, `0..=10` linear with `8` the retail mix and `10` a 1.25x boost. Each SPU voice is tagged at key-on with the bus of whoever keyed it - a sequencer note is BGM, a cue is SFX - and scaled before the dry sum and the reverb send; XA voice and FMV audio ride neither bus. Both play hosts apply it, and at the default the mix is bit-identical to the single-bus one ([audio](audio.md)). |
 | `World::toggles.entry_pulse_enabled` (`--no-entry-pulse` disables) | on | Scene-entry VDF pulse: a rolling vertex-morph envelope over the packs it is authored for (jou's flesh ground, Rim Elm's shoreline; every other scene keeps retail's still geometry; [field-ambient-fx](field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs)). Retail-armed morph scenes are unaffected either way. |
 | `OptionsState::retail_view_window` -> `World::toggles.view_window_crop` | **on**, effective at retail framing only | Retail's visible-tile crop: the field ground and decoration cells are drawn only inside the camera's tile window clipped to the walk region ([`field_view_window`](../../crates/engine-core/src/field_view_window.rs), [encounter.md](../formats/encounter.md#the-scratchpad-window-0x1f8003e8eb)). Both hosts apply it while the camera is at `CameraDistance::Retail` with the drag / tilt / zoom knobs at identity and `F3` off, so the retail-distance frames the comparison corpus takes are cropped. Any wider or re-aimed view draws the map whole - see [below](#the-visible-tile-crop-follows-the-framing). |
 | `Renderer::set_psx_mode` (`LEGAIA_PSX_RENDER=1`; "PSX rasterisation" checkbox on the browser play page) | off | Strict-PS1 rasterisation artefacts - see below. |
@@ -89,7 +90,8 @@ prot         → iso (conceptual)
 lzs          ← (none)
 game-tables  → bytes  (SCUS / overlay static tables)
 battle-models → game-tables, lzs, prot, tim, tmd, bytes  (battle model formats + glTF)
-asset        → game-tables, battle-models, lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
+overlay-images → lzs, bytes  (code-overlay images: detection, static extraction map, slot-B layout, resident tables)
+asset        → game-tables, battle-models, overlay-images, lzs, prot, tim, tmd, vab, mes, anm, mdec, bytes
 tmd          → tim
 tim          ← (none)
 xa           → iso
@@ -102,16 +104,19 @@ disc-patch   → iso, prot, lzs, asset, xa  (DiscPatcher, PPF, space ledger)
 translate    → disc-patch, asset, art, font, lzs, prot  (language packs)
 party-swap   → asset, lzs, tim, tmd, bytes  (battle-model swap kernels)
 texture-replace → disc-patch, translate, asset, iso, lzs, tim  (image replacement)
-patcher      → disc-patch, translate, party-swap, texture-replace + the parser crates
+code-hooks   → disc-patch, asset, lzs  (MIPS encoders + simulator, injection arenas, self-contained hook mods)
+patcher      → disc-patch, translate, party-swap, texture-replace, code-hooks + the parser crates
 
 engine-battle-vm → asset, art               (battle action SM, formulas, battle camera, cast ticks; below engine-vm)
 engine-vm     → engine-battle-vm, asset, prot, art, anm  (VM layer; no GPU / audio deps)
 engine-battle → engine-vm, asset, art, anm, save, tim, tmd, bytes  (World-free battle kernels; no GPU / audio deps)
-engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no World)
+engine-fishing → engine-vm, asset, tmd  (the fishing rules engine; no World)
+engine-minigames → engine-fishing, engine-vm, asset, save    (minigame rules engines; no World)
 engine-minigame-scenes → engine-minigames, engine-menus, engine-battle, engine-field, engine-system, engine-vm, asset, tim, tmd  (the minigames' 3D scene surfaces; no World)
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
 engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system: input, fades, streaming, sound state)
-engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim, serde  (World-free menu / title / card front end)
+engine-dialog → engine-vm, asset, font, mes  (World-free dialog pager + inline-dialogue / cutscene-timeline state)
+engine-menus  → engine-dialog, engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, save, tim, serde  (World-free menu / title / card front end)
 engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, bytes, mes, tmd, serde  (World-free field kernels: actor programs, camera params, cue routers)
 engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-minigame-scenes, engine-vm + the parser crates
 render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)

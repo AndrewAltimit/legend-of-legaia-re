@@ -403,7 +403,10 @@ started from:
   seat does not cross - is installed from its first opcode at the settle
   tick, ungated, as the modal timeline (a concurrent context when another
   timeline holds that slot). The record replays its own staging: its
-  `MoveTo`s, camera beats and pokes run from the top. The system flags
+  `MoveTo`s, camera beats and pokes run from the top. It is installed
+  earlier when retail's system script says the record took the player
+  before the scene's per-frame body ever ran
+  ([below](#a-record-that-took-the-player-at-the-install-pass)). The system flags
   the record set in the straight-line run that ends on the gate PC (from
   its last jump, picker or flag test) are cleared first: retail executed
   that run to stand where it was captured, so its latches are already in
@@ -465,6 +468,35 @@ started from:
 `play-window` takes the same gate as `LEGAIA_SCRIPT_GATE`, with the same
 resume and paging, so the image channel frames the phase the state
 channels scored; it is handed only when the headless run met the gate.
+
+### A record that took the player at the install pass
+
+The scene system script's context (tick `FUN_801DA51C`) is on the same actor
+lists, and its PC `+0x9E` is where the entry script's last pass parked. The
+system SM runs no pass while a record holds the player
+([script-vm](../subsystems/script-vm.md#engagement-and-the-system-script)),
+so in a capture inside a cutscene that PC is the pass the record interrupted.
+The opening's records interrupt the first one: `town01`'s system context sits
+on `+0x9F` through `rim_elm_zoom_intro`, `vahn_walks_out` and
+`name_input_ui`, and `map01`'s on `+0x13F` in `s2_rimelm_town01` - in both the
+PC right after the install slice's last `0x21`, with the per-frame loop
+(`town01` from `+0xA3`, `map01` from `+0x143`) never entered.
+
+A resume at the settle tick runs that loop sixty times first, with a free
+player at the seat, and the loop's first pass selects a region there: it
+raised `0x19D` / `0x19E` in `town01` and `0x528` in `map01`, bits no retail
+state of the opening holds, and picked the cave-brown clear colour under
+`rim_elm_zoom_intro`. So the seed carries the system PC on the gate
+(`ScriptGate::system_pc`, the `:s<pc>` tail of `LEGAIA_SCRIPT_GATE`) and
+starts the record on the first tick the engine's own system script stands
+on it (`ScriptGate::drive_resume`), before the next pass. The record's
+latches are then left to the replay rather than raised at the settle tick.
+
+Only an install park is taken early. A park inside the loop - one a later
+jump comes back to, `retail_compare_script::loops_back_to` - is a PC the
+engine first stands on the tick *before* its own first pass, and retail's
+body has run there: `rikuroa_post_caruban` and the `garmel` captures hold
+the selector bit that pass raises, and keep the settle-tick resume.
 
 What the replay exposes is the engine's own record execution, and two
 shapes it has shown are worth knowing:
@@ -740,9 +772,14 @@ seed failure.
 A state the manifest tags with a `resident_patch` was made on a patched disc
 and replays that build's executable; its `enemy_hp` / `battle_party` details
 say so, since what the patch writes into a combatant is not retail behaviour.
-The three `shiny_refactor_gimard_*` states read `enemy_hp` `0.5` for exactly
-that reason: their monster's maxima are the shiny-Seru boost's `x135/100`
-(`133` over the disc's `99`, `27` over `20`).
+One patch effect is recognised and left unscored rather than flagged: under
+a `shiny-seru` resident patch, a monster maximum that reads exactly the
+boost's `x135/100` (truncated) over the engine's disc value is the patch's
+write at battle init, and is listed in the detail like a probe's write
+below. The three `shiny_refactor_gimard_*` states hold `133` over the disc's
+`99` HP and `27` over `20` MP; scored, they read `enemy_hp` `0.5` for a
+difference no retail disc produces. Any other difference on those states
+still scores.
 
 A state whose capture probe wrote into a combatant **after** battle init names
 those fields in the manifest's `ram_injected` (`p0.mp_max`), and the battle
@@ -1156,11 +1193,18 @@ entry picks its track by which duel-return marker is up (`0x477` /
 `0x478` -> `4096`, `0x479` -> `2028`, `0x47A` -> stop), clears it and spawns
 the post-duel record; each duel record raises its own marker immediately
 before its `3E FF`. A battle capture therefore holds the marker of the fight
-in progress, and the seed's entry consumes it as if returning from that
-fight: `nivora_duel_mid_blazing_slash` (Gi duel, row `31`, marker `0x479`)
-reads `2028` where retail's word is the `4096` an earlier return parked.
-The duel record itself starts no track (it selects sound set `4`, which the
-replay does carry), so there is no start to replay. See
+in progress. The marker is one of the fight's
+[entry latches](#a-pre-fight-flag-runs-the-entrys-post-battle-branch), so
+the seed's entry does not see it and takes the no-marker arm (`2054`),
+where retail's word is the `4096` the **previous** duel's return parked:
+`nivora_duel_pre_plasma_strike` (marker `0x478`) and
+`nivora_duel_mid_blazing_slash` (Gi duel, row `31`, marker `0x479`) both
+read `2054` against `4096`. Landing with the marker up had the entry return
+from the wrong fight - `0x478` picks `4096` too, which scored the second
+duel by coincidence, and `0x479` picks `2028`. The word is the return
+before, which no flag in the capture names. The duel record itself starts
+no track (it selects sound set `4`, which the replay does carry), so there
+is no start to replay. See
 [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track).
 
 ## Menu states
@@ -1209,7 +1253,7 @@ measured channels.
 | `scene` | 1 when the engine landed in retail's scene |
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
-| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
+| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
@@ -1268,9 +1312,25 @@ cutscene face-at or rotate, a talk snap - so a remaining miss is a leg the
 engine wrote differently or not at all. The phase gate
 samples on the first frame the engine's record reaches retail's PC, which is
 not always the frame retail is on: a record that sits on an op waiting for a
-turn to land compares the engine's turn mid-ramp against retail's landed one
-(`new_game_cutscene_intro_a`'s flat 8, held at `B3 08 0A` behind a 40-frame
-`B8 08 86 28`).
+turn to land compares the engine's turn mid-ramp against retail's landed one.
+`new_game_cutscene_intro_a` is held on `opdeene` `P2[18]` `+0x6F6`
+(`B3 05 0A`, the wait on flat 5's compass walk `C1 05 00 C4`) behind flat 8's
+40-vsync `B8 08 86 28`, and the capture itself says how long retail has sat
+there: flat 5's walk cursor `+0x54` reads `54` of its `128`, with the turn
+long landed. The gate aligns the two on the shot instead - the record's
+4800-vsync camera glide, `939` vsyncs in on both sides - and on that clock the
+engine's record reaches the walk `925` vsyncs after the glide starts where
+retail's reached it after `885`, so the engine is sampled `15` vsyncs into
+the turn. The forty vsyncs are the engine's record running long, and the
+state brackets where: flat 8's looping clip `4` (bound by `A2 08 04` at
+`+0x58E`, cursor `+0x68 = 144`) puts that bind about `401` vsyncs after the
+glide starts, a dozen *later* than the engine's `388` - the `0x4A` waits
+rounding up to retail's three-vsync frame. Retail therefore makes up some
+fifty vsyncs between `+0x58E` and `+0x6EE`, where the only time that is not a
+`0x4A` wait is the four end-latch spins on flat 5 (`AD 05 08` after clips
+`8`, `9`, `8` reversed and `7`; `30`, `60`, `29` and `60` engine ticks by
+`FUN_800204F8`'s step and wrap over the scene bank's frame counts). Which of
+them retail clears sooner is not pinned.
 
 ## The image channel
 
@@ -1376,6 +1436,17 @@ it, the child also writes that family's triangles one per line
 (`<path>.tris`: draw index, screen corners, clip `w`, mesh-space corners), the per-packet level
 to match against the display list's corners when a family's count parts.
 
+### The frames either side of a gated capture
+
+A gated child captures one frame, and a draw the retail frame shows may be
+missing from it or only early or late. The child logs the tick it captured on
+(`capture at tick N`), and `LEGAIA_DIAG_CAPTURE_TICK=<tick>` beside a kept
+`cmd.sh` takes the frame at that world tick instead of on the gate, with
+every seed and drive still running. A strip of such frames around `N` is what
+showed Tail Fire's hit rays forty ticks ahead of the gate - the fold on the
+wrong edge, not a missing effect
+([battle-action](../subsystems/battle-action.md#a-monsters-cast-lands-from-its-homing-flight)).
+
 ## The ratchet
 
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
@@ -1390,11 +1461,21 @@ outside a `--filter`, or one the run could not seed, keeps its baselined
 channels, and a run without a display keeps each state's baselined image
 score. A state the run did seed otherwise takes the run's channel set, so a
 channel that no longer applies to it (a field state re-classed `world_map`
-has no `footing`) leaves the file rather than failing every later check as
+has no `facing`) leaves the file rather than failing every later check as
 `not measured`. A baselined state missing from the local library is
 skipped (backups are per-machine), and the image channel is skipped unless
 the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
 display).
+
+A state the manifest tags with a `resident_patch` was made on a patched
+disc, so it replays a modified executable and its RAM and frame are not
+retail's. Those states stay in the corpus and in the baseline file - several
+are the only capture of their scene - but they sit outside both the headline
+and the ratchet: the channel means and the mean state score are taken over
+the retail-disc states, the patched-disc states get a channel table of their
+own in the report, and a drop on one prints as `[patched-drift]` for review
+instead of failing the check. A difference on a patched-disc state is a lead
+to confirm against a retail capture, not a measured engine defect.
 
 The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
 extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
@@ -1440,6 +1521,19 @@ question; a camera channel far off on a state whose label names a cutscene
 is script progress; a `bgm` miss on an arrival state is capture timing
 ([below](#arrival-states-are-captured-before-the-town-runs)).
 
+Two environment switches open up a battle state's `camera` channel:
+
+| Switch | Adds |
+|---|---|
+| `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
+| `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+
+The first says which component of a framing misses its endpoint and which
+input put it there - a heading, a body pair, a yaw counter; the second
+replays how the combatants got where they stand. A run seeded from an
+[undrifted](#battle-states) capture names the ground it was seeded on in
+its drift, and the capture's own pairs in the trace.
+
 ## Divergence shapes
 
 Shapes the corpus separates, each with what it indicates:
@@ -1454,7 +1548,7 @@ Shapes the corpus separates, each with what it indicates:
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
-| player seated exactly, angles / `H` / eye exact, camera focus thousands of units away (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the image child lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
+| retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
 | a town label over the overworld's `H`, word `2000` and fog gate | a door caught before the town's field init ran; scored as the overworld `0x80084540` names ([below](#arrival-states-are-captured-before-the-town-runs)) |
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | a residue of about a dozen frames of the credits walk against the camera glide ([below](#ending-vignettes-are-mid-script)) |
@@ -1501,31 +1595,56 @@ The same pass picks the frame's clear colour. `town01`'s entry loop sets
 tile box `[0, 0 .. 44, 55]` and black elsewhere
 ([script-vm-menuctrl](../subsystems/script-vm-menuctrl.md#0x4c-nibble-1-sub-3---the-field-clear-colour)).
 `rim_elm_zoom_intro` holds black with the player at `(3456, 5632)`, inside
-that box, because the opening record carried the player there after the
-loop's last pass; the seed's pass at the seat (the one that raises `0x19D`)
-picks brown, and the brown shows through the semi-transparent sea. It is the
-selector's seeding limit, on the clear colour.
+that box, because the opening record took the player before the loop ran a
+pass at all. A seed that ran the loop at the seat picked brown, which showed
+through the semi-transparent sea; the opening states now start their record
+at the install pass
+([above](#a-record-that-took-the-player-at-the-install-pass)), and the
+selector bit and the colour stay down as retail's do.
 
 ### A pre-fight flag runs the entry's post-battle branch
 
-A scripted fight's pending flag is still up in a capture of the fight, and
-the seed enters the scene with it. In `town01` and `town0b` that flag is
-what the entry script tests for the *return* from the fight: `town01`'s
-`P1[0]` init at `+0x91` tests `0x23C`, clears it and runs `B1 2E 08`,
-engaging Tetsu's placement for the post-fight scene; `town0b`'s per-frame
-loop does the same for `0x30C` .. `0x30E` (`B1 2B 08` .. `B1 2D 08` at
-`+0x417..+0x43B`). Retail never ran that branch before the fight - it raised
-the flag in the talk that staged it. In the seed the branch clears the flag
-(the `-sys 0x23C` / `-sys 0x30C` / `-sys 0x30E` bit) and the engaged placement
-holds the system loop as retail's does on a real return
+A scripted fight's pending flag is still up in a capture of the fight. In
+`town01` and `town0b` that flag is what the entry script tests for the
+*return* from the fight: `town01`'s `P1[0]` init at `+0x91` tests `0x23C`,
+clears it and runs `B1 2E 08`, engaging Tetsu's placement for the post-fight
+scene; `town0b`'s per-frame loop does the same for `0x30C` .. `0x30E`
+(`B1 2B 08` .. `B1 2D 08` at `+0x417..+0x43B`). Retail never ran that branch
+before the fight - it raised the flag in the talk that staged it, after the
+entry had run. A seed that lands the save with the flag up runs the branch:
+it clears the flag, and the engaged placement holds the system loop as
+retail's does on a real return
 ([script-vm](../subsystems/script-vm.md)), so no later pass re-selects the
-region band the init cleared (`-sys 0x19D` in `town01`, `-sys 0x528` in
-`town0b`), and the field camera the fight inherits its entry yaw from stays
-where the seat left it. Retail's own return agrees:
-`v0_1_post_battle_tetsu_town` holds `0x19D` down. The Tetsu and Rim Elm
-Gimard battle states (`s5_tetsu_battle`, `v0_1_battle_*`,
-`rim_elm_gimard_*`, `shiny_refactor_gimard_*`) carry the two bits as a
-seeding limit.
+region band the init cleared (`0x19D` in `town01`, `0x528` in `town0b`), and
+the field camera the fight inherits its entry yaw from stays where the seat
+left it. Retail's own return agrees: `v0_1_post_battle_tetsu_town` holds
+`0x19D` down.
+
+The seed therefore holds the fight's **entry latches** back from the
+landing and raises them once the field has settled, where retail's record
+raised them (`retail_compare_battle::entry_latches`,
+`RetailBattle::entry_latches`; the image child lands the same save and
+raises them after its own settle, `LEGAIA_BATTLE_LATCHES`). The latches are
+read off the disc, not chosen: every system-flag `SET` inside the
+battle-entry window of the `3E FF <row>` that names the capture's formation
+row (`man_field_scripts::walk_battle_entry_arms`), where the capture's save
+holds the flag. `town01`'s sparring record reads `50 19 · 50 00 · 52 3C ·
+3E FF 04`, so the five Tetsu states (`s5_tetsu_battle`, `v0_1_battle_*`)
+land without `0x23C` and carry both bits through the seed. The comparand
+keeps the latches.
+
+What the window does not reach stays a seeding limit. `town0b`'s Gimard
+fight is row `2` and its pending flags are raised further from the entry op
+than the window, so `rim_elm_gimard_*` and `shiny_refactor_gimard_*` still
+read `-sys 0x30C` / `0x30E` and `-sys 0x528`. A capture whose formation
+cell matches no registered row has no row to key the arms on.
+
+The boss states made from a debug start (`cort_*`, `zora_glare_petrify_*`:
+eleven system flags set, the same stale entry operand in two different
+scenes) hold selector bit `0x19F` in both scenes. No pass of either scene's
+loop selected it - the fights were entered without the scenes' own
+arrivals - so the engine's settle, which does run a pass, reads `0x19D`.
+That is capture history, not a selector the seed could seat.
 
 ### A flag the entry raises on every load
 
@@ -1655,12 +1774,13 @@ behind:
 The engine follows the same rule (`ZoneFollow`'s gate in
 `Camera::zone_follow_tick`), but the seat is an arrival and its snap pins the
 focus on the seat. So the corpus reads retail's focus pair whenever it is not
-`-player` (`RetailObs::seat_focus`) and hands it to the image child as
-`LEGAIA_SEAT_FOCUS`, which the snap lands after its clamp; the ease then
-leaves it until the player moves, and the frame looks where retail's looked.
-The headless seed does not take it, so the `camera` channel's focus part
-keeps reporting the miss - it is history the seat cannot replay, not a
-compose the engine got wrong.
+`-player` (`RetailObs::seat_focus`) and seats it with the position: the
+headless seed arms it on the zone camera (`ZoneFollow::seat_focus_after_snap`)
+and the image child takes it as `LEGAIA_SEAT_FOCUS`, and in both the snap
+lands it after its clamp. The ease then leaves it until the player moves, so
+the `camera` channel and the frame both look where retail's looked. It is
+history the seat cannot replay, exactly as the camera parameter block is -
+what the channel still scores is the pose the engine composes around it.
 
 The same gate leaves the **rest** of the pose half-eased.
 `town01_npc16_dialogue_first_page` was poked to `(3456, 3072)` and stepped
@@ -1689,12 +1809,14 @@ overworld ([above](#the-corpus)), where the word, the gate and the camera
 agree; scored under the label, every one of those channels had compared the
 overworld against the town.
 
-One bit still differs on `s2_rimelm_town01`: the engine holds flag `0x528`,
-retail none of `0x526..0x531`. That band is the entry script's own: each
-pass of `map01`'s per-frame body clears `0x527..0x52E` and sets `0x528` while
-the player stands in the map, so the engine's freshly entered `map01` raises
-it, while retail's state is a door already under way with the band down. It
-is the same capture timing as the word and the gate, on the flag bank.
+`s2_rimelm_town01` also holds none of `0x526..0x531`, the band `map01`'s
+per-frame body owns (each pass clears `0x527..0x52E` and sets `0x528` while
+the player stands in the map). Its install slice clears the band
+(`+0x36..+0x44`) and the opening's walk record takes the player before the
+body runs once - the system context is parked on `+0x13F` - so the band stays
+down for the whole walk to the door. The seed starts that record at the
+install pass for the same reason
+([above](#a-record-that-took-the-player-at-the-install-pass)).
 
 ### A held track
 
@@ -1879,7 +2001,26 @@ keeps the engine's own value, so a wrong framing - a yaw base, a focus on the
 wrong body - still reads as one; what the alignment removes is the start,
 which is the previous framing's leftover (an earlier action's side-and-tilt
 coin, the orbit's clock at the commit) and is recorded nowhere in the state.
-It is the in-action twin of [the orbit alignment](#battle-states). Replayed
+It is the in-action twin of [the orbit alignment](#battle-states).
+
+The yaw counter `ctx[+0x6DA]` is aligned the same way, as the clock it is.
+The action SM's prologue adds `max(1, 4 * frame_step / 3)` to it every pass
+(`0x801E29E4..0x801E2A24`), from whichever rung of the per-action ladder the
+seed or the swing-clip commit stored
+([battle](../subsystems/battle.md#battle-camera-exact)), so its low bits at
+a capture count the passes retail spent getting there - its frame-step
+history and its CD waits, neither of which a replay shares. While the drive
+holds the capture's own state, a counter within `0x3F` of retail's reads
+retail's (`BattleDrive::steer`, on the headless seed and the image child
+alike). The rungs stand `0x80` apart at the nearest (`0x200` / `0x280`), so
+a wrong rung still reads as one. The capture band is left out - its drive
+gates on the counter instead. `delilas_gi_spirit_artifact` held its Spirit
+clip five passes later than retail's (`27` over the seed's `0x800` against
+`22`), which left its yaw endpoint five units off, outside the origin
+alignment's tolerance, and the channel read the start of the ease instead
+of the framing.
+
+Replayed
 casts are left out: their close-ups and module shots measured worse aligned
 (`flute_spikefish_midcast` `image` `.910` to `.828`,
 `shiny_refactor_gimard_precast` `.904` to `.861`, with the camera channel
@@ -1901,13 +2042,18 @@ and the seed itself; the seed stores the pin over its roll after the draws
 (the `rand()` stream is unchanged).
 
 The cases that led here, each a start no word records, and what still
-separates them where an endpoint is a few units off the engine's
-(`battle_noa_miracle_art_combo`'s yaw `1778` against `1771` stays unaligned):
+separates them where an endpoint is off the engine's
+(`battle_noa_miracle_art_combo`'s yaw endpoint stays unaligned: it carries
+Noa's heading, and the strike band turns that onto the target's body pair
+every pass, so it moves with the phase of both clips):
 
 - **No clock under the Far option.** `battle_noa_miracle_art_combo` is
   captured in a component strike `0x1E` with Battle Camera Far
-  (`0x800846C0 = 2`). Its endpoint matches the engine's case-7 target (yaw
-  `1778` against `1771`, TR z `4915` exact), but the yaw counter
+  (`0x800846C0 = 2`). Its endpoint is the engine's case-7 target to within the two
+  combatants' pose phase (TR z `4915` exact; the focus midpoint `33` units
+  and the yaw `31` apart, both read off body pairs - at the capture's
+  accumulator the engine's swing clip stands about two frames further into
+  its lunge than retail's body pair shows), but the yaw counter
   `ctx[+0x6DA]` is frozen at the Attack branch's `0x200` under Far, and the
   accumulator `ctx[+0x87C]` counts only from the component clip's commit. The
   queue itself is no obstacle - the player entered it through the arts input,
@@ -1996,6 +2142,19 @@ separates them where an endpoint is a few units off the engine's
   the midpoint with a target on the far side of the party. The rounds are
   the drive's own; nothing in the capture recovers the history that put
   retail's counter on monster slot 4.
+- **A numeral that sank instead of rising.** Retail's floating value rises
+  `3/2` of its ring timer above the struck actor's display trio
+  (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project
+  it through their draw matrix, which ends in the Y flip that cancels the
+  models' own, and the anchor went in unflipped: the run fell through the
+  floor and left by the bottom of the stage, so no engine frame of a landed
+  hit carried the figure retail's shows at row `32`
+  (`battle_numerals::popup_rect`). Its size was off the same way round: the
+  square's half-extent is half the ring timer in **view** units, added after
+  the camera matrix has scaled the centre, and it went through the 4x stage
+  scale with the anchor - at the 24-px cap from its fourth frame, where
+  `battle_melee_hit_spark`'s two packet arenas draw one `15` at `18` and
+  then `22` px.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,
@@ -2028,6 +2187,33 @@ separates them where an endpoint is a few units off the engine's
   camera reads exact on both sides; what moves the frame is Tetsu's idle
   clip, sampled at whatever phase of its loop that elapsed time lands on.
   The capture holds no word that pins the idle phase.
+- **An approach that ends a step later.** `player_steal_skeleton_pre` is
+  captured in `0x1E` with Vahn on `(-195, -214)`, where his approach ended,
+  and the seed stands him there. The range law
+  ([battle-action](../subsystems/battle-action.md)) measures his live pair
+  against the skeleton's **body** pair and, for a size class of `3` or
+  more, against `size << 4` - `352` for the skeleton's `22` (both sides
+  read the same class). On the capture's own pose the metric reads `361`
+  (Vahn's `+43` reach offset over the `318` to body `(20, 20)`): out of
+  range, in a state only an in-range check enters. Retail's check passed
+  with the two at least nine units nearer - on another pose of the
+  skeleton, or before the separation pass moved them - and the capture
+  does not say which; nothing re-tests the pair inside the loop. The engine's check runs against the idle pose the seed stands
+  the skeleton in (`359`), fails, and its walk clip takes one step, `42`
+  units, before the strike loop. From the nearer ground the strike band's
+  heading is `463` against `484` and the case-7 yaw endpoint twenty units
+  off, outside the origin alignment, so the channel scores the ease's
+  start.
+- **A pose two frames on.** `battle_noa_miracle_art_combo`'s case-7 focus
+  is the midpoint of two body pairs, and at the capture's accumulator
+  (`72`, nine vsyncs after the swing clip's commit) retail's Noa reads body
+  `(318, -63)`, the pose the engine's clip shows between its sixth and
+  seventh tick; the engine's ninth has lunged on to `(252, -67)`. Retail's
+  pair is the one its draw stored the pass before
+  ([battle-action](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
+  so the SM reads a pose one pass old, where the port refreshes the pair
+  from the newest pose at the head of each tick. One capture does not fix
+  the lag to a frame, so the port's refresh stands.
 - **An idle loop restarts the accumulator.**
   `player_steal_skeleton_banner` is saved in `0x20` with Vahn back on his
   idle clip, the skeleton dead and the steal caption up. A looping clip's

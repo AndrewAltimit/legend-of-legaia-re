@@ -14,7 +14,9 @@ as `translation`, and the battle-model swap kernels are
 the image-replacement modules `texture`, `texture_palettes`,
 `battle_texture`, `monster_texture` and `save_icon` live in
 [`legaia-texture-replace`](../texture-replace/README.md), re-exported at
-their old paths):
+their old paths; the MIPS encoders, the injection arenas and the
+self-contained code-hook mods live in
+[`legaia-code-hooks`](../code-hooks/README.md), likewise re-exported):
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,

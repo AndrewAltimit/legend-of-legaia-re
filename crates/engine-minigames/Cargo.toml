@@ -10,6 +10,6 @@ path = "src/lib.rs"
 
 [dependencies]
 legaia-asset.workspace = true
+legaia-engine-fishing.workspace = true
 legaia-engine-vm.workspace = true
 legaia-save.workspace = true
-legaia-tmd.workspace = true

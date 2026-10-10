@@ -29,6 +29,34 @@ fn update_attack_facing<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8, ta
     }
 }
 
+/// The strike band's per-pass facing recompute (`0x1E` at
+/// `0x801E36F0..0x801E371C`, `0x1F` at `0x801E3AD0..0x801E3AFC`): the same
+/// `(bearing + 0x800) & 0xFFF` store as the approach states', but measured
+/// to the target's **body pair** `+0x3C` / `+0x40` (`lh a0,0x40(s8)` /
+/// `lh a1,0x3c(s8)`) rather than its live pair. It follows the framing call
+/// and precedes the `+0x1DC` bit-1 test, so it runs on every pass of both
+/// states: the attacker keeps turning onto a target its own hits (and the
+/// separation pass) move, and the heading the post-strike framings subtract
+/// is the live one.
+// PORT: FUN_801E295C (`0x801E36F0..0x801E371C` / `0x801E3AD0..0x801E3AFC`, the strike band's facing store)
+fn update_strike_facing<H: BattleActionHost + ?Sized>(host: &mut H, slot: u8) {
+    let Some(target) = host.actor(slot).map(|a| a.active_target) else {
+        return;
+    };
+    // `s8` is loaded only for a table slot (`sltiu v0,t2,0x8` at
+    // `0x801E29B8`); a group code leaves the port's heading alone.
+    if target >= 8 {
+        return;
+    }
+    let (Some(a), Some(t)) = (host.actor_position(slot), host.actor_anchor(target)) else {
+        return;
+    };
+    let facing = bearing_12bit_approx(t.1, t.0, a.1, a.0).wrapping_add(0x800) & 0xFFF;
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.facing_angle = facing;
+    }
+}
+
 pub(super) fn attack_face<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -233,6 +261,7 @@ pub(super) fn attack_chain<H: BattleActionHost + ?Sized>(
     // instead. Either way nothing in this arm touches HP.
     counterattack_swap(host, ctx);
     let slot = ctx.active_actor;
+    update_strike_facing(host, slot);
     // Strike pacing gate: while ADVANCE_DONE is still set the previous
     // staged swing is in flight - skip the byte read and hold (the anim
     // system clears the bit when the staged clip's event-path commit fires
@@ -573,6 +602,7 @@ pub(super) fn attack_recovery<H: BattleActionHost + ?Sized>(
 ) -> StepOutcome {
     let slot = ctx.active_actor;
     host.pose(slot, Pose::Recover);
+    update_strike_facing(host, slot);
     // `0x1F` waits for `+0x1DC` bit 1 to clear (`0x801E3AEC..0x801E3AF8`) -
     // i.e. for the last staged byte's clip to commit - then stages idle over
     // it (`sb zero,0x1da` at `0x801E3B04`; the anim tick commits that at

@@ -1133,6 +1133,19 @@ pub(super) fn cmd_play_window_with_record(
                     session.fog_render_tick();
                 }
                 session.set_host_drains_queues(true);
+                // `LEGAIA_BATTLE_LATCHES=23c,19` (hex): the system flags the
+                // fight's own record raised on its way into the entry op.
+                // The corpus lands the save without them and raises them
+                // here, after the settle, where retail's record did
+                // (`retail_compare_battle::entry_latches`).
+                if let Ok(v) = std::env::var("LEGAIA_BATTLE_LATCHES") {
+                    for idx in v
+                        .split(',')
+                        .filter_map(|f| u16::from_str_radix(f.trim(), 16).ok())
+                    {
+                        session.host.world.system_flag_set(idx);
+                    }
+                }
                 // The settle can run a script that re-seats the present
                 // party (a scripted duel's entry); the headless seed installs
                 // the fight's roster after its settle, so the child does too.

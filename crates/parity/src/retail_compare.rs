@@ -542,15 +542,7 @@ impl RetailObs {
     /// its track on one.
     pub fn seed_save(&self) -> Option<legaia_save::SaveFile> {
         let mut save = self.save.clone()?;
-        for idx in self.seed_latches() {
-            if let Some(b) = save
-                .ext
-                .story_flag_bits
-                .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
-            {
-                *b &= !(0x80u8 >> (idx & 7));
-            }
-        }
+        clear_system_flags(&mut save, &self.seed_latches());
         Some(save)
     }
 
@@ -867,6 +859,13 @@ pub fn run_engine_with(
             Some(block) => session.camera.zone.arm_arrival_over(block),
             None => session.camera.zone.arm_arrival(),
         }
+        // A focus retail left behind (a poked or script-carried player the
+        // follow ease never ran for) is walk history like the block: the
+        // snap lands it, as the image child's `LEGAIA_SEAT_FOCUS` does, and
+        // the engine's own ease leaves it until the player moves.
+        if let Some(focus) = retail.seat_focus {
+            session.camera.zone.seat_focus_after_snap(focus);
+        }
     }
     // A capture inside a running script is compared at the script's phase,
     // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
@@ -907,7 +906,12 @@ pub fn run_engine_with(
                     || t < 5
                     || std::env::var_os("LEGAIA_RC_SCRIPT_TRACE_ALL").is_some())
             {
-                eprintln!("script gate t={t}: {}", g.trace(&session.host.world));
+                eprintln!(
+                    "script gate t={t}: sys pc {} (retail {:?}) {}",
+                    session.host.world.field_pc,
+                    retail.scripts.system_pc,
+                    g.trace(&session.host.world)
+                );
             }
             if g.met(&session.host.world) {
                 if std::env::var_os("LEGAIA_RC_SCRIPT_TRACE").is_some() {
@@ -916,7 +920,7 @@ pub fn run_engine_with(
                 met_at = Some(t);
                 break;
             }
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK && !g.resumed_early.get() {
                 // The record's own latches, held back from the entry, are
                 // retail's state again once the entry has run - the
                 // settle-window sample included; a resume takes them back
@@ -941,9 +945,7 @@ pub fn run_engine_with(
                         .seed_ambient_walker(w.flat, w.x, w.z, w.heading);
                 }
             }
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK
-                && crate::retail_compare_script::resume_record(&mut session.host, g)
-            {
+            if g.drive_resume(&mut session.host, t) {
                 resumed = true;
             }
         }
@@ -1140,6 +1142,19 @@ const SYSTEM_FLAG_WINDOW: usize = 0x158;
 
 /// Every raised bit of the save's system-flag bank, as the flag ids
 /// `World::system_flag_set` takes (MSB-first within a byte).
+/// Lower the system flags `ids` in a lifted save.
+pub fn clear_system_flags(save: &mut legaia_save::SaveFile, ids: &[u16]) {
+    for &idx in ids {
+        if let Some(b) = save
+            .ext
+            .story_flag_bits
+            .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
+        {
+            *b &= !(0x80u8 >> (idx & 7));
+        }
+    }
+}
+
 pub fn system_flag_ids(save: &legaia_save::SaveFile) -> Vec<u16> {
     let bits = save
         .ext
@@ -1165,10 +1180,18 @@ pub struct CorpusSummary {
     pub seed_failed: usize,
     /// Class -> count, over every state.
     pub classes: BTreeMap<String, usize>,
-    /// Channel -> `(mean score, states measured)` over seeded states.
+    /// Channel -> `(mean score, states measured)` over the seeded states
+    /// made on a retail disc. This is the headline.
     pub channels: BTreeMap<String, (f64, usize)>,
-    /// Mean of per-state scores over seeded states.
+    /// Mean of per-state scores over the seeded retail-disc states.
     pub mean_state_score: f64,
+    /// Seeded states made on a patched disc (`resident_patch`).
+    pub patched: usize,
+    /// The same channel means over the patched-disc states, kept apart: a
+    /// difference there may be the patch's, not the engine's.
+    pub patched_channels: BTreeMap<String, (f64, usize)>,
+    /// Mean of per-state scores over the seeded patched-disc states.
+    pub patched_mean_state_score: f64,
 }
 
 pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
@@ -1178,6 +1201,9 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
     };
     let mut sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
     let mut state_sum = 0.0;
+    let mut retail_scored = 0usize;
+    let mut patched_sums: BTreeMap<String, (f64, usize)> = BTreeMap::new();
+    let mut patched_state_sum = 0.0;
     for r in reports {
         *s.classes
             .entry(
@@ -1201,7 +1227,14 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
             }
         }
         if let Some(sc) = r.score {
-            state_sum += sc;
+            let (sums, state_sum) = if r.resident_patch.is_some() {
+                s.patched += 1;
+                (&mut patched_sums, &mut patched_state_sum)
+            } else {
+                retail_scored += 1;
+                (&mut sums, &mut state_sum)
+            };
+            *state_sum += sc;
             for (k, v) in &r.channels {
                 let e = sums.entry(k.clone()).or_default();
                 e.0 += v;
@@ -1209,15 +1242,16 @@ pub fn summarise(reports: &[StateReport]) -> CorpusSummary {
             }
         }
     }
-    s.channels = sums
-        .into_iter()
-        .map(|(k, (sum, n))| (k, (round3(sum / n as f64), n)))
-        .collect();
-    s.mean_state_score = if s.seeded == 0 {
-        0.0
-    } else {
-        round3(state_sum / s.seeded as f64)
+    let means = |sums: BTreeMap<String, (f64, usize)>| -> BTreeMap<String, (f64, usize)> {
+        sums.into_iter()
+            .map(|(k, (sum, n))| (k, (round3(sum / n as f64), n)))
+            .collect()
     };
+    let mean = |sum: f64, n: usize| if n == 0 { 0.0 } else { round3(sum / n as f64) };
+    s.channels = means(sums);
+    s.patched_channels = means(patched_sums);
+    s.mean_state_score = mean(state_sum, retail_scored);
+    s.patched_mean_state_score = mean(patched_state_sum, s.patched);
     s
 }
 
@@ -1277,6 +1311,7 @@ fn run_one(
         detail: BTreeMap::new(),
         score: None,
         image: None,
+        resident_patch: entry.resident_patch.clone(),
     };
     let mut retail = match read_retail(entry, scus) {
         Ok(r) => r,
@@ -1528,10 +1563,28 @@ impl Baseline {
         out
     }
 
-    /// Every drop against this baseline. A channel the run did not measure
-    /// is skipped when `allow_unmeasured` names it (the image channel on a
-    /// run without a display), and is a failure otherwise.
+    /// Every drop against this baseline on a state made on a retail disc.
+    /// A channel the run did not measure is skipped when `allow_unmeasured`
+    /// names it (the image channel on a run without a display), and is a
+    /// failure otherwise. A patched-disc state never fails the ratchet -
+    /// see [`Self::patched_drift`].
     pub fn regressions(&self, reports: &[StateReport], allow_unmeasured: &[&str]) -> Vec<String> {
+        self.drops(reports, allow_unmeasured, false)
+    }
+
+    /// The same drops on the states made on a patched disc
+    /// (`resident_patch`). They replay a modified executable, so a drop is
+    /// reported for review and is not a regression against retail.
+    pub fn patched_drift(&self, reports: &[StateReport], allow_unmeasured: &[&str]) -> Vec<String> {
+        self.drops(reports, allow_unmeasured, true)
+    }
+
+    fn drops(
+        &self,
+        reports: &[StateReport],
+        allow_unmeasured: &[&str],
+        patched: bool,
+    ) -> Vec<String> {
         let by_label: BTreeMap<&str, &StateReport> =
             reports.iter().map(|r| (r.label.as_str(), r)).collect();
         let mut out = Vec::new();
@@ -1542,6 +1595,9 @@ impl Baseline {
             let Some(r) = by_label.get(label.as_str()) else {
                 continue;
             };
+            if r.resident_patch.is_some() != patched {
+                continue;
+            }
             for (ch, &want) in chans {
                 match r.channels.get(ch) {
                     Some(&got) if got + RATCHET_EPS < want => {
@@ -1564,14 +1620,32 @@ pub fn markdown_report(reports: &[StateReport], summary: &CorpusSummary) -> Stri
     let _ = writeln!(s, "# Retail comparison corpus\n");
     let _ = writeln!(
         s,
-        "{} states; {} seeded; {} seed failures; mean state score {:.3}\n",
-        summary.states, summary.seeded, summary.seed_failed, summary.mean_state_score
+        "{} states; {} seeded ({} on a patched disc); {} seed failures; mean state score \
+         {:.3} retail, {:.3} patched\n",
+        summary.states,
+        summary.seeded,
+        summary.patched,
+        summary.seed_failed,
+        summary.mean_state_score,
+        summary.patched_mean_state_score
     );
-    let _ = writeln!(s, "## Channels (mean over seeded states)\n");
+    let _ = writeln!(s, "## Channels (mean over seeded retail-disc states)\n");
     let _ = writeln!(s, "| channel | mean | measured |\n|---|---|---|");
     for ch in CHANNELS {
         if let Some((m, n)) = summary.channels.get(*ch) {
             let _ = writeln!(s, "| {ch} | {m:.3} | {n} |");
+        }
+    }
+    if summary.patched > 0 {
+        let _ = writeln!(
+            s,
+            "\n## Channels, patched-disc states (reported, not ratcheted)\n"
+        );
+        let _ = writeln!(s, "| channel | mean | measured |\n|---|---|---|");
+        for ch in CHANNELS {
+            if let Some((m, n)) = summary.patched_channels.get(*ch) {
+                let _ = writeln!(s, "| {ch} | {m:.3} | {n} |");
+            }
         }
     }
     let _ = writeln!(s, "\n## Classes\n");
@@ -1588,12 +1662,16 @@ pub fn markdown_report(reports: &[StateReport], summary: &CorpusSummary) -> Stri
     for r in ranked {
         let _ = writeln!(
             s,
-            "### {} - {:.3} ({} {} 0x{:02X})\n",
+            "### {} - {:.3} ({} {} 0x{:02X}){}\n",
             r.label,
             r.score.unwrap_or(0.0),
             r.scene,
             r.emulator,
-            r.game_mode
+            r.game_mode,
+            r.resident_patch
+                .as_deref()
+                .map(|p| format!(" - patched disc: {p}"))
+                .unwrap_or_default()
         );
         for ch in CHANNELS {
             if let Some(v) = r.channels.get(*ch) {

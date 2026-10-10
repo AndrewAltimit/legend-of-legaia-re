@@ -22,6 +22,7 @@ mod character_anm_glb_real;
 mod dance_howto_disc;
 mod disc_extract;
 mod dome_ladder_and_hub_real;
+mod dream_yaw_part_page_ladder;
 mod equipment_view_real;
 mod field_npc_catalog;
 mod field_scene_anim;

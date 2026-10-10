@@ -181,12 +181,29 @@ pub fn arts_banner_prims(
 }
 
 /// Project `FUN_801DF6B8`'s view-space square through a host camera:
-/// `vp` is the column-major view-projection matrix the host draws the battle
-/// with, `world_scale` what the host multiplies a PSX world coordinate by
-/// before it. The square's half-extent is laid along the camera's own right
-/// axis (row 0 of `vp`, normalised), which is how a view-space offset reads
-/// in world space; retail's square is square on screen, so the vertical
-/// half-extent is the horizontal one. `None` behind the eye.
+/// `vp` is the column-major view-projection matrix of the battle camera
+/// alone (`legaia_engine_vm::battle_cam_script::battle_vp`, with no model
+/// scale composed), `world_scale` what the host multiplies a PSX world
+/// coordinate by before it. The square's half-extent is laid along the
+/// camera's own right axis (row 0 of `vp`, normalised), which is how a
+/// view-space offset reads in world space; retail's square is square on
+/// screen, so the vertical half-extent is the horizontal one. `None` behind
+/// the eye.
+///
+/// The anchor rides the world scale and the half-extent does not: it is a
+/// view-space length, added after the camera matrix has scaled the centre.
+/// `battle_melee_hit_spark`'s two frame arenas pin it - the `15` over Gimard
+/// is drawn as `18`-wide cells and then `22`-wide ones, the spans half the
+/// ring timer gives at that depth with no scale, where a half-extent taken
+/// through the 4x stage scale is at the 24-px cap from its fourth frame.
+///
+/// `anchor` is a raw PSX point, `+Y` down, and `vp` is a draw matrix: every
+/// host view-projection ends in the `scale(1, -1, 1)` that cancels the
+/// per-model Y flip its draws carry
+/// (`legaia_engine_vm::battle_cam_script::battle_vp`), so a raw point goes
+/// through it with its Y negated. Fed unflipped, a numeral's rise
+/// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
+/// fall: the run sank through the floor and off the bottom of the stage.
 pub fn popup_rect(
     vp: &[f32; 16],
     world_scale: f32,
@@ -205,14 +222,18 @@ pub fn popup_rect(
             )
         })
     };
-    let c = anchor.map(|v| v as f32 * world_scale);
+    let c = [
+        anchor[0] as f32 * world_scale,
+        -(anchor[1] as f32) * world_scale,
+        anchor[2] as f32 * world_scale,
+    ];
     let (cx, cy) = stage(c)?;
     let right = [vp[0], vp[4], vp[8]];
     let len = (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
     if len <= f32::EPSILON {
         return None;
     }
-    let off = half as f32 * world_scale / len;
+    let off = half as f32 / len;
     let (ex, ey) = stage([
         c[0] + right[0] * off,
         c[1] + right[1] * off,
@@ -256,7 +277,7 @@ mod tests {
         // x/z scaled to NDC over a fixed w: 1 world unit = 1/1000 NDC.
         let mut vp = [0.0f32; 16];
         vp[0] = 0.001;
-        vp[5] = -0.001;
+        vp[5] = 0.001;
         vp[10] = 0.001;
         vp[15] = 1.0;
         let small = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 0);
@@ -264,6 +285,63 @@ mod tests {
         assert_eq!(small.len(), 1);
         assert!(big[0].w > small[0].w);
         assert!(popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 37).is_empty());
+    }
+
+    /// The numeral rises. Under a real battle draw matrix - the camera
+    /// `battle_gimard_tail_fire_b` holds (pitch `64`, yaw `2620`, `TR (0,
+    /// 1024, 3283)`, focus `(125, 0, -642)`) - a hit on the struck member's
+    /// display trio `(144, -112, -1173)` projects above the floor under it
+    /// from the first frame and has reached the resting row by the ring
+    /// timer the capture holds (`352`, age `21`), which is where the
+    /// capture's display list seats the run.
+    #[test]
+    fn a_popup_rises_under_a_battle_draw_matrix() {
+        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 64.0,
+            yaw: 2620.0,
+            tr: [0.0, 1024.0, 3283.0],
+            focus: [125.0, 0.0, -642.0],
+        };
+        // The retail battle world scale the actor stage is drawn at.
+        const SCALE: f32 = 4.0;
+        let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
+        let trio = [144.0, -112.0, -1173.0];
+        let row = |age: u16| popup_value_cells(&vp, SCALE, trio, 16, age)[0].y;
+        let floor = popup_rect(&vp, SCALE, [144, 0, -1173], 1).unwrap().1;
+        assert!(row(0) < floor, "the push frame sits over the floor");
+        assert!(row(8) < row(0), "and climbs: {} then {}", row(0), row(8));
+        assert_eq!(row(21), vr::RESTING_TOP_Y);
+        assert_eq!(popup_value_cells(&vp, SCALE, trio, 16, 21).len(), 2);
+    }
+
+    /// The numeral's size is the ring timer's, in view units.
+    /// `battle_melee_hit_spark` holds two frames of one `15` in its packet
+    /// arenas - cells `18` wide and then `22` wide (corner spans; the kernel's
+    /// `w` is the span plus one), the later one on the resting row - over
+    /// Gimard's display trio `(-2, -461, 492)` under pitch `0`, yaw `2925`,
+    /// `TR (0, 1298, 3424)`, focus `(-2, 0, 389)`. Those are the spans of
+    /// ring timers `224` and `288` with the half-extent unscaled.
+    #[test]
+    fn a_popup_grows_at_the_ring_timers_view_space_rate() {
+        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 0.0,
+            yaw: 2925.0,
+            tr: [0.0, 1298.0, 3424.0],
+            focus: [-2.0, 0.0, 389.0],
+        };
+        const SCALE: f32 = 4.0;
+        let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
+        let cells = |age: u16| popup_value_cells(&vp, SCALE, [-2.0, -461.0, 492.0], 15, age);
+        assert_eq!(vr::popup_timer(13), 224);
+        assert_eq!(vr::popup_timer(17), 288);
+        let (early, late) = (cells(13), cells(17));
+        assert_eq!((early[0].w, early[0].h), (19, 19));
+        assert_eq!((late[0].w, late[0].h), (23, 23));
+        assert_eq!(late[0].y, vr::RESTING_TOP_Y);
+        // One pitch apart, the units digit to the right.
+        assert_eq!(late[1].x - late[0].x, 23);
     }
 
     fn quad(p: &ScreenPrim) -> ScreenQuad {

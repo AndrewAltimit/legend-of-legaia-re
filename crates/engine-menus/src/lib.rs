@@ -5,10 +5,10 @@
 //! overlay's widget
 //! choreography, category / arrange tables and open sequence, name entry,
 //! the title and publisher-logo phases, the card write flow and `bu` I/O,
-//! the debug character editor, key rebinding, game over, the inn, and the
-//! field dialog pager (panel, row window, pacing, picker slide, text
-//! balloon) and the inline-dialogue / cutscene-timeline context state:
-//! the `World`-free half of the engine's menu layer.
+//! the debug character editor, key rebinding, game over and the inn: the
+//! `World`-free half of the engine's menu layer. The field dialog pager and
+//! the inline-dialogue / cutscene-timeline context state live one crate
+//! down, in `legaia-engine-dialog`, and are re-exported here.
 //!
 //! Every module's whole dependency closure inside the engine is in this
 //! crate or below it, so it sits strictly below `legaia-engine-core`,
@@ -31,21 +31,22 @@ use legaia_engine_battle::target_picker;
 
 use legaia_engine_battle::arts_command_input;
 
+// The dialog pager and the spawned-context state, in `legaia-engine-dialog`;
+// re-exported here at the paths they had as modules of this crate.
+pub use legaia_engine_dialog::{
+    cutscene_timeline, dialog, dialog_pacing, dialog_picker_slide, dialog_window, inline_dialogue,
+    text_balloon,
+};
+
 pub mod battle_input;
 pub mod battle_open;
 pub mod card_bu_io;
 pub mod card_flow;
-pub mod cutscene_timeline;
 pub mod debug_char_editor;
-pub mod dialog;
-pub mod dialog_pacing;
-pub mod dialog_picker_slide;
-pub mod dialog_window;
 pub mod equip_session;
 pub mod equipment;
 pub mod field_menu;
 pub mod game_over;
-pub mod inline_dialogue;
 pub mod inn;
 pub mod inventory_use;
 pub mod item_bag;
@@ -73,7 +74,6 @@ pub mod shop_catalog;
 pub mod spell_menu;
 pub mod spell_party_broadcast;
 pub mod status_screen;
-pub mod text_balloon;
 pub mod timed_fight;
 pub mod title;
 pub mod title_screen_atlas;

@@ -7,6 +7,12 @@ use super::*;
 /// describe a seedable fight.
 pub const BATTLE_NOT_SEEDABLE: &str = "battle not seedable: ";
 
+/// The `resident_patch` tag of a state made under the shiny-Seru patch, and
+/// the boost that patch applies to a shiny monster's HP / MP maxima.
+const SHINY_SERU_PATCH: &str = "shiny-seru";
+const SHINY_BOOST_NUM: u32 = 135;
+const SHINY_BOOST_DEN: u32 = 100;
+
 pub(super) fn run_battle(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
@@ -23,6 +29,16 @@ pub(super) fn run_battle(
             report.unseeded = "battle observables not read".into();
             return;
         }
+    };
+    // The flags the fight's own record raised on its way in are held back
+    // from the seed's scene entry (`retail_compare_battle::entry_latches`).
+    let latched;
+    let battle = {
+        let mut b = battle.clone();
+        b.entry_latches =
+            crate::retail_compare_battle::entry_latches(opts.extracted, retail, battle);
+        latched = b;
+        &latched
     };
     // The first stream under which the fight is still on at the sample, its
     // opening reached a prompt without a surprise round the capture's own
@@ -160,8 +176,31 @@ pub(super) fn run_battle(
         None => battle,
     };
     let image = battle_image(opts, entry, retail, battle, &engine, report);
+    // The shiny-Seru patch boosts a shiny monster's maxima at battle init
+    // (`x135/100`, truncated). A maximum that reads exactly that over the
+    // engine's disc value is the patch's write, not retail's, and is left
+    // unscored like a probe's; any other difference still scores.
+    let mut unscored = entry.ram_injected.clone();
+    if entry
+        .resident_patch
+        .as_deref()
+        .is_some_and(|p| p.contains(SHINY_SERU_PATCH))
+    {
+        for (m, (r, e)) in battle.monsters.iter().zip(&engine.monsters).enumerate() {
+            let Some(r) = r else { continue };
+            let boosted = |v: u16| (u32::from(v) * SHINY_BOOST_NUM / SHINY_BOOST_DEN) as u16;
+            for (name, want, got) in [
+                ("hp_max", r.hp_max, e.hp_max),
+                ("mp_max", r.mp_max, e.mp_max),
+            ] {
+                if want != got && want == boosted(got) {
+                    unscored.push(format!("m{m}.{name}"));
+                }
+            }
+        }
+    }
     let (mut ch, mut det) =
-        crate::retail_compare_battle::compare_battle(retail, battle, &engine, &entry.ram_injected);
+        crate::retail_compare_battle::compare_battle(retail, battle, &engine, &unscored);
     if let Some(img) = &image {
         ch.insert("image".into(), round3(img.within));
         det.insert(
@@ -219,6 +258,13 @@ pub(super) fn battle_image(
         .map(system_flag_ids)
         .unwrap_or_default();
     let extra = crate::retail_compare_battle::play_window_args(battle, row);
+    // The child lands the save the headless seed landed: the fight's own
+    // entry latches held back, and raised after its settle
+    // (`LEGAIA_BATTLE_LATCHES`).
+    let child_save = retail.save.clone().map(|mut save| {
+        crate::retail_compare::clear_system_flags(&mut save, &battle.entry_latches);
+        save
+    });
     let mut env = vec![
         (
             "LEGAIA_BATTLE_STAGE",
@@ -238,6 +284,17 @@ pub(super) fn battle_image(
             crate::retail_compare_battle::bar_seeds_to_env(&engine.hp_seed),
         ),
     ];
+    if !battle.entry_latches.is_empty() {
+        env.push((
+            "LEGAIA_BATTLE_LATCHES",
+            battle
+                .entry_latches
+                .iter()
+                .map(|f| format!("{f:x}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+    }
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
@@ -338,7 +395,7 @@ pub(super) fn battle_image(
         // assembled battle meshes) rather than the New Game template the
         // bare door entry seeds. The door with the system flags stays the
         // fallback for a state whose save window does not lift.
-        match retail.save.as_ref() {
+        match child_save.as_ref() {
             Some(save) => crate::retail_compare_image::FrameEntry::Resume(save),
             None => crate::retail_compare_image::FrameEntry::Door(&flags),
         },

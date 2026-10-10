@@ -291,6 +291,40 @@ pub fn class0_frame_draws_at(
     out
 }
 
+/// The class-0 frame around a **measured text actor's** centre rect - the
+/// skin every kind-`0x0D` box wears (the sparring-tutorial prompts and the
+/// timed-fight strip, both registered through `FUN_8003541C` with an explicit
+/// `(x, y, w, h)` and style word `0x44`).
+///
+/// It is the banner's frame, not the dialog reading box's: the
+/// `v0_1_battle_command_menu` display list draws the lesson intro
+/// (rect `(16, 14, 279, 10)`) as ten opaque `POLY_GT4` fill tiles from
+/// texel `(128, 0)` under CLUT `(32, 511)`, grey `0x40` at the top and
+/// `0x88` at the bottom, over `(8, 6)..(303, 32)`, with the gold edge
+/// sprites of tile-set 0 inside that rect (left column at `(8, 10)`, `18`
+/// tall; bottom run on row `28`). So the frame is the centre rect inflated
+/// by 8 on every side - the pen sits [`BANNER_PEN_INSET`] inside an interior
+/// that is itself [`BANNER_BORDER`] inside the frame - and the fill is the
+/// blue marble patch, opaque, where the dialog box's is a translucent
+/// gradient.
+///
+/// REF: FUN_8003541C, FUN_8002BDC4
+pub fn text_actor_frame_draws_for(
+    rects: &SaveMenuAtlasRects,
+    rect: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let (x, y, w, h) = rect;
+    class0_frame_draws_at(
+        rects,
+        (x, y),
+        (w, h + 2 * BANNER_PEN_INSET),
+        stage_origin,
+        stage_scale,
+    )
+}
+
 /// One banner line as the text engine lays it: the authoring escape `^X`
 /// becomes the runtime icon escape `0xCE (X - 0x2D)`, the preprocessor
 /// `FUN_80036514`'s rewrite, so a spell name carrying its element plate

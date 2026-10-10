@@ -9,10 +9,11 @@ type-specific handler. Each asset can be either LZS-compressed (the
 common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
 (handled by `FUN_8001a8b0`, a sized memcpy).
 
-The static data tables live in [`legaia-game-tables`](../game-tables/README.md)
-and the battle model formats in
-[`legaia-battle-models`](../battle-models/README.md); this crate re-exports
-both at their old paths, and the rows below still describe them as
+The static data tables live in [`legaia-game-tables`](../game-tables/README.md),
+the battle model formats in
+[`legaia-battle-models`](../battle-models/README.md) and the code-overlay
+image formats in [`legaia-overlay-images`](../overlay-images/README.md); this
+crate re-exports all three at their old paths, and the rows below still describe them as
 `legaia_asset::<module>`.
 
 ## Contents

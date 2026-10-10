@@ -38,6 +38,19 @@ fn archive() -> Option<Vec<u8>> {
     None
 }
 
+/// PROT 0898, the battle-action overlay: the move-power table a cast's
+/// homing flight flies on and the spell clip / shot pairs.
+fn overlay_0898() -> Option<Vec<u8>> {
+    let mut dirs = Vec::new();
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR") {
+        dirs.push(PathBuf::from(d).join("PROT"));
+    }
+    dirs.push(PathBuf::from("../../extracted/PROT"));
+    dirs.push(PathBuf::from("extracted/PROT"));
+    dirs.into_iter()
+        .find_map(|d| std::fs::read(d.join("0898_xxx_dat.BIN")).ok())
+}
+
 /// How long the capture band may hold before the sweep reads it as the
 /// stage guard rather than a choreography. PROT 0954's body is longer than
 /// the guard even with the wheel stopped at once: its arms count down
@@ -111,6 +124,11 @@ struct CastTrace {
     moved: i32,
     /// The body walks its caster in and stages nothing else on it.
     walk_only: bool,
+    /// The action ended under observation.
+    finished: bool,
+    /// The action state and the caster's committed clip / frame on the first
+    /// tick the party had lost HP.
+    first_hit: Option<(u8, u8, i16)>,
 }
 
 /// Every `(monster id, spell id)` the scripted per-monster AI switch can
@@ -214,6 +232,13 @@ fn setup(
     let mut w = World::new();
     w.set_spell_catalog(legaia_engine_core::retail_magic::seru_magic_catalog_from_scus(scus)?);
     w.install_menu_text(scus);
+    // With the move-power table in, a cast whose clip seeds a homing flight
+    // lands its hit from that flight and the recovery state waits on the
+    // flight's children - the path a booted fight takes.
+    if let Some(overlay) = overlay_0898() {
+        w.tables.move_power =
+            legaia_engine_core::move_power::MovePowerCatalog::from_overlay_0898(&overlay);
+    }
     while w.actors.len() < 8 {
         w.actors.push(Actor::default());
     }
@@ -324,7 +349,10 @@ fn cast(
             0
         });
         w.tick();
-        if w.mode != SceneMode::Battle {
+        // A fight the cast itself ended (the wipe gate `0x5A`, or the mode
+        // already gone) is a cast that ended.
+        if w.mode != SceneMode::Battle || w.battle_ctx.action_state == 0x5A {
+            t.finished = t.acted;
             break;
         }
         let a = &w.actors[seat];
@@ -341,7 +369,17 @@ fn cast(
         }
         if !now_acting && t.acted {
             t.party_hp_lost = hp_at_start.saturating_sub(party_hp(&w));
+            t.finished = true;
             break;
+        }
+        if now_acting && t.first_hit.is_none() && party_hp(&w) < hp_at_start {
+            t.first_hit = Some((
+                w.battle_ctx.action_state,
+                a.battle.current_anim,
+                a.battle_animation
+                    .as_ref()
+                    .map_or(-1, |p| p.current_frame()),
+            ));
         }
         acting = now_acting;
         if !acting {
@@ -430,6 +468,11 @@ fn every_monster_special_attack_animates() {
                     }
                     if !t.acted {
                         Some(format!("never cast; tags {tags:02x?}"))
+                    } else if !t.finished {
+                        Some(format!(
+                            "the cast never ended: states {:02x?} ({} ticks)",
+                            t.states, t.ticks
+                        ))
                     } else if t.band_ticks >= band_limit(&t) {
                         Some(format!(
                             "the capture band held {} ticks (the stage guard, not a choreography)",
@@ -487,4 +530,40 @@ fn every_monster_special_attack_animates() {
         broken.len(),
         broken.join("\n")
     );
+}
+
+/// Gimard's Tail Fire lands when its flame does. Retail's only damage site
+/// for a monster's cast is the effect-child hit arm of `FUN_801E09F8`
+/// (`jal 0x801DD0AC` at `0x801E188C`), reached on the pass a landed homing
+/// slot's counter has run out, and the slots are seeded by the cast clip's
+/// effect-script terminator. `battle_gimard_tail_fire_b` holds the result:
+/// state `0x2B`, the caster on clip `8`, the victim hit 22 vsyncs earlier
+/// (number-ring timer `352`), 24 vsyncs after the clip's commit. So the hit
+/// is inside the sustain state, several frames into the cast clip - not on
+/// the edge out of the pre-cast wait `0x29`, before the clip has started.
+#[test]
+fn tail_fire_lands_from_its_homing_flight() {
+    const GIMARD: u16 = 0x0A;
+    const TAIL_FIRE: u8 = 0x27;
+    let Some(entry) = archive() else {
+        return;
+    };
+    let Some(scus) = scus() else {
+        eprintln!("[skip] SCUS_942.54 unreadable");
+        return;
+    };
+    if overlay_0898().is_none() {
+        eprintln!("[skip] extracted PROT 0898 missing");
+        return;
+    }
+    let (t, _) = cast(&entry, &scus, GIMARD, TAIL_FIRE).expect("the Gimard fight builds");
+    assert!(t.acted && t.finished, "the cast ran: {:02x?}", t.states);
+    assert!(t.party_hp_lost > 0, "Tail Fire hit");
+    let (state, clip, frame) = t.first_hit.expect("the hit landed while Gimard acted");
+    eprintln!(
+        "[ran] [tail-fire-flight] hit in state {state:#04x} on clip {clip:#04x} frame {frame}"
+    );
+    assert_eq!(state, 0x2B, "the hit lands in the sustain state");
+    assert_eq!(Some(clip), t.staged_clip, "under the cast clip");
+    assert!(frame >= 4, "frames into it (frame {frame})");
 }

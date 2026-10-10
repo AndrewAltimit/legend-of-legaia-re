@@ -518,6 +518,8 @@ impl LegaiaRuntime {
                     fill: r.gauge_fill,
                     box_: r.gauge_box,
                     digits: r.gauge_digits,
+                    tip: r.gauge_tip,
+                    full_mark: r.gauge_100,
                 },
                 &frame,
                 origin,

@@ -807,7 +807,7 @@ reads the routine's frame through the scratchpad reader.
 
 Off by default, seedless, no Sony bytes (the plate is the disc's own icon
 records, drawn by the disc's own emitters). Module
-[`legaia_patcher::enemy_hp_bar`](../../crates/patcher/src/enemy_hp_bar.rs);
+[`legaia_patcher::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs);
 the module's tests execute the assembled words in the crate's R3000
 interpreter against stubbed retail helpers; disc oracle
 `crates/patcher/tests/enemy_hp_bar_real.rs`; runtime probe

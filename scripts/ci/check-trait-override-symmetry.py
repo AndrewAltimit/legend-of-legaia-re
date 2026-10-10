@@ -98,6 +98,7 @@ CORE_SRC = REPO / "crates" / "engine-core" / "src"
 SPLIT_SRCS = [
     REPO / "crates" / "engine-field" / "src",
     REPO / "crates" / "engine-menus" / "src",
+    REPO / "crates" / "engine-dialog" / "src",
     REPO / "crates" / "engine-system" / "src",
 ]
 WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"

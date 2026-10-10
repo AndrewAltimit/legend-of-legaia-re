@@ -176,7 +176,9 @@ pub struct OverlayMap {
     pub overlays: Vec<OverlayRecord>,
 }
 
-const MAP_TOML: &str = include_str!("../data/static-overlays.toml");
+// The map stays at its documented path under `crates/asset/data/`, which the
+// analysis scripts and the docs open by name.
+const MAP_TOML: &str = include_str!("../../asset/data/static-overlays.toml");
 
 /// The committed static-overlay map, parsed once. Panics at first use if the
 /// embedded TOML is malformed - that is a build-time authoring error, caught by

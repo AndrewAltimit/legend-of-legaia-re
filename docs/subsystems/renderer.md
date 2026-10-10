@@ -1157,7 +1157,11 @@ are `0x20`, `0x80`, `0x100`, `0x180`, `0x300`, `0x380`, `0x400`, `0x500`,
 and the lone `0x80` - pitch skipped, yaw and roll kept - is `urudre1` stager
 record 14's, past an ext `0x37` branch that jumps the record's first `HALT`.
 A walk that ends at the first `HALT` misses it, which is how this page once
-said no such word ships. Otherwise a skip-bit node drops yaw, and `0x300`
+said no such word ships. The record is live content: `urudre1` is Vahn's dream
+at Uru Mais, its walk-on band at tile `(97, 10)` starts cutscene record
+`P2[1]`, and that record's `34 30 05` installs stager record 6, whose op `0x25`
+spawns record 14 as a run of `0x4000` sprite-arm quads
+(`crates/web-viewer/tests/dream_yaw_part_page_ladder.rs` plays it). Otherwise a skip-bit node drops yaw, and `0x300`
 keeps pitch.
 
 The field decoration pass `FUN_801F7088` has its own copy of the skip arm,

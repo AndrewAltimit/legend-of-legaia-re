@@ -22,7 +22,7 @@ pub const SHINY_BONUS_PCT: u32 = 35;
 
 /// Setup hook (SCUS, after the monster-setup loop in `FUN_800513F0`).
 pub const HOOK_SETUP_VA: u32 = 0x8005_1A20;
-pub(crate) const HOOK_SETUP_W0: u32 = 0x3C02_8008; // lui v0,0x8008
+pub const HOOK_SETUP_W0: u32 = 0x3C02_8008; // lui v0,0x8008
 /// Capture-success hook (overlay 0898, `FUN_801ec3e4`): the captured enemy actor
 /// (`v1`) is live here, so its shiny marker can be stashed.
 pub const HOOK_CAPTURE_VA: u32 = 0x801E_E2E8;
@@ -72,7 +72,7 @@ pub(crate) const STAT_FIRST_OFF: u16 = 0x14C;
 /// ... and one past the last (AGL current is `0x16A`, loop end is exclusive).
 pub(crate) const STAT_END_OFF: u16 = 0x16C;
 /// BIOS `rand` thunk (returns `v0`).
-pub(crate) const RAND_FUNC_VA: u32 = 0x8005_6798;
+pub const RAND_FUNC_VA: u32 = 0x8005_6798;
 /// Shiny high-bit flag in the level byte.
 pub(crate) const SHINY_FLAG: u16 = 0x80;
 /// First-monster id global (`DAT_8007BD0C`), set before the setup hook and
@@ -110,7 +110,7 @@ pub(crate) const BITMAP_BYTES: usize = 32;
 /// the `legaia_asset::face_anim` / `item_names` table addresses, and the SsAPI
 /// sound/effect tables found by read-watching a live battle (their zero padding
 /// is what the old arena3/4/5 wrongly squatted in - the Healing-Leaf freeze).
-pub(crate) const SCUS_TABLE_RANGES: &[(u32, u32)] = &[
+pub const SCUS_TABLE_RANGES: &[(u32, u32)] = &[
     // Dialog-font + text-render live block, up to the item-name table. Covers the
     // 256-byte glyph advance/width table (`0x80073F1C`, `legaia_font`), the 38-entry
     // `0xCE`-escape table (`0x80074050`), the per-glyph advance-padding var
@@ -136,7 +136,7 @@ pub(crate) const SCUS_TABLE_RANGES: &[(u32, u32)] = &[
 ];
 /// Known live tables in the battle-action overlay (0898), same VA space. The
 /// move-id index map + the move-power table window (which absorbed the old cave).
-pub(crate) const OVERLAY_TABLE_RANGES: &[(u32, u32)] = &[(0x801F_4E63, 0x801F_69D8)];
+pub const OVERLAY_TABLE_RANGES: &[(u32, u32)] = &[(0x801F_4E63, 0x801F_69D8)];
 
 /// SCUS rodata gap (padding before the steal table). Hosts the scratch word +
 /// the setup (B) and capture-copy (C1) routines. Reference-free; not in any

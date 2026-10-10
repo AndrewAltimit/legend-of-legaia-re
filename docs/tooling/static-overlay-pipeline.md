@@ -11,7 +11,7 @@ from `PROT.DAT` and disassembling it at its load base, with identity attached
 from the first byte. It **complements** the dynamic captures; it does not
 replace them (see [Scope + limits](#scope--limits)).
 
-Implementation: [`legaia_asset::static_overlay`](../../crates/asset/src/static_overlay.rs);
+Implementation: [`legaia_asset::static_overlay`](../../crates/overlay-images/src/static_overlay.rs);
 CLI `asset overlay …`; committed map
 [`crates/asset/data/static-overlays.toml`](../../crates/asset/data/static-overlays.toml).
 
@@ -58,7 +58,7 @@ This is proved two ways:
 ## Base recovery
 
 The load base is recovered **statically** from the overlay's own internal `jal`
-call graph ([`static_overlay::recover_base`](../../crates/asset/src/static_overlay.rs)).
+call graph ([`static_overlay::recover_base`](../../crates/overlay-images/src/static_overlay.rs)).
 For the true base `B`, every internal call target `T` maps to file offset
 `T - B`, which begins a function prologue (`addiu sp, sp, -X`). Tallying
 `B = T - prologue_offset` over every (distinct-call-target, prologue-offset)

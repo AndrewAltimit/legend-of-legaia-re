@@ -67,14 +67,15 @@ Choose by what you're trying to do:
 The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
 **Track 1 - preservation.** `bytes` (shared checked readers) and the container layer `iso`, `prot`, `lzs`, `asset` (over
-`game-tables`, the static data tables, and `battle-models`, the battle model
-formats); the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`, over `disc-patch` (the sector write-back
+`game-tables`, the static data tables, `battle-models`, the battle model
+formats, and `overlay-images`, the code-overlay image formats); the per-format parsers `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`; the pipeline driver `extract`; the emulator-state bridges `mednafen` and `pcsxr`; the curated label sets `gamedata` and `cheats`; and the disc patcher `patcher`, over `disc-patch` (the sector write-back
 foundation) with `translate` (language packs), `party-swap` (the
-battle-model swap kernels) and `texture-replace` (texture, battle-art and
-save-icon replacement) split out of it.
+battle-model swap kernels), `texture-replace` (texture, battle-art and
+save-icon replacement) and `code-hooks` (the MIPS code-injection layer) split
+out of it.
 
-**Track 2 - engine.** `engine-core` (world + scene host), `engine-minigames` (the minigame rules engines), `engine-minigame-scenes` (the duel and arena 3D surfaces), `engine-vm` (the ported VMs), `engine-battle-vm` (the battle action SM, formulas, battle camera and cast ticks, re-exported by `engine-vm`), `engine-battle` (the `World`-free battle kernels), `engine-effects` (the `World`-free effect kernels),
-`engine-system` (the `World`-free runtime system: input, fades, streaming, sound state), `engine-menus` (the `World`-free menu, title and card front end), `engine-field` (the `World`-free field kernels), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists, over the shared `render-kernels`), `engine-session` (the `BootSession` + BGM director every play host ticks), `engine-screens` (the shop-family screens composed once for both hosts), `engine-shell` (the `legaia-engine` binary), `parity` (the retail parity oracles and comparison corpus), plus `asset-viewer` and the `web-viewer` WASM target.
+**Track 2 - engine.** `engine-core` (world + scene host), `engine-minigames` (the minigame rules engines), `engine-fishing` (the fishing rules engine below it), `engine-minigame-scenes` (the duel and arena 3D surfaces), `engine-vm` (the ported VMs), `engine-battle-vm` (the battle action SM, formulas, battle camera and cast ticks, re-exported by `engine-vm`), `engine-battle` (the `World`-free battle kernels), `engine-effects` (the `World`-free effect kernels),
+`engine-system` (the `World`-free runtime system: input, fades, streaming, sound state), `engine-menus` (the `World`-free menu, title and card front end), `engine-dialog` (the `World`-free dialog pager and script-context state), `engine-field` (the `World`-free field kernels), `engine-render` (winit + wgpu), `engine-audio` (SPU + sequencer), `engine-ui` (renderer-agnostic draw lists, over the shared `render-kernels`), `engine-session` (the `BootSession` + BGM director every play host ticks), `engine-screens` (the shop-family screens composed once for both hosts), `engine-shell` (the `legaia-engine` binary), `parity` (the retail parity oracles and comparison corpus), plus `asset-viewer` and the `web-viewer` WASM target.
 
 The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu / winit / cpal dependency, which is what lets the same session code run natively and in `wasm32`.
 

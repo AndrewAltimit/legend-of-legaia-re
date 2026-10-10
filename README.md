@@ -258,6 +258,7 @@ legend-of-legaia-re/
 │   ├── asset/                    # Asset dispatcher, streaming, bundle detectors, categorize
 │   ├── game-tables/              # Static SCUS / overlay data tables (items, equipment, spells, ...), re-exported by asset
 │   ├── battle-models/            # Monster archive, player battle files, equipment assembly, glTF export
+│   ├── overlay-images/           # Code-overlay images: detection, static extraction map, slot-B layout, resident tables
 │   ├── tim/                      # PSX TIM parser + PNG exporter + software VRAM model
 │   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
@@ -280,13 +281,17 @@ legend-of-legaia-re/
 │   ├── translate/                # Language-pack pipeline behind `legaia-patcher translate`
 │   ├── party-swap/               # Party / Delilas battle-model swap kernels (pure transforms)
 │   ├── texture-replace/          # Texture / battle-art / monster-skin / save-icon replacement
+│   ├── code-hooks/               # MIPS encoders + simulator, injection arenas, self-contained code-hook mods
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
-│   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder
+│   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, prize exchange, Muscle Dome ladder
+│   ├── engine-fishing/           # The fishing rules engine: pond session, rod / lure / line actors, hub, floor grid
+│   ├── engine-minigame-scenes/   # Minigame 3D scene surfaces loaded off a PROT reader: Baka Fighter duel, Muscle Dome arena
 │   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
 │   ├── engine-system/            # World-free runtime system: pad pump, stream installer, sound state, fades
 │   ├── engine-menus/             # World-free menu front end: catalogs, item / spell / equip sessions, menu screens
+│   ├── engine-dialog/            # World-free dialog pager, text balloon, inline-dialogue + cutscene-timeline state
 │   ├── engine-field/             # World-free field kernels: actor programs, follow camera, event queue, world-map controller
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── render-kernels/           # wgpu-free render kernels both hosts share (GTE, CPU raster, emitters, lighting)

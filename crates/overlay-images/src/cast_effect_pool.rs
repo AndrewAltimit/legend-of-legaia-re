@@ -111,7 +111,7 @@ pub fn seru_module_prot(id: u8) -> Option<u32> {
 /// `0x20` (retail's `sltiu v0,v1,0x20`).
 ///
 /// `sub_id` is the **spell record's `+0x01` byte**
-/// ([`crate::spell_names::SpellEntry::sub_class`]), and the same byte the
+/// (`legaia_game_tables::spell_names::SpellEntry::sub_class`), and the same byte the
 /// pager `FUN_8003EC70(record[+1] + 0x28)` resolves - two readers, one byte.
 pub fn capture_module_prot(sub_id: u8) -> Option<u32> {
     ((sub_id as usize) < CAST_TABLE_SLOTS).then(|| CAPTURE_MODULE_PROT_FIRST + sub_id as u32)

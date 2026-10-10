@@ -16,7 +16,8 @@
 //! The engine carries the same shape with one owner, [`PendingCast`]: the
 //! menu confirm / monster pick arm the SM and park the resolved targets
 //! here; the fold runs once, at retail's seam - the stager's strike for a
-//! summon, the `0x29` exit for everything else - through
+//! summon, the homing flight's landed hit for a monster's cast whose clip
+//! seeds one, the `0x29` exit for everything else - through
 //! [`World::cast_spell_on_slots_prepaid`], because the band's own `0x28` has
 //! already charged the MP. A cast that leaves the band by any other door
 //! (a capture branch, a dead caster) is still folded once, at the band's end,
@@ -163,6 +164,10 @@ pub struct PendingCast {
     pub spell_id: u8,
     /// Absolute actor slots the outcome folds onto.
     pub targets: Vec<u8>,
+    /// The fold waits on the move's homing flight: each target is folded on
+    /// the pass its effect child lands its hit
+    /// ([`World::settle_cast_band`], [`World::fold_pending_cast_target`]).
+    pub on_flight: bool,
 }
 
 /// Where the stager is in its choreography.
@@ -364,6 +369,7 @@ impl World {
             caster,
             spell_id: def.id,
             targets,
+            on_flight: false,
         });
         self.battle_ctx.active_actor = caster;
         self.battle_ctx.queued_action = ActionCategory::Magic.as_byte();
@@ -419,6 +425,7 @@ impl World {
             caster: slot,
             spell_id: def.id,
             targets,
+            on_flight: false,
         });
         self.battle_ctx.active_actor = slot;
         self.battle_ctx.queued_action = ActionCategory::Magic.as_byte();
@@ -478,6 +485,75 @@ impl World {
         let Some(pc) = self.casting.pending_cast.take() else {
             return;
         };
+        self.fold_cast(pc);
+    }
+
+    /// Fold the owed cast onto `target` alone and keep the rest owed - the
+    /// hit one homing effect child lands
+    /// ([`crate::action_effect_script::HomingSlots::hits`]). A target the
+    /// cast does not owe is left alone.
+    ///
+    /// REF: FUN_801E09F8 (the effect-child hit arm `0x801E1844..0x801E1A68`,
+    /// one victim per landed slot)
+    pub(in crate::world) fn fold_pending_cast_target(&mut self, target: u8) {
+        let Some(mut pc) = self.casting.pending_cast.take() else {
+            return;
+        };
+        let Some(i) = pc.targets.iter().position(|&t| t == target) else {
+            self.casting.pending_cast = Some(pc);
+            return;
+        };
+        pc.targets.remove(i);
+        let caster = pc.caster;
+        let one = PendingCast {
+            targets: vec![target],
+            ..pc.clone()
+        };
+        // The flight has already drawn the move's lists on its way; every
+        // per-target fold finds them held, not just the first.
+        self.casting.homing_holds_lists = Some(caster);
+        self.fold_cast(one);
+        if pc.targets.is_empty() {
+            self.casting.homing_holds_lists = None;
+        } else {
+            self.casting.pending_cast = Some(pc);
+        }
+    }
+
+    /// Whether the owed cast's outcome is its homing flight's to land: a
+    /// monster's cast whose staged clip (`params[1]`, `+0x1E0`) carries an
+    /// effect-script terminator - the record whose step seeds the homing
+    /// slots - on a move the move-power table resolves, so the flight has a
+    /// record to fly on.
+    fn cast_fold_rides_the_flight(&self, pc: &PendingCast) -> bool {
+        use crate::action_effect_script as fx;
+        if pc.caster < self.party.party_count
+            || crate::summon::PLAYER_SUMMON_IDS.contains(&pc.spell_id)
+        {
+            return false;
+        }
+        let Some(a) = self.actors.get(usize::from(pc.caster)) else {
+            return false;
+        };
+        let clip = a.battle.params.get(1).copied().unwrap_or(0xFF);
+        let terminates = a
+            .battle_action_clips
+            .as_ref()
+            .and_then(|clips| clips.get(usize::from(clip))?.as_ref())
+            .is_some_and(|c| {
+                (0..fx::MAX_CURSOR)
+                    .map_while(|k| fx::EffectRecord::at(&c.effect_script, k))
+                    .any(|r| r.is_terminator())
+            });
+        terminates
+            && self
+                .tables
+                .move_power
+                .as_ref()
+                .is_some_and(|cat| cat.fx_for_move_id(pc.spell_id).is_some())
+    }
+
+    fn fold_cast(&mut self, pc: PendingCast) {
         // A capture body that took a branch with no damage site (PROT 0953's
         // charge, `0x801F6CEC`) owes nothing: retail never reaches its
         // `FUN_801DD6B4` on that path.
@@ -558,10 +634,16 @@ impl World {
     /// The live loop's post-step glue for the cast band: fold the owed cast
     /// at retail's seam.
     ///
-    /// * A non-summon cast folds the frame the SM leaves `0x29` for the anim
-    ///   chain (the module has been paged in and the first clip staged); the
-    ///   party trigger already folded the `< 0x25` arm's cast, so this is
-    ///   the monster's fold.
+    /// * A monster's cast whose clip seeds a homing flight folds per target
+    ///   on the pass that target's effect child lands its hit - retail's
+    ///   only damage site for it (`FUN_801E09F8`, `jal 0x801DD0AC` at
+    ///   `0x801E188C`, reached when a landed slot's counter has run out).
+    ///   `battle_gimard_tail_fire_b` holds that instant: `0x2B`, 46 vsyncs
+    ///   into the cast clip, the victim's reaction clip and hit tint just
+    ///   staged. [`World::tick_homing_slots`] makes the call.
+    /// * Any other non-summon cast folds the frame the SM leaves `0x29` for
+    ///   the anim chain (the module has been paged in and the first clip
+    ///   staged); the party trigger already folded the `< 0x25` arm's cast.
     /// * The summon route (`0x29 -> 0x32`) leaves the fold to the stager's
     ///   strike.
     /// * Any door out of the bands (`0x50` and above: done, the capture
@@ -588,6 +670,12 @@ impl World {
             ..=ActionState::MagicCaptureFinalize.as_byte())
             .contains(&to);
         let band_over = to >= ActionState::DoneCleanup.as_byte() && !capture_band;
+        if left_precast && !band_over && self.cast_fold_rides_the_flight(pc) {
+            if let Some(pc) = self.casting.pending_cast.as_mut() {
+                pc.on_flight = true;
+            }
+            return;
+        }
         if left_precast || band_over {
             self.fold_pending_cast();
         }
