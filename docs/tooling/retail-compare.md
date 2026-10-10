@@ -26,8 +26,29 @@ way `mednafen-state vram-dump --display-crop` reads it.
 | ratchet test | [`retail_compare_corpus.rs`](../../crates/engine-shell/tests/retail_compare_corpus.rs) | Disc-gated; fails on any per-state channel drop |
 | baseline | [`retail-compare-baseline.json`](../../scripts/ci/retail-compare-baseline.json) | Scores and classes only - no pixels, no RAM |
 
+## How it works
+
+```mermaid
+flowchart LR
+    state["library save state"] --> ram["retail RAM: observables"]
+    state --> vram["retail VRAM: displayed frame"]
+    ram --> seed["seed the engine into the same situation"]
+    seed --> settle["tick until settled"]
+    settle --> chan["score each channel in 0..1"]
+    vram --> chan
+    chan --> report["report.md / report.json, worst state first"]
+    chan --> ratchet["ratchet against the baseline JSON"]
+```
+
+A state the engine cannot be seeded into stays in the report with its reason.
+Start with [Running it](#running-it) and [Reading the report](#reading-the-report);
+the sections after them define the model the scores come from.
+
 ## Contents
 
+- [Running it](#running-it)
+- [Reading the report](#reading-the-report)
+- [The ratchet](#the-ratchet)
 - [The corpus](#the-corpus)
 - [Retail observables](#retail-observables)
 - [The seeding model](#the-seeding-model)
@@ -36,11 +57,95 @@ way `mednafen-state vram-dump --display-crop` reads it.
 - [Menu states](#menu-states)
 - [Channels](#channels)
 - [The image channel](#the-image-channel)
-- [The ratchet](#the-ratchet)
-- [Running it](#running-it)
-- [Reading the report](#reading-the-report)
 - [Divergence shapes](#divergence-shapes)
 - [See also](#see-also)
+
+## Running it
+
+```bash
+scripts/ci/retail-compare.py                  # state channels, report under captures/retail-compare/
+scripts/ci/retail-compare.py --images         # + the image channel (needs a display)
+scripts/ci/retail-compare.py --images --check # assert the baseline
+scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
+scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
+
+LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
+  cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
+```
+
+The driver builds `legaia-engine` under the `release-test` profile first
+(`--no-build` skips that), writes the report to `--out` (default
+`captures/retail-compare/`), and exits 0 with a `[skip]` line when the
+library or the extracted disc is missing; it looks for both in the worktree
+and then in the main checkout.
+
+The subcommand is `legaia-engine retail-compare`, which takes `--library`,
+`--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
+`--flags-first`, `--write-baseline` (the driver's `--bless`) and
+`--check-baseline` (the driver's `--check`).
+
+## Reading the report
+
+`report.md` opens with the channel means over the seeded states and the
+class counts, then lists every seeded state **worst first**, each channel
+with both sides' values and, when the frame ran, the side-by-side image.
+The unseeded states close it, each with its reason. `report.json` carries
+the same rows for scripts.
+
+The worst states are the product. For each, decide first whether the
+divergence is the instrument's - a [seeding gap](#the-seeding-model) - or
+the engine's: a camera channel at 1 with a bad image is a rendering
+question; a camera channel far off on a state whose label names a cutscene
+is script progress; a `bgm` miss on an arrival state is capture timing
+([below](#arrival-states-are-captured-before-the-town-runs)).
+
+Two environment switches open up a battle state's `camera` channel:
+
+| Switch | Adds |
+|---|---|
+| `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
+| `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
+
+The first says which component of a framing misses its endpoint and which
+input put it there - a heading, a body pair, a yaw counter; the second
+replays how the combatants got where they stand. A run seeded from an
+[undrifted](#battle-states) capture names the ground it was seeded on in
+its drift, and the capture's own pairs in the trace.
+
+## The ratchet
+
+`scripts/ci/retail-compare-baseline.json` holds, per state label, each
+measured channel's score, plus every state's class. The test
+`retail_compare_corpus` re-runs the corpus and fails when any state's
+channel falls more than `0.0005` (the JSON round-trip slack) below its
+baselined score, when a baselined channel of a state the run did seed goes
+unmeasured, when a seedable state fails to seed, or when no state is seeded
+at all. A rise is allowed and is folded in
+by a reviewed `--bless`. A bless merges into the existing file: a state
+outside a `--filter`, or one the run could not seed, keeps its baselined
+channels, and a run without a display keeps each state's baselined image
+score. A state the run did seed otherwise takes the run's channel set, so a
+channel that no longer applies to it (a field state re-classed `world_map`
+has no `facing`) leaves the file rather than failing every later check as
+`not measured`. A baselined state missing from the local library is
+skipped (backups are per-machine), and the image channel is skipped unless
+the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
+display).
+
+A state the manifest tags with a `resident_patch` was made on a patched
+disc, so it replays a modified executable and its RAM and frame are not
+retail's. Those states stay in the corpus and in the baseline file - several
+are the only capture of their scene - but they sit outside both the headline
+and the ratchet: the channel means and the mean state score are taken over
+the retail-disc states, the patched-disc states get a channel table of their
+own in the report, and a drop on one prints as `[patched-drift]` for review
+instead of failing the check. A difference on a patched-disc state is a lead
+to confirm against a retail capture, not a measured engine defect.
+
+The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
+extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
+before the repo-relative defaults - in a git worktree the data lives in the
+main checkout.
 
 ## The corpus
 
@@ -1446,93 +1551,6 @@ every seed and drive still running. A strip of such frames around `N` is what
 showed Tail Fire's hit rays forty ticks ahead of the gate - the fold on the
 wrong edge, not a missing effect
 ([battle-action](../subsystems/battle-action.md#a-monsters-cast-lands-from-its-homing-flight)).
-
-## The ratchet
-
-`scripts/ci/retail-compare-baseline.json` holds, per state label, each
-measured channel's score, plus every state's class. The test
-`retail_compare_corpus` re-runs the corpus and fails when any state's
-channel falls more than `0.0005` (the JSON round-trip slack) below its
-baselined score, when a baselined channel of a state the run did seed goes
-unmeasured, when a seedable state fails to seed, or when no state is seeded
-at all. A rise is allowed and is folded in
-by a reviewed `--bless`. A bless merges into the existing file: a state
-outside a `--filter`, or one the run could not seed, keeps its baselined
-channels, and a run without a display keeps each state's baselined image
-score. A state the run did seed otherwise takes the run's channel set, so a
-channel that no longer applies to it (a field state re-classed `world_map`
-has no `facing`) leaves the file rather than failing every later check as
-`not measured`. A baselined state missing from the local library is
-skipped (backups are per-machine), and the image channel is skipped unless
-the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
-display).
-
-A state the manifest tags with a `resident_patch` was made on a patched
-disc, so it replays a modified executable and its RAM and frame are not
-retail's. Those states stay in the corpus and in the baseline file - several
-are the only capture of their scene - but they sit outside both the headline
-and the ratchet: the channel means and the mean state score are taken over
-the retail-disc states, the patched-disc states get a channel table of their
-own in the report, and a drop on one prints as `[patched-drift]` for review
-instead of failing the check. A difference on a patched-disc state is a lead
-to confirm against a retail capture, not a measured engine defect.
-
-The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
-extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
-before the repo-relative defaults - in a git worktree the data lives in the
-main checkout.
-
-## Running it
-
-```bash
-scripts/ci/retail-compare.py                  # state channels, report under captures/retail-compare/
-scripts/ci/retail-compare.py --images         # + the image channel (needs a display)
-scripts/ci/retail-compare.py --images --check # assert the baseline
-scripts/ci/retail-compare.py --images --bless # fold a reviewed rise into the baseline
-scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = either)
-
-LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
-  cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
-```
-
-The driver builds `legaia-engine` under the `release-test` profile first
-(`--no-build` skips that), writes the report to `--out` (default
-`captures/retail-compare/`), and exits 0 with a `[skip]` line when the
-library or the extracted disc is missing; it looks for both in the worktree
-and then in the main checkout.
-
-The subcommand is `legaia-engine retail-compare`, which takes `--library`,
-`--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
-`--flags-first`, `--write-baseline` (the driver's `--bless`) and
-`--check-baseline` (the driver's `--check`).
-
-## Reading the report
-
-`report.md` opens with the channel means over the seeded states and the
-class counts, then lists every seeded state **worst first**, each channel
-with both sides' values and, when the frame ran, the side-by-side image.
-The unseeded states close it, each with its reason. `report.json` carries
-the same rows for scripts.
-
-The worst states are the product. For each, decide first whether the
-divergence is the instrument's - a [seeding gap](#the-seeding-model) - or
-the engine's: a camera channel at 1 with a bad image is a rendering
-question; a camera channel far off on a state whose label names a cutscene
-is script progress; a `bgm` miss on an arrival state is capture timing
-([below](#arrival-states-are-captured-before-the-town-runs)).
-
-Two environment switches open up a battle state's `camera` channel:
-
-| Switch | Adds |
-|---|---|
-| `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
-| `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state and each of the first four combatants' live pair, body pair, heading, clip and target |
-
-The first says which component of a framing misses its endpoint and which
-input put it there - a heading, a body pair, a yaw counter; the second
-replays how the combatants got where they stand. A run seeded from an
-[undrifted](#battle-states) capture names the ground it was seeded on in
-its drift, and the capture's own pairs in the trace.
 
 ## Divergence shapes
 
