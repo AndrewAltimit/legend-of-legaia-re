@@ -13,10 +13,8 @@ use legaia_patcher::items::valid_item_pool;
 use legaia_patcher::ppf;
 
 use crate::cli::{RandomizeArgs, mode_str};
-use crate::util::{
-    check_usa_disc, clock_seed, cue_contents, load_image, note_overwrite, parse_item_id,
-    resolve_seed, with_extension,
-};
+use crate::disc_io::{check_usa_disc, cue_contents, load_image, note_overwrite, with_extension};
+use crate::flag_values::{clock_seed, parse_item_id, resolve_seed};
 
 pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
     let seed = match args.seed.as_deref() {

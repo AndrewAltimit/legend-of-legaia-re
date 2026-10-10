@@ -16,7 +16,7 @@ use legaia_patcher::ppf;
 use legaia_patcher::save_icon::{self, SLOT_COUNT};
 use legaia_tim::encode::decode_png_rgba;
 
-use crate::util::{cue_contents, load_image, note_overwrite};
+use crate::disc_io::{cue_contents, load_image, note_overwrite};
 
 pub(crate) fn cmd_save_icon_list(input: &Path) -> Result<()> {
     let image = load_image(input)?;

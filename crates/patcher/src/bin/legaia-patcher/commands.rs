@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
 
-use crate::util::load_image;
+use crate::disc_io::load_image;
 
 pub(crate) fn cmd_shops(input: &Path) -> Result<()> {
     let image = load_image(input)?;

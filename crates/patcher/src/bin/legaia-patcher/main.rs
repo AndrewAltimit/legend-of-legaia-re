@@ -14,13 +14,14 @@
 mod cli;
 mod commands;
 mod delilas_audit;
+mod disc_io;
+mod flag_values;
 mod monster_block;
 mod monster_model;
 mod randomize;
 mod save_icon;
 mod texture;
 mod translate;
-mod util;
 
 use anyhow::Result;
 use clap::Parser;

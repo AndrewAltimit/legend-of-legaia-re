@@ -40,7 +40,7 @@ use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::party_swap;
 use legaia_tmd::encode::{ModelObject, decode_model};
 
-use crate::util::load_image;
+use crate::disc_io::load_image;
 
 /// One character's decoded audit inputs.
 pub(crate) struct CharSide {

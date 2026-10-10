@@ -13,7 +13,7 @@ use legaia_patcher::translation::{
 };
 use legaia_patcher::{apply, ppf};
 
-use crate::util::{cue_contents, load_image};
+use crate::disc_io::{cue_contents, load_image};
 
 fn read_pack(path: &Path) -> Result<LanguagePack> {
     let text =
@@ -786,13 +786,13 @@ pub(crate) fn cmd_import(
     if let Some(ppf_path) = patch {
         let runs = ppf::diff_runs(&original, &patched);
         let desc = format!("Legaia translation pack ({})", pack.language);
-        crate::util::note_overwrite(ppf_path);
+        crate::disc_io::note_overwrite(ppf_path);
         std::fs::write(ppf_path, ppf::write_ppf3(&desc, &runs))
             .with_context(|| format!("write PPF {}", ppf_path.display()))?;
         println!("wrote {} ({} change runs)", ppf_path.display(), runs.len());
     }
     if let Some(out) = output {
-        crate::util::note_overwrite(out);
+        crate::disc_io::note_overwrite(out);
         std::fs::write(out, &patched)
             .with_context(|| format!("write patched image {}", out.display()))?;
         let cue = out.with_extension("cue");

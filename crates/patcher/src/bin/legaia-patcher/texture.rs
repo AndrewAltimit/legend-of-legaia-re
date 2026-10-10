@@ -29,7 +29,7 @@ use legaia_tim::encode::{EncodeOptions, decode_png_rgba};
 use legaia_tim::multi_palette::View;
 
 use crate::cli::TimTierArg;
-use crate::util::{cue_contents, load_image, note_overwrite};
+use crate::disc_io::{cue_contents, load_image, note_overwrite};
 
 pub(crate) fn target(entry: Option<u32>, offset: u64, lzs_section: Option<u32>) -> TextureTarget {
     TextureTarget {

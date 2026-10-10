@@ -16,7 +16,7 @@ use legaia_asset::monster_archive;
 use legaia_patcher::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 use legaia_patcher::ppf;
 
-use crate::util::{cue_contents, load_image, note_overwrite};
+use crate::disc_io::{cue_contents, load_image, note_overwrite};
 
 pub(crate) fn cmd_monster_block(
     input: &Path,
