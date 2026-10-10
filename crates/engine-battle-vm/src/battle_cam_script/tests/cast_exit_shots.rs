@@ -1,0 +1,270 @@
+//! The summon close-up, the battle-over hold, the win pose, the stand-off and the escape shots.
+
+use super::*;
+
+/// `FUN_801DC0A0` case `0x12` against the `puera_summon_mid_cast` capture:
+/// the ramp saturated at `0xC8` gives retail's pitch `3696` (`-400`), and an
+/// accumulator of `649` lands the eye height on the captured `2066`.
+#[test]
+fn the_summon_cast_close_up_matches_a_captured_frame() {
+    let actor = BattleCamActor {
+        facing: 0,
+        world: [300.0, -40.0, -800.0],
+        height: None,
+    };
+    let (pose, raw_z) = summon_cast_framing(actor, None, 649, 0xC8);
+    // The focus is the body pair `+0x3C` / `+0x40` when one is known.
+    let (bodied, _) = summon_cast_framing(actor, Some([123.0, -456.0]), 649, 0xC8);
+    assert_eq!(bodied.focus, [123.0, 0.0, -456.0]);
+    assert_eq!(pose.pitch, -400.0);
+    assert_eq!((pose.pitch as i32).rem_euclid(4096), 3696);
+    assert_eq!(pose.tr[1], 2066.0);
+    assert_eq!(raw_z, 0x680 - 3 * 649);
+    assert_eq!(pose.tr[2], prescale_tr_z(raw_z));
+    assert_eq!(pose.yaw, (649 * 2 + 0x500) as f32);
+    // The focus is the caster's X/Z at floor height.
+    assert_eq!(pose.focus, [300.0, 0.0, -800.0]);
+}
+
+/// While the action SM sits in the summon band's `0x33` / `0x34`, the
+/// action camera walks to the cast close-up, not case 6's framing.
+#[test]
+fn the_summon_band_frames_the_cast_close_up() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.observe_action_state(0x32);
+    cam.observe_action_state(0x34);
+    for f in 1..=200u64 {
+        cam.advance_to(f * 2);
+    }
+    let c = cam.attack.ctx;
+    let (want, _) = summon_cast_framing(cam.actor, cam.acting_body, c.accum, c.ramp);
+    let got = cam.framing_pose();
+    assert_eq!(got.pitch, want.pitch);
+    assert!(
+        (got.tr[1] - want.tr[1]).abs() <= 32.0,
+        "{got:?} vs {want:?}"
+    );
+}
+
+/// **The battle-over arm's win-pose script, pinned against retail RAM.**
+/// `noa_levelup_banner` is parked in the results hold with Vahn (character
+/// `1`, seat 0) posing `0x14`: display trio `(78, -183, -15)`, heading
+/// `562`, `ctx[+0x87C] = 616`, `ctx[+0x26E] = 0xC8`. The rotation trio reads
+/// pitch `-0x20` and yaw `0x800 - 562 = 1486` exactly, the focus is the
+/// display X / Z on the floor, and TR is one tween step short of the arm's
+/// target (`(0, 941, 1830)` against `(0, 928, prescale(1126))`), walking
+/// down from the stand-off pose the load window left.
+#[test]
+fn the_battle_over_arm_reproduces_the_results_hold_capture() {
+    let vahn = BattleCamActor {
+        facing: 562,
+        world: [78.0, -183.0, -15.0],
+        height: None,
+    };
+    let f = ActionFraming {
+        battle_over: true,
+        char_id: 1,
+        anim_id: 0x14,
+        accum: 616,
+        ramp: 0xC8,
+        ..Default::default()
+    };
+    let p = action_framing(vahn, f);
+    assert_eq!(p.pitch, -32.0);
+    assert_eq!(p.yaw, 1486.0);
+    // TR.y = -5 * -183 + (616 >> 3) - 0x40; TR.z = 0x500 - (616 >> 2).
+    assert_eq!(p.tr, [0.0, 928.0, prescale_tr_z(1126)]);
+    assert_eq!(f.raw_z(), 1126);
+    assert_eq!(p.focus, [78.0, 0.0, -15.0], "display X / Z on the floor");
+    // The capture is mid-chase toward that target, from above on both.
+    assert!(941.0 > p.tr[1] && 1830.0 > p.tr[2]);
+}
+
+/// The script's dispatch edges: character `4`'s fixed arm, an unknown
+/// character or a pose outside `0x11..=0x18` editing nothing, and the one
+/// pose that skips the height floor.
+#[test]
+fn the_win_pose_script_dispatch() {
+    let ground = BattleCamActor {
+        facing: 0,
+        world: [0.0, 0.0, 0.0],
+        height: None,
+    };
+    let over = ActionFraming {
+        battle_over: true,
+        accum: 800,
+        ramp: 0x40,
+        ..Default::default()
+    };
+    // Character 4: pitch 0x80 then the floor's quarter-shortfall on top.
+    let terra = battle_over_slots(ground, ActionFraming { char_id: 4, ..over });
+    assert_eq!(terra.tr_z, 100 + 0x680);
+    assert_eq!(terra.pitch, 0x80 + 0x280 / 4);
+    assert_eq!(terra.tr_y, 0x280);
+    // Character 0 / out-of-range pose: the base and the floor only.
+    for f in [
+        ActionFraming { char_id: 0, ..over },
+        ActionFraming {
+            char_id: 1,
+            anim_id: 0x19,
+            ..over
+        },
+    ] {
+        let s = battle_over_slots(ground, f);
+        assert_eq!((s.tr_y, s.tr_z, s.pitch), (0x280, 0x500, 0xA0), "{f:?}");
+    }
+    // Character 2 posing 0x16 keeps a TR.y under the floor.
+    let noa = battle_over_slots(
+        ground,
+        ActionFraming {
+            char_id: 2,
+            anim_id: 0x16,
+            ..over
+        },
+    );
+    assert_eq!(noa.tr_y, (800 >> 3) - 0xC0, "no floor");
+    assert_eq!(noa.pitch, 0x100);
+    // Tables 2 and 3 alias their last entry to arm 1; table 1 aliases 6/7
+    // to 0/1.
+    let at = |c: u8, a: u8| {
+        battle_over_slots(
+            ground,
+            ActionFraming {
+                char_id: c,
+                anim_id: a,
+                ..over
+            },
+        )
+    };
+    assert_eq!(at(1, 0x17), at(1, 0x11));
+    assert_eq!(at(1, 0x18), at(1, 0x12));
+    assert_eq!(at(2, 0x18), at(2, 0x12));
+    assert_eq!(at(3, 0x18), at(3, 0x12));
+}
+
+/// Case 8's **stand-off** arm: a dead target whose node is gone frames the
+/// acting actor alone at `TR (0, 0x400, radius * 5 / 2)`, level, yaw from
+/// the target's heading plus the live ladder.
+#[test]
+fn a_gone_target_takes_the_stand_off_arm() {
+    let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+    cam.set_actor(BattleCamActor {
+        facing: 562,
+        world: [78.0, -183.0, -15.0],
+        height: None,
+    });
+    cam.action_yaw = 0x10;
+    cam.attack.ctx.phase_cursor = 1;
+    cam.target = Some(PostActionTarget {
+        world: [600.0, 0.0, 800.0],
+        live: false,
+        facing: (562 + 0x800) & 0xFFF,
+        node_gone: true,
+        ..PostActionTarget::default()
+    });
+    let (pose, raw_z) = cam.action_end_pose();
+    assert_eq!(raw_z, PARTY_BODY_RADIUS * 5 / 2);
+    assert_eq!(pose.tr, [0.0, 1024.0, prescale_tr_z(1600)]);
+    assert_eq!(pose.pitch, 0.0);
+    assert_eq!(pose.focus, [78.0, 0.0, -15.0], "the actor, not the corpse");
+    let yaw: i32 = -((562 + 0x800) & 0xFFF) - ((1 << 9) - 0x100) + 0x10;
+    assert_eq!(pose.yaw, yaw.rem_euclid(4096) as f32);
+    assert_eq!(cam.action_yaw, 0x10, "the stand-off arm keeps the ladder");
+}
+
+/// The lone-monster defeat bypass (`0x801D6AC8..0x801D6AF0`) takes the same
+/// stand-off arm with the node still drawn.
+#[test]
+fn a_lone_scripted_monster_dying_in_place_takes_the_stand_off_arm() {
+    let mk = |node_gone: bool, lone_defeat: bool| {
+        let mut cam = BattleCamera::new(BattleCamPhase::ActionEnd, 0);
+        cam.set_actor(BattleCamActor {
+            facing: 562,
+            world: [78.0, -183.0, -15.0],
+            height: None,
+        });
+        cam.target = Some(PostActionTarget {
+            world: [600.0, 0.0, 800.0],
+            live: false,
+            facing: 7,
+            node_gone,
+            lone_defeat,
+            ..PostActionTarget::default()
+        });
+        cam.action_end_pose()
+    };
+    assert_eq!(mk(false, true), mk(true, false));
+    assert_ne!(mk(false, true), mk(false, false));
+}
+
+#[test]
+fn escape_shot_cuts_to_the_reverse_angle_and_holds_it() {
+    let mut cam = traced_cam(BattleCamPhase::Menu);
+    cam.arm_escape_shot();
+    assert_eq!(cam.pose().yaw, ESCAPE_SNAP_YAW, "the snap lands at once");
+    // 0x30 display frames of tween, then the landed pose holds through any
+    // state the run band and the teardown pass through.
+    for f in 1..=0x30u64 {
+        cam.advance_to(f);
+    }
+    let landed = cam.pose();
+    assert_eq!(landed.yaw, 2048.0);
+    assert_eq!(landed.tr, [0.0, 1536.0, 0.0]);
+    assert_eq!(landed.focus, [0.0, 0.0, 1024.0]);
+    for (i, state) in [0x65u8, 0x66, 0x50, 0x00].into_iter().enumerate() {
+        cam.observe_action_state(state);
+        cam.advance_to(0x30 + 2 * (i as u64 + 1));
+    }
+    assert_eq!(
+        cam.pose().yaw,
+        2048.0,
+        "no framing case takes the camera back"
+    );
+    assert_eq!(cam.pose().focus, landed.focus);
+}
+
+/// The magic exit's camera write (`0x801E4958..0x801E497C`): on the
+/// `0x2E -> 0x50` edge a pitch at or above `0x191` snaps to pitch `0`, eye Y
+/// `0x500`; a lower pitch, or any other edge, leaves the framing alone.
+#[test]
+fn magic_exit_edge_snaps_a_steep_pitch() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x2E);
+    cam.pose.pitch = 0x191 as f32;
+    cam.pose.tr[1] = 300.0;
+    cam.observe_action_state(0x50);
+    assert_eq!((cam.pose.pitch, cam.pose.tr[1]), (0.0, 1280.0));
+
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x2E);
+    cam.pose.pitch = 0x190 as f32;
+    cam.pose.tr[1] = 300.0;
+    cam.observe_action_state(0x50);
+    assert_eq!((cam.pose.pitch, cam.pose.tr[1]), (400.0, 300.0));
+
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x51);
+    cam.pose.pitch = 0x400 as f32;
+    cam.observe_action_state(0x50);
+    assert_eq!(cam.pose.pitch, 1024.0);
+}
+
+/// A granted flee's wait (`0x65`) backs the eye off `32 * step` a pass
+/// (`0x801E59A4..0x801E59BC`) once the escape shot owns the camera.
+#[test]
+fn escape_wait_backs_the_eye_away() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    for f in 1..=40u64 {
+        cam.advance_to(f * 2);
+    }
+    cam.arm_escape_shot();
+    cam.observe_action_state(0x64);
+    for f in 41..=200u64 {
+        cam.advance_to(f * 2);
+    }
+    let settled = cam.pose.tr[2];
+    cam.observe_action_state(0x65);
+    cam.advance_to(402);
+    assert_eq!(cam.pose.tr[2], settled - 64.0);
+}
