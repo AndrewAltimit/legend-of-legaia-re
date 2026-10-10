@@ -84,14 +84,19 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         }))?,
     )?;
     println!(
-        "retail-compare: {} states, {} seeded, mean state score {:.3} -> {}",
+        "retail-compare: {} states, {} seeded ({} on a patched disc), mean state score {:.3} \
+         retail -> {}",
         summary.states,
         summary.seeded,
+        summary.patched,
         summary.mean_state_score,
         out.join("report.md").display()
     );
     for (ch, (mean, n)) in &summary.channels {
         println!("  {ch:<10} {mean:.3} over {n}");
+    }
+    for (ch, (mean, n)) in &summary.patched_channels {
+        println!("  patched {ch:<10} {mean:.3} over {n}");
     }
     if let Some(p) = args.write_baseline {
         // A filtered or display-less run measures a subset, so it updates
@@ -113,6 +118,9 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         let regs = b.regressions(&reports, allow);
         for r in &regs {
             eprintln!("[regression] {r}");
+        }
+        for r in b.patched_drift(&reports, allow) {
+            eprintln!("[patched-drift] {r}");
         }
         anyhow::ensure!(
             regs.is_empty(),

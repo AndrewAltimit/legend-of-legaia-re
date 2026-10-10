@@ -1467,6 +1467,16 @@ skipped (backups are per-machine), and the image channel is skipped unless
 the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a
 display).
 
+A state the manifest tags with a `resident_patch` was made on a patched
+disc, so it replays a modified executable and its RAM and frame are not
+retail's. Those states stay in the corpus and in the baseline file - several
+are the only capture of their scene - but they sit outside both the headline
+and the ratchet: the channel means and the mean state score are taken over
+the retail-disc states, the patched-disc states get a channel table of their
+own in the report, and a drop on one prints as `[patched-drift]` for review
+instead of failing the check. A difference on a patched-disc state is a lead
+to confirm against a retail capture, not a measured engine defect.
+
 The test is disc-gated (`LEGAIA_DISC_BIN`) and finds the library and the
 extracted disc through `LEGAIA_SAVES_LIBRARY` / `LEGAIA_EXTRACTED_DIR`
 before the repo-relative defaults - in a git worktree the data lives in the

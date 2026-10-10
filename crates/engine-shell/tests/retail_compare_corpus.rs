@@ -51,8 +51,14 @@ fn the_retail_comparison_corpus_holds_its_baseline() {
     .expect("run corpus");
     let summary = summarise(&reports);
     eprintln!(
-        "[retail-compare] {} states, {} seeded, {} seed failures, mean state score {:.3}",
-        summary.states, summary.seeded, summary.seed_failed, summary.mean_state_score
+        "[retail-compare] {} states, {} seeded ({} on a patched disc), {} seed failures, mean \
+         state score {:.3} retail / {:.3} patched",
+        summary.states,
+        summary.seeded,
+        summary.patched,
+        summary.seed_failed,
+        summary.mean_state_score,
+        summary.patched_mean_state_score
     );
     for (ch, (mean, n)) in &summary.channels {
         eprintln!("[retail-compare]   {ch:<10} {mean:.3} over {n}");
@@ -72,6 +78,11 @@ fn the_retail_comparison_corpus_holds_its_baseline() {
     let regressions = baseline.regressions(&reports, allow);
     for r in &regressions {
         eprintln!("[regression] {r}");
+    }
+    // A state made on a patched disc replays a modified executable: its
+    // drops are listed for review and do not fail the ratchet.
+    for r in baseline.patched_drift(&reports, allow) {
+        eprintln!("[patched-drift] {r}");
     }
     assert!(
         regressions.is_empty(),

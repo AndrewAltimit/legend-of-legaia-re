@@ -62,6 +62,10 @@ pub struct StateReport {
     pub score: Option<f64>,
     /// Pixel metric detail when the image channel ran.
     pub image: Option<ImageScore>,
+    /// The scenario's `resident_patch`: set when the state was made on a
+    /// patched disc, so it replays that build's executable, not retail's.
+    #[serde(default)]
+    pub resident_patch: Option<String>,
 }
 
 pub(crate) fn round3(v: f64) -> f64 {
