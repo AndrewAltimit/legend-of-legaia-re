@@ -311,7 +311,7 @@ was written - find the symbol by name, not by line.
 | `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs:236` | FALSE INERT |
 | `80024e80` | `spawn_fade` | `crates/engine-system/src/fade.rs` | WIRED |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE |
-| `80038050` | `confirm_menu` | `crates/engine-menus/src/dialog.rs:409` | FALSE INERT |
+| `80038050` | `confirm_menu` | `crates/engine-dialog/src/dialog.rs:409` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs:270` | FALSE INERT |
 | `8003ebe4` | `(module)` | `crates/engine-core/src/overlay_loader.rs:3` | DISCLOSE |
 | `8003ebe4` | `load_overlay_a` | `crates/engine-core/src/overlay_loader.rs:180` | DISCLOSE |

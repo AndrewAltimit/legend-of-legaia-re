@@ -829,7 +829,7 @@ This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
 reaches. Engine means the wgpu-free crates both hosts link
 (`ENGINE_API_CRATES`: `engine-core`, `engine-battle`, `engine-effects`,
-`engine-minigames`, `engine-minigame-scenes`, `engine-vm`, `engine-battle-vm`, `engine-ui`,
+`engine-minigames`, `engine-minigame-scenes`, `engine-dialog`, `engine-vm`, `engine-battle-vm`, `engine-ui`,
 `engine-audio`, `engine-session`, `engine-screens`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.

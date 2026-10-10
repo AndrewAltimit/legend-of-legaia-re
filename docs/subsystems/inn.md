@@ -111,7 +111,7 @@ the record's own local flags saw a bit nothing ever set.
 
 Engine port of the whole path: `World::trigger_field_interact` →
 `World::drive_inline_dialogue` → `World::step_inline_dialogue`
-([`crate::inline_dialogue`](../../crates/engine-menus/src/inline_dialogue.rs)) →
+([`crate::inline_dialogue`](../../crates/engine-dialog/src/inline_dialogue.rs)) →
 `legaia_engine_vm::field::step`. The runner binds the poked actor's `+0x62`
 into the executing context around each cross-context `2B`/`2C`/`2D`, mirrors
 it back, and parks on the clip-end spin until the player's clip cursor

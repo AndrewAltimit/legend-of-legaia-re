@@ -1411,6 +1411,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-dialog"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-vm",
+ "legaia-font",
+ "legaia-mes",
+]
+
+[[package]]
 name = "legaia-engine-effects"
 version = "0.1.0"
 dependencies = [
@@ -1445,11 +1455,11 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-engine-battle",
+ "legaia-engine-dialog",
  "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
- "legaia-mes",
  "legaia-prot",
  "legaia-save",
  "legaia-tim",

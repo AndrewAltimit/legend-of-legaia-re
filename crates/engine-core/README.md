@@ -426,7 +426,7 @@ field VM, so dialogue advances by script execution rather than by a
 reimplemented approximation. Hosts that want the simpler path can leave
 it off and drive the dialog panel directly. The runner's state
 (`inline_dialogue`), the cutscene timeline's (`cutscene_timeline`) and the
-pager panel (`dialog`) live in `legaia-engine-menus`; the stepping is
+pager panel (`dialog`) live in `legaia-engine-dialog`; the stepping is
 `World`'s.
 
 A pass ends where retail's parks: on the record's backward jump onto a PC

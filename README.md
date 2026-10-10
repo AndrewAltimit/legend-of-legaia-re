@@ -288,6 +288,7 @@ legend-of-legaia-re/
 │   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
 │   ├── engine-system/            # World-free runtime system: pad pump, stream installer, sound state, fades
 │   ├── engine-menus/             # World-free menu front end: catalogs, item / spell / equip sessions, menu screens
+│   ├── engine-dialog/            # World-free dialog pager, text balloon, inline-dialogue + cutscene-timeline state
 │   ├── engine-field/             # World-free field kernels: actor programs, follow camera, event queue, world-map controller
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
 │   ├── render-kernels/           # wgpu-free render kernels both hosts share (GTE, CPU raster, emitters, lighting)

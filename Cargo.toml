@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -55,6 +55,7 @@ legaia-engine-battle-vm = { path = "crates/engine-battle-vm" }
 legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-field = { path = "crates/engine-field" }
+legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-system = { path = "crates/engine-system" }
 legaia-engine-minigames = { path = "crates/engine-minigames" }
