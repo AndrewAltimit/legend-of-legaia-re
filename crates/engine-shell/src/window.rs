@@ -88,6 +88,15 @@ pub struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
+    /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
+    /// starting the captured phase's glide where retail's stood
+    /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::align_glide_origin`]).
+    /// Set by the retail-compare image channel.
+    pub battle_cam_align: Option<(
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+    )>,
     /// `LEGAIA_SEAT_HUD_GLIDES_LANDED=1`: the retail capture's HUD widget
     /// glides had all landed, so the captured frame lands the engine's too
     /// (`World::land_battle_hud_glides`). Set by the retail-compare image
@@ -417,6 +426,9 @@ impl ScreenshotConfig {
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
+                .ok()
+                .and_then(|v| legaia_parity::retail_compare_battle::cam_align_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_parity::retail_compare_battle::HudGlideSeat::list_from_env(&v))

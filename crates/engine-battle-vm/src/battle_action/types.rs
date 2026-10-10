@@ -1183,6 +1183,19 @@ pub struct BattleActionCtx {
     /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
     pub camera_variant: u8,
 
+    /// Capture-harness pin for [`Self::camera_variant`]: when set, the
+    /// action seed (`0x0C`) stores it over its own `rand() % 4` roll and the
+    /// category arm's narrowing, after the draws themselves were made so the
+    /// shared `rand()` stream is unchanged.
+    ///
+    /// A replay of a retail capture reaches the capture's action on its own
+    /// RNG stream, so the side and tilt it frames from are its own coin, not
+    /// retail's; the retail comparison drive pins the variant the capture
+    /// reads (`ctx[+0xD]`) for the seat it drives. The seed is the only
+    /// place the pin can land in time: the state after it arms its framing
+    /// on the same tick. Nothing in play sets it.
+    pub camera_variant_pin: Option<u8>,
+
     /// `[+0x6D0]` - the battle camera's framing height / distance.
     ///
     /// Seeded at [`ActionState::ActionSeed`] by `FUN_801F0348`

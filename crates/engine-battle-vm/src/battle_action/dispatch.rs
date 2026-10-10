@@ -926,5 +926,11 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             ActionState::SpiritPreArm
         }
     };
+    // Capture harness: a replay that knows the variant retail's seed rolled
+    // lands it over the engine's own roll, after every draw above was made
+    // (`BattleActionCtx::camera_variant_pin`). Nothing in play sets it.
+    if let Some(pin) = ctx.camera_variant_pin {
+        ctx.camera_variant = pin;
+    }
     transition(ctx, next)
 }
