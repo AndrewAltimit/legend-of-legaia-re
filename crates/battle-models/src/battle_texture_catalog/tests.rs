@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build a synthetic player file with one flagged section record whose

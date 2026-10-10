@@ -6,6 +6,10 @@
 use super::*;
 use anyhow::{Result, bail};
 
+/// Byte offset from the start of an SC save block to where game data begins.
+///
+/// Verified by locating the "Vahn", "Noa", "Gala" names in an actual Legaia
+/// retail mednafen `.mcr` save at `~/.mednafen/sav/Legend of Legaia (USA).*.0.mcr`.
 /// Block layout: SC magic at +0, icon palette at +0x60, icon pixels at +0x80;
 /// game-data region begins at +0x200.
 pub const RETAIL_GAME_DATA_OFFSET: usize = 0x200;

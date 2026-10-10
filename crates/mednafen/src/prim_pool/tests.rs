@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build one packet: `[tag][payload...]`, returning the bytes.

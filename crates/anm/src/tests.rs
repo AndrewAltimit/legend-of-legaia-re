@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn synthetic(records: &[&[u8]]) -> Vec<u8> {

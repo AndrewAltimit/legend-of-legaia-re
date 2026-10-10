@@ -362,11 +362,6 @@ pub fn write_block(card_buf: &mut [u8], save_data: &[u8], product_code: &str) ->
     Ok(free[0])
 }
 
-/// Byte offset from the start of an SC save block to where game data begins.
-///
-/// Verified by locating the "Vahn", "Noa", "Gala" names in an actual Legaia
-/// retail mednafen `.mcr` save at `~/.mednafen/sav/Legend of Legaia (USA).*.0.mcr`.
-
 fn bytes_to_ascii(b: &[u8]) -> String {
     b.iter()
         .take_while(|&&c| c != 0)

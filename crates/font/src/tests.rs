@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// An attached escape sprite lays out at the pen, `y_offset` down, and

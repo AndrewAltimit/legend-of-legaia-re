@@ -1,4 +1,3 @@
-
 use super::*;
 use crate::{decode_rgba8, parse_strict};
 

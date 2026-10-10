@@ -1079,7 +1079,6 @@ pub(super) enum Cmd {
         cmd: OverlayCmd,
     },
 
-    // --- lane W1-B ---
     /// Byte-account one PROT entry: which bytes a parser claims, and what
     /// shape the rest has.
     ///

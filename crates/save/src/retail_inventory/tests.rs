@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn default_inv() -> RetailInventory {

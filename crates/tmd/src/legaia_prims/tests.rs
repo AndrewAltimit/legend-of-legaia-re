@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build a section with one FT3 group: count=2, ilen=5, vertex_offset=14.

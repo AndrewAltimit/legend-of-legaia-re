@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Synthetic tables: band slot deltas at (512,256)/(640,256)/(768,256),

@@ -93,7 +93,6 @@ fn resolve_prot_entry(input: &str, prot_dir: &std::path::Path) -> Result<PathBuf
     anyhow::bail!("no entry {prefix}*.BIN under {}", prot_dir.display())
 }
 
-// --- lane W1-B ---
 #[allow(clippy::too_many_arguments)]
 fn account_cmd(
     input: &str,
@@ -142,7 +141,6 @@ fn main() -> Result<()> {
     reset_sigpipe();
     match Cli::parse().cmd {
         Cmd::Describe { input, count } => describe(&input, count),
-        // --- lane W1-B ---
         Cmd::Account {
             input,
             prot_dir,
