@@ -389,6 +389,17 @@ engine verdict:
   own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off
   its `4C 51` tile before the press.
 
+  So are the placed objects' clips. Which frame of a door's swing is up is
+  touch history: `door_warp_rim_elm_to_mei_house` and `mei_house_door_pcsx`
+  stand in a doorway the player has just pushed open, and a seat that
+  stands the player there never touched the door. Every field-actor-ticked
+  node with a clip bound gives its record `+0x50`, clip `+0x5C`, cursor
+  `+0x68`, control word `+0x62` and step `+0x6A` (`retail_object_clips`,
+  `LEGAIA_SEAT_OBJECT_CLIPS`), written over the matching prop's own on the
+  frame the child captures (`World::seed_object_prop_clip`). A prop the
+  engine holds on another clip is left alone, so the seed never re-binds
+  what the engine's own spawn or script chose.
+
   So is an ending vignette's photo panel. The vignette record grabs the
   drawn frame into `(512, 0)` (`43 12`) and shows it through the image
   panel (`43 13`, shrunk to a corner by `43 14`), and a capture is usually

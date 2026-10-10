@@ -132,6 +132,12 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_OBJECT_CLIPS=<record>:<clip>:<cursor>:<flags>:<rate>;..`:
+    /// a retail state's drawn actors' clip words
+    /// (`legaia_parity::retail_compare::retail_object_clips`), written over
+    /// the matching placed props' clips on the capture frame
+    /// (`World::seed_object_prop_clip`).
+    pub seat_object_clips: Vec<legaia_parity::retail_compare::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
     /// over the engine's on the capture frame (`World::seed_field_morph`).
@@ -476,6 +482,9 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
                 .map(|v| legaia_parity::retail_compare::morphs_from_env(&v))
+                .unwrap_or_default(),
+            seat_object_clips: std::env::var("LEGAIA_SEAT_OBJECT_CLIPS")
+                .map(|v| legaia_parity::retail_compare::object_clips_from_env(&v))
                 .unwrap_or_default(),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {

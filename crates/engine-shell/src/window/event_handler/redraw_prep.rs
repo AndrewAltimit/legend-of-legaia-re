@@ -103,6 +103,15 @@ impl PlayWindowApp {
                 world.presentation.fx = fx;
             }
             if due {
+                for c in &sc.seat_object_clips {
+                    self.session.host.world.seed_object_prop_clip(
+                        usize::from(c.record),
+                        c.clip,
+                        c.cursor,
+                        c.flags,
+                        c.rate,
+                    );
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host

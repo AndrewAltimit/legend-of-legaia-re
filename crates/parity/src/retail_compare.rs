@@ -321,6 +321,9 @@ pub struct RetailObs {
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
     pub object_models: Vec<(u16, i16)>,
+    /// Drawn field actors' clip words ([`retail_object_clips`]), handed to
+    /// the image child as `LEGAIA_SEAT_OBJECT_CLIPS`.
+    pub object_clips: Vec<ObjectClipSeed>,
     /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
     /// the image child as `LEGAIA_SEAT_MORPHS`.
     pub morphs: Vec<MorphSeed>,
@@ -491,6 +494,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            object_clips: if matches!(class, StateClass::Field) {
+                retail_object_clips(ram)
+            } else {
+                Vec::new()
+            },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
             page_mark: matches!(class, StateClass::Field | StateClass::WorldMap)
                 .then(|| retail_page_mark(ram))
@@ -610,6 +618,12 @@ impl RetailObs {
                     .map(|(r, m)| format!("{r}:{m}"))
                     .collect::<Vec<_>>()
                     .join(","),
+            ));
+        }
+        if !self.object_clips.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_OBJECT_CLIPS",
+                object_clips_env(&self.object_clips),
             ));
         }
         if !self.morphs.is_empty() {
@@ -1997,6 +2011,28 @@ mod tests {
         assert_eq!(overworld.class, StateClass::WorldMap);
         overworld.seat_view_window(Some(&pad));
         assert_eq!(overworld.view_window, None);
+    }
+
+    #[test]
+    fn object_clip_seeds_round_trip_the_env() {
+        let clips = vec![
+            ObjectClipSeed {
+                record: 0,
+                clip: 2,
+                cursor: 95,
+                flags: 0x0108,
+                rate: 8,
+            },
+            ObjectClipSeed {
+                record: 17,
+                clip: 1,
+                cursor: -3,
+                flags: 0x0015,
+                rate: 16,
+            },
+        ];
+        assert_eq!(object_clips_from_env(&object_clips_env(&clips)), clips);
+        assert_eq!(object_clips_from_env("1:2:3;junk;4:5:6:7:8").len(), 1);
     }
 
     /// The page mark's displayed frame: the RAM's frame taken back over the

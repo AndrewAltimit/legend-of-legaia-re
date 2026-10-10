@@ -434,6 +434,77 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
         .collect()
 }
 
+/// One drawn field actor's clip words: record `+0x50`, clip id `+0x5C`,
+/// cursor `+0x68`, control word `+0x62` and cursor step `+0x6A` - what the
+/// anim tick `FUN_800204F8` steps and the draw walker poses from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectClipSeed {
+    pub record: u16,
+    pub clip: u8,
+    pub cursor: i16,
+    pub flags: u16,
+    pub rate: i16,
+}
+
+/// Every field actor with a clip bound, first in list order per record
+/// (as [`retail_object_models`] takes them). A placed object's clip is touch
+/// and walk history - a door the player has just pushed open, a lid mid
+/// swing - which a seat does not replay; the image child writes the cursor
+/// and control word over the matching prop's own on the frame it captures
+/// (`World::seed_object_prop_clip`, which leaves a prop on another clip
+/// alone).
+pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            if !seen.insert(record) {
+                return None;
+            }
+            let clip = game_anchors::u16_at(ram, n + 0x5C);
+            (1..0x100).contains(&clip).then(|| ObjectClipSeed {
+                record,
+                clip: clip as u8,
+                cursor: game_anchors::i16_at(ram, n + 0x68),
+                flags: game_anchors::u16_at(ram, n + 0x62),
+                rate: game_anchors::i16_at(ram, n + 0x6A),
+            })
+        })
+        .collect()
+}
+
+/// `LEGAIA_SEAT_OBJECT_CLIPS`: `record:clip:cursor:flags:rate`, `;`-joined.
+pub fn object_clips_env(clips: &[ObjectClipSeed]) -> String {
+    clips
+        .iter()
+        .map(|c| {
+            format!(
+                "{}:{}:{}:{}:{}",
+                c.record, c.clip, c.cursor, c.flags, c.rate
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`object_clips_env`]; a malformed entry is dropped.
+pub fn object_clips_from_env(v: &str) -> Vec<ObjectClipSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.split(':').map(str::trim);
+            Some(ObjectClipSeed {
+                record: f.next()?.parse().ok()?,
+                clip: f.next()?.parse().ok()?,
+                cursor: f.next()?.parse().ok()?,
+                flags: f.next()?.parse().ok()?,
+                rate: f.next()?.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
 /// One ambient walker's live seat: flat MAN index `+0x50`, `+0x14` /
 /// `+0x18`, and the retail-space heading `+0x26`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

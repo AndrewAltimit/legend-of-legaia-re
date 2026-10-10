@@ -163,6 +163,35 @@ impl World {
         }
     }
 
+    /// Capture alignment: write a placed object's clip cursor and control
+    /// word over its prop's own, where the prop has that clip bound. Which
+    /// frame of a door's swing is up is touch history a seat does not
+    /// replay; a prop on another clip is left alone, so the seed never
+    /// re-binds what the engine's own spawn or script chose. The retail
+    /// comparison's image child only.
+    pub fn seed_object_prop_clip(
+        &mut self,
+        record: usize,
+        clip: u8,
+        cursor: i16,
+        flags: u16,
+        rate: i16,
+    ) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == record && p.anim.anim_id == clip)
+        {
+            p.anim.cursor = cursor;
+            p.anim.flags = flags;
+            if rate != 0 {
+                p.anim.rate = rate;
+            }
+        }
+    }
+
     /// Advance the placed-prop layer one field tick: step the clips, step an
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.
