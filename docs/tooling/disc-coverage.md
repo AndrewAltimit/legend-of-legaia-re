@@ -3,6 +3,23 @@
 How much of the game's own bytes the project can account for, measured against
 the disc rather than against the project's own notes.
 
+Three instruments share the work, each with its own denominator:
+
+```mermaid
+flowchart TD
+    D["Disc bytes"] --> C["Code images<br/>(SCUS + overlays)"]
+    D --> P["PROT data entries"]
+    C --> C1["disc-coverage.py, code half:<br/>is this byte inside a dumped function?"]
+    P --> P1["disc-coverage.py, data half:<br/>is the entry's format class known?"]
+    P1 --> P2["byte-account-coverage.py:<br/>which bytes does a parser consume?"]
+    N["Addresses the project cites"] --> PC["port-catalog.py:<br/>dumped / documented / ported"]
+```
+
+The code half is byte-exact; the data half is format recognition and so an
+upper bound; [`byte-accounting.md`](byte-accounting.md) is the per-byte
+measurement under it; and the port catalog measures the citation graph, not
+the disc.
+
 ## Why this exists alongside the port catalog
 
 [`port-catalog.py`](port-catalog.md) tracks three status columns - `dumped`,
