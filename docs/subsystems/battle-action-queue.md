@@ -1,11 +1,56 @@
 # Battle action queue and Tactical Arts
 
+Every battle action is a short byte string: the **action queue** at `actor[+0x1DF..+0x1F2]`. For an attack, the player's arrows go in as swing bytes, the queue builder rewrites recognised combos into art constants, and the [action state machine](battle-action.md) plays one byte per swing while the animation's hit events apply the damage. This page documents the queue's alphabet, how `FUN_801EED1C` builds it (Tactical Arts, Miracle and Super Arts, the no-input basic attack), how it is consumed, and the action validator `FUN_8003FB10`.
+
+The port builds byte-identical queues (`legaia_art::tokenize` plus the byte appliers in `legaia_engine_vm::battle_action`) and resolves damage from the animation's hit events exactly as retail does.
+
+## At a glance
+
+| Item | Value |
+|---|---|
+| Queue | `actor[+0x1DF..+0x1F2]`, 16-byte build window (`ACTION_QUEUE_CAP`) inside a 19-byte stream |
+| Strike cursor | `ctx[+0x15]` (`0xFF` = parked) |
+| Category | `actor[+0x1DE]` (`3` = Attack, which is also every Tactical Art) |
+| Queue builder | `FUN_801EED1C` (PROT 0898 file `+0x20504`), called at action-seed state `0x0C` (`0x801E2C7C`) |
+| Learn-on-use check | `FUN_801EFBFC` |
+| Super applier | `FUN_801EF9E4` (file `+0x211CC`) |
+| Saved-chain preseed / write-back | `FUN_801DA34C` / `FUN_801DA59C` |
+| Damage kernel | `FUN_801EC3E4`, called from the anim tick `FUN_80047430` once per hit event |
+| Staged / committed / latched clip | `actor[+0x1DA]` / `+0x1D9` / `+0x1DB` |
+| Per-clip hit index | `actor[+0x1F4]` (max 4 hits per clip) |
+| Resident tables (0898) | Miracle replacements `0x801F64F4` (3 x 16 B), Super `find` `0x801F6524` (15 x 13 B), Super `replace` `0x801F65E8` (15 x 16 B), starter marks `0x801F6990`, trigger flag `0x801F696C`, innate-art caps `0x801F686C` |
+| Port | `crates/art` (`tokenize`, matchers), `crates/engine-battle-vm/src/battle_action/` (`queue_applier.rs`, `attack.rs`, `validator.rs`), `engine-core` `world/battle/command_flow.rs` and `loop_driver/hits.rs` |
+
+### Queue alphabet (attack band)
+
+| Byte | Meaning |
+|---|---|
+| `0x00` | Terminator (the magic band uses `0xFF`) |
+| `0x0C` / `0x0D` / `0x0E` / `0x0F` | Direction swing: Left / Right / Down (low) / Up (high). Written as `0x0B + dir_code` |
+| `0x19` | Art starter - the art is already known |
+| `0x1A` | `SpecialStarter` - art learned on this use; also the starter the Super applier stamps |
+| `0x1B..0x1E` | Art constants of the Miracle Art and the three Hyper Arts (art ordinals `0..=3`) |
+| `0x1F..` | Art constants of the ordinary arts. Art ordinal `n` is constant `0x1B + n`; art-animation bank record `k` is constant `0x10 + k` |
+| `0x8C..0x8F` | On-disc Miracle rows only: direction bytes with bit 7 set, cleared by the builder's MSB sweep |
+
+For a monster the bytes are action-entry indices from the AI picker, and for a cast they are the spell id followed by `(clip, shot)` pairs ([`battle-action.md`](battle-action.md)).
+
+```mermaid
+flowchart TD
+    A["Player enters arrows, or a saved chain is preseeded (FUN_801DA34C)"] --> B["Swing bytes 0x0C..0x0F at actor+0x1DF"]
+    B --> C["FUN_801EED1C tokenizes: starter over the last matched arrow, art constant inserted after it"]
+    C --> D["Miracle replacement (if the Ra-Seru marker ctx+0x25F is set)"]
+    D --> E["MSB clear and marked-starter reorder"]
+    E --> F["FUN_801EF9E4: Super find -> tail replace"]
+    F --> G["Strike loop 0x1E stages one byte per clip into actor+0x1DA"]
+    G --> H["Anim tick calls FUN_801EC3E4 on each hit-event frame"]
+    H --> I["One power byte per hit, summed into the combo word"]
+    I --> J["Total lands on live HP once, on the last beat"]
+```
+
 ## A Tactical Art is an ordinary attack-band action
 
-There is no Arts *band*. A recognised art executes through the same category-3
-attack band a plain physical swing does; the only thing that makes it an art is
-the byte the strike loop stages. Three separate functions carry the chain, and
-none of them is the one people reach for first.
+There is no Arts band. A recognised art executes through the same category-3 attack band a plain swing does; what makes it an art is the byte the strike loop stages. Three functions carry the chain: the queue builder, the strike loop and the damage kernel.
 
 ### 1. The queue builder writes the art constant into the stream
 
@@ -36,10 +81,7 @@ The port builds the same stream. `World::build_arts_action_queue`
 `legaia_art::tokenize` (leading arrows kept, the starter over the last matched
 arrow, the constant inserted after it), the learn-on-use verdict per accepted
 art (`0x1A` for a newly learned one), and the Miracle / MSB-clear / Super finish
-(`legaia_engine_vm::battle_action::finish_action_queue`), so a three-direction
-art is two swings plus the art on both sides. The older reading - the port's
-entry resolver folding the leading directions into the art - is what
-[What the port does](#what-the-port-does) replaced.
+(`legaia_engine_vm::battle_action::finish_action_queue`), so a three-direction art is two swings plus the art on both sides.
 
 A second commit path exists at `0x801EF5BC..0x801EF644`, gated on
 `ctx[+0x25F + slot] != 0`, which writes `0x1A` at the *start* of the match and
@@ -61,10 +103,7 @@ The `0x1E` body's stage site is `0x801E3734..0x801E3764`:
 801e3764  sb  v1,0x1da(s3)       ; actor[+0x1DA] = b    (the stage)
 ```
 
-Two corrections fall out. The cursor is a **battle-controller** byte
-(`_DAT_8007BD24[+0x15]`, reached as `0x4(s5)`), not an actor byte - the port
-models it per actor, which is equivalent only because one actor acts at a time.
-And the terminator is tested at the **new** cursor
+The cursor is a **battle-controller** byte (`_DAT_8007BD24[+0x15]`, reached as `0x4(s5)`), not an actor byte; the port models it per actor, which is equivalent because one actor acts at a time. The terminator is tested at the **new** cursor
 (`0x801E3998..0x801E39AC`), with `0x00` routing to state `0x1F`
 (`0x801E3A7C`).
 
@@ -89,9 +128,7 @@ load-bearing. The build loop writes `1` at each art it accepts
 (`0x801EF788`); the Super tail-replace `FUN_801EF9E4` writes `4` at each
 `0x1A` it stamps (`0x801EFBA8`), *after* the reorder. So a Super Art's starter
 is the one starter the second pass leaves alone, and the War God Icon's extra
-pass performs the Super again rather than a plain swing. A port that
-reconstructs the marks from the finished queue bytes cannot tell the two apart
-- both starters read `0x1A`.
+pass performs the Super again rather than a plain swing. The marks cannot be reconstructed from the finished queue bytes: both starters read `0x1A`.
 
 Port: `legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
 with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
@@ -215,185 +252,11 @@ unchanged. `+0x1DB` is the byte the per-art attack camera dispatches on
 which is why the camera is unreachable for any action whose stream carries only
 direction swings.
 
-### What the port does
+## Building the queue
 
-The same three things, in the same seats:
+<a id="action-queue-and-tactical-arts-trigger-ordering"></a>
 
-- **The queue is byte-exact.** `World::build_arts_action_queue` tokenizes the
-  entered arrows (§1), runs the learn-on-use verdict per accepted art and the
-  Miracle / MSB-clear / Super finish, and `arm_battle_art_action` copies the
-  window verbatim into the actor's action-parameter stream under category `3`.
-  A saved-chain row is armed from its directional string through the same
-  builder, so there is one arts path.
-- **The strike loop only stages.** `attack_chain` (`engine-vm`,
-  `battle_action/attack.rs`) stages one byte per clip behind the `+0x1DC`
-  bit-1 latch, tests the terminator at the new cursor, and never touches HP;
-  `attack_recovery` waits for the last clip's commit, stages idle over it and
-  parks the cursor at `0xFF` (`STRIKE_CURSOR_PARKED`).
-- **Damage is the anim tick's.** `World::tick_battle_hit_events`
-  (`world/battle/loop_driver/hits.rs`) is the engine seat of the per-frame
-  `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
-  runs the kernel's head guard chain
-  (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
-  `entry[0]` in `0x0C..=0x1F`, `+0x1F4 < 4`, `entry[0x10 + idx] != 0`,
-  `frame + 1 >= entry[0x10 + idx]`) against the playing clip's own head bytes
-  (`MonsterAnimPlayer::hit_source`), resolves an admitted hit with the entry's
-  power byte at that index (`land_melee_hit`: the weapon fold, the melee roll,
-  the accumulate into the target's combo word `+0x0` and its HP bar), bumps
-  `+0x1F4`, and lands the accumulated total on live HP **once** - on the hit
-  that is its clip's last listed beat while the cursor is parked
-  (`apply_combo_total`, retail's `0x801EE9A4..0x801EEA78` arm). The same pass
-  runs the tick's event-path commit (`event_commit_due`:
-  `entry[0x10] + 2 < frame` with `entry[+0x76] == 0`), which is what chains
-  one swing into the next mid-clip. Each resolved hit is surfaced as a
-  `BattleHitEvent` (`engine-core::battle_events`) carrying its index, power
-  byte, damage and running total for the impact-FX and HIT / TOTAL layers.
-
-A direction swing's entry carries its own power byte at `+0x00` (Vahn's high
-swing reads `0x18`, his low swing `0x1D`) and one beat, so a swing is exactly
-one hit resolved from the clip, not from the command; an art record's embedded
-entry carries up to four. The art record is consulted only for what the entry
-does not carry - the status effect and the per-hit sound cue - and the art is
-identified from the latched staged id (`staged_art_constant`), party slots
-only, so a monster's `0x1B+` clip indices never read as art constants.
-
-Two fallbacks keep clip-less hosts and the synthetic catalog playable, both
-disclosed at the code: a staged byte whose clip has no entry head resolves its
-hits at stage time (`resolve_zero_length_clip_hits`), and a monster whose
-catalog carries no attack entries keeps the AGL-budget immediate swings
-(`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
-disc data, where every entry carries its head.
-
-All three arms of the apply-mode law in §3 are wired, beside the loop-window
-re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read by
-`tick_battle_hit_events` under the same party / slot `0x11` / latched
-`>= 0x2B` gate). `World::hit_apply_mode` runs the look-ahead and the mode
-decision on every admitted hit
-(`legaia_engine_vm::battle_action::remaining_hit_class_bits` +
-`apply_mode`), and `resolve_hit_event` routes on the result: `APPLY_MODE_EARLY`
-lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
-keeps the cursor-parked / last-beat pair.
-
-The size-class byte the early arm needs is now carried:
-`legaia_asset::monster_archive::MonsterRecord::swing_class` parses record
-`+0x1E` and `MonsterDef::swing_class` projects it into the catalog, which is
-also what fills the no-input attack queue's own class input
-(`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
-that connects with everything - so a disc-free session behaves exactly as it
-did. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
-loop's own Attack x2 refill and by the stage site's per-stage bump, both
-described in §2.
-
-**What the builder tokenizes against.** The records retail's inner loop walks
-are the character's art-animation bank records (`record[0] +0x58`,
-[battle-data-pack.md](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)):
-record `k` is constant `0x10 + k`, its `+0x00` combo is the arrow string
-compared against the queue (`0x801EF3BC..0x801EF3EC`). Both hosts install
-those records at battle entry, next to the bank's clips
-(`World::install_art_bank_records`), so the live arts input matches the disc's
-arts. Two records never rewrite the queue and are left out of the port's
-catalog: the Miracle Art and the three Hyper Arts (ordinals `0..=3`,
-constants `0x1B..0x1E`) take the loop's other arm (`sltiu a1,a0,0x4` at
-`0x801EF330`), which writes nothing while the slot's `+0x25F` marker is clear;
-and a fully matched **one-arrow** combo takes the `s1 == 1` exit
-(`0x801EF420..0x801EF434`) with no rewrite - on the disc that is the Miracle
-finisher's record, and admitting it would steal an arrow from every art that
-contains one.
-
-Still divergent after this, each with its prerequisite:
-
-- **`0x20` is left at once.** Retail's return state holds while the target's
-  committed anim is not idle / `8` and the actor's node `+0x74` still counts
-  (`FUN_801E295C` state `0x20`), so the last clip finishes and the target
-  settles - back to idle, or onto entry `8`, the downed party member's
-  kneel the clip-tag ladder ends on - before `0x50`. The port transitions
-  immediately, so the last clip's hit lands under `0x51` (still with the
-  cursor parked, so the total applies). Prerequisite: a host query
-  for "clip in flight" on the `BattleActionHost` trait (every host impl).
-- **Empty-event art clips deal nothing through the driver.** The Miracle
-  entry (Vahn's Craze, `0x1B`: 50 frames, `+0x10..+0x13 = 0`) has no hit
-  events, so its damage path - the effect script or a chained clip - is
-  unpinned; the typed path never reaches it (above), the Miracle replacement
-  does.
-- **The starter's rate.** The `0x1A` SpecialStarter arms `ctx[+0x243]`
-  through its solo byte and the art-constant commit arm halves every actor's
-  `+0x21D` while it is set (`0x8004BB78..0x8004BBB0`); the SM clears it at
-  `0x38` and `0x50` (`0x801E4E94`, `0x801E5234`) and arms it itself at `0x3C`.
-  The port mirrors the arm through `gauge_rearm_latch` and the Done clear;
-  the two SM writes are not modelled.
-
-## Action validator (`FUN_8003FB10`)
-
-The 18-arm gate (`0x00..=0x0D` plus `0x80..=0x83`) the menu / battle UI runs against a candidate
-slot before committing the player's action. Selects which validation rule fires from the outer
-`param_1` arm (jump table at `0x80014D70`, bound `< 0x84`; unhandled slots return invalid) and,
-for arm 6, a sub-case `param_2` through a second 7-entry table at `0x80014F80`. Reads HP / MP /
-status / stat caps from the active record - the setup loop caches per-slot
-`(hp, hp_max, mp, mp_max)` pointer quads from the battle-actor table `DAT_801C9370`
-(`+0x14C/+0x14E/+0x150/+0x152`, 7 slots) when `_DAT_8007B83C == 0x15`, else from the character
-records `0x80084708 + slot*0x414` (`+0x106/+0x104/+0x10A/+0x108`, 3 slots) - and writes a
-per-slot validity bit at `gp + 0x9A8`. Source:
-`ghidra/scripts/funcs/8003fb10.txt`.
-
-Arms (ported wholesale as `legaia_engine_vm::battle_action::validate_action` over the
-`ActionValidatorHost` trait, with the `gp + 0x9A8` byte modelled as an explicit `validity_bits`
-parameter; the target-relevance arms are additionally re-implemented where they are consumed -
-liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in
-`inventory_use::effect_benefits_target`):
-
-| arm | meaning |
-|---|---|
-| `0x00` | Alive AND `hp < hp_max` (heal target). |
-| `0x01` | Walk party - set bit per slot that's alive-and-not-full. |
-| `0x02` | Alive AND `mp < mp_max` (restore-MP target). |
-| `0x03` | Status-flag presence. Battle: `actor[+0x16E] != 0`, returned **without touching the validity byte**; field: record `+0x12E != 0` with the usual clear-then-set bit write. |
-| `0x04` | Dead target (Revive item validator). |
-| `0x05` | Alive (any-action target). |
-| `0x06` | Stat-cap walker - alive slot AND sub-case-picked effective record stat(s) still below cap (strict `<`; character records regardless of mode): 0 = HP max (`+0x104` < 9999), 1 = ATK (`+0x112` < 999), 2 = UDF/LDF pair (`+0x114`/`+0x116` < 999), 3 = SPD (`+0x118` < 999), 4 = INT (`+0x11A` < 999), 5 = MP max (`+0x108` < 999), 6 = all of those plus AGL (`+0x110` < `0x118`). Sub-case ≥ 7 is invalid. |
-| `0x07` | Alive (synonym of arm 5; separate code path with no upper bound). |
-| `0x08` | Alive AND `(status & 3) != 0` ("can apply paralysis / sleep"). Battle branch skips the validity-byte write; the field branch reads the record status word **signed** and tests `& 0xFFFF0003`, so a status word with bit 15 set validates even with bits 0-1 clear (sign-extension quirk, kept by the port). |
-| `0x09` / `0x0A` | Always valid; force the bitmask to the literal `0x07`. |
-| `0x0B` / `0x0C` / `0x0D` | Per-slot exact match; only valid when `slot == arm - 0x0B`. |
-| `0x80` | Out-of-battle; story flag `0x100000` clear AND system flag 5 clear. |
-| `0x81` | Out-of-battle; story flag `0x200000` clear AND system flag 6 clear. |
-| `0x82` | Out-of-battle; calls the external item-count validator (`FUN_80046898`). |
-| `0x83` | Always valid. |
-
-The retail dispatcher writes a per-slot validity bit at `gp + 0x9A8` with per-arm discipline:
-most arms clear their slot's bit before testing and set it on success, arm `0x01` zeroes the
-whole byte before its walk, arms `0x09`/`0x0A` force the byte to `7` and `0x0B..=0x0D` overwrite
-it with the matched slot's mask, while the battle branches of `0x03`/`0x08` and all of
-`0x80..=0x83` never touch it. The engine port (`validate_action`) keeps that discipline via its
-`validity_bits` parameter; the consuming menu paths (`target_picker` for battle-target cursors,
-`inventory_use` for item-menu greying) additionally surface the same signal where it is read.
-The dump's only real callees are the system-flag test `FUN_8003CE64` (arms `0x80`/`0x81`, flags
-5/6 in the `DAT_80085758` bank, alongside `_DAT_1F800394` bits `0x100000`/`0x200000`) and the
-arm-`0x82` gate `FUN_80046898` - a 3-instruction leaf returning
-`*(int *)(gp + 0x2E8) < 0xE0` (signed compare; `see ghidra/scripts/funcs/80046898.txt`),
-ported as `battle_action::item_count_gate` over `ActionValidatorHost::inventory_count`. The
-validator does **not** call the ability bit-test `FUN_800431D0` (an earlier attribution in
-[`battle.md`](battle.md) / `reference/functions.md`).
-
-The "inventory has room, against a 224-slot cap" reading of that compare is **falsified**, and
-the two symbol names above preserve it only because three surfaces spell them. `gp` is
-`0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac` `addiu gp,gp,-0x4ce8`, cross-checked
-against two known globals: the halfword camera pitch at `gp+0x478` = `_DAT_8007B790` and the
-tile-board install pointer at `gp+0x138` = `_DAT_8007B450`). So `gp + 0x2E8` is
-`_DAT_8007B600` - in the `0x8007Bxxx` overlay-scratch band, not the `0x80084xxx` save/game-state
-window an inventory length lives in.
-
-It is the **Incense window**. Its one writer, `FUN_80046870`
-(`battle_helpers::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
-`0x82` being Incense (item `0x8A`) - and tops it up by `0x40`, capped at `0x100`. The two overlay
-sites that reach it by absolute address count it in field **walk-regen ticks**, not frames: the
-walk tick `FUN_801D0B90` (PROT 0897, `0x801D0CD4..0x801D0CE8`) decrements it once per running tick
-and, on the transition to zero, hands the field a "wore off" event (`_DAT_8007B450 = 0x801F2278`),
-and the region encounter roll `FUN_801D9E1C` skips its whole roll while it is non-zero
-(`0x801DA174`). So an Incense suppresses encounters outright for its window, and `0xE0` is the
-threshold below which another may be used - which is why a host should return `0` ("no window
-outstanding") and not plumb an inventory length in.
-
-## Action queue and Tactical Arts trigger ordering
+### Trigger ordering
 
 Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolves the player's command-input sequence into a flat **action queue** of [`ActionConstant`](../formats/art-data.md#action-constants) bytes. The queue is built incrementally from directional inputs and accumulated arts; once the player commits, the runtime applies two trigger passes in order (retail: both inside the queue-builder `FUN_801EED1C` - see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4)):
 
@@ -401,32 +264,6 @@ Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolve
 2. **Super Art find/replace at tail** - for each chained art the runtime walks all the character's Super Art `find` patterns and replaces the matched tail with a `replace` tail ending in the Super Art's finisher action constant. Triggers require: the last art of `find` is the last action in the queue, and all participating arts paid AP.
 
 Both passes are from-scratch ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`, applied together by `legaia_engine_vm::battle_action::resolve_action_queue`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
-
-### Miracle / Super in the live player-driven Arts submenu
-
-Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle-round-loop.md#arts-command-input) hands `World::build_arts_action_queue` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_core::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands the same builder a stored `legaia_save::SavedChainRecord`'s directional string (`ArtRow::sequence`). Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
-
-- **Miracle Arts are wired.** A Miracle Art's trigger *is* an exact directional-string match (`MiracleMatcher::find`), so `battle_arts::miracle_for_chain` recognises a saved chain whose command string equals the caster's Miracle Art and flags the menu row (`ArtRow::miracle = Some(name)`). `World::build_battle_arts_rows` then resolves the row's per-strike profile from the Miracle's finisher-replacement queue via `resolve_action_queue`: each art constant in the replacement contributes its staged [`ArtRecord`](../formats/art-data.md) power bytes + status effect, or one tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the same graceful-degradation fallback the no-disc-data path uses). The native `play-window` HUD shows the Miracle name on the row.
-- **Super Arts are wired, with the queue connectors abstracted.** A Super fires when the player chains several named arts ending on a known combination. `SuperMatcher`'s `find` patterns match the **tail** of a queue with the *interleaved* shape `Starter Art <dir> Starter Art <dir> Starter Art` (e.g. Vahn's Tri-Somersault `find` = `19 27 0F 19 1F 0E 19 27` = `Starter Somersault Up Starter Cyclone Down Starter Somersault`; see [art-data.md](../formats/art-data.md#super-arts) § Super Arts). The live submenu reaches that match in two steps:
-  1. **Recognize the named-art sequence.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional `Command` string into the ordered named arts it performs, identifying each by its own `ArtRecord::commands` (greedy longest-match). `battle_arts::super_for_chain` runs this over the caster's loaded art catalog.
-  2. **Tail-match the pinned art ordering.** `SuperMatcher::trigger_by_art_sequence` compares the recognized ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault), with the `0x19` starters and the interleaved connector directions stripped. A tail match flags the menu row (`ArtRow::super_art = Some(name)`), and `World::build_battle_arts_rows` resolves the per-strike profile from the Super's finisher-replacement queue (`SuperArt::replace`) through the same `art_actions_strike_profile` helper the Miracle path uses. The `play-window` HUD shows the Super name on the row. Super is checked *after* Miracle, matching the retail "Miracle replacement runs before Super tail expansion" order.
-
-  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash) - because it is a **leftover of the physical input**, not something typed between arts: the retail tokenizer keeps a matched art's leading arrows and lets arts overlap, so the connector is whatever arrow the previous match left standing (`legaia_art::tokenize`; see [art-data.md](../formats/art-data.md#super-arts) - the byte-exact queue is derivable from the input, and every Super's input from its pattern).
-  The live submenu matches the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown.
-
-  **The queue location is now pinned by capture:** it is the per-actor action-parameter byte stream at `actor[+0x1DF..+0x1F2]` - **not** `ctx[+0x274]`, which a capture showed is the turn-order active-actor index written by `recompute_battle_order` (`FUN_801DABA4`: `lbu v0,0x11(v1); sb v0,0x274`).
-  Direction/connector bytes encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up and `0x1A` = `SpecialStarter`; a Noa Miracle Art capture read that stream and it matched the engine's modeled replacement string byte-exact (probe `autorun_super_art_action_queue.lua`; runbook [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)). A Vahn **Tri-Somersault** capture likewise confirmed the Super path: its resident queue tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is byte-identical to `super_art.rs`'s `Tri-Somersault` `replace`, validating the combo-specific connectors (`0x27 → 0F`, `0x1F → 0E`) and the finisher tail; the dequeue site is pc `0x801D89D8`.
-
-  **All 15 Supers' `find`/`replace` strings are capture-validated.** The battle overlay keeps the whole trigger table resident; read out of live battle RAM (static-recomp endgame battle state, scene `jou ene`, mode `0x15`) it is:
-
-  - `0x801F64F4` / `0x801F6504` / `0x801F6514` - the three Miracle-Art replacement strings ([art-data.md](../formats/art-data.md#miracle-arts)'s pinned trigger-entry VAs), leading `0x8C/0x8D/0x8E/0x8F` masked-direction bytes intact, byte-exact against `miracle.rs`;
-  - `0x801F6524` - the 15 Super `find` entries, fixed 13-byte stride (`[len u8][bytes][zero pad]`), in `super_art.rs` table order (Vahn ×5, Noa ×5, Gala ×5);
-  - `0x801F65E8` - the 15 Super `replace` strings, 16-byte stride, zero-padded, word-aligned, same order.
-
-  Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
-  So the byte-exact connector strings are no longer spreadsheet-only: the resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
-  (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
-  The modeled tables feed the live path through `miracle_row_for` / `super_rows_for`, which project them into the resident row shapes; the queue arithmetic itself is the byte applier's, not `SuperMatcher`'s (see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4) below).
 
 ### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)
 
@@ -566,8 +403,7 @@ The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue`
 `ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
 than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
 that change: the Super scan takes the **first matching row in resident-table order** (not the
-longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate has two halves and the port
-now runs both. The per-slot marker `ctx[+0x25F + slot]` is **not** written by an input
+longest `find`), and it applies **once** (not to a fixpoint). Retail's Miracle gate has two halves and the port runs both. The per-slot marker `ctx[+0x25F + slot]` is **not** written by an input
 recognizer - it has exactly one writer in the corpus, the party battle-actor seeding routine
 `FUN_80053CB8` (`sb v1,0x25f(v0)` at `0x80054270`), which raises it when one equipment byte of
 the acting character's record is occupied: `+0x761` (record-relative `+0x199`) for every roster
@@ -660,32 +496,140 @@ retail kernel that applies. The `+0x1E` class reaches it through
 target, an empty slot or a synthetic catalog reads `0` and takes the two-arm-swing shape, which
 is retail's own answer for every non-class-`2` target.
 
-#### Why the seed is load-bearing, and where the damage goes
+#### One strike per staged swing
 
-State `0x1E` is a walk over the stream; it is not a strike primitive with a stream attached.
-An Attack that arms the band without seeding `actor[+0x1DF..]` reads its `0x00` terminator on
-byte 0 and drops to recovery on the first frame, so **the entire retail strike loop is skipped**
-- nothing is staged into `+0x1DA`, the equipment swing clips at action-table slots
-`0x0C..0x0F` never commit, no effect script is installed, and the move-power record the
-weapon-trail streak projects from never resolves (its key is this stream's first byte, read at
-`engine-core`'s `step_actor_effect_script`). The port had exactly that shape: damage still
-landed because `engine-core`'s live loop applied it through its own edge-triggered path, so
-nothing failed loudly.
+State `0x1E` is a walk over the stream. An Attack that armed the band without seeding `actor[+0x1DF..]` would read the `0x00` terminator on byte 0 and drop to recovery on the first frame: nothing staged into `+0x1DA`, no swing clip committed, no effect script installed, and no move-power record for the weapon-trail streak (its key is the stream's first byte, read at `engine-core`'s `step_actor_effect_script`).
 
-That leaves one reconciliation to state, because both halves can now fire. The authoritative
-seam is retail's: `FUN_801EC3E4` resolves one hit per **committed arms command** (SCUS calls it
-at `0x800478A0`), so the port applies one strike per swing byte the chain stages, keyed on the
-staged byte being a direction swing (`0x0C..=0x0F`). The live loop's edge-triggered
-`apply_basic_attack` now runs only when the chain consumed **zero** bytes - which is the
-monster band, whose swing count is the AGL budget (`FUN_801E9FD4`) rather than a queue. The
-staged byte is also what picks the defence half and the command power scalar for its own
-strike, so a low swing and an arm swing no longer resolve against the same number.
+`FUN_801EC3E4` resolves one hit per **committed arms command** (SCUS calls it at `0x800478A0`), so the port applies one strike per swing byte the chain stages, keyed on the staged byte being a direction swing (`0x0C..=0x0F`). The live loop's edge-triggered `apply_basic_attack` runs only when the chain consumed **zero** bytes - the monster band, whose swing count is the AGL budget (`FUN_801E9FD4`) rather than a queue. The staged byte also picks the defence half and the command power scalar for its own strike.
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
 
 The engine-side translator at `crates/engine-battle/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle.attack` and the right defense (UDF or LDF, picked from `World::battle.defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
 
 `World::fold_battle_event` folds the `ApplyArtStrike` outcome: HP / status into the target, and the outcome's **sound cues** (`cue.is_sound()`, the `HitCue::kind` SfxBank ids - distinct from the move-power `+0x0d` `FUN_8004fcc8` namespace) into a per-frame `BattleSfxCue` queue the host drains via `World::drain_battle_sfx_cues` (the audio sibling of `drain_battle_hit_fx`). The host plays each through `SfxBank::play_one_shot` at the cue's `timing_frames` delay. The live battle loop wires this end to end: the SFX bank is decoded from the user's executable at boot and the cues key on through the per-scene VAB (see [`battle.md`](battle-round-loop.md#sfx-bank--scheduler)).
+
+### Miracle / Super in the live player-driven Arts submenu
+
+Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle-round-loop.md#arts-command-input) hands `World::build_arts_action_queue` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_core::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands the same builder a stored `legaia_save::SavedChainRecord`'s directional string (`ArtRow::sequence`). Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
+
+- **Miracle Arts are wired.** A Miracle Art's trigger *is* an exact directional-string match (`MiracleMatcher::find`), so `battle_arts::miracle_for_chain` recognises a saved chain whose command string equals the caster's Miracle Art and flags the menu row (`ArtRow::miracle = Some(name)`). `World::build_battle_arts_rows` then resolves the row's per-strike profile from the Miracle's finisher-replacement queue via `resolve_action_queue`: each art constant in the replacement contributes its staged [`ArtRecord`](../formats/art-data.md) power bytes + status effect, or one tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the same graceful-degradation fallback the no-disc-data path uses). The native `play-window` HUD shows the Miracle name on the row.
+- **Super Arts are wired, with the queue connectors abstracted.** A Super fires when the player chains several named arts ending on a known combination. `SuperMatcher`'s `find` patterns match the **tail** of a queue with the *interleaved* shape `Starter Art <dir> Starter Art <dir> Starter Art` (e.g. Vahn's Tri-Somersault `find` = `19 27 0F 19 1F 0E 19 27` = `Starter Somersault Up Starter Cyclone Down Starter Somersault`; see [art-data.md](../formats/art-data.md#super-arts) § Super Arts). The live submenu reaches that match in two steps:
+  1. **Recognize the named-art sequence.** `legaia_art::recognize_art_sequence` tokenizes a saved chain's flat directional `Command` string into the ordered named arts it performs, identifying each by its own `ArtRecord::commands` (greedy longest-match). `battle_arts::super_for_chain` runs this over the caster's loaded art catalog.
+  2. **Tail-match the pinned art ordering.** `SuperMatcher::trigger_by_art_sequence` compares the recognized ordering against each Super's `SuperArt::art_sequence()` - the `find` pattern projected to its art constants only (`[0x27, 0x1F, 0x27]` for Tri-Somersault), with the `0x19` starters and the interleaved connector directions stripped. A tail match flags the menu row (`ArtRow::super_art = Some(name)`), and `World::build_battle_arts_rows` resolves the per-strike profile from the Super's finisher-replacement queue (`SuperArt::replace`) through the same `art_actions_strike_profile` helper the Miracle path uses. The `play-window` HUD shows the Super name on the row. Super is checked *after* Miracle, matching the retail "Miracle replacement runs before Super tail expansion" order.
+
+  The match is deliberately **connector-abstracted**. The connector direction after each art is *combo-specific* - the same art appears with different connectors across Supers (Vahn's `0x27` is followed by `0F` in Tri-Somersault but `0E` in Power Slash) - because it is a **leftover of the physical input**, not something typed between arts: the retail tokenizer keeps a matched art's leading arrows and lets arts overlap, so the connector is whatever arrow the previous match left standing (`legaia_art::tokenize`; see [art-data.md](../formats/art-data.md#super-arts) - the byte-exact queue is derivable from the input, and every Super's input from its pattern).
+  The live submenu matches the named-art ordering because a saved chain carries no connector bytes, not because the byte-exact strings are unknown.
+
+  **The queue location is pinned by capture:** it is the per-actor action-parameter byte stream at `actor[+0x1DF..+0x1F2]` - **not** `ctx[+0x274]`, which a capture showed is the turn-order active-actor index written by `recompute_battle_order` (`FUN_801DABA4`: `lbu v0,0x11(v1); sb v0,0x274`).
+  Direction/connector bytes encode as `0x0C/0x0D/0x0E/0x0F` = Left/Right/Down/Up and `0x1A` = `SpecialStarter`; a Noa Miracle Art capture read that stream and it matched the engine's modeled replacement string byte-exact (probe `autorun_super_art_action_queue.lua`; runbook [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md)). A Vahn **Tri-Somersault** capture likewise confirmed the Super path: its resident queue tail `19 27 0F 19 1F 0E 1A 2B 2B 2B` is byte-identical to `super_art.rs`'s `Tri-Somersault` `replace`, validating the combo-specific connectors (`0x27 → 0F`, `0x1F → 0E`) and the finisher tail; the dequeue site is pc `0x801D89D8`.
+
+  **All 15 Supers' `find`/`replace` strings are capture-validated.** The battle overlay keeps the whole trigger table resident; read out of live battle RAM (static-recomp endgame battle state, scene `jou ene`, mode `0x15`) it is:
+
+  - `0x801F64F4` / `0x801F6504` / `0x801F6514` - the three Miracle-Art replacement strings ([art-data.md](../formats/art-data.md#miracle-arts)'s pinned trigger-entry VAs), leading `0x8C/0x8D/0x8E/0x8F` masked-direction bytes intact, byte-exact against `miracle.rs`;
+  - `0x801F6524` - the 15 Super `find` entries, fixed 13-byte stride (`[len u8][bytes][zero pad]`), in `super_art.rs` table order (Vahn ×5, Noa ×5, Gala ×5);
+  - `0x801F65E8` - the 15 Super `replace` strings, 16-byte stride, zero-padded, word-aligned, same order.
+
+  Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
+  The resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
+  (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
+  The modeled tables feed the live path through `miracle_row_for` / `super_rows_for`, which project them into the resident row shapes; the queue arithmetic itself is the byte applier's, not `SuperMatcher`'s (see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4) below).
+
+## Port
+
+### What the port does
+
+The same three things, in the same seats:
+
+- **The queue is byte-exact.** `World::build_arts_action_queue` tokenizes the
+  entered arrows (§1), runs the learn-on-use verdict per accepted art and the
+  Miracle / MSB-clear / Super finish, and `arm_battle_art_action` copies the
+  window verbatim into the actor's action-parameter stream under category `3`.
+  A saved-chain row is armed from its directional string through the same
+  builder, so there is one arts path.
+- **The strike loop only stages.** `attack_chain` (`engine-vm`,
+  `battle_action/attack.rs`) stages one byte per clip behind the `+0x1DC`
+  bit-1 latch, tests the terminator at the new cursor, and never touches HP;
+  `attack_recovery` waits for the last clip's commit, stages idle over it and
+  parks the cursor at `0xFF` (`STRIKE_CURSOR_PARKED`).
+- **Damage is the anim tick's.** `World::tick_battle_hit_events`
+  (`world/battle/loop_driver/hits.rs`) is the engine seat of the per-frame
+  `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
+  runs the kernel's head guard chain
+  (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
+  `entry[0]` in `0x0C..=0x1F`, `+0x1F4 < 4`, `entry[0x10 + idx] != 0`,
+  `frame + 1 >= entry[0x10 + idx]`) against the playing clip's own head bytes
+  (`MonsterAnimPlayer::hit_source`), resolves an admitted hit with the entry's
+  power byte at that index (`land_melee_hit`: the weapon fold, the melee roll,
+  the accumulate into the target's combo word `+0x0` and its HP bar), bumps
+  `+0x1F4`, and lands the accumulated total on live HP **once** - on the hit
+  that is its clip's last listed beat while the cursor is parked
+  (`apply_combo_total`, retail's `0x801EE9A4..0x801EEA78` arm). The same pass
+  runs the tick's event-path commit (`event_commit_due`:
+  `entry[0x10] + 2 < frame` with `entry[+0x76] == 0`), which is what chains
+  one swing into the next mid-clip. Each resolved hit is surfaced as a
+  `BattleHitEvent` (`engine-core::battle_events`) carrying its index, power
+  byte, damage and running total for the impact-FX and HIT / TOTAL layers.
+
+A direction swing's entry carries its own power byte at `+0x00` (Vahn's high
+swing reads `0x18`, his low swing `0x1D`) and one beat, so a swing is exactly
+one hit resolved from the clip, not from the command; an art record's embedded
+entry carries up to four. The art record is consulted only for what the entry
+does not carry - the status effect and the per-hit sound cue - and the art is
+identified from the latched staged id (`staged_art_constant`), party slots
+only, so a monster's `0x1B+` clip indices never read as art constants.
+
+Two fallbacks keep clip-less hosts and the synthetic catalog playable, both
+disclosed at the code: a staged byte whose clip has no entry head resolves its
+hits at stage time (`resolve_zero_length_clip_hits`), and a monster whose
+catalog carries no attack entries keeps the AGL-budget immediate swings
+(`apply_basic_attack`, still accumulate-then-apply). Neither is reachable with
+disc data, where every entry carries its head.
+
+All three arms of the apply-mode law in §3 are wired, beside the loop-window
+re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read by
+`tick_battle_hit_events` under the same party / slot `0x11` / latched
+`>= 0x2B` gate). `World::hit_apply_mode` runs the look-ahead and the mode
+decision on every admitted hit
+(`legaia_engine_vm::battle_action::remaining_hit_class_bits` +
+`apply_mode`), and `resolve_hit_event` routes on the result: `APPLY_MODE_EARLY`
+lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
+keeps the cursor-parked / last-beat pair.
+
+The size-class byte the early arm needs is `legaia_asset::monster_archive::MonsterRecord::swing_class` (record `+0x1E`), projected into the catalog as `MonsterDef::swing_class`, which also fills the no-input attack queue's class input (`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
+that connects with everything - so a disc-free session never takes the early arm. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
+loop's own Attack x2 refill and by the stage site's per-stage bump, both
+described in §2.
+
+**What the builder tokenizes against.** The records retail's inner loop walks
+are the character's art-animation bank records (`record[0] +0x58`,
+[battle-data-pack.md](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)):
+record `k` is constant `0x10 + k`, its `+0x00` combo is the arrow string
+compared against the queue (`0x801EF3BC..0x801EF3EC`). Both hosts install
+those records at battle entry, next to the bank's clips
+(`World::install_art_bank_records`), so the live arts input matches the disc's
+arts. Two records never rewrite the queue and are left out of the port's
+catalog: the Miracle Art and the three Hyper Arts (ordinals `0..=3`,
+constants `0x1B..0x1E`) take the loop's other arm (`sltiu a1,a0,0x4` at
+`0x801EF330`), which writes nothing while the slot's `+0x25F` marker is clear;
+and a fully matched **one-arrow** combo takes the `s1 == 1` exit
+(`0x801EF420..0x801EF434`) with no rewrite - on the disc that is the Miracle
+finisher's record, and admitting it would steal an arrow from every art that
+contains one.
+
+Still divergent:
+
+
+- **Empty-event art clips deal nothing through the driver.** The Miracle
+  entry (Vahn's Craze, `0x1B`: 50 frames, `+0x10..+0x13 = 0`) has no hit
+  events, so its damage path - the effect script or a chained clip - is
+  unpinned; the typed path never reaches it (above), the Miracle replacement
+  does.
+- **The starter's rate.** The `0x1A` SpecialStarter arms `ctx[+0x243]`
+  through its solo byte and the art-constant commit arm halves every actor's
+  `+0x21D` while it is set (`0x8004BB78..0x8004BBB0`); the SM clears it at
+  `0x38` and `0x50` (`0x801E4E94`, `0x801E5234`) and arms it itself at `0x3C`.
+  The port mirrors the arm through `gauge_rearm_latch` and the Done clear;
+  the two SM writes are not modelled.
 
 ### Spirit / Run in the live command menu
 
@@ -702,3 +646,66 @@ consumes the turn through the Done band. The escape *probability* is the retail
 [`FUN_801E791C` roll](battle-action-helpers.md#the-escape-roll-fun_801e791c) - party vs enemy speed/missing-HP scores
 plus the two Chicken accessory bits - ported as `battle_formulas::escape_roll` and rolled by
 `World::roll_battle_escape`.
+
+## Action validator (`FUN_8003FB10`)
+
+The 18-arm gate (`0x00..=0x0D` plus `0x80..=0x83`) the menu / battle UI runs against a candidate
+slot before committing the player's action. Selects which validation rule fires from the outer
+`param_1` arm (jump table at `0x80014D70`, bound `< 0x84`; unhandled slots return invalid) and,
+for arm 6, a sub-case `param_2` through a second 7-entry table at `0x80014F80`. Reads HP / MP /
+status / stat caps from the active record - the setup loop caches per-slot
+`(hp, hp_max, mp, mp_max)` pointer quads from the battle-actor table `DAT_801C9370`
+(`+0x14C/+0x14E/+0x150/+0x152`, 7 slots) when `_DAT_8007B83C == 0x15`, else from the character
+records `0x80084708 + slot*0x414` (`+0x106/+0x104/+0x10A/+0x108`, 3 slots) - and writes a
+per-slot validity bit at `gp + 0x9A8`. Source:
+`ghidra/scripts/funcs/8003fb10.txt`.
+
+Arms (ported wholesale as `legaia_engine_vm::battle_action::validate_action` over the
+`ActionValidatorHost` trait, with the `gp + 0x9A8` byte modelled as an explicit `validity_bits`
+parameter; the target-relevance arms are additionally re-implemented where they are consumed -
+liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in
+`inventory_use::effect_benefits_target`):
+
+| arm | meaning |
+|---|---|
+| `0x00` | Alive AND `hp < hp_max` (heal target). |
+| `0x01` | Walk party - set bit per slot that's alive-and-not-full. |
+| `0x02` | Alive AND `mp < mp_max` (restore-MP target). |
+| `0x03` | Status-flag presence. Battle: `actor[+0x16E] != 0`, returned **without touching the validity byte**; field: record `+0x12E != 0` with the usual clear-then-set bit write. |
+| `0x04` | Dead target (Revive item validator). |
+| `0x05` | Alive (any-action target). |
+| `0x06` | Stat-cap walker - alive slot AND sub-case-picked effective record stat(s) still below cap (strict `<`; character records regardless of mode): 0 = HP max (`+0x104` < 9999), 1 = ATK (`+0x112` < 999), 2 = UDF/LDF pair (`+0x114`/`+0x116` < 999), 3 = SPD (`+0x118` < 999), 4 = INT (`+0x11A` < 999), 5 = MP max (`+0x108` < 999), 6 = all of those plus AGL (`+0x110` < `0x118`). Sub-case ≥ 7 is invalid. |
+| `0x07` | Alive (synonym of arm 5; separate code path with no upper bound). |
+| `0x08` | Alive AND `(status & 3) != 0` ("can apply paralysis / sleep"). Battle branch skips the validity-byte write; the field branch reads the record status word **signed** and tests `& 0xFFFF0003`, so a status word with bit 15 set validates even with bits 0-1 clear (sign-extension quirk, kept by the port). |
+| `0x09` / `0x0A` | Always valid; force the bitmask to the literal `0x07`. |
+| `0x0B` / `0x0C` / `0x0D` | Per-slot exact match; only valid when `slot == arm - 0x0B`. |
+| `0x80` | Out-of-battle; story flag `0x100000` clear AND system flag 5 clear. |
+| `0x81` | Out-of-battle; story flag `0x200000` clear AND system flag 6 clear. |
+| `0x82` | Out-of-battle; calls the external item-count validator (`FUN_80046898`). |
+| `0x83` | Always valid. |
+
+The retail dispatcher writes a per-slot validity bit at `gp + 0x9A8` with per-arm discipline:
+most arms clear their slot's bit before testing and set it on success, arm `0x01` zeroes the
+whole byte before its walk, arms `0x09`/`0x0A` force the byte to `7` and `0x0B..=0x0D` overwrite
+it with the matched slot's mask, while the battle branches of `0x03`/`0x08` and all of
+`0x80..=0x83` never touch it. The engine port (`validate_action`) keeps that discipline via its
+`validity_bits` parameter; the consuming menu paths (`target_picker` for battle-target cursors,
+`inventory_use` for item-menu greying) additionally surface the same signal where it is read.
+The dump's only real callees are the system-flag test `FUN_8003CE64` (arms `0x80`/`0x81`, flags
+5/6 in the `DAT_80085758` bank, alongside `_DAT_1F800394` bits `0x100000`/`0x200000`) and the
+arm-`0x82` gate `FUN_80046898` - a 3-instruction leaf returning
+`*(int *)(gp + 0x2E8) < 0xE0` (signed compare; `see ghidra/scripts/funcs/80046898.txt`),
+ported as `battle_action::item_count_gate` over `ActionValidatorHost::inventory_count`. The validator does **not** call the ability bit-test `FUN_800431D0`.
+
+That compare is not an inventory-room test against a 224-slot cap, although the symbol names `item_count_gate` / `inventory_count` still spell that reading. `gp` is `0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac` `addiu gp,gp,-0x4ce8`, cross-checked against the camera pitch at `gp+0x478` = `_DAT_8007B790` and the tile-board install pointer at `gp+0x138` = `_DAT_8007B450`), so `gp + 0x2E8` is `_DAT_8007B600`, in the `0x8007Bxxx` scratch band and not the `0x80084xxx` save-state window an inventory length lives in.
+
+It is the **Incense window**. Its one writer, `FUN_80046870`
+(`battle_helpers::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
+`0x82` being Incense (item `0x8A`) - and tops it up by `0x40`, capped at `0x100`. The two overlay
+sites that reach it by absolute address count it in field **walk-regen ticks**, not frames: the
+walk tick `FUN_801D0B90` (PROT 0897, `0x801D0CD4..0x801D0CE8`) decrements it once per running tick
+and, on the transition to zero, hands the field a "wore off" event (`_DAT_8007B450 = 0x801F2278`),
+and the region encounter roll `FUN_801D9E1C` skips its whole roll while it is non-zero
+(`0x801DA174`). So an Incense suppresses encounters outright for its window, and `0xE0` is the
+threshold below which another may be used - which is why a host should return `0` ("no window
+outstanding") and not plumb an inventory length in.
