@@ -583,7 +583,8 @@ impl MuscleDomeAssets {
         char_slot: u32,
     ) -> Option<Self> {
         let player_file = read_prot(
-            crate::battle_party_form::PLAYER_BATTLE_FILE_BASE as usize + char_slot.min(2) as usize,
+            legaia_asset::battle_texture_catalog::PLAYER_FILE_ENTRIES[0] as usize
+                + char_slot.min(2) as usize,
         )?;
         let raw = player_file.as_slice();
         let (asm, fmesh, foids) = fighter_build(raw)?;
@@ -948,7 +949,7 @@ impl MuscleDomeSurface {
     }
 
     /// [`Self::frame`] gated on the world's sim tick
-    /// ([`crate::world::FrameClock::sim_ticks`]): the choreography, the pose
+    /// (`legaia_engine_core::world::FrameClock::sim_ticks`): the choreography, the pose
     /// and the battle camera script step once per tick the world ran, and a
     /// display frame that ran no tick re-draws the last pose. [`Self::frame`]
     /// steps once per *call*, so a host calling it once per display frame

@@ -461,9 +461,12 @@ presentation left to the host. The ones that need no `World` - `dance`,
 `baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board`,
 `prize_exchange` and the World-free half of `muscle_dome` - live in
 [`legaia-engine-minigames`](../engine-minigames/README.md) and are
-re-exported here at their old paths; this crate keeps their `World` glue
-and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
-`fishing_scene`, `fishing_venue`, `muscle_dome*`):
+re-exported here at their old paths, as are the duel and arena surfaces
+(`baka_duel_scene`, `muscle_dome_scene`) from
+[`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md); this
+crate keeps their `World` glue and scene assembly (`dance_venue`,
+`dance_cast_scene`, `fishing_scene`, `fishing_venue`, `muscle_dome`,
+`muscle_ringside`):
 
 - `dance` - Noa's dance rhythm minigame, driven by the parsed step chart. It
   also owns the two `minigame_actor` pools the overlay's draw kernels read: the
@@ -500,7 +503,8 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   the live roster and hands the slice to `magic_loadout_of`. `timed_fight`
   and `battle_open` split the same way: their kernels in
   `legaia-engine-menus`, their `World` / `ProtIndex` readers here.
-- `muscle_dome_scene` - the dome's 3D arena surface, `MuscleDomeSurface`:
+- `muscle_dome_scene` (re-exported from `legaia-engine-minigame-scenes`) -
+  the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by
   `DomeCamera`. Both play hosts drive it once a frame, as
@@ -613,7 +617,8 @@ and scene assembly (`dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
   fishing minigame's `PondSession`, its actors, the venue hub screen and
   venue-actor step.
 - `slot_machine` / `baka_cabinet` / `baka_duel_scene` - the casino slot
-  machine rules engine, and the Baka Fighter cabinet shell and 3D duel scene.
+  machine rules engine, and the Baka Fighter cabinet shell and 3D duel scene
+  (the last re-exported from `legaia-engine-minigame-scenes`).
 - `tile_board` / `timed_fight` / `incense_notice` - the op-`0x49` tile board,
   the turn-limited boss fight's gate, and the Incense wear-off notice.
 - `encounter` / `encounter_man` / `monster_ai` / `monster_catalog` - per-scene

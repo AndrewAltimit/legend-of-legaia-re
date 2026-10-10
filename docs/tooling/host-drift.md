@@ -829,7 +829,7 @@ This tier asks the next question with the only evidence a source scan carries:
 for each paired kernel, the set of **engine functions** each host's body
 reaches. Engine means the wgpu-free crates both hosts link
 (`ENGINE_API_CRATES`: `engine-core`, `engine-battle`, `engine-effects`,
-`engine-minigames`, `engine-vm`, `engine-battle-vm`, `engine-ui`,
+`engine-minigames`, `engine-minigame-scenes`, `engine-vm`, `engine-battle-vm`, `engine-ui`,
 `engine-audio`, `engine-session`, `engine-screens`). A host's own
 helpers are followed transitively, so a step spelled as five private methods
 is compared against a twin that inlines them.
@@ -1690,7 +1690,7 @@ through one builder, `minigames::baka_state_json_for`; the play page's own
 copy carried no `clock` and no `ghosts`.
 
 **The duel's 3D surface is one engine kernel on all three hosts.**
-`engine-core::baka_duel_scene` builds the buffers (both fighters, two ghost
+`engine-minigame-scenes::baka_duel_scene` builds the buffers (both fighters, two ghost
 copies each, the four arena walls, the floor), poses them from the fighters'
 display clips and the afterimage passes, and owns the arena camera; the
 native window (`refresh_baka_duel_gpu`) and the play page

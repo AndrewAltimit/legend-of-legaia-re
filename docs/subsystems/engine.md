@@ -108,11 +108,12 @@ engine-battle-vm → asset, art               (battle action SM, formulas, battl
 engine-vm     → engine-battle-vm, asset, prot, art, anm  (VM layer; no GPU / audio deps)
 engine-battle → engine-vm, asset, art, anm, save, tim, tmd, bytes  (World-free battle kernels; no GPU / audio deps)
 engine-minigames → engine-vm, asset, save, tmd    (minigame rules engines; no World)
+engine-minigame-scenes → engine-minigames, engine-menus, engine-battle, engine-field, engine-system, engine-vm, asset, tim, tmd  (the minigames' 3D scene surfaces; no World)
 engine-effects → engine-battle, engine-minigames, engine-vm, asset, tmd  (World-free effect kernels)
 engine-system → engine-vm, bytes, cheats, gamedata  (World-free runtime system: input, fades, streaming, sound state)
 engine-menus  → engine-system, engine-battle, engine-minigames, engine-vm, asset, art, font, mes, save, tim, serde  (World-free menu / title / card front end)
 engine-field  → engine-system, engine-minigames, engine-battle, engine-vm, asset, anm, bytes, mes, tmd, serde  (World-free field kernels: actor programs, camera params, cue routers)
-engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-vm + the parser crates
+engine-core   → engine-battle, engine-effects, engine-system, engine-menus, engine-field, engine-minigames, engine-minigame-scenes, engine-vm + the parser crates
 render-kernels → engine-vm, asset, tim, tmd (GTE math, screen prims, VRAM capture, effect emitters; no wgpu)
 engine-ui     → render-kernels, engine-vm, asset, tim, tmd, font (draw-list builders; no wgpu)
 engine-render → engine-ui, engine-vm, asset, tim, font (wgpu; no engine-core dep)
@@ -133,7 +134,7 @@ Asset crates (`tim`, `tmd`, `vab`, etc.) stay engine-agnostic - they produce typ
 Sequenced music is covered by `crates/seq` (the SEQ parser) plus the `engine-audio` `Sequencer`; the `.dpk / .MAP / .PCH` family decodes through `legaia_asset::sound_pack`.
 Battle splits three ways: the action SM and the arithmetic kernels it calls live in `engine-battle-vm` (a crate below `engine-vm`, which re-exports every module at its old `legaia_engine_vm::` path - [that crate's README](../../crates/engine-battle-vm/README.md) has the split line), the `World`-free battle kernels (monster AI script, catalogs, encounters, level-up, the per-frame battle passes) in `engine-battle`, and the stateful `World` side (round loop, command flow, cast band, monster turn picker) in `engine-core`, which re-exports every `engine-battle` module at its old path. Menu modules live in `engine-core` next to the field VM hosts.
 
-The minigame rules engines split the same way: `engine-minigames` holds the ones that need no `World` (slot machine, Baka Fighter, dance, fishing, the prize exchange, the Muscle Dome's contest ladder and damage model), and `engine-core` re-exports each at its old path while keeping their `World` glue and scene assembly - the split line is in [that crate's README](../../crates/engine-minigames/README.md).
+The minigame rules engines split the same way: `engine-minigames` holds the ones that need no `World` (slot machine, Baka Fighter, dance, fishing, the prize exchange, the Muscle Dome's contest ladder and damage model), and `engine-core` re-exports each at its old path while keeping their `World` glue and scene assembly - the split line is in [that crate's README](../../crates/engine-minigames/README.md). The two 3D surfaces that load through a `read_prot` closure rather than a `Scene` (the Baka Fighter duel and the Muscle Dome arena) sit one crate up, in [`engine-minigame-scenes`](../../crates/engine-minigame-scenes/README.md).
 
 ## Runtime architecture
 

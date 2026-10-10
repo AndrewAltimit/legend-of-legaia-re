@@ -545,7 +545,7 @@ is set, stores the idle and clears bit `8`. So a normal attack plays out
 once and idles, a hit reaction plays out, holds one tick and idles, and a
 knockdown holds until the next round setup.
 
-Port: `engine-core::baka_duel_scene::FighterMotion`, one per seat in
+Port: `engine-minigame-scenes::baka_duel_scene::FighterMotion`, one per seat in
 `BakaFight` (`BakaFight::motion`), stepped every tick after the rules. It
 feeds only the presentation - the exchange still books off the strike
 clock, and cooldowns still pace re-entry. All three hosts pose the fighters
@@ -642,7 +642,7 @@ over the `6 x 6` window the init seeds at `0x1F8003F8` / `0x1F8003FA`
 
 ### In the port
 
-`engine-core::baka_duel_scene` is the whole 3D surface, and every duel host
+`engine-minigame-scenes::baka_duel_scene` is the whole 3D surface, and every duel host
 draws through it:
 
 - `DuelCamera` holds the ten globals, runs the round setup's snap, the spin,
@@ -1839,7 +1839,7 @@ uploaded).
 
 The **3D duel** - both fighters posed by their display clips, the special's
 ghosts, the walls, the floor and the arena camera - is
-`engine-core::baka_duel_scene`, drawn by the play window and the browser
+`engine-minigame-scenes::baka_duel_scene`, drawn by the play window and the browser
 play page from one buffer set and one view-projection; see
 [The arena in 3D](#in-the-port).
 

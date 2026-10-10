@@ -20,7 +20,7 @@
 //!   [`SPECIAL_CAMERA_TABLE_VA`], or [`OPPONENT_SPECIAL_GLIDE`] for the
 //!   opponent. Both glides are the SCUS camera-relative glide family
 //!   (`FUN_80021248` normalizes, `FUN_8002149C` walks), run here through
-//!   [`legaia_engine_vm::camera_rel_actor`] and [`crate::camera_rel_glide`].
+//!   [`legaia_engine_vm::camera_rel_actor`] and [`legaia_engine_vm::camera_rel_glide`].
 //!   The world is drawn through the field view build `FUN_800172C0` with the
 //!   base matrix at `0x6000` (6x, captured in the parked `minigame_baka_fighter`
 //!   state along with `H = 512`), so [`DuelCamera::view`] divides the eye trio
