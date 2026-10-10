@@ -442,4 +442,44 @@ mod tests {
             "a bare Spu::new() pre-render is dry where the live mixer is wet"
         );
     }
+
+    #[test]
+    fn bus_volumes_scale_music_and_cues_independently() {
+        // A sequencer note rides the BGM bus, a cue key-on the SFX bus: each
+        // config level silences only its own voices, and the default level
+        // leaves the mix untouched.
+        assert_eq!(crate::volume_level_gain(crate::VOLUME_LEVEL_UNITY), 0x4000);
+        assert_eq!(crate::volume_level_gain(0), 0);
+        assert_eq!(crate::volume_level_gain(99), crate::volume_level_gain(10));
+        let level = |sequencer: bool, bgm: u8, sfx: u8| {
+            let sink = TestAudioSink::new(crate::SPU_INTERNAL_RATE);
+            sink.set_bus_volumes(bgm, sfx);
+            sink.with_spu(|spu| {
+                let bank = held_tone_bank(spu);
+                if sequencer {
+                    assert!(bank.play_note(spu, 0, 0, 60, 127));
+                } else {
+                    assert!(bank.play_tone(spu, 0, 0, 0, 60, 127));
+                }
+            });
+            sink.render_frames(4096).mean_abs()
+        };
+        for sequencer in [true, false] {
+            let unity = level(sequencer, 8, 8);
+            assert!(unity > 0.0);
+            let (own_off, other_off) = if sequencer {
+                (level(true, 0, 8), level(true, 8, 0))
+            } else {
+                (level(false, 8, 0), level(false, 0, 8))
+            };
+            assert_eq!(
+                own_off, 0.0,
+                "sequencer={sequencer}: own bus at 0 is silent"
+            );
+            assert_eq!(
+                other_off, unity,
+                "sequencer={sequencer}: the other bus is untouched"
+            );
+        }
+    }
 }

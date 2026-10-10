@@ -34,6 +34,10 @@ pub mod reverb;
 pub mod voice;
 
 pub use reverb::{Reverb, ReverbMode};
+pub use voice::VoiceBus;
+
+/// Unity [`Spu::bus_gain`] (Q1.14).
+pub const BUS_GAIN_UNITY: u16 = 0x4000;
 
 use ram::SpuRam;
 use voice::Voice;
@@ -71,6 +75,11 @@ pub struct Spu {
     /// the sample with the larger magnitude is the one the larger volume
     /// scaled - which also covers a voice whose volume a CC changes mid-note.
     pub mono: bool,
+    /// Engine-only per-bus gain, Q1.14 (`0x4000` = unity), indexed by
+    /// [`VoiceBus::index`]: `[bgm, sfx]`. Each voice's output is scaled by its
+    /// [`Voice::bus`]'s gain before it reaches the dry mix and the reverb
+    /// send. Unity on both (the default) is the retail mix, bit-identical.
+    pub bus_gain: [u16; 2],
 }
 
 impl Default for Spu {
@@ -84,6 +93,7 @@ impl Default for Spu {
             note_trace: None,
             reverb_mode_raw: 0,
             mono: false,
+            bus_gain: [BUS_GAIN_UNITY; 2],
         }
     }
 }
@@ -191,8 +201,16 @@ impl Spu {
         let mut send_l: i64 = 0;
         let mut send_r: i64 = 0;
         let mono = self.mono;
+        let bus_gain = self.bus_gain;
         for v in &mut self.voices {
             let (l, r) = v.tick(&self.ram);
+            let g = bus_gain[v.bus.index()];
+            let (l, r) = if g == BUS_GAIN_UNITY {
+                (l, r)
+            } else {
+                let g = g as i64;
+                (((l as i64 * g) >> 14) as i32, ((r as i64 * g) >> 14) as i32)
+            };
             let (l, r) = if mono {
                 let m = if l.abs() >= r.abs() { l } else { r };
                 (m, m)

@@ -1407,6 +1407,15 @@ track (`engine-shell/tests/mednafen_voice_parity.rs`).
 sides (`0x800677F4..0x80067818`) - every voice of a mono-mode state reads
 `L == R == max` - not at their average. `Spu::mono` applies it at mix time.
 
+**BGM / SFX buses (engine-only).** Retail has one SPU mix; the engine tags
+each voice at key-on with the bus of whoever keyed it - a sequencer note
+(`PitchPath::Sequencer`) is `VoiceBus::Bgm`, a cue key-on (`PitchPath::Cue`)
+is `VoiceBus::Sfx` - and `Spu::bus_gain` scales the voice before the dry sum
+and the reverb send. The config file's `bgm_volume` / `sfx_volume` (`0..=10`,
+linear, level 8 = unity) set the two gains through
+`AudioSink::set_bus_volumes` on both play hosts. At the default the mix is
+bit-identical to the single-bus one; XA streams ride neither bus.
+
 **Timebase.** The production playback path ticks the sequencer once per SPU
 sample (`tick_sample`), so the music clock is locked to the audio clock.
 Timing is computed with an **exact integer accumulator** (units of

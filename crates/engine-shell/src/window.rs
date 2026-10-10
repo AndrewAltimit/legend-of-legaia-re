@@ -1730,6 +1730,9 @@ impl PlayWindowApp {
             // mixer gate zeroes the output while the sequencer / SPU keep
             // ticking, so unmuting resumes mid-track in sync.
             audio.set_muted(self.options_state.muted);
+            // Engine-only BGM / SFX bus levels (config file only); the
+            // default level is unity, the retail mix.
+            audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
         }
     }
 

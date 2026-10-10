@@ -68,7 +68,7 @@ pub use sfx::{
 };
 pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
 pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
-pub use sink::AudioSink;
+pub use sink::{AudioSink, VOLUME_LEVEL_UNITY, volume_level_gain};
 pub use spu::Spu;
 pub use spu::adpcm::{AdpcmDecoder, BLOCK_BYTES, SAMPLES_PER_BLOCK};
 pub use spu::adsr::{AdsrConfig, AdsrState, Phase};

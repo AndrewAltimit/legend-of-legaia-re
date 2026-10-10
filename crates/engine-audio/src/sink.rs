@@ -15,6 +15,18 @@ use anyhow::Result;
 use crate::spu::Spu;
 use crate::{SequencerProgress, StreamResampler, XaPlayback, sequencer::Sequencer};
 
+/// The config-file volume level (`0..=10`) whose bus gain is unity: the
+/// default, which leaves the retail mix bit-identical.
+pub const VOLUME_LEVEL_UNITY: u8 = 8;
+
+/// Q1.14 bus gain for a `0..=10` volume level: linear, `level / 8`, so 0 is
+/// silent, [`VOLUME_LEVEL_UNITY`] is unity (`0x4000`) and 10 is a 1.25x boost
+/// (the mix saturates rather than wraps). Levels above 10 clamp to 10.
+pub const fn volume_level_gain(level: u8) -> u16 {
+    let level = if level > 10 { 10 } else { level } as u32;
+    (level * crate::spu::BUS_GAIN_UNITY as u32 / VOLUME_LEVEL_UNITY as u32) as u16
+}
+
 /// An audio output: anything that owns a [`StreamResampler`] and feeds a
 /// device from it. Implementors provide [`Self::with_core`]; every control
 /// method is provided on top of it.
@@ -39,6 +51,17 @@ pub trait AudioSink {
     /// zeroed - so unmuting resumes in sync, mid-track.
     fn set_muted(&self, muted: bool) {
         self.with_core(|s| s.muted = muted);
+    }
+
+    /// The engine-only BGM / SFX bus volumes (the config file's `bgm_volume`
+    /// / `sfx_volume`, each `0..=10`): every sequencer voice is scaled by the
+    /// BGM level, every cue voice by the SFX level ([`Spu::bus_gain`] via
+    /// [`volume_level_gain`]). The default level 8 is unity - the retail mix.
+    /// XA streams (voice / FMV audio) ride neither bus; mute covers them.
+    fn set_bus_volumes(&self, bgm_level: u8, sfx_level: u8) {
+        self.with_core(|s| {
+            s.spu.bus_gain = [volume_level_gain(bgm_level), volume_level_gain(sfx_level)];
+        });
     }
 
     /// Current state of the master mute gate.
