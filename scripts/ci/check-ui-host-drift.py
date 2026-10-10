@@ -656,7 +656,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "natively. Both ask `field_frame::frame_clear_color`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play_battle_render.rs", "play_scene_clear_color"),
+            "web": ("crates/web-viewer/src/play_battle_render/stage_exports.rs", "play_scene_clear_color"),
         },
         "mode": "symbols_all",
         "symbols": ["frame_clear_color"],
