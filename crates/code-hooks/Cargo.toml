@@ -1,0 +1,15 @@
+[package]
+name = "legaia-code-hooks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_code_hooks"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-asset.workspace = true
+legaia-disc-patch.workspace = true
+legaia-lzs.workspace = true

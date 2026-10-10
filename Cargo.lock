@@ -1318,6 +1318,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-code-hooks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-asset",
+ "legaia-disc-patch",
+ "legaia-lzs",
+]
+
+[[package]]
 name = "legaia-disc-patch"
 version = "0.1.0"
 dependencies = [
@@ -1826,6 +1836,7 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-bytes",
+ "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-font",
  "legaia-gamedata",

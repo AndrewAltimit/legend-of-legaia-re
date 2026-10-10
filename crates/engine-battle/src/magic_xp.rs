@@ -114,7 +114,7 @@ pub fn add_spell_xp(record: &mut CharacterRecord, slot: usize, gain: u32) {
 /// id, `level = 1`, `xp = 0`, and increments the count. The newest Seru
 /// therefore always lists first. (The randomizer's shiny-Seru feature
 /// patches exactly this routine's level write + shift - see
-/// `crates/patcher/src/shiny_seru/`.)
+/// `crates/code-hooks/src/shiny_seru/`.)
 ///
 /// ## The stored id is the FULL spell id, not its low byte
 ///

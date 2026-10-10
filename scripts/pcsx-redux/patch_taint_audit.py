@@ -56,7 +56,7 @@ SCUS_END_VA = 0x8007B800
 # (va, len, label). Each is a site one patcher feature rewrites; a state whose
 # resident bytes differ from the retail executable over the window carries
 # that feature. The arenas are the verified-dead SCUS regions the hand-
-# assembled features share (crates/patcher/src/shiny_seru/layout.rs), so an
+# assembled features share (crates/code-hooks/src/shiny_seru/layout.rs), so an
 # arena hit alone names the class, not the feature.
 SITES = [
     (0x800321D4, 8, "shiny-seru (menu hook)"),

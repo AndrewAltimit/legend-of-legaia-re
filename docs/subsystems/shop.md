@@ -627,7 +627,7 @@ vendor-name plates. (These instruction/descriptor words are byte-verified by
 the randomizer's seru-trading vendor, which patches exactly these seams -
 cursor clamp, a detour after the Quit text draw, and the window record's
 height field - to grow the panel to four rows; see
-`crates/patcher/src/seru_overlay/consts.rs` and
+`crates/code-hooks/src/seru_overlay/consts.rs` and
 [randomizer.md](../tooling/randomizer.md).)
 
 ## Gold-shop stock source

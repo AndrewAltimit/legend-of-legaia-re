@@ -281,6 +281,7 @@ legend-of-legaia-re/
 │   ├── translate/                # Language-pack pipeline behind `legaia-patcher translate`
 │   ├── party-swap/               # Party / Delilas battle-model swap kernels (pure transforms)
 │   ├── texture-replace/          # Texture / battle-art / monster-skin / save-icon replacement
+│   ├── code-hooks/               # MIPS encoders + simulator, injection arenas, self-contained code-hook mods
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
