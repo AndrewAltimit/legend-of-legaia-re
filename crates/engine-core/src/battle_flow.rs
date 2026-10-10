@@ -212,6 +212,15 @@ pub struct ActiveTutorialBox {
     /// [`crate::battle_tutorial::SPARRING_CAPTION_RECT`]). `None` for every
     /// `FUN_801F747C` emission.
     pub placed: Option<(i16, i16, i16, i16)>,
+    /// A self-dismissing prompt of the 967 emitter - the text actor it
+    /// registers under sort key `1`. Retail never times that node out: it
+    /// stands until the next key-`1` registration reuses it or the hook
+    /// unregisters it, so when this box leaves the queue it becomes the
+    /// world's standing prompt
+    /// ([`crate::world::BattleState::tutorial_standing`]). `false` for a
+    /// waiting box (key `2`), the sparring caption and the battle-open
+    /// banner, which are other actors.
+    pub stands: bool,
 }
 
 impl ActiveTutorialBox {
@@ -250,11 +259,14 @@ impl ActiveTutorialBox {
     }
 }
 
-/// How long a non-waiting tutorial box stays up, in frames.
+/// How long a non-waiting tutorial box holds the battle loop, in frames.
 ///
-/// Retail's non-waiting styles are dismissed by the emitting handler's own
-/// sequencing rather than a timer; the engine's box queue needs a duration, so
-/// it uses the dialog layer's standard auto-advance dwell.
+/// Retail's self-dismissing prompt holds nothing and is never timed out: its
+/// text actor stands until the next one replaces it. The engine's box queue
+/// parks the loop on every box, so a non-waiting one needs a duration - the
+/// dialog layer's standard auto-advance dwell - after which it leaves the
+/// queue and stands on screen as retail's does
+/// ([`ActiveTutorialBox::stands`]).
 pub const TUTORIAL_BOX_AUTO_FRAMES: u16 = 150;
 
 #[cfg(test)]
@@ -275,6 +287,7 @@ mod tests {
             group: 0,
             any_press_dismisses: true,
             placed: Some(SPARRING_CAPTION_RECT),
+            stands: false,
         };
         assert_eq!(b.rect(120), Some((56, 176, 208, 28)));
         assert_eq!(b.rect(194), Some((56, 176, 208, 28)));

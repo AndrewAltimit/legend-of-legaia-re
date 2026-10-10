@@ -383,6 +383,7 @@ impl World {
                 group,
                 any_press_dismisses: false,
                 placed: None,
+                stands: false,
             });
     }
 

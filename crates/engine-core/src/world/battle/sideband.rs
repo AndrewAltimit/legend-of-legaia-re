@@ -126,6 +126,7 @@ impl World {
         self.battle.stage_id = 0;
         self.battle.tutorial = None;
         self.battle.tutorial_boxes.clear();
+        self.battle.tutorial_standing = None;
         self.battle.end = None;
         self.finish_battle();
     }
@@ -195,6 +196,7 @@ impl World {
                 // `FUN_800355F0` at `0x801F7374`: the floating-element list
                 // (the sign-off box with it) is drained.
                 self.battle.tutorial_boxes.clear();
+                self.battle.tutorial_standing = None;
                 // Not staged: the `FUN_801D829C` aim at party seat 0
                 // (`0x801F7368`) - the phase-scripted camera keeps its
                 // framing through the fade.
@@ -541,6 +543,7 @@ impl World {
             any_press_dismisses: true,
             // HUD element `0x5A`'s own placement record, not a measured box.
             placed: Some(SPARRING_CAPTION_RECT),
+            stands: false,
         });
     }
 

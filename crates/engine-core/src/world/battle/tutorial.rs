@@ -100,6 +100,7 @@ impl World {
         self.battle.stage_id = crate::battle_tutorial::TUTORIAL_STAGE_ID;
         self.battle.tutorial_pending = false;
         self.battle.tutorial_boxes.clear();
+        self.battle.tutorial_standing = None;
         self.battle.flow = BattleFlowState::Idle;
     }
 
@@ -109,9 +110,15 @@ impl World {
         !self.battle.tutorial_boxes.is_empty()
     }
 
-    /// The box currently on screen, if any.
+    /// The box currently on screen, if any: the queue's head, or with the
+    /// queue empty the standing prompt
+    /// ([`crate::world::BattleState::tutorial_standing`]). Hosts park the
+    /// HUD surfaces a box covers on it.
     pub fn battle_tutorial_box(&self) -> Option<&ActiveTutorialBox> {
-        self.battle.tutorial_boxes.front()
+        self.battle
+            .tutorial_boxes
+            .front()
+            .or(self.battle.tutorial_standing.as_ref())
     }
 
     /// Every box on screen this frame: the **front group** of the queue.
@@ -121,12 +128,24 @@ impl World {
     /// frame at `Begin | Run` - and each is its own text actor, so a host
     /// draws the whole group, not the queue's head. A later dispatch's boxes
     /// wait behind the group until it has been dismissed.
+    ///
+    /// The standing prompt draws under them: it is the key-`1` actor, and a
+    /// queued self-dismissing box is the registration that replaces it, so
+    /// it is yielded only while the front group brings none of its own.
     pub fn battle_tutorial_boxes_on_screen(&self) -> impl Iterator<Item = &ActiveTutorialBox> + '_ {
         let group = self.battle.tutorial_boxes.front().map(|b| b.group);
-        self.battle
+        let front = move |b: &&ActiveTutorialBox| Some(b.group) == group;
+        let replaced = self
+            .battle
             .tutorial_boxes
             .iter()
-            .take_while(move |b| Some(b.group) == group)
+            .take_while(front)
+            .any(|b| b.stands);
+        self.battle
+            .tutorial_standing
+            .iter()
+            .filter(move |_| !replaced)
+            .chain(self.battle.tutorial_boxes.iter().take_while(front))
     }
 
     /// The next free dispatch group id for the box queue.
@@ -261,11 +280,30 @@ impl World {
             .iter()
             .position(|b| b.group != group)
             .unwrap_or(self.battle.tutorial_boxes.len());
+        // The hook's unregister pair: under a waiting box at flow `0x5A` it
+        // frees text actors `0` and `1` (`0x801F71BC..0x801F71D8`), so the
+        // standing prompt goes when the target cursor opens over one.
+        if self.battle.flow.raw() == 0x5A
+            && self
+                .battle
+                .tutorial_boxes
+                .iter()
+                .take(keep_from)
+                .any(|b| b.waits_for_input)
+        {
+            self.battle.tutorial_standing = None;
+        }
         let mut i = 0;
         let mut end = keep_from;
         while i < end {
             if done(&self.battle.tutorial_boxes[i]) {
-                self.battle.tutorial_boxes.remove(i);
+                // A self-dismissing prompt leaves the queue, not the
+                // screen: it is the key-`1` actor until the next one.
+                if let Some(b) = self.battle.tutorial_boxes.remove(i)
+                    && b.stands
+                {
+                    self.battle.tutorial_standing = Some(b);
+                }
                 end -= 1;
             } else {
                 i += 1;
@@ -325,6 +363,7 @@ impl World {
             };
             let waits_for_input = b.placement().is_some_and(|p| p.waits_for_input);
             self.battle.tutorial_boxes.push_back(ActiveTutorialBox {
+                stands: !waits_for_input,
                 text: text.to_string(),
                 style: b.style,
                 waits_for_input,
