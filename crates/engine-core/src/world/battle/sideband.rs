@@ -514,7 +514,9 @@ impl World {
     /// than showing an empty window.
     fn raise_sparring_caption(&mut self) {
         use crate::battle_flow::ActiveTutorialBox;
-        use crate::battle_tutorial::{SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_STYLE};
+        use crate::battle_tutorial::{
+            SPARRING_CAPTION_FRAMES, SPARRING_CAPTION_RECT, SPARRING_CAPTION_STYLE,
+        };
         let Some(text) = self
             .battle
             .ui_strings
@@ -537,6 +539,8 @@ impl World {
             frames_remaining: SPARRING_CAPTION_FRAMES,
             group,
             any_press_dismisses: true,
+            // HUD element `0x5A`'s own placement record, not a measured box.
+            placed: Some(SPARRING_CAPTION_RECT),
         });
     }
 

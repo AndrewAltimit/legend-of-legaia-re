@@ -286,3 +286,39 @@ fn following_the_lesson_never_rewinds() {
         assert_eq!(e.boxes[0].message, tut::msg::NOW_BEGIN);
     }
 }
+
+/// The sparring caption's box is disc data: placement record `0x5A` of the
+/// SCUS screen-element table. The engine carries its landed content box as
+/// [`tut::SPARRING_CAPTION_RECT`]; this pins the constant to the record.
+#[test]
+fn the_sparring_caption_box_is_placement_record_0x5a() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    }
+    let scus = std::env::var_os("LEGAIA_EXTRACTED_DIR")
+        .map(PathBuf::from)
+        .into_iter()
+        .chain(["extracted", "../../extracted"].map(PathBuf::from))
+        .map(|d| d.join("SCUS_942.54"))
+        .find(|p| p.exists());
+    let Some(scus) = scus else {
+        eprintln!("[skip] no extracted SCUS_942.54");
+        return;
+    };
+    let scus = std::fs::read(scus).expect("read SCUS");
+    let table = legaia_asset::screen_elements::ScreenElementTable::from_scus(&scus)
+        .expect("screen-element table");
+    let rec = table
+        .get(tut::SPARRING_CAPTION_RECORD)
+        .expect("record 0x5A");
+    // A framed window (kind 3) that slides up from below the screen.
+    assert_eq!(rec.kind & 0xFF, 3);
+    assert_eq!(rec.seat, (56, 236));
+    let (px, py) = rec.alt_pen();
+    assert_eq!(
+        (px, py, rec.width, rec.height),
+        tut::SPARRING_CAPTION_RECT,
+        "the landed pen and the fixed content box"
+    );
+}

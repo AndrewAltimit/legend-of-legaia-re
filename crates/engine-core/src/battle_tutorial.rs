@@ -429,12 +429,31 @@ pub const FLOW_STATE_BATTLE_OVER: u8 = 0xC8;
 /// REF: FUN_80056208
 pub const SPARRING_CAPTION_FRAMES: u16 = 0x0B40 / 8;
 
-/// Box style the sparring caption is placed with. The caption is HUD
-/// element `0x5A`, not a 967 emission, and its frame position - centred,
-/// sitting on the bottom anchor `0xCC` - is the corner emitter style `9`
-/// computes ([`BoxStyle::from_raw`]), pinned from the retail frame of the
-/// caption up; style `9` also carries the caption's non-waiting dismissal.
+/// Box style the sparring caption is queued under: style `9`'s non-waiting
+/// dismissal. The caption is HUD element `0x5A`, not a 967 emission, so the
+/// style places nothing - its box is [`SPARRING_CAPTION_RECT`].
 pub const SPARRING_CAPTION_STYLE: u8 = 9;
+
+/// The screen-element placement record HUD element `0x5A` raises - row
+/// `0x5A` of the table at `0x80076C10`
+/// (`legaia_asset::screen_elements`).
+pub const SPARRING_CAPTION_RECORD: usize = 0x5A;
+
+/// The sparring caption's content box `(x, y, w, h)` in 320x240 stage
+/// pixels, as placement record [`SPARRING_CAPTION_RECORD`] carries it: a
+/// **fixed** `208 x 28` box (`+0x06` / `+0x08`) on the landed seat
+/// `(56, 178)` (`+0x0A` / `+0x0C`; the glyph pen sits two rows above a
+/// seat), not a box measured from the line. The record is a kind-`3`
+/// framed window like the message banner's, so the frame is this box
+/// inflated by 8: `(48, 168)..(272, 212)`, which is where the
+/// `v0_1_battle_start_tetsu` display list draws its fill tiles and corner
+/// sprites, with the two text rows on `y = 176` / `190` from `x = 56`.
+/// Measuring the caption instead drew a frame 21 px narrower and 4 px
+/// shorter, with the text 7 px right of retail's.
+///
+/// The record's first seat `(56, 236)` is where the box slides up from;
+/// the port raises it landed.
+pub const SPARRING_CAPTION_RECT: (i16, i16, i16, i16) = (56, 176, 208, 28);
 
 /// Action-state value the completion tail writes to `ctx[0x07]`.
 pub const ACTION_STATE_TERMINAL: u8 = 0xFF;

@@ -331,6 +331,7 @@ impl World {
                 frames_remaining: TUTORIAL_BOX_AUTO_FRAMES,
                 group,
                 any_press_dismisses: false,
+                placed: None,
             });
         }
     }
