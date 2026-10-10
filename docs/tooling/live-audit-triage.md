@@ -322,14 +322,14 @@ was written - find the symbol by name, not by line.
 | `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs:172` | WIRE |
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs:973` | FALSE INERT |
 | `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs:676` | WIRE |
-| `801d06c8` | `buy` | `crates/engine-minigames/src/fishing/prize.rs:159` | FALSE INERT |
+| `801d06c8` | `buy` | `crates/engine-fishing/src/fishing/prize.rs:159` | FALSE INERT |
 | `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome/session.rs` | FALSE INERT |
-| `801d092c` | `max_qty` | `crates/engine-minigames/src/fishing/prize.rs:137` | FALSE INERT |
+| `801d092c` | `max_qty` | `crates/engine-fishing/src/fishing/prize.rs:137` | FALSE INERT |
 | `801d0b90` | `tick_walk_regen` | `crates/engine-field/src/walk_regen.rs:86` | WIRE |
-| `801d0c3c` | `first_visible` | `crates/engine-minigames/src/fishing/prize.rs:98` | FALSE INERT |
+| `801d0c3c` | `first_visible` | `crates/engine-fishing/src/fishing/prize.rs:98` | FALSE INERT |
 | `801d4040` | `symbol_pad_bit` | `crates/engine-minigames/src/dance/types.rs:84` | DELETE |
-| `801d6f90` | `is_available` | `crates/engine-minigames/src/fishing/prize.rs:124` | FALSE INERT |
-| `801d712c` | `select_owned_rod` | `crates/engine-minigames/src/fishing/rod_menu.rs:42` | FALSE INERT |
+| `801d6f90` | `is_available` | `crates/engine-fishing/src/fishing/prize.rs:124` | FALSE INERT |
+| `801d712c` | `select_owned_rod` | `crates/engine-fishing/src/fishing/rod_menu.rs:42` | FALSE INERT |
 | `801d8258` | `arm` | `crates/engine-field/src/world_map.rs:78` | DISCLOSE |
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs:406` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-menus/src/menu_item_category.rs` | WIRED |

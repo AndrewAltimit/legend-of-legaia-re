@@ -2818,6 +2818,7 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-render",
     REPO / "crates" / "engine-core",
     REPO / "crates" / "engine-minigames",
+    REPO / "crates" / "engine-fishing",
     REPO / "crates" / "engine-effects",
     REPO / "crates" / "engine-field",
     REPO / "crates" / "engine-menus",
@@ -3668,6 +3669,7 @@ HOTKEY_SOURCES = [
 SHARED_CALLER_ROOTS = [
     REPO / "crates" / "engine-core" / "src",
     REPO / "crates" / "engine-minigames" / "src",
+    REPO / "crates" / "engine-fishing" / "src",
     REPO / "crates" / "engine-effects" / "src",
     REPO / "crates" / "engine-field" / "src",
     REPO / "crates" / "engine-menus" / "src",
@@ -4442,6 +4444,7 @@ ENGINE_API_CRATES = (
     "engine-dialog",
     "engine-system",
     "engine-minigames",
+    "engine-fishing",
     "engine-minigame-scenes",
     "engine-vm",
     "engine-battle-vm",

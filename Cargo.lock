@@ -1459,6 +1459,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-fishing"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-vm",
+ "legaia-tmd",
+]
+
+[[package]]
 name = "legaia-engine-menus"
 version = "0.1.0"
 dependencies = [
@@ -1497,9 +1506,9 @@ name = "legaia-engine-minigames"
 version = "0.1.0"
 dependencies = [
  "legaia-asset",
+ "legaia-engine-fishing",
  "legaia-engine-vm",
  "legaia-save",
- "legaia-tmd",
 ]
 
 [[package]]

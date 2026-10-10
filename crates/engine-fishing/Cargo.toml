@@ -1,15 +1,14 @@
 [package]
-name = "legaia-engine-minigames"
+name = "legaia-engine-fishing"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "legaia_engine_minigames"
+name = "legaia_engine_fishing"
 path = "src/lib.rs"
 
 [dependencies]
 legaia-asset.workspace = true
-legaia-engine-fishing.workspace = true
 legaia-engine-vm.workspace = true
-legaia-save.workspace = true
+legaia-tmd.workspace = true
