@@ -730,6 +730,14 @@ SPLIT_MODULES = frozenset({
     "crates/engine-field/src/world_map_panel_host",
     "crates/engine-effects/src/summon",
     "crates/engine-effects/src/screen_fx",
+    "crates/engine-battle-vm/src/cast_arm_ticks",
+    "crates/engine-battle-vm/src/seru_magic_ticks",
+    "crates/engine-battle-vm/src/battle_attack_camera",
+    "crates/engine-motion-vm/src/ambient_motion",
+    "crates/engine-motion-vm/src/motion_vm",
+    "crates/engine-vm/src/baka_hub_actors",
+    "crates/engine-vm/src/actor_tick",
+    "crates/engine-vm/src/world_map_panel_actors",
 })
 
 
