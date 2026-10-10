@@ -100,10 +100,10 @@ There is **one** pack format. [`pack.md`](pack.md) reads it at offset 0 (the bar
 | [XA-ADPCM](xa.md) | Confirmed | CD-XA Mode 2 Form 2 streamed audio, demuxed per `(file_no, ch_no)` channel. |
 | [MES dialog](mes.md) | Confirmed | Dialog containers in two variants (Compact, Records): offset table + text bytecode. |
 | [Dialog font](dialog-font.md) | Confirmed | Proportional font: width table `0x80073F1C`, escape table `0x80074050`, glyphs in VRAM at `(896, 0)`. |
-| [ANM animation](anm.md) | Confirmed | Animation pack: `u16 count`, `u16 offsets[count]`, 8-byte per-(bone, frame) entries. |
+| [ANM animation](anm.md) | Confirmed | Field-actor clip bank: `u32 count`, `u32 offsets[count]`, 8-byte per-(bone, frame) entries. Arrives as asset type `0x05`. |
 | [Monster animation](monster-animation.md) | Confirmed | Per-object rigid-transform keyframes inside the monster archive (PROT 867), one stream per action. |
 | [Player-character meshes](character-mesh.md) | Confirmed | Field form in PROT 0874; battle form assembled per character from equipment sections. |
-| [Player battle files](battle-data-pack.md) | Confirmed | `data\battle\PLAYER1..4` (extraction 863..866): header, LZS record 0, equip-slot table, per-slot streams. |
+| [Player battle files](battle-data-pack.md) | Confirmed | `data\battle\PLAYER1..4` (extraction 863..866): header, LZS record 0 (action table, art-animation bank), equip-slot table, per-slot mesh / texture streams. |
 | [MDT move table](mdt.md) | Confirmed | Tactical Arts move tables; two on-disc layouts the consumer accepts. |
 | [Art data](art-data.md) | Inferred | Per-character art records: Action Constants, command sequences, power byte, Miracle / Super Art triggers. |
 | [Headerless 16bpp stills](ringside-still.md) | Confirmed | Extraction 1221 / 1222: raw BGR555 uploaded to VRAM `(384, 0)`, the Muscle Dome ringside reaction. |
