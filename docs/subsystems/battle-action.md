@@ -171,9 +171,9 @@ Unhandled values are listed under [Unhandled states](#unhandled-states).
 
 `0xFF` has exactly one writer: the **non-wipe** arm of `0x5A`, reached when every living actor has acted and both sides still stand. The wipe arms write no state byte at all - they raise the battle-end *signal* `DAT_8007BD71 = 0xFE` (with `_DAT_8007BD2C` = `5` party wipe / `0` monster wipe), which the successful-escape teardown `0x66` also raises. Battle end is signalled through `DAT_8007BD71`, never through the state byte.
 
-Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whole body is two context writes: `ctx[+0x06] = 0x14` (`0x801E67F4`), handing the round back to the command-flow SM's round-start arm, and `ctx[+0x28A] += 1` (`0x801E6810`) around a call to `FUN_801F45A4`. The only way in is the `jr v0` at `0x801E2AAC`, so a decompiler pass that does not resolve the table reports `Removing unreachable block (ram,0x801E67E8)` and the round bump is absent from the C. The command-flow side of the handshake is in [`battle-command-flow.md`](battle-command-flow.md#the-round-loop---what-re-arms-0x1e); `0x14` then stores `0x1E` unconditionally, which is why the `Begin` / `Run` prompt belongs to the round and not to a battle's first turn.
+Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whole body is two context writes: `ctx[+0x06] = 0x14` (`0x801E67F4`), handing the round back to the command-flow SM's round-start arm, and `ctx[+0x28A] += 1` (`0x801E6810`) around a call to `FUN_801F45A4` (the per-round status-`0x400` waker). The only way in is the `jr v0` at `0x801E2AAC`, so a decompiler pass that does not resolve the table reports `Removing unreachable block (ram,0x801E67E8)` and the round bump is absent from the C. The command-flow side of the handshake is in [`battle-command-flow.md`](battle-command-flow.md#the-round-loop---what-re-arms-0x1e); `0x14` then stores `0x1E` unconditionally, which is why the `Begin` / `Run` prompt belongs to the round and not to a battle's first turn.
 
-**Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` settle) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
+**Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` wake sweep) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 
@@ -543,7 +543,7 @@ Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] =
 
 #### State `0xFF` - End of round
 
-Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the [end-of-action damage/HP-bar settle](battle-action-helpers.md#battle-helper-functions)).
+Sets `ctx[+0x6] = 0x14`, increments `ctx[+0x28A]` (round counter), calls `func_0x801F45A4` (the per-round status-`0x400` waker, see [battle-action-helpers.md](battle-action-helpers.md#battle-helper-functions)).
 
 **Next:** round boundary; the next round's actor selection follows.
 
