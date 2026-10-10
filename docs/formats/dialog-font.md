@@ -49,7 +49,7 @@ Character codes `0x00..=0x1F` are reserved for control / escape bytes (`0x7C` ne
 advance = widths[c] + DAT_800740E8 + 1
 ```
 
-where `DAT_800740E8` is a per-call padding override, reset to zero at the end of each render call. Menus and battle draw with it at zero; the field dialog pager `FUN_801D84D0` stores `1` before every row it draws, so dialogue runs one pixel wider per glyph than the same text in a menu (see [Line width and wrapping](#line-width-and-wrapping)). The trailing `+1` is a fixed inter-character gap.
+where `DAT_800740E8` is a per-call padding override, reset to zero at the end of each render call. Menus and battle draw with it at zero; the field dialog pager `FUN_801D84D0` stores `1` before every row it draws (`0x801D97D8`) and before every option-picker label (`0x801D9B78`), so dialogue runs one pixel wider per glyph than the same text in a menu (see [Line width and wrapping](#line-width-and-wrapping)). The trailing `+1` is a fixed inter-character gap. The port lays a dialogue row out through `Font::layout_padded` at `measure::DIALOG_GLYPH_PAD` in the builders both play hosts draw with (`engine_ui::dialog_reading_box_text_draws_for`, `dialog_picker_label_draws_for`).
 
 The advance is applied by the **common tail** of `FUN_80036888`'s per-byte loop
 (body `0x80036B9C`), which every byte reaches except the four control bytes

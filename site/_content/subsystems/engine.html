@@ -21,7 +21,7 @@
   <h2>How the crates stack</h2>
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 570" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Kernels with no World: engine-ui (draw lists, no wgpu), engine-minigames (the minigame rules engines), engine-effects (the effect kernels) and engine-battle (the battle kernels), all but engine-ui linked by engine-core. VMs: engine-vm (the VMs) over engine-battle-vm (the battle action state machine and formulas). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
+    <svg viewBox="0 0 880 670" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Kernels with no World, upper row: engine-ui (draw lists, no wgpu), engine-menus (menu front end), engine-field (field kernels), engine-effects (effect kernels), the last three linked by engine-core. Lower row: render-kernels (shared GTE and raster kernels, under engine-ui), engine-system (pad, streaming, sound state, fades), engine-minigames (minigame rules) and engine-battle (battle kernels). VMs: engine-vm (the VMs) over engine-battle-vm (the battle action state machine and formulas). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="868" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
@@ -51,21 +51,30 @@
       <rect class="dg-node" x="20" y="330" width="180" height="56" rx="5"/>
       <text class="dg-label" x="110" y="354">engine-ui</text><text class="dg-sub" x="110" y="372">draw lists, no wgpu</text>
       <rect class="dg-node" x="230" y="330" width="180" height="56" rx="5"/>
-      <text class="dg-label" x="320" y="354">engine-minigames</text><text class="dg-sub" x="320" y="372">minigame rules</text>
+      <text class="dg-label" x="320" y="354">engine-menus</text><text class="dg-sub" x="320" y="372">menu front end</text>
       <rect class="dg-node" x="440" y="330" width="190" height="56" rx="5"/>
-      <text class="dg-label" x="535" y="354">engine-effects</text><text class="dg-sub" x="535" y="372">effect kernels</text>
+      <text class="dg-label" x="535" y="354">engine-field</text><text class="dg-sub" x="535" y="372">field kernels</text>
       <rect class="dg-node" x="650" y="330" width="190" height="56" rx="5"/>
-      <text class="dg-label" x="745" y="354">engine-battle</text><text class="dg-sub" x="745" y="372">battle kernels</text>
+      <text class="dg-label" x="745" y="354">engine-effects</text><text class="dg-sub" x="745" y="372">effect kernels</text>
 
-      <text class="dg-edge-label" x="842" y="422" text-anchor="end">VMs</text>
-      <rect class="dg-node" x="330" y="430" width="200" height="56" rx="5"/>
-      <text class="dg-label" x="430" y="454">engine-vm</text><text class="dg-sub" x="430" y="472">field, move, motion, effect VMs</text>
-      <rect class="dg-node" x="590" y="430" width="220" height="56" rx="5"/>
-      <text class="dg-label" x="700" y="454">engine-battle-vm</text><text class="dg-sub" x="700" y="472">battle action SM + formulas</text>
+      <rect class="dg-node" x="20" y="430" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="110" y="454">render-kernels</text><text class="dg-sub" x="110" y="472">GTE + raster kernels</text>
+      <rect class="dg-node" x="230" y="430" width="180" height="56" rx="5"/>
+      <text class="dg-label" x="320" y="454">engine-system</text><text class="dg-sub" x="320" y="472">pad, streams, fades</text>
+      <rect class="dg-node" x="440" y="430" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="535" y="454">engine-minigames</text><text class="dg-sub" x="535" y="472">minigame rules</text>
+      <rect class="dg-node" x="650" y="430" width="190" height="56" rx="5"/>
+      <text class="dg-label" x="745" y="454">engine-battle</text><text class="dg-sub" x="745" y="472">battle kernels</text>
 
-      <rect class="dg-group" x="20" y="510" width="840" height="48" rx="6"/>
-      <text class="dg-label" x="440" y="532">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
-      <text class="dg-sub" x="440" y="549">engine-agnostic: typed data in memory, never wgpu, winit or cpal</text>
+      <text class="dg-edge-label" x="842" y="522" text-anchor="end">VMs</text>
+      <rect class="dg-node" x="330" y="530" width="200" height="56" rx="5"/>
+      <text class="dg-label" x="430" y="554">engine-vm</text><text class="dg-sub" x="430" y="572">field, move, motion, effect VMs</text>
+      <rect class="dg-node" x="590" y="530" width="220" height="56" rx="5"/>
+      <text class="dg-label" x="700" y="554">engine-battle-vm</text><text class="dg-sub" x="700" y="572">battle action SM + formulas</text>
+
+      <rect class="dg-group" x="20" y="610" width="840" height="48" rx="6"/>
+      <text class="dg-label" x="440" y="632">format crates: asset, prot, iso, lzs, tim, tmd, vab, seq, xa, mes, anm, art, save, font, mdec ...</text>
+      <text class="dg-sub" x="440" y="649">engine-agnostic: typed data in memory, never wgpu, winit or cpal</text>
 
       <path class="dg-edge" d="M120 86 L120 128" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M200 86 L320 128" marker-end="url(#en-arrow)"/>
@@ -82,18 +91,21 @@
       <path class="dg-edge" d="M370 286 L330 328" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M480 286 L520 328" marker-end="url(#en-arrow)"/>
       <path class="dg-edge" d="M530 286 L720 328" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M425 286 L425 428" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M440 358 L412 358" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M630 358 L648 358" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M200 372 L328 445" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M340 386 L380 428" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M500 386 L470 428" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M680 386 L532 440" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M530 458 L588 458" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M110 386 L110 508" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M430 486 L430 508" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M700 486 L700 508" marker-end="url(#en-arrow)"/>
-      <path class="dg-edge" d="M852 286 L852 508" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M110 386 L110 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M320 386 L320 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M535 386 L535 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M470 386 L380 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M745 386 L745 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M680 386 L600 428" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M180 470 L328 545" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M340 486 L400 528" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M500 486 L460 528" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M680 486 L532 540" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M530 558 L588 558" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M60 486 L60 608" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M430 586 L430 608" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M700 586 L700 608" marker-end="url(#en-arrow)"/>
+      <path class="dg-edge" d="M852 286 L852 608" marker-end="url(#en-arrow)"/>
       <text class="dg-edge-label" x="480" y="110">both play hosts</text>
       <text class="dg-edge-label" x="130" y="212">native only</text>
     </svg>
@@ -109,7 +121,11 @@
       <tr><td><code>engine-core</code></td><td>The simulation: <code>World</code> (which implements every VM&rsquo;s <code>Host</code>), the scene host and scene resources, the mode seat, menus, shop / inn / level-up sessions, saves, the minigames&rsquo; <code>World</code> glue. Draws nothing</td></tr>
       <tr><td><code>engine-minigames</code></td><td>The minigame rules engines that need no <code>World</code> - slot machine, Baka Fighter, dance, fishing, the prize exchange, the Muscle Dome contest ladder. <code>engine-core</code> re-exports each at its old path</td></tr>
       <tr><td><code>engine-effects</code></td><td>The effect kernels that need no <code>World</code>: the action effect scripts, the ribbon and render-mode-4 emitters, the summon scene-graph driver, the screen effects and object effects. <code>engine-core</code> re-exports each at its old path</td></tr>
+      <tr><td><code>engine-system</code></td><td>The <code>World</code>-free runtime system below <code>engine-core</code>: pad input and the retail pad pump, the stream chunk installer, MDEC DMA sync, sound state, fades, mode-entry initialisers, the RAM-cell map. <code>engine-core</code> re-exports each module at its old path</td></tr>
+      <tr><td><code>engine-menus</code></td><td>The <code>World</code>-free menu front end: item and equipment catalogs, the inventory-use and spell-menu sessions, the window-widget host, title and boot screens, the memory-card flow, the dialog pager, inn, shop, save, status and pause screens</td></tr>
+      <tr><td><code>engine-field</code></td><td>The <code>World</code>-free field kernels: actor programs, the follow camera&rsquo;s parameters and eases, player clip playback, the op-<code>0x49</code> submode, the field event queue, CLUT effects, the world-map controller, the MAN field-script decoders, the mode seat and field camera</td></tr>
       <tr><td><code>engine-ui</code></td><td>Renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>) and the shared render kernels - the wgpu-free leaf both hosts can link</td></tr>
+      <tr><td><code>render-kernels</code></td><td>The wgpu-free render kernels both hosts share - GTE math, the screen-primitive builder and its CPU rasteriser, VRAM capture, the effect emitters, battle numerals, enhanced scene lighting. <code>engine-ui</code> re-exports it</td></tr>
       <tr><td><code>engine-render</code></td><td>The wgpu renderer with a software PSX VRAM (1024&times;512, palette decode in the fragment shader)</td></tr>
       <tr><td><code>engine-audio</code></td><td>From-scratch 24-voice SPU, SsAPI-shaped sequencer, SFX bank; cpal output natively, WebAudio in the browser</td></tr>
       <tr><td><code>engine-session</code></td><td><code>BootSession</code> - the scene host plus the per-frame order around its tick (mode seat, pause menu, camera, BGM and SFX routing) - and the <code>AudioBgmDirector</code>, both generic over the audio output. Both play hosts tick it</td></tr>

@@ -92,7 +92,7 @@
         <span class="layer-title">Engine reimplementation</span>
       </div>
       <div class="layer-body">
-        <div class="layer-crate">engine-core / engine-vm / engine-battle / engine-effects / engine-minigames / engine-ui / engine-render / engine-audio / engine-session / engine-shell</div>
+        <div class="layer-crate">engine-core / engine-vm / engine-battle / engine-effects / engine-minigames / engine-menus / engine-field / engine-system / engine-ui / engine-render / engine-audio / engine-session / engine-shell</div>
         <div class="layer-desc">The from-scratch Rust port: world and scene state, the script VMs, the battle, effect and minigame kernels, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build tick the same game session - the <a href="play.html">play page</a> is the engine itself, not a second implementation. The <a href="subsystems/engine.html#crate-layout">engine page</a> draws how the engine crates stack.</div>
       </div>
     </a>
@@ -116,12 +116,12 @@
       <tr>
         <td><strong>Preservation</strong></td>
         <td>Every asset off the disc as PNG / WAV / OBJ / glTF / JSON, a format spec per file type with the game function that reads it named as evidence, and round-trip parsers that can write assets back.</td>
-        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the <code>extract</code> driver, and the <code>patcher</code>.</td>
+        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the static tables (<code>game-tables</code>) and battle model formats (<code>battle-models</code>) <code>asset</code> re-exports, the <code>extract</code> driver, and the <code>patcher</code> over <code>disc-patch</code>, <code>translate</code>, <code>party-swap</code> and <code>texture-replace</code>.</td>
       </tr>
       <tr>
         <td><strong>Reimplementation</strong></td>
         <td>A playable engine built from those specs plus logic traced in Ghidra and rewritten fresh - never a decompilation or static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
-        <td>The simulation (<code>engine-core</code> over <code>engine-vm</code>, <code>engine-battle-vm</code>, <code>engine-battle</code>, <code>engine-effects</code>, <code>engine-minigames</code>), presentation (<code>engine-ui</code>, <code>engine-render</code>, <code>engine-audio</code>), the shared game loop (<code>engine-session</code>, <code>engine-screens</code>), the <code>parity</code> oracles, the native <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
+        <td>The simulation (<code>engine-core</code> over <code>engine-vm</code>, <code>engine-battle-vm</code>, <code>engine-battle</code>, <code>engine-effects</code>, <code>engine-minigames</code>, <code>engine-menus</code>, <code>engine-field</code>, <code>engine-system</code>), presentation (<code>engine-ui</code> over <code>render-kernels</code>, <code>engine-render</code>, <code>engine-audio</code>), the shared game loop (<code>engine-session</code>, <code>engine-screens</code>), the <code>parity</code> oracles, the native <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
       </tr>
     </tbody>
   </table>

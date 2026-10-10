@@ -2740,3 +2740,48 @@ fn a_frame_step_of_three_steps_every_third_frame_and_lands_a_three_frame_tween()
         assert_eq!(cam.pose.yaw, landed, "step {step}");
     }
 }
+
+/// The magic exit's camera write (`0x801E4958..0x801E497C`): on the
+/// `0x2E -> 0x50` edge a pitch at or above `0x191` snaps to pitch `0`, eye Y
+/// `0x500`; a lower pitch, or any other edge, leaves the framing alone.
+#[test]
+fn magic_exit_edge_snaps_a_steep_pitch() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x2E);
+    cam.pose.pitch = 0x191 as f32;
+    cam.pose.tr[1] = 300.0;
+    cam.observe_action_state(0x50);
+    assert_eq!((cam.pose.pitch, cam.pose.tr[1]), (0.0, 1280.0));
+
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x2E);
+    cam.pose.pitch = 0x190 as f32;
+    cam.pose.tr[1] = 300.0;
+    cam.observe_action_state(0x50);
+    assert_eq!((cam.pose.pitch, cam.pose.tr[1]), (400.0, 300.0));
+
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.observe_action_state(0x51);
+    cam.pose.pitch = 0x400 as f32;
+    cam.observe_action_state(0x50);
+    assert_eq!(cam.pose.pitch, 1024.0);
+}
+
+/// A granted flee's wait (`0x65`) backs the eye off `32 * step` a pass
+/// (`0x801E59A4..0x801E59BC`) once the escape shot owns the camera.
+#[test]
+fn escape_wait_backs_the_eye_away() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    for f in 1..=40u64 {
+        cam.advance_to(f * 2);
+    }
+    cam.arm_escape_shot();
+    cam.observe_action_state(0x64);
+    for f in 41..=200u64 {
+        cam.advance_to(f * 2);
+    }
+    let settled = cam.pose.tr[2];
+    cam.observe_action_state(0x65);
+    cam.advance_to(402);
+    assert_eq!(cam.pose.tr[2], settled - 64.0);
+}

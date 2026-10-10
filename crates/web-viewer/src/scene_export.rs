@@ -108,6 +108,38 @@ impl LegaiaViewer {
         }
     }
 
+    /// Place mesh handle `mesh` at `(tx, ty, tz)` under a placement's three
+    /// authored PSX angles (`rot_x` / `rot_y` / `rot_z`, `4096` = full
+    /// revolution, the object record's `+0x08` / `+0x0A` / `+0x0C`) - the
+    /// tilted twin of [`Self::scene_export_add_instance`] for a draw the page
+    /// renders through `placementModelEuler`. The node carries the full
+    /// `Rx * Ry * Rz` rotation the native `export-glb` writes for the same
+    /// record (`scene_assembly::placement_rotation_quat`), so a pitched or
+    /// rolled placement is not stood upright in the file.
+    #[allow(clippy::too_many_arguments)]
+    pub fn scene_export_add_instance_euler(
+        &mut self,
+        mesh: u32,
+        tx: f32,
+        ty: f32,
+        tz: f32,
+        rot_x: u16,
+        rot_y: u16,
+        rot_z: u16,
+        scale: f32,
+    ) {
+        if let Some(s) = self.scene_export.as_mut()
+            && (mesh as usize) < s.meshes.len()
+        {
+            s.instances.push(euler_instance(
+                mesh as usize,
+                [tx, ty, tz],
+                [rot_x, rot_y, rot_z],
+                scale,
+            ));
+        }
+    }
+
     /// Bake the accumulated session into `.glb` bytes and close it. Returns
     /// an empty array when the session is missing or contains no drawable
     /// geometry.
@@ -116,5 +148,51 @@ impl LegaiaViewer {
             return Vec::new();
         };
         build_scene_glb(&s.name, &s.meshes, &s.instances, &s.vram).unwrap_or_default()
+    }
+}
+
+/// One tilted export instance: the yaw field in the page's convention
+/// (`-angle`, what `scene_export_add_instance` receives) plus the full
+/// render-frame quaternion, which the baker emits in its place.
+fn euler_instance(mesh: usize, translation: [f32; 3], rot: [u16; 3], scale: f32) -> SceneInstance {
+    use legaia_engine_core::scene_assembly::{draw_rot_y_radians, placement_rotation_quat};
+    SceneInstance {
+        mesh,
+        translation,
+        rot_y: draw_rot_y_radians(rot[1]),
+        rotation: Some(placement_rotation_quat(rot)),
+        scale,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A yaw-only record's quaternion is the same `Ry` the yaw path emits
+    /// (`quat_y(-rot_y)` of the page's negated angle), so routing every draw
+    /// through the euler entry would not move an untilted placement.
+    #[test]
+    fn yaw_only_euler_matches_the_yaw_path() {
+        for raw in [0u16, 0x200, 0x400, 0x955, 0xC00] {
+            let inst = euler_instance(0, [0.0; 3], [0, raw, 0], 1.0);
+            let q = inst.rotation.unwrap();
+            let half = -inst.rot_y / 2.0;
+            let want = [0.0, half.sin(), 0.0, half.cos()];
+            let dot: f32 = q.iter().zip(want).map(|(a, b)| a * b).sum();
+            assert!(
+                (dot.abs() - 1.0).abs() < 1e-5,
+                "raw {raw:#x}: {q:?} vs {want:?}"
+            );
+        }
+    }
+
+    /// A pitched record is not a pure yaw: the quaternion carries an X part.
+    #[test]
+    fn tilted_record_keeps_its_pitch() {
+        let q = euler_instance(0, [0.0; 3], [0x400, 0, 0], 1.0)
+            .rotation
+            .unwrap();
+        assert!(q[0].abs() > 0.5, "pitch lost: {q:?}");
     }
 }

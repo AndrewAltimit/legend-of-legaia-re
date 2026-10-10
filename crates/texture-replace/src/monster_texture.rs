@@ -45,7 +45,7 @@ use legaia_asset::monster_archive::{
     self as archive, CLUT_COUNT, MonsterPage, PALETTE_COLOURS, SLOT_STRIDE,
 };
 
-use crate::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
+use legaia_disc_patch::disc::{DiscPatcher, MONSTER_ARCHIVE_ENTRY};
 
 /// Bytes a monster slot allocates for its LZS stream: the slot past the
 /// `u32 dec_size` prefix.

@@ -695,7 +695,8 @@ tests the camera pitch `DAT_8007B790` against `0x191` and, when it is at or
 above, zeroes the pitch and stores the **absolute** value `0x500` into
 `_DAT_800840BC`. That is a framing snap to the close-up pose - `0x500` is the
 1280 the close-up framings hold - written into one component of the camera
-translation trio.
+translation trio. The host method is gone: the battle camera applies the snap itself on
+the `0x2E -> 0x50` edge (`BattleCamera::observe_action_state`).
 
 `apply_shake`'s `amplitude` is a different quantity: a `1..=0x15` shift count
 read from `_DAT_8007B630`, whose only retail writer is a field-VM opcode

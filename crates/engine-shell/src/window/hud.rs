@@ -1400,28 +1400,15 @@ impl PlayWindowApp {
                 snap.scroll_px,
                 snap.box_rows,
             );
-            // Option-picker labels: retail draws them CLUT-7 white at
-            // `box_x + 0x10`, 15-px pitch from the box origin row; the
-            // pointing-hand sprite (drawn in the chrome layer) marks the
-            // selection. Keep a text `>` marker only when the chrome
-            // atlas is missing.
+            // Option-picker labels, through the builder the page shares.
             if let Some((px, py, _, _)) = lay.picker {
-                for (i, opt) in snap.options.iter().enumerate() {
-                    let selected = i == snap.cursor;
-                    let label = if has_chrome {
-                        opt.clone()
-                    } else {
-                        format!("{}{}", if selected { "> " } else { "  " }, opt)
-                    };
-                    let row_layout = self.font.layout_ascii(&label);
-                    let pen = (px + 0x10, py + i as i32 * 0xF);
-                    let color = if selected || has_chrome {
-                        legaia_engine_render::MENU_TEXT_WHITE
-                    } else {
-                        [0.8, 0.85, 1.0, 1.0]
-                    };
-                    draws.extend(text_draws_for(&row_layout, pen, color));
-                }
+                draws.extend(legaia_engine_render::dialog_picker_label_draws_for(
+                    &self.font,
+                    &snap.options,
+                    snap.cursor,
+                    (px, py),
+                    has_chrome,
+                ));
             }
             legaia_engine_render::scale_stage_text_draws(&mut draws, stage_origin, stage_scale);
             out.extend(draws);

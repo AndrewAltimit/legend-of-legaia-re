@@ -216,7 +216,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 
 | Crate | Binary | Scope |
 |---|---|---|
-| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: only `legaia-asset`, `legaia-engine-core`, `legaia-engine-battle` and `legaia-patcher` depend on it - the older per-format crates hand-roll their reads. |
+| [`crates/bytes`](crates/bytes/README.md) | - | Checked little-endian byte readers. The leaf under the format stack, but **not** yet universal: `legaia-asset`, the engine and patcher crates and the crates split out of them depend on it, while the older per-format crates hand-roll their reads. |
 | [`crates/iso`](crates/iso/README.md) | `disc-extract` | PSX Mode2/2352 disc reader, ISO9660 walker, **sector write-back** (`write` module: EDC/ECC re-encode + `patch_file_logical`; `iso9660::find_file_in_image`). |
 | [`crates/prot`](crates/prot/README.md) | `prot-extract` | PROT.DAT / DMY.DAT TOC, CDNAME map, standalone TIM-pack. |
 | [`crates/lzs`](crates/lzs/README.md) | `lzs-decode` | Legaia LZS decoder (reversed from `FUN_8001a55c`) + `compress` re-packer (greedy LZSS the retail decoder accepts; for editing assets). |
@@ -244,6 +244,7 @@ Each crate has a one-page `README.md` describing its scope, format coverage, and
 | [`crates/disc-patch`](crates/disc-patch/README.md) | - | The patcher's foundation: `DiscPatcher` same-size PROT edits with EDC/ECC re-encode, PPF 3.0 writer, the SCUS / overlay free-space ledger, MAN re-pack budgets. Re-exported by `legaia-patcher`. |
 | [`crates/translate`](crates/translate/README.md) | - | The language-pack pipeline behind `legaia-patcher translate`: pack schema + markup, export / import, string relocation, other-build alignment and the PAL lift. Re-exported as `legaia_patcher::translation`. |
 | [`crates/party-swap`](crates/party-swap/README.md) | - | The Party / Delilas battle-model swap kernels (rig permutation, pivot-anchored rest-pose bake, field form, win poses, movesets, enemy-anim remap) as pure transforms; disc writes stay in the patcher. Re-exported as `legaia_patcher::party_swap`. |
+| [`crates/texture-replace`](crates/texture-replace/README.md) | - | Image replacement modules (scene TIMs + palette contexts, party battle art, monster skins, save-slot portraits): decode, re-encode against the retail palettes and budget, write through `DiscPatcher`. Re-exported by `legaia-patcher` at the old paths. |
 
 **Track 2 - engine reimplementation (from-scratch Rust)**
 

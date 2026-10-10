@@ -251,11 +251,13 @@ legend-of-legaia-re/
 ├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
 ├── crates/
 │   │   # Track 1 - preservation (disc → PNG / WAV / OBJ / JSON)
-│   ├── bytes/                    # Checked little-endian readers (asset, engine-core, engine-battle, patcher)
+│   ├── bytes/                    # Checked little-endian readers (asset, the engine + patcher crates)
 │   ├── iso/                      # PSX disc reader + ISO9660 walker + sector write-back
 │   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
 │   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c) + re-packer
 │   ├── asset/                    # Asset dispatcher, streaming, bundle detectors, categorize
+│   ├── game-tables/              # Static SCUS / overlay data tables (items, equipment, spells, ...), re-exported by asset
+│   ├── battle-models/            # Monster archive, player battle files, equipment assembly, glTF export
 │   ├── tim/                      # PSX TIM parser + PNG exporter + software VRAM model
 │   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
 │   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
@@ -274,12 +276,20 @@ legend-of-legaia-re/
 │   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
 │   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
 │   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
+│   ├── disc-patch/               # Patcher foundation: same-size PROT edits, EDC/ECC, PPF writer, free-space ledger
+│   ├── translate/                # Language-pack pipeline behind `legaia-patcher translate`
+│   ├── party-swap/               # Party / Delilas battle-model swap kernels (pure transforms)
+│   ├── texture-replace/          # Texture / battle-art / monster-skin / save-icon replacement
 │   │   # Track 2 - engine reimplementation (from-scratch Rust)
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
 │   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder
 │   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
+│   ├── engine-system/            # World-free runtime system: pad pump, stream installer, sound state, fades
+│   ├── engine-menus/             # World-free menu front end: catalogs, item / spell / equip sessions, menu screens
+│   ├── engine-field/             # World-free field kernels: actor programs, follow camera, event queue, world-map controller
 │   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
+│   ├── render-kernels/           # wgpu-free render kernels both hosts share (GTE, CPU raster, emitters, lighting)
 │   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
 │   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer
 │   ├── engine-vm/                # Actor / field / effect / move / motion VMs (re-exports the battle VM kernels)

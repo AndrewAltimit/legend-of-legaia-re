@@ -1572,6 +1572,9 @@ impl World {
         self.minigames.fx.tick(1);
         match self.mode {
             SceneMode::Battle => {
+                // The frame driver's discarded `rand()` draw, once a battle
+                // frame (`FUN_80046A20` `0x80046D2C`).
+                self.tick_battle_pass_draw();
                 // Battle animation advance. This is SIMULATION, not
                 // presentation: its staged-clip end edge retires `ADVANCE_DONE`
                 // and converges the anim id pair - the pacing gate whose

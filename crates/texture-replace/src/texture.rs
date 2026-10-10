@@ -21,7 +21,7 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::disc::DiscPatcher;
+use legaia_disc_patch::disc::DiscPatcher;
 use legaia_tim::encode::{EncodeOptions, Encoded, encode_replacement};
 use legaia_tim::multi_palette::{
     ImportKind, View, all_sets, decode_mapped, import_png, indexed_png, own_palettes,
@@ -514,7 +514,7 @@ pub fn texture_catalogs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::disc::synth::{synth_disc, synth_prot};
+    use legaia_disc_patch::disc::synth::{synth_disc, synth_prot};
     use legaia_tim::decode_rgba8;
 
     /// A minimal strict-valid 4bpp TIM: 16-entry CLUT (red/green/black + STP

@@ -68,8 +68,6 @@ pub enum BattleEvent {
         strike_index: u8,
         outcome: ArtStrikeOutcome,
     },
-    /// `BattleActionHost::screen_shake` - kick the camera.
-    ScreenShake { magnitude: u16 },
     /// `BattleActionHost::duck_audio_level` - ramp the live audio level
     /// `_DAT_8007B910` toward a percentage of the player's configured level
     /// `_DAT_8008457C` (used by SummonSustain / MagicCaptureFade). Every
@@ -284,7 +282,6 @@ impl BattleEvent {
                     "ApplyArtStrike(actor={actor_slot}, target={target_slot}, strike={strike_index}, dmg={dmg})"
                 )
             }
-            BattleEvent::ScreenShake { magnitude } => format!("ScreenShake({magnitude})"),
             BattleEvent::DuckAudioLevel { target_pct } => format!("DuckAudioLevel({target_pct}%)"),
             BattleEvent::BattleEnd { cause } => format!("BattleEnd({cause:?})"),
             BattleEvent::TacticalArtLearned { char_id, art_id } => {
@@ -382,7 +379,6 @@ mod tests {
                 target_slot: 0,
                 party_slot: 0,
             },
-            BattleEvent::ScreenShake { magnitude: 0 },
             BattleEvent::DuckAudioLevel { target_pct: 0 },
             BattleEvent::BattleEnd {
                 cause: BattleEndCause::PartyWipe,

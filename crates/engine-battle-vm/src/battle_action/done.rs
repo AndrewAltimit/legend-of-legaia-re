@@ -69,9 +69,12 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     // action and not again.
     ctx.done_ui_torn_down = 0;
 
-    // Per-category pose: run → screen-shake; attack → pose 8; otherwise idle.
+    // Per-category pose: attack → pose 8; otherwise idle. The run arm
+    // (`0x801E5F00`) poses nothing: it turns the camera yaw `-= step * 2`,
+    // which the battle camera's idle orbit carries (the Done band's Run
+    // category resolves to the Menu phase, `done_band_phase`).
     match category {
-        ActionCategory::Run => host.screen_shake(0x500),
+        ActionCategory::Run => {}
         ActionCategory::Attack => host.pose(slot, Pose::Recover),
         _ => host.pose(slot, Pose::Idle),
     }
@@ -575,6 +578,14 @@ pub(super) fn done_seru_absorb<H: BattleActionHost + ?Sized>(
     // the exit is a test on the value rather than on the crossing.
     if ctx.frame_timer >= 0 {
         ctx.frame_timer = ctx.frame_timer.saturating_sub(host.frame_dt());
+    }
+    // The press skip: with the countdown still at or above the teardown
+    // threshold, a newly-pressed button (`_DAT_8007B874`, read at
+    // `0x801E63A8`) pins it one below it (`li v0,0x13` / `sh v0,0x2(s7)` at
+    // `0x801E63B4` / `0x801E63B8`) - the banner's last twenty frames still
+    // run, but the wait before them is cut.
+    if ctx.frame_timer >= DONE_SERU_ABSORB_TEARDOWN_BELOW && host.pad_word() != 0 {
+        ctx.frame_timer = DONE_SERU_ABSORB_TEARDOWN_BELOW - 1;
     }
     let outcome = if ctx.frame_timer >= 0 {
         stay(ctx)

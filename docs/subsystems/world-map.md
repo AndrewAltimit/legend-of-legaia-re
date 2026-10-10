@@ -2515,7 +2515,11 @@ the horizon - and shows where the visible-tile window or the coast leaves the
 top of the frame open. Port: `legaia_engine_vm::world_map_sky` (the packets),
 `legaia_engine_core::world_map_sky` (the gate both hosts call), and
 `legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
-at the far plane so it lands only where the scene drew nothing.
+at the far plane so it lands only where the scene drew nothing. The shared
+layer composer (`engine_screens::screen_layers::compose_screen_prims`) puts
+the band first in the under-text list, as retail's farthest bucket: the
+party HUD panels write no depth, so a band composited over the text fills
+their clear pixels and hides the names behind the horizon.
 
 **Engine status.** The continent ground now renders as a **heightfield
 surface**: [`Scene::walk_heightfield`] →

@@ -82,6 +82,11 @@ pub struct CastFxState {
     /// it holds), so the frame draws its packets
     /// ([`crate::world::World::cross_beam_draw`]).
     pub(crate) module_beam_live: bool,
+    /// The Spikefish flute's flee, staged by PROT 0925's outcome arm from
+    /// inside the action SM's stager call and applied to the action
+    /// context after the step's write-back ([`crate::world::World::step_battle`]):
+    /// retail's arm stores `ctx[7] = 0x65` and `ctx[+0x6D8] = 0x3C` itself.
+    pub(crate) module_flee: bool,
     /// PROT 0904's draw state: the beam trail ring and the packets its last
     /// tick drew ([`crate::world::World::theeder_draw`]). Reset when a cast
     /// is armed.
@@ -247,6 +252,7 @@ impl CastFxState {
             module_ring_angle: 0,
             module_beam_counter: 0,
             module_beam_live: false,
+            module_flee: false,
             module_theeder: Default::default(),
             module_hit_arm: None,
             module_settle_ticks: 0,

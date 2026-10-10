@@ -32,11 +32,11 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::disc::DiscPatcher;
 use legaia_asset::save_icon::{
     self, CLUT_ENTRIES_PER_TILE, SaveIconSheet, TILE_BLOCK_BYTES, TILE_CLUT_BYTES, TILE_SIZE,
 };
 use legaia_asset::title_pak;
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// PROT entry that carries the sheet.
 pub const PROT_ENTRY: u32 = save_icon::PROT_ENTRY as u32;

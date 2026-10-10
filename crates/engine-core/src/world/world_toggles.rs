@@ -112,6 +112,13 @@ pub struct WorldToggles {
     /// raises it under `LEGAIA_WORLD_MAP_MARKERS=1`. The player's stand-in
     /// marker (drawn only when the leader's mesh is missing) is not gated.
     pub overworld_marker_overlay: bool,
+    /// The battle frame driver's discarded `rand()` draw
+    /// ([`crate::world::World::tick_battle_pass_draw`]): one draw from the
+    /// shared stream on every battle pass, whose result retail never reads.
+    /// On by default - it is retail behaviour, and every outcome roll's
+    /// position in the stream depends on it. Clearing it is a tooling knob
+    /// (an A/B over the stream), not an enhancement.
+    pub battle_pass_rand_draw: bool,
 }
 
 impl WorldToggles {
@@ -129,6 +136,7 @@ impl WorldToggles {
             battle_camera: crate::options::BattleCameraOpt::default(),
             field_hp_display: crate::options::HpDisplayOpt::Immediate,
             overworld_marker_overlay: false,
+            battle_pass_rand_draw: true,
         }
     }
 }

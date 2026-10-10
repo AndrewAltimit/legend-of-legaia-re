@@ -96,12 +96,55 @@ pub fn dialog_reading_box_text_draws_for(
     let mut out = Vec::new();
     for (i, line) in page.split('|').enumerate() {
         let pen = (bx, by + scroll_px + i as i32 * DIALOG_ROW_PITCH);
-        for d in text_draws_for(&font.layout(&dialog_page_bytes(line)), pen, MENU_TEXT_WHITE) {
+        // The pager stores `DAT_800740E8 = 1` before each row it draws
+        // (`0x801D97D8`), so dialogue runs a pixel wider per glyph than the
+        // same text in a menu.
+        let laid = font.layout_padded(
+            &dialog_page_bytes(line),
+            legaia_font::measure::DIALOG_GLYPH_PAD,
+        );
+        for d in text_draws_for(&laid, pen, MENU_TEXT_WHITE) {
             match band {
                 None => out.push(d),
                 Some((top, bottom)) => out.extend(crop_rows(d, top, bottom)),
             }
         }
+    }
+    out
+}
+
+/// Text draws for the pager's option-picker labels: label `i` at
+/// `(picker_x + 0x10, picker_y + i*0xF)` (`0x801D9B6C`) in CLUT-7 white, laid
+/// out with the same `DAT_800740E8 = 1` the rows take (`0x801D9B78`). The
+/// pointing hand in the chrome layer marks the selection; without the chrome
+/// atlas a text `>` marker stands in for it and the unselected labels dim.
+pub fn dialog_picker_label_draws_for(
+    font: &legaia_font::Font,
+    options: &[String],
+    cursor: usize,
+    picker_origin: (i32, i32),
+    has_chrome: bool,
+) -> Vec<TextDraw> {
+    let (px, py) = picker_origin;
+    let mut out = Vec::new();
+    for (i, opt) in options.iter().enumerate() {
+        let selected = i == cursor;
+        let label = if has_chrome {
+            opt.clone()
+        } else {
+            format!("{}{}", if selected { "> " } else { "  " }, opt)
+        };
+        let laid = font.layout_padded(label.as_bytes(), legaia_font::measure::DIALOG_GLYPH_PAD);
+        let color = if selected || has_chrome {
+            MENU_TEXT_WHITE
+        } else {
+            [0.8, 0.85, 1.0, 1.0]
+        };
+        out.extend(text_draws_for(
+            &laid,
+            (px + 0x10, py + i as i32 * DIALOG_ROW_PITCH),
+            color,
+        ));
     }
     out
 }
@@ -155,6 +198,21 @@ mod tests {
         let sprite = d.iter().find(|t| t.dst.2 == 16).expect("the sprite draws");
         assert_eq!(sprite.dst.1, 18, "y_offset -2 from the row pen");
         assert_eq!(sprite.color, [1.0, 1.0, 1.0, MENU_TEXT_WHITE[3]]);
+    }
+
+    /// The pager's `DAT_800740E8 = 1`: each glyph of a dialogue row sits one
+    /// pixel further along than the same text laid out for a menu.
+    #[test]
+    fn dialogue_rows_take_the_pager_glyph_pad() {
+        let font = legaia_font::synthetic_for_tests();
+        let d = dialog_reading_box_text_draws_for(&font, "AAA", (0, 0), 0, None);
+        let menu = font.layout(b"AAA");
+        let xs: Vec<i32> = d.iter().map(|t| t.dst.0).collect();
+        let menu_xs: Vec<i32> = menu.glyphs.iter().map(|g| g.dst_x).collect();
+        assert_eq!(xs.len(), 3);
+        for (i, (x, m)) in xs.iter().zip(&menu_xs).enumerate() {
+            assert_eq!(*x - *m, i as i32, "glyph {i}");
+        }
     }
 
     fn quad(y: i32, h: u32) -> TextDraw {

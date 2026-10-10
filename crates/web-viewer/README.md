@@ -1042,9 +1042,14 @@ Builder-style session on `LegaiaViewer` so the site pages can download
 `scene_export_set_vram(bytes)` / `scene_export_add_mesh(name, positions,
 uvs, cba_tsb, indices, flat_rgba) -> handle` /
 `scene_export_add_instance(handle, tx, ty, tz, rot_y, scale)` /
+`scene_export_add_instance_euler(handle, tx, ty, tz, rot_x, rot_y, rot_z, scale)` /
 `scene_export_finish() -> Vec<u8>`. The page feeds the same mesh buffers it
 uploads to WebGL plus the same per-draw `(translation, rotY, scale)`
-triples it builds model matrices from; the bake
+triples it builds model matrices from; a draw whose record carries a pitch
+or roll goes through the `_euler` entry with its three raw angles, which
+writes the same `Rx * Ry * Rz` node rotation the native `export-glb` writes
+(`scene_assembly::placement_rotation_quat`), so a tilted record is not stood
+upright in the file. The bake
 (`legaia_asset::scene_gltf::build_scene_glb`) renders every distinct
 `(cba, tsb-page)` pair the vertices sample into a 256x256 tile of one RGBA
 atlas (the PSX VRAM+CLUT indirection has no glTF equivalent), remaps UVs,

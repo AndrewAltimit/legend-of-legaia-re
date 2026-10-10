@@ -1,0 +1,18 @@
+[package]
+name = "legaia-texture-replace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_texture_replace"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-asset.workspace = true
+legaia-disc-patch.workspace = true
+legaia-iso.workspace = true
+legaia-lzs.workspace = true
+legaia-tim.workspace = true
+legaia-translate.workspace = true

@@ -501,6 +501,10 @@ pub struct BattleState {
     /// the root-motion carry truncates over and the camera steps on
     /// ([`crate::world::World::set_battle_frame_step`]).
     pub frame_clock: crate::world::battle::BattleFrameClock,
+    /// The battle frame the frame driver's discarded `rand()` draw last ran
+    /// on ([`crate::world::World::tick_battle_pass_draw`]) - one draw a
+    /// battle frame, however many vsyncs it spans.
+    pub pass_draw_frame: Option<u64>,
     /// Battle VRAM uploads a cast's side-band stream made this frame - the
     /// `summon.dat` texture slots a player summon's case `0x32` streams to
     /// CLUT `(0, 488)` / page `(512, 0)` and `(0, 490)` / `(640, 0)`
@@ -794,6 +798,7 @@ impl BattleState {
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),
+            pass_draw_frame: None,
             vram_loads: Default::default(),
             form_transition: Default::default(),
             stage_camera: None,

@@ -16,7 +16,6 @@ enum Event {
     SpellSustain(u8, u8),
     ApplyDamage(u8, u8, u8, u8),
     ApplyArtStrike(ArtStrikeInfo),
-    ScreenShake(u16),
     Brightness(u8),
     BattleEnd(BattleEndCause),
     LoadCapture(u8),
@@ -214,9 +213,6 @@ impl BattleActionHost for RecHost {
     }
     fn character_ability_bits_high(&self, slot: u8) -> u32 {
         self.ability_bits_high.get(&slot).copied().unwrap_or(0)
-    }
-    fn screen_shake(&mut self, m: u16) {
-        self.record(Event::ScreenShake(m));
     }
     fn duck_audio_level(&mut self, p: u8) {
         self.record(Event::Brightness(p));
@@ -1447,14 +1443,6 @@ fn done_cleanup_attack_uses_recover_pose() {
     ctx.action_state = ActionState::DoneCleanup.as_byte();
     step(&mut host, &mut ctx);
     assert!(host.take().contains(&Event::Pose(1, Pose::Recover)));
-}
-
-#[test]
-fn done_cleanup_run_screen_shakes() {
-    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
-    ctx.action_state = ActionState::DoneCleanup.as_byte();
-    step(&mut host, &mut ctx);
-    assert!(host.take().contains(&Event::ScreenShake(0x500)));
 }
 
 /// `DoneCleanup`'s tail `jal`s the gauge re-arm (`FUN_801E93C8` at
@@ -4005,4 +3993,54 @@ fn the_gauge_extend_class_draws_its_camera_variant_in_spirit_fire() {
     host.rng_seq = vec![7];
     step(&mut host, &mut ctx);
     assert_eq!(*host.rng_pos.borrow(), 0, "no draw off class 5");
+}
+
+/// State `0x52`'s press skip (`0x801E639C..0x801E63B8`): at or above the
+/// teardown threshold a newly-pressed button pins the countdown at `0x13`;
+/// below it the press does nothing.
+#[test]
+fn seru_absorb_hold_press_clamps_the_wait_to_the_teardown() {
+    use crate::battle_action::done::{DONE_SERU_ABSORB_FRAMES, DONE_SERU_ABSORB_TEARDOWN_BELOW};
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 1);
+    ctx.action_state = ActionState::DoneSeruAbsorb.as_byte();
+    ctx.frame_timer = DONE_SERU_ABSORB_FRAMES;
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.frame_timer,
+        DONE_SERU_ABSORB_FRAMES - 1,
+        "idle pad: plain decrement"
+    );
+    host.pad_word = 0x40;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.frame_timer, DONE_SERU_ABSORB_TEARDOWN_BELOW - 1);
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.frame_timer,
+        DONE_SERU_ABSORB_TEARDOWN_BELOW - 2,
+        "below the threshold a press is a plain decrement"
+    );
+}
+
+/// State `0x65`'s press skip (`0x801E5978..0x801E59A0`): a failed run's
+/// wait ends on the press's own pass; a successful escape's ignores it.
+#[test]
+fn run_wait_press_skips_only_the_failed_run_message() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunWait.as_byte();
+    ctx.frame_timer = 0x3C;
+    ctx.absorbed_seru = 0; // run roll failed
+    host.pad_word = 0x40;
+    let out = step(&mut host, &mut ctx);
+    assert!(matches!(
+        out,
+        StepOutcome::Transition { to, .. } if to == ActionState::DoneCleanup.as_byte()
+    ));
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Run, 1);
+    ctx.action_state = ActionState::RunWait.as_byte();
+    ctx.frame_timer = 0x3C;
+    ctx.absorbed_seru = 1; // escaped
+    host.pad_word = 0x40;
+    assert_eq!(step(&mut host, &mut ctx), StepOutcome::Stay);
+    assert_eq!(ctx.frame_timer, 0x3B);
 }

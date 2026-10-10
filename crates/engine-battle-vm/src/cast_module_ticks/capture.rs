@@ -341,6 +341,51 @@ pub fn spikefish_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> C
 /// `0x801F7448`, inside the arm the head table's word 5 reaches).
 pub const SPIKEFISH_STAGE_ARM: u8 = 5;
 
+/// The PROT 0925 arm whose exit carries the flute's outcome: the flee
+/// staging on an ordinary fight and, on every fight, the round tail
+/// ([`spikefish_round_tail`]).
+pub const SPIKEFISH_OUTCOME_ARM: u8 = 8;
+
+/// PROT 0925's **round tail** - the end of arm 8, run on every fight,
+/// scripted or not (`0x801F79B4..0x801F7A88`):
+///
+/// ```text
+/// for seat in 0..ctx[+0]:
+///     if seat[+0x14C] != 0: ctx[+0x1A] += 1               ; 0x801F79E0..0x801F79FC
+///     if seat[+0x1DE] == 1 && seat[+0x16C] != 0:
+///         FUN_800421D4(seat[+0x1DF], 1)                    ; item refund
+/// ctx[+0x1A] -= 1                                          ; 0x801F7A54..0x801F7A60
+/// seats 0, 1, 2: +0x16C = 0                                ; 0x801F7A70..0x801F7A88
+/// ```
+///
+/// The cursor moves by the **living party** minus one, not by the members
+/// that still had a turn: on a scripted fight, where the flute cannot flee,
+/// a cast early in the round pushes the cursor past the monsters still due
+/// to act, so the round ends before they move and the next round's picker
+/// re-chooses their action (an evolved Cort's charged Final Crisis is lost
+/// that way). That is retail behaviour, and the faithful port keeps it.
+///
+/// Returns the item ids the tail refunds, in seat order. `party` is the
+/// seated party row, retail seats `0..ctx[+0]`.
+///
+/// PORT: FUN_801F6A00 (arm 8's round tail, `0x801F79B4..0x801F7A88`)
+pub fn spikefish_round_tail(ctx: &mut CastModuleCtx, party: &mut [CastActorState]) -> Vec<u8> {
+    let mut refunds = Vec::new();
+    for seat in party.iter() {
+        if seat.hp != 0 {
+            ctx.turn_cursor = ctx.turn_cursor.wrapping_add(1);
+        }
+        if seat.action_category == super::ACTION_CATEGORY_ITEM && seat.init_key != 0 {
+            refunds.push(seat.queued_action);
+        }
+    }
+    ctx.turn_cursor = ctx.turn_cursor.wrapping_sub(1);
+    for seat in party.iter_mut().take(3) {
+        seat.init_key = 0;
+    }
+    refunds
+}
+
 /// PROT 0924 (Ultimate Rave) tick body.
 ///
 /// Twelve phase arms behind `sltiu a1, 0xc` (`0x801F6AA8`) through the table
@@ -530,4 +575,38 @@ pub fn water_crystals_tick(
         }
         false
     })
+}
+
+#[cfg(test)]
+mod spikefish_tail_tests {
+    use super::*;
+
+    /// Three living members, one of them still due an Item turn: the cursor
+    /// moves by two (living minus one), the item is refunded, and every
+    /// party seat's initiative key is spent.
+    #[test]
+    fn round_tail_moves_the_cursor_by_the_living_party() {
+        let mut ctx = CastModuleCtx {
+            turn_cursor: 1,
+            ..Default::default()
+        };
+        let seat = |hp, key, cat, item| CastActorState {
+            hp,
+            init_key: key,
+            action_category: cat,
+            queued_action: item,
+            ..Default::default()
+        };
+        let mut party = [seat(10, 0, 4, 0), seat(20, 7, 1, 0x2A), seat(5, 3, 3, 0)];
+        let refunds = spikefish_round_tail(&mut ctx, &mut party);
+        assert_eq!(ctx.turn_cursor, 3);
+        assert_eq!(refunds, vec![0x2A]);
+        assert!(party.iter().all(|s| s.init_key == 0));
+
+        // A downed member does not count.
+        let mut ctx = CastModuleCtx::default();
+        let mut party = [seat(10, 0, 0, 0), seat(0, 0, 0, 0)];
+        spikefish_round_tail(&mut ctx, &mut party);
+        assert_eq!(ctx.turn_cursor, 0);
+    }
 }

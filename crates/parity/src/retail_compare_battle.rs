@@ -123,7 +123,7 @@ pub const INFLIGHT_DEADLINE: u64 = INFLIGHT_TICKS as u64;
 /// breaks (`FUN_801DABA4`'s pick): any change in how long an action holds
 /// shifts which draw breaks it, so a state can lose every early seed to a
 /// party wipe without anything in the battle being wrong.
-pub const BATTLE_RNG_SEEDS: [u32; 12] = [
+pub const BATTLE_RNG_SEEDS: [u32; 48] = [
     0x1234_5678,
     0x9E37_79B9,
     0x0BAD_F00D,
@@ -136,6 +136,42 @@ pub const BATTLE_RNG_SEEDS: [u32; 12] = [
     0xA54F_F53A,
     0x510E_527F,
     0x9B05_688C,
+    0x1F83_D9AB,
+    0x5BE0_CD19,
+    0x428A_2F98,
+    0x7137_4491,
+    0xB5C0_FBCF,
+    0xE9B5_DBA5,
+    0x3956_C25B,
+    0x59F1_11F1,
+    0x923F_82A4,
+    0xAB1C_5ED5,
+    0xD807_AA98,
+    0x1283_5B01,
+    0x09E6_633D,
+    0x3D95_588A,
+    0x9DEB_E964,
+    0x6369_1762,
+    0x54F7_AE41,
+    0x49C1_6D38,
+    0x43DE_897D,
+    0x9A3B_E366,
+    0xAE2A_57C2,
+    0x9115_780A,
+    0xFBD4_4AC9,
+    0xF0FE_EC45,
+    0xBC5D_413F,
+    0xE805_AD94,
+    0xEA78_4A98,
+    0xBAED_D782,
+    0xB307_DC35,
+    0x78A0_C04B,
+    0x9EF3_D083,
+    0x847A_F270,
+    0x04EF_5376,
+    0xCBAA_DB89,
+    0x7B54_AE6C,
+    0x8BAE_8BFB,
 ];
 /// The battle projection's `H` (`FUN_8003D254`; `battle_cam_script::GTE_H`).
 const BATTLE_H: i16 = 256;
