@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {

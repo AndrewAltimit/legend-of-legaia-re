@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Synthetic host that fakes a 4-sector LBA range per PROT

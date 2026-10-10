@@ -1,4 +1,3 @@
-
 #[test]
 fn a_stream_drives_only_its_records_first_placement() {
     let records = [Some(5), None, Some(8), Some(5), Some(8), Some(9)];
