@@ -1,23 +1,46 @@
 # Worklist classification
 
-[`port-catalog.py`](port-catalog.md) emits a worklist of addresses that are
-`dumped` and `documented` but carry no `// PORT:` tag. It counts one row per
-address, and an address is not the same thing as a portable function.
+[`port-catalog.py`](port-catalog.md) emits a worklist of addresses that are `dumped` and `documented` but carry no `// PORT:` tag. It counts one row per address - and an address is not the same thing as a portable function. `scripts/ghidra-analysis/classify-worklist.py` sorts every worklist address into a class that says what the row really is, with a one-line mechanical reason, so the worklist reads as work rather than as addresses.
 
-Ghidra promotes intra-function jump labels to fake `FUN_` entries. Overlays hold
-relocated copies of the same library routine, so one routine can occupy several
-rows at several VAs. Different overlays load different code at the same VA, so
-one row can stand for several unrelated routines. Some rows are data regions
-that were dumped through a function-shaped script. Taken together these inflate
-the worklist by an amount no reader can eyeball.
+Four things inflate a raw worklist:
 
-`scripts/ghidra-analysis/classify-worklist.py` reads the Ghidra dumps under
-`ghidra/scripts/funcs/` and assigns every worklist address one class plus a
-mechanical reason. Every reason restates evidence found in a dump - the same
-standard the [ignore list](port-catalog.md) is held to. The classifier never
-guesses: where the heuristics disagree it emits `UNCERTAIN`, because a false
-`REAL` costs a future lane a wasted investigation and a false non-portable class
-silently deletes real work.
+- Ghidra promotes jump labels inside a function to fake `FUN_` entries.
+- Overlays (code images loaded at shared RAM addresses) hold relocated copies of the same library routine, so one routine occupies several rows at several virtual addresses (VAs).
+- Different overlays load different code at the same VA, so one row can stand for several unrelated routines.
+- Some rows are data regions that were dumped through a function-shaped script.
+
+Every reason the classifier gives restates evidence found in a dump or an extracted image - the same standard the [ignore list](port-catalog.md#ignore-list) is held to. It never guesses: where its tests disagree it emits `UNCERTAIN`, because a false `REAL` costs a wasted investigation and a false non-portable class silently deletes real work.
+
+```mermaid
+flowchart TD
+    row["worklist address"] --> dumps["dumps covering the VA"]
+    dumps --> testify{"any dump that testifies?"}
+    testify -->|no| unc["UNCERTAIN"]
+    testify -->|yes| shape{"shape of the body"}
+    shape -->|"listing, hex blob, pointer table"| data["DATA"]
+    shape -->|"stub or caseD_ fragment"| ph["PHANTOM"]
+    shape -->|"inside another body, or tail fragment"| int["INTERIOR"]
+    shape -->|"no jr ra, exits by jump"| st["SHARED_TAIL"]
+    shape -->|"own entry, own frame, jr ra"| cmp{"compare across images"}
+    cmp -->|"same stream as another entry"| dup["DUPLICATE"]
+    cmp -->|"distinct code in 2+ images"| va["VA_ALIASED"]
+    cmp -->|"BIOS thunk or PsyQ library"| ven["REAL_BUT_VENDOR"]
+    cmp -->|"one routine"| real["REAL"]
+    dup --> arb["static-image arbitration"]
+    va --> arb
+```
+
+The diagram maps which evidence yields which class; it is not the script's exact test order. Arbitration can turn an alias or duplicate verdict back into `REAL`, or into `UNCERTAIN` ([static-image arbitration](#static-image-arbitration)).
+
+| Section | Read it for |
+|---|---|
+| [Running it](#running-it) | The invocation, `--explain`, `--audit-ignored`. |
+| [The classes](#the-classes) | What each class means and how it is detected. |
+| [Interpreting the result](#interpreting-the-result) | Which classes are work, and how much. |
+| [Proposed ignore entries](#proposed-ignore-entries) | The merge policy per class. |
+| [What an ignore row claims](#what-an-ignore-row-claims) | Address / scope / reachability claims and how each is refuted. |
+| [What an `--audit-ignored` re-raise means](#what-an---audit-ignored-re-raise-means) | The audit's test order and the entry-boundary test. |
+| [The sibling worklist](#the-sibling-worklist-cited-but-not-dumped) | `--missing-dumps` rows and fabricated bodies. |
 
 ## Running it
 
@@ -34,12 +57,7 @@ directory is gitignored, so a fresh worktree has none and `port-catalog.py` run
 inside one reports `dumped: 0` - point both `--repo` and `--catalog` at the
 checkout that produced the dumps.
 
-`--repo`, `--catalog` and `--out` all default to this checkout, so from the
-repo root a drill-down needs no path at all - `--audit-ignored` on its own runs.
-They used to be required in every mode, which made an audit that writes nothing
-demand a destination to write it to, and made the two drill-downs exit on an
-argparse error rather than running. Pass them explicitly when the dumps live in
-a different checkout from the one the script sits in.
+`--repo`, `--catalog` and `--out` all default to this checkout, so from the repo root a drill-down needs no path at all - `--audit-ignored` on its own runs. Pass them explicitly when the dumps live in a different checkout from the one the script sits in.
 
 `--explain <addr>` prints the per-dump evidence for a single address: which dump
 files cover the VA, each one's resolved `entry=`, image, instruction count,
@@ -60,111 +78,6 @@ re-derives the row's own evidence and reads agreement as disagreement.
 gives the test order and the two noise shapes it exists to suppress, and
 [the three kinds of ignore claim](#the-three-kinds-of-ignore-claim) says which rows
 it can speak about at all.
-
-### The three kinds of ignore claim
-
-The `worklist_*` prefix on an ignore-list section is not cosmetic, and the audit's
-scope is exactly that prefix. Three different assertions live in
-[`port-catalog-ignore.toml`](port-catalog.md), and only one of them is a claim
-the images can settle:
-
-- an **address** claim - *no routine begins at this VA*: `worklist_interior`,
-  `worklist_phantom`, `worklist_data`, `worklist_shared_tail`,
-  `worklist_duplicate`, `worklist_misbased_print`, `worklist_uncertain`;
-- a **scope** claim - *the routine is real, and the from-scratch port covers it
-  another way*: every unprefixed section, from `libgte` and `bios` through
-  `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`;
-- a **reachability** claim - *the routine is real, the port does not cover it,
-  and retail never reaches it*: the `unreferenced` section, described below.
-
-The [entry-boundary test](#the-entry-boundary-test) refutes an address claim by
-finding a routine where the row says there is none. Against a scope claim it has
-no purchase at all: such a row already describes the body, instruction by
-instruction, so "an image starts a routine at this VA" is what the row says
-rather than a contradiction of it. Filing a scope row under a `worklist_*` name
-therefore guarantees a re-raise on every run, which is how the audit's exit code
-stops meaning anything. A scope claim is checked by re-reading the body against
-the engine's own implementation - a human task the reason exists to make cheap -
-so scope sections stay unprefixed however they were arrived at.
-
-The decisive check is neither the dump nor the reason string: disassemble the
-mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
-it. A **leaf** has no prologue, so a missing prologue is not a missing function -
-`FUN_801CF5D0` is a frameless eight-field record copy and is still the menu
-overlay's first routine.
-
-### What a scope-row audit can and cannot find
-
-The paragraph above says a scope claim is checked by re-reading the body. That
-is a human task with no exit code, so it is worth saying what a pass means.
-
-The check that carries weight is **operand-level**: a scope reason that names
-the table the routine indexes, the jump table it dispatches through, the bound
-it compares against and the helpers it calls is a reason written from the bytes,
-and re-deriving those four from the disassembly either confirms it or does not.
-A reason that only names a *category* ("GP0 chrome", "PsyQ transport") cannot be
-confirmed or refuted, and the fix for one of those is to rewrite it with its
-operands rather than to argue about it.
-
-The second thing worth checking while there is a **stale citation**: a reason
-whose `see ghidra/scripts/funcs/<stem>.txt` names a dump that has since been
-re-based or re-labelled. That would be a pointer going stale rather than the
-claim going wrong - the row's operands still check out against whichever dump
-of the VA the attribution CSV gives to the owning image - but it is the thing
-that makes a row unverifiable later. Watch for the near-miss: an address can
-carry several dump stems, so a stem that is absent from the first two hits of a
-glob is not an absent stem.
-
-### The reachability claim
-
-A row in `unreferenced` says the opposite of an address claim: a routine *does*
-begin here, and nothing on the disc ever gets to it. That takes a different
-instrument again - the entry-boundary test only looks at the VA itself, and a
-call-graph sweep only looks for `jal`. The evidence is a whole-disc sweep for
-every reference form at once, over `SCUS_942.54`, the based overlay images and
-the raw bytes of every extracted `PROT.DAT` entry
-([`address-reference-scan.md`](address-reference-scan.md)).
-
-Its relation to the other two kinds is worth stating, because a row can only be
-one of them:
-
-| Kind | Says | Refuted by |
-|---|---|---|
-| address | no routine begins here | disassembling a routine at the VA |
-| scope | the port covers this another way | re-reading the body against the engine's implementation |
-| reachability | nothing on the disc reaches this entry | finding any reference form for the address |
-
-The reachability row is the one to prefer over a port. A port of a routine the
-runtime cannot enter is inert by construction, so it lands in the audit's
-disclosed-inert section and stays there forever - a wiring worklist entry no
-wiring pass can close. Settling it as a documented negative keeps the worklist
-honest in both directions.
-
-### A word hit separates a template-seated entry from an interior label
-
-The reachability sweep and the entry-boundary test answer different questions,
-and one scan shape invites reading the first as an answer to the second. An
-address with **no** `jal`, **no** `j`, **no** `lui`+`addiu` and only branches
-looks like an intra-function label, because a label is reached exactly that
-way. But a routine seated on a
-[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
-scans almost identically: nothing calls it either - the actor pool copies its
-address into `actor[+0xC]` and the frame walk `jalr`s that - so the only
-evidence it leaves is the one word in the template.
-
-That single aligned word is the whole difference, and it is decisive in both
-directions: a label carries no copy of its own address anywhere, so a word hit
-at the VA rules `INTERIOR` out. `801D2298` (field ledge-hop advance) and
-`801D4098` (dance clip-driver gate) are the worked cases - each has exactly
-one word hit, in its own image, immediately after the template's `ffff0000`
-model-selector lead, and each is `REAL`. The scan's own triage calls both hits
-`incidental-code`, because the templates sit inside code
-([`address-reference-scan.md`](address-reference-scan.md#a-template-inside-a-code-region-reads-as-incidental-code)),
-so the class name is not the verdict - the neighbouring words are.
-
-Both directions of this cost something. Filing a template-seated entry as
-`INTERIOR` deletes a real port site; filing a label as `REAL` because the
-branches look like traffic mints a phantom row. Read the words at the hit.
 
 ## The classifier's output
 
@@ -189,10 +102,7 @@ states that look alike in a diff and in a directory listing:
 
 The two are told apart by re-running, not by reading. Before citing either
 file as evidence of a clean worklist, regenerate it against a checkout with a
-populated `funcs/` and see whether the file changes. The CSV shipped as a bare
-header row for a while, which reads as "classified and clean" and was in fact
-"unrun" - the exact `0 findings` / `findings not shown` ambiguity the gates on
-this page's siblings exist to remove.
+populated `funcs/` and see whether the file changes. A bare header row reads as "classified and clean" and can equally be "unrun".
 
 ## The classes
 
@@ -467,10 +377,7 @@ reading it as `INTERIOR` deletes the second overlay's routine from the worklist
 with a reason that is true about the first.
 
 The classifier therefore requires containment to hold in *every* image that
-dumps a whole self-entry body here. Where one image contains the VA and another
-carries a body with its own `addiu sp,sp,-N` prologue and `jr ra`, the row is
-aliased. `--audit-ignored` exists because this rule was added after the ignore
-list had already absorbed rows decided the other way.
+dumps a whole self-entry body here. Where one image contains the VA and another carries a body with its own `addiu sp,sp,-N` prologue and `jr ra`, the row is aliased. `--audit-ignored` re-checks absorbed rows against this rule.
 
 ## Interpreting the result
 
@@ -558,23 +465,9 @@ risk:
 | `DUPLICATE` | Merge only when a peer is ported, or is a live worklist row that names the routine stably. A peer that is itself aliased does not qualify - ignoring both ends deletes the routine. |
 | `VA_ALIASED`, `UNCERTAIN` | Never merged. |
 
-**Never merge the proposal file unread**, and `DUPLICATE` is why. A wave that
-hand-checked six proposed rows found three of them wrong, all the same way:
-normalisation masks absolute address-shaped immediates, which erases a `jal`
-target, so *every small thunk hashes identically to every other small thunk*
-and distinct routines are proposed for deletion as copies of one another. The
-cost is asymmetric - an ignore row leaves the worklist permanently and nothing
-re-examines it - so a wrong row here is more expensive than a wrong row
-anywhere else in this layer. The generated file now carries that warning in its
-own header, where it cannot be missed by someone who never opened this page.
+**Never merge the proposal file unread**, and `DUPLICATE` is why. Normalisation masks absolute address-shaped immediates, which erases a `jal` target, so *every small thunk hashes identically to every other small thunk* and distinct routines get proposed for deletion as copies of one another. The cost is asymmetric: an ignore row leaves the worklist permanently and nothing re-examines it, so a wrong row here is more expensive than a wrong row anywhere else in this layer. The generated file carries the same warning in its own header.
 
-The `DUPLICATE` rule is not hypothetical in the other direction either: a
-cross-image relocated match can name a peer whose own row stands for two
-routines, in which case the match identifies neither. The sharper form of the same failure is a peer address that is not a
-body at all - the matching stream came from a mis-based dump *printed* at that
-VA, while the VA itself hosts an unrelated routine in some other overlay. Both
-are checked mechanically now: a peer qualifies only when a dump at the peer VA
-carries the same body and resolves against an image there.
+A `DUPLICATE` can also fail from the peer's side. A cross-image relocated match can name a peer whose own row stands for two routines, in which case the match identifies neither. The sharper form is a peer address that is not a body at all: the matching stream came from a mis-based dump *printed* at that VA, while the VA itself hosts an unrelated routine in some other overlay. Both are checked mechanically - a peer qualifies only when a dump at the peer VA carries the same body and resolves against an image there.
 
 Reviewed rows land in `port-catalog-ignore.toml` under the same
 `worklist_*` section names, which keeps a merged row traceable back to the
@@ -595,6 +488,112 @@ strings plus a re-run, rather than from a CSV that would otherwise have to be
 kept as a growing archive. Re-running the classifier after a merge reports only
 the residue - `REAL`, `VA_ALIASED`, `UNCERTAIN`, and any `DUPLICATE` the merge
 policy held back.
+
+## What an ignore row claims
+
+### The three kinds of ignore claim
+
+The `worklist_*` prefix on an ignore-list section is not cosmetic, and the audit's
+scope is exactly that prefix. Three different assertions live in
+[`port-catalog-ignore.toml`](port-catalog.md), and only one of them is a claim
+the images can settle:
+
+- an **address** claim - *no routine begins at this VA*: `worklist_interior`,
+  `worklist_phantom`, `worklist_data`, `worklist_shared_tail`,
+  `worklist_duplicate`, `worklist_misbased_print`, `worklist_uncertain`;
+- a **scope** claim - *the routine is real, and the from-scratch port covers it
+  another way*: every unprefixed section, from `libgte` and `bios` through
+  `prim_builder`, `mesh_submit`, `noop_frame` and `noop_stubs`;
+- a **reachability** claim - *the routine is real, the port does not cover it,
+  and retail never reaches it*: the `unreferenced` section, described below.
+
+The [entry-boundary test](#the-entry-boundary-test) refutes an address claim by
+finding a routine where the row says there is none. Against a scope claim it has
+no purchase at all: such a row already describes the body, instruction by
+instruction, so "an image starts a routine at this VA" is what the row says
+rather than a contradiction of it. Filing a scope row under a `worklist_*` name
+therefore guarantees a re-raise on every run, which is how the audit's exit code
+stops meaning anything. A scope claim is checked by re-reading the body against
+the engine's own implementation - a human task the reason exists to make cheap -
+so scope sections stay unprefixed however they were arrived at.
+
+The decisive check is neither the dump nor the reason string: disassemble the
+mapped image at the VA and look for the `jr ra` / `addiu sp,sp,-N` pair around
+it. A **leaf** has no prologue, so a missing prologue is not a missing function -
+`FUN_801CF5D0` is a frameless eight-field record copy and is still the menu
+overlay's first routine.
+
+### What a scope-row audit can and cannot find
+
+A scope claim is checked by re-reading the body. That is a human task with no exit code, so it is worth saying what a pass means.
+
+The check that carries weight is **operand-level**: a scope reason that names
+the table the routine indexes, the jump table it dispatches through, the bound
+it compares against and the helpers it calls is a reason written from the bytes,
+and re-deriving those four from the disassembly either confirms it or does not.
+A reason that only names a *category* ("GP0 chrome", "PsyQ transport") cannot be
+confirmed or refuted, and the fix for one of those is to rewrite it with its
+operands rather than to argue about it.
+
+The second thing worth checking while there is a **stale citation**: a reason
+whose `see ghidra/scripts/funcs/<stem>.txt` names a dump that has since been
+re-based or re-labelled. That would be a pointer going stale rather than the
+claim going wrong - the row's operands still check out against whichever dump
+of the VA the attribution CSV gives to the owning image - but it is the thing
+that makes a row unverifiable later. Watch for the near-miss: an address can
+carry several dump stems, so a stem that is absent from the first two hits of a
+glob is not an absent stem.
+
+### The reachability claim
+
+A row in `unreferenced` says the opposite of an address claim: a routine *does*
+begin here, and nothing on the disc ever gets to it. That takes a different
+instrument again - the entry-boundary test only looks at the VA itself, and a
+call-graph sweep only looks for `jal`. The evidence is a whole-disc sweep for
+every reference form at once, over `SCUS_942.54`, the based overlay images and
+the raw bytes of every extracted `PROT.DAT` entry
+([`address-reference-scan.md`](address-reference-scan.md)).
+
+Its relation to the other two kinds is worth stating, because a row can only be
+one of them:
+
+| Kind | Says | Refuted by |
+|---|---|---|
+| address | no routine begins here | disassembling a routine at the VA |
+| scope | the port covers this another way | re-reading the body against the engine's implementation |
+| reachability | nothing on the disc reaches this entry | finding any reference form for the address |
+
+The reachability row is the one to prefer over a port. A port of a routine the
+runtime cannot enter is inert by construction, so it lands in the audit's
+disclosed-inert section and stays there forever - a wiring worklist entry no
+wiring pass can close. Settling it as a documented negative keeps the worklist
+honest in both directions.
+
+### A word hit separates a template-seated entry from an interior label
+
+The reachability sweep and the entry-boundary test answer different questions,
+and one scan shape invites reading the first as an answer to the second. An
+address with **no** `jal`, **no** `j`, **no** `lui`+`addiu` and only branches
+looks like an intra-function label, because a label is reached exactly that
+way. But a routine seated on a
+[static actor template](../reference/functions/runtime-libs.md#static-actor-templates)
+scans almost identically: nothing calls it either - the actor pool copies its
+address into `actor[+0xC]` and the frame walk `jalr`s that - so the only
+evidence it leaves is the one word in the template.
+
+That single aligned word is the whole difference, and it is decisive in both
+directions: a label carries no copy of its own address anywhere, so a word hit
+at the VA rules `INTERIOR` out. `801D2298` (field ledge-hop advance) and
+`801D4098` (dance clip-driver gate) are the worked cases - each has exactly
+one word hit, in its own image, immediately after the template's `ffff0000`
+model-selector lead, and each is `REAL`. The scan's own triage calls both hits
+`incidental-code`, because the templates sit inside code
+([`address-reference-scan.md`](address-reference-scan.md#a-template-inside-a-code-region-reads-as-incidental-code)),
+so the class name is not the verdict - the neighbouring words are.
+
+Both directions of this cost something. Filing a template-seated entry as
+`INTERIOR` deletes a real port site; filing a label as `REAL` because the
+branches look like traffic mints a phantom row. Read the words at the hit.
 
 ## What an `--audit-ignored` re-raise means
 
@@ -630,19 +629,9 @@ evidence the merged reason cannot already contain, in this order:
 
 ### A row filed under the classifier's own class is not contradicted
 
-`VA_ALIASED` is not in the non-portable set - the address really does cover
-code, in several images - so an ignore row that says exactly that used to
-re-raise on every run. That trains a reader to stop reading the audit, which
-costs more than the row does. The audit therefore also stands down when the
-class it computes is the section the row already sits in, which is what
-`[worklist_va_aliased]` says: several slot-B modules hold different routines at
-one VA, so the bare address is not one port site and a `// PORT:` tag over it
-would name whichever module the tagger happened to read.
+`VA_ALIASED` is not in the non-portable set - the address really does cover code, in several images - so a naive audit would re-raise an ignore row that says exactly that on every run, and a report that always fires stops being read. The audit therefore also stands down when the class it computes is the section the row already sits in. That is what `[worklist_va_aliased]` says: several slot-B modules hold different routines at one VA, so the bare address is not one port site, and a `// PORT:` tag over it would name whichever module the tagger happened to read.
 
-That section exists because fifteen slot-B rows were filed under a *shape*
-(`interior`, `data`, `shared_tail`) before the modules that alias them were
-mapped. Re-run against the mapped set, the verdict "do not port the bare VA"
-survived every one and the stated shape survived none.
+For slot-B rows in particular, file the alias rather than a *shape* (`interior`, `data`, `shared_tail`): a shape read off one module does not hold for the modules that alias it, while "do not port the bare VA" does.
 
 ### The entry-boundary test
 
@@ -696,8 +685,7 @@ after a data run" fires hardest on exactly the address most likely to be that
 routine's *second* instruction. `boot_init_pak` (PROT 0895) is the case:
 `0x801CE9C0` opens `addiu sp,sp,-0x230` and its frame closes 784 bytes later, so
 `0x801CE9C4` is interior - yet the data run above `0x801CE9C0` outweighed the one
-instruction between it and the VA and the tell fired. The signature is now
-refused when the word immediately before the VA is itself a non-leaf prologue.
+instruction between it and the VA. So the signature is refused when the word immediately before the VA is itself a non-leaf prologue.
 
 ### Limits
 
@@ -714,40 +702,18 @@ nobody has extracted can hold an entry at a VA every extracted sibling uses as
 interior code. That is the direction in which the audit stays silent about a
 wrong row, and it is closed by extracting overlays, not by tuning the test.
 
-The same corpus growth is what makes the audit worth re-running rather than
-trusted once. Extracting an overlay can *refute* a merged row as readily as it
-can support one: the row that carried `0x801D84B4` as inter-function padding was
-read off the minigame images, where the VA really is a `nop` run, and the field
-overlay begins a six-instruction leaf there that stores master game mode
-`0x16` (CARD INIT) and raises the entry-context word - the overlay-local twin of
-the SCUS scripted game-over trigger. The row was deleting that routine with a
-reason true of four other images, and the audit is what surfaced it.
+The same corpus growth is what makes the audit worth re-running rather than trusted once. Extracting an overlay can *refute* a merged row as readily as it can support one. `0x801D84B4` is the worked case: in the minigame images the VA really is a `nop` run (inter-function padding), while the field overlay begins a six-instruction leaf there that stores master game mode `0x16` (CARD INIT) and raises the entry-context word - the overlay-local twin of the SCUS scripted game-over trigger. A "padding" reason true of four images would delete that routine.
 
-A **base** does the same. Recovering PROT 0896's base put the foreign-build
-options image in the arbiter's corpus, and eight rows that read a VA as
-interior code or a cited instruction in another image re-raised at once: 0896
-begins a routine at each. None of those is port work - the image is never
-loaded on this disc - so they moved to the `jp_options_status_overlay` scope
-section with both facts in the reason, rather than being kept under an
-address claim the image now refutes.
+A recovered **base** does the same. With PROT 0896 based, the foreign-build options image is in the arbiter's corpus, and it begins a routine at several VAs that are interior code or a cited instruction in other images. None of those is port work - the image is never loaded on this disc - so such rows sit in the `jp_options_status_overlay` scope section with both facts in the reason, rather than under an address claim the image refutes.
 
 #### An image's inherited tail is not its code
 
-The arbiter's images are trimmed twice. The first cut is the over-read: an
-extracted footprint that runs into a neighbour's sectors stops where that
-neighbour's head appears. The second is the
-[inherited tail](byte-accounting.md#a-residue-run-that-is-another-images-code) -
-the run where an overlay's extent holds an earlier entry's bytes at the same
-file offset, the packer's buffer rather than this overlay's content - cut by
-the same `inherited_tail.tail_cuts` rule `disc-coverage.py` and the byte
-account apply. Without it the entry-boundary test read the donor's routine
-boundaries as the host image's: PROT 0900 is the menu overlay's code from file
-`0x252A`, so `0x801F90DC` - the menu's item-info panel `FUN_801D0F1C` at the
-slot-B base - read as a `summon_render` entry, and contradicted a
-mis-based-print row that is right. The same cut is what let `0x801F7628` read
-as one image's routine instead of two aliased ones: it is the battle tutorial's
-countdown arm `FUN_801F7628`, ported as `BattleTutorial::arm_countdown`, which
-an interior row had kept off the worklist.
+The arbiter's images are trimmed twice. The first cut is the over-read: an extracted footprint that runs into a neighbour's sectors stops where that neighbour's head appears. The second is the [inherited tail](byte-accounting.md#a-residue-run-that-is-another-images-code) - the run where an overlay's extent holds an earlier entry's bytes at the same file offset, the packer's buffer rather than this overlay's content - cut by the same `inherited_tail.tail_cuts` rule `disc-coverage.py` and the byte account apply.
+
+Without the second cut the entry-boundary test reads the donor's routine boundaries as the host image's. Two cases:
+
+- PROT 0900 is the menu overlay's code from file `0x252A`, so `0x801F90DC` - the menu's item-info panel `FUN_801D0F1C` at the slot-B base - would read as a `summon_render` entry and contradict a mis-based-print row that is right.
+- `0x801F7628` reads as one image's routine instead of two aliased ones: it is the battle tutorial's countdown arm `FUN_801F7628`, ported as `BattleTutorial::arm_countdown`.
 
 ## The sibling worklist: cited but not dumped
 
@@ -805,11 +771,7 @@ decode every word of it into something. The output is a dump of ordinary
 appearance, and every word that decodes as a `jal` becomes a citation of an
 address nothing ever called. Applied to a known data window - a module's link
 base, a jump table, a string blob - a single pass can mint a worklist row per
-fabricated call. PROT 0900's head window is the worked case: already recorded as
-data in [`dump-corpus-integrity.md`](dump-corpus-integrity.md), it was later
-re-walked into a 1692-byte "body" whose lone decoded call target,
-`0x80040000`, entered the dump worklist as if it were undumped code. Nothing
-calls it: at that VA `SCUS_942.54` holds an ordinary `j` in the middle of
+fabricated call. PROT 0900's head window is the worked case: it is data ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)), and walked as code it yields a 1692-byte "body" whose lone decoded call target, `0x80040000`, enters the dump worklist as if it were undumped code. Nothing calls it: at that VA `SCUS_942.54` holds an ordinary `j` in the middle of
 `FUN_8003FB10`, and the roundness of the address is the first hint that no
 linker put a function there.
 
