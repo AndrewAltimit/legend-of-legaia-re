@@ -335,3 +335,26 @@ fn play_clock_counts_by_delta_and_restarts_on_new_game() {
     world.tick_play_clock(5013.0);
     assert_eq!(world.clock.play_time_seconds, 3);
 }
+
+/// A host that stops reading - a paused or backgrounded page, a minimised
+/// window - is not playing: the gap counts nothing, and the clock picks up
+/// from where it stood.
+#[test]
+fn play_clock_does_not_count_a_stalled_host() {
+    let mut world = World::new();
+    world.tick_play_clock(100.0);
+    for i in 1..=30 {
+        world.tick_play_clock(100.0 + f64::from(i) * 0.1);
+    }
+    assert_eq!(world.clock.play_time_seconds, 3);
+    // An hour with no reading, then play resumes.
+    world.tick_play_clock(3703.0);
+    assert_eq!(
+        world.clock.play_time_seconds, 3,
+        "the stall is not play time"
+    );
+    for i in 1..=20 {
+        world.tick_play_clock(3703.0 + f64::from(i) * 0.1);
+    }
+    assert_eq!(world.clock.play_time_seconds, 5);
+}

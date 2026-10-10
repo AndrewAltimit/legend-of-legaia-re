@@ -621,6 +621,7 @@ impl World {
         // `tick_play_clock` sets a fresh origin and a zero mark.
         self.clock.play_clock_origin = None;
         self.clock.play_clock_high_water = 0;
+        self.clock.play_clock_last = None;
         self.cutscene.timeline = None;
         self.field_vm.helper_contexts.clear();
         self.cutscene.narration = None;
