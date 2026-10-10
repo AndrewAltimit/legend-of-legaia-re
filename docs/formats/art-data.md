@@ -1,92 +1,73 @@
 # Art Data - Tactical Arts records
 
-Each playable character (Vahn, Noa, Gala) has a per-character table of *art records* describing damage, animation, hit timing, status effects, and Super/Miracle Art trigger metadata. These records drive the battle action system.
+A Tactical Art is a d-pad combo the player enters in battle. Each playable
+character (Vahn, Noa, Gala) has a table of fixed-size *art records* holding the
+combo, the art's name, its per-strike damage power, hit timing and effect cues.
+A second, separate table in the executable holds what the menu *shows* for each
+art: name, AP cost and the arrow string. This page covers both tables, the
+action-constant id space that links them, and the Miracle / Super Art trigger
+tables.
 
-Implementation: [`crates/art`](../../crates/art/README.md).
+Implementation: [`crates/art`](../../crates/art/README.md) (tables, tokenizer,
+matchers) and `legaia_patcher::arts_power` / `super_art_power` (record editors).
 
-## Contents
+## At a glance
 
-- [Where the data lives](#where-the-data-lives)
-- [Confidence](#confidence)
-- [Action Constants](#action-constants)
-- [Art record layout](#art-record-layout)
-  - [Fixed prefix](#fixed-prefix)
-  - [Variable fields](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
-  - [Power encoding](#power-encoding)
-  - [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)
-- [Runtime cue playout](#runtime-cue-playout)
-  - [The cue tables](#the-cue-tables)
-  - [Target-group encoding](#target-group-encoding)
-- [Learned Art Constant](#learned-art-constant)
-- [Art Anim Data](#art-anim-data)
-- [Miracle Arts](#miracle-arts)
-- [Super Arts](#super-arts)
-- [Arts-name table (`DAT_80075EC4`)](#arts-name-table-dat_80075ec4)
-  - [`+4` is authored data with no runtime reader](#4-is-authored-data-with-no-runtime-reader)
-  - [Command-glyph string (`+8`)](#command-glyph-string-8)
-  - [Validation oracle](#validation-oracle)
-- [See also](#see-also)
-
-## Where the data lives
-
-| Source | Location |
+| | |
 |---|---|
-| Vahn art records (RAM) | `0x80160EFC` (first record) onwards |
-| Noa art records (RAM)  | `0x80176998` (first record) onwards |
-| Gala art records (RAM) | `0x8018BA54` (first record) onwards |
+| Art records (disc) | decoded `record0` of the player battle file: extraction `0863` Vahn / `0864` Noa / `0865` Gala ([battle-data-pack.md](battle-data-pack.md)) |
+| Art records (RAM) | first record at `0x80160EFC` Vahn / `0x80176998` Noa / `0x8018BA54` Gala; resident once the Arts menu opens |
+| Record stride | `0xD0`, indexed by action constant: `art_block_base + (c - 0x10) * 0xD0` |
+| Art block | reached through `record0[+0x58]`; runtime copy of `record0` at `DAT_801C9360[char]` |
+| Display table | `DAT_80075EC4` in `SCUS_942.54`, 20-byte records |
 | Learned Art Constants (RAM) | Vahn `0x8008488D`, Noa `0x80084CA1`, Gala `0x8008506C` |
-| On-disc source | Per-character player-data `record0` - extraction `0863` Vahn / `0864` Noa / `0865` Gala |
-| Miracle Art trigger entries (RAM `801F` segment) | Vahn's Craze `0x64F4`, Noa's Ark `0x6504`, Biron Rage `0x6514` |
-| Miracle Art trigger entries (record-file offsets) | Vahn's Craze `0x0CDC`, Noa's Ark `0x0CEC`, Biron Rage `0x0CFC` |
+| Miracle trigger entries | RAM `801F` segment `0x64F4` / `0x6504` / `0x6514`; record-file offsets `0x0CDC` / `0x0CEC` / `0x0CFC` |
+| Super Art tables | find `0x801F6524`, replace `0x801F65E8`, 15 entries |
 
-**"PROT entry `0x05C4`" is not a location.** `0x05C4` = 1476 is past the last
-PROT index, and the external RE work this page draws on used it as a label for
-the record file rather than as an archive coordinate. The records live in the
-player-data `record0` above; the `0x05C4`-area offsets in the third row are
-offsets inside that file.
+"PROT entry `0x05C4`", a label used by external RE work for the record file, is
+not an archive coordinate (`0x05C4` = 1476 is past the last PROT index). The
+`0x0CDC`-style offsets above are offsets inside that record file.
+
+```mermaid
+flowchart TD
+    D["player file record0 (extraction 0863..0865)"] --> A["art block, 0xD0 stride"]
+    A -->|"+0 combo"| M["matcher / tokenizer FUN_801EED1C"]
+    M --> Q["action queue actor+0x1DF"]
+    Q --> C["anim commit FUN_8004AD80"]
+    C --> R["actor+0x4C = materialized art record"]
+    R -->|"+0x24 power"| K["damage kernel FUN_801EC3E4"]
+    R -->|"hit run"| P["cue playout FUN_801DEA50"]
+    S["SCUS DAT_80075EC4"] -->|"+8 glyphs, +2 AP, +0xC name"| U["Arts menu display"]
+```
 
 ## Confidence
 
-Split by part, not per-page:
+| Part | Level | Basis |
+|---|---|---|
+| Combo at record `+0`, `0xD0` stride | Confirmed | savestate-proven; decoded `record0` byte-matches live RAM |
+| Name field `+0x10..+0x24` | Confirmed | byte-identical to the modeled Super Art names for all fifteen |
+| Power bytes at `+0x24` | Confirmed | disassembly-traced read chain + all three player files |
+| Impact-effect class `+0x7A` | Confirmed | `FUN_801ec3e4` bound check + two readers |
+| Arts-name table `DAT_80075EC4` | Confirmed | reader-traced, byte-exact against curated gamedata |
+| Remaining variable fields (timing, cues, identifier, speed, status, repeat, background) | Inferred | external RE work cross-referenced with Meth962's observations; exact per-art offsets not pinned |
 
-- **Confirmed** - the command-sequence prefix at record `+0` and the fixed
-  `0xD0` record stride (savestate-proven, both copies located); the damage
-  power byte at `record0 +0x24` (disassembly-traced read chain below); the
-  SCUS arts-name table (`DAT_80075EC4`).
-- **Inferred** - the exact byte offsets of the variable-field tail (damage /
-  animation / effect fields after the prefix), which come from external RE work
-  cross-referenced with Meth962's earlier observations.
+### The combo has two copies
 
-> **Where the button combos live - there are TWO copies (savestate-proven).**
-> The directional command of each art is stored in two different files, and they
-> serve two different consumers:
->
-> 1. **The matcher** (what actually fires the art) reads the per-character art
->    records at the RAM bases above (`0x80160EFC` Vahn / `0x80176998` Noa /
->    `0x8018BA54` Gala), where the combo is the `1=L,2=R,3=D,4=U` byte run
->    (0-terminated) at record `+0`, on a fixed `0xD0` stride - **exactly the
->    record layout the [Art record layout](#art-record-layout) section below
->    describes**. (So that schema was right about the format; only the "PROT
->    `0x05C4`" label was wrong - `0x05C4` = 1476 isn't a valid PROT index.) These
->    records are *not* resident until the Arts menu is opened; they load from each
->    character's player-data file `record0` (canonical extraction entries: Vahn
->    `0863` / Noa `0864` / Gala `0865` - the `edstati3`/PLAYERn files; the
->    historical "Vahn `0861`" attribution matched the same bytes through 0861's
->    extended over-read window), whose decoded `record0` byte-matches the live
->    RAM.
-> 2. **The display** is the SCUS `DAT_80075EC4` arts-name table `+8` glyph string
->    (see [Arts-name table](#arts-name-table-dat_80075ec4)) - only the arrows
->    shown in the menu.
->
-> Two emulator playtests proved the split: editing the SCUS glyph copy (whether by
-> moving the `+8` pointer or overwriting the glyph bytes) changes the menu arrows
-> but the art still triggers on the old combo, because the matcher reads the
-> player-file record copy. So a faithful edit must change **both** copies. This is
-> what the arts-combo randomizer does - see [`docs/tooling/randomizer.md`](../tooling/randomizer.md).
+The directional command of each art is stored twice, for two consumers:
+
+1. **The matcher** (what fires the art) reads the art record's `+0` run:
+   `1=L, 2=R, 3=D, 4=U`, 0-terminated.
+2. **The display** is the SCUS arts-name table's `+8` glyph string
+   ([below](#arts-name-table-dat_80075ec4)): only the arrows shown in the menu.
+
+Editing the SCUS glyph copy changes the menu arrows but the art still triggers
+on the old combo (emulator-verified), so a faithful edit changes both. The
+arts-combo randomizer does - see
+[`docs/tooling/randomizer.md`](../tooling/randomizer.md).
 
 ## Action Constants
 
-Every entry in the battle action queue is one of these `0x00–0x32` values:
+Every entry in the battle action queue is one of these `0x00..0x32` values:
 
 | Byte | Meaning |
 |---|---|
@@ -107,230 +88,275 @@ Every entry in the battle action queue is one of these `0x00–0x32` values:
 | `0x0E` | Down |
 | `0x0F` | Up |
 | `0x10` | Spirit Animation |
-| `0x11–0x18` | Empty Slots 1–8 (placeholder, never appears in static data) |
+| `0x11..0x18` | Empty Slots 1-8 (placeholder, never appears in static data) |
 | `0x19` | Regular Art Starter |
 | `0x1A` | Special Art Starter |
-| `0x1B–0x32` | Per-character arts (the *constant* is shared across characters but resolves to a different art per character - see [`crates/art/src/tables.rs`](../../crates/art/src/tables.rs)) |
+| `0x1B..0x32` | Per-character arts (the constant is shared across characters but names a different art per character - see [`crates/art/src/tables.rs`](../../crates/art/src/tables.rs)) |
 
-The first 4 directional bytes of a Miracle Art's replacement string are stored on disc with the high nibble's MSB set (`0x8C` / `0x8D` / `0x8E` / `0x8F`); the runtime ANDs with `0x7F` when copying into the queue. `legaia_art::miracle::unmask_replacement_byte` matches that.
+These constants double as the **battle anim-id space**. The action state
+machine's strike loop stages each queue byte into `actor[+0x1DA]`, and the anim
+commit `FUN_8004AD80` resolves it:
 
-These constants double as the **battle anim-id space**: the action SM's
-strike loop stages each queue byte verbatim into `actor[+0x1DA]`, and the
-anim commit `FUN_8004AD80` resolves it - directions `0x0C..0x0F` index the
-runtime action table directly (those four slots are swing records spliced
-from the **equipped-item sections** at battle init), while ids `>= 0x10`
-(starters, arts) materialize a record from the per-character `0xD0`-stride
-**art-animation bank** (the record[0] `+0x58` pointer) into dynamic table
-slot `0x10`/`0x11` - the on-disc "Empty Slots". Art ids `0x1B+` also drive
-the HUD art-name display and `FUN_8004C650(char, id - 0x1B)`. The "Empty
-Slots 1-8" ids `0x11..0x18` reappear at runtime in `actor[+0x1DB]` (last
-staged id), where the battle camera driver `FUN_801D5854` dispatches
-per-art camera variants on them. See
-[battle-data-pack.md § Battle animations](battle-data-pack.md#battle-animations-record0).
+- Directions `0x0C..0x0F` index the runtime action table directly. Those four
+  slots are swing records spliced from the equipped-item sections at battle
+  init.
+- Ids `>= 0x10` (starters, arts) materialize a record from the per-character
+  art block into dynamic table slot `0x10` / `0x11` - the on-disc "Empty
+  Slots".
+- Art ids `0x1B+` also drive the HUD art-name display and
+  `FUN_8004C650(char, id - 0x1B)`.
+- Ids `0x11..0x18` reappear at runtime in `actor[+0x1DB]` (last staged id),
+  where the battle camera driver `FUN_801D5854` dispatches per-art camera
+  variants.
+
+See [battle-data-pack.md § Battle animations](battle-data-pack.md#battle-animations-record0).
 
 ## Art record layout
 
-The layout is **schema-then-walk**: each record begins with a fixed prefix (commands, action constant, anim index), and the remainder is a sequence of variable-width fields whose presence depends on the art. The researcher captured field positions but did not pin every byte - this page documents the schema; [`crates/art`](../../crates/art) ships a strict parser for the prefix and surfaces the unparsed tail for downstream tooling.
+### Pinned fields
 
-> The `+0x00` command-sequence field below is the form the **runtime matcher**
-> reads (the `1=L,2=R,3=D,4=U` run at record `+0`, 0-terminated; records are a
-> fixed `0xD0` stride - see the warning at the top of this page). It lives in the
-> per-character player-data `record0` (canonical extraction entries: Vahn
-> `0863` / Noa `0864` / Gala `0865`; `0861` was the historical over-read
-> window), not at PROT `0x05C4`. The SCUS [arts-name table](#arts-name-table-dat_80075ec4)
-> `+8` glyph string is the *display* copy of the same combo.
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u8[] | combo | `1=L, 2=R, 3=D, 4=U`, 0-terminated. A Super Art record holds a one-byte stub here | Confirmed |
+| `+0x10` | 0x14 | name | fixed slot `+0x10..+0x24`. Populated for Super Arts, Miracle finishers, starters (`"Starter"`) and some Hyper Arts; zeros for regular arts, which use the SCUS name table | Confirmed |
+| `+0x24` | u8[1..=4] | power | one damage-power byte per strike ([encoding](#power-encoding)) | Confirmed |
+| `+0x7A` | u8 | impact-effect class | `0` = none, `1..=5` ([below](#impact-effect-class-entry-0x7a)) | Confirmed |
+| rest of `0xD0` | - | variable fields | see next table | Inferred |
 
-### Fixed prefix
+<a id="fixed-prefix"></a>
 
-```
-+0x00  u8[]   command sequence - values 1=L, 2=R, 3=D, 4=U; terminated by 0x00
-       u8     action constant (0x1B..=0x32)
-       u8     anim_index (primary)
-       u8[5]  anim_extra (reserved; usually 0; some Hyper Arts chain multiple records)
-```
+The schema from the external RE work describes the bytes after the combo
+terminator as `action constant (0x1B..=0x32)`, `anim_index`, then five
+`anim_extra` bytes (usually 0; some Hyper Arts chain multiple records).
+[`legaia_art::parse_record`] decodes that prefix - combo, action constant,
+`anim_index` - and returns the rest as an unparsed tail. Its position for the
+action constant and `anim_index` is **not** pinned against disc records: its
+test feeds it synthesised bytes, and the confirmed layout above places the name
+field at a fixed `+0x10`.
 
-### Variable fields (positions documented, exact byte offsets per art-specific)
+<a id="variable-fields-positions-documented-exact-byte-offsets-per-art-specific"></a>
+
+### Variable fields
+
+Positions are documented by the schema; exact byte offsets are not pinned.
 
 | Field | Encoding |
 |---|---|
-| Art Name | UTF-like string. Populated for Super Arts, Miracle Art finishers, and some Hyper Arts; absent for regular arts (the runtime falls back to a per-character name table). |
-| Art Power (×4) | Each byte is a damage multiplier - see [Power encoding](#power-encoding) below. **Pinned to record `+0x24`** (a fixed offset, 1-4 active bytes), not the art-specific variable position this table originally implied. |
-| Damage Timing (×4) | One byte per Art Power byte; the animation frame at which that hit fires. |
-| Special Effect Cues (×2) | Each cue occupies 2 words: half-word effect_id, then 3 half-words XYZ. Active iff any field is non-zero. |
-| Hit Effect Cues (×4) | Each cue is a 32-bit word: high half = timing in frames, low half = constant (`0x1A` = sound effect, `0x4C` = hit effect, …). Spreadsheet shape - the runtime carrier is the 8-byte hit run below, and in that dispatch `0x4C` fires neither sound nor an authored visual (see [Runtime cue playout](#runtime-cue-playout)). |
-| Identifier | Byte. Some values trigger special animations (`0x67` in Heaven's Drop = Thunderbolt). |
-| Anim Speed | Byte. Lower = slower playback, higher = faster. |
-| Effect on Enemy | Byte status ailment: `1` = Toxic, `2` = Numb, `3` = Venom, `4` = Sleep, `5` = Confuse, `6` = Curse, `7` = Stone, `8` = Faint (see `legaia_engine_vm::status_effects`). |
-| Repeat Frames | 3 bytes: count, start_frame, end_frame. Replays a frame range; for some arts also repeats the damage from power bytes that fall in the range (Super Tempest's 4 power bytes → 8 actual hits). |
-| Background | Byte. `0` = regular, `2` = black (Super Arts and Tornado Flame Hyper Art). |
-| Runtime Address | Word. Written by the runtime after the art is used once in battle - always `None` in static data. |
+| Damage Timing (×4) | one byte per power byte: the animation frame at which that hit fires |
+| Special Effect Cues (×2) | 2 words each: half-word effect id, then 3 half-words XYZ. Active iff any field is non-zero |
+| Hit Effect Cues (×4) | schema shape: a 32-bit word, high half = timing in frames, low half = constant (`0x1A`, `0x4C`, …). The runtime carrier is the 8-byte hit run in [Runtime cue playout](#runtime-cue-playout) |
+| Identifier | byte. Some values trigger special animations (`0x67` in Heaven's Drop = Thunderbolt) |
+| Anim Speed | byte. Lower = slower playback |
+| Effect on Enemy | status byte: `1` Toxic, `2` Numb, `3` Venom, `4` Sleep, `5` Confuse, `6` Curse, `7` Stone, `8` Faint (`legaia_engine_vm::status_effects`) |
+| Repeat Frames | 3 bytes: count, start frame, end frame. Replays a frame range; for some arts also repeats the damage of power bytes in the range (Super Tempest's 4 power bytes → 8 hits) |
+| Background | byte. `0` = regular, `2` = black (Super Arts and the Tornado Flame Hyper Art) |
+| Runtime Address | word, written by the runtime after the art is first used in battle; empty in static data |
 
 ### Power encoding
 
 | Byte range | Defense target | Multiplier sequence | Notes |
 |---|---|---|---|
-| `0x16–0x1A` | UDF (Upper Defense Factor) | `12, 18, 20, 22, 28` | Standard UDF range |
-| `0x1B–0x1F` | LDF (Lower Defense Factor) | `12, 18, 20, 22, 28` | Standard LDF range |
-| `0x0C–0x10` | UDF (alt range) | `12, 18, 20, 22, 28` | UDF-target hits miss **short** enemies |
-| `0x11–0x15` | LDF (alt range) | `12, 18, 20, 22, 28` | LDF-target hits miss **floating** enemies |
+| `0x16..0x1A` | UDF (Upper Defense Factor) | `12, 18, 20, 22, 28` | Standard UDF range |
+| `0x1B..0x1F` | LDF (Lower Defense Factor) | `12, 18, 20, 22, 28` | Standard LDF range |
+| `0x0C..0x10` | UDF (alt range) | `12, 18, 20, 22, 28` | UDF-target hits miss **short** enemies |
+| `0x11..0x15` | LDF (alt range) | `12, 18, 20, 22, 28` | LDF-target hits miss **floating** enemies |
 | any other | - | - | No damage |
 
-Concretely: `0x1D` = LDF × 20, `0x19` = UDF × 22, `0x1F` = LDF × 28, `0x1A` = UDF × 28.
+So `0x1D` = LDF × 20, `0x19` = UDF × 22, `0x1F` = LDF × 28, `0x1A` = UDF × 28.
 
-The kernel decodes the byte with `mult = MULT[(v - 0xC) % 5]`,
+The kernel decodes the byte as `mult = MULT[(v - 0xC) % 5]` with
 `MULT = [12, 18, 20, 22, 28]`, and picks the defence facet by
-`(v - 0xC) % 10 < 5` (UDF else LDF). `MULT` is byte-verified at overlay-`0898`
-VA `0x801F64EC` (`[0c 12 14 16 1c]`); the sibling def-side table is `0x801F64E4`
-(`[06 04 04 04 02]`).
+`(v - 0xC) % 10 < 5` (UDF, else LDF). `MULT` is byte-verified at overlay-`0898`
+VA `0x801F64EC` (`[0c 12 14 16 1c]`); the sibling def-side table is at
+`0x801F64E4` (`[06 04 04 04 02]`).
 
 ### Damage power byte - pinned to `record0 +0x24`
 
-The power bytes are **Confirmed** on disc, not inferred. Each `0xD0`-stride art
-record (the matcher record, combo at `+0`) carries its 1-4 per-strike power
-bytes as a contiguous run at a **fixed offset `+0x24`** (the name field is a
-fixed `+0x10..+0x24` slot, so power is *after* the name, but at a constant
-offset, not a name-relative one). The read chain, disassembly-traced:
+Each art record carries its 1-4 per-strike power bytes as a contiguous run at
+the fixed offset `+0x24`, directly after the name slot. The read chain, from
+the disassembly:
 
-- The arts/melee damage kernel is **`FUN_801EC3E4`** (overlay 0898; the summon
-  kernel `FUN_801DD0AC` handles *specials* via the move-power table, which is
-  special-attack-only). It reads the current strike's power byte as
-  `param_2[actor+0x1F4]`, where `param_2 = actor[+0x4C]` (the materialized art
-  record) and `actor+0x1F4` is a strike cursor that starts at `0`
-  (`FUN_8004AD80`/`FUN_80047430` zero it) and increments `+1` per hit
-  (`0x801EECE8`). So the first four bytes the cursor visits are the four power
-  bytes, and `param_2` points at the power run (`record+0x24`).
-- `FUN_8004AD80` materializes an art (staged id `>= 0x10`) into
-  `actor[+0x4C] = *(DAT_801C9360[char] + slot*4)`; `DAT_801C9360[char]` is the
-  runtime copy of `record0` (`+0x58` = its art block), and `record0` decodes
-  from the player battle file ([battle-data-pack.md](battle-data-pack.md), PROT
-  `0863`/`0864`/`0865`).
+- The arts / melee damage kernel is **`FUN_801EC3E4`** (overlay 0898). (The
+  summon kernel `FUN_801DD0AC` handles specials through the
+  [move-power table](move-power.md).) It reads the current strike's power as
+  `param_2[actor+0x1F4]`, where `param_2 = actor[+0x4C]` is the materialized
+  art record's power run and `actor+0x1F4` is a strike cursor.
+  `FUN_8004AD80` / `FUN_80047430` zero the cursor; it increments per hit at
+  `0x801EECE8`.
+- `FUN_8004AD80` materializes a staged id `>= 0x10` as
+  `actor[+0x4C] = *(DAT_801C9360[char] + slot*4)`. `DAT_801C9360[char]` is the
+  runtime copy of `record0`, whose `+0x58` is the art block.
 
-Byte-validation across all three player files: every art the SCUS arts-name
-table lists resolves to one `record0` record whose `+0x24` holds power-encoding
-bytes matching the art's damage tier (weak single arts 1 byte, hyper/super arts
-4 ascending bytes; the two Noa Hurricane-Kick holes and Gala's spirit-only
-Miracle - which carries *no* `+0x24` byte - both reproduce). There is **no**
-display copy of the power (unlike the combo, whose menu arrows are a separate
-SCUS string): the kernel reads only these bytes. The parser + in-place editor
-is `legaia_patcher::arts_power` (CLI `legaia-patcher arts` /
-`--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)); this
-supersedes the earlier "exact byte offsets per art-specific / UNPINNED" note.
+Every art in the SCUS arts-name table resolves to one `record0` record whose
+`+0x24` holds power bytes matching the art's damage tier: weak single arts
+carry 1 byte, hyper / super arts 4 ascending bytes. The two Noa Hurricane-Kick
+holes and Gala's spirit-only Miracle (which carries no `+0x24` byte) reproduce.
+There is no display copy of the power. Editor:
+`legaia_patcher::arts_power` (CLI `legaia-patcher arts`,
+`--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)).
 
 ### Art records are indexed by action constant
 
-The `0xD0`-stride array is not a packed list of the arts a character can input -
-it is indexed by **action constant**. The record for constant `c` sits at
+The `0xD0`-stride array is indexed by **action constant**, not packed by
+inputtable art:
 
 ```text
 record_off = art_block_base + (c - 0x10) * 0xD0
 ```
 
-so constants `0x19` / `0x1A` (the two [Art Starters](#action-constants)) land on
-the two records whose `+0x10` name field reads `"Starter"`, constant `0x1B` on
-each character's Miracle Art (the record carrying that character's Miracle
-command string at `+0`), and the regular arts follow at `0x1B + display index`.
-The mapping comes off the queue-builder `FUN_801EED1C`, which emits a matched
-art's constant as its row `+ 0x18` (`addiu v1,t3,0x18` then `sb v1,0x1df(v0)` at
-`0x801EF6F0`/`0x801EF6F8`), with the array as enumerated from its first parseable
-record starting eight records ahead of row 0.
+Constants `0x19` / `0x1A` land on the two records named `"Starter"`, `0x1B` on
+the character's Miracle Art (the record with the Miracle command string at
+`+0`), and regular arts follow at `0x1B + display index`. The mapping comes off
+the queue-builder `FUN_801EED1C`, which emits a matched art's constant as its
+row `+ 0x18` (`addiu v1,t3,0x18` then `sb v1,0x1df(v0)` at
+`0x801EF6F0` / `0x801EF6F8`); the array's first parseable record sits eight
+records ahead of row 0.
 
-Three consequences the arts tooling depends on:
+- **Super Art finishers have records here**, at `0x2B..0x2F` (Vahn, Gala) and
+  `0x2E..0x32` (Noa) - the constants `super_art.rs` carries as each Super's
+  `finisher`. The `+0x10` name is the Super Art's English name
+  (*Tri-Somersault*, *Neo Static Raising*, …) and `+0x24` holds real power
+  tiers, so a Super Art's damage is ordinary art-record data.
+- **A Super Art record has no combo.** Its `+0` is a one-byte stub, shorter
+  than any real three-direction input, so a combo-keyed lookup never lands on
+  one.
+- **Some records are reachable by neither route.** Vahn's and Gala's `0x2A` and
+  Noa's `0x2C` / `0x2D` carry named records with power bytes but have no
+  arts-name-table row and no combo.
 
-- **Super Art finishers have records here too**, at `0x2B..0x2F` (Vahn, Gala) and
-  `0x2E..0x32` (Noa) - the same constants `super_art.rs` carries as each Super's
-  `finisher`. Each one's `+0x10` name is the Super Art's English name
-  (*Tri-Somersault*, *Neo Static Raising*, …), byte-identical to the modeled
-  table for all fifteen, and its `+0x24` run holds real power tiers. So a Super
-  Art's damage is ordinary art-record data.
-- **A Super Art record has no combo.** Its `+0` field is a one-byte stub, shorter
-  than the three-direction minimum any real art input uses, which is why a
-  combo-keyed lookup can never land on one.
-- **Some records are reachable by neither route**: Vahn's and Gala's constant
-  `0x2A` and Noa's `0x2C`/`0x2D` carry named records with power bytes but have no
-  arts-name-table row and no combo, so nothing in the display path names them.
-
-Parsers: `legaia_patcher::super_art_power` (locate + edit, name-validated),
-`legaia_patcher::arts_power` (the combo-keyed sibling).
+Editors: `legaia_patcher::super_art_power` (locate + edit by constant,
+name-validated) and `legaia_patcher::arts_power` (combo-keyed).
 
 ## Runtime cue playout
 
-The art record's [Special / Hit Effect Cues and Damage Timing](#variable-fields-positions-documented-exact-byte-offsets-per-art-specific)
-fields are read at play-time by a per-frame driver, not decoded up front. The
-matched art materializes into `actor[+0x4C]` (see [Damage power byte](#damage-power-byte---pinned-to-record0-0x24)),
-and a per-actor **cue cursor** at `actor[+0x1F5]` walks the record's hit run,
-firing one cue per animation frame it reaches. The functions below are the
-readers; each is in the battle overlay (PROT 0898).
+The record's cue and timing fields are read at play time by a per-frame driver.
+The matched art materializes into `actor[+0x4C]`, and a per-actor **cue
+cursor** at `actor[+0x1F5]` walks the hit run, firing one cue per animation
+frame reached. All readers are in the battle overlay (PROT 0898).
 
-- **`FUN_801dea50`** (`see ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`)
-  is the arts per-frame hit-cue + damage-marker playout. It reads the hit run at
-  `art_record + cursor*8 + 0x14` (8-byte entries: `+0` timing, `+1` cue code,
-  `+2/+4/+6` XYZ offsets), places each cue in world space from the actor's
-  position (`+0x34/+0x38`) rotated by its facing (`+0x46`) through the shared
-  sin/cos tables, and dispatches on the cue code. A code with the high bit set
-  spawns an `efect.dat` billboard (masked `& 0x7f`, via `FUN_801dfdf0`, which
-  resolves the id through the `pack1` descriptor table - see
-  [effect.md](effect.md)); a plain code selects a 3D move-VM prototype from
-  `0x801F6324` and pairs it with an SFX (see [the cue tables](#the-cue-tables)).
-  On the
-  terminator entry it materializes the move-power record for the move id
-  `actor[+0x1DF]` (`0x801F4F5C`, 26-byte stride; see [move-power.md](move-power.md))
-  and lays down that move's own per-hit cue list plus the multi-target markers.
-  It advances `actor[+0x1F5]` and loops while the cursor is `< 8`.
-- **`FUN_801e22c8`** (`see ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt`)
-  is a lighter impact-cue emitter for a single art/anim id. It indexes a
-  per-art cue table at `0x801F6470` (5-byte stride: `+0` entry count, then the
-  cue codes), and for each entry spawns either a number (`FUN_801dfdf0`) or an
-  SFX + effect sprite, decorating the sprite with the caller's texture word
-  (`+0x74`) unless it is the `0x808080` sentinel.
-- **`FUN_801e09f8`** (`see ghidra/scripts/funcs/overlay_battle_action_801e09f8.txt`)
-  is the special-attack sibling of `FUN_801dea50`: the same cue-table + number
-  machinery, but its damage path routes through the summon / move-power kernel
-  `FUN_801dd0ac` rather than the arts fold.
-- **`FUN_801e6d84`** (`see ghidra/scripts/funcs/overlay_battle_action_801e6d84.txt`)
-  raises the caster and enemy target **banners** for a committed action. It
-  keys on the active actor's staged fields - target `+0x1DD`, action-constant
-  category `+0x1DE`, move/spell id `+0x1DF` - returns without raising anything
-  for Run / Defend (`+0x1DE == 5`), enumerates live enemies (slots 3..6, alive
-  flag `+0x14C`) for an all-target action, and otherwise raises the
-  single-target banner. `FUN_801d8de8` is the HUD-element / message raiser
-  (the port surfaces it as `BattleActionHost::ui_element`), **not** a camera
-  command; the routine's only camera-adjacent writes are the two banner-width
-  words `DAT_800773AA` / `DAT_800773B2`. The battle-action SM raises the plan
-  at the tail of its `ActionSeed` state - see
-  [`battle-action.md`](../subsystems/battle-action.md#actor-pool-leaf-helpers).
+| Function | Role |
+|---|---|
+| `FUN_801dea50` | arts per-frame hit-cue + damage-marker playout |
+| `FUN_801e09f8` | special-attack sibling: same cue tables and numbers, damage through the summon / move-power kernel `FUN_801dd0ac` |
+| `FUN_801e22c8` | lighter impact-cue emitter for one art / anim id |
+| `FUN_801e6d84` | raises the caster and enemy target banners for a committed action |
+
+Dumps: `ghidra/scripts/funcs/overlay_battle_action_801dea50.txt`,
+`…_801e09f8.txt`, `…_801e22c8.txt`, `…_801e6d84.txt`.
+
+**`FUN_801dea50`** reads the hit run at `art_record + cursor*8 + 0x14`
+(`art_record` = `actor[+0x4C]`):
+
+| Entry offset | Field |
+|---|---|
+| `+0` | timing (frame) |
+| `+1` | cue code |
+| `+2` / `+4` / `+6` | XYZ offsets |
+
+It places each cue in world space from the actor's position (`+0x34` / `+0x38`)
+rotated by its facing (`+0x46`), and dispatches on the cue code. A code with
+the high bit set spawns an `efect.dat` billboard (id `& 0x7f`, via
+`FUN_801dfdf0`, resolved through the `pack1` descriptor table - see
+[effect.md](effect.md)). A plain code selects a 3D move-VM prototype from
+`0x801F6324` ([the cue tables](#the-cue-tables)). On the terminator entry it
+materializes the move-power record for move id `actor[+0x1DF]` (`0x801F4F5C`,
+26-byte stride; [move-power.md](move-power.md)) and lays down that move's own
+per-hit cue list plus the multi-target markers. It advances `actor[+0x1F5]` and
+loops while the cursor is `< 8`.
+
+**`FUN_801e22c8`** indexes a per-art cue table at `0x801F6470` (5-byte stride:
+`+0` entry count, then cue codes). For each entry it spawns either a number
+(`FUN_801dfdf0`) or an effect sprite, decorating the sprite with the caller's
+texture word (`+0x74`) unless that is the `0x808080` sentinel.
+
+**`FUN_801e6d84`** keys on the active actor's staged fields: target `+0x1DD`,
+action-constant category `+0x1DE`, move / spell id `+0x1DF`. It returns without
+raising anything for Run / Defend (`+0x1DE == 5`), enumerates live enemies
+(slots 3..6, alive flag `+0x14C`) for an all-target action, and otherwise
+raises the single-target banner. `FUN_801d8de8` is the HUD-element / message
+raiser (port: `BattleActionHost::ui_element`), not a camera command; the
+routine's only camera-adjacent writes are the banner-width words
+`DAT_800773AA` / `DAT_800773B2`. The action state machine raises the plan at
+the tail of its `ActionSeed` state - see
+[`battle-action.md`](../subsystems/battle-action.md#actor-pool-leaf-helpers).
+
+### The cue tables
+
+| Table VA | Indexed by | Role |
+|---|---|---|
+| `0x801F6418` | cue code (1-byte stride) | CLUT **source x**; a nonzero entry copies a palette row |
+| `0x801F6324` | cue code (`code*4`), 61 entries | pointer to the effect-sprite descriptor spawned via `FUN_80050ed4` |
+| `0x801F6470` | art / anim id (5-byte stride) | per-art cue list (`+0` count, then codes), read by `FUN_801e22c8` |
+
+**No battle effect id plays a sound.** `0x801F6418` is not an SFX id table. Its
+six readers end in `FUN_80058490`, whose string at `0x800156EC` is `MoveImage`,
+and the 8 bytes they build are a PsyQ `RECT`: `x = 0x801F6418[code]`,
+`y = 0x1DC`, `w = 0x10`, `h = 1`, copied to `(0xE0, 0x1DC)`. That is a
+16-entry CLUT row copy at VRAM `y = 476` - the effect's palette. The table
+holds only `0xB0` / `0xC0` / `0xD0`, which are VRAM x coordinates outside the
+`0x00..=0x63` id space of the [sound-effect table](sfx-table.md). A
+`jal 0x80058490` sweep of the battle overlay returns exactly those six readers,
+each paired with its `0x801F6324` spawn, and no SPU-cue call
+(`FUN_8004FCC8` / `FUN_8004FE5C` / `FUN_80035B50` / `FUN_8003D53C` /
+`FUN_800250D4`) appears inside `FUN_801DEA50` or `FUN_801E22C8`.
+
+A party Tactical Art's audio is therefore entirely the **CD-XA** layer: the
+per-swing cue, the shout pool, and for a Hyper the per-`(character, action
+constant)` fanfare fired by `FUN_8004AD80`.
+
+Other rules of the dispatch:
+
+- A cue code's high bit (`0x80`) is the "spawn a digit" flag; the low 7 bits
+  select the glyph.
+- `FUN_801dea50` gates its `0x801F6418` read on `code < 0x32` (`sltiu` at
+  `0x801df0d8`); `FUN_801e22c8` consults it for any plain code.
+- Neither bounds the `0x801F6324` read against its 61 entries. A plain code
+  past `0x3C` reads into the next table as a "pointer": the schema's `0x4C`
+  "hit effect" constant lands on the zero word at `0x801F6454` and stages a
+  part from a NULL record. So `0x4C` names no sound and no authored effect;
+  the visible hit comes from the in-range codes, the digit spawns and the
+  impact freeze / tint.
+- Per-code specials (scale variants, the code-`0` → `9` substitution, the
+  homing handle, the `0x81..=0x83` shockwave) are tabulated in
+  [`battle-action.md` § the per-action effect script](../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
 
 ### Impact-effect class (entry `+0x7A`)
 
-The cue script above is not the only thing that draws during an art. Entry
-`+0x7A` carries a `1..=5` selector (`0` = none), bounded by `FUN_801ec3e4`'s
+Entry `+0x7A` is a `1..=5` selector (`0` = none), bounded by `FUN_801ec3e4`'s
 `sltiu v0,v0,6`. That routine stores the selector at `actor[+0x21F]` and the
-row it indexes out of `0x801F53D4` at `actor[+0x04]`, and two renderers read
-those - neither of which consults the entry's cue records:
+row it indexes out of `0x801F53D4` at `actor[+0x04]`. Two renderers read those,
+and neither consults the cue records:
 
-| reader | what it draws |
+| Reader | What it draws |
 |---|---|
-| `FUN_8004998c` | An element spark streamed along the swing path at random cadence: `efect.dat` sprite `0x0B` for selector `1`, `0x10` for selector `2`. Gated on `actor[+0x21F]` being non-zero. |
-| `FUN_80049348` | Fading afterimage copies of the character mesh, tinted from the per-**character** table at `0x80076908` (3 entries + a non-party row, 4 bytes each). Reached from `FUN_800480d8` only when `actor[+0x04]` left a colour word on the node. |
+| `FUN_8004998c` | an element spark streamed along the swing path at random cadence: `efect.dat` sprite `0x0B` for selector `1`, `0x10` for selector `2`. Gated on `actor[+0x21F]` non-zero |
+| `FUN_80049348` | fading afterimage copies of the character mesh, tinted from the per-character table at `0x80076908`. Reached from `FUN_800480d8` only when `actor[+0x04]` left a colour word on the node |
 
-So this byte, and not the cue script, is what makes an art read as its owner's
-element. On the three 50-AP Hyper Arts it is set only on Vahn's Burning Flare
-(`1`); Noa's Vulture Blade and Gala's Explosive Fist are `0`, and Gala's
-Thunder Punch is `2`. A reskin that rewrites the cue records but leaves `+0x7A`
-alone still shows the host character's sparks and ghost trail - see
-[randomizer.md](../tooling/randomizer.md).
+This byte, not the cue script, makes an art read as its owner's element. On the
+three 50-AP Hyper Arts it is set only on Vahn's Burning Flare (`1`); Noa's
+Vulture Blade and Gala's Explosive Fist are `0`, and Gala's Thunder Punch is
+`2`. A reskin that rewrites the cue records but leaves `+0x7A` alone still
+shows the host character's sparks and ghost trail
+([randomizer.md](../tooling/randomizer.md)).
 
 #### The afterimage table's channel order - **R is byte 0**
 
-`0x80076908` is four words, and the party rows are permutations of one pair
-(`60 30 30`, `30 60 30`, `30 30 60`, with `50 50 30` for the monster row at
-`0x80076914`), so only the byte order decides which character is red.
+`0x80076908` is four 4-byte rows: three party rows and a monster row at
+`0x80076914`.
 
-The order is pinned by hardware register assignment, not by taste.
-`FUN_80049348` writes the row into the render node's `+0x74`
-(`0x8004939C..0x800493C4`); `FUN_80048A08` stages that word into `gp[+0x9D8]`
-(`0x80048BEC` `lw v0,0x74(s0)` / `0x80048BF8` `sw v0,0x9d8(gp)`); the draw
-wrapper `FUN_80043390` takes it as `a1` and, on the `a2 != 0` arm, splits it
-low byte first into the **GTE far-colour control registers**:
+| Row | Bytes | Colour |
+|---|---|---|
+| Vahn | `60 30 30` | red |
+| Noa | `30 60 30` | green |
+| Gala | `30 30 60` | blue |
+| monsters | `50 50 30` | olive |
+
+The byte order is pinned by register assignment. `FUN_80049348` writes the row
+into the render node's `+0x74` (`0x8004939C..0x800493C4`); `FUN_80048A08`
+stages that word into `gp[+0x9D8]` (`0x80048BEC` `lw v0,0x74(s0)` /
+`0x80048BF8` `sw v0,0x9d8(gp)`); the draw wrapper `FUN_80043390` takes it as
+`a1` and, on the `a2 != 0` arm, splits it low byte first into the GTE (the
+PSX geometry coprocessor) far-colour control registers:
 
 ```text
 800434c8  ctc2 s6,cr21     ; RFC <- (a1 & 0xff) << 4
@@ -338,76 +364,28 @@ low byte first into the **GTE far-colour control registers**:
 800434d0  ctc2 s4,cr23     ; BFC <- ((a1 >> 16) & 0xff) << 4
 ```
 
-with the same low-byte-first split into `cr13`/`cr14`/`cr15` (`RBK`/`GBK`/`BBK`)
-at `0x80043464..0x8004346C`. So byte 0 is red, and the table reads Vahn red,
-Noa green, Gala blue, monsters olive. Move-VM op `0x0C` builds the same field
-the same way (`+0x74 = (v1<<24 | 0x40000000) + v2 + (v3<<8) + (v4<<16)` - `v2`
-is the red operand). Mirror: `engine-core::battle_afterimage::GHOST_COLOR_PARTY`.
+The same low-byte-first split feeds `cr13` / `cr14` / `cr15`
+(`RBK` / `GBK` / `BBK`) at `0x80043464..0x8004346C`. Move-VM op `0x0C` builds
+the same field the same way
+(`+0x74 = (v1<<24 | 0x40000000) + v2 + (v3<<8) + (v4<<16)`, `v2` red). Mirror:
+`engine-core::battle_afterimage::GHOST_COLOR_PARTY`.
 
-`FUN_8005112c`'s ribbon literals looked like a contradiction because they are
-**not this field**. They are the fourth argument of the 2D streak builder
-`FUN_80048310`, which decomposes and re-packs them without moving a byte
-(`0x80048460..0x80048474`, `0x80048540..0x80048580`) and hands the result to
-`FUN_800485BC`. That routine lays down a `POLY_G4`, whose vertex colour bytes
-sit at `+0x04`/`+0x0C`/`+0x14`/`+0x1C`, and it writes **byte 2** of the word to
-the `r` slot (`0x800487FC..0x80048814` shifts `>> 0x10` into `sp+0x8C`, stored
-at `+0x04`/`+0x14`), byte 1 to `g` and byte 0 to `b`. Two conventions, one per
-consumer: the mesh-tint word feeds GTE colour registers red-first, the 2D
-streak literals feed GP0 vertex colours blue-first. Neither is a mis-read of
-the other, and no capture is needed.
-
-### The cue tables
-
-`FUN_801dea50` / `FUN_801e09f8` resolve a plain cue code through two parallel
-overlay tables; `FUN_801e22c8` uses the third:
-
-| Table VA | Indexed by | Role |
-|---|---|---|
-| `0x801F6418` | cue code (1-byte stride) | CLUT **source x** (not an SFX id - see below); nonzero entry copies a palette row |
-| `0x801F6324` | cue code (`code*4`) | pointer to the effect-sprite descriptor spawned via `FUN_80050ed4` |
-| `0x801F6470` | art/anim id (5-byte stride) | per-art cue list (`+0` count, then codes) read by `FUN_801e22c8` |
-
-**No battle effect id plays a sound.** `0x801F6418` was long documented here
-as an SFX id issuing a "`0x1DC` sound packet". It is not: the routine the six
-readers end in is `FUN_80058490`, whose materialised string at `0x800156EC` is
-literally `MoveImage`, and the 8-byte "packet" is a PsyQ `RECT` -
-`x = 0x801F6418[code]`, `y = 0x1DC`, `w = 0x10`, `h = 1` - copied to
-`(0xE0, 0x1DC)`. That is a 16-entry CLUT row copy at VRAM `y = 476`, i.e. the
-effect's palette. The table holds only `0xB0` / `0xC0` / `0xD0`, which are VRAM
-x coordinates and are outside the `0x00..=0x63` id space of the
-[sound-effect descriptor table](sfx-table.md). A `jal 0x80058490` sweep of the
-battle overlay returns exactly the six `0x801F6418` readers, each paired with
-its `0x801F6324` prototype spawn, and no SPU-cue call
-(`FUN_8004FCC8`/`FUN_8004FE5C`/`FUN_80035B50`/`FUN_8003D53C`/`FUN_800250D4`)
-appears anywhere inside `FUN_801DEA50` or `FUN_801E22C8`.
-
-A party Tactical Art's audio is therefore entirely the **CD-XA** layer: the
-per-swing cue, the shout pool, and - for a Hyper - the per-`(character,
-action constant)` fanfare fired by `FUN_8004AD80`.
-
-A cue code's high bit (`0x80`) is not an index into these tables - it is the
-"spawn a digit" flag, and the low 7 bits select the glyph, matching the
-[Miracle Art directional MSB masking](#action-constants) convention (`& 0x7F`).
-
-Two bounds the readers apply differently. `FUN_801dea50`'s SFX read is gated
-`code < 0x32` (`sltiu` at `0x801df0d8`) while `FUN_801e22c8` consults the map
-for any plain code; and neither bounds the `0x801F6324` read against the
-table's 61 entries, so a plain code past `0x3C` reads into the SFX map as a
-"pointer" - the spreadsheet's `0x4C` "hit effect" constant lands on the zero
-word at `0x801F6454`, staging a part from a NULL record. So `0x4C` names no
-sound and no authored effect; the visible hit presentation comes from the
-in-range cue codes, the digit spawns, and the impact freeze/tint. Per-code
-specials of the `FUN_801dea50` dispatch (scale variants, the code-`0` → `9`
-substitution, the homing handle, the `0x81..=0x83` shockwave) are tabulated
-in [`battle-action.md` § the per-action effect script](../subsystems/battle-action.md#the-per-action-effect-script-fun_801dea50).
+Not the same field: `FUN_8005112c`'s ribbon literals are the fourth argument of
+the 2D streak builder `FUN_80048310`, which re-packs them unchanged
+(`0x80048460..0x80048474`, `0x80048540..0x80048580`) for `FUN_800485BC`. That
+routine lays down a `POLY_G4` (vertex colours at
+`+0x04` / `+0x0C` / `+0x14` / `+0x1C`) and writes **byte 2** of the word to the
+`r` slot (`0x800487FC..0x80048814`), byte 1 to `g`, byte 0 to `b`. The
+mesh-tint word is red-first into GTE registers; the 2D streak literals are
+blue-first into GP0 vertex colours.
 
 ### Target-group encoding
 
-Several arts readers share a compact target-group code in place of an explicit
-actor list. `FUN_801dea50` (staged value) and `FUN_801dceac`
-(`see ghidra/scripts/funcs/overlay_battle_action_801dceac.txt`, which computes
-the centroid / bounding box of a group's actor positions for area-effect aiming)
-both decode it the same way:
+Several arts readers share a compact target-group code. `FUN_801dea50` (staged
+value) and `FUN_801dceac`
+(`ghidra/scripts/funcs/overlay_battle_action_801dceac.txt`, the centroid /
+bounding box of a group's actor positions for area-effect aiming) decode it the
+same way:
 
 | Code | Actor slot range `[start, end)` | Meaning |
 |---|---|---|
@@ -418,9 +396,14 @@ both decode it the same way:
 
 ## Learned Art Constant
 
-A separate per-character byte (`0x8008488D` Vahn, `0x80084CA1` Noa, `0x8008506C` Gala) tracks the *highest learned art slot*. Slot indices `0..=0x10` resolve to action constants through a per-character indirection table - and that table has **holes**: Noa skips slots `0x02` and `0x03` because her Hurricane Kick covers all three on-disc levels through a single learned slot.
+A per-character byte (`0x8008488D` Vahn, `0x80084CA1` Noa, `0x8008506C` Gala)
+tracks the highest learned art slot. Slot indices `0..=0x10` resolve to action
+constants through a per-character table with **holes**: Noa skips slots `0x02`
+and `0x03` because her Hurricane Kick covers all three on-disc levels through
+one learned slot.
 
-Crate API: [`legaia_art::learned_art_action(character, slot)`](../../crates/art/src/tables.rs) returns the action constant for a slot, or `None` for holes / out-of-range.
+API: [`legaia_art::learned_art_action(character, slot)`](../../crates/art/src/tables.rs)
+returns the action constant, or `None` for holes / out-of-range.
 
 | Slot | Vahn | Noa | Gala |
 |---|---|---|---|
@@ -442,13 +425,20 @@ Crate API: [`legaia_art::learned_art_action(character, slot)`](../../crates/art/
 | `0x0F` | - | Acrobatic Blitz (`0x2A`) | - |
 | `0x10` | - | Lizard Tail (`0x2B`) | - |
 
-Vahn and Gala stop at `0x0E` (15 learned arts each). Noa extends to `0x10` (15 learned arts but spread across 17 slot positions because of the two Hurricane Kick holes).
+Vahn and Gala stop at `0x0E` (15 learned arts each). Noa extends to `0x10`: 15
+learned arts across 17 slot positions.
 
 ## Art Anim Data
 
-Selects the animation record played when the art fires. The Art Record's `anim_index` byte at offset +16 indexes a per-character animation table. Slot `0` is always Spirit; slot `3` is always Art Starter. Some slots are holes (e.g. Vahn has no slot `0x0C`, Gala has no slot `0x09`).
+The art record's `anim_index` byte selects the animation record played when the
+art fires, indexing a per-character animation table. Slot `0` is always Spirit
+and slot `3` always Art Starter; some slots are holes. Most records reference
+one anim slot; a few (Hurricane Kick on Noa) use the `anim_extra` bytes to
+chain into a continuation slot. The schema places `anim_index` at record offset
+`+16`, which is where the confirmed layout has the name field - see the
+[prefix note](#fixed-prefix).
 
-Crate API: [`legaia_art::art_anim_name(character, anim_index)`](../../crates/art/src/tables.rs).
+API: [`legaia_art::art_anim_name(character, anim_index)`](../../crates/art/src/tables.rs).
 
 | Anim | Vahn | Noa | Gala |
 |---|---|---|---|
@@ -472,11 +462,11 @@ Crate API: [`legaia_art::art_anim_name(character, anim_index)`](../../crates/art
 | `0x11` | Acrobatic Blitz | Electro Thrash | - |
 | `0x12` | - | - | Neo Raising |
 
-Most art records reference exactly one anim slot; a handful (e.g. Hurricane Kick on Noa) use the `anim_extra` reserved bytes at +17 to chain into a continuation slot for multi-stage animations.
-
 ## Miracle Arts
 
-Each character has one Miracle Art. When the player enters the *exact* command sequence for that art, the runtime **clears the entire action queue** and writes the art's replacement string instead.
+Each character has one Miracle Art. When the player enters its exact command
+sequence, the runtime **clears the whole action queue** and writes the art's
+replacement string.
 
 | Character | Art | RAM | Record-file offset | Command sequence |
 |---|---|---|---|---|
@@ -484,11 +474,19 @@ Each character has one Miracle Art. When the player enters the *exact* command s
 | Noa | Noa's Ark | `0x6504` | `0x0CEC` | L U R D U L U D R |
 | Gala | Biron Rage | `0x6514` | `0x0CFC` | R R D U D U D L L |
 
-Each replacement string follows the shape `[L, R, D, U, SpecialStarter, art1, art2, ...]` where the four leading directionals are the on-disc MSB-set bytes (`0x8C`/`0x8D`/`0x8E`/`0x8F`), masked to `0x0C`/`0x0D`/`0x0E`/`0x0F` at copy time. The full table is in [`crates/art/src/miracle.rs`](../../crates/art/src/miracle.rs).
+A replacement string has the shape
+`[L, R, D, U, SpecialStarter, art1, art2, ...]`. The four leading directionals
+are stored with the high bit set (`0x8C` / `0x8D` / `0x8E` / `0x8F`); the
+runtime ANDs with `0x7F` when copying into the queue
+(`legaia_art::miracle::unmask_replacement_byte`). Full table:
+[`crates/art/src/miracle.rs`](../../crates/art/src/miracle.rs).
 
 ## Super Arts
 
-Super Arts are not invoked by direct command-string match. Instead, after each art finishes, the runtime walks the full action queue and looks for a registered *Find* pattern. If a Find pattern matches the **tail** of the queue and all participating arts paid AP, the matched bytes are replaced by a *Replace* tail that ends with the Super Art's finisher action constant.
+A Super Art is not a direct command match. After each art finishes, the runtime
+walks the action queue for a registered *Find* pattern. If one matches the
+**tail** of the queue and every participating art paid AP, the matched bytes
+are replaced by a *Replace* tail ending in the Super Art's finisher constant.
 
 Example - Vahn's Tri-Somersault (`0x2B`):
 
@@ -499,35 +497,44 @@ Replace: 19 27 0F 19 1F 0E 1A 2B 2B 2B
          (… SpecialStarter, Tri-Somersault × 3 hits)
 ```
 
-Triggers:
-1. The last art of the Find string must be the last action in the queue.
-2. All arts in the Find string must be non-NEW (their AP cost is paid).
-3. Super Arts themselves do not consume AP - the chain arts pay it.
+Trigger conditions:
 
-Full per-character tables (5 entries each for Vahn / Noa / Gala = 15 total) are in [`crates/art/src/super_art.rs`](../../crates/art/src/super_art.rs).
+1. The last art of the Find string is the last action in the queue.
+2. Every art in the Find string is non-NEW (its AP cost is paid).
+3. The Super Art charges no AP of its own; its cost is the chain's sum.
 
-Each Super Art also has its **own art record** in the per-character `0xD0`-stride array, addressed by its finisher constant (see [Art records are indexed by action constant](#art-records-are-indexed-by-action-constant)): the record's `+0x10` name field is the Super Art's English name and its `+0x24` run its per-strike power bytes. What it does **not** have is an input combo or a row in the [arts-name table](#arts-name-table-dat_80075ec4) - so a Super Art carries no AP number, no menu command string, and no entry in either display list the game draws. Patcher knob: `--super-art-power` ([randomizer.md](../tooling/randomizer.md#super-art-damage-power)).
+The tables are resident overlay data (find `0x801F6524`, replace `0x801F65E8`,
+15 entries, capture-validated); per-character copies (5 each) are in
+[`crates/art/src/super_art.rs`](../../crates/art/src/super_art.rs).
 
-The interleaved connector direction after each art (the `0F` / `0E` above) is
-**not typed between the arts** - it is what the retail tokenizer leaves behind:
+Each Super Art has its own art record, addressed by its finisher constant
+([above](#art-records-are-indexed-by-action-constant)), with its name at
+`+0x10` and power bytes at `+0x24`. It has no input combo and no row in the
+[arts-name table](#arts-name-table-dat_80075ec4), so it carries no AP number
+and no menu command string. Patcher knob: `--super-art-power`
+([randomizer.md](../tooling/randomizer.md#super-art-damage-power)).
 
-- `FUN_801EED1C`'s normalisation loop (`0x801EF2EC..0x801EF858`, read off the
-  disassembly) writes `0x19` over the **last** arrow of a matched art, inserts
-  the art constant after it, and **keeps the leading arrows in place**; it walks
-  tail-first (`s8` counts down from 15) and restarts at `s8 + 1` after every
-  match, so an arrow can belong to two arts. `↑↓↑` alone becomes `0F 0E 19 27`.
-  Port + derivation: [`legaia_art::tokenize`](../../crates/art/src/tokenize.rs).
-- So a Super's `find` pattern is what its **physical input** tokenizes to.
-  Tri-Somersault's `19 27 0F 19 1F 0E 19 27` is `↑↓↑↑↑↓↑` - seven arrows,
-  Somersault (0..2), Cyclone (1..4) and Somersault (4..6) **overlapping** - and
-  the in-the-wild capture's resident queue `0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B`
-  is exactly that input tokenized then tail-replaced (the leading `0F 0E` are
-  Somersault's own first two arrows). Laying the three arts end to end
-  (`↑↓↑ ↓↑↑↑ ↑↓↑`) tokenizes to four arts and does **not** trigger.
-- Every retail Super derives to a unique shortest input, all 7..=9 arrows,
-  and fourteen of the fifteen agree with the independent walkthrough table
-  (Dragon Fangs' printed six-arrow input drops one and never performs Swan
-  Driver; the derived `↑↓↑↑↑↓↓` does):
+### The connectors come from the tokenizer
+
+The direction bytes between arts in a Find pattern (`0F` / `0E` above) are not
+typed between the arts. They are what the retail tokenizer leaves behind:
+
+- `FUN_801EED1C`'s normalisation loop (`0x801EF2EC..0x801EF858`) writes `0x19`
+  over the **last** arrow of a matched art, inserts the art constant after it,
+  and keeps the leading arrows. It walks tail-first (`s8` counts down from 15)
+  and restarts at `s8 + 1` after every match, so one arrow can belong to two
+  arts. `↑↓↑` alone becomes `0F 0E 19 27`. Port:
+  [`legaia_art::tokenize`](../../crates/art/src/tokenize.rs).
+- A Super's Find pattern is what its **physical input** tokenizes to.
+  Tri-Somersault's `19 27 0F 19 1F 0E 19 27` is `↑↓↑↑↑↓↑`: seven arrows, with
+  Somersault (0..2), Cyclone (1..4) and Somersault (4..6) overlapping. A
+  captured resident queue `0F 0E 19 27 0F 19 1F 0E 1A 2B 2B 2B` is that input
+  tokenized then tail-replaced. Laying the three arts end to end
+  (`↑↓↑ ↓↑↑↑ ↑↓↑`) tokenizes to four arts and does not trigger.
+- Every retail Super derives to a unique shortest input of 7..=9 arrows.
+  Fourteen of fifteen agree with the independent walkthrough table; Dragon
+  Fangs' printed six-arrow input drops one and never performs Swan Driver,
+  where the derived `↑↓↑↑↑↓↓` does.
 
 | Character | Super Art | Chain | Input | AP |
 |---|---|---|---|---|
@@ -547,64 +554,56 @@ The interleaved connector direction after each art (the `0F` / `0E` above) is
 | Gala | Heaven's Drop | Flying Knee Attack, Head-Splitter, Black Rain | `↓↑←↑↑←↓↓` | 60 |
 | Gala | Neo Static Raising | Back Punch, Guillotine, Neo Raising | `←→←↑←←→↑←` | 66 |
 
-AP is the chain's sum; a Super Art charges nothing of its own. The connectors are
-still resident table data (find `0x801F6524` / replace `0x801F65E8`, 15 entries,
-capture-validated), and the live player-driven Arts submenu still matches a
-recognized art *ordering* against `SuperArt::art_sequence()` (`legaia_art::recognize_art_sequence`
-+ `SuperMatcher::trigger_by_art_sequence`, see
-[`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu)) -
-what changed is that the byte-exact queue is now derivable from the input.
-(`ctx[+0x274]`, once suspected as the queue-builder, is the turn-order
-active-actor index; the live action queue is `actor[+0x1DF]`.)
+The live player-driven Arts submenu also matches a recognized art *ordering*
+against `SuperArt::art_sequence()` (`legaia_art::recognize_art_sequence` +
+`SuperMatcher::trigger_by_art_sequence`; see
+[`subsystems/battle-action.md`](../subsystems/battle-action.md#miracle--super-in-the-live-player-driven-arts-submenu)).
+The live action queue is `actor[+0x1DF]`; `ctx[+0x274]` is the turn-order
+active-actor index, not the queue.
 
 ## Arts-name table (`DAT_80075EC4`)
 
-The display names + AP costs of every Tactical Art live in a static table in
-`SCUS_942.54` at `DAT_80075EC4`. It's the table the MES interpreter's `0xC5`
-substitution code reads (see [mes.md](mes.md#bytecode-encoding)) - the `0xC5`
-operand `XX` keys it as `(character = XX>>6, art index = XX&0x3F)`.
+The display names and AP costs of every Tactical Art live in a static table in
+`SCUS_942.54` at `DAT_80075EC4`. The MES interpreter's `0xC5` substitution code
+reads it ([mes.md](mes.md#bytecode-encoding)): operand `XX` keys it as
+`(character = XX>>6, art index = XX&0x3F)`. The expander `FUN_80036514` scans
+the 20-byte (`0x14`) records, which are sorted by character, matching
+`(record[+0], record[+1])`, and returns the `+0xC` name pointer
+(`(&PTR_DAT_80075ED0)[match_index * 5]`).
 
-The expander (`FUN_80036514`) scans 20-byte (`0x14`) records sorted by
-character, matching `(record[+0], record[+1])` against the key, and returns the
-`+0xC` name pointer (`(&PTR_DAT_80075ED0)[match_index * 5]`).
-
-| Offset | Type | Field |
-|---|---|---|
-| `+0` | u8 | character: `0` Vahn, `1` Noa, `2` Gala |
-| `+1` | u8 | art display index within the character |
-| `+2` | u8 | **AP cost - display only**; see [below](#the-ap-byte-is-a-display-mirror) |
-| `+3` | u8 | padding |
-| `+4` | u16 | per-art tier constant - **no reader on the disc**; see [below](#4-is-authored-data-with-no-runtime-reader) |
-| `+6` | u16 | zero |
-| `+8` | u32 | pointer to the command-input display string (MES arrow-glyph sequence; its first byte is the input count) |
-| `+0xC` | u32 | pointer to the name string |
-| `+0x10` | u32 | aux pointer (second string) |
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0` | u8 | character | `0` Vahn, `1` Noa, `2` Gala | Confirmed |
+| `+1` | u8 | art index | display index within the character | Confirmed |
+| `+2` | u8 | AP cost | **display only** ([below](#the-ap-byte-is-a-display-mirror)) | Confirmed |
+| `+3` | u8 | padding | | Confirmed |
+| `+4` | u16 | tier constant | no reader on the disc ([below](#4-is-authored-data-with-no-runtime-reader)) | Confirmed (unread) |
+| `+6` | u16 | zero | | Confirmed |
+| `+8` | u32 | glyph pointer | command-input display string ([below](#command-glyph-string-8)) | Confirmed |
+| `+0xC` | u32 | name pointer | | Confirmed |
+| `+0x10` | u32 | aux pointer | second string | Confirmed |
 
 A `(99, 99)` record named `"End"` terminates the table. Each character's index
-`0` entry is the **Miracle Art** (AP byte `99`; the name string opens with a
-`0xCE 0x09` character-name-substitution control, e.g. *"&'s Ark"* / Gala's
-*"Biron Rage"*).
+`0` entry is the Miracle Art (AP byte `99`; the name opens with a `0xCE 0x09`
+character-name substitution, e.g. *"&'s Ark"*; Gala's is *"Biron Rage"*).
 
-The AP costs are byte-exact against the curated [`gamedata`](../reference/gamedata.md)
-arts table (every matched art agrees), which makes this the on-disc provenance
-for that table's `ap` column + the canonical art display order.
+The AP bytes agree with the curated [`gamedata`](../reference/gamedata.md) arts
+table for every matched art, making this table the on-disc provenance for that
+table's `ap` column and the canonical art display order.
 
 ### `+4` is authored data with no runtime reader
 
-The `+4` halfword has **zero readers** across `SCUS_942.54` and all 80 based
-overlay images. Eight sites materialise the table base (`addiu rX, rY, 0x5ec4` at
-`0x8003445C`, `0x800360D8`, `0x80036338`, `0x800365E4`, `0x80036764`,
-`0x8004C680`, `0x8004C6BC`, and `0x801D447C` in PROT 0899); walking every load
-whose base register descends from one of them, with the accumulated
-displacement tracked through the `addiu`/`addu`/`sll` chain, reaches the record
-only at `+0` (character), `+1` (art index), `+2` (the AP display byte, at
-`0x801D4524`), `+8`, `+0xC` and `+0x10` (the three string pointers). Nothing
-loads `+4` or `+6`, and a five-form address sweep for `0x80075EC8` returns no
-word, jump, branch or materialisation pair in any image.
+The `+4` halfword has zero readers across `SCUS_942.54` and all 80 based
+overlay images. Eight sites materialise the table base (`addiu rX, rY, 0x5ec4`
+at `0x8003445C`, `0x800360D8`, `0x80036338`, `0x800365E4`, `0x80036764`,
+`0x8004C680`, `0x8004C6BC`, and `0x801D447C` in PROT 0899). Following every
+load whose base register descends from one of them reaches the record only at
+`+0`, `+1`, `+2` (at `0x801D4524`), `+8`, `+0xC` and `+0x10`. Nothing loads
+`+4` or `+6`, and a five-form address sweep for `0x80075EC8` finds no word,
+jump, branch or materialisation pair in any image.
 
-What the values *are* is still readable off the disc: `+4` is a per-art tier
-constant, monotone with the art's position in its character's list, and it is
-keyed to that position rather than to AP or to the combo length.
+The values are a per-art tier constant keyed to the art's position in its
+character's list:
 
 | `+4` | Arts carrying it |
 |---|---|
@@ -616,40 +615,33 @@ keyed to that position rather than to AP or to the combo length.
 | `5000` | the four-input arts |
 | `1` | the `(99, 99)` "End" terminator record |
 
-Two independent facts rule the obvious readings out. It is not an AP mirror:
-Noa's 70-AP index-1 art and Vahn's 50-AP index-1 art both carry `50000`, and
-Gala's index-3 and index-4 arts share AP `30` across `30000` and `15000`. It is
-not the input count either: five-input arts appear at both `40000` (Fire Blow)
-and `10000` (Cyclone), and Tempest Break's seven inputs sit below the
-six-input `15000` band. The old "≈ power/score" gloss was a guess from the
-round numbers; the per-strike damage powers live in the `0xD0`-stride art
-record's `+0x24` run instead, and that page already records that retail keeps
-no display copy of them.
+It is not an AP mirror: Noa's 70-AP and Vahn's 50-AP index-1 arts both carry
+`50000`, and Gala's index-3 and index-4 arts share AP `30` across `30000` and
+`15000`. It is not the input count: five-input arts appear at both `40000`
+(Fire Blow) and `10000` (Cyclone), and Tempest Break's seven inputs sit below
+the six-input band. It is not damage power either; that is the art record's
+`+0x24` run.
 
 ### The AP byte is a display mirror
 
-The `+2` byte is **not** the value the battle engine spends. It has exactly one
-reader in the whole image - `lbu a0,0x2(s2)` at `0x801D4524`, inside the menu
-overlay's status-panel renderer `FUN_801D33D8` (PROT 0899), which halves it
-under the actor's `0x800` flag and draws it as a 3-cell decimal. The battle path
-never touches it: the party arts queue-builder *computes* the cost as
-`multiplier x command_count`, with the multiplier taken from three code
-immediates keyed on the art's position in its character's list. Retail keeps the
-two consistent by authoring - for all 45 arts the byte equals that product
-exactly, Noa's index gap included. Full derivation, both call sites and the
-patcher that has to move both:
+The `+2` byte is not what the battle engine spends. Its single reader in the
+whole image is `lbu a0,0x2(s2)` at `0x801D4524`, inside the menu overlay's
+status-panel renderer `FUN_801D33D8` (PROT 0899), which halves it under the
+actor's `0x800` flag and draws a 3-cell decimal. The battle path *computes* the
+cost as `multiplier x command_count`, the multiplier taken from three code
+immediates keyed on the art's position in its character's list. For all 45
+arts the byte equals that product, Noa's index gap included. Derivation, both
+call sites and the patcher that moves both:
 [`arts-command-gauge.md` § What an art costs in AP](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap).
+
+<a id="command-glyph-string"></a>
 
 ### Command-glyph string (`+8`)
 
-The `+8` pointer is the **command-input string** - the arrow sequence shown in
-the arts menu (the *display* copy of the combo; the matcher reads a separate
-`1-4` copy in the player-file records, see the warning at the top of this page).
-Encoding: `[count u8]` then `count`
-two-byte glyph codes. A one-off `0xFF XX` marker separates the sequence
-(`0xFF06` for regular arts, `0xFF09` for Miracle arts), is **not** a direction,
-and its position within the string varies (it can sit mid-combo). The arrow
-glyphs map to physical d-pad directions:
+The `+8` pointer is the arrow sequence shown in the arts menu - the display
+copy of the combo. Encoding: `[count u8]` then `count` two-byte glyph codes. A
+one-off `0xFF XX` marker (`0xFF06` for regular arts, `0xFF09` for Miracle arts)
+is not a direction, and its position varies (it can sit mid-combo).
 
 | Glyph | Direction | dir code |
 |---|---|---|
@@ -658,36 +650,33 @@ glyphs map to physical d-pad directions:
 | `0x81AB` | ↓ Down | 3 |
 | `0x81AA` | ↑ Up | 4 |
 
-The string stores the **physical** direction; the logical action (Arms /
-Ra-Seru) depends on the character's handedness (Noa's Arms / Ra-Seru are
-swapped). The codes match the `Left=1 / Right=2 / Down=3 / Up=4` encoding the
-PROT records use. Cross-checking against gamedata surfaces at least one
-walkthrough error (Vahn's *Hyper Elbow* is `L R L` on disc, not `Arms / Ra-Seru
-/ High`). Decoded by `legaia_art::arts_table::parse_from_scus`; dump it with
-`art arts-table`.
+The string stores the **physical** direction, with the same
+`Left=1 / Right=2 / Down=3 / Up=4` codes as the art records. The logical action
+(Arms / Ra-Seru) depends on the character's handedness; Noa's are swapped. The
+disc corrects at least one walkthrough error: Vahn's *Hyper Elbow* is `L R L`,
+not `Arms / Ra-Seru / High`. Parser: `legaia_art::arts_table::parse_from_scus`;
+CLI `art arts-table`.
 
 ### Validation oracle
 
-Because the glyph string is byte-exact ground truth, it serves as the
-validation oracle for the two derived command sources:
+The glyph string is byte-exact ground truth, so it validates the two derived
+command sources:
 
-- **The best-effort art-record parser** ([`legaia_art::parse_record`]).
+- **[`legaia_art::parse_record`].**
   `legaia_art::ArtsOracle::by_command(character, &commands)` resolves a decoded
-  command sequence back to a named art; the disc-gated contract test
-  `crates/art/tests/arts_table_real.rs` runs every art's canonical record bytes
-  through `parse_record` and asserts the decode round-trips through the oracle.
-  This pins the parser's `1=L,2=R,3=D,4=U` command-byte decode against the
-  executable without depending on the record's still-Inferred variable-field
-  tail.
+  command sequence to a named art. The disc-gated test
+  `crates/art/tests/arts_table_real.rs` synthesises each art's record-opening
+  bytes from its ground-truth command sequence, runs them through
+  `parse_record`, and asserts the decode round-trips through the oracle. That
+  pins the `1=L,2=R,3=D,4=U` command decode, not the rest of the prefix.
 - **The curated `legaia-gamedata` `arts.toml` `ap` + `directions` columns.**
-  The disc-gated test `crates/gamedata/tests/arts_scus_oracle.rs` matches each
-  curated art to its SCUS row by name and asserts AP + directions agree, with a
-  small explicit allowlist for documented walkthrough errors (currently only
-  *Hyper Elbow*). A new undocumented divergence fails the test.
+  `crates/gamedata/tests/arts_scus_oracle.rs` matches each curated art to its
+  SCUS row by name and asserts AP + directions agree, with an explicit
+  allowlist for documented walkthrough errors (*Hyper Elbow*).
 
 ## See also
 
-- [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - battle action state machine that consumes the queue and resolves damage.
-- [`docs/subsystems/battle-formulas.md`](../subsystems/battle-formulas.md) - damage / MP / accuracy / RNG arithmetic kernels that read the power bytes.
-- [`docs/subsystems/arts-command-gauge.md`](../subsystems/arts-command-gauge.md) - the AP gauge the player spends inputting these arts, and the weapon-specialty arm-width penalty.
-- [`docs/formats/mdt.md`](mdt.md) - the per-frame *animation* bytecode for the Tactical Arts move VM, distinct from this art-record layer.
+- [`docs/subsystems/battle-action.md`](../subsystems/battle-action.md) - the battle action state machine that consumes the queue and resolves damage.
+- [`docs/subsystems/battle-formulas.md`](../subsystems/battle-formulas.md) - the damage / MP / accuracy / RNG kernels that read the power bytes.
+- [`docs/subsystems/arts-command-gauge.md`](../subsystems/arts-command-gauge.md) - the AP gauge the player spends inputting arts, and the weapon-specialty arm-width penalty.
+- [`docs/formats/mdt.md`](mdt.md) - the per-frame animation bytecode for the move VM, distinct from this art-record layer.
