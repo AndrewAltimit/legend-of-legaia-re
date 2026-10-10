@@ -705,7 +705,7 @@ SPLIT_MODULES = frozenset({
     "crates/engine-minigames/src/muscle_dome",
     "crates/engine-minigames/src/dance",
     "crates/engine-menus/src/save_select",
-    "crates/patcher/src/delilas_party",
+    "crates/delilas-party/src/delilas_party",
     "crates/engine-battle-vm/src/cast_module_ticks",
     "crates/engine-fishing/src/fishing",
     "crates/engine-vm/src/title_overlay",

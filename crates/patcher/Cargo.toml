@@ -24,6 +24,7 @@ default = ["cli"]
 cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
+legaia-delilas-party.workspace = true
 legaia-arts-patch.workspace = true
 legaia-code-hooks.workspace = true
 legaia-party-swap.workspace = true

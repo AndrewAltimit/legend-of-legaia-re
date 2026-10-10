@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/overlay-images", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/code-hooks", "crates/arts-patch", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-fishing", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
+members = ["crates/iso", "crates/prot", "crates/lzs", "crates/bytes", "crates/game-tables", "crates/battle-models", "crates/overlay-images", "crates/asset", "crates/tmd", "crates/tim", "crates/xa", "crates/vab", "crates/mdt", "crates/mes", "crates/anm", "crates/seq", "crates/font", "crates/save", "crates/extract", "crates/disc-patch", "crates/translate", "crates/party-swap", "crates/texture-replace", "crates/code-hooks", "crates/arts-patch", "crates/delilas-party", "crates/patcher", "crates/mdec", "crates/art", "crates/mednafen", "crates/pcsxr", "crates/cheats", "crates/gamedata", "crates/engine-battle", "crates/engine-battle-vm", "crates/engine-system", "crates/engine-dialog", "crates/engine-menus", "crates/engine-field", "crates/engine-core", "crates/engine-effects", "crates/engine-fishing", "crates/engine-minigames", "crates/engine-minigame-scenes", "crates/render-kernels", "crates/engine-ui", "crates/engine-render", "crates/engine-audio", "crates/engine-vm", "crates/engine-session", "crates/engine-screens", "crates/parity", "crates/engine-shell", "crates/asset-viewer", "crates/web-viewer"]
 
 [workspace.package]
 version = "0.1.0"
@@ -83,6 +83,7 @@ legaia-translate = { path = "crates/translate" }
 legaia-code-hooks = { path = "crates/code-hooks" }
 legaia-party-swap = { path = "crates/party-swap" }
 legaia-arts-patch = { path = "crates/arts-patch" }
+legaia-delilas-party = { path = "crates/delilas-party" }
 legaia-texture-replace = { path = "crates/texture-replace" }
 legaia-patcher = { path = "crates/patcher", default-features = false }
 legaia-pcsxr = { path = "crates/pcsxr", default-features = false }

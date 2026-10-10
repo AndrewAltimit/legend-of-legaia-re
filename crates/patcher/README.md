@@ -19,7 +19,9 @@ self-contained code-hook mods live in
 [`legaia-code-hooks`](../code-hooks/README.md), likewise re-exported; the
 Tactical Arts edits `arts`, `arts_power`, `arts_ap_grant`, `oscillating_ap`
 and `super_art_*` live in [`legaia-arts-patch`](../arts-patch/README.md),
-re-exported at their old paths):
+re-exported at their old paths; and the play-as-Delilas mod - `delilas_party`
+and its voice, effect, signature-attack and field-scene modules - lives in
+[`legaia-delilas-party`](../delilas-party/README.md), also re-exported):
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
@@ -1405,7 +1407,9 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 
 The largest new-content family - play *as* Gi / Lu / Che while the ravine
 duels field Vahn / Noa / Gala. One orchestrator plus support modules, including the
-`party_swap` model-swap machinery; this table is the map, the full mechanism reference is
+`party_swap` model-swap machinery. Every module in this table except
+`delilas_cast`, `party_swap` and `mips_sim` lives in
+[`legaia-delilas-party`](../delilas-party/README.md); this table is the map, the full mechanism reference is
 [`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
 
 | Module | Carries |

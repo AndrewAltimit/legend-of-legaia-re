@@ -7,9 +7,10 @@ rig, and a Delilas model on a player rig. Both animation systems pose parts
 by index, so a swap reduces to an anatomy permutation, an extras merge and a
 pivot-anchored rest-pose bake (the module docs walk each step).
 
-Pure transforms over decoded disc assets - no disc I/O. The disc writes stay
-in [`legaia-patcher`](../patcher/README.md), which re-exports this crate's
-one module at its old path (`legaia_patcher::party_swap`).
+Pure transforms over decoded disc assets - no disc I/O. The disc writes are
+[`legaia-delilas-party`](../delilas-party/README.md)'s, the layer above this
+one. [`legaia-patcher`](../patcher/README.md) re-exports this crate's one
+module at its old path (`legaia_patcher::party_swap`).
 
 - `party_swap` - the model swap itself; its submodules: `playerize` (Delilas
   model onto a player rig), `fieldize` / `event_field` / `nivora_field` (the
