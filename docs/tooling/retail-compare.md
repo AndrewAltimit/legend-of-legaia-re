@@ -635,192 +635,206 @@ fight runs ([battle](../subsystems/battle.md)):
 | combatant HP / max / MP / max | actor table `0x801C9370[slot]`, `+0x14C` / `+0x14E` / `+0x150` / `+0x152` |
 | camera | the field's rotation / translation globals; `H` is `256` |
 
-**Seeding.** The scene is entered through the card-load path and the field
-settles the same window a field state does - the fight is entered from a
-running field, as retail's was, so the scene's track has started. The
-formation cell is matched against the scene's registered MAN rows; a cell
-no row carries (a fight installed from another table) is registered as a
-formation of its own, carrying the scripted bit, with the monster archive's
-stats for its ids. The fight's own composition and stage are seeded from the capture: retail's
-present list `0x8007BD10` becomes the engine's active party (a guest seat, or a
-battle-id fight whose init re-seeds the trio, is not the save window's field
-party), and the stage variant `0x8007BD60 & 0x1F` and battle init's
-keep-object-1 byte `0x8007B64B` are stamped
-(`World::seed_battle_stage_variant` / `seed_battle_backdrop_keep_object_1`;
-`play-window` reads both as `LEGAIA_BATTLE_STAGE=variant,keep`), because a
-battle capture's player actor is no longer the field walker whose tile names
-them. Both come from the region reader, and the second is not decoration:
-nilboa's Thunder Ravine region keeps the backdrop shell's object 1, the
-horizon mist ribbon, which a replay seeded with the variant alone dropped. `World::force_encounter` then arms the row through the
-ordinary transition - the path `play-window --battle` takes, including the
-scripted carrier's replayed tutorial arm and the carrier's replayed BGM
-words ([below](#the-track-word-in-battle)). When the mode flips, the retail
+The seed replays the fight from a running field and then places it at the
+capture's phase. Each step below exists because leaving it out moves a channel
+for a reason that is not a port defect:
+
+| Step | What is taken from the capture | Engine side / knob |
+|---|---|---|
+| [Enter the fight](#seeding-the-fight) | formation cell, present party, stage variant, keep-object-1 byte | `World::force_encounter`, `LEGAIA_BATTLE_STAGE=variant,keep` |
+| [Pin the stream](#the-stream-at-the-entry) | nothing - retail's RNG state is not in the capture | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
+| [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
+| [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
+| [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
+| [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
+| [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
+| [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
+
+### Seeding the fight
+
+The scene is entered through the card-load path and the field settles the same
+window a field state does. The fight is entered from a running field, as
+retail's was, so the scene's track has started.
+
+- **Formation.** The formation cell is matched against the scene's registered
+  MAN rows. A cell no row carries (a fight installed from another table) is
+  registered as a formation of its own, carrying the scripted bit, with the
+  monster archive's stats for its ids.
+- **Party.** Retail's present list `0x8007BD10` becomes the engine's active
+  party. A guest seat, or a battle-id fight whose init re-seeds the trio, is
+  not the save window's field party.
+- **Stage.** The stage variant `0x8007BD60 & 0x1F` and battle init's
+  keep-object-1 byte `0x8007B64B` are stamped
+  (`World::seed_battle_stage_variant` / `seed_battle_backdrop_keep_object_1`;
+  `play-window` reads both as `LEGAIA_BATTLE_STAGE=variant,keep`). A battle
+  capture's player actor is no longer the field walker whose tile names them,
+  so both come from the region reader. The second matters: nilboa's Thunder
+  Ravine region keeps the backdrop shell's object 1, the horizon mist ribbon.
+
+`World::force_encounter` then arms the row through the ordinary transition -
+the path `play-window --battle` takes, including the scripted carrier's
+replayed tutorial arm and the carrier's replayed BGM words
+([below](#the-track-word-in-battle)). When the mode flips, the retail
 combatants' live HP / MP are written over the engine's, and the session is
 placed at the capture's phase.
 
-**The stream at the entry.** Retail's RNG state at the instant its fight began
-is not in the capture, and left alone the engine's would be whatever the
-field settle happened to draw - so every channel that rides a draw (a
-monster's pick and target, the battle camera, the frame) moved whenever a
-field-side port changed how many draws it takes or how they are shaped,
-with nothing in the battle changed. The world stream is therefore set to a
-fixed seed just before `World::force_encounter`, on the headless seed and in
-the image child alike (`LEGAIA_BATTLE_RNG_SEED`), and held there at the head
-of every tick of the field-side intro transition
-(`EncounterState::rng_hold`): the field's NPC and ambient programs keep
-drawing until the fight is in battle mode, and a pin before the transition
-alone let a fix to a scene's ambient installs re-deal its fights. A capture of something a
-draw decides is still one realisation of the stream, so the seeds in
-`BATTLE_RNG_SEEDS` are tried in order and the first under which the fight is
-still on, its opening reached a prompt, and the drive or replayed cast
-reached the capture's phase is the one scored; a state no seed satisfies
-keeps the first seed's run, `never reached`. A capture past the end signal
-also wants retail's win pose: the results sequencer draws it from the stream
-(`victory_pose_id`), and the results camera is that pose's own script
-(`battle_over_script`), so `noa_levelup_banner` reached its hold on another
-pose framed a shot nobody saw. The pose actor's latched `+0x1DB` is read
-(`RetailBattle::win_pose`), a seed that reaches the phase on another pose is
-kept only as the fallback, and the remaining seeds are tried for one that
-draws retail's.
+### The stream at the entry
 
-**The image child plays the same fight.** The frame is only evidence about
-the state the channels scored if the `play-window` child replays that fight
-tick for tick, and three things used to put it on another one:
+Retail's RNG state at the instant its fight began is not in the capture. Left
+alone, the engine's would be whatever the field settle happened to draw, so
+every channel that rides a draw (a monster's pick and target, the battle
+camera, the frame) would move whenever a field-side port changed how many
+draws it takes.
 
-- the headless seed settles the landed field for `SETTLE_TICKS` before it
-  sets the stream and arms the encounter, and the child armed at boot. The
-  encounter transition then owned the child's first tick, so the scene's
-  entry scripts never ran - on an overworld that left the ambient-particle
-  gate clear, and the emitter that draws the stream once a frame never drew.
-  The child now settles the same ticks first (`LEGAIA_BATTLE_SETTLE`) and,
-  like the seed, installs the fight's roster after the settle, since a
-  scripted duel's entry can re-seat the party;
-- the fog pool's render step is not presentation-only (it writes the live
-  count and depth view the next tick's spawns read, and a spawn draws the
-  stream), and the headless seed renders nothing. It now runs the step the
-  hosts' draw pass runs after every tick (`BootSession::fog_render_tick`),
-  and the child is tick-locked - one tick per redraw - so its draw passes
-  land on the same ticks;
-- the mid-fight HP / MP were written on the headless side only, so the child
-  fought on full bars and its monster AI picked from a different table. The
-  bars it seeded reach the child on the same first battle tick
-  (`LEGAIA_BATTLE_BARS`).
+- The world stream is set to a fixed seed just before `World::force_encounter`,
+  on the headless seed and in the image child alike (`LEGAIA_BATTLE_RNG_SEED`).
+- It is held there at the head of every tick of the field-side intro transition
+  (`EncounterState::rng_hold`): the field's NPC and ambient programs keep
+  drawing until the fight is in battle mode.
+- A capture of something a draw decides is still one realisation of the stream.
+  The seeds in `BATTLE_RNG_SEEDS` are tried in order, and the first under which
+  the fight is still on, its opening reached a prompt, and the drive or replayed
+  cast reached the capture's phase is the one scored. A state no seed satisfies
+  keeps the first seed's run, `never reached`.
+- A capture past the end signal also wants retail's win pose. The results
+  sequencer draws it from the stream (`victory_pose_id`), and the results camera
+  is that pose's own script (`battle_over_script`). The pose actor's latched
+  `+0x1DB` is read (`RetailBattle::win_pose`); a seed that reaches the phase on
+  another pose is kept only as the fallback, and the remaining seeds are tried
+  for one that draws retail's (`noa_levelup_banner`).
 
-**Where the combatants stand.** Retail walks nobody home after an action
+### The image child plays the same fight
+
+The frame is only evidence about the state the channels scored if the
+`play-window` child replays that fight tick for tick. Three couplings make that
+true:
+
+| Coupling | Why it matters | Mechanism |
+|---|---|---|
+| Settle before arming | An encounter armed at boot owns the first tick, so the scene's entry scripts never run. On an overworld that leaves the ambient-particle gate clear, and the emitter that draws the stream once a frame never draws | The child settles `SETTLE_TICKS` first (`LEGAIA_BATTLE_SETTLE`) and installs the fight's roster after the settle, since a scripted duel's entry can re-seat the party |
+| Fog render step | It is not presentation-only: it writes the live count and depth view the next tick's spawns read, and a spawn draws the stream | The headless seed runs `BootSession::fog_render_tick` after every tick; the child is tick-locked (one tick per redraw) |
+| Mid-fight bars | A child on full bars has its monster AI pick from a different table | The seeded HP / MP reach the child on the same first battle tick (`LEGAIA_BATTLE_BARS`) |
+
+### Where the combatants stand
+
+Retail walks nobody home after an action
 ([battle-action.md](../subsystems/battle-action.md#where-an-action-leaves-its-combatants)),
 so a capture of a running fight stands its combatants wherever earlier rounds
 left them: `zora_glare_petrify_pre`'s Zora casts from `(649, -47)`, beside the
 party, and the Delilas duels' monsters stand at the party's row. Every framing
 case aims at those positions - case 6 on a caster, case 0 on a member, case
-9's formation box - so a seed on the authored seats framed the cast at the
-far end of the stage. The first battle tick therefore also places every
-combatant on its captured live pair `+0x34` / `+0x38`
-(`RetailBattle::seeded_ground`, carried as the `:x:z` tail of each
-`LEGAIA_BATTLE_BARS` entry), on every plan but an opening capture, which is
-sampled before any round ran. The acting seat is placed too, even on a
-captured Attack whose pair is a point on the walk the drive replays: the walk
-ends at its target whatever it starts from.
+9's formation box.
 
-**HUD glides the capture had landed.** The battle HUD's plates rise over
-sixteen vsyncs from the action seed (`FUN_801D9BBC`'s records at
-`ctx[+0x11B4]`; a landed record reads `total == 0`). A seat placed on its
-captured ground skips the approach retail spent that time on, so a drive can
-reach an attack capture's phase with the engine's plates still mid-rise while
-retail's had long since landed (`battle_gaza2_park_0x19_summon_melee`, a park
-held for seconds; `player_steal_skeleton_pre`). When every retail record has
-landed the image child lands the engine's at the capture
-(`LEGAIA_SEAT_HUD_GLIDES_LANDED`, `World::land_battle_hud_glides`). The RAM
-cannot say how long ago a glide landed, and the displayed frame is two
-frame steps older: `battle_noa_miracle_art_combo`'s plates landed inside that
-window, so its frame shows them still rising while the seat lands them.
+- **Ground.** The first battle tick places every combatant on its captured live
+  pair `+0x34` / `+0x38` (`RetailBattle::seeded_ground`, carried as the `:x:z`
+  tail of each `LEGAIA_BATTLE_BARS` entry), on every plan but an opening
+  capture, which is sampled before any round ran. The acting seat is placed
+  too, even on a captured Attack whose pair is a point on the walk the drive
+  replays: the walk ends at its target whatever it starts from.
+- **Heading.** On a capture past the end signal each placed combatant takes its
+  heading `+0x46` (a `:facing` field after `:x:z`). The attack band's recompute
+  stores it every frame of a swing and nothing turns the actor back, so the
+  member who struck last stands facing its target, and case 6's battle-over yaw
+  is `0x800 - actor[+0x46]`. A capture of a running fight keeps the engine's
+  own headings, which its replayed rounds set.
+- **Defeat tint.** A body whose tint state `+0x21C` is the defeat fade takes its
+  colour lanes `+0x04` (a `:d<hex>` field). A monster killed earlier has stepped
+  them to black and is no longer drawn; without the field a `0`-HP body with
+  resting lanes stands in the frame (`noa_levelup_banner`'s results camera sits
+  inside the dead Gobu Gobu).
 
-A record still in flight seats its widget instead. Its target seat
-(`+0x04` / `+0x06`) names the widget - `(16, 12)` the actor plaque,
-`(16, 192)` the readout bar, another seat on the bar's row the target plaque,
-`x = 168` the combo cluster's anchor - and its `elapsed` byte, less the
-display lag (`FUN_801D9BBC` adds the frame step a pass, so the byte counts
-vsyncs), is how far the displayed frame shows it (`LEGAIA_SEAT_HUD_GLIDES`,
-`World::seat_battle_hud_glide`, the cluster's age on the host's HUD). The
-replayed cast or strike reaches its phase on its own clock, which the raise
-does not share: `nivora_duel_mid_blazing_slash` holds plaque and bar ten
-vsyncs into the raise, six on screen - the plaque all but above the top edge,
-the bar part below the bottom - where the engine's had landed, and
-`battle_melee_hit_spark`'s cluster is twelve vsyncs into its slide, eight on
-screen, which leaves it off the right edge.
+### HUD glides the capture had landed
 
-**A push the capture already holds.** A capture inside an action stands its
-combatants where that action had already moved them - a target shoved back
-by its hits, a member knocked down by a spell - and the drive replays the
-action from that ground, so every push lands twice
-(`battle_gimard_tail_fire_a`'s Vahn ended `129` units behind his captured
-pair, and the framing that follows him lost Gimard off the frame's edge). No
-word in the capture holds the ground the action started from, but the
-engine's own replay measures the push: a driven action that reaches its
-phase is run once more on the same stream from `captured - drift`
-(`RetailBattle::undrift`, any axis moved by at least `UNDRIFT_MIN`), and the
-second run is kept when it stands the placed combatants nearer their
-captured pairs than the first (`ground_residual`). The acting seat's own
-drift is its approach, whose direction is the heading every framing case
-subtracts, so a seat that walked moves with its **target's** drift instead -
-the pair keeps the first run's geometry - and a caster that stood stays put.
-A capture past the end signal is not re-run: the win pose's own travel is
-not a push the capture holds twice.
+The battle HUD's plates rise over sixteen vsyncs from the action seed
+(`FUN_801D9BBC`'s records at `ctx[+0x11B4]`; a landed record reads
+`total == 0`). A seat placed on its captured ground skips the approach retail
+spent that time on, so a drive can reach an attack capture's phase with the
+engine's plates still mid-rise while retail's had long since landed
+(`battle_gaza2_park_0x19_summon_melee`, `player_steal_skeleton_pre`).
 
-Two more facts go with the pair. On a capture past the end signal each
-placed combatant takes its heading `+0x46` (a `:facing` field after `:x:z`):
-the attack band's recompute stores it every frame of a swing and nothing turns
-the actor back, so the member who struck last stands facing its target, and
-case 6's battle-over yaw is `0x800 - actor[+0x46]`. A capture of a running
-fight keeps the engine's own headings, which its replayed rounds set; seeding
-the captured ones there moved the corpus both ways. And a body whose tint state `+0x21C` is the defeat
-fade takes its colour lanes `+0x04` (a `:d<hex>` field): a monster killed
-earlier has stepped them to black and is no longer drawn, where a seed at
-`0` HP with resting lanes stood its body in the frame -
-`noa_levelup_banner`'s results camera sat inside the dead Gobu Gobu.
+- **All landed.** When every retail record has landed, the image child lands the
+  engine's at the capture (`LEGAIA_SEAT_HUD_GLIDES_LANDED`,
+  `World::land_battle_hud_glides`).
+- **Still in flight.** A record in flight seats its widget instead
+  (`LEGAIA_SEAT_HUD_GLIDES`, `World::seat_battle_hud_glide`, the cluster's age
+  on the host's HUD). Its target seat (`+0x04` / `+0x06`) names the widget:
+  `(16, 12)` the actor plaque, `(16, 192)` the readout bar, another seat on the
+  bar's row the target plaque, `x = 168` the combo cluster's anchor. Its
+  `elapsed` byte, less the display lag, is how far the displayed frame shows it
+  (`FUN_801D9BBC` adds the frame step a pass, so the byte counts vsyncs).
 
-**Rewards already granted.** A capture on the results frame or after it
-(`SpanGate::Results` / `Exit`) holds the party past the EXP grant and the
-level-up applier `FUN_801E9504`, and the seed replays the fight, which grants
-again. `RetailObs` takes them back first
-(`retail_compare_battle::ungrant_results_rewards`): every living member loses
-the share `gp+0xA04`, and a member the applier levelled - its record stat
-window `+0x11C..+0x12D` apart from the live window it is mirrored into one
-phase later - gets the live values back and its level byte one lower.
-Without it `noa_levelup_banner`'s Noa, already level 3, gained nothing the
-second time and the engine frame showed no "level increased" line.
+Two limits to read a residual by. The RAM cannot say how long ago a glide
+landed, and the displayed frame is two frame steps older:
+`battle_noa_miracle_art_combo`'s plates landed inside that window, so its frame
+shows them still rising while the seat lands them. And a replayed cast or
+strike reaches its phase on its own clock, which the raise does not share:
+`nivora_duel_mid_blazing_slash` holds plaque and bar ten vsyncs into the raise
+(six on screen), and `battle_melee_hit_spark`'s cluster is twelve vsyncs into
+its slide (eight on screen), which leaves it off the right edge.
 
-A cast's **magic** level-up has the same shape one band earlier. The summon
-return's level check `FUN_801E70BC` bumps the cast spell's level byte and
-stores the banner element `0x65` on `ctx[+0x26]` (`0x801E723C`), which the
-next action seed clears; a capture that holds `0x65` there is past the bump.
-`retail_compare_battle::ungrant_magic_level_up` lowers that spell's level on
-the acting member's record by one and leaves its XP, which still clears the
-old threshold, so the replayed cast levels it again and raises the banner
-(`shiny_refactor_gimard_levelup`).
+### A push the capture already holds
 
-A settled field also carries its script state into the fight. In `nilboa`
-the settle leaves the Nivora duel's dialogue parked on a text page when the
-encounter is forced. Retail cannot show that box over a fight: its pager
-`FUN_801D84D0` lives in the field overlay (PROT 0897, slot A), which the
-battle overlay replaces, so the parked context keeps its park and nothing
-draws it. The engine matches - `World::script_dialog_panel`, which both
-hosts draw the box from, answers `None` in battle mode. What still parts the two is
-render-coupled: a battle clip's end is read off
-the window's pose sampling, so an effect-script spawn can land a few ticks
-apart (the Delilas Spirit band `0x47`). Comparing a per-tick trace of
-`World::rng_state` and the action SM from both sides is how such a split is
-found.
+A capture inside an action stands its combatants where that action had already
+moved them - a target shoved back by its hits, a member knocked down by a
+spell. The drive replays the action from that ground, so every push lands twice
+(`battle_gimard_tail_fire_a`'s Vahn ends `129` units behind his captured pair,
+and the framing that follows him loses Gimard off the frame's edge).
 
-A seed whose entry rolled a formation advantage (`ctx+0x290` / its latch
-`+0x291`: a back attack or a pre-emptive strike) is passed over too, except
-on an opening capture. A capture of a running fight is not its opening round,
-and a surprise opening hands one side a round of swings - the monsters' on the
-party, or the party's on the monsters - between the HP / MP the seed wrote and
-the replayed action, so a replayed cast read the engine's extra damage as an
-HP miss (`EngineBattle::surprise_opening`).
+No word in the capture holds the ground the action started from, but the
+engine's own replay measures the push:
 
-**Placing the phase.** The capture's command-flow byte `ctx[+0x06]` picks one
-of five plans (`SeedPlan`):
+1. A driven action that reaches its phase is run once more on the same stream
+   from `captured - drift` (`RetailBattle::undrift`, any axis moved by at least
+   `UNDRIFT_MIN`).
+2. The second run is kept when it stands the placed combatants nearer their
+   captured pairs than the first (`ground_residual`).
+3. The acting seat's own drift is its approach, whose direction is the heading
+   every framing case subtracts. A seat that walked therefore moves with its
+   **target's** drift (the pair keeps the first run's geometry); a caster that
+   stood stays put.
+4. A capture past the end signal is not re-run: the win pose's own travel is not
+   a push the capture holds twice.
+
+### Rewards already granted
+
+A capture on the results frame or after it (`SpanGate::Results` / `Exit`) holds
+the party past the EXP grant and the level-up applier `FUN_801E9504`. The seed
+replays the fight, which grants again, so `RetailObs` takes the grant back first.
+
+| Grant | How the capture shows it | Take-back |
+|---|---|---|
+| EXP + level-up | every living member holds the share `gp+0xA04`; a levelled member's record stat window `+0x11C..+0x12D` differs from the live window it is mirrored into one phase later | `retail_compare_battle::ungrant_results_rewards`: remove the share, restore the live values, lower the level byte by one (`noa_levelup_banner`) |
+| Magic level-up | the summon return's level check `FUN_801E70BC` bumps the cast spell's level byte and stores the banner element `0x65` on `ctx[+0x26]` (`0x801E723C`), which the next action seed clears | `retail_compare_battle::ungrant_magic_level_up`: lower that spell's level on the acting member's record by one, leave its XP so the replayed cast levels it again (`shiny_refactor_gimard_levelup`) |
+
+Without the take-back the replay grants nothing the second time and the engine
+frame shows no "level increased" line or banner.
+
+### Field script state and surprise openings
+
+- **A parked dialogue.** A settled field carries its script state into the
+  fight: in `nilboa` the settle leaves the Nivora duel's dialogue parked on a
+  text page when the encounter is forced. Retail cannot show that box over a
+  fight - its pager `FUN_801D84D0` lives in the field overlay (PROT 0897, slot
+  A), which the battle overlay replaces. The engine matches:
+  `World::script_dialog_panel`, which both hosts draw the box from, answers
+  `None` in battle mode.
+- **Render-coupled clip ends.** A battle clip's end is read off the window's
+  pose sampling, so an effect-script spawn can land a few ticks apart between
+  the headless seed and the child (the Delilas Spirit band `0x47`). Compare a
+  per-tick trace of `World::rng_state` and the action SM from both sides to
+  find such a split.
+- **Surprise openings.** A seed whose entry rolled a formation advantage
+  (`ctx+0x290` / its latch `+0x291`: a back attack or a pre-emptive strike) is
+  passed over, except on an opening capture
+  (`EngineBattle::surprise_opening`). A capture of a running fight is not its
+  opening round, and a surprise opening hands one side a round of swings
+  between the HP / MP the seed wrote and the replayed action, which reads as an
+  HP miss.
+
+### Placing the phase
+
+The capture's command-flow byte `ctx[+0x06]` picks one of five plans
+(`SeedPlan`):
 
 | Retail `ctx[+0x06]` | Plan | What the engine runs |
 |---|---|---|
@@ -830,42 +844,54 @@ of five plans (`SeedPlan`):
 | `0xFF`, summon band | cast | the capture's cast replayed ([below](#replayed-casts)) |
 | `0xFF`, anything else | action | the pad path through rounds until the action SM holds `ctx[+0x07]` on seat `ctx[+0x13]` |
 
-The entry band is everything below the round prompt: `0xFD` is SCUS battle
-init's own store (`FUN_80055B6C`, `sb v0,0x6(v1)` at `0x80055FA8`, before the
-overlay's init writes `0x00`), `0x0A` / `0x0B` the intro timer, `0x0C` the boss
-stage module's baton, `0x14` the one-frame turn setup
-([battle](../subsystems/battle.md#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing)).
+**The entry band** is everything below the round prompt
+([battle](../subsystems/battle.md#the-battle-open-flow---ctx0x06-from-the-intro-timer-to-the-first-swing)):
+
+| `ctx[+0x06]` | Meaning |
+|---|---|
+| `0xFD` | SCUS battle init's own store (`FUN_80055B6C`, `sb v0,0x6(v1)` at `0x80055FA8`), before the overlay's init writes `0x00` |
+| `0x0A` / `0x0B` | the intro timer |
+| `0x0C` | the boss stage module's baton |
+| `0x14` | the one-frame turn setup |
+
 Every value decodes to the engine's `Idle`, so an opening capture is compared
 with the engine before its own opening has run, and its frame is taken there
 too (`BattleDrive::Opening`): the first battle frame whose monsters are bound,
 and for a capture past the intro timer (`0x0C` / `0x14`) the first one whose
-enemy-name labels have cleared, rather than a fixed tick past the round
-prompt - a surface retail had not reached. That comparison is only as
-good as the engine's opening: the port does not park its command flow on the
-intro timer (`battle::intro_names` - the round prompt opens with the names
-still up, which the recorded replays pace off), so an ordinary fight holds its
-prompt already at the flip and an opening capture of one reads `phase` `0`.
-The corpus's opening captures are all the sparring fight, whose opening the
-tutorial holds back. Their `camera` reads the
+enemy-name labels have cleared.
+
+That comparison is only as good as the engine's opening. The port does not park
+its command flow on the intro timer (`battle::intro_names` - the round prompt
+opens with the names still up, which the recorded replays pace off), so an
+ordinary fight holds its prompt already at the flip and an opening capture of
+one reads `phase` `0`. The corpus's opening captures are all the sparring
+fight, whose opening the tutorial holds back.
+
+**The entry sweep.** An opening capture's `camera` reads the
 [battle-entry sweep](../subsystems/battle.md#the-battle-entry-sweep) the SCUS
-frame driver runs before the battle tick: `v0_1_battle_loading_tetsu` (`0xFD`)
-holds pitch `60`, `TR (0, 1472, 6912)` and `s5_tetsu_battle` (`0x00`) pitch
-`16`, `TR (0, 2010, 3552)`. The driver's entry counter `gp+0x330` says how far
-in each is (`0x84` and `0xAF`), so an opening capture is taken once the
-engine's own sweep has run as far (`entry_sweep_reached`; the counter rides
-the drive as `opening,<swept>,<counter>`), and a counter of `0xFF` - the sweep
-over - waits for the engine's to end. Every other battle capture was taken
-after the sweep, since retail's battle tick opens no prompt under it, while
-the engine's prompt opens at the flip: the seed waits the engine's sweep out
-before it counts the first prompt, the in-flight cast seed dispatches only
-once it is over, and the image child's pad drive holds until then.
+frame driver runs before the battle tick. The driver's entry counter `gp+0x330`
+says how far in each capture is:
+
+| State | `ctx[+0x06]` | `gp+0x330` | Pitch | `TR` |
+|---|---|---|---|---|
+| `v0_1_battle_loading_tetsu` | `0xFD` | `0x84` | `60` | `(0, 1472, 6912)` |
+| `s5_tetsu_battle` | `0x00` | `0xAF` | `16` | `(0, 2010, 3552)` |
+
+An opening capture is taken once the engine's own sweep has run as far
+(`entry_sweep_reached`; the counter rides the drive as
+`opening,<swept>,<counter>`), and a counter of `0xFF` - the sweep over - waits
+for the engine's to end. Every other battle capture was taken after the sweep,
+since retail's battle tick opens no prompt under it, while the engine's prompt
+opens at the flip. So the seed waits the engine's sweep out before it counts
+the first prompt, the in-flight cast seed dispatches only once it is over, and
+the image child's pad drive holds until then.
 
 A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a
 `battle not seedable:` reason and counted as a classified limit, not as a
 seed failure.
 
-**Battle channels.**
+### Battle channels
 
 | Channel | Score |
 |---|---|
@@ -874,31 +900,28 @@ seed failure.
 | `phase` | 1 when the engine's command-flow state equals retail's `ctx[+0x06]` decoded to the engine's band - and, for a replayed or driven action, the same action-SM state on the same seat; for a driven menu, the same member |
 | `bgm` | retail's track word against the field track the engine will resume ([below](#the-track-word-in-battle)) |
 
-A state the manifest tags with a `resident_patch` was made on a patched disc
-and replays that build's executable; its `enemy_hp` / `battle_party` details
-say so, since what the patch writes into a combatant is not retail behaviour.
-One patch effect is recognised and left unscored rather than flagged: under
-a `shiny-seru` resident patch, a monster maximum that reads exactly the
-boost's `x135/100` (truncated) over the engine's disc value is the patch's
-write at battle init, and is listed in the detail like a probe's write
-below. The three `shiny_refactor_gimard_*` states hold `133` over the disc's
-`99` HP and `27` over `20` MP; scored, they read `enemy_hp` `0.5` for a
-difference no retail disc produces. Any other difference on those states
-still scores.
-
-A state whose capture probe wrote into a combatant **after** battle init names
-those fields in the manifest's `ram_injected` (`p0.mp_max`), and the battle
-channels leave them unscored, with both values in the detail. Battle init
-copies each party record's maxima into its actor once (`FUN_80053CB8`), so a
-record poked later carries the probe's value while the actor keeps the copy:
-`evolved_0x90_midcast` / `_0x91_midcast` (`autorun_evolved_cast.lua`) grant
-`999` MP into Vahn's record (`+0x108` / `+0x10A` / `+0x11E`) over an actor whose
-`+0x152` still reads `27`, and the engine, seeded from the record, reads `999`.
-
 `scene`, `mode` (engine `Battle`), `camera`, `flags`, `inventory` and `image`
 keep their field meaning. HP / MP current values are seeded, so their misses
 are what the settle window changed; the max values are the real check
 (record-derived on the party, archive-derived on the monsters).
+
+Two kinds of state carry fields the battle channels leave **unscored**, with
+both values listed in the detail:
+
+- **`resident_patch` states** were made on a patched disc and replay that
+  build's executable; their `enemy_hp` / `battle_party` details say so. One
+  patch effect is recognised rather than flagged: under a `shiny-seru` resident
+  patch, a monster maximum that reads exactly the boost's `x135/100` (truncated)
+  over the engine's disc value is the patch's write at battle init. The three
+  `shiny_refactor_gimard_*` states hold `133` over the disc's `99` HP and `27`
+  over `20` MP. Any other difference on those states still scores.
+- **`ram_injected` fields** (`p0.mp_max`) name what a capture probe wrote into a
+  combatant **after** battle init. Battle init copies each party record's maxima
+  into its actor once (`FUN_80053CB8`), so a record poked later carries the
+  probe's value while the actor keeps the copy: `evolved_0x90_midcast` /
+  `_0x91_midcast` (`autorun_evolved_cast.lua`) grant `999` MP into Vahn's record
+  (`+0x108` / `+0x10A` / `+0x11E`) over an actor whose `+0x152` still reads `27`,
+  and the engine, seeded from the record, reads `999`.
 
 ### Driving to the phase
 
