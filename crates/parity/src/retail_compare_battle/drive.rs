@@ -347,6 +347,12 @@ pub(super) fn capture_accum_done(
         .is_none_or(|c| c.close_up_accum() >= u32::from(want))
 }
 
+/// How far apart the engine's yaw counter `ctx[+0x6DA]` and a capture's may
+/// stand and still be the same rung of the per-action ladder read at another
+/// instant (`BattleDrive::steer`): under half the `0x80` between the nearest
+/// rungs (`0x200` / `0x280`), about a second of drift.
+const YAW_CLOCK_SLACK: i32 = 0x3F;
+
 /// Whether the engine's yaw counter has run as far through `0x6E` as
 /// retail's `yaw` (`ctx[+0x6DA]`) says retail's did: the capture's value
 /// less the `0x6F` frames still to come (the depth ramps `16` a display
@@ -927,6 +933,20 @@ impl BattleDrive {
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.align_action_yaw_half(i32::from(yaw));
+                // The counter's drift is a clock from the seat's seed pass
+                // (`max(1, 4 * frame_step / 3)` an SM pass, `0x801E29E4`),
+                // so how far it has run by the capture is the frame-step
+                // and CD-wait history of retail's passes. In the capture's
+                // own state, a counter within the clock's slack of retail's
+                // reads retail's; a wrong rung of the ladder (they stand
+                // `0x80` apart at the nearest) stays the engine's. The
+                // capture band gates on the counter instead.
+                if state == want && !matches!(end, SpanGate::CaptureFade { .. }) {
+                    let d = (cam.action_yaw_base() - i32::from(yaw)).rem_euclid(0x1000);
+                    if d.min(0x1000 - d) <= YAW_CLOCK_SLACK {
+                        cam.set_action_yaw_base(i32::from(yaw));
+                    }
+                }
                 if let Some(coin) = steer.coin {
                     cam.align_phase_cursor(coin);
                 }

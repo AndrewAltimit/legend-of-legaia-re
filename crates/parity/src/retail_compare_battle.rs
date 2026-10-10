@@ -185,6 +185,10 @@ pub struct Combatant {
     pub mp_max: u16,
 }
 
+/// One pool slot as the capture held it: the live pair `+0x34` / `+0x38`,
+/// the body pair `+0x3C` / `+0x40` and the current clip `+0x1D9`.
+pub type CapturedActor = ([i16; 2], [i16; 2], u8);
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
@@ -306,6 +310,17 @@ pub struct RetailBattle {
     /// Each pool slot's live `+0x34` / `+0x38` pair (party `0..=2`,
     /// monsters `3..=7`), `None` for an empty slot.
     pub ground: Vec<Option<[i16; 2]>>,
+    /// The system flags the fight's own record raised on its way into the
+    /// entry op and the capture therefore holds ([`entry_latches`]): held
+    /// back from the scene entry the seed runs and raised once the field
+    /// has settled, where retail's record raised them. Empty as read; the
+    /// corpus run fills it.
+    pub entry_latches: Vec<u16>,
+    /// Each pool slot's captured live pair, body pair `+0x3C` / `+0x40` and
+    /// current clip `+0x1D9`, as read - [`Self::ground`] is what a seed
+    /// places and [`Self::undrift`] moves it; this is what the capture
+    /// held. The post-strike framings read the body pair (cases 7 and 8).
+    pub captured: Vec<Option<CapturedActor>>,
     /// Each pool slot's heading `+0x46` (12-bit), beside [`Self::ground`]:
     /// the attack band's facing recompute stores it every frame of a
     /// swing and nothing turns the actor back, so a member stands facing
@@ -1431,6 +1446,20 @@ impl RetailBattle {
                 .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
+            entry_latches: Vec::new(),
+            captured: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    let h = |o: u32| game_anchors::u16_at(ram, p + o) as i16;
+                    in_ram(p).then(|| {
+                        (
+                            [h(0x34), h(0x38)],
+                            [h(0x3C), h(0x40)],
+                            game_anchors::u8_at(ram, p + 0x1D9),
+                        )
+                    })
+                })
+                .collect(),
             ground: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
@@ -1551,6 +1580,10 @@ pub struct EngineBattle {
     /// placed (`[x, z]`, the phase's ground pair less the seeded one), for
     /// a driven action that reached its phase ([`RetailBattle::undrift`]).
     pub ground_drift: [Option<[i32; 2]>; legaia_engine_core::world::INFLIGHT_GROUND_SLOTS],
+    /// The camera's phase, glide target and origin-alignment mask set
+    /// against the capture's tween endpoints - a diagnostic the `camera`
+    /// detail carries under `LEGAIA_RC_CAM_TRACE`.
+    pub cam_trace: Option<String>,
 }
 
 /// The smallest replay drift, on either axis, [`RetailBattle::undrift`]
@@ -1750,6 +1783,60 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
         .collect()
 }
 
+/// The system flags a scripted fight's capture holds only because the
+/// record that entered the fight raised them on its way into the entry op:
+/// every `SET` within the battle-entry window of the `3E FF <row>` that
+/// names the capture's formation row
+/// (`man_field_scripts::walk_battle_entry_arms`), where the capture's save
+/// holds the flag.
+///
+/// Retail raised them **after** its scene entry ran, in the talk or
+/// cutscene that staged the fight. A seed that lands the save with them
+/// already up hands them to the entry script, and where the entry reads
+/// one as "back from that fight" it runs the return instead: `town01`'s
+/// init tests `0x23C`, clears it and engages Tetsu's post-fight scene,
+/// whose hold keeps the system loop from re-selecting the region band;
+/// `nilboa`'s picks its track off the duel-return markers and clears them.
+/// The seed holds them back from the landing and raises them once the field
+/// has settled ([`RetailBattle::entry_latches`]).
+///
+/// Lands the save once to read the scene's arms and match the row. The
+/// pairing is the gate: a row no record enters has no arm. (The context's
+/// scripted bit is not one - the sparring fight and the Rim Elm Gimard
+/// read it clear.)
+pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle) -> Vec<u16> {
+    let Some(save) = retail.save.clone() else {
+        return Vec::new();
+    };
+    let held = crate::retail_compare::system_flag_ids(&save);
+    let cfg = BootConfig {
+        scene: retail.scene.clone(),
+        enable_audio: false,
+    };
+    let Ok(mut session) = BootSession::open(extracted, &cfg) else {
+        return Vec::new();
+    };
+    let opts = FieldLiveOpts {
+        live_loop: true,
+        player_battle: true,
+        ..Default::default()
+    };
+    let _landing = session.resume_save(save, &retail.scene, &opts);
+    let world = &session.host.world;
+    let Some(row) = matching_row(world, &battle.monster_ids) else {
+        return Vec::new();
+    };
+    let mut out: Vec<u16> = world
+        .scene_battle_entry_arms
+        .iter()
+        .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
+        .map(|a| a.flag)
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 /// Seed the engine into `retail`'s battle and sample it.
 pub fn run_engine_battle(
     extracted: &Path,
@@ -1770,10 +1857,13 @@ pub fn run_engine_battle(
         player_battle: true,
         ..Default::default()
     };
-    let save = retail
+    let mut save = retail
         .save
         .clone()
         .context("retail state has no liftable save window")?;
+    // The flags the fight's own record raised are not the entry's to read
+    // ([`entry_latches`]).
+    crate::retail_compare::clear_system_flags(&mut save, &battle.entry_latches);
     let _landing = session.resume_save(save, &retail.scene, &opts);
     let mut director = crate::retail_compare::RecordingDirector::default();
     session.host.route_bgm_events(&mut director)?;
@@ -1789,6 +1879,9 @@ pub fn run_engine_battle(
         session.tick()?;
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
+    }
+    for &idx in &battle.entry_latches {
+        session.host.world.system_flag_set(idx);
     }
     let world = &mut session.host.world;
     let source;
@@ -2108,10 +2201,58 @@ pub fn run_engine_battle(
     // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`). Pad drives
     // only: a replayed cast's close-ups and module shots measured worse
     // aligned (`flute_spikefish_midcast` image `.910` to `.828`).
+    let mut cam_trace = None;
+    if std::env::var_os("LEGAIA_RC_CAM_TRACE").is_some()
+        && let Some(cam) = session.host.world.battle.camera.as_ref()
+    {
+        let p = |p: legaia_engine_vm::battle_cam_script::BattleCamPose| {
+            format!(
+                "{}/{} tr={:?} focus={:?}",
+                p.pitch,
+                p.yaw.rem_euclid(4096.0),
+                p.tr,
+                p.focus
+            )
+        };
+        cam_trace = Some(format!(
+            "{:?} gliding={} | engine pose {} | engine target {} | retail live {} | retail end {}",
+            cam.phase(),
+            cam.is_gliding(),
+            p(cam.framing_pose()),
+            p(cam.glide_target()),
+            p(battle.cam_tween.0),
+            p(battle.cam_tween.1)
+        ));
+    }
     if matches!(driven, Some(Some(_)))
         && let Some(cam) = session.host.world.battle.camera.as_mut()
     {
-        cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
+        let mask = cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
+        if let Some(t) = cam_trace.as_mut() {
+            t.push_str(&format!(" | aligned {mask:#010b}"));
+        }
+    }
+    if let Some(t) = cam_trace.as_mut() {
+        let pc = usize::from(battle.party_count);
+        let world = &session.host.world;
+        for (slot, a) in world.actors.iter().enumerate() {
+            let pool = if slot < pc { slot } else { 3 + (slot - pc) };
+            let Some((live, body, clip)) = battle.captured.get(pool).copied().flatten() else {
+                continue;
+            };
+            if slot >= pc + usize::from(battle.monster_count) {
+                continue;
+            }
+            t.push_str(&format!(
+                " | slot {slot}: retail {live:?} body {body:?} facing {:?} clip {clip:#04X}, engine ({}, {}) body {:?} facing {} clip {:#04X}",
+                battle.facing.get(pool).copied().flatten(),
+                a.move_state.world_x,
+                a.move_state.world_z,
+                a.battle.seat,
+                a.battle.facing_angle & 0xFFF,
+                world.battle_current_anim(slot)
+            ));
+        }
     }
     let world = &session.host.world;
     // How far the drive moved each placed combatant: a capture of a running
@@ -2167,6 +2308,7 @@ pub fn run_engine_battle(
         battle_bgm: snap.battle_bgm,
         save: snap.save,
         ground_drift,
+        cam_trace,
     })
 }
 
@@ -2481,6 +2623,27 @@ fn run_drive(
         if world.mode != SceneMode::Battle {
             break;
         }
+        if std::env::var_os("LEGAIA_RC_POS_TRACE").is_some() && world.mode == SceneMode::Battle {
+            eprintln!(
+                "[pos] t={t} act={} st=0x{:02X} {}",
+                world.battle_ctx.active_actor,
+                world.battle_ctx.action_state,
+                (0..world.actors.len().min(4))
+                    .map(|i| {
+                        let a = &world.actors[i];
+                        format!(
+                            "| {i}: ({}, {}) b{:?} f{} c{:#04X} tgt{} ",
+                            a.move_state.world_x,
+                            a.move_state.world_z,
+                            a.battle.seat,
+                            a.battle.facing_angle & 0xFFF,
+                            world.battle_current_anim(i),
+                            a.battle.active_target
+                        )
+                    })
+                    .collect::<String>()
+            );
+        }
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
@@ -2627,7 +2790,7 @@ fn combatant_score(
     }
     if !skipped.is_empty() {
         d.push_str(&format!(
-            "; not scored, written by the capture probe: {}",
+            "; not scored, written by the capture probe or a resident patch: {}",
             skipped.join(", ")
         ));
     }
@@ -2746,7 +2909,10 @@ pub fn compare_battle(
             engine.prompt_tick
         ),
     );
-    let (s, d) = camera_score(&retail.camera, &engine.camera);
+    let (s, mut d) = camera_score(&retail.camera, &engine.camera);
+    if let Some(t) = &engine.cam_trace {
+        d.push_str(&format!("; [{t}]"));
+    }
     put("camera", s, d);
     put(
         "bgm",

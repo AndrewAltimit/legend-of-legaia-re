@@ -529,6 +529,13 @@ impl BattleCamera {
         !self.glides.is_empty()
     }
 
+    /// The pose the glide in flight is heading for (the current pose when
+    /// none is) - what the retail comparison corpus sets against a
+    /// capture's tween-table endpoints.
+    pub fn glide_target(&self) -> BattleCamPose {
+        self.glides.front().map_or(self.pose, |g| g.target)
+    }
+
     /// Phase-align the idle orbit's clock: set the free-running azimuth to
     /// `yaw` (12-bit units). Applies only where the orbit owns yaw - the
     /// [`BattleCamPhase::Menu`] far framing with no yaw glide in flight - and

@@ -542,15 +542,7 @@ impl RetailObs {
     /// its track on one.
     pub fn seed_save(&self) -> Option<legaia_save::SaveFile> {
         let mut save = self.save.clone()?;
-        for idx in self.seed_latches() {
-            if let Some(b) = save
-                .ext
-                .story_flag_bits
-                .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
-            {
-                *b &= !(0x80u8 >> (idx & 7));
-            }
-        }
+        clear_system_flags(&mut save, &self.seed_latches());
         Some(save)
     }
 
@@ -1150,6 +1142,19 @@ const SYSTEM_FLAG_WINDOW: usize = 0x158;
 
 /// Every raised bit of the save's system-flag bank, as the flag ids
 /// `World::system_flag_set` takes (MSB-first within a byte).
+/// Lower the system flags `ids` in a lifted save.
+pub fn clear_system_flags(save: &mut legaia_save::SaveFile, ids: &[u16]) {
+    for &idx in ids {
+        if let Some(b) = save
+            .ext
+            .story_flag_bits
+            .get_mut(SYSTEM_FLAG_WINDOW + usize::from(idx >> 3))
+        {
+            *b &= !(0x80u8 >> (idx & 7));
+        }
+    }
+}
+
 pub fn system_flag_ids(save: &legaia_save::SaveFile) -> Vec<u16> {
     let bits = save
         .ext
