@@ -59,8 +59,8 @@ Each row: `ctx[7]` value, what runs during that frame, and the next state(s). Al
 | `0x17` | Attack - close-range | Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`. | `0x18`. |
 | `0x18` | Attack - strike | Final anim match → falls into the swing apex frame. | `0x1E`. |
 | `0x19` | Attack - short-step (party attackers, and walk-less monsters via the `0x14` fallback) | Idle pose + facing + range recheck. While range > 0 → stays (no movement code, no timeout - see the park section below). Range == 0 → bumps `actor[+0x1DC] |= 1` (windup-done flag) and `actor[+0x16] = 0`. | `0x1E`. |
-| `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
-| `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
+| `0x1E` | **Attack chain - strike loop** | Per-strike counters (`+0x15`/`+0x16`) advancing the attack-script byte stream at `actor[+0x1DF + +0x15]`, with counter-attack redirect and ability-flag impact-step physics. Re-faces the attacker every pass ([below](#the-strike-band-re-faces-the-attacker-every-pass)). Full step body: [Attack chain - strike loop (`0x1E`)](#attack-chain---strike-loop-0x1e). | `0x1F` once the strike-script terminator is hit. |
+| `0x1F` | Attack - recovery wait | `FUN_801D5854(actor, 7 or 8)` (recover-pose; pose 8 if target's anim matched a counter trigger at `s8[+0x1F1]/+0x1F2`). Re-faces the attacker every pass. Waits for `actor[+0x1DC] & 2 == 0`. | `0x20`. |
 | `0x20` | Attack - return | Two holds, then `0x50`. First the **attacker's** committed id: while `actor[+0x1D9] != 0` (`0x801E54EC`) it only re-poses and holds - the wait for the last swing's clip to end, since `0x1F`'s gate opens when that clip *commits* and its hit events (and the combo-total apply) all land after. Then the **target's reaction**: see [the reaction hold](#the-state-0x20-reaction-hold). Each held pass re-poses `FUN_801D5854(actor, 7 or 8)`. Every exit is the one `0x50` store at `0x801E5588`; there is no counter-attack route out. | `0x50` (done) or stays. |
 | `0x28` | **Magic / Item - cast begin** | Resolves bearing + facing, sets the cast timer, looks up the spell-name HUD label, and deducts the (ability-bit-scaled) MP cost; capture-class spells route to `0x6E`. Full step body: [Magic / Item - cast begin (`0x28`)](#magic--item---cast-begin-0x28). | `0x29` (or `0x6E` for capture). |
 | `0x29` | Magic - pre-cast wait | Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_801DBF9C(party, spell_id)` ([the cast trigger](#the-party-cast-trigger-fun_801dbf9c) - anim stream, not outcome). `actor[+0x1E0] == 9` → `0x32` (summon). Then **bumps the stream cursor before reading** (`0x801E4644..0x801E4650`) and stages the byte at `+0x1DA` (`0x801E4664`) - the first anim byte is `+0x1E0`, behind the spell id; a `-1` there clears the stage → `0x50`. Else if spell_id < 0x81: a second bump, `FUN_801DC0A0(party, byte)` (the cast-effect driver), and the id-keyed cues (`0x14C / 0x144 / 0x15E` for ids `0x3F / 0x2C / 0x6A`). | `0x2A`, or `0x32` (summon), or `0x50` (done). |
@@ -3813,6 +3813,36 @@ written by `World::tick_battle_animations` from `World::juggle_window_open`
 after each cursor advance. The damage roll still reads the two terms as zero,
 and the blocked branch's own apply-mode walk (`0x801EE720..0x801EE918`) is the
 port's ordinary apply mode.
+
+#### The strike band re-faces the attacker every pass
+
+States `0x1E` and `0x1F` each end their framing call with the same store the
+approach states make - `actor[+0x46] = (FUN_80019B28(...) + 0x800) & 0xFFF` -
+but with a different first point (`0x801E36F0..0x801E371C` in the strike loop,
+`0x801E3AD0..0x801E3AFC` in the recovery wait):
+
+| States | `a0`, `a1` (the target) | `a2`, `a3` (the attacker) |
+|---|---|---|
+| `0x14`, `0x15`, `0x16`, `0x18`, `0x19` | live pair `+0x38`, `+0x34` | live pair `+0x38`, `+0x34` |
+| `0x1E`, `0x1F` | **body pair** `+0x40`, `+0x3C` | live pair `+0x38`, `+0x34` |
+
+The store sits ahead of the `+0x1DC` bit-1 test (`bne v1,zero` with
+`sh v0,0x46(s3)` in its delay slot), so it runs on every pass, staging or
+holding. An attacker therefore keeps turning onto a target its own hits and
+the separation pass move, and onto the target's pose rather than its feet: a
+body the knockdown clip carries sideways pulls the attacker's heading with
+it. The heading matters past the swing - root motion steps along it, and
+cases 7 and 8 subtract it from the yaw counter.
+
+`player_steal_skeleton_pre` reads Vahn at `484` in `0x1E`, the bearing from
+his live pair `(-195, -214)` to the skeleton's body pair `(20, 20)`.
+
+Port: `battle_action::attack`'s `update_strike_facing`, called by the
+`AttackChain` and `AttackRecovery` arms through
+`BattleActionHost::actor_anchor`. A heading held from the approach turned
+the post-strike shot by however far the target had been moved since: a
+Gimard shoved a hundred units sideways left Vahn `178` units off his
+bearing, and the camera with him.
 
 **The commit turns the defender.** The commit itself (`0x801EEC34..0x801EECBC`)
 skips a zero `s7` and a Stoned defender (`+0x16E & 0x4`), stores `s7` into the
