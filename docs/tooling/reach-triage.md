@@ -46,8 +46,11 @@ dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 5 are
 the reach worklist, every one of which carries a verdict below: `8004629c`
 (b), and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` (d). The three rows
 an earlier figure listed as awaiting a newer union member - `801f2134`,
-`800485bc` and `801dba90` - read entered, and `8004629c`'s gate is
-a single disc carrier (`urudre1` stager record 14) rather than absent content. The
+`800485bc` and `801dba90` - read entered. `8004629c`'s gate was a single disc
+carrier (`urudre1` stager record 14) rather than absent content, and
+`dream_yaw_part_page_ladder` - a member that joined after this union was
+taken, so the figures above do not count it - drives that carrier on the play
+page; the next full export should read it entered and leave the four (d) rows. The
 battle-tutorial countdown arm `801f7628`, a port site the ignore list had
 hidden as interior until the static images took the inherited-tail cut
 ([`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code)),
@@ -1628,7 +1631,7 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b), **converted** | the weapon-trail gate is the committed clip's `+0x77` identity byte, not the move-power record: `FUN_8005112C` fires only on four swing clips (Vahn `0x29`, Noa `0x1E` / `0x2A`, Gala `0x64`), and the earlier reading here borrowed `801e1ab0`'s `+0x0b` gate. On the disc, Vahn's `0x29` is his art-bank clip `0x2B`. `w1c_battle_render_ladder`'s rung 6 seats that clip in a forced fight through the page's `debug_stage_battle_anim` and requires the page to plan and compose the sweep, against the same fight before seating, which plans none. `weapon_trail_prims` is called on both hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`) | `800485bc` |
 | `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`legaia_engine_screens::prize_window_draws`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
-| `gte/math.rs` | 1 | (b) | `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, only for a part whose `+0x52` keeps yaw. One disc word does: `urudre1` stager record 14's `0x0080`, past an ext `0x37` guard a first-`HALT` walk never crossed (`move_ctrl52_census_disc` pins it; [`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)). The gate is the scene: Vahn's dream at Uru Mais installs record 6 from `P2[1]` / `P2[3]` (`34 30 05`), which spawns record 14 through op `0x25`. No ladder visits the dream | `8004629c` |
+| `gte/math.rs` | 1 | (b), **converted** | `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, only for a part whose `+0x52` keeps yaw. One disc word does: `urudre1` stager record 14's `0x0080` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)). `dream_yaw_part_page_ladder` walks the play page onto the dream's walk-on band at tile `(97, 10)`, pages cutscene record `P2[1]` to its `34 30 05`, and composes the sprite-arm quads record 14 spawns through `play_field_fx_sync` | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
 rendering host in the union, every anchored builder read never-entered at

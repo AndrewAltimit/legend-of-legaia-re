@@ -732,6 +732,14 @@ CANONICAL_LADDERS = [
     # `World::active_effect_ribbons`, the list both battle hosts draw.
     # Disc-gated; export WITHOUT `--release`.
     ("effect_ribbon_carriers_real", "legaia-engine-core"),
+    # The camera yaw factor of a camera-relative part (`8004629c`,
+    # `GteMat3::rot_y` under `camera_view_rotation`), which runs only for a
+    # `+0x52` word that skips pitch or roll and keeps yaw. One word on the
+    # disc does: `urudre1` stager record 14's `0x0080`. The page walks onto
+    # the dream's walk-on band, pages cutscene record `P2[1]` to its
+    # `34 30 05`, and composes the spawned sprite-arm quads through
+    # `play_field_fx_sync`.
+    ("dream_yaw_part_page_ladder", "legaia-web-viewer"),
 ]
 CANONICAL_LADDER_NAMES = [name for name, _pkg in CANONICAL_LADDERS]
 
