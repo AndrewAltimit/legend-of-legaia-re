@@ -1,4 +1,5 @@
 use super::*;
+use legaia_asset::baka_opponents::ROUND_WIN_TARGET;
 
 #[test]
 fn tally_stalls_each_row_until_it_has_faded_in() {
