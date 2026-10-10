@@ -533,6 +533,8 @@ NATIVE_GEOMETRY = "crates/engine-shell/src/window/geometry.rs"
 WEB_BOOT_TITLE = "crates/web-viewer/src/boot_title.rs"
 WEB_MINIGAMES_MUSCLE = "crates/web-viewer/src/minigames_muscle/exports.rs"
 WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
+WEB_PLAY_BATTLE_SCREEN_PRIMS = "crates/web-viewer/src/play_battle/screen_prims.rs"
+WEB_PLAY_BATTLE_SESSION_EXPORTS = "crates/web-viewer/src/play_battle/session_exports.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
 NATIVE_REDRAW_PASSES = (
     "crates/engine-shell/src/window/event_handler/redraw_passes.rs"
@@ -933,7 +935,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "emitter through `BattleIntro::arm_for_battle`",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
         },
         "mode": "symbols_all",
         "symbols": ["arm_for_battle"],
@@ -999,7 +1001,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "assertion is on the composer",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_BATTLE, "rebuild_screen_geom"),
+            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "rebuild_screen_geom"),
         },
         "mode": "symbols_all",
         "symbols": ["compose_screen_prims"],
@@ -1016,7 +1018,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "neither host may append a world-decided layer itself",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_BATTLE, "tick_battle_intro"),
+            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "tick_battle_intro"),
         },
         "mode": "symbols_same",
         "symbols": [
@@ -1042,7 +1044,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`SceneHost::battle_intro_style_inputs`",
         "sites": {
             "native": ("crates/engine-shell/src/window/battle/intro.rs", "arm_battle_intro"),
-            "web": (WEB_PLAY_BATTLE, "arm_battle_intro"),
+            "web": (WEB_PLAY_BATTLE_SCREEN_PRIMS, "arm_battle_intro"),
         },
         "mode": "symbols_all",
         "symbols": ["battle_intro_style_inputs"],
@@ -1543,7 +1545,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "reappearing on one host only",
         "sites": {
             "native": (NATIVE_BOOT_CUTSCENE, "tick_boot_ui"),
-            "web": (WEB_PLAY_BATTLE, "game_over_input"),
+            "web": (WEB_PLAY_BATTLE_SESSION_EXPORTS, "game_over_input"),
         },
         "mode": "symbols_all",
         "symbols": ["GameOverOutcome::ReturnToTitle"],

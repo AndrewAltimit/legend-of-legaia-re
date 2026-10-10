@@ -1306,7 +1306,7 @@ builder - a sky dome's panels sweep every azimuth
 ([`host-drift.md`](../tooling/host-drift.md)).
 
 Reproducing a backdrop on the browser host needs no encounter roll:
-`play_battle.rs` exports a wasm `debug_force_battle(row)` mirroring native
+`play_battle/session_exports.rs` exports a wasm `debug_force_battle(row)` mirroring native
 `--battle <ROW>`. Town stages roll no encounters and are otherwise
 unreachable in the browser.
 
