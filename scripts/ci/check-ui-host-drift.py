@@ -845,7 +845,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "and which column the coverage test read. Both scene rebuilds must "
         "install through `ClutWalkAnim::install`",
         "sites": {
-            "native": (NATIVE_FIELD_RENDER, "resolve_ocean_anim"),
+            "native": ("crates/engine-shell/src/window/field_render/terrain.rs", "resolve_ocean_anim"),
             "web": (WEB_RUNTIME, "rebuild_render_state"),
         },
         "mode": "symbols_all",
@@ -1259,7 +1259,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "browser play page (angle-dependently - invisible in a diff and in "
         "any single screenshot taken from the lucky angle)",
         "sites": {
-            "native": (NATIVE_FIELD_RENDER, "compute_coplanar_env_offsets"),
+            "native": ("crates/engine-shell/src/window/field_render/placements.rs", "compute_coplanar_env_offsets"),
             "web": (WEB_PLAY, "build_field_render"),
         },
         "mode": "symbols_all",
@@ -1363,7 +1363,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "index list through `field_ground::crop_indices` on both hosts, "
         "re-issued on the rectangle's `stamp`",
         "sites": {
-            "native": (NATIVE_FIELD_RENDER, "sync_ground_crop"),
+            "native": ("crates/engine-shell/src/window/field_render/floor_wave.rs", "sync_ground_crop"),
             "web": (WEB_PLAY, "field_ground_indices_cropped"),
         },
         "mode": "symbols_all",
