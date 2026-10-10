@@ -126,7 +126,18 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // Retail's battle init zeroes `_DAT_8007B792`; the port opens on the
         // field camera's azimuth, through the shared on-axis guard (a port
         // judgement, `docs/subsystems/battle.md`).
-        entry_yaw: script::battle_entry_yaw(world.locomotion.camera_azimuth),
+        //
+        // The sparring fight keeps retail's zero. Its whole open stands on
+        // it - the entry sweep (`s5_tetsu_battle`: yaw `0` under case 2),
+        // the enemy-name hold, and the side-band's caption close-up
+        // (`v0_1_battle_start_tetsu`: yaw `0`, `TR (0, 0x500, 0x666)`) - and
+        // the lesson prompt then orbits out of it, as every retail fight
+        // does.
+        entry_yaw: if world.battle.stage_id == crate::battle_sideband::STAGE_SPARRING {
+            0.0
+        } else {
+            script::battle_entry_yaw(world.locomotion.camera_azimuth)
+        },
         shake_amplitude: world.camera.shake_amplitude,
         attack: battle_attack_channels(world, world.battle_ctx.active_actor),
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's

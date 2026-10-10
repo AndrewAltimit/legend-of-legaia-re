@@ -1001,6 +1001,11 @@ pub enum SeedPlan {
 /// display frames.
 const ENTRY_SWEEP_TICKS: u32 = 120;
 
+/// Ticks an opening seed of the sparring fight may run past its sweep for
+/// the round start the intro names hold back
+/// (`legaia_engine_core::world::intro_names::INTRO_HOLD_FRAMES` is `0x5A`).
+const SPARRING_OPEN_TICKS: u32 = 160;
+
 /// Whether the engine's battle-entry sweep
 /// ([`legaia_engine_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
 /// has run as far as retail's frame-driver counter `entry` reads: a counter
@@ -2149,6 +2154,20 @@ pub fn run_engine_battle(
                 session.tick()?;
                 session.fog_render_tick();
                 session.host.route_bgm_events(&mut director)?;
+            }
+            // A sparring capture past the intro timer (`0x14`) holds the
+            // side-band's caption and the close-up it selects; the engine
+            // raises it on the round start its open holds back until the
+            // enemy names have gone (`World::sparring_open_held`).
+            if matches!(battle.flow, 0x0C | 0x14) {
+                for _ in 0..SPARRING_OPEN_TICKS {
+                    if !session.host.world.battle.sparring_round_pending {
+                        break;
+                    }
+                    session.tick()?;
+                    session.fog_render_tick();
+                    session.host.route_bgm_events(&mut director)?;
+                }
             }
         }
         (SeedPlan::Cast, Some(gate)) if prompt_tick.is_some() => {

@@ -485,6 +485,11 @@ pub struct BattleState {
     /// [`crate::scene::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
+    /// The sparring fight's first round start is waiting on the battle open
+    /// ([`crate::world::World::sparring_open_held`]): the side-band has not
+    /// yet seen the flow at `0x14`, so its caption is not up. Reset at
+    /// battle entry.
+    pub sparring_round_pending: bool,
     /// The Y angle of the backdrop draw's slot 1, retail `0x800891D2` (the
     /// second row of the per-slot angle table at `0x800891C8`), in 4096ths
     /// of a turn. [`crate::world::World::tick_battle_backdrop_spin`] winds
@@ -803,6 +808,7 @@ impl BattleState {
             stage_id: 0,
             arrival: Default::default(),
             backdrop_rebound: false,
+            sparring_round_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
             vram_moves: Vec::new(),

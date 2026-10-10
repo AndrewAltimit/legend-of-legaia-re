@@ -38,7 +38,9 @@ pub enum BattleDrive {
     /// `swept` is set for a capture whose flow byte is past the intro timer
     /// (`0x0C` / `0x14`): the enemy-name labels `0x0B` sweeps are gone there,
     /// so the frame waits for the engine's own intro names to clear
-    /// (`World::battle.intro_names_frames`).
+    /// (`World::battle.intro_names_frames`) - and, in the sparring fight, for
+    /// the round start they were holding back, which is what raises the
+    /// side-band's caption a `0x14` capture shows.
     ///
     /// `entry` is retail's frame-driver counter `gp+0x330`: the frame also
     /// waits for the engine's battle-entry sweep to run as far
@@ -766,7 +768,13 @@ impl BattleDrive {
             // The first frame whose monsters are drawable: the bodies bind
             // a few ticks after the mode flip.
             Self::Opening { swept, entry } => {
-                let ok = (!swept || world.battle.intro_names_frames == 0)
+                // A sparring capture past the intro timer also holds the
+                // side-band's caption, which the engine raises on the round
+                // start the open was holding back
+                // (`World::sparring_open_held`).
+                let ok = (!swept
+                    || world.battle.intro_names_frames == 0
+                        && !world.battle.sparring_round_pending)
                     && entry_sweep_reached(world, entry)
                     && world.actors.iter().enumerate().all(|(i, a)| {
                         a.battle_monster_id.is_none()

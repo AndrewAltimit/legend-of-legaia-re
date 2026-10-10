@@ -66,6 +66,12 @@ impl World {
     /// REF: FUN_80056208 (called by the frame driver `FUN_80046A20` at
     /// `0x80046D60`, ahead of both battle state machines)
     pub(in crate::world) fn tick_battle_sideband(&mut self) -> bool {
+        // The sparring fight's round start, once the battle open lets the
+        // flow reach `0x14` ([`Self::sparring_open_held`]).
+        if self.battle.sparring_round_pending && !self.sparring_open_held() {
+            self.battle.sparring_round_pending = false;
+            self.begin_battle_round();
+        }
         let inputs = self.battle_sideband_inputs(None);
         let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
         self.apply_battle_sideband(&fx.effects);
@@ -197,6 +203,31 @@ impl World {
         }
     }
 
+    /// Whether the battle open still stands between the sparring fight and
+    /// its first `0x14`. The side-band arms its caption on the flow byte
+    /// reading `0x14` (`FUN_80056208` phase `0`), and retail's flow gets
+    /// there only through the whole open: the frame driver runs the battle
+    /// tick `FUN_801D0748` once its entry counter `gp+0x330` reads `0xFF`
+    /// (`beq a0,v0,0x80047014` at `0x80046EF8`) - after the camera's entry
+    /// sweep - and the tick then walks `0x00 -> 0x0A`, composes the enemy
+    /// names and holds `0x0B` for the intro timer `ctx[+0x6D6]`
+    /// (`0x801D0DE0..0x801D0E58`) before it stores `0x14`. So Tetsu's line
+    /// comes up after the sweep and after his name label has gone, never
+    /// under either: `s5_tetsu_battle` (flow `0x00`, counter `0xAF`) shows
+    /// the bare arena, `v0_1_battle_start_tetsu` (flow `0x14`) the caption
+    /// over the close-up.
+    ///
+    /// The port opens every other fight's round at the flip
+    /// ([`super::intro_names`]); the spar is held to retail's order because
+    /// its caption and the close-up it selects are what the open shows.
+    ///
+    /// REF: FUN_80046A20, FUN_801D0748, FUN_80056208
+    pub fn sparring_open_held(&self) -> bool {
+        self.battle.stage_id == sb::STAGE_SPARRING
+            && self.battle.sideband.phase == 0
+            && (self.battle_entry_sweeping() || self.battle.intro_names_frames > 0)
+    }
+
     /// The side-band's say over a round start (`FUN_801D0748` state `0x14`):
     /// `true` when the round has to wait. The sparring caption holds it
     /// (`ctx[+0x6B0]`, tested at `0x801D0BDC`), and under the arrival the
@@ -204,6 +235,10 @@ impl World {
     pub(in crate::world) fn battle_sideband_holds_round(&mut self) -> bool {
         match self.battle.stage_id {
             sb::STAGE_SPARRING if self.battle.sideband.phase == 0 => {
+                if self.sparring_open_held() {
+                    self.battle.sparring_round_pending = true;
+                    return true;
+                }
                 let inputs = self.battle_sideband_inputs(Some(sb::INTRO_ARM_MODE));
                 let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
                 self.apply_battle_sideband(&fx.effects);
