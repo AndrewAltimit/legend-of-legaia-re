@@ -3,7 +3,7 @@
 
 The browser play page's frame loop (`site/js/play-app.js`, `_frame`) draws
 through one of three branches - an in-world minigame venue, a battle, or the
-field - over ONE `TmdRenderer` (`site/js/webgl-tmd.js`). Several renderer
+field - over ONE `TmdRenderer` (`site/js/webgl-tmd*.js`). Several renderer
 setters store a value the renderer keeps until the next call (the NCLIP cull
 word, the prologue colour grade and depth-cue ramp, the palette-collapse half
 of the grade, the overworld curvature). A setter like that, called inside one
@@ -44,7 +44,13 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-RENDERER_JS = "site/js/webgl-tmd.js"
+# The class body is declared across these files (the first declares the class,
+# the others install methods onto it); the setters are read out of all of them.
+RENDERER_JS = (
+    "site/js/webgl-tmd.js",
+    "site/js/webgl-tmd-frame-state.js",
+    "site/js/webgl-tmd-assembled-scene.js",
+)
 PAGE_JS = "site/js/play-app.js"
 STAGING_FN = "_stageFrameState"
 
@@ -181,11 +187,11 @@ def main() -> int:
     if args.selftest:
         print("selftest: ok")
         return 0
-    renderer_src = (REPO_ROOT / RENDERER_JS).read_text(encoding="utf-8")
+    renderer_src = "\n".join((REPO_ROOT / p).read_text(encoding="utf-8") for p in RENDERER_JS)
     page_src = (REPO_ROOT / PAGE_JS).read_text(encoding="utf-8")
     sticky = sticky_setters(renderer_src)
     if not sticky:
-        print(f"no sticky setters found in {RENDERER_JS} - classifier broken?", file=sys.stderr)
+        print(f"no sticky setters found in {", ".join(RENDERER_JS)} - classifier broken?", file=sys.stderr)
         return 2
     staged = {s for _, s, fn in calls_by_function(page_src) if fn == STAGING_FN}
     findings = audit(renderer_src, page_src)
