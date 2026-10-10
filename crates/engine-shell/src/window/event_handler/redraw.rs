@@ -332,6 +332,9 @@ impl PlayWindowApp {
         if self.battle_vram.is_none() {
             return Vec::new();
         }
+        // `cam` is the FX camera, the battle camera with the stage scale
+        // composed; the layout takes the camera alone.
+        let cam = cam * Mat4::from_scale(Vec3::splat(1.0 / self.battle_stage_scale()));
         let Some((cluster, runs)) = self.battle_value_readout_layout(cam) else {
             return Vec::new();
         };
@@ -399,6 +402,16 @@ impl PlayWindowApp {
         out
     }
 
+    /// The world scale a stage battle's actors and effects are drawn at
+    /// ([`BATTLE_WORLD_SCALE`]); `1` for a fight with no stage mesh.
+    pub(super) fn battle_stage_scale(&self) -> f32 {
+        if self.battle_stage_mesh.is_some() {
+            BATTLE_WORLD_SCALE
+        } else {
+            1.0
+        }
+    }
+
     /// The readout's **layout**, shared by the retail-art emit above and the
     /// font fallback above it: the combo cluster and one run of digit
     /// cells per struck actor, seated through this host's camera.
@@ -453,8 +466,12 @@ impl PlayWindowApp {
         // view-space square over the struck actor's display trio, rising and
         // growing with the ring timer (`battle_numerals::popup_value_cells`,
         // the kernel the browser play page seats through too).
+        // `cam` is the battle camera without the world scale the actor
+        // stage is drawn at; the kernel scales the anchor and keeps the
+        // square's half-extent in view units, as retail's projection does.
         let vp = cam.to_cols_array();
         let world = &self.session.host.world;
+        let world_scale = self.battle_stage_scale();
         let mut runs = Vec::new();
         for p in newest {
             let Some(trio) = world.battle_display_trio(usize::from(p.slot)) else {
@@ -462,7 +479,11 @@ impl PlayWindowApp {
             };
             let age = p.frames_total.saturating_sub(p.frames_remaining);
             let cells = legaia_engine_render::battle_numerals::popup_value_cells(
-                &vp, 1.0, trio, p.amount, age,
+                &vp,
+                world_scale,
+                trio,
+                p.amount,
+                age,
             );
             if !cells.is_empty() {
                 runs.push(cells);

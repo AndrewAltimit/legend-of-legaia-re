@@ -2139,7 +2139,12 @@ every pass, so it moves with the phase of both clips):
   models' own, and the anchor went in unflipped: the run fell through the
   floor and left by the bottom of the stage, so no engine frame of a landed
   hit carried the figure retail's shows at row `32`
-  (`battle_numerals::popup_rect`).
+  (`battle_numerals::popup_rect`). Its size was off the same way round: the
+  square's half-extent is half the ring timer in **view** units, added after
+  the camera matrix has scaled the centre, and it went through the 4x stage
+  scale with the anchor - at the 24-px cap from its fourth frame, where
+  `battle_melee_hit_spark`'s two packet arenas draw one `15` at `18` and
+  then `22` px.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,

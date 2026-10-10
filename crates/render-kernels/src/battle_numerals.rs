@@ -181,12 +181,21 @@ pub fn arts_banner_prims(
 }
 
 /// Project `FUN_801DF6B8`'s view-space square through a host camera:
-/// `vp` is the column-major view-projection matrix the host draws the battle
-/// with, `world_scale` what the host multiplies a PSX world coordinate by
-/// before it. The square's half-extent is laid along the camera's own right
-/// axis (row 0 of `vp`, normalised), which is how a view-space offset reads
-/// in world space; retail's square is square on screen, so the vertical
-/// half-extent is the horizontal one. `None` behind the eye.
+/// `vp` is the column-major view-projection matrix of the battle camera
+/// alone (`legaia_engine_vm::battle_cam_script::battle_vp`, with no model
+/// scale composed), `world_scale` what the host multiplies a PSX world
+/// coordinate by before it. The square's half-extent is laid along the
+/// camera's own right axis (row 0 of `vp`, normalised), which is how a
+/// view-space offset reads in world space; retail's square is square on
+/// screen, so the vertical half-extent is the horizontal one. `None` behind
+/// the eye.
+///
+/// The anchor rides the world scale and the half-extent does not: it is a
+/// view-space length, added after the camera matrix has scaled the centre.
+/// `battle_melee_hit_spark`'s two frame arenas pin it - the `15` over Gimard
+/// is drawn as `18`-wide cells and then `22`-wide ones, the spans half the
+/// ring timer gives at that depth with no scale, where a half-extent taken
+/// through the 4x stage scale is at the 24-px cap from its fourth frame.
 ///
 /// `anchor` is a raw PSX point, `+Y` down, and `vp` is a draw matrix: every
 /// host view-projection ends in the `scale(1, -1, 1)` that cancels the
@@ -224,7 +233,7 @@ pub fn popup_rect(
     if len <= f32::EPSILON {
         return None;
     }
-    let off = half as f32 * world_scale / len;
+    let off = half as f32 / len;
     let (ex, ey) = stage([
         c[0] + right[0] * off,
         c[1] + right[1] * off,
@@ -304,6 +313,35 @@ mod tests {
         assert!(row(8) < row(0), "and climbs: {} then {}", row(0), row(8));
         assert_eq!(row(21), vr::RESTING_TOP_Y);
         assert_eq!(popup_value_cells(&vp, SCALE, trio, 16, 21).len(), 2);
+    }
+
+    /// The numeral's size is the ring timer's, in view units.
+    /// `battle_melee_hit_spark` holds two frames of one `15` in its packet
+    /// arenas - cells `18` wide and then `22` wide (corner spans; the kernel's
+    /// `w` is the span plus one), the later one on the resting row - over
+    /// Gimard's display trio `(-2, -461, 492)` under pitch `0`, yaw `2925`,
+    /// `TR (0, 1298, 3424)`, focus `(-2, 0, 389)`. Those are the spans of
+    /// ring timers `224` and `288` with the half-extent unscaled.
+    #[test]
+    fn a_popup_grows_at_the_ring_timers_view_space_rate() {
+        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 0.0,
+            yaw: 2925.0,
+            tr: [0.0, 1298.0, 3424.0],
+            focus: [-2.0, 0.0, 389.0],
+        };
+        const SCALE: f32 = 4.0;
+        let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
+        let cells = |age: u16| popup_value_cells(&vp, SCALE, [-2.0, -461.0, 492.0], 15, age);
+        assert_eq!(vr::popup_timer(13), 224);
+        assert_eq!(vr::popup_timer(17), 288);
+        let (early, late) = (cells(13), cells(17));
+        assert_eq!((early[0].w, early[0].h), (19, 19));
+        assert_eq!((late[0].w, late[0].h), (23, 23));
+        assert_eq!(late[0].y, vr::RESTING_TOP_Y);
+        // One pitch apart, the units digit to the right.
+        assert_eq!(late[1].x - late[0].x, 23);
     }
 
     fn quad(p: &ScreenPrim) -> ScreenQuad {
