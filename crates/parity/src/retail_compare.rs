@@ -328,6 +328,9 @@ pub struct RetailObs {
     /// (`0x8007BF5D..5F`) - handed to the image child as `LEGAIA_SEAT_CLEAR`
     /// ([`retail_clear_rgb`]).
     pub clear_rgb: Option<[u8; 3]>,
+    /// The dialogue page mark's displayed strip frame ([`retail_page_mark`]),
+    /// handed to the image child as `LEGAIA_SEAT_PAGE_MARK`.
+    pub page_mark: Option<u8>,
     /// The player's heading `+0x26` (retail space, `0` = -Z), when it still
     /// equals the arrival facing `_DAT_80073EFC` the entry script's `4C 3A`
     /// gave it; `None` once the pad has turned the player.
@@ -481,6 +484,9 @@ impl RetailObs {
                 Vec::new()
             },
             clear_rgb: matches!(class, StateClass::Field).then(|| retail_clear_rgb(ram)),
+            page_mark: matches!(class, StateClass::Field | StateClass::WorldMap)
+                .then(|| retail_page_mark(ram))
+                .flatten(),
             // Only while the player still faces the way the entry stood it:
             // after a pad turn the heading is walk history the seat does
             // not replay.
@@ -606,6 +612,9 @@ impl RetailObs {
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
+        }
+        if let Some(f) = self.page_mark {
+            env.push(("LEGAIA_SEAT_PAGE_MARK", f.to_string()));
         }
         if let Some(p) = self.panel {
             env.push(("LEGAIA_SEAT_PANEL", panel_env(&p)));

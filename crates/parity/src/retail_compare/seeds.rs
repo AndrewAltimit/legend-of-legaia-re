@@ -113,6 +113,44 @@ pub fn retail_clear_rgb(ram: &[u8]) -> [u8; 3] {
     [0, 1, 2].map(|i| game_anchors::u8_at(ram, DRAW_ENV_CLEAR + i))
 }
 
+/// The field pager's state word `_DAT_801F2734` (`0x19` = a page waits).
+const PAGER_STATE: u32 = 0x801F_2734;
+/// The pager's automatic-press countdown `_DAT_80073F00`.
+const PAGER_AUTO_PRESS: u32 = 0x8007_3F00;
+/// The cursor sprite primitive's kind-1 frame index / timer
+/// (`0x801C6000 + 4`, `0x801C6010 + 4`; `FUN_8002B994`).
+const PAGE_MARK_FRAME: u32 = 0x801C_6004;
+const PAGE_MARK_TIMER: u32 = 0x801C_6014;
+
+/// Which frame of the dialogue page mark's two-frame strip a field state's
+/// **displayed** frame shows, or `None` when the pager draws no mark (no
+/// page waits, or an automatic press is counting down -
+/// `0x801D9804..0x801D9828`).
+///
+/// The strip flips every sixteen vsyncs of the kind's timer
+/// (`legaia_engine_core::cursor_sprite`), which counts from the first call
+/// at the box's height - time the seed does not replay. The frame on screen
+/// is two game frames older than the RAM, so the timer is taken back by the
+/// lag and the frame with it when that crosses a flip.
+pub fn retail_page_mark(ram: &[u8]) -> Option<u8> {
+    if game_anchors::u32_at(ram, PAGER_STATE) != 0x19
+        || game_anchors::i16_at(ram, PAGER_AUTO_PRESS) > 0
+    {
+        return None;
+    }
+    let frame = game_anchors::u32_at(ram, PAGE_MARK_FRAME);
+    let timer = game_anchors::u32_at(ram, PAGE_MARK_TIMER) as i32;
+    if frame > 1 || !(0..16).contains(&timer) {
+        return None;
+    }
+    let lag = 2 * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    Some(if timer < lag {
+        frame as u8 ^ 1
+    } else {
+        frame as u8
+    })
+}
+
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 pub(super) const PART_TICK: u32 = 0x8002_1DF4;
 

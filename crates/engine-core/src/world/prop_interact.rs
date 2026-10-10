@@ -275,7 +275,11 @@ impl World {
             // on this frame's tick is shown first and commits on a later
             // confirm, so a mashed confirm never picks option 0 unseen.
             let menu_was_open = panel.menu_active();
-            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+            panel.tick_at_auto_drawn(
+                self.clock.frame_step,
+                &mut self.dialog.auto_press,
+                &mut self.dialog.cursor_sprites,
+            );
             // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();

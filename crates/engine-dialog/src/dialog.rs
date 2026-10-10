@@ -327,6 +327,16 @@ pub struct OwnedDialogPanel {
     /// decoded against (hosts install it after construction, so rows are
     /// re-decoded when it changes).
     decoded_subs: Option<usize>,
+    /// The page mark this pager call drew ([`Self::advance_icon`]): its strip
+    /// frame, or `None` when the call drew none. Meaningful once
+    /// [`Self::cursor_driven`] is up.
+    advance_icon: Option<u8>,
+    /// The option hand's idle bob on this pager call ([`Self::picker_hand_bob`]).
+    hand_bob: i32,
+    /// A pager call has run the cursor primitive for this panel
+    /// ([`Self::tick_at_auto_drawn`]); until then the mark is the static
+    /// frame 0 of a panel nobody animates.
+    cursor_driven: bool,
 }
 
 /// One line of a pager page, decoded once: each glyph with the reveal units
@@ -426,6 +436,9 @@ impl OwnedDialogPanel {
             menu_opens_at_wait: false,
             auto_pressed: false,
             decoded_subs: None,
+            advance_icon: None,
+            hand_bob: 0,
+            cursor_driven: false,
         }
     }
 
@@ -920,6 +933,85 @@ impl OwnedDialogPanel {
             }
         }
         st
+    }
+
+    /// [`Self::tick_at_auto`] plus the pager call's two cursor sprites, run
+    /// through the shared primitive state `cursors`
+    /// ([`crate::cursor_sprite`]) as retail's draw tail runs them:
+    ///
+    /// * the **page mark** (kind `1`, mode `1`) at
+    ///   `(0x10A, box_y + rows*0xF - 0x13)`, only while the pager sits in state `0x19` **and** the
+    ///   automatic-press countdown `_DAT_80073F00` is not running
+    ///   (`0x801D9804..0x801D985C`: `bne state,0x19` then `bgtz` on the
+    ///   countdown) - a page a script turns by itself never shows the mark;
+    /// * the **option hand** (kind `0`, mode `1`) on the selected row once
+    ///   the picker's slide rests (`0x801D9BB4..0x801D9BE0`).
+    ///
+    /// Read the results through [`Self::advance_icon`] and
+    /// [`Self::picker_hand_bob`].
+    ///
+    /// PORT: FUN_801D84D0 (draw tail: page-mark gate `0x801D9804..0x801D985C`, option hand `0x801D9BB4..0x801D9BE0`)
+    pub fn tick_at_auto_drawn(
+        &mut self,
+        frame_step: u8,
+        auto_press: &mut i16,
+        cursors: &mut crate::cursor_sprite::CursorSprites,
+    ) -> PanelState {
+        let pager_call = self.window.is_some() && self.vsync_phase == 0;
+        let st = self.tick_at_auto(frame_step, auto_press);
+        if !pager_call {
+            return st;
+        }
+        self.cursor_driven = true;
+        let dt = frame_step.max(1);
+        let waits = (self.waiting_for_input || self.done) && !self.menu_active;
+        self.advance_icon = if waits && *auto_press <= 0 && !self.auto_pressed {
+            let rows = self.box_rows().unwrap_or(0) as i16;
+            Some(
+                cursors
+                    .call(
+                        crate::cursor_sprite::KIND_PAGE_MARK,
+                        0x10A,
+                        0x10 + rows * 0xF - 0x13,
+                        dt,
+                    )
+                    .frame,
+            )
+        } else {
+            None
+        };
+        self.hand_bob = match self.picker_rect().filter(|_| self.picker_hand_drawn()) {
+            Some((x, y, _, _)) => {
+                cursors
+                    .call(
+                        crate::cursor_sprite::KIND_HAND,
+                        (x - 6) as i16,
+                        (y + self.picker_cursor as i32 * 0xF) as i16,
+                        dt,
+                    )
+                    .dx
+            }
+            None => 0,
+        };
+        st
+    }
+
+    /// The page mark to draw at the box's lower-right rim: `Some(frame)` of
+    /// the two-frame strip ([`crate::cursor_sprite::CURSOR_RECORDS`] kind
+    /// `1`), `None` when the pager draws none. A panel no pager call has
+    /// animated (the plain-MES paths, a host ticking [`Self::tick`] itself)
+    /// answers the still frame `0` while it waits for a press.
+    pub fn advance_icon(&self) -> Option<u8> {
+        if self.cursor_driven {
+            return self.advance_icon;
+        }
+        ((self.waiting_for_input || self.done) && !self.menu_active).then_some(0)
+    }
+
+    /// The option hand's idle bob in stage pixels (X), `0` while no pager
+    /// call animates it.
+    pub fn picker_hand_bob(&self) -> i32 {
+        self.hand_bob
     }
 
     /// Whether the automatic press fired on the last [`Self::tick_at_auto`];
@@ -1835,6 +1927,47 @@ mod tests {
     /// The automatic press counts down only while the page waits, by the
     /// frame step once per pager call, and presses on the call that takes
     /// it to zero or below (`0x801D8F4C..0x801D8F88`).
+    /// The pager draws the page mark only in the wait and only while no
+    /// automatic press counts down (`0x801D9804..0x801D9828`), and the mark
+    /// flips frames every sixteen vsyncs.
+    #[test]
+    fn the_page_mark_shows_in_the_wait_and_hides_under_an_automatic_press() {
+        use crate::cursor_sprite::CursorSprites;
+        let inline = vec![0x1F, b'a', 0x00, 0x24, 0x1F, b'b', 0x00, 0x25];
+        // A page the player turns: no mark while it types, then the strip.
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        let mut cursors = CursorSprites::default();
+        let mut auto = 0i16;
+        while !panel.is_waiting_for_input() {
+            assert_eq!(panel.advance_icon(), None, "no mark while typing");
+            panel.tick_at_auto_drawn(2, &mut auto, &mut cursors);
+        }
+        assert_eq!(panel.advance_icon(), Some(0));
+        let mut frames = Vec::new();
+        for _ in 0..64 {
+            panel.tick_at_auto_drawn(2, &mut auto, &mut cursors);
+            frames.push(panel.advance_icon().expect("the mark stays up"));
+        }
+        assert!(frames[..14].iter().all(|f| *f == 0), "{frames:?}");
+        assert!(frames[16..30].iter().all(|f| *f == 1), "{frames:?}");
+        assert!(frames[32..46].iter().all(|f| *f == 0), "{frames:?}");
+
+        // A page a script turns: the countdown hides the mark throughout.
+        let mut panel = OwnedDialogPanel::from_inline_dialog(&inline).unwrap();
+        let mut cursors = CursorSprites::default();
+        let mut auto = 21i16;
+        let mut vsyncs = 0;
+        loop {
+            panel.tick_at_auto_drawn(2, &mut auto, &mut cursors);
+            assert_eq!(panel.advance_icon(), None, "vsync {vsyncs}");
+            if panel.take_auto_press() {
+                break;
+            }
+            vsyncs += 1;
+            assert!(vsyncs < 256, "the press never fired");
+        }
+    }
+
     #[test]
     fn the_automatic_press_counts_down_in_the_wait_and_fires_once() {
         let inline = vec![0x1F, b'a', 0x00, 0x24, 0x1F, b'b', 0x00, 0x25];

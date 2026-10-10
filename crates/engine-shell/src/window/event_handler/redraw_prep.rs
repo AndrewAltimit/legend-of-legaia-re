@@ -92,6 +92,9 @@ impl PlayWindowApp {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;
             }
+            if due && let Some(f) = sc.seat_page_mark {
+                self.session.host.world.seat_page_mark_frame(f);
+            }
             if due && let Some(p) = sc.seat_panel {
                 let world = &mut self.session.host.world;
                 let mut fx = std::mem::take(&mut world.presentation.fx);

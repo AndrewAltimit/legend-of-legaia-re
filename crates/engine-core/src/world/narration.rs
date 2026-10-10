@@ -569,6 +569,23 @@ impl World {
                 .any(|tl| tl.dialog.is_some())
     }
 
+    /// The page mark `panel` draws this frame: its strip frame, or `None`
+    /// when the pager draws none ([`crate::dialog::OwnedDialogPanel::advance_icon`]).
+    /// A seated frame ([`Self::seat_page_mark_frame`]) replaces the panel's
+    /// own while the mark is up.
+    pub fn page_mark_frame(&self, panel: &crate::dialog::OwnedDialogPanel) -> Option<u8> {
+        panel
+            .advance_icon()
+            .map(|f| self.dialog.page_mark_seat.unwrap_or(f))
+    }
+
+    /// Seat the page mark's strip frame for the frames that follow - the
+    /// retail comparison's phase alignment: which of the two frames is up is
+    /// vsyncs since the box first waited, which a seed does not replay.
+    pub fn seat_page_mark_frame(&mut self, frame: u8) {
+        self.dialog.page_mark_seat = Some(frame & 1);
+    }
+
     /// The dialog box a script context is showing: the modal timeline's when
     /// it has one, else the first concurrent helper's. Retail has one shared
     /// box, so hosts draw exactly this one
@@ -761,7 +778,11 @@ impl World {
         // One-frame rule (see `step_inline_dialogue`): a menu that opened
         // on this tick is shown before any confirm can commit it.
         let menu_was_open = panel.menu_active();
-        panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+        panel.tick_at_auto_drawn(
+            self.clock.frame_step,
+            &mut self.dialog.auto_press,
+            &mut self.dialog.cursor_sprites,
+        );
         // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
         // confirm the player did not make.
         let confirm = confirm || panel.take_auto_press();

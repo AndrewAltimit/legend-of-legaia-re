@@ -56,7 +56,10 @@ struct DialogSnapshot {
     picker_rect: Option<StageRect>,
     /// The option hand is drawn (the slide rests).
     picker_hand: bool,
-    waiting: bool,
+    /// The option hand's idle bob (X, stage pixels).
+    hand_bob: i32,
+    /// The page mark's strip frame, `None` when the pager draws none.
+    advance_icon: Option<u8>,
 }
 
 /// A stage-pixel centre rect `(x, y, w, h)`.
@@ -109,9 +112,8 @@ fn from_panel(
         cursor,
         picker_rect: panel.picker_rect(),
         picker_hand: panel.picker_hand_drawn(),
-        // The advance hand shows at a page break AND on the final fully-typed
-        // page (retail waits for a confirm on both).
-        waiting: panel.is_waiting_for_input() || panel.is_done(),
+        hand_bob: panel.picker_hand_bob(),
+        advance_icon: panel.advance_icon(),
     })
 }
 
@@ -299,18 +301,18 @@ impl LegaiaRuntime {
                 if snap.picker_hand {
                     sprites.push(ui::dialog_option_hand_sprite(
                         rects,
-                        (prect.0, prect.1),
+                        (prect.0 + snap.hand_bob, prect.1),
                         snap.cursor,
                         origin,
                         scale,
                     ));
                 }
-            } else if snap.waiting {
-                // Page-advance hand at the lower-right rim while the pager
-                // waits for confirm (FUN_8002B994 kind 1).
-                sprites.push(ui::dialog_advance_hand_sprite(
-                    rects, lay.main, origin, scale,
-                ));
+            } else if let Some(frame) = snap.advance_icon {
+                // The two-frame page mark at the lower-right rim while the
+                // pager waits for confirm (FUN_8002B994 kind 1).
+                let icon = legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+                    [usize::from(frame) & 1];
+                sprites.push(ui::dialog_page_mark_sprite(icon, lay.main, origin, scale));
             }
         }
 

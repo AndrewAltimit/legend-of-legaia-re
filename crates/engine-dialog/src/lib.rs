@@ -13,6 +13,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod cursor_sprite;
 pub mod cutscene_timeline;
 pub mod dialog;
 pub mod dialog_pacing;
