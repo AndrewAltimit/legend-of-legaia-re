@@ -719,6 +719,17 @@ SPLIT_MODULES = frozenset({
     "crates/engine-core/src/pause_screens",
     "crates/engine-minigames/src/baka_fighter",
     "crates/parity/src/retail_compare_battle",
+    "crates/engine-menus/src/pause_screens",
+    "crates/engine-menus/src/shop",
+    "crates/engine-menus/src/save_menu_atlas",
+    "crates/engine-menus/src/equip_session",
+    "crates/engine-menus/src/save_subscreen",
+    "crates/engine-dialog/src/dialog",
+    "crates/engine-field/src/mode",
+    "crates/engine-field/src/camera",
+    "crates/engine-field/src/world_map_panel_host",
+    "crates/engine-effects/src/summon",
+    "crates/engine-effects/src/screen_fx",
 })
 
 

@@ -3347,7 +3347,7 @@ def _selftest_render_case(rule: dict, src: str) -> bool:
 OWNED_TYPES: list[dict[str, object]] = [
     {
         "type": "Camera",
-        "defined_in": "crates/engine-field/src/camera.rs",
+        "defined_in": "crates/engine-field/src/camera/state.rs",
         "why": "which camera owns a frame and what its retail GTE inputs are "
         "is one engine question; a host that renders a field without holding "
         "the type re-implements the mover, the compass azimuth and the "
@@ -3524,7 +3524,7 @@ def check_owned_types(shipped: dict[str, list[tuple[str, str]]]) -> tuple[list[s
 ENUM_COVERAGE: list[dict[str, object]] = [
     {
         "enum": "SceneMode",
-        "source": "crates/engine-field/src/mode.rs",
+        "source": "crates/engine-field/src/mode/game_mode.rs",
         "why": "a mode both hosts can ENTER (the shared scene host drains the "
         "mode-24 door warp for either) and only one can DRAW leaves the other "
         "host's player in a frozen field with no screen - the shape four "
