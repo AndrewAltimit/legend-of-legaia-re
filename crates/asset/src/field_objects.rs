@@ -588,7 +588,8 @@ pub fn parse_walk_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
 /// protagonist / NPC ids `1..=3` (`false`). An unplaced record - a
 /// decoration cell - takes `+0x10` either way: scenes do put scenery on
 /// records `1..=3` (`vozz`'s ground fern is record 3, pack mesh 10, on
-/// dozens of cells).
+/// dozens of cells; `vell`, `rugi`, `retona`, `deene`, `opdeene` and
+/// `rikuroa` each dress fifteen or more cells through those records).
 pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -> Vec<Placement> {
     let mut out = Vec::new();
     let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
