@@ -1,6 +1,19 @@
 # Asset type dispatcher
 
-`FUN_8001F05C` is the central asset-type dispatcher - every per-asset-format branch (TIM, TMD, MES, ANM, …) is reached through it. Implementation: `crates/asset/src/lib.rs::AssetType`. Source: `ghidra/scripts/funcs/8001f05c.txt`.
+Every asset the game loads is tagged with a one-byte **type** that says what it is - a texture, a mesh, dialog text, an animation bank. `FUN_8001F05C` is the one routine that turns that byte into an action: allocate a buffer, decompress or copy the bytes, and register the result with the right subsystem. Both containers on the disc ([asset descriptor tables](asset-descriptor.md) and [DATA_FIELD streams](data-field.md)) store the byte the same way, packed into a `type_size` word, and both reach this dispatcher.
+
+Implementation: `legaia_asset::AssetType` in [`crates/asset/src/lib.rs`](../../crates/asset/src/lib.rs). Source: `ghidra/scripts/funcs/8001f05c.txt`.
+
+## The `type_size` word
+
+```
+ 31        24 23                               0
++------------+----------------------------------+
+| type byte  |  size in bytes (24 bits)         |
++------------+----------------------------------+
+```
+
+In a descriptor table the size is the asset's **decompressed** length. In a DATA_FIELD stream it is the chunk's raw length.
 
 ## Calling convention
 
@@ -8,9 +21,10 @@
 result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_only);
 ```
 
-- `type_and_size` packs **type** in the high 8 bits, **size** in the low 24 bits.
-- `copy_only != 0` → asset is uncompressed; the dispatcher calls `FUN_8001A8B0` (memcpy).
-- `copy_only == 0` → asset is LZS-compressed; the dispatcher calls `FUN_8001A55C` (the [LZS decoder](lzs.md)).
+| `copy_only` | Meaning | Callee |
+|---|---|---|
+| non-zero | Asset is stored uncompressed | `FUN_8001A8B0` (memcpy) |
+| zero | Asset is LZS-compressed | `FUN_8001A55C` (the [LZS decoder](lzs.md)) |
 
 ## Type table
 
@@ -26,8 +40,8 @@ result = FUN_8001f05c(byte *src_data, u32 type_and_size, int param3, int copy_on
 | `0x07` | `VDF` | Vertex-deformation (morph-delta) pack, installed at `DAT_8007B7DC` and post-processed via `FUN_8001FBCC` per sub-entry (pointer table `0x80083E58`). Populated in 61 scene bundles; parser `legaia_asset::scene_vdf`. |
 | `0x08` | `SIN` | Raw load |
 | `0x09` | `TMD2` | Single bare TMD blob (no pack header). Hands directly to `FUN_80026B4C`; same on-disc format as a single member of the TMD-pack used by case 2. Parse with `crates/tmd::parse` directly. |
-| `0x0B` | `MOVE2` | Raw load with cleanup of prior buffer |
 | `0x0A` | `FLAG` (implicit) | Returns sentinel `0xA00` - no malloc, no decompress, no register |
+| `0x0B` | `MOVE2` | Raw load with cleanup of prior buffer |
 | `0x0F` | `FLAG` | Returns sentinel `0xF00` |
 | `0x14` | `FLAG` | Returns sentinel `0x1400` |
 
@@ -118,7 +132,7 @@ across 84 images returns one hit, the `lui` at `0x8001F0BC` that indexes it.
 There is no store into it and no second index site, so no handler is installed
 into the empty slots at runtime.
 
-## Where the dispatcher actually gets called
+## Where the dispatcher is called from
 
 **Three** `jal 0x8001F05C` sites exist on the disc (1234 images, 121.4 MB).
 Two are in SCUS: `FUN_8002541C` at `0x80025564`, reached only from its `0x14`
