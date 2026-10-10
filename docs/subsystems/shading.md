@@ -2,22 +2,46 @@
 
 Every textured pixel Legaia puts on screen is the product of a short, fixed
 chain: a 4-bit or 8-bit **index** in a texture, a 16-bit **palette entry** that
-index selects out of video memory, a per-primitive **colour word** the GPU
-multiplies the entry by, an optional **depth cue** that pulls that colour word
-toward a far colour, an optional **blend** with what is already on screen, and
-a **dither + 15-bit write** into the framebuffer. The colour word is baked into
-the mesh for nearly every primitive; the exception, the light-source rows,
-gets it from the GTE light ([below](#step-4-the-colour-word---why-raw-textures-look-darker-or-brighter)).
+index selects out of video memory (VRAM), a per-primitive **colour word** the
+GPU multiplies the entry by, an optional **depth cue** that pulls that colour
+word toward a far colour, an optional **blend** with what is already on
+screen, and a **dither + 15-bit write** into the framebuffer. There is no
+light source in the chain: the colour word is baked into the mesh for nearly
+every primitive. The one exception, the light-source rows, gets it from the
+GTE light ([step 4](#step-4-the-colour-word---why-raw-textures-look-darker-or-brighter)).
 
-This page walks the chain in order, with the retail routine behind each step,
-and ends with what it means for someone editing textures. The per-routine
-detail lives on the pages it links: [`renderer.md`](renderer.md) (the TMD
-renderer and the port's shaders), [`battle.md`](battle.md) (the battle
-ambient and actor tint), [`field-ambient-fx.md`](field-ambient-fx.md)
-(animated palettes), [`tim.md`](../formats/tim.md) and
+This matters to anyone exporting or editing textures: a texture file shows
+only the first three steps, so it rarely matches the screen. This page walks
+the chain in order, with the retail routine behind each step, and ends with
+what it means for a modder. The per-routine detail lives on the pages it
+links: [`renderer.md`](renderer.md) (geometry, dispatch and the port's render
+passes), [`battle.md`](battle.md) (the battle ambient and actor tint),
+[`field-ambient-fx.md`](field-ambient-fx.md) (animated palettes),
+[`tim.md`](../formats/tim.md) and
 [`npc-palette.md`](../formats/npc-palette.md) (where palettes are uploaded).
 
+**In the port** the chain is the default on both hosts: baked colour words,
+the depth cue and the four blend modes are always on, and the light-source
+rows shade through the same GTE light formula. Only step 7 differs by
+default - the port renders without the 15-bit dither unless
+`Renderer::set_psx_mode` is turned on ([Port](#port)).
+
 ## The chain at a glance
+
+```mermaid
+flowchart TD
+    A["Texel index<br/>4bpp or 8bpp, from the texture page"] --> B["CLUT entry<br/>16-bit word read from VRAM at the packet's CBA"]
+    B --> C{"entry == 0x0000"}
+    C -- yes --> X["Not drawn"]
+    C -- no --> E
+    D["Colour word<br/>baked in the TMD, or NCCS / NCCT for light-source rows"] --> D2["Depth cue DPCS / DPCT<br/>toward far colour by IR0"]
+    D2 --> E["Modulate<br/>texel * colour / 128, clamp 255"]
+    E --> F{"ABE prim and STP texel"}
+    F -- yes --> G["Blend with framebuffer<br/>one of 4 ABR modes"]
+    F -- no --> H["Opaque"]
+    G --> I["Dither 4x4, cut to 5 bits<br/>15-bit framebuffer write"]
+    H --> I
+```
 
 | Step | What happens | Retail source |
 |---|---|---|
@@ -93,8 +117,7 @@ For the system-UI page (VRAM `(896, 256)`: the menu / battle sheet at
 `PROT.DAT` `0x18E0` and the smaller TIMs uploaded beside it) the mapping is
 disc data, and one kernel reads it: `legaia_asset::tim_palette_context::texel_palettes`.
 The asset viewer's **As the game draws it** view and the ROM patcher's
-texture editor (region list, in-game view, `tim-palette-map`) both call it,
-so the two can no longer disagree.
+texture editor (region list, in-game view, `tim-palette-map`) both call it.
 
 - **Who samples what.** Every rectangle comes from the widget-class table
   (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/asset/src/ui_widgets.rs),
@@ -164,8 +187,9 @@ per channel unless op `4C 8A` sets another) plus the first light's intensity,
 times the object colour. Under the scene-load light a face turned away keeps
 an eighth of its texel and a face square to the light a little over the whole
 of it. `cave01`'s rock walls are all such rows; most scene packs hold few or
-none. The evidence and the formula are in
-[`renderer.md`](renderer.md#the-light-source-rows).
+none. The formula, its inputs and the evidence are in
+[`renderer.md`](renderer.md#the-light-source-rows), and the colour-word
+encoding per primitive type in [`renderer.md`](renderer.md#lighting).
 
 2D sprites ride the same rule. The widget-sprite emitters stamp the packet
 word `0x64808080` / `0x66808080` (`FUN_8002C488` at `0x8002C4C0` and
@@ -295,4 +319,12 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 | Battle ambient | `legaia_engine_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
 | Actor tint | `legaia_engine_vm::battle_actor_tint`, `battle_actor_draw` |
 | Animated palettes | `engine-core::clut_cell_fx`, `World::step_clut_fx`, `legaia_asset::clut_walk` |
-| Blend + dither | `psx_blend`, `psx_dither` (`Renderer::set_semi_blend`, `set_psx_mode`) |
+| Light-source rows | `engine-core::field_lit_mesh` over `engine-vm::field_light`; kernels `gte::lighting` |
+| Blend | `psx_blend` (`Renderer::set_semi_blend`, default on) |
+| Dither | `psx_dither` (`Renderer::set_psx_mode`, default off - the one step the port does not apply by default) |
+
+Colours stay PSX framebuffer values end to end - no sRGB conversion anywhere
+on the path ([`renderer.md`](renderer.md#colour-space-psx-framebuffer-values-end-to-end)).
+The enhancement layer (enhanced lighting, the occlusion fade, volumetric fog)
+sits on top of this chain and is pixel-identical when off
+([`renderer.md`](renderer.md#rendering-knobs-what-is-faithful-what-is-a-choice)).
