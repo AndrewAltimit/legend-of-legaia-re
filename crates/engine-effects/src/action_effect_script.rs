@@ -677,9 +677,12 @@ pub struct HomingSpawn {
 /// (`0x801E1334..0x801E1430`). Phase `3` counts down and then hits and frees
 /// the slot (`0x801E178C..0x801E1A68`).
 ///
-/// The hit itself stays with the engine's cast fold; this carries the
+/// The hit's arithmetic stays with the engine's cast fold; this carries the
 /// flight - the position the camera's projectile shot (`FUN_801DC0A0` case
-/// `8`) frames, the child count its case `7` hands on at, and the spawns.
+/// `8`) frames, the child count its case `7` hands on at, the spawns - and
+/// says **when** the hit lands: the pass a landed slot's counter has run out
+/// on is the one that rolls `FUN_801DD0AC` and writes the victim
+/// (`0x801E1844..0x801E1A68`), reported in [`HomingSlots::hits`].
 ///
 /// PORT: FUN_801E09F8 (the per-slot phases 1..3: seed, flight, landing, free)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -690,6 +693,9 @@ pub struct HomingSlots {
     /// Whether the world routes this flight's list spawns. See
     /// `World::seed_homing_slots`.
     pub emits: bool,
+    /// The child bytes (target actor index plus one) of the slots the last
+    /// [`Self::step`] hit and freed, `0` for none. Slot-indexed.
+    pub hits: [u8; HOMING_SLOTS],
 }
 
 impl HomingSlots {
@@ -704,6 +710,7 @@ impl HomingSlots {
         child_of: impl Fn(usize) -> u8,
     ) {
         self.record = record;
+        self.hits = [0; HOMING_SLOTS];
         for (i, s) in self.slots.iter_mut().enumerate() {
             *s = HomingSlot {
                 phase: 1,
@@ -742,6 +749,7 @@ impl HomingSlots {
         target: impl Fn(u8) -> Option<[i32; 3]>,
     ) -> Vec<HomingSpawn> {
         let mut out = Vec::new();
+        self.hits = [0; HOMING_SLOTS];
         let byte = |o: usize| record.get(o).copied().unwrap_or(0);
         let speed = i32::from(byte(0x08));
         let list = |base: usize| -> Vec<u8> {
@@ -765,11 +773,18 @@ impl HomingSlots {
                 }
             }
         }
-        for s in self.slots.iter_mut() {
+        for (i, s) in self.slots.iter_mut().enumerate() {
             if s.child == 0 {
                 continue;
             }
             let Some(t) = target(s.child) else {
+                // A child whose actor is gone has nothing to fly onto or
+                // hit: the slot frees, so the recovery gate that counts it
+                // (`ctx[+0x24D]`) cannot hold the band open on it.
+                if s.phase >= 2 {
+                    s.phase = 0;
+                    s.child = 0;
+                }
                 continue;
             };
             match s.phase {
@@ -801,6 +816,8 @@ impl HomingSlots {
                     if s.counter != 0 {
                         s.counter = (s.counter - 4).max(0);
                     } else {
+                        // `0x801E1844..0x801E1A68`: the hit, then the free.
+                        self.hits[i] = s.child;
                         s.phase = 0;
                         s.child = 0;
                     }
@@ -1415,9 +1432,13 @@ mod tests {
             h.step(&rec, 0, |_| Some(target));
         }
         assert_eq!(h.slots[0].phase, 3);
+        assert_eq!(h.hits, [0; 4], "no hit while the landing counter runs");
         h.step(&rec, 0, |_| Some(target));
         assert_eq!(h.slots[0].phase, 0);
+        assert_eq!(h.hits, [1, 0, 0, 0], "the hit lands on the freeing pass");
         assert_eq!(h.children(), 0);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.hits, [0; 4], "and is reported once");
         assert_eq!(
             h.lead(),
             Some([0, -300, -2000]),
@@ -1438,5 +1459,20 @@ mod tests {
         assert_eq!(h.slots[0].phase, 0);
         assert_eq!(h.slots[0].pos, [500, 0, 500]);
         assert_eq!(out.len(), 1, "the `+0x16` list only");
+        assert_eq!(h.hits[0], 1);
+    }
+
+    #[test]
+    fn a_slot_whose_target_is_gone_frees_without_a_hit() {
+        let rec = tail_fire_like(300, 8);
+        let target = [0, 0, -2000];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, -300, 0), &[Some(target)], |_| 1);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.slots[0].phase, 2);
+        h.step(&rec, 0, |_| None);
+        assert_eq!(h.slots[0].phase, 0);
+        assert_eq!(h.children(), 0);
+        assert_eq!(h.hits, [0; 4]);
     }
 }

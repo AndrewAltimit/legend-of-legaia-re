@@ -20,6 +20,19 @@ use super::super::*;
 impl PlayWindowApp {
     /// Whether a `LEGAIA_CAPTURE_GATE` capture's phase holds this frame.
     pub(super) fn capture_phase_met(&self) -> bool {
+        // `LEGAIA_DIAG_CAPTURE_TICK=<tick>` takes the frame at that world
+        // tick instead of on the gate, with every seed and drive still
+        // running: the frames either side of a gated capture (whose tick the
+        // child logs as `capture at tick`) say whether a draw the retail
+        // frame shows is missing or only early / late.
+        static FORCED: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+        if let Some(t) = *FORCED.get_or_init(|| {
+            std::env::var("LEGAIA_DIAG_CAPTURE_TICK")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        }) {
+            return self.screenshot.is_some() && self.tick_no >= t;
+        }
         let world = &self.session.host.world;
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))

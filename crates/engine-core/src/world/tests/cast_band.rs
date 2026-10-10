@@ -1078,6 +1078,7 @@ fn a_capture_charge_branch_folds_nothing() {
         caster: 1,
         spell_id: 0x81,
         targets: vec![0],
+        on_flight: false,
     });
     world.casting.module_skips_fold = true;
     world.fold_pending_cast();
@@ -1209,6 +1210,7 @@ fn evil_seru_magic_lands_the_stager_hit_then_the_tick_hit_and_folds_nothing_more
         caster,
         spell_id: 0xAD,
         targets: vec![0, 1, 2],
+        on_flight: false,
     });
     let mut hit_phases: Vec<(u8, u8)> = Vec::new();
     let mut done = false;
@@ -1304,6 +1306,7 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
                 caster: CASTER,
                 spell_id: id,
                 targets: vec![0],
+                on_flight: false,
             });
             let hp = |w: &World| -> Vec<u16> { (0..8).map(|i| w.actors[i].battle.hp).collect() };
             let start = hp(&world);
@@ -1446,6 +1449,7 @@ fn dead_end_crisis_wipes_the_party_outside_the_cort_fight() {
         caster: 3,
         spell_id: 0xA1,
         targets: vec![0, 1, 2],
+        on_flight: false,
     });
     world.fold_pending_cast();
     for seat in 0..3 {

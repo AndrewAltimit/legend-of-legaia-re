@@ -108,6 +108,26 @@ impl World {
             .any(|r| r.is_terminator())
     }
 
+    /// `(ctx[+0x24E..=+0x251], ctx[+0x252..=+0x255])` as the cast census
+    /// reads them: each slot's phase byte and child byte. All zero while the
+    /// flight has no record to fly on, since [`Self::tick_homing_slots`]
+    /// would never free such a slot.
+    ///
+    /// REF: FUN_801E09F8 (census head, `0x801E0B6C..0x801E0BF0`)
+    pub(in crate::world) fn homing_child_slots(&self) -> ([u8; 4], [u8; 4]) {
+        let h = &self.casting.homing;
+        let flies = h.record.is_some_and(|idx| {
+            self.tables
+                .move_power
+                .as_ref()
+                .is_some_and(|cat| cat.record_at_index(idx).is_some())
+        });
+        if !flies {
+            return ([0; 4], [0; 4]);
+        }
+        (h.slots.map(|s| s.phase), h.slots.map(|s| s.child))
+    }
+
     /// One battle frame of the homing slots, after the streak's own counter
     /// walk (slot `0`'s phase-`1` word).
     pub(in crate::world) fn tick_homing_slots(&mut self) {
@@ -138,6 +158,21 @@ impl World {
         let mut homing = self.casting.homing;
         let spawns = homing.step(&raw, counter, target);
         self.casting.homing = homing;
+        // A landed slot's hit (`0x801E1844..0x801E1A68`): the cast that rides
+        // this flight folds onto that slot's victim now.
+        let caster = self.battle_ctx.active_actor;
+        if self
+            .casting
+            .pending_cast
+            .as_ref()
+            .is_some_and(|pc| pc.on_flight && pc.caster == caster)
+        {
+            for child in homing.hits {
+                if let Some(victim) = child.checked_sub(1) {
+                    self.fold_pending_cast_target(victim);
+                }
+            }
+        }
         if !homing.emits {
             return;
         }
@@ -145,7 +180,6 @@ impl World {
         // 7 to the 2D pool `FUN_801DFDF0` at the slot's heading, the rest to
         // the `0x801F6324` prototype scene with its CLUT stage
         // (`0x801E1178..0x801E1238`).
-        let caster = self.battle_ctx.active_actor;
         for s in spawns {
             self.battle
                 .effect_spawns

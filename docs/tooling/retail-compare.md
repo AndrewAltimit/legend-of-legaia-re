@@ -1436,6 +1436,17 @@ it, the child also writes that family's triangles one per line
 (`<path>.tris`: draw index, screen corners, clip `w`, mesh-space corners), the per-packet level
 to match against the display list's corners when a family's count parts.
 
+### The frames either side of a gated capture
+
+A gated child captures one frame, and a draw the retail frame shows may be
+missing from it or only early or late. The child logs the tick it captured on
+(`capture at tick N`), and `LEGAIA_DIAG_CAPTURE_TICK=<tick>` beside a kept
+`cmd.sh` takes the frame at that world tick instead of on the gate, with
+every seed and drive still running. A strip of such frames around `N` is what
+showed Tail Fire's hit rays forty ticks ahead of the gate - the fold on the
+wrong edge, not a missing effect
+([battle-action](../subsystems/battle-action.md#a-monsters-cast-lands-from-its-homing-flight)).
+
 ## The ratchet
 
 `scripts/ci/retail-compare-baseline.json` holds, per state label, each
@@ -2121,6 +2132,14 @@ every pass, so it moves with the phase of both clips):
   the midpoint with a target on the far side of the party. The rounds are
   the drive's own; nothing in the capture recovers the history that put
   retail's counter on monster slot 4.
+- **A numeral that sank instead of rising.** Retail's floating value rises
+  `3/2` of its ring timer above the struck actor's display trio
+  (`FUN_801DF6B8`, `0x801DF780..0x801DF7B4`), toward `-Y`. The hosts project
+  it through their draw matrix, which ends in the Y flip that cancels the
+  models' own, and the anchor went in unflipped: the run fell through the
+  floor and left by the bottom of the stage, so no engine frame of a landed
+  hit carried the figure retail's shows at row `32`
+  (`battle_numerals::popup_rect`).
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,

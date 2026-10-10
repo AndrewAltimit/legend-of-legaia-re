@@ -450,12 +450,46 @@ a monster's cast clip at `params[1]`) and park the resolved targets in one
 owner, `World::casting.pending_cast`. The band then charges the ability-bit-folded MP at
 `MagicCastBegin` and the outcome folds **once**, at retail's seam, through
 `cast_spell_on_slots_prepaid` (no second debit): a Seru cast folds in the
-engine's stager at its strike ([below](#the-engines-summon-stager)); anything
-else folds the frame the SM leaves `0x29` for the anim chain
-(`World::settle_cast_band`); a cast that leaves the bands by another door (the
-capture branch, a dead caster) folds at the band's end, so no turn spends MP
-for nothing. An escape spell that folds this way ends the encounter from the
+engine's stager at its strike ([below](#the-engines-summon-stager)); a
+monster's cast whose clip seeds a homing flight folds from that flight
+([below](#a-monsters-cast-lands-from-its-homing-flight)); anything else folds
+the frame the SM leaves `0x29` for the anim chain (`World::settle_cast_band`);
+a cast that leaves the bands by another door (the capture branch, a dead
+caster) folds at the band's end, so no turn spends MP for nothing. An escape spell that folds this way ends the encounter from the
 live loop on the same frame, as the item path's fold already did.
+
+#### A monster's cast lands from its homing flight
+
+Retail's one damage site for a monster's non-capture cast is the effect-child
+hit arm of the per-frame cast tick `FUN_801E09F8` (`0x801E1844..0x801E1A68`):
+the move's sound cue (`record[+0x0D]` through `FUN_8004FCC8`), the roll
+`jal 0x801DD0AC` at `0x801E188C`, the number-ring push, the clamped HP store
+and the victim's reaction clip, then the slot's phase and child bytes zeroed.
+It is reached per slot, on the pass a slot in phase `3` finds its counter
+`ctx[+0x6C6 + i*2]` run out (`beq v0,zero,0x801e1844` at `0x801E17A0`). The
+slots are the four the cast clip's effect-script terminator seeds
+([the per-action effect script](#the-per-action-effect-script-fun_801dea50)),
+so the hit is as late as the clip's terminator record, its streak, its flight
+and its landing counter make it.
+
+`battle_gimard_tail_fire_b` holds the result for Tail Fire, whose record has
+no streak and no landing counter (`+0x04 = +0x06 = 0`) and whose launch point
+`(181, -300, -674)` is already inside the arrival radius of its victim: state
+`0x2B`, slot `0` freed on the victim's old position, the number ring's timer
+at `352` - 22 vsyncs after the hit, 24 after the clip's commit.
+
+The port folds there. `World::settle_cast_band` leaves a monster's cast owed
+at the `0x29` exit when its staged clip carries a terminator and the
+move-power table resolves the move (`PendingCast::on_flight`);
+`HomingSlots::step` reports the child of every slot it frees after a landing
+(`HomingSlots::hits`), and `World::tick_homing_slots` folds the cast onto that
+one victim (`World::fold_pending_cast_target`). The census reads the same
+slots (`World::homing_child_slots`), so the recovery state `0x2D` holds while
+a child is still in flight, as retail's `ctx[+0x24D]` gate does. A target the
+flight never reached is folded at the band's end with the rest. Folded on the
+`0x29` edge instead, the victim was hit, tinted and thrown before the cast
+clip had started and the projectile it was reacting to was still to come.
+Disc-gated oracle: `monster_special_anim_sweep_disc::tail_fire_lands_from_its_homing_flight`.
 
 #### The monster's cast is only as real as the catalog
 

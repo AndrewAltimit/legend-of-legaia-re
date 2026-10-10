@@ -2788,6 +2788,7 @@ DIAG_GATES: list[dict[str, object]] = [
     # --- subtractive / logging only ----------------------------------------
     {"env": "LEGAIA_DIAG_DRAWS", "additive": False, "note": "write the frame's draw census + CPU VRAM to a file; draws nothing"},
     {"env": "LEGAIA_DIAG_DRAW_TRIS", "additive": False, "note": "beside LEGAIA_DIAG_DRAWS, write one census family per triangle; draws nothing"},
+    {"env": "LEGAIA_DIAG_CAPTURE_TICK", "additive": False, "note": "take a gated --screenshot capture at a chosen world tick instead of on its gate; draws nothing"},
     {"env": "LEGAIA_DIAG_NOFX", "additive": False, "note": "suppress the effect layer"},
     {"env": "LEGAIA_DIAG_NO_GHOSTS", "additive": False, "note": "suppress the battle after-image ghost pass (A/B attribution)"},
     {"env": "LEGAIA_DIAG_NO_PRIM_NEAR", "additive": False, "note": "disarm the per-primitive near reject (A/B attribution; the browser never disarms it)"},
