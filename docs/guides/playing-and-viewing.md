@@ -354,8 +354,9 @@ is the retail cadence - a faster walk steps more often, standing still is silent
 ## 6. Saves and config live next to you
 
 The engine resolves its files against the **current directory**: key bindings
-in `legaia-input.toml`, options (camera preset, movement mode) in
-`legaia-options.toml`, and save slots under `saves/`. Run from the same
+in `legaia-input.toml`, options (camera preset, movement mode, the
+`bgm_volume` / `sfx_volume` music and sound-effect levels, `0..=10` with `8`
+the retail mix) in `legaia-options.toml`, and save slots under `saves/`. Run from the same
 directory each time - or pass explicit paths where supported
 (`--save-dir`, `config set --config-file`).
 

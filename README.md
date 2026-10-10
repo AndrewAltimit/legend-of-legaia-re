@@ -284,6 +284,7 @@ legend-of-legaia-re/
 │   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
 │   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
 │   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, fishing, prize exchange, Muscle Dome ladder
+│   ├── engine-minigame-scenes/   # Minigame 3D scene surfaces loaded off a PROT reader: Baka Fighter duel, Muscle Dome arena
 │   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
 │   ├── engine-system/            # World-free runtime system: pad pump, stream installer, sound state, fades
 │   ├── engine-menus/             # World-free menu front end: catalogs, item / spell / equip sessions, menu screens

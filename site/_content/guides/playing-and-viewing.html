@@ -219,7 +219,7 @@
 
 <section class="doc-section" id="config-saves">
   <h2>6 &middot; Saves and config</h2>
-  <p>Run from a terminal, the engine resolves its files against the <strong>current directory</strong>: key bindings in <code>legaia-input.toml</code>, options (camera preset, movement mode) in <code>legaia-options.toml</code>, and save slots under <code>saves/</code>. Run from the same directory each time - or pass explicit paths where supported (<code>--save-dir</code>, <code>config set --config-file</code>). A <a href="#launcher">launcher</a> start always runs from the per-user data directory instead, so the files stay in one place however the binary was started.</p>
+  <p>Run from a terminal, the engine resolves its files against the <strong>current directory</strong>: key bindings in <code>legaia-input.toml</code>, options (camera preset, movement mode, the <code>bgm_volume</code> / <code>sfx_volume</code> music and sound-effect levels, <code>0..=10</code> with 8 the retail mix) in <code>legaia-options.toml</code>, and save slots under <code>saves/</code>. Run from the same directory each time - or pass explicit paths where supported (<code>--save-dir</code>, <code>config set --config-file</code>). A <a href="#launcher">launcher</a> start always runs from the per-user data directory instead, so the files stay in one place however the binary was started.</p>
   <p>Rebind keys with <code>config</code>:</p>
   <div class="cli"><code>./legaia-engine config show</code></div>
   <div class="cli"><code>./legaia-engine config set --binding Space=Cross</code></div>
