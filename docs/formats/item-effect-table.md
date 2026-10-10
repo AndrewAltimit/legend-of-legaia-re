@@ -17,17 +17,16 @@ a separate, **also static** [heal-amount table](#heal-amount-table-0x8007655c).
 The apply handler is the **static** `FUN_800402F4` (`ghidra/scripts/funcs/
 800402f4.txt`), reached through a 132-entry jump table at `0x80014FA0`. **What
 indexes that table depends on the caller** - three callers index it with three
-different bytes: the descriptor class at `0x801d84b4` (the field item-use path,
-the only one the "indexed by the descriptor class byte" reading described), the
-item record's own `+0` kind byte at `0x801d9280`, and the battle actor's `+0x1E8`
-at `0x801e40dc`. It handles both the field item menu and the battle
+different bytes: the descriptor class at `0x801d84b4` (the field item-use path),
+the item record's own `+0` kind byte at `0x801d9280`, and the battle actor's
+`+0x1E8` at `0x801e40dc`. "Indexed by the descriptor class byte" describes only
+the first. It handles both the field item menu and the battle
 item path in one function (it branches on `game_mode == 0x15`, walking either the
 char records or the battle-actor table `0x801C9370`). The HP / MP heal arms size
 the restore by reading a tier-indexed `u16` table at `0x8007655C` (HP) /
 `0x80076564` (MP) - so the numbers **are** on the disc, decoded by
 `legaia_asset::item_effect` (`ItemEffectTable::heal_amounts` / `restore_amount`).
-(This **corrects** the earlier "the amounts are a switch of immediates inside an
-overlay-resident apply handler, not in the dumped corpus" reading.)
+The amounts are not a switch of immediates inside an overlay handler.
 
 ## Table base + record layout
 
@@ -37,12 +36,12 @@ overlay-resident apply handler, not in the dumped corpus" reading.)
 | Stride | `0x4` bytes |
 | Record count | `130` (subtypes `0x00..=0x81`); ends at the spell table `0x800754C8` |
 
-| Offset | Type | Field |
-|---|---|---|
-| `+0` | u8 | effect **class** (action-validator arm) |
-| `+1` | u8 | **tier** / sub-case (per-class selector; e.g. heal-HP `0/1/2` = `200/800/max`) |
-| `+2` | u8 | **flags** (see below) |
-| `+3` | u8 | **passive-effect index** (`0x00..=0x3F`) for accessory / quest-item rows; `0x41` = no-passive sentinel on consumable rows (see [accessory-passive-table.md](accessory-passive-table.md)) |
+| Offset | Type | Field | Confidence |
+|---|---|---|---|
+| `+0` | u8 | effect **class** (action-validator arm) | Confirmed |
+| `+1` | u8 | **tier** / sub-case (per-class selector; e.g. heal-HP `0/1/2` = `200/800/max`) | Confirmed |
+| `+2` | u8 | **flags** (see below) | Confirmed |
+| `+3` | u8 | **passive-effect index** (`0x00..=0x3F`) for accessory / quest-item rows; `0x41` = no-passive sentinel on consumable rows (see [accessory-passive-table.md](accessory-passive-table.md)) | Confirmed |
 
 ### Flag byte (`+2`)
 
@@ -88,12 +87,10 @@ An opcode-decoding sweep of `SCUS_942.54` plus all 80 based overlay images for a
 `+2` byte load followed within five instructions by `andi ..., 0x40` finds
 `0x801D18E0` and `0x801D1C50` and nothing else. In particular the item-info
 panel `FUN_801D0F1C` does **not** read the bit - it contains no `andi 0x40` at
-all. The earlier attribution ("its consumer is the item-info panel, which
-branches past the accessory-passive block") mistook that panel's
-`slti a0, 0x40` at `0x801D107C` / `0x801D1110` for a flag test; that instruction
-compares the record's `+3` **passive index** against the `>= 0x40` no-passive
-sentinel ([accessory-passive-table.md](accessory-passive-table.md)), a different
-field and a magnitude compare rather than a mask.
+all. Its `slti a0, 0x40` at `0x801D107C` / `0x801D1110` is not a flag test: that
+instruction compares the record's `+3` **passive index** against the `>= 0x40`
+no-passive sentinel ([accessory-passive-table.md](accessory-passive-table.md)), a
+different field and a magnitude compare rather than a mask.
 
 Bit `0x08` is a sixth populated bit this table does not name. It is read at
 `0x800308D8` / `0x80030BB4` (the bag-list builder, gating a consumable into the

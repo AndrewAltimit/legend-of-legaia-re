@@ -41,7 +41,7 @@ A handful of entries in the same band lead with a NUL-padded ASCII title string 
 is **Nighto's summon stager** (capture-pinned on the spell-`0x85` slot of the summon loader's
 `903..=913` range; the name also appears in the SCUS spell table - `Hell's Music|Kill or confuse
 enemy.` - and in `summon.dat`'s attack-name records, exactly parallel to Gimard's `Burning
-Attack`). The earlier "Disco King dance-song" reading is **refuted**: the dance overlay (0980)
+Attack`). It is not a "Disco King" dance song: the dance overlay (0980)
 contains zero slot-B loader callsites - its music is sequenced BGM via the sound streaming
 loader. `0924_xxx_dat.BIN` "Ultimate Rave" and `0927_xxx_dat.BIN` "Dark Eclipse" are the same
 attack-titled, stager-shaped family (part-spawn call census matches the pinned stagers). Their

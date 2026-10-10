@@ -144,11 +144,11 @@ entries with a fully populated collision grid - satisfy it by accident. Pairing
 the zeroed header with an empty field is what makes the escape hatch a
 statement about the file.
 
-### Why this size class hid for so long
+### Byte statistics do not identify it
 
 Nothing about the byte statistics of a field map says "content". The four
 regions are sparse by construction - a small map leaves most of two `128 x 128`
-grids at zero - so before the class existed these entries scattered across
+grids at zero - so a statistical classifier scatters these entries across
 `mostly_zeros` (a *placeholder* verdict, which is the wrong answer for the file
 that carries every scene's collision data) and `unknown_low_entropy`, with a
 handful of the densest landing in `unknown_other`. Only the fixed footprint and
@@ -164,7 +164,7 @@ The map is **slot 0 of the scene's block in extraction space**, i.e. extraction
 index `define - 2` under the
 [+2 numbering correction](cdname.md#numbering-space). Resolving it by "the first
 `0x12000` entry at or after the scene's label" instead picks the *next* scene's
-map - a mistake that once loaded the wrong collision grid for every field scene.
+map, and so the wrong collision grid.
 The runtime's own resolution is `FUN_8003E8A8`'s `toc[idx + 2]`; the engine
 mirrors it in `Scene::field_map_index`. Two blocks outside the named-scene range
 (`other1`, `other7`) also carry a `0x12000` slot 0, so the size class is not

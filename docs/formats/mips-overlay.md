@@ -1,18 +1,18 @@
 # MIPS overlay code
 
-Static disc copies of runtime overlays - small subsystem code blobs that load into the `0x801C0000+` overlay window. Distinct from the major full-scene overlays (title / town / battle / options); these are smaller specialised blobs from the `0901..=0969_xxx_dat` PROT range.
+The game's executable is small; most of its code ships as **overlays** - blobs of MIPS machine code stored as ordinary PROT entries and loaded into RAM at `0x801C0000+` when a mode needs them. This page covers the detector for the simplest shape: an entry whose first bytes are a function prologue. These are the smaller specialised blobs in the `0901..=0969_xxx_dat` PROT range, as distinct from the big per-mode overlays (title / field / battle / menu).
+
+There is no container here: the entry is raw code and data linked for one load address. The "format" is the detection rule plus the load base, which the disc does not state in the entry itself.
 
 Implementation: `crates/overlay-images/src/mips_overlay.rs`.
 
 ## Layout
 
-```text
-+0x00   u32  0x27BDFFXX        ; addiu sp, sp, -X (negative stack adjust)
-+0x04   u32  prologue follow-up; sw ra/s* (0xAFB?_00XX), or another addiu /
-                                ; lui / sw / R-type - the second instruction
-                                ; of the entry function's prologue
-+0x08   ...                    ; rest of the overlay code blob
-```
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u32 | first instruction | `0x27BDFFXX` = `addiu sp, sp, -X`, a stack-frame allocation | Confirmed |
+| `+0x04` | u32 | second instruction | A prologue follow-up: `sw ra/s*` (`0xAFB?_00XX`), another `addiu`, `lui`, `sw`, or an R-type op | Confirmed |
+| `+0x08` | rest | code + data | The remainder of the overlay image | Confirmed |
 
 ## Detection
 
@@ -28,9 +28,9 @@ All matches cluster in the `0901..=0969` PROT range - sized 14 KB to 37 KB (one 
 
 Each entry can be Ghidra-imported via [`scripts/ghidra-analysis/bulk-import-overlays.sh`](../tooling/overlay-capture.md) once a base address is determined. The overlay window is `0x801C0000`–`0x80200000`; each blob loads at a specific offset within that range, determinable from the asset chain that pulls it in.
 
-## Likely subsystems
+## What the band holds
 
-Based on size and the `xxx_dat` clustering: cutscenes, world-map, menu screens, mini-games, or per-scene specialised code that doesn't fit in the main town-field overlay.
+The `0903..=0966` entries are the 64 slot-B cast / summon images, each one special attack's stager ([`slot-b-module-layout.md`](slot-b-module-layout.md), [`cast-module.md`](../subsystems/cast-module.md)). `0968` / `0969` are the two boss-stage modules ([`battle.md`](../subsystems/battle.md)). Entries that lead with a pointer table instead of a prologue are covered by the [sister detector](overlay-ptr-table.md).
 
 ## Reading the format
 

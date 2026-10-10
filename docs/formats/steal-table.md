@@ -1,15 +1,16 @@
 # Steal-item table
 
-What the player steals from an enemy with the **Evil God Icon** equipped - at
-most once per attacking action, from the first monster that action fells, see
-[the steal attack](#the-steal-attack) - is
-looked up in a static per-monster table inside `SCUS_942.54` - **not** in the
-PROT 867 `battle_data` monster record. An exhaustive offset scan of the decoded
-record (correlated against ground-truth steal data) finds no steal field there:
-the reward block at `+0x44..+0x49` holds only gold / exp / drop. The steal item
-lives in this separate executable table, which is exactly why every record-only
-search came up empty (the long-open thread in
-[`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md)).
+With the **Evil God Icon** equipped, an attack can steal an item from an enemy -
+at most once per attacking action, from the first monster that action fells
+([the steal attack](#the-steal-attack)). Which item, and at what chance, comes
+from a static per-monster table inside `SCUS_942.54`: two bytes per monster,
+chance then item.
+
+The table is **not** part of the PROT 867 monster record, which is where the
+drop item lives. An exhaustive offset scan of the decoded record, correlated
+against ground-truth steal data, finds no steal field there: the reward block at
+`+0x44..+0x49` holds only gold / exp / drop. A search confined to the monster
+record therefore finds nothing.
 
 ## Table base + record layout
 

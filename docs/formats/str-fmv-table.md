@@ -2,9 +2,9 @@
 
 Which movie plays, from which frame to which frame, and where on screen - the cutscene / MDEC overlay resolves all of it through a lookup table in its data section.
 
-**The catch: there are two tables, and only one of them is the FMV table.** They sit near each other, they both hold per-file records, and the wrong one has been mistaken for the right one before.
+**The catch: there are two tables, and only one of them is the FMV table.** They sit near each other and both hold per-file records, so the wrong one is easy to take for the right one.
 
-1. **libcd directory-record cache** at `0x801CAE08` - the `CdSearchFile` per-directory file cache, an array of PsyQ `CdlFILE`-shape records. This is generic libcd state, *not* an FMV table. (Earlier captures sighted the window at `0x801CAE40`.) See [Directory-record cache](#directory-record-cache-0x801cae08-24-b-cdlfile-records).
+1. **libcd directory-record cache** at `0x801CAE08` - the `CdSearchFile` per-directory file cache, an array of PsyQ `CdlFILE`-shape records. This is generic libcd state, *not* an FMV table. See [Directory-record cache](#directory-record-cache-0x801cae08-24-b-cdlfile-records).
 2. **FMV dispatch table** at `0x801D0A6C` - 23 entries, 32 bytes each. This is the actual play-engine source.
 
 The dispatch table is what you want. Each record is `[path_ptr, color_depth_flag, start_frame, end_frame, fb_x, fb_y, width, height]`: a path-string pointer into the **path string table** at the overlay start (`0x801CE818`), plus the frame range that slot plays. The play loop `FUN_801CF098` receives one entry from the master dispatch's selector.
@@ -23,7 +23,7 @@ The retail trigger range (`0..=8`) is pinned independently by the per-STR FMV tr
 
 ## Directory-record cache (`0x801CAE08`, 24 B `CdlFILE` records)
 
-What earlier captures read as a "compact MV-file table at `0x801CAE40`" is libcd's directory cache: one PsyQ `CdlFILE` record per file of the last-searched directory,
+The region around `0x801CAE40` is not a "compact MV-file table". It is libcd's directory cache: one PsyQ `CdlFILE` record per file of the last-searched directory,
 
 ```text
 +0x00  u32       CdlLOC   - byte 0 = BCD minute, 1 = BCD second,
@@ -32,9 +32,9 @@ What earlier captures read as a "compact MV-file table at `0x801CAE40`" is libcd
 +0x08  char[16]  name     - "MV1.STR;1\0..." (null-padded)
 ```
 
-starting with the `.` / `..` entries at `0x801CAE08` / `0x801CAE20`; the first named file record sits at `0x801CAE38`. The earlier name-first 24-byte parse (name at `+0x00`, MSF at `+0x10`) was **phase-shifted 8 bytes**, which paired each name with the *next* record's location - manufacturing the apparent one-entry shift ("`MV1` points at disc `MV2`", "`MV6` points at `XA15.XA`"). At the `CdlFILE` phase every record is self-consistent: `MV1.STR;1` carries MV1's own LBA and size. A title-screen capture shows the same cache holding the `XA` directory (`XA1.XA;1..XA34.XA;1`); the FMV capture shows the `MOV` directory. Convert `CdlLOC` to LBA with the standard identity `LBA = ((M*60)+S)*75 + F - 150`.
+starting with the `.` / `..` entries at `0x801CAE08` / `0x801CAE20`; the first named file record sits at `0x801CAE38`. A name-first 24-byte parse (name at `+0x00`, MSF at `+0x10`) is **phase-shifted 8 bytes**: it pairs each name with the *next* record's location and manufactures an apparent one-entry shift ("`MV1` points at disc `MV2`", "`MV6` points at `XA15.XA`"). At the `CdlFILE` phase every record is self-consistent: `MV1.STR;1` carries MV1's own LBA and size. A title-screen capture shows the same cache holding the `XA` directory (`XA1.XA;1..XA34.XA;1`); the FMV capture shows the `MOV` directory. Convert `CdlLOC` to LBA with the standard identity `LBA = ((M*60)+S)*75 + F - 150`.
 
-The `legaia_asset::str_fmv_table` parser still reads the historical name-first window (its `bcd_msf` is the *following* record's location); treat it as a capture-forensics helper, not a format decoder.
+The `legaia_asset::str_fmv_table` parser reads that name-first window (its `bcd_msf` is the *following* record's location); treat it as a capture-forensics helper, not a format decoder.
 
 ## Path string table (`0x801CE810`, null-terminated)
 
