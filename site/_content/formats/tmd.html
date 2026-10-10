@@ -110,6 +110,74 @@
 <section class="doc-section" id="per-prim-colour">
   <h2>Record layouts</h2>
   <p>A record is <code>[colour or texture block][vertex indices][normal indices or pad]</code>. Vertex "indices" are u16 <em>byte offsets</em> into the vertex array (divide by 8 for the index). Quads list corners in winding order <code>[0,1,3,2]</code> through the remap table so <code>colour[i]</code> pairs with <code>vertex[i]</code>.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tmd-fig-title">
+      <title id="tmd-fig-title">A primitive section is a chain of groups, each an 8-byte header and a run of same-sized records. One record, a lit textured quad, expanded: a 12-byte texture block naming a palette cell and a texture page, four vertex offsets into the vertex array, one normal offset, and padding.</title>
+      <defs><marker id="tmd-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="18">primitive section of one object</text>
+      <rect class="dg-node-accent" x="20" y="26" width="130" height="44"/>
+      <text class="dg-label" x="85" y="45">group header</text>
+      <text class="dg-sub" x="85" y="61">count, flags, ilen</text>
+      <rect class="dg-node" x="150" y="26" width="60" height="44"/><text class="dg-label" x="180" y="52">record</text>
+      <rect class="dg-node-ok" x="210" y="26" width="60" height="44"/><text class="dg-label" x="240" y="52">record</text>
+      <rect class="dg-node" x="270" y="26" width="60" height="44"/><text class="dg-label" x="300" y="52">record</text>
+      <rect class="dg-node" x="330" y="26" width="50" height="44"/><text class="dg-label" x="355" y="52">...</text>
+      <rect class="dg-group" x="380" y="26" width="70" height="44"/><text class="dg-sub" x="415" y="52">zero pad</text>
+      <rect class="dg-node-accent" x="450" y="26" width="130" height="44"/>
+      <text class="dg-label" x="515" y="45">group header</text>
+      <text class="dg-sub" x="515" y="61">another shape</text>
+      <rect class="dg-node" x="580" y="26" width="120" height="44"/><text class="dg-label" x="640" y="52">records ...</text>
+      <path class="dg-edge-dim" d="M150 84 V78 H380 V84"/>
+      <text class="dg-edge-label" x="268" y="98" text-anchor="middle">count records, each ilen x 4 bytes</text>
+
+      <path class="dg-edge-dim" d="M210 70 L20 150 M270 70 L700 150"/>
+      <text class="dg-edge-label" x="350" y="140" text-anchor="middle">one record: lit textured quad (flags 0x12, ilen 6 = 24 bytes)</text>
+      <rect class="dg-node" x="20.0" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="48.3" y="175">u0 v0</text>
+      <rect class="dg-node-accent" x="76.7" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="105.0" y="175">cba</text>
+      <rect class="dg-node" x="133.3" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="161.7" y="175">u1 v1</text>
+      <rect class="dg-node-accent" x="190.0" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="218.3" y="175">tsb</text>
+      <rect class="dg-node" x="246.7" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="275.0" y="175">u2 v2</text>
+      <rect class="dg-node" x="303.3" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="331.7" y="175">u3 v3</text>
+      <rect class="dg-node" x="360.0" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="388.3" y="175">v0</text>
+      <rect class="dg-node" x="416.7" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="445.0" y="175">v1</text>
+      <rect class="dg-node" x="473.3" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="501.7" y="175">v2</text>
+      <rect class="dg-node" x="530.0" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="558.3" y="175">v3</text>
+      <rect class="dg-node" x="586.7" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="615.0" y="175">n</text>
+      <rect class="dg-group" x="643.3" y="150" width="56.7" height="40"/>
+      <text class="dg-label" x="671.7" y="175">pad</text>
+      <text class="dg-edge-label" x="22" y="204">+0</text>
+      <text class="dg-edge-label" x="362" y="204">+12</text>
+      <text class="dg-edge-label" x="589" y="204">+20</text>
+
+      <rect class="dg-node" x="30" y="246" width="150" height="38" rx="5"/>
+      <text class="dg-label" x="105" y="262">palette cell</text><text class="dg-sub" x="105" y="277">in VRAM</text>
+      <rect class="dg-node" x="195" y="246" width="150" height="38" rx="5"/>
+      <text class="dg-label" x="270" y="262">texture page</text><text class="dg-sub" x="270" y="277">in VRAM</text>
+      <rect class="dg-node" x="375" y="246" width="200" height="38" rx="5"/>
+      <text class="dg-label" x="475" y="262">vertex array</text><text class="dg-sub" x="475" y="277">offset / 8 = index</text>
+      <rect class="dg-node" x="590" y="246" width="110" height="38" rx="5"/>
+      <text class="dg-label" x="645" y="262">normal array</text><text class="dg-sub" x="645" y="277">offset / 8</text>
+      <path class="dg-edge" d="M105.0 190 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M218.3 190 V218 H270 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M388.3 190 V218 H400 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M445.0 190 V218 H450 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M501.7 190 V218 H500 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M558.3 190 V218 H550 V244" marker-end="url(#tmd-arrow)"/>
+      <path class="dg-edge" d="M615.0 190 V218 H645 V244" marker-end="url(#tmd-arrow)"/>
+    </svg>
+    <figcaption>Records in a group share one stride and one layout, so the group header is the only place shape is stated. A record never stores coordinates: it points at shared vertices and normals by byte offset, and at a palette and texture page in video memory by the <code>cba</code> / <code>tsb</code> words.</figcaption>
+  </figure>
   <h3 id="colour-block">Untextured records (rows 2/3)</h3>
   <p>Each colour is the PSX <code>[R, G, B, code]</code> word; the fourth byte is the GPU command code, not colour.</p>
   <table class="layout">
@@ -153,12 +221,6 @@
         </tbody>
       </table>
       <p>The general renderer's fallback on rows 0/1 reads past the vertex indices into the normal block. The on-disc packets put a lit textured quad's four vertex indices at byte 12 for both rows, so the parser resolves <code>6</code> u16 units for both. Across every field / town env pack, offset 12 is the only candidate with zero out-of-range indices and it leaves the quads planar (0.78 units mean out-of-plane, vs 65-166 for the alternatives). Reading at the wrong offset makes indices exceed the vertex count and mesh builders drop the prims - a town house renders as a shredded pile.</p>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: two texture-block mis-reads</summary>
-    <div class="disclosure-body">
-      <p>A walker that placed the texture block at <code>vertex_offset - 12</code> was right only for the baked rows; on lit rows it read <code>(cba, tsb)</code> from geometry and drew rainbow garbage. Mis-reading an untextured colour block as a texture block samples a random VRAM page - the "flat green tint / transparent hole". Both are catalogued on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
     </div>
   </details>
 </section>

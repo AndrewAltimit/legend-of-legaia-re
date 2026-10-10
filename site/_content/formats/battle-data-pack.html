@@ -26,6 +26,44 @@
     <div class="bm-cell bm-pad" style="--w:2"><span class="bm-off"></span><span class="bm-name">zero pad</span><span class="bm-size">to 0x8000</span></div>
     <div class="bm-cell bm-accent" style="--w:9"><span class="bm-off">+0x8000</span><span class="bm-name">slot region</span><span class="bm-size">[dec_size][LZS] per slot</span></div>
   </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 292" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="bdp-fig-title">
+      <title id="bdp-fig-title">A player battle file, three levels deep. The file holds a header, an LZS animation record, a descriptor table and a slot region; each descriptor entry points at one slot; each slot decodes to a header, a loader frame, a Legaia TMD and a texture pool.</title>
+      <defs><marker id="bdp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="20" y="44" width="70" height="44"/><text class="dg-label" x="55" y="71">header</text>
+      <rect class="dg-node" x="90" y="44" width="170" height="44"/>
+      <text class="dg-label" x="175" y="63">record[0], LZS</text><text class="dg-sub" x="175" y="79">animations, art bank</text>
+      <rect class="dg-node-accent" x="260" y="44" width="140" height="44"/>
+      <text class="dg-label" x="330" y="63">descriptor table</text><text class="dg-sub" x="330" y="79">item id, offset, size</text>
+      <rect class="dg-group" x="400" y="44" width="60" height="44"/><text class="dg-sub" x="430" y="71">pad</text>
+      <rect class="dg-node" x="460" y="44" width="80" height="44"/><text class="dg-label" x="500" y="71">slot</text>
+      <rect class="dg-node-ok" x="540" y="44" width="80" height="44"/><text class="dg-label" x="580" y="71">slot</text>
+      <rect class="dg-node" x="620" y="44" width="80" height="44"/><text class="dg-label" x="660" y="71">slot ...</text>
+      <text class="dg-edge-label" x="20" y="36">one player file</text>
+      <text class="dg-edge-label" x="290" y="22" text-anchor="end">one entry per equipment item</text>
+      <path class="dg-edge" d="M300 44 V26 H500 V42" marker-end="url(#bdp-arrow)"/>
+      <path class="dg-edge" d="M360 44 V14 H580 V42" marker-end="url(#bdp-arrow)"/>
+      <text class="dg-edge-label" x="592" y="18">slots from +0x8000</text>
+
+      <path class="dg-edge-dim" d="M540 88 L20 142 M620 88 L700 142"/>
+      <rect class="dg-node" x="20" y="142" width="100" height="44"/>
+      <text class="dg-label" x="70" y="161">dec_size</text><text class="dg-sub" x="70" y="177">u32</text>
+      <rect class="dg-node-accent" x="120" y="142" width="470" height="44"/>
+      <text class="dg-label" x="355" y="169">LZS stream</text>
+      <rect class="dg-group" x="590" y="142" width="110" height="44"/><text class="dg-sub" x="645" y="169">pad to sector</text>
+      <path class="dg-edge" d="M355 186 V226" marker-end="url(#bdp-arrow)"/>
+      <text class="dg-edge-label" x="366" y="211">decompress to dec_size bytes</text>
+      <rect class="dg-node" x="20" y="228" width="120" height="50"/>
+      <text class="dg-label" x="80" y="250">slot header</text><text class="dg-sub" x="80" y="267">32 bytes</text>
+      <rect class="dg-node" x="140" y="228" width="150" height="50"/>
+      <text class="dg-label" x="215" y="250">loader frame</text><text class="dg-sub" x="215" y="267">attach + bone ids</text>
+      <rect class="dg-node-ok" x="290" y="228" width="190" height="50"/>
+      <text class="dg-label" x="385" y="250">Legaia TMD</text><text class="dg-sub" x="385" y="267">the item's geometry</text>
+      <rect class="dg-node" x="480" y="228" width="220" height="50"/>
+      <text class="dg-label" x="590" y="250">texture pool</text><text class="dg-sub" x="590" y="267">palette + 4bpp pixels</text>
+    </svg>
+    <figcaption>The battle model is not stored whole. The game reads the equipped item ids, looks each up in the descriptor table, and decodes only those slots - so what a character wears decides which meshes and textures are ever loaded.</figcaption>
+  </figure>
   <p>The 16-sector prologue (header, <code>record[0]</code>, descriptor table) is read in one go; slots are then streamed by seeking from one selected slot to the next. The header itself is four words:</p>
   <div class="byte-map" role="img" aria-label="Header: descriptor offset, image block A offset, image block B offset, record 0 decoded size">
     <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">desc_off</span><span class="bm-size">u32</span></div>
@@ -150,12 +188,6 @@
     </tbody>
   </table>
   <p>The assembler reads one bone-id byte per object while <code>obj_index &lt; attach_count</code>, then tags surplus objects <code>0xFF</code> (per-clip swap variant) or <code>0xFE</code> (extra animated part). Assembled objects are also <em>effect-read</em>: the Spirit charge samples authored vertex indices of specific objects, so a rebuild must keep a real vertex pool in every slot even when it draws nothing.</p>
-  <details class="disclosure">
-    <summary>History: earlier readings of the slot header</summary>
-    <div class="disclosure-body">
-      <p><code>+0x04</code> / <code>+0x08</code> were first read as nested-section end offsets and <code>+0x10</code> as half of a flag word; the byte-match corpus read the loader frame's attach bytes as texture-format tags. The assembler's disassembly supersedes all of these - see <a href="../reference/re-settled-threads.html">settled threads</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="texture-pool-vram-placement">
@@ -269,12 +301,6 @@
     <div class="disclosure-body">
       <p>Rebased at load together with the <code>+0x58</code> art-bank pointer, and read by nothing. The sweep now covers the whole disc: <code>SCUS_942.54</code> plus all 83 mapped overlay images, 518,656 instruction words. Eight word-width accesses sit at that displacement on a base other than the stack pointer, and every one is accounted for - the relocation itself, a render struct's <em>z</em> component, two scratchpad block copies, two module-local effect-handle stores, and one pointer walk that starts in a module context rather than at the record table.</p>
       <p>Its target is <code>clut_a_off &minus; 4</code>, zero on disc. The earlier "points at the ME archive" hypothesis is refuted by the disc: no <code>"ME"</code> archive exists in any player file.</p>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: the "16 MB container at PROT 0865" reading</summary>
-    <div class="disclosure-body">
-      <p>That figure was extraction 0865's window under the superseded entry-size expression: it spanned Gala's file, Terra's, and most of the monster archive. The same over-read produced "Vahn = PROT 0861" and the battle_data / monster archive conflation. Each file's slot region tiles its own footprint exactly, which fixes the true size. Catalogued in <a href="../reference/re-do-not-re-walk.html#containers">do-not-re-walk</a>.</p>
     </div>
   </details>
   <details class="disclosure">

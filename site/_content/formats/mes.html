@@ -30,6 +30,38 @@
     <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">end</span><span class="bm-name">0x00</span><span class="bm-size">u8</span></div>
     <div class="bm-cell bm-dim" style="--w:2"><span class="bm-off">control</span><span class="bm-name">0x24 / 0x25 / 0x27..</span><span class="bm-size">after the page</span></div>
   </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 262" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mes-fig-title">
+      <title id="mes-fig-title">How one dialog line becomes text on screen: glyph bytes index the dialog font, a two-byte escape pulls a name from a game table, the zero byte ends the line and the control byte after the page tells the pager what the next button press does.</title>
+      <defs><marker id="mes-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="20">one line, as stored</text>
+      <rect class="dg-node" x="20" y="30" width="60" height="40"/><text class="dg-label" x="50" y="55">0x1F</text>
+      <rect class="dg-node" x="80" y="30" width="200" height="40"/><text class="dg-label" x="180" y="55">glyph bytes</text>
+      <rect class="dg-node-accent" x="280" y="30" width="110" height="40"/><text class="dg-label" x="335" y="55">0xC1 XX</text>
+      <rect class="dg-node" x="390" y="30" width="170" height="40"/><text class="dg-label" x="475" y="55">glyph bytes</text>
+      <rect class="dg-node" x="560" y="30" width="60" height="40"/><text class="dg-label" x="590" y="55">0x00</text>
+      <rect class="dg-node-warn" x="620" y="30" width="80" height="40"/><text class="dg-label" x="660" y="55">control</text>
+      <path class="dg-edge" d="M150 70 V116" marker-end="url(#mes-arrow)"/>
+      <path class="dg-edge" d="M335 70 V116" marker-end="url(#mes-arrow)"/>
+      <path class="dg-edge" d="M660 70 V116" marker-end="url(#mes-arrow)"/>
+      <rect class="dg-node" x="40" y="118" width="220" height="50" rx="5"/>
+      <text class="dg-label" x="150" y="139">dialog font</text>
+      <text class="dg-sub" x="150" y="157">byte = tile index + its width</text>
+      <rect class="dg-node" x="275" y="118" width="210" height="50" rx="5"/>
+      <text class="dg-label" x="380" y="139">name table</text>
+      <text class="dg-sub" x="380" y="157">hero, item, magic or art name</text>
+      <rect class="dg-node" x="520" y="118" width="180" height="50" rx="5"/>
+      <text class="dg-label" x="610" y="139">pager</text>
+      <text class="dg-sub" x="610" y="157">next page, close, or menu</text>
+      <path class="dg-edge" d="M150 168 V204" marker-end="url(#mes-arrow)"/>
+      <path class="dg-edge" d="M380 168 V204" marker-end="url(#mes-arrow)"/>
+      <path class="dg-edge" d="M610 168 V228 H492" marker-end="url(#mes-arrow)"/>
+      <rect class="dg-node-ok" x="40" y="206" width="450" height="44" rx="5"/>
+      <text class="dg-label" x="265" y="225">dialog box</text>
+      <text class="dg-sub" x="265" y="241">three rows of proportional text</text>
+    </svg>
+    <figcaption>Nothing in a line is ASCII. Glyph bytes are positions in the <a href="dialog-font.html">dialog font</a>; a substitution escape is resolved when the line is drawn, which is why renaming the hero changes every line that mentions him.</figcaption>
+  </figure>
   <p>A line is glyph indices with 2-byte escapes. Consecutive lines fill a three-row box; the control byte after the page says what the button press does - next page, close, or open a choice menu.</p>
 </section>
 
@@ -169,10 +201,6 @@
       <p>Picker box rect: <code>x = 0x26</code>, <code>y = 0x94 + ((4-N)*0xF)/2</code>, <code>w = 0xF4</code>, <code>h = 0x38 - (4-N)*0xF</code> - 244 wide, shrinking 15 px per absent option. The main reading box is emitted as <code>(ctx+0x12, ctx+0x14 + d, 0xF4, lines*0xF - 3)</code> with skin <code>0x61</code>, where <code>d</code> moves only with the <code>0x48</code> collapse animation - the rows scroll, the frame does not.</p>
       <p>The box emitter composes a 9-slice gold frame from the system-UI sheet plus an interior fill of <strong>two identical semi-transparent gouraud quads</strong> (mode <code>B/2 + F/2</code>, top RGB <code>(0x18,0x18,0x28)</code>, bottom <code>(0x40,0x40,0xA0)</code>), which composes to <code>0.25 back + 0.75 gradient</code>. The engine bakes the gradient at alpha 191/255 and draws it once. The page-advance hand draws at <code>(0x10A, box_y + lines*0xF - 0x13)</code>; the picker hand at <code>(box_x - 6, box_y + cursor*0xF)</code>; labels render CLUT 7 at <code>box_x + 0x10</code>.</p>
     </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: labels between the open byte and the continuation</summary>
-    <div class="disclosure-body"><p>An earlier note read the 2-byte entries after the open byte as the option labels. They are the jump table; the labels follow the continuation byte. An earlier parser also required the dispatch-byte continuation and so found zero pickers in town01. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
 </section>
 

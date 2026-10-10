@@ -27,11 +27,34 @@
   </div>
 
   <p>The meta-event difference, byte for byte:</p>
-  <div class="byte-map" role="img" aria-label="Set Tempo meta event: FF, 51, then three tempo bytes with no length byte">
-    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+0</span><span class="bm-name">FF</span><span class="bm-size">meta</span></div>
-    <div class="bm-cell bm-dim" style="--w:1"><span class="bm-off">+1</span><span class="bm-name">51</span><span class="bm-size">Set Tempo</span></div>
-    <div class="bm-cell bm-accent" style="--w:3"><span class="bm-off">+2</span><span class="bm-name">tt tt tt - no <code>03</code> length byte first</span><span class="bm-size">u24 BE us/qn</span></div>
-  </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="seq-fig-title">
+      <title id="seq-fig-title">The same two meta events in a standard MIDI file and in a Legaia SEQ. MIDI puts a length byte after the meta type; SEQ does not, so its tempo event is five bytes and its end-of-track is two.</title>
+      <text class="dg-edge-label" x="150" y="20">set tempo</text>
+      <text class="dg-edge-label" x="522" y="20">end of track</text>
+      <text class="dg-edge-label" x="20" y="52">standard MIDI</text>
+      <rect class="dg-node" x="150" y="30" width="56" height="34"/><text class="dg-label" x="178" y="52">FF</text>
+      <rect class="dg-node" x="206" y="30" width="56" height="34"/><text class="dg-label" x="234" y="52">51</text>
+      <rect class="dg-node-warn" x="262" y="30" width="56" height="34"/><text class="dg-label" x="290" y="52">03</text>
+      <rect class="dg-node-accent" x="318" y="30" width="56" height="34"/><text class="dg-label" x="346" y="52">tt</text>
+      <rect class="dg-node-accent" x="374" y="30" width="56" height="34"/><text class="dg-label" x="402" y="52">tt</text>
+      <rect class="dg-node-accent" x="430" y="30" width="56" height="34"/><text class="dg-label" x="458" y="52">tt</text>
+      <rect class="dg-node" x="522" y="30" width="56" height="34"/><text class="dg-label" x="550" y="52">FF</text>
+      <rect class="dg-node" x="578" y="30" width="56" height="34"/><text class="dg-label" x="606" y="52">2F</text>
+      <rect class="dg-node-warn" x="634" y="30" width="56" height="34"/><text class="dg-label" x="662" y="52">00</text>
+      <text class="dg-edge-label" x="20" y="112">Legaia SEQ</text>
+      <rect class="dg-node" x="150" y="90" width="56" height="34"/><text class="dg-label" x="178" y="112">FF</text>
+      <rect class="dg-node" x="206" y="90" width="56" height="34"/><text class="dg-label" x="234" y="112">51</text>
+      <rect class="dg-node-accent" x="262" y="90" width="56" height="34"/><text class="dg-label" x="290" y="112">tt</text>
+      <rect class="dg-node-accent" x="318" y="90" width="56" height="34"/><text class="dg-label" x="346" y="112">tt</text>
+      <rect class="dg-node-accent" x="374" y="90" width="56" height="34"/><text class="dg-label" x="402" y="112">tt</text>
+      <rect class="dg-node" x="522" y="90" width="56" height="34"/><text class="dg-label" x="550" y="112">FF</text>
+      <rect class="dg-node" x="578" y="90" width="56" height="34"/><text class="dg-label" x="606" y="112">2F</text>
+      <text class="dg-edge-label" x="150" y="148">A MIDI parser takes the first tempo byte for the length, mis-sizes the event and</text>
+      <text class="dg-edge-label" x="150" y="164">loses the tempo - so the track keeps its 240 BPM placeholder.</text>
+    </svg>
+    <figcaption>Amber cells are the length bytes MIDI writes and SEQ omits. The three <code>tt</code> bytes are the tempo, big-endian microseconds per quarter note.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="header">
@@ -93,7 +116,7 @@
   <details class="disclosure">
     <summary>Details: the track that needs the meta latch (PROT 1045)</summary>
     <div class="disclosure-body">
-      <p>Every stream in the corpus parses to a clean end. PROT 1045 (sound test 57, the "sorrowful event" requiem) closes on a ritardando written with the meta latch: <code>FF 51 0E C4 3E</code> (62 BPM), then <code>51 0F 42 40</code> (60 BPM) with no second <code>FF</code>. Read <code>51 0F 42</code> as a note instead and the parser falls one byte out of phase, reads the closing volume fade (<code>B5 07 nn</code> / <code>B6 07 nn</code>) as long deltas and notes, walks through the real <code>FF 2F 00</code> and halts on a <code>0xF4</code> eleven bytes past it - the last bars garbled and the loop never reached. That was once recorded as a one-byte desync in an otherwise valid stream.</p>
+      <p>Every stream in the corpus parses to a clean end. PROT 1045 (sound test 57, the "sorrowful event" requiem) closes on a ritardando written with the meta latch: <code>FF 51 0E C4 3E</code> (62 BPM), then <code>51 0F 42 40</code> (60 BPM) with no second <code>FF</code>. Read <code>51 0F 42</code> as a note instead and the parser falls one byte out of phase, reads the closing volume fade (<code>B5 07 nn</code> / <code>B6 07 nn</code>) as long deltas and notes, walks through the real <code>FF 2F 00</code> and halts on a <code>0xF4</code> eleven bytes past it - the last bars garbled and the loop never reached.</p>
     </div>
   </details>
 </section>

@@ -42,6 +42,57 @@
     <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off"></span><span class="bm-name">frame 1 &hellip; frame n-1</span><span class="bm-size">entries</span></div>
     <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">end-8</span><span class="bm-name">padding</span><span class="bm-size">8 zero bytes</span></div>
   </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="anm-fig-title">
+      <title id="anm-fig-title">An ANM record is a grid of 8-byte entries, one row per frame and one column per bone. Each entry holds a translation and a rotation, and bone i poses TMD object i directly.</title>
+      <defs><marker id="anm-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="250" y="22" text-anchor="middle">one record: frames x bones entries of 8 bytes</text>
+      <text class="dg-sub" x="146" y="44">bone 0</text>
+      <text class="dg-sub" x="198" y="44">bone 1</text>
+      <text class="dg-sub" x="250" y="44">bone 2</text>
+      <text class="dg-sub" x="302" y="44">...</text>
+      <text class="dg-sub" x="354" y="44">last</text>
+      <text class="dg-sub" x="86" y="72">frame 0</text>
+      <rect class="dg-node" x="120" y="50" width="52" height="36"/>
+      <rect class="dg-node" x="172" y="50" width="52" height="36"/>
+      <rect class="dg-node" x="224" y="50" width="52" height="36"/>
+      <rect class="dg-node" x="276" y="50" width="52" height="36"/>
+      <rect class="dg-node" x="328" y="50" width="52" height="36"/>
+      <text class="dg-sub" x="86" y="108">frame 1</text>
+      <rect class="dg-node" x="120" y="86" width="52" height="36"/>
+      <rect class="dg-node" x="172" y="86" width="52" height="36"/>
+      <rect class="dg-node-accent" x="224" y="86" width="52" height="36"/>
+      <rect class="dg-node" x="276" y="86" width="52" height="36"/>
+      <rect class="dg-node" x="328" y="86" width="52" height="36"/>
+      <text class="dg-sub" x="86" y="144">frame 2</text>
+      <rect class="dg-node" x="120" y="122" width="52" height="36"/>
+      <rect class="dg-node" x="172" y="122" width="52" height="36"/>
+      <rect class="dg-node" x="224" y="122" width="52" height="36"/>
+      <rect class="dg-node" x="276" y="122" width="52" height="36"/>
+      <rect class="dg-node" x="328" y="122" width="52" height="36"/>
+      <text class="dg-sub" x="86" y="180">...</text>
+      <rect class="dg-node" x="120" y="158" width="52" height="36"/>
+      <rect class="dg-node" x="172" y="158" width="52" height="36"/>
+      <rect class="dg-node" x="224" y="158" width="52" height="36"/>
+      <rect class="dg-node" x="276" y="158" width="52" height="36"/>
+      <rect class="dg-node" x="328" y="158" width="52" height="36"/>
+      <path class="dg-edge-dim" d="M36 62 V180" marker-end="url(#anm-arrow)"/>
+      <text class="dg-edge-label" x="20" y="216">stored row by row: all of frame 0, then frame 1 ...</text>
+      <path class="dg-edge" d="M276 104 H398" marker-end="url(#anm-arrow)"/>
+      <rect class="dg-node-accent" x="400" y="76" width="188" height="56"/>
+      <text class="dg-label" x="494" y="100">translation</text>
+      <text class="dg-sub" x="494" y="118">bytes 0..4: 3 x 12-bit</text>
+      <rect class="dg-node" x="588" y="76" width="112" height="56"/>
+      <text class="dg-label" x="644" y="100">rotation</text>
+      <text class="dg-sub" x="644" y="118">bytes 5..7</text>
+      <text class="dg-edge-label" x="400" y="66">the 8-byte entry for (frame 1, bone 2)</text>
+      <path class="dg-edge" d="M550 132 V166" marker-end="url(#anm-arrow)"/>
+      <rect class="dg-node-ok" x="400" y="168" width="300" height="50" rx="5"/>
+      <text class="dg-label" x="550" y="189">TMD object 2 this frame</text>
+      <text class="dg-sub" x="550" y="207">every vertex: R * v + T, no parent bone</text>
+    </svg>
+    <figcaption>"Bone" here means one rigid mesh piece: column <em>i</em> moves TMD object <em>i</em> on its own, so there is no skeleton to walk. Playback steps down the rows and interpolates between neighbouring frames.</figcaption>
+  </figure>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>
@@ -98,12 +149,6 @@
     <li>The renderer poses object <code>i</code> with a flat <code>R&middot;v + T</code> about the object origin - there is no bone hierarchy to accumulate. Bone <code>i</code> drives TMD object <code>i</code>.</li>
     <li>Frame 0 of an idle clip is the rest pose: it places each TMD object at its joint with its rest orientation.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the "byte 4 high nibble" phrasing</summary>
-    <div class="disclosure-body">
-      <p>Earlier prose placed <code>high4(T2)</code> in the high nibble of byte 4. The instruction sequence <code>lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8</code> at <code>0x8001BF30..0x8001BF3C</code> reads the low nibble, and the parser always did. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="disc-sources">

@@ -19,6 +19,51 @@
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
   <p>A CD image (<code>.bin</code>) is a flat run of sectors addressed by LBA - the logical block address, a sector number counting from the start of the disc. "Mode2/2352" names the sector flavour PlayStation discs use: mode 2 of the CD-ROM XA standard, stored as full 2352-byte raw sectors rather than pre-stripped 2048-byte ones. Reading a file means knowing its start LBA and peeling the 2048 user-data bytes out of each sector.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="disc-fig-title">
+      <title id="disc-fig-title">From raw sector to named file: a 2352-byte sector yields 2048 bytes of user data, ISO9660 turns runs of user data into 45 named files, and PROT.DAT is the one that holds the game's assets</title>
+      <defs><marker id="disc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="30" y="16" width="150" height="54" rx="5"/>
+      <text class="dg-label" x="105" y="39">Raw sector</text>
+      <text class="dg-sub" x="105" y="57">2352 bytes, by LBA</text>
+      <rect class="dg-node-accent" x="200" y="16" width="150" height="54" rx="5"/>
+      <text class="dg-label" x="275" y="39">User data</text>
+      <text class="dg-sub" x="275" y="57">2048 bytes at +24</text>
+      <rect class="dg-node" x="370" y="16" width="150" height="54" rx="5"/>
+      <text class="dg-label" x="445" y="39">ISO9660</text>
+      <text class="dg-sub" x="445" y="57">descriptor at LBA 16</text>
+      <rect class="dg-node" x="540" y="16" width="150" height="54" rx="5"/>
+      <text class="dg-label" x="615" y="39">45 files</text>
+      <text class="dg-sub" x="615" y="57">found by name</text>
+      <path class="dg-edge" d="M180 43 H198" marker-end="url(#disc-arrow)"/>
+      <path class="dg-edge" d="M350 43 H368" marker-end="url(#disc-arrow)"/>
+      <path class="dg-edge" d="M520 43 H538" marker-end="url(#disc-arrow)"/>
+      <path class="dg-edge" d="M615 70 V98" marker-end="url(#disc-arrow)"/>
+      <rect class="dg-group" x="30" y="100" width="660" height="134" rx="6"/>
+      <text class="dg-edge-label" x="42" y="119">files on the disc (plus SYSTEM.CNF)</text>
+      <rect class="dg-node" x="40" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="90" y="153">SCUS_942.54</text>
+      <text class="dg-sub" x="90" y="171">executable</text>
+      <rect class="dg-node-accent" x="148" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="198" y="153">PROT.DAT</text>
+      <text class="dg-sub" x="198" y="171">asset archive</text>
+      <rect class="dg-node" x="256" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="306" y="153">CDNAME.TXT</text>
+      <text class="dg-sub" x="306" y="171">entry names</text>
+      <rect class="dg-node" x="364" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="414" y="153">DMY.DAT</text>
+      <text class="dg-sub" x="414" y="171">dev fixtures</text>
+      <rect class="dg-node" x="472" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="522" y="153">MOV/MV*.STR</text>
+      <text class="dg-sub" x="522" y="171">6 movies</text>
+      <rect class="dg-node" x="580" y="130" width="100" height="54" rx="5"/>
+      <text class="dg-label" x="630" y="153">XA/XA*.XA</text>
+      <text class="dg-sub" x="630" y="171">34 streams</text>
+      <path class="dg-edge-dim" d="M198 184 V200"/>
+      <text class="dg-edge-label" x="198" y="216">1233 numbered entries: textures, models, scripts, sound banks, code</text>
+    </svg>
+    <figcaption>The three layers every tool in the workspace peels in order. Sector numbers (LBAs) only matter up to the ISO9660 step; past it everything is a named file, and almost everything interesting is inside <a href="prot.html">PROT.DAT</a>.</figcaption>
+  </figure>
   <p>Two things live on top of that geometry:</p>
   <ul class="bullets">
     <li><strong>ISO9660</strong> - the standard CD filesystem that turns sector numbers into the 45 named files on the disc.</li>
@@ -48,7 +93,7 @@
       <tr><td><code>2072..2352</code></td><td>280</td><td>EDC + ECC</td><td>error detection + correction (Form 1 only; Form 2 XA audio sectors carry no ECC)</td></tr>
     </tbody>
   </table>
-  <p><code>RawDisc::read_sector(lba)</code> returns just the user-data slice; <code>read_user_data(lba, count, buf)</code> reads a contiguous run.</p>
+  <p><code>read_user_data(lba, count, buf)</code> reads a contiguous run of sectors the same way.</p>
 <pre><code>const SECTOR_SIZE: usize = 2352;
 const USER_DATA_OFFSET: usize = 24;
 const USER_DATA_SIZE: usize = 2048;</code></pre>
@@ -74,12 +119,6 @@ const USER_DATA_SIZE: usize = 2048;</code></pre>
       <tr><td><code>XA/XA*.XA</code></td><td>streamed voice and audio in standard CD-XA Mode 2 Form 2; <code>crates/xa</code> demuxes per <code>(file_no, ch_no)</code> straight off the raw sectors</td><td><a href="xa.html">XA audio</a></td></tr>
     </tbody>
   </table>
-  <details class="disclosure">
-    <summary>History: the XA "non-standard interleave"</summary>
-    <div class="disclosure-body">
-      <p>Early tooling reported a bespoke XA interleave. The interleave is the standard one; the apparent muxing scheme was damage from reading Form 2 sectors through a Form 1 (2048-byte) truncation. The demuxer reads raw 2352-byte sectors - see <a href="xa.html">XA audio</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="full-iso-relayout">
