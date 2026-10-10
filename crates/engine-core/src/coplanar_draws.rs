@@ -325,9 +325,11 @@ fn lift_dir(vis: [f32; 3]) -> [f32; 3] {
 /// [`mesh_planes`]); draws whose mesh has no entry are skipped.
 ///
 /// Within a cluster the draw presenting the **largest** plane stays put and
-/// each overlapping smaller/later draw lifts `DRAW_NUDGE` units per rank
-/// toward the surface's visible side - the same "small decal wins" outcome
-/// retail's mean-Z ordering-table bucketing produces. Ranks are assigned by
+/// each overlapping smaller draw lifts `DRAW_NUDGE` units per rank toward
+/// the surface's visible side - the same "small decal wins" outcome retail's
+/// mean-Z ordering-table bucketing produces. Between draws of equal area the
+/// **earlier** one lifts: equal quads share a bucket, and a bucket draws its
+/// packets last-linked first, so the earlier-emitted draw is the one on top. Ranks are assigned by
 /// greedy graph colouring, so chains of adjacent tiles alternate 0/1 instead
 /// of accumulating.
 pub fn coplanar_draw_offsets(
@@ -511,11 +513,21 @@ pub fn coplanar_draw_offsets(
             max_area.insert(d, m);
         }
         let mut order: Vec<usize> = edges.keys().copied().collect();
+        // Equal areas: the **later** draw is the base and the earlier one
+        // lifts. Two draws laying the same quads on one plane - a sign over
+        // the wall panel behind it - put their packets in the same ordering
+        // table bucket (equal mean Z), and a bucket is a LIFO list: the
+        // packet linked last is drawn first, so the draw the field pass
+        // emitted first paints over the one it emitted after. `koin1`'s
+        // prize-counter banner (env slot 64, additive, CLUT `(80, 504)`) is
+        // emitted before the brick panel it hangs on (slot 63), and retail's
+        // display list holds each brick quad directly ahead of its banner
+        // quad; ranked the other way the panel hid the banner outright.
         order.sort_by(|&a, &b| {
             max_area[&b]
                 .partial_cmp(&max_area[&a])
                 .unwrap_or(std::cmp::Ordering::Equal)
-                .then(a.cmp(&b))
+                .then(b.cmp(&a))
         });
         // Rank capacity must exceed the largest mutual-overlap clique or the
         // clamp hands the overflow draws one shared rank - taiku's plaza
@@ -777,6 +789,26 @@ mod tests {
                 "rank accumulated: {off:?}"
             );
         }
+    }
+
+    /// Two different meshes laying the same quad on one plane at one
+    /// position (koin1's banner over its brick panel): the draw emitted
+    /// first is the one retail paints last, so it is the one that lifts.
+    #[test]
+    fn of_two_equal_planes_the_earlier_draw_lifts() {
+        let (p, i) = floor_quad(128.0);
+        let mut planes = HashMap::new();
+        planes.insert(64usize, mesh_planes(&p, &i));
+        planes.insert(63usize, mesh_planes(&p, &i));
+        let draws = vec![draw(64, 0, 0, 0), draw(63, 0, 0, 0)];
+        let offs = coplanar_draw_offsets(&draws, &planes);
+        assert_eq!(offs.len(), 1, "exactly one draw lifts: {offs:?}");
+        let off = offs.get(&draws[0]).expect("the earlier draw lifts");
+        assert!((off[1] + DRAW_NUDGE).abs() < 1e-4, "off={off:?}");
+        // Whichever mesh comes first.
+        let swapped = vec![draw(63, 0, 0, 0), draw(64, 0, 0, 0)];
+        let offs = coplanar_draw_offsets(&swapped, &planes);
+        assert!(offs.contains_key(&swapped[0]), "{offs:?}");
     }
 
     #[test]
