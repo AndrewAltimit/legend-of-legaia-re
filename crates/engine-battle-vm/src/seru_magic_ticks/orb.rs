@@ -1,0 +1,221 @@
+//! PROT 0911 Orb (`0x89`): whole-row heal and status cleanse tick.
+
+use super::*;
+
+/// PROT 0911 (`summon_orb`) tick body - `0x801CF4EC` row `8` (`0x801F1FBC`).
+/// The module's image opens with code, so the body sits at the load base.
+pub const ORB_TICK: u32 = 0x801F_69D8;
+
+// ---------------------------------------------------------------------------
+// PROT 0911 - Orb
+// ---------------------------------------------------------------------------
+
+/// The phase PROT 0911's arm `5` jumps straight to, skipping `6`, `7` and `8`
+/// (`sb s7,0x279(s5)` at `0x801F7780` with `s7 = 9`).
+pub const ORB_ARM5_TARGET_PHASE: u8 = 9;
+
+/// `ctx[+0x278]` arm `5` writes before the jump (`0x801F775C`).
+pub const ORB_ARM5_CTX_278: u8 = 2;
+
+/// PROT 0911's settle arm.
+pub const ORB_SETTLE_PHASE: u8 = 0x0A;
+
+/// The lowest magic level at which arm `9`'s status cleanse runs at all
+/// (`sltiu v0,v0,0x3` at `0x801F7BD8` - below `3` the branch skips the whole
+/// ladder).
+pub const ORB_CLEANSE_MIN_LEVEL: u8 = 3;
+
+/// The party seats arm `9` un-hides before it heals - `actor_table[0..3]`,
+/// each gated on `0x8007BD10[seat] != 0` (the per-seat character index).
+pub const ORB_PARTY_SEATS: u8 = 3;
+
+/// PROT 0911's inline heal: `(magic_level << 6) + 0x1C0`, i.e.
+/// `level * 64 + 448`.
+///
+/// `magic_level` is **not** a spell-table field. Arm `9` walks the caster's
+/// own character record - `0x80084140 + (0x8007BD10[ctx[+0x13]] - 1) * 0x414`,
+/// the `0x414`-stride live record block `docs/formats/save-record.md`
+/// describes - scanning the 32-entry learned-id list at record `+0x13D` for
+/// `caster[+0x1DF]` and reading the parallel byte at record `+0x161`
+/// (`0x801F7AB4` / `0x801F7AD8` under a `0x80084140` base, so `+0x705` and
+/// `+0x729` from there).
+///
+/// `docs/formats/spell-table.md` records this family's heal as
+/// `(power_byte << 5) + 0xE0`. PROT 0911's shift is `0x6` and its addend
+/// `0x1C0` (`sll v0,v0,0x6` at `0x801F7AE0`, `addiu a3,v0,0x1c0` at
+/// `0x801F7AEC`) - exactly twice the documented amount - so the formula is
+/// per module, not band-wide.
+pub fn orb_heal_amount(magic_level: u8) -> u32 {
+    (u32::from(magic_level) << 6) + 0x1C0
+}
+
+/// The `+0x16E` keep-mask arm `9`'s cleanse ladder applies, selected by the
+/// battle-overlay word at `0x801F6960` (read at `0x801F7BE4`, below this
+/// module's own load base, so it belongs to PROT 0898 rather than to the
+/// module).
+///
+/// * `1` -> `0xFFFC` - clears Venom and Toxic only;
+/// * `2` -> `0xFF84` - also clears `0x08`..`0x40`;
+/// * `3` and `4` -> `0xFB84` - additionally clears bit `0x400`, the Kiss of
+///   Death mark `crate::cast_module_ticks::FLAG_KISS_OF_DEATH_MARK` names.
+///
+/// Any other selector clears nothing. Selector `4` additionally doubles the
+/// seat's AP gauge `+0x170` with a ceiling of `0x64`
+/// (`0x801F7E10..0x801F7E3C`, [`crate::seru_magic_ticks::cure_tier4_ap`]).
+pub fn orb_cleanse_mask(selector: u8) -> Option<u16> {
+    match selector {
+        1 => Some(0xFFFC),
+        2 => Some(0xFF84),
+        3 | 4 => Some(0xFB84),
+        _ => None,
+    }
+}
+
+/// One seat's outcome inside PROT 0911's heal sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeruHeal {
+    /// The seat healed.
+    pub seat: u8,
+    /// HP actually restored, after the clamp to `maxHP - HP`.
+    pub restored: u16,
+    /// `true` when this seat's AP gauge `+0x170` was doubled (selector `4`
+    /// only).
+    pub doubled_ap: bool,
+}
+
+/// PROT 0911 (Orb, action id `0x89`) tick body.
+///
+/// A `beq`/`slti` chain at `0x801F6A68..0x801F6AE8` over phases
+/// `0,1,2,3,4,5,9,0x0A,0xFF`. `s4 = actor_table[7]` is the summon seat; the
+/// busy flag lives on the **stack** (`sw t6,0x38(sp)` with `t6 = 1` at
+/// `0x801F6A34`), not in a saved register, which is the same latched-busy
+/// convention spelled differently.
+///
+/// This module is the band's **heal**, and its `1` HP store is an `addu`:
+///
+/// * `0` - `ctx[+0x278] = 0`;
+/// * `3` - summon `+0x21C = 0`, `+0x04 = 0`, `+0x21B = 8`, `+0x176 = 0x80`;
+/// * `4` - summon `+0x1DA += 1`;
+/// * `5` - `ctx[+0x278] = 2`, then `ctx[+0x279] = 9` - a jump, not an
+///   advance, which is why `6`, `7` and `8` are unreachable;
+/// * `9` - un-hide the party seats (`+0x21C = 0`, `+0x04 = 0x20080200`),
+///   `ctx[+0x278] = 0`, summon `+0x21C = 0xFF`, then the heal sweep over
+///   `actor_table[0 .. ctx[+0]]`: skip a dead seat, and unless `+0x16E & 4`
+///   `restored = min(amount, maxHP - HP)`, `+0x14C += restored`,
+///   `+0x10 = -restored` (a **store**, not an accumulate - the bar delta is
+///   overwritten with the negative of the heal), then the cleanse ladder when
+///   the caster's magic level is at least [`ORB_CLEANSE_MIN_LEVEL`] - whose
+///   selector-`4` arm also doubles the seat's AP gauge `+0x170`, capped at
+///   100;
+/// * `0x0A` - hold until the module's countdown expires, then phase `0xFF`;
+/// * `0xFF` - return zero.
+///
+/// `amount` is [`orb_heal_amount`] of the caster's per-magic level, and
+/// `max_hp` answers `+0x14E` for a seat, neither of which
+/// [`CastActorState`] carries. `cleanse` is the `0x801F6960` selector, or
+/// `None` when the level gate fails.
+///
+/// Not ported: the `record[+0x5D0]` counter the arm bumps by `2` or `4` per
+/// healed seat (a save-record write, outside the actor mirror) and the
+/// `+0x220..0x223` render-byte reset the cleanse ladder performs.
+///
+/// Wired: `World::run_cast_module_code`.
+///
+/// PORT: FUN_801F69D8 (PROT 0911 tick; phase chain + the whole-row heal and cleanse, packet/camera arms unported)
+pub fn orb_tick(
+    ctx: &mut CastModuleCtx,
+    seats: &mut [CastActorState],
+    summon_seat: u8,
+    amount: u32,
+    cleanse: Option<u8>,
+    settle: &mut i32,
+    max_hp: impl Fn(u8) -> u16,
+) -> (CastTickStep, Vec<SeruHeal>) {
+    let mut healed = Vec::new();
+    let step = run_latched(ctx, |c| match c.phase {
+        0 => {
+            c.ctx_278 = 0;
+            CastArmStep::Advance
+        }
+        3 => {
+            if let Some(s) = seats.get_mut(summon_seat as usize) {
+                s.render_flag = 0;
+            }
+            CastArmStep::Advance
+        }
+        4 => {
+            if let Some(s) = seats.get_mut(summon_seat as usize) {
+                s.staged_anim = s.staged_anim.wrapping_add(1);
+            }
+            CastArmStep::Advance
+        }
+        5 => {
+            c.ctx_278 = ORB_ARM5_CTX_278;
+            c.phase = ORB_ARM5_TARGET_PHASE;
+            CastArmStep::Hold
+        }
+        9 => {
+            for seat in 0..ORB_PARTY_SEATS {
+                if let Some(s) = seats.get_mut(seat as usize) {
+                    s.render_flag = 0;
+                }
+            }
+            c.ctx_278 = 0;
+            if let Some(s) = seats.get_mut(summon_seat as usize) {
+                s.render_flag = 0xFF;
+            }
+            let mask = cleanse.and_then(orb_cleanse_mask);
+            for seat in 0..c.party_count {
+                let cap = max_hp(seat);
+                let Some(v) = seats.get_mut(seat as usize) else {
+                    continue;
+                };
+                // A dead seat is skipped whole (`beq v0,zero,0x801f7e40` at
+                // `0x801F7A2C`); `+0x16E & 4` skips only the HP store
+                // (`0x801F7B7C`) and the cleanse ladder still runs.
+                if v.hp == 0 {
+                    continue;
+                }
+                let stores_hp = (v.flags & FLAG_NON_TARGETABLE) == 0;
+                let restored = if stores_hp {
+                    let r = u32::from(cap).saturating_sub(u32::from(v.hp)).min(amount) as u16;
+                    v.hp = v.hp.wrapping_add(r);
+                    v.hp_bar_delta = -i32::from(r);
+                    r
+                } else {
+                    0
+                };
+                if let Some(m) = mask {
+                    v.flags &= m;
+                }
+                let doubled_ap = cleanse == Some(4);
+                if doubled_ap {
+                    v.spirit_gauge = crate::seru_magic_ticks::cure_tier4_ap(v.spirit_gauge);
+                }
+                if stores_hp {
+                    healed.push(SeruHeal {
+                        seat,
+                        restored,
+                        doubled_ap,
+                    });
+                }
+            }
+            // `countdown += scalar << 8` (`0x801F78A4..0x801F78B8`).
+            *settle += SETTLE_SCALAR << 8;
+            CastArmStep::Advance
+        }
+        ORB_SETTLE_PHASE => {
+            // An ungated drain (`subu; bgtz` at `0x801F7F74..0x801F7F94`):
+            // `0xFF` once the word arm 9 re-armed is spent.
+            *settle -= SETTLE_DRAIN_PER_TICK;
+            if *settle <= 0 {
+                c.phase = SERU_B_DONE_PHASE;
+            }
+            CastArmStep::Hold
+        }
+        SERU_B_DONE_PHASE => CastArmStep::Finish,
+        1 | 2 => CastArmStep::Advance,
+        _ => CastArmStep::Finish,
+    });
+    (step, healed)
+}

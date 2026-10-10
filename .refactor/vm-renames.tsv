@@ -1,0 +1,4 @@
+legaia_engine_battle_vm::cast_seru_ticks_a	legaia_engine_battle_vm::seru_magic_ticks
+legaia_engine_battle_vm::cast_seru_ticks_b	legaia_engine_battle_vm::seru_magic_ticks
+legaia_engine_vm::cast_seru_ticks_a	legaia_engine_battle_vm::seru_magic_ticks
+legaia_engine_vm::cast_seru_ticks_b	legaia_engine_battle_vm::seru_magic_ticks

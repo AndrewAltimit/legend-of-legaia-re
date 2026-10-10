@@ -223,7 +223,7 @@ pub fn summon_predamage_lazy(
 /// Only **one** module in the band pages this formula. The band's heals are
 /// PROT 0905 (Vera, this one) and PROT 0911 (Orb), and Orb's is its own
 /// closed form `(magic_level << 6) + 0x1C0` on its tick body
-/// (`crate::cast_seru_ticks_b::orb_heal_amount`). PROT 0903 / 0910 / 0913
+/// (`crate::seru_magic_ticks::orb_heal_amount`). PROT 0903 / 0910 / 0913
 /// were listed here as heal stagers and are not: all three roll damage
 /// through `FUN_801DD0AC(0x12, 7, seat)`.
 pub fn heal_summon_amount(magic_level: u8) -> u16 {

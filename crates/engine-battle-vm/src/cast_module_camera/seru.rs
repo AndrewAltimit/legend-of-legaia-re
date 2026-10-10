@@ -73,7 +73,7 @@ pub const GIMARD_BREATH_CLUT_MOVE: ModuleVramMove = ModuleVramMove {
 
 /// PROT 0903 (Gimard) - the camera and countdown half of the tick
 /// `0x801F69D8`, one call per tick before the phase-chain body
-/// ([`crate::cast_seru_ticks_a::gimard_tick`]) runs.
+/// ([`crate::seru_magic_ticks::gimard_tick`]) runs.
 ///
 /// `b` below is `FUN_80019B28(victim, caster)`, the heading from the victim
 /// to the caster, and `h = (b + 0x800) & 0xFFF` its reverse:

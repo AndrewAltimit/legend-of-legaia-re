@@ -28,15 +28,44 @@ use std::path::PathBuf;
 const MODULE_SOURCES: [(&str, &str); 3] = [
     (
         "cast_seru_ticks_a",
-        include_str!("../../engine-battle-vm/src/cast_seru_ticks_a.rs"),
+        concat!(
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/hit_sites.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/gimard.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/theeder.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/vera.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/gizam.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/nighto.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/zenoir.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/tests/ids_0x81_0x86.rs"),
+        ),
     ),
     (
         "cast_seru_ticks_b",
-        include_str!("../../engine-battle-vm/src/cast_seru_ticks_b.rs"),
+        concat!(
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/row_sweep.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/viguro.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/swordie.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/orb.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/spoon.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/freed.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/nova.rs"),
+            include_str!("../../engine-battle-vm/src/seru_magic_ticks/tests/ids_0x87_0x8b.rs"),
+        ),
     ),
     (
         "cast_arm_ticks",
-        include_str!("../../engine-battle-vm/src/cast_arm_ticks.rs"),
+        concat!(
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/damage_shapes.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/glare_divide.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/steal.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/curse.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/guilty_cross.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/rolling_flare.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/water_hazard.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/blade_breath.rs"),
+            include_str!("../../engine-battle-vm/src/cast_arm_ticks/tests.rs"),
+        ),
     ),
 ];
 

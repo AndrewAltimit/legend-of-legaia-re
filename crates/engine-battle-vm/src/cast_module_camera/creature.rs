@@ -350,7 +350,7 @@ pub fn jedo_direct(_st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
 /// a pass through arm 1 (the stream request, `0x801F6C64`) and arm 2 (the CD
 /// poll `FUN_8003F2B8(1)`, `0x801F6CD0`). Retail sits in arm 2 for as long
 /// as the read takes, drifting. Nova's tick body is ported
-/// (`cast_seru_ticks_b`), so this director runs beside it
+/// (`seru_magic_ticks`), so this director runs beside it
 /// ([`ModuleProfile::camera_beside`]) and holds nothing; the engine's read is
 /// always ready, and the later framings (arm 2's `0x40`-frame shot on the
 /// creature once the read lands, and on) are not directed. The

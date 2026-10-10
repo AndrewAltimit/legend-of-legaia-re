@@ -161,7 +161,7 @@ pub const VIGURO_STAGER_ARM1_CLIP: u8 = 1;
 ///
 // --- W1-C ---
 /// Arm `1` (`0x801F7BCC`) is the second, and it is what releases the tick
-/// body's phase-`8` rendezvous ([`crate::cast_seru_ticks_b`]):
+/// body's phase-`8` rendezvous ([`crate::seru_magic_ticks`]):
 ///
 /// ```text
 /// summon[+0x176] = 0                      ; pose, unported

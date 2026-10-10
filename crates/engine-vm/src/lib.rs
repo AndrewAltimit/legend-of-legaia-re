@@ -138,10 +138,13 @@ pub use legaia_engine_battle_vm::cast_fatal_decision;
 pub use legaia_engine_battle_vm::cast_module_camera;
 pub use legaia_engine_battle_vm::cast_module_ticks;
 // --- W1-C ---
+#[doc(hidden)]
 pub use legaia_engine_battle_vm::cast_seru_ticks_b;
 // --- end W1-C ---
 // --- W1-B ---
+#[doc(hidden)]
 pub use legaia_engine_battle_vm::cast_seru_ticks_a;
+pub use legaia_engine_battle_vm::seru_magic_ticks;
 // --- end W1-B ---
 // --- W1-D ---
 pub use legaia_engine_battle_vm::cast_arm_ticks;

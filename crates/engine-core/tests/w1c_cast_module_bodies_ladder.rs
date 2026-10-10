@@ -51,7 +51,7 @@ const MODULE_SOURCES: &[&str] = &[
     include_str!("../../engine-battle-vm/src/cast_module_ticks/ticks.rs"),
     include_str!("../../engine-battle-vm/src/cast_module_ticks/capture.rs"),
     include_str!("../../engine-battle-vm/src/cast_module_ticks/arms.rs"),
-    include_str!("../../engine-battle-vm/src/cast_module_ticks/arms_0955.rs"),
+    include_str!("../../engine-battle-vm/src/cast_module_ticks/six_spell_cell.rs"),
     include_str!("../../engine-battle-vm/src/cast_module_ticks/tests.rs"),
 ];
 

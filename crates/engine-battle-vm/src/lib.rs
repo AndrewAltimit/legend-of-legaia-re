@@ -59,7 +59,12 @@ pub mod cast_arm_ticks;
 pub mod cast_fatal_decision;
 pub mod cast_module_camera;
 pub mod cast_module_ticks;
-pub mod cast_seru_ticks_a;
-pub mod cast_seru_ticks_b;
 pub mod move_no_effect_guard;
 pub mod psx_camera;
+pub mod seru_magic_ticks;
+
+// Old paths of `seru_magic_ticks`, kept until consumers are rewritten.
+#[doc(hidden)]
+pub use seru_magic_ticks as cast_seru_ticks_a;
+#[doc(hidden)]
+pub use seru_magic_ticks as cast_seru_ticks_b;

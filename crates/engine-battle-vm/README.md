@@ -210,8 +210,8 @@ The crate's remaining modules are leaf kernels; by family:
   `battle_gauge_rearm`, `battle_commit_log`, `battle_cursor_pose`,
   `battle_record_writer`, `battle_cue_group`, `move_no_effect_guard` (the
   "No effect." banner).
-- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `cast_seru_ticks_a` /
-  `cast_seru_ticks_b` (the slot-B cast-module tick bodies, PROT 0903..0966),
+- **Casts** - `cast_module_ticks` / `cast_arm_ticks` / `seru_magic_ticks`
+  (the slot-B cast-module tick bodies, PROT 0903..0966, one file per module),
   `cast_module_camera` (the summon modules' own camera and countdown),
   `cast_fatal_decision` (PROT 0954), `battle_cast_census`,
   `battle_cast_cue`, `battle_cast_dispatch`; see

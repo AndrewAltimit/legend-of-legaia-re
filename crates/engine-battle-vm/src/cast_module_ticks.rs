@@ -91,25 +91,25 @@ use crate::battle_damage_wrappers::{
 };
 
 mod arms;
-mod arms_0955;
 mod capture;
 mod caster_stages;
 mod chain_bodies;
 mod evil_seru_magic;
 mod idioms;
 mod power;
+mod six_spell_cell;
 mod stagers;
 mod state;
 mod ticks;
 
 pub use arms::*;
-pub use arms_0955::*;
 pub use capture::*;
 pub use caster_stages::*;
 pub use chain_bodies::*;
 pub use evil_seru_magic::*;
 pub use idioms::*;
 pub use power::*;
+pub use six_spell_cell::*;
 pub use stagers::*;
 pub use state::*;
 pub use ticks::*;
