@@ -187,6 +187,14 @@ pub fn arts_banner_prims(
 /// axis (row 0 of `vp`, normalised), which is how a view-space offset reads
 /// in world space; retail's square is square on screen, so the vertical
 /// half-extent is the horizontal one. `None` behind the eye.
+///
+/// `anchor` is a raw PSX point, `+Y` down, and `vp` is a draw matrix: every
+/// host view-projection ends in the `scale(1, -1, 1)` that cancels the
+/// per-model Y flip its draws carry
+/// (`legaia_engine_vm::battle_cam_script::battle_vp`), so a raw point goes
+/// through it with its Y negated. Fed unflipped, a numeral's rise
+/// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
+/// fall: the run sank through the floor and off the bottom of the stage.
 pub fn popup_rect(
     vp: &[f32; 16],
     world_scale: f32,
@@ -205,7 +213,11 @@ pub fn popup_rect(
             )
         })
     };
-    let c = anchor.map(|v| v as f32 * world_scale);
+    let c = [
+        anchor[0] as f32 * world_scale,
+        -(anchor[1] as f32) * world_scale,
+        anchor[2] as f32 * world_scale,
+    ];
     let (cx, cy) = stage(c)?;
     let right = [vp[0], vp[4], vp[8]];
     let len = (right[0] * right[0] + right[1] * right[1] + right[2] * right[2]).sqrt();
@@ -256,7 +268,7 @@ mod tests {
         // x/z scaled to NDC over a fixed w: 1 world unit = 1/1000 NDC.
         let mut vp = [0.0f32; 16];
         vp[0] = 0.001;
-        vp[5] = -0.001;
+        vp[5] = 0.001;
         vp[10] = 0.001;
         vp[15] = 1.0;
         let small = popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 0);
@@ -264,6 +276,34 @@ mod tests {
         assert_eq!(small.len(), 1);
         assert!(big[0].w > small[0].w);
         assert!(popup_value_cells(&vp, 1.0, [0.0, 0.0, 0.0], 7, 37).is_empty());
+    }
+
+    /// The numeral rises. Under a real battle draw matrix - the camera
+    /// `battle_gimard_tail_fire_b` holds (pitch `64`, yaw `2620`, `TR (0,
+    /// 1024, 3283)`, focus `(125, 0, -642)`) - a hit on the struck member's
+    /// display trio `(144, -112, -1173)` projects above the floor under it
+    /// from the first frame and has reached the resting row by the ring
+    /// timer the capture holds (`352`, age `21`), which is where the
+    /// capture's display list seats the run.
+    #[test]
+    fn a_popup_rises_under_a_battle_draw_matrix() {
+        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        let pose = BattleCamPose {
+            pitch: 64.0,
+            yaw: 2620.0,
+            tr: [0.0, 1024.0, 3283.0],
+            focus: [125.0, 0.0, -642.0],
+        };
+        // The retail battle world scale the actor stage is drawn at.
+        const SCALE: f32 = 4.0;
+        let vp = battle_vp(&pose, SCALE, 4.0 / 3.0);
+        let trio = [144.0, -112.0, -1173.0];
+        let row = |age: u16| popup_value_cells(&vp, SCALE, trio, 16, age)[0].y;
+        let floor = popup_rect(&vp, SCALE, [144, 0, -1173], 1).unwrap().1;
+        assert!(row(0) < floor, "the push frame sits over the floor");
+        assert!(row(8) < row(0), "and climbs: {} then {}", row(0), row(8));
+        assert_eq!(row(21), vr::RESTING_TOP_Y);
+        assert_eq!(popup_value_cells(&vp, SCALE, trio, 16, 21).len(), 2);
     }
 
     fn quad(p: &ScreenPrim) -> ScreenQuad {
