@@ -1149,6 +1149,21 @@ function arenaClaims() {
   return out;
 }
 
+// The Delilas Challenge and the Delilas party swap both rewrite the same piece
+// of battle AI code, and the patcher refuses the pair. '' when they are not
+// both on.
+function delilasConflictMessage() {
+  const challenge = document.getElementById('rom-delilas-challenge');
+  const party = document.getElementById('rom-delilas-party');
+  if (!challenge || !party || !challenge.checked || !party.value) return '';
+  return (
+    '\u201cthe Delilas Challenge\u201d cannot be combined with the Delilas party swap. ' +
+    'Both rewrite the same piece of the Delilas siblings\u2019 battle AI, and only one of ' +
+    'them can have it. To fix, either set the Delilas party swap to Off, or turn off ' +
+    '\u201cthe Delilas Challenge\u201d (the checkbox in Gameplay).'
+  );
+}
+
 // The one sentence shown both live and at submit, or '' when there is no
 // conflict. Only the pairs the patcher refuses outright are reported: shiny
 // Seru vs the Delilas Challenge is resolved in the patcher's favour (the
@@ -2528,6 +2543,7 @@ function init() {
     delilasMovesRow.hidden = !delilasPartySel.value;
   };
   delilasPartySel.addEventListener('change', syncDelilasArtsRow);
+  delilasPartySel.addEventListener('change', () => syncArenaConflict());
   const fishingPriceInput = $('rom-fishing-price');
   const renameLocationInput = $('rom-rename-location');
   const earthEggPriceInput = $('rom-earth-egg-price');
@@ -2987,10 +3003,11 @@ function init() {
   function syncArenaConflict() {
     const box = $('rom-arena-conflict');
     if (!box) return '';
-    const msg = arenaConflictMessage();
+    const delilasMsg = delilasConflictMessage();
+    const msg = delilasMsg || arenaConflictMessage();
     box.textContent = msg;
     box.hidden = !msg;
-    const claims = msg ? arenaClaims() : [];
+    const claims = msg && !delilasMsg ? arenaClaims() : [];
     const apClaim = claims.find((c) => c.key === 'artsAp');
     // Mark the exact rows, so "2 Tactical-Art rows" is something you can see.
     for (const r of document.querySelectorAll('#rom-art-rows .art-row')) {
@@ -3007,6 +3024,7 @@ function init() {
       delilasChallenge: 'rom-delilas-challenge',
     };
     const lit = new Set(claims.map((c) => BOX[c.key]).filter(Boolean));
+    if (delilasMsg) lit.add(BOX.delilasChallenge);
     for (const id of Object.values(BOX)) {
       const el = $(id);
       const rowEl = el && el.closest('.rom-check-row');

@@ -1559,7 +1559,8 @@ chest / steal fill pools. Full reference:
 party play **as the Delilas siblings**: each character keeps their own stats,
 magic and story but wears the mapped sibling's battle model, name and element,
 while the Nivora Ravine duels and the Muscle Dome Master legs field Vahn, Noa
-and Gala performing the Delilas move sets.
+and Gala performing the Delilas move sets. It cannot be combined with
+`--delilas-challenge`; the patcher refuses the pair.
 
 | Option | Values | Meaning |
 |---|---|---|

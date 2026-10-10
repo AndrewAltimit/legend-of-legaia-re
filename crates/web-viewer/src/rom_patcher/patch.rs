@@ -281,6 +281,15 @@ pub async fn patch_rom(
     let door_mode = parse_mode(doors);
     let house_door_mode = parse_mode(house_doors);
 
+    // The Delilas Challenge and the Delilas party swap both rewrite the AI
+    // picker's Delilas arm; together the swap stops part-way through, so the
+    // pair is refused before anything is written (same rule as the CLI).
+    if delilas_challenge && !delilas_party.trim().is_empty() {
+        return Err(err(
+            "the Delilas Challenge and the Delilas party swap both rewrite the Delilas arm of \
+             the battle AI picker and are mutually exclusive; enable only one",
+        ));
+    }
     // Arts AP-grant, shiny-Seru, and the Delilas Challenge dome course reuse the
     // same verified-dead SCUS arena bytes (0x8007AE00). Arts AP-grant is a hard
     // conflict with either (manual-only); shiny-Seru vs the Delilas Challenge is
@@ -1170,9 +1179,8 @@ pub async fn patch_rom(
     }
 
     // Delilas party swap (empty = off): play as the mapped siblings, the
-    // ravine duels field Vahn / Noa / Gala models. Runs after
-    // --delilas-challenge (same ordering as the CLI - the challenge cuts
-    // its slim dome clones from the pre-swap blocks). The single heaviest
+    // ravine duels field Vahn / Noa / Gala models. Never runs alongside
+    // the Delilas Challenge (refused above). The single heaviest
     // stage in the whole run (player files + monster blocks + field forms
     // + XA banks), so it gets its own progress label.
     prog.stage("Delilas party swap").await;

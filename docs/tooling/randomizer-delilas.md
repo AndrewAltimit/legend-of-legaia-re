@@ -388,12 +388,11 @@ therefore inherits every clip - the same law `monster-model` replacement rides.
 | Story scenes | sibling NPC rigs and head TIMs in four scenes | `nivora_field`, `party_swap::event_field` | `nivora_field_real`, `delilas_event_field_real` |
 | Saves and dialog | portrait tiles, new-game names, speaker lines | `delilas_party` | `delilas_party_real` |
 
-**Ordering with `--delilas-challenge`.** The challenge applies first, so its
-memory-tight dome 1v2 streams slim clones cut from the retail sibling blocks
-while the 1v1 ravine duels (ample heap headroom) carry the swapped models. Both
-features edit the AI picker's Delilas arm at `0x801EB7C0..`: the challenge
-detours one word of it and the swap's enemy-side conversion rewrites the body
-and refuses an arm that is neither retail nor its own encoding.
+**Mutually exclusive with `--delilas-challenge`.** Both features edit the AI
+picker's Delilas arm at `0x801EB7C0..`: the challenge detours one word of it,
+and the swap's enemy-side conversion rewrites the body and refuses an arm that
+is neither retail nor its own encoding. The CLI and the site patcher reject the
+pair before writing anything.
 
 Still retail: menu portraits and battle HUD faces.
 

@@ -96,6 +96,16 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
             );
         }
     }
+    // The Delilas Challenge detours a word of the AI picker's Delilas arm at
+    // 0x801EB7C0.. and the party swap's enemy-side conversion rewrites that
+    // same arm, refusing any encoding but retail or its own. Applied together
+    // the swap stops part-way through, so the pair is refused up front.
+    if args.delilas_challenge && args.delilas_party.is_some() {
+        bail!(
+            "--delilas-challenge and --delilas-party both rewrite the Delilas arm of the \
+             battle AI picker and are mutually exclusive; enable only one"
+        );
+    }
     let original = load_image(&args.input)?;
     check_usa_disc(&original, args.allow_region_mismatch, "randomize")?;
     let mut patcher = DiscPatcher::open(original.clone()).context("parse disc image")?;
@@ -369,12 +379,8 @@ pub(crate) fn cmd_randomize(args: RandomizeArgs) -> Result<()> {
         manifest.push("delilas_challenge = false".to_string());
     }
 
-    // Delilas party swap: play as the siblings, fight the heroes. Runs
-    // AFTER --delilas-challenge on purpose - the challenge cuts its slim
-    // dome clones (archive slots 190/191) from the blocks as they are at
-    // its own apply time, so challenge-first keeps the memory-tight dome
-    // 1v2 on the retail sibling data while the ravine duels (1v1, ample
-    // headroom) carry the swapped models.
+    // Delilas party swap: play as the siblings, fight the heroes. Never
+    // runs alongside --delilas-challenge (refused above).
     if let Some(mapping) = &args.delilas_party {
         let cast_route = if args.shiny_seru
             || args.show_super_arts
