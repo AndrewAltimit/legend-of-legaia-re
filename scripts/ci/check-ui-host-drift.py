@@ -542,6 +542,8 @@ WEB_PLAY_BATTLE = "crates/web-viewer/src/play_battle.rs"
 WEB_PLAY_BATTLE_SCREEN_PRIMS = "crates/web-viewer/src/play_battle/screen_prims.rs"
 WEB_PLAY_BATTLE_SESSION_EXPORTS = "crates/web-viewer/src/play_battle/session_exports.rs"
 WEB_PLAY = "crates/web-viewer/src/play.rs"
+WEB_PLAY_PLAYER_MESH = "crates/web-viewer/src/play/player_mesh.rs"
+WEB_PLAY_TERRAIN_GROUND = "crates/web-viewer/src/play/terrain_ground.rs"
 NATIVE_REDRAW_PASSES = (
     "crates/engine-shell/src/window/event_handler/redraw_passes.rs"
 )
@@ -594,7 +596,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`World::actor_hidden_by_scene`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play.rs", "play_player_drawn"),
+            "web": ("crates/web-viewer/src/play/player_mesh.rs", "play_player_drawn"),
         },
         "mode": "symbols_all",
         "symbols": ["actor_hidden_by_scene"],
@@ -611,7 +613,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "compose through `field_env::live_placed_model`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": ("crates/web-viewer/src/play.rs", "field_placement_models"),
+            "web": ("crates/web-viewer/src/play/placements.rs", "field_placement_models"),
         },
         "mode": "symbols_all",
         "symbols": ["placed_model_swaps"],
@@ -971,7 +973,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "sites must read the kernel",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY, "field_player_occluded"),
+            "web": (WEB_PLAY_PLAYER_MESH, "field_player_occluded"),
         },
         "mode": "symbols_all",
         "symbols": ["player_body_centre"],
@@ -1319,7 +1321,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "where the sink lives",
         "sites": {
             "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
-            "web": (WEB_PLAY, "field_ground_positions"),
+            "web": (WEB_PLAY_TERRAIN_GROUND, "field_ground_positions"),
         },
         "mode": "symbols_all",
         "symbols": ["render_positions"],
@@ -1333,7 +1335,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`field_ground::render_indices`",
         "sites": {
             "native": (NATIVE_GEOMETRY, "heightfield_to_vram_mesh"),
-            "web": (WEB_PLAY, "field_ground_indices"),
+            "web": (WEB_PLAY_TERRAIN_GROUND, "field_ground_indices"),
         },
         "mode": "symbols_all",
         "symbols": ["render_indices"],
@@ -1348,7 +1350,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "black out cells the other draws",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY, "field_view_cells_now"),
+            "web": (WEB_PLAY_TERRAIN_GROUND, "field_view_cells_now"),
         },
         "mode": "symbols_all",
         "symbols": ["field_view_cells", "framing_is_retail"],
@@ -1360,7 +1362,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`CellKey::of_draw`",
         "sites": {
             "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY, "field_terrain_live"),
+            "web": (WEB_PLAY_TERRAIN_GROUND, "field_terrain_live"),
         },
         "mode": "symbols_all",
         "symbols": ["terrain_draw_visible"],
@@ -1372,7 +1374,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "re-issued on the rectangle's `stamp`",
         "sites": {
             "native": ("crates/engine-shell/src/window/field_render/floor_wave.rs", "sync_ground_crop"),
-            "web": (WEB_PLAY, "field_ground_indices_cropped"),
+            "web": (WEB_PLAY_TERRAIN_GROUND, "field_ground_indices_cropped"),
         },
         "mode": "symbols_all",
         "symbols": ["crop_indices"],
@@ -1382,7 +1384,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "same property as the native pairing above, across the two web "
         "surfaces' ground exporters",
         "sites": {
-            "web_play": (WEB_PLAY, "field_ground_positions"),
+            "web_play": (WEB_PLAY_TERRAIN_GROUND, "field_ground_positions"),
             "web_viewer": (WEB_FIELD_SCENE, "field_scene_ground_positions"),
         },
         "mode": "symbols_all",
