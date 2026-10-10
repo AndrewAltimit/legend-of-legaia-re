@@ -1,6 +1,56 @@
 # Encounter record format
 
-The on-disc encounter record installed onto a field actor when the script VM triggers a battle. The pointer is written at `actor[+0x94]` by field-VM op handlers and consumed by the world-map / field entity tick at `FUN_801DA51C` to populate the global encounter formation cell.
+An **encounter record** names the monsters of one battle: a count and up to four monster ids. Every battle in the game starts from one, whether a random roll or a scripted boss fight. The record's address is parked on a field actor at `actor[+0x94]`, and the entity tick `FUN_801DA51C` copies its ids into the four-byte **formation cell** at `0x8007BD0C` that battle init reads.
+
+There is no standalone encounter file. Records live in each scene's **MAN** asset (the per-scene script and placement container, asset type `0x03`): section 0 holds a formation table plus the region table that drives random rolls. This page also covers two neighbours that share the MAN's tail-section chain and the same code cluster: the section-3 **camera-region table** and the camera's **visible tile window** at scratchpad `0x1F8003E8..EB`.
+
+## At a glance
+
+**Encounter record** (one formation-table row; stride 8 in retail):
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u8 | scripted predicate | Non-zero raises bit `0x80` of the per-battle flags byte `0x8007BD60` | Confirmed |
+| `+0x01` | u8[2] | reserved | Not read by the formation copy | Confirmed (unread) |
+| `+0x03` | u8 | `monster_count` | `0..=4`; `0` leaves the formation cell cleared | Confirmed |
+| `+0x04` | u8[count] | `monster_ids` | Monster-archive ids, one per formation slot | Confirmed |
+| after | - | stride padding | Not consumed by the formation copy | Confirmed (unread) |
+
+**MAN section 0** (the encounter section, carved by `FUN_8003A110`):
+
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| `+0x00` | u8 | `formation_stride` | Row size of the formation table (retail `8`) |
+| `+0x01` | u8 | `condition_stride` | Row size of the condition table (retail `4`) |
+| `+0x02` | u8 | `region_stride` | Row size of the region table (retail `12`) |
+| `+0x03` | u8 | `formation_count` | Then `formation_count` encounter records |
+| next | u8 + rows | condition table | `[u16 flag_id][s16 region_count]` per row; `0xFFFF` = unconditional |
+| next | u8 + rows | region table | Tile AABB, rate increment, formation slice, backdrop byte |
+
+**Camera-region record** (MAN section 3, `[u8 count]` then 18-byte rows): `[kind][4 box bytes][mode byte][12 parameter bytes]` - [decoded below](#man-section-3-the-camera-region-table).
+
+**Visible tile window** (`0x1F8003E8..EB`): four signed tile offsets `[near X, near Z, far X, far Z]` from the camera's tile - [decoded below](#the-scratchpad-window-0x1f8003e8eb).
+
+```mermaid
+flowchart TD
+    MAN["Scene MAN, section 0<br/>formation + condition + region tables"]
+    ROLL["Random roll FUN_801D9E1C<br/>region AABB + step counter"]
+    SCR["Scripted arm<br/>field-VM op 3E FF row"]
+    INL["Inline arm<br/>halt-acquire ops 0x37 / 0x41 ..."]
+    PTR["actor +0x94<br/>record pointer"]
+    TICK["Entity tick FUN_801DA51C<br/>confirm state"]
+    CELL["Formation cell 0x8007BD0C..0F"]
+    FLAG["Flags byte 0x8007BD60<br/>stage id + bit 0x80"]
+    MAN --> ROLL
+    MAN --> SCR
+    ROLL -->|"row address, flag 0x80000"| PTR
+    SCR -->|"row address"| PTR
+    INL -->|"opcode pointer, flag 0x400"| PTR
+    PTR --> TICK
+    TICK -->|"count + ids"| CELL
+    TICK -->|"record +0 non-zero"| FLAG
+    ROLL -->|"region +8 & 0x1F"| FLAG
+```
 
 ## Contents
 
@@ -9,370 +59,202 @@ The on-disc encounter record installed onto a field actor when the script VM tri
 - [Reader](#reader)
 - [Writer (record-pointer install)](#writer-record-pointer-install)
 - [Formation cell + battle-data variant selector](#formation-cell--battle-data-variant-selector)
-  - [Worked example: the Rim Elm training fight](#worked-example-the-rim-elm-training-fight)
-  - [The carrier entity](#the-carrier-entity)
 - [Scripted-battle id path (`FUN_8005567c`)](#scripted-battle-id-path-fun_8005567c)
 - [Random-encounter trigger path](#random-encounter-trigger-path)
+- [The MAN header and section chain](#the-man-header-and-section-chain)
 - [MAN section 3: the camera-region table](#man-section-3-the-camera-region-table)
-  - [The scratchpad window `0x1F8003E8..EB`](#the-scratchpad-window-0x1f8003e8eb)
 - [What this doesn't tell us](#what-this-doesnt-tell-us)
 - [Random vs scripted formations (the MAN encounter section)](#random-vs-scripted-formations-the-man-encounter-section)
 - [Files referencing this format](#files-referencing-this-format)
 
 ## Confidence
 
-**Confirmed (record shape, reader, install path) - Inferred (encoding within scripts).**
-The reader (`FUN_801DA51C` body at `0x801DA620..0x801DA678`) is fully decoded.
-The install path is the script-VM dispatcher's set of "arm encounter" opcodes
-(0x37/0x41, 0x38, 0x43, 0x47, 0x4C); Ghidra's C decomp of `FUN_801de840`
-makes the install value explicit: `pbVar43 = (byte *)(param_1 + param_2)` -
-i.e. the **current script-bytecode opcode pointer**. So the encounter-record
-bytes (count at `+0x3`, ids at `+0x4..`) are the trailing operand bytes of
-the install opcode itself, inlined into the field-VM script for the scene
-that installs the record. **There is no separate on-disc
-encounter-record array**; the carriers are the per-scene field-VM script
-bundles ([`scene-v12-table.md`](scene-v12-table.md) sister pairs +
-[`scene-bundles.md`](scene-bundles.md) `scene_event_scripts`). The exact
-opcode encoding (how target / sub-op bytes pack into `+0x0..+0x2`) varies
-per opcode and is decoded case-by-case in the dispatcher (see
-[`subsystems/script-vm.md`](../subsystems/script-vm.md)).
+**Confirmed (record shape, reader, install paths, section 0 tables, camera-region table) - Inferred (per-opcode header bytes of the inline arm).**
+
+- The reader (`FUN_801DA51C` body at `0x801DA5F8..0x801DA678`) is decoded instruction by instruction.
+- Three arms install the pointer: the random roll, the scripted `3E FF <row>` op, and the field VM's halt-acquire opcodes (`0x37`/`0x41`, `0x38`, `0x43`, `0x47`, `0x4C`). The first two point at a MAN formation row. The third stores the **current opcode pointer** (`s0 = bytecode + pc`), so its "record" is the bytes overlaying the install opcode itself.
+- How each halt-acquire opcode packs its own bytes into `+0x0..+0x2` varies per opcode and is decoded case by case in [`subsystems/script-vm.md`](../subsystems/script-vm.md).
+
+The carriers are the per-scene field-VM script bundles ([`scene-v12-table.md`](scene-v12-table.md) sister pairs and [`scene-bundles.md`](scene-bundles.md) `scene_event_scripts`) and the scene MAN.
 
 ## Layout
 
 ```text
-+0x00  u8[3]  reserved             ; cleared to zero by the reader before the copy
++0x00  u8     scripted predicate    ; non-zero => per-battle flag 0x80
++0x01  u8[2]  reserved              ; not read by the formation copy
 +0x03  u8     monster_count         ; 0..4 inclusive
-+0x04  u8[N]  monster_ids           ; N == monster_count, each id indexes the
-                                    ; monster catalog (the per-scene battle_data
-                                    ; group)
-[possibly more after - fields not consumed by the formation copy]
++0x04  u8[N]  monster_ids           ; N == monster_count; monster-archive ids
+[stride padding - not consumed by the formation copy]
 ```
 
-The reader copies `monster_ids[0..count]` into the global formation cell at `0x8007BD0C..0x8007BD0F` (a 4-byte array, one byte per slot). Slots beyond `count` stay zeroed. `monster_count == 0` clears the formation cell entirely (no monsters spawn this round).
+The reader copies `monster_ids[0..count]` into the formation cell `0x8007BD0C..0x8007BD0F`, one byte per slot. Slots beyond `count` stay zero, and `monster_count == 0` leaves the whole cell clear (no monsters spawn).
+
+Parsers: `legaia_asset::man_section::FormationRecord` (the MAN row, keeps `+0..+2` as `header_bytes`) and [`EncounterRecord`](../../crates/engine-battle/src/encounter_record.rs) (the runtime window: `COUNT_OFFSET = 3`, `IDS_OFFSET = 4`). Both reject `count > 4`.
 
 ## Reader
 
-`FUN_801DA51C` (the world-map / field entity tick, see [`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c---world-map-entity-tick)) at offsets `0x801DA620..0x801DA678`:
+`FUN_801DA51C` is the world-map / field entity tick ([`subsystems/world-map.md`](../subsystems/world-map.md#fun_801da51c---world-map-entity-tick)). `s1` is the actor record. Its confirm state first tests the predicate byte:
+
+```mips
+801da5f8  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
+801da600  lbu v0,0x0(v0)         ; v0 = record[+0]
+801da608  beq v0,zero,0x801da620  ; zero: leave the flags byte alone
+801da60c  _lui v1,0x8008
+801da610  lbu v0,-0x42a0(v1)      ; 0x8007BD60, the per-battle flags byte
+801da618  ori v0,v0,0x80
+801da61c  sb v0,-0x42a0(v1)
+```
+
+Then it clears the cell and copies the ids:
 
 ```mips
 801da620  lui v0,0x8008
 801da624  addiu s0,v0,-0x42f4   ; s0 = formation_cell_base = 0x8007BD0C
-801da628  sb zero,0x3(s0)        ; clear monster slot 3 (0x8007BD0F)
-801da62c  sb zero,0x2(s0)        ; clear monster slot 2 (0x8007BD0E)
-801da630  sb zero,0x1(s0)        ; clear monster slot 1 (0x8007BD0D)
+801da628  sb zero,0x3(s0)        ; clear slot 3 (0x8007BD0F)
+801da62c  sb zero,0x2(s0)        ; clear slot 2
+801da630  sb zero,0x1(s0)        ; clear slot 1
 801da634  jal 0x801de190         ; helper (effect / sound trigger)
-801da638  _sb zero,-0x42f4(v0)   ; clear monster slot 0 (0x8007BD0C)
-801da63c  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
-801da640  nop
+801da638  _sb zero,-0x42f4(v0)   ; clear slot 0 (0x8007BD0C)
+801da63c  lw v0,0x94(s1)         ; v0 = actor[+0x94]
 801da644  lbu a1,0x3(v0)         ; a1 = monster_count = record[+0x3]
-801da648  nop
 801da64c  beq a1,zero,0x801da67c  ; nothing to copy: skip loop
 801da650  _clear a0
-801da654  move a2,s0             ; a2 = formation cell base
-801da658  lw v0,0x94(s1)         ; re-read record pointer (volatile)
+801da654  move a2,s0
+801da658  lw v0,0x94(s1)         ; re-read record pointer
 801da65c  addu v1,a0,a2          ; v1 = &formation[a0]
-801da660  addu v0,a0,v0          ; v0 = record + a0
+801da660  addu v0,a0,v0
 801da664  lbu v0,0x4(v0)         ; v0 = record[+0x4 + a0] = monster_ids[a0]
 801da668  addiu a0,a0,0x1
 801da66c  sb v0,0x0(v1)          ; formation[a0-1] = monster_ids[a0-1]
 801da670  slt v0,a0,a1
 801da674  bne v0,zero,0x801da658  ; loop until a0 == monster_count
-801da678  _nop
 ```
 
-The `s1` register is the actor record (caller's `a0` in `FUN_801DA51C`); `+0x94` is the encounter-record pointer slot. The clear-then-copy ordering means a `monster_count < 4` record correctly leaves trailing slots zeroed. After the copy the reader clears `entity[+0x94]` and advances the entity's 5-state SM (`entity[+0x8A]++`), so the formation copy fires exactly once per arm.
+After the copy the reader clears `entity[+0x94]` and advances the entity's 5-state machine (`entity[+0x8A]++`), so the copy fires exactly once per arm.
 
-Just before the copy the reader also reads `record[+0]` and, when it is non-zero, ORs bit `0x80` into the per-battle flags byte `DAT_8007BD60`:
+**What `record[+0]` holds depends on the arm:**
 
-```mips
-801da5f8  lw v0,0x94(s1)         ; v0 = encounter_record_ptr = actor[+0x94]
-801da5fc  nop
-801da600  lbu v0,0x0(v0)         ; v0 = record[+0]
-801da604  nop
-801da608  beq v0,zero,0x801da620  ; zero: leave the flags byte alone
-801da60c  _lui v1,0x8008
-801da610  lbu v0,-0x42a0(v1)      ; 0x8007BD60, the per-battle flags byte
-801da614  nop
-801da618  ori v0,v0,0x80
-801da61c  sb v0,-0x42a0(v1)
-```
+- An **inline-script** arm points `+0x94` at the install opcode, so `record[+0]` *is* that opcode - non-zero by construction, and the bit is always raised.
+- The **`3E FF <row>`** arm and the **random roll** point `+0x94` at a MAN formation row (`ctrl[+0x20] + 1 + row * ctrl[+0x5D]`), so the predicate is authored per row. Retail's scripted and boss rows are exactly the rows with a non-zero byte: `rikuroa` rows 16 and 17 (the lone Caruban fight) read `01 00 00`, while its sixteen random rows read `00 00 00`.
 
-The byte is the first of the record's three "reserved" bytes. Which value sits there depends on which arm installed the record, and both arms are live:
+What the raised bit changes is tabulated under [the per-battle flags byte](#the-per-battle-flags-byte-dat_8007bd60).
 
-- An **inline-script** arm points `+0x94` at the bytecode overlaying the install opcode, so `record[+0]` *is* the install opcode - non-zero by construction, and the bit is always raised.
-- The **`3E FF <row>`** arm and the **random roll** both point `+0x94` at a MAN formation row (`ctrl[+0x20] + 1 + row * ctrl[+0x5D]`), so the predicate is the row's own header byte, authored per row. Retail's scripted / boss rows are exactly the rows that carry a non-zero one: `rikuroa`'s rows 16 and 17 (the lone Caruban fight the stager launches) read `01 00 00`, while all sixteen of its random rows read `00 00 00`.
+### What makes a halt an encounter
 
-What the raised bit then changes is tabulated under [the per-battle flags byte](#the-per-battle-flags-byte-dat_8007bd60).
+There is no dedicated "encounter" opcode.
 
-**Discriminator (relevant to wiring this in an engine).** There is no dedicated "encounter" opcode:
+- The inline install opcodes are the field VM's generic **halt-acquire** family, the same ones ordinary script yields use.
+- The *consumer* decides: only entities ticked by `FUN_801DA51C` (those carrying the `entity[+0x8A]` state machine) read `+0x94` as a formation record, and only in the confirm state.
+- The random path enters that state through the `FUN_801D9E1C` roll in state 0.
+- The general scripted arm is op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`; every `op0 < 100` runs the same body). The handler sets `entity[+0x8A] = 1` and `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1`. Disc sites: `garmel` rows 8 / 9 = Songi / Zeto, `rikuroa` row 17 = Caruban; boss rows sit outside every region's rollable slice. Full arm in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row).
 
-- The install opcodes below are the field VM's generic **halt-acquire** family (`0x37/0x41/0x38/0x43/0x47/0x4C`), the same ones used for ordinary script yields.
-- What turns a halt into an encounter is the *consumer*: only world-map / field **entities** ticked by `FUN_801DA51C` (those carrying the 5-state `entity[+0x8A]` SM) ever read their `+0x94` as a formation record, and only once the SM reaches the encounter-confirm state.
-- The random-encounter path enters that state via the `FUN_801D9E1C` roll (state 0); a *scripted* arm relies on the scene bytecode having authored `[count @ +3][ids @ +4..]` after the halt opcode on such an entity's context.
-- The general-purpose scripted arm is op **`0x3E` with `op0 = 0xFF`** (`3E FF <row>`; every `op0 < 100` runs the same body): the retail case-0x3E handler sets `entity[+0x8A] = 1` and installs `entity[+0x94] = ctrl[+0x20] + row * ctrl[+0x5D] + 1` - pointing the record slot at MAN formation-table row `row` directly (full arm + disc sites in [battle.md](../subsystems/battle.md#scripted-battle-entry-3e-ff-row): garmel rows 8/9 = Songi/Zeto, rikuroa row 17 = Caruban; boss rows sit outside every region's rollable `[base, base+count)` slice). Other per-scene shapes (an inline `[count][ids]` authored after a halt op) still occur; which shape a fight uses remains a per-scene bytecode fact.
+**Engine port.** The field VM mirrors the split:
 
-**Engine port.** The from-scratch field VM mirrors this discriminator split:
-
-- The bare arm-encounter op (`0x37`/`0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded record window overlaying the opcode (`[opcode][op1][op2][count][≤4 ids]`).
-- The engine consumer (`World`) parses that window as an `EncounterRecord`, registers the formation, and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`); a successful install disarms (fire-once, matching the retail `entity[+0x94]` clear).
-- `World::encounters.scripted_armed` is the engine stand-in for "the active entity's `FUN_801DA51C` SM reached the confirm state" until the per-scene carrier identity is pinned.
+- The bare arm op (`0x37` / `0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded window overlaying the opcode (`[opcode][op1][op2][count][<=4 ids]`).
+- `World` parses the window as an `EncounterRecord`, registers the formation and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`). A successful install disarms, matching the retail `entity[+0x94]` clear.
+- `World::encounters.scripted_armed` stands in for "the active entity's state machine reached the confirm state".
 
 ## Writer (record-pointer install)
 
-The script-VM dispatcher (`FUN_801DE840`, see [`subsystems/script-vm.md`](../subsystems/script-vm.md)) installs the encounter record on an actor with the pattern at `0x801DEEDC..0x801DEEEC`:
+The script-VM dispatcher `FUN_801DE840` ([`subsystems/script-vm.md`](../subsystems/script-vm.md)) installs the inline record with the pattern at `0x801DEEDC..0x801DEEEC`:
 
 ```mips
 801deedc  lw v0,0x10(s5)
 801deee0  sw s0,0x94(s5)         ; actor[+0x94] = s0 (encounter record pointer)
 801deee4  sh zero,0x54(s5)       ; reset actor sub-state
-801deee8  ori v0,v0,0x400        ; raise "encounter armed" flag (state[0x400])
+801deee8  ori v0,v0,0x400        ; raise "encounter armed" flag
 801deeec  sw v0,0x10(s5)
 ```
 
-`s0` is set once at the dispatcher prologue (`addu s0, a0, s8` at
-`0x801DE858`, i.e. `s0 = param_1 + param_2 = bytecode_buffer + pc_offset`)
-and is the **current opcode pointer in the field-VM script bytecode**.
-The Ghidra C decomp surfaces this as `pbVar43 = (byte *)(param_1 + param_2)`.
-`s5` is the resolved target actor - frequently the player context
-(`_DAT_8007C364`); when bit 7 of the opcode byte is set, byte +1 routes
-through the system-channel resolver `FUN_8003C83C`.
+`s0` is set once in the prologue (`addu s0, a0, s8` at `0x801DE858`): the current opcode pointer in the script bytecode. `s5` is the resolved target actor, often the player context `_DAT_8007C364`; when bit 7 of the opcode byte is set, byte `+1` routes through the system-channel resolver `FUN_8003C83C`.
 
-Multiple opcodes install the same pointer; each pairs the install with
-its own pre-install gate (target-actor selector, sub-op switch, etc.) and
-each advances the PC by a different amount past the opcode:
+Each opcode pairs the install with its own gate and advances the PC by 3:
 
-| Opcode | Install line | PC advance | Notes |
-|---|---|---|---|
-| `0x37` / `0x41` (shared case) | `0x801DEEDC` / `0x801DEF08` | `+3` | Bare arm-encounter. Second install on `param_3` if `iVar18 == _DAT_8007C364`. |
-| `0x38` | `0x801DEFA0` / `0x801DF038` | `+3` | Falls through to the same install clause; first branch reads a halfword table at `0x80073F04` into `actor[+0x26]` when low-7-bits of byte +1 are zero. |
-| `0x43` (sub-op `0/1/A/B`) | `0x801DF3FC` (decomp line 5223) | `+3` | Movement-target setup follows the install (`actor[+0x14..+0x1A]` from operand bytes); the encounter arms when the actor reaches the target. |
-| `0x47` | `0x801E1C38` (decomp line 5610) | `+3` | |
-| `0x4C` | `0x801E1F44` / `0x801E21C0` / `0x801E... ` (decomp lines 6341 / 6460 / 6556) | `+3` | Three internal install sites in the same case body - one per inner sub-op. |
+| Opcode | Install line | Notes |
+|---|---|---|
+| `0x37` / `0x41` (shared case) | `0x801DEEDC` / `0x801DEF08` | Bare arm. Second install on `param_3` when the target is `_DAT_8007C364`. |
+| `0x38` | `0x801DEFA0` / `0x801DF038` | Same install clause; first branch reads a halfword table at `0x80073F04` into `actor[+0x26]` when the low 7 bits of byte `+1` are zero. |
+| `0x43` (sub-op `0/1/A/B`) | `0x801DF3FC` | Movement-target setup follows (`actor[+0x14..+0x1A]` from operands); the encounter arms when the actor arrives. |
+| `0x47` | `0x801E1C38` | |
+| `0x4C` | `0x801E1F44` / `0x801E21C0` / a third site | Three install sites in one case body, one per inner sub-op. |
 
-All install paths share the same pre-install gate:
+All share the pre-install gate:
 
-```
+```text
 if (actor[+0x94] != 0  ||  actor == _DAT_8007C364) &&
    ((actor[+0x10] & 0x400) == 0  ||  *_DAT_801C6EA4[+8] != 0)
 ```
 
-- the actor already has a record installed (re-arm), OR it's the player
-context (always allowed); AND the armed flag is clear OR the scene
-explicitly allows re-arm.
+The actor already has a record (re-arm) or is the player context, and the armed flag is clear or the scene allows re-arm.
 
-Two non-encounter writes to `actor[+0x94]` also live in the dispatcher
-(case `0x34`: `pbVar47 + 0xe` and `pbVar47 + 3`). These do **not** raise
-the `0x400` flag and pair with `actor[+0x9c]`/`actor[+0x9e]` zero-writes;
-they're a separate "callback" pattern. Only the install sites listed in
-the table above are encounter-record arms.
+Case `0x34` also writes `actor[+0x94]` (`pbVar47 + 0xe` and `pbVar47 + 3`). Those writes do **not** raise `0x400` and pair with `actor[+0x9c]` / `actor[+0x9e]` zero-writes; they are a separate callback pattern, not encounter arms.
 
 ## Formation cell + battle-data variant selector
 
-Adjacent to the formation cell:
-
 | Address | Size | Role |
 |---|---|---|
-| `0x8007BD0C` | `u8[4]` | Active formation: monster ids per slot, populated by the reader above. |
-| `0x8007BD11` | `u8` | Battle-data PROT-id selector. `FUN_800520F0` case-4 path reads this byte and chooses PROT entry **`0x367`** (raw TOC index; = extraction entry 0869) when it equals the case-1 character index, otherwise **`0x36D`** (raw TOC index; = extraction entry 0875). The selected entry is loaded as a kind-2 streaming asset for the battle scene. |
-| `0x8007BD60` | `u8` | Per-battle flags byte, [decoded below](#the-per-battle-flags-byte-dat_8007bd60). |
+| `0x8007BD0C` | `u8[4]` | Active formation: monster ids per slot, written by the reader above. |
+| `0x8007BD11` | `u8` | Battle-data PROT selector. `FUN_800520F0`'s case-4 path picks raw TOC index **`0x367`** (extraction 0869) when the byte equals the case-1 character index, else **`0x36D`** (extraction 0875), loaded as a kind-2 streaming asset. |
+| `0x8007BD60` | `u8` | Per-battle flags byte, decoded below. |
+
+The cell keeps its last formation until the next install; victory does not clear it. Captured cells: `01 00 00 00` before an encounter on `map01`, `04 04 00 00` in a two-monster `map01` battle, `0A 0D 00 00` after a `suimon` battle (scenario manifest: [`mednafen-automation.md`](../tooling/mednafen-automation.md)).
 
 ### The per-battle flags byte (`DAT_8007BD60`)
 
-One byte carries two unrelated things, written by the two halves of the same
-encounter path:
+One byte carries two unrelated things, written by the two halves of the encounter path:
 
-- **Low bits - the stage id.** The random-encounter reader overwrites the whole
-  byte with `region[+8] & 0x1F` (`FUN_801D9E1C`), and the backdrop picker reads
-  it back as `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the
-  battle stage. See [`legaia_asset::battle_backdrop`](../../crates/asset/src/battle_backdrop.rs).
-- **Bit `0x80` - "this fight is scripted".** Raised by the entity SM's confirm
-  state when the armed record's own `record[+0]` is non-zero
-  (`0x801DA5F8..0x801DA61C`, quoted above). Because the roll writes the byte
-  *first* and the confirm state ORs into it *after*, the two never race: a
-  random roll leaves the bit clear unless the row it landed on carries a
-  non-zero header byte of its own.
+- **Low bits - the stage id.** The random roll overwrites the whole byte with `region[+8] & 0x1F` (`FUN_801D9E1C`, `0x801DA064..0x801DA070`). The backdrop picker reads `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the battle stage; see [`legaia_asset::battle_backdrop`](../../crates/asset/src/battle_backdrop.rs).
+- **Bit `0x80` - "this fight is scripted".** Raised by the confirm state when `record[+0]` is non-zero. The roll writes the byte first and the confirm state ORs into it afterwards, so the two never race.
 
-Three consumers read bit `0x80`, and each gives a scripted fight a different
-face:
+Consumers of bit `0x80`:
 
 | Consumer | Effect when the bit is set |
 |---|---|
 | Battle-intro style selector (`FUN_801CE8CC`) | Selects `SpinUpParticles` instead of the `TileShatter` default (or `TileShatter` sub-style 1 for slot-0 ids `0x13..=0x15`). |
-| Intro transition phase 0 (`FUN_801CF5BC`) | Overwrites the plain battle-start cue `0x1F` with `0x4D` in SFX-ring slot 0 (see [`cutscene.md`](../subsystems/cutscene.md#transition-tick--battle-handoff---fun_801cf5bc)). |
+| Intro transition phase 0 (`FUN_801CF5BC`) | Overwrites the battle-start cue `0x1F` with `0x4D` in SFX-ring slot 0 ([`cutscene.md`](../subsystems/cutscene.md#transition-tick--battle-handoff---fun_801cf5bc)). |
 | Enemy stat-boost profile (`FUN_80054CB0` via `ctx[+0x287]`) | Picks the boost profile; see [`legaia_asset::monster_archive`](../../crates/battle-models/src/monster_archive.rs). |
-| Seru-magic side-effect stager (`FUN_801F3D3C` via `ctx[+0x287]`) | Enables the 80% suppression roll and the base-vs-record compare that keeps a player's ATK / DEF / INT debuffs off a boss; see [battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). |
+| Seru-magic side-effect stager (`FUN_801F3D3C` via `ctx[+0x287]`) | Enables the 80% suppression roll and the base-vs-record compare that keeps ATK / DEF / INT debuffs off a boss ([battle-formulas.md](../subsystems/battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch)). |
 | Escape roll (`FUN_801E791C` via `ctx[+0x287]`) | Blocks the party's escape ([battle-action.md](../subsystems/battle-action.md)). |
-| Summon instant-death / status resist (PROT 0907 / 0908 / 0916 via `ctx[+0x287]`) | Lets a monster whose record `+0x20` is set abandon the summon's outcome; see [battle.md](../subsystems/battle.md#the-instant-death--status-resist-gate-record-0x20). |
+| Summon instant-death / status resist (PROT 0907 / 0908 / 0916 via `ctx[+0x287]`) | Lets a monster whose record `+0x20` is set abandon the summon's outcome ([battle.md](../subsystems/battle.md#the-instant-death--status-resist-gate-record-0x20)). |
 
-The engine carries the bit as a property of the *formation row* rather than as
-a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's
-`record[+0]` as `header_flags` and derives `per_battle_flags()` from it, which
-the intro style + transition read at battle entry.
-
-Snapshots of the formation cell across captures (see [`scripts/scenarios.toml`](../tooling/mednafen-automation.md)):
-
-| Save | `0x8007BD0C..0F` | Interpretation |
-|---|---|---|
-| `mc1` (pre-encounter, `map01`) | `01 00 00 00` | One-monster record from the previous battle; selector reset to `0x01`. |
-| `mc2` (in-battle, `map01`) | `04 04 00 00` | Two-slot encounter, both slots monster id `0x04`. |
-| `mc3` (post-battle, `suimon`) | `0A 0D 00 00` | Two-slot encounter, monsters `0x0A` and `0x0D`. |
+The engine carries the bit on the *formation row* rather than as a global: `legaia_engine_core::monster_catalog::FormationDef` keeps the row's `record[+0]` as `header_flags` and derives `per_battle_flags()` from it.
 
 ### Worked example: the Rim Elm training fight
 
-The game's opening battle - the training fight in Rim Elm (`town01`) - is a
-scripted **single-monster** encounter. The opponent is monster archive id
-`0x4F` ("Tetsu"); it is the only monster in the formation. Reading the
-formation cell across the training-fight capture corpus shows the install
-boundary cleanly:
+The opening battle in Rim Elm (`town01`) is a scripted single-monster fight against monster id `0x4F` ("Tetsu"). The cell reads `00 00 00 00` in the field before the fight and `4F 00 00 00` from battle load (`game_mode 0x15`) onward, including after the return to the field.
 
-| Capture phase (`town01`) | `0x8007BD0C..0F` | Interpretation |
-|---|---|---|
-| Pre-battle field (free movement, before the fight) | `00 00 00 00` | No formation installed - the cell is clear. |
-| Battle loading (`game_mode 0x15`, graphics not yet drawn) | `4F 00 00 00` | One-monster formation: id `0x4F` in slot 0. |
-| Battle running (graphics / command menu / submenu) | `4F 00 00 00` | Same lone-monster formation. |
-| Post-battle field (back to `game_mode 0x03`) | `4F 00 00 00` | Cell retains the last formation until the next install (it is cleared only at the next encounter, not on victory). |
+The id is **not** an inline script literal. It is **town01 MAN formation index 4**; the scene's formation table reads:
 
-So the formation copy happens at battle entry, exactly as the reader above
-describes: the cell is empty in the field and carries the lone id `0x4F`
-from battle-load onward.
-
-**The id `0x4F` is not an inline script literal - it is a per-scene formation
-index.** Two independent surveys of town01's bytecode find no `[count=1][0x4F]`
-install operand anywhere:
-
-1. The `scene_event_scripts` prescript at PROT entry 3 - the small structured
-   records carry no such pattern, and the `0x4F` bytes in the bulk payload are
-   high-entropy asset data, not bytecode.
-2. The scene's **MAN partition-1 field-VM scripts** (record 0 = scene-entry system
-   script, records 1.. = per-actor interaction scripts) walked **opcode-aware** with
-   the field-VM disassembler (`legaia_engine_vm::field_disasm` driving
-   `legaia_engine_core::man_field_scripts::walk_partition1_scripts`). The walk lands
-   on every `0x37`/`0x41` yield byte and decodes the trailing `[count][ids]` window
-   at each: across 53 records and 71 yield sites, **zero** carry the `[1][0x4F]`
-   Tetsu signature. Every window that decodes is a `count=0` artifact from the
-   walker stepping into embedded MES dialog text (the windows are plain ASCII -
-   `1F 64 6F 20` = `"do "`, `1F 56 61` = `"Va"`, …). This is exactly the false
-   positive a naive `0x37`/`0x41` byte-scan produces; the opcode-aware walk is what
-   distinguishes a real arm boundary from a dialog byte. The system entry script
-   (record 0) decodes near-cleanly (a real executable stream), while the
-   interaction records desync into dialog - itself evidence the encounter arm is
-   not script-borne. See the disc-gated regression test
-   `crates/engine-core/tests/town01_p1_arm_sites.rs` and the
-   `legaia-engine man-scripts --scene <name>` survey CLI (its
-   `--gflag-partition <n>` flag walks any partition's records for
-   `GFLAG_SET`/`GFLAG_CLEAR` writes - e.g. partition 2 surfaces the opening
-   prologue's cutscene-timeline `GFLAG_SET 26` town01 hand-off arm).
-
-Instead, the lone-`0x4F` formation is **town01 MAN formation index 4**. The per-scene formations load from
-the scene's MAN asset into a contiguous **8-byte-stride** table
-(`[3 reserved][count: 0..4][≤4 ids]`) resident in the field work area; in the live
-"talk to Tetsu / Come at me!" save state that table reads:
-
-```
+```text
 [0] 00 00 00 01 04            [4] 00 00 00 01 4f   <- Tetsu (count 1, id 0x4F)
 [1] 00 00 00 01 07            [5] 00 00 00 02 0a 0a
 [2] 00 00 00 01 0a            [6] 00 00 00 02 3d 3d
 [3] 00 00 00 04 3f 3e 3e 3e
 ```
 
-This is **byte-identical** to the engine's MAN parse (`legaia_asset::man_section`
-→ `crate::encounter_man::scene_encounter_from_man`, which yields exactly these 7
-formations for town01, `formation_id` 4 = `[0x4F]`). The scripted carrier entity
-selects this formation **by index** (it points `actor[+0x94]` at the table row, and
-`FUN_801DA51C` copies it into the cell on the dialogue-accept), which is why the
-cell shows the lone `0x4F` while no inline operand carries it. The pre-confirm
-capture has the cell still clear - the install fires on the accept press.
+A live save state's table is byte-identical to the engine's MAN parse (`legaia_asset::man_section` → `encounter_man::scene_encounter_from_man`, 7 formations). The carrier points `actor[+0x94]` at row 4 and `FUN_801DA51C` copies it on the dialogue accept.
+
+Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partition-1 scripts finds none, and a naive `0x37` / `0x41` byte scan only lands inside embedded dialog text (`crates/engine-core/tests/town01_p1_arm_sites.rs`; survey CLI `legaia-engine man-scripts --scene <name>`).
 
 ### The carrier entity
 
-The MAN-placed actor that installs this fight is pinned: town01 partition-1
-holds exactly one placement at **tile (76, 65)** with **model byte `0x6A`**,
-whose interaction record carries a long multi-page dialog block - the sparring
-talk-menu and its battle-trigger branch. It is the only on-map placement whose
-inline dialog runs that long (the village's other NPCs are one- or two-line),
-which is what distinguishes it from them; it sits adjacent to the town01 spawn.
-Mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL`
-in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and
-locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
+The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and locked by `crates/engine-core/tests/rim_elm_sparring_carrier.rs`.
 
-The carrier is identified by its **dialog block**, not by an opcode-decoded
-selector: a field interaction record is dominated by embedded message text whose
-bytes alias field-VM opcodes (a literal `>` is `0x3E`, the scripted-battle / door-warp opcode;
-ASCII punctuation hits the `0x37`/`0x41` yield bytes), so a linear disassembly
-desyncs inside the text and reports phantom interact / dialog ops with garbage
-operands. The dialog text itself is therefore recovered **structurally** - as a
-run of `0x1F`-lead / `0x00`-terminated segments
-(`man_field_scripts::first_inline_dialog_offset`) - which is also how every
-town01 NPC's message renders. Confirming the dialogue-accept → `actor[+0x94]`
-install on this specific entity still needs a mid-interaction RAM capture; the
-field-VM control flow from the menu branch to the formation-index install is the
-remaining open step.
+**The install is disc-visible.** The sparring prompt is an ordinary MES-embedded **option picker** (`legaia_mes::scan_pickers` / `Picker::jump_target`; runner in [`script-vm.md`](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), four options wide. The fight option's branch runs `3E FF 04`: partition-1 **record 10**, offset `+0x07F7`, three instructions past the `4A 10 00` `WaitFrames 16` at `+0x07EE`. It is the only `3E FF` in the scene's talk records. The other three options run a talk reply and no fight.
 
-The from-scratch engine reaches this fight faithfully through the same indexed
-table: a cold boot loads town01's MAN formations (with the monster archive's real
-stats merged at scene entry), and `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)`
-(`= 4`, in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs))
-installs the existing row as the forced next encounter - no re-encoded record, the
-scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()`
-remains for the equivalent hand-built `[count=1][0x4F]` window used by the
-arm-seam path.
+Interaction records are mostly message text whose bytes alias opcodes (a literal `>` is `0x3E`), so a linear disassembly desyncs inside them. Dialog text is recovered structurally as `0x1F`-lead / `0x00`-terminated segments (`man_field_scripts::first_inline_dialog_offset`).
 
-The carrier set the field entity SM acts on is derived **from the MAN itself**
-rather than hand-built: `man_field_scripts::derive_field_carriers` walks the
-partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`
-- the pinned sparring partner (`is_rim_elm_sparring_carrier`, by tile + model)
-becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain
-`Npc` keyed by its record index; decorative/warp placements carry no carrier.
-Tile and model alone do not make the carrier: the later Rim Elm variants
-(`town0b`, `town0c`, `town0d`) place Tetsu on the same tile with the same
-model, and their records are talk-only. The sparring carrier is installed only
-when the placement's own partition-1 record names row `4` in a scripted-battle
-op (`man_field_scripts::record_battle_entry_rows`) - the only way retail enters
-the fight - so talking to Tetsu in the mist-attack town stays a conversation
-(`crates/engine-shell/tests/town0b_battle_softlock.rs`).
-`World::install_field_carriers_from_man` installs that derived set and returns the
-sparring carrier's slot; `enter_field_scene` calls it on every field entry (the
-counterpart to the MAN encounter-table install), so the carriers are live from
-the scene's own data. They sit Idle until the carrier is engaged, which advances
-the actual MAN actor's `FUN_801DA51C` SM. Engagement is driven by the
-talk interaction's dialogue-accept: talking to the sparring carrier's placement
-(the button-press interaction, which resumes the actor's parked script - no
-field-VM opcode; op `0x3E` with `op0 < 100` is the
-[scripted-battle install](../subsystems/script-vm.md#0x3e-scripted-battle-op0--100),
-not a talk) opens its inline dialogue and arms the engage, and
-accepting the prompt (the dialog-advance dismiss, `0x4C` n5 sub-4) engages it -
-so the field-VM bytecode drives the fight, not a manual API. (`engage_field_carrier`
-remains the direct entry point the auto-arm and tests call.)
+**Engine port.**
 
-**The sparring prompt is not a Yes/No box, and its branch is decoded.** It is
-an ordinary MES-embedded **option picker** of the kind the talk menus use
-(`legaia_mes::scan_pickers` / `Picker::jump_target`; the runner is
-[`script-vm.md` § option-choice effects](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)),
-four options wide here, and the fight option is the one whose branch installs a
-scripted battle - the two-byte field-VM prefix `3E FF` followed by the formation
-row (`garmel`'s Zeto is `3E FF 09`, `rikuroa`'s Caruban `3E FF 11`). The install
-is disc-visible at a decoded opcode boundary: town01 partition-1 **record 10**
-carries `3E FF 04` at record offset `+0x07F7`, three instructions past the
-`4A 10 00` `WaitFrames 16` at `+0x07EE`, and it is the only `3E FF` in the
-scene's talk records. So there **is** a decline path: picking any of the other
-three runs that option's talk reply and no fight. The engine gates on it rather than on the dialog dismiss -
-`spar_menu_of` scans each option's branch target for the install prefix and
-`World::carriers.menu` engages only when the cursor sits on that option
-(`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather
-than an English label is what makes it hold under the PAL discs and translation
-packs. The formation *index* (`4`) is still a pinned
-constant - the interaction record selects its formation by index, not via an
-inline `[count][ids]` literal - but which actor is the carrier, and where it
-stands, now come from the scene data.
+- `man_field_scripts::derive_field_carriers` walks the partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`: the sparring partner becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain `Npc`.
+- Tile and model alone do not make the carrier. `town0b`, `town0c` and `town0d` place Tetsu on the same tile with talk-only records, so the carrier is installed only when the placement's own record names row `4` in a scripted-battle op (`man_field_scripts::record_battle_entry_rows`; `crates/engine-shell/tests/town0b_battle_softlock.rs`).
+- `World::install_field_carriers_from_man` installs the set on every field entry (`enter_field_scene`).
+- Talking to the carrier opens its dialogue. `spar_menu_of` scans each option's branch for the `3E FF` prefix, and `World::carriers.menu` engages only when the cursor sits on the fight option (`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather than a label keeps it correct on PAL discs and translation packs.
+- `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)` installs the existing row as the forced next encounter, so the scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()` is the equivalent hand-built window for the arm-seam path.
 
 ## Scripted-battle id path (`FUN_8005567c`)
 
-The `actor[+0x94]` record path above is one of **two** ways the formation cell is
-populated. The other is a global **battle-id** at `DAT_8007b7fc` consumed at
-battle-init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to expand
-the id into the cell:
-
-The store order in the disassembly is:
+A second way to fill the formation cell exists in the executable: a global **battle id** at `DAT_8007b7fc`, consumed at battle init by `FUN_80055b6c`, which calls `FUN_8005567c` (`SCUS_942.54`) to expand it.
 
 | Address | Store | Effect |
 |---|---|---|
@@ -381,165 +263,65 @@ The store order in the disassembly is:
 | `0x800556A0` | `sb v0, DAT_8007BD0D` | slot 1 = id |
 | `0x800556A8` | `sb v0, DAT_8007BD0E` | slot 2 = id |
 
-Id ranges `0x07..0x09`, `0x49..0x4d`, `0x88..0x8b`, `0xa2..0xff` are the
-"bespoke" bands: they zero slots 1, 2 and 3, collapsing the cell to a lone
-`[id,0,0,0]`. Only `0xa2`/`0xa3`/`0xa4` additionally seed `DAT_8007BD10..`
-(with `1` / `3` / `2`). The `DAT_8007b7fc == 0` fallback writes `4` to all
-four slots with four explicit `sb`s at `0x80055788..0x800557A4`, then clears
-the boss-transition arm at `DAT_8007B64A`.
-
-Slot 1 **is** written directly, in the prologue alongside slots 0 and 2.
-Ghidra's decompiled C ends with a synthesized `DAT_8007bd0d = DAT_8007bd0e;`
-and shows only three stores in the fallback - both are reordering artifacts
-of the same kind, and neither exists in the instruction stream. Read the
-disassembly here, not the decompile. The three cases:
-
 | Battle id | Resulting cell |
 |---|---|
-| `0` | `[4, 4, 4, 4]` - every slot, slot 1 included |
-| in a bespoke band | `[id, 0, 0, 0]` |
+| `0` | `[4, 4, 4, 4]` (four explicit `sb`s at `0x80055788..0x800557A4`), then clears the boss-transition arm `DAT_8007B64A` |
+| in a bespoke band (`0x07..0x09`, `0x49..0x4d`, `0x88..0x8b`, `0xa2..0xff`) | `[id, 0, 0, 0]` |
 | any other non-zero | `[id, id, id, 0]` |
 
-Ported from-scratch as `legaia_engine_core::encounter_record::expand_battle_id`,
-alongside the `actor[+0x94]` record path it is the alternate of.
+Only `0xa2` / `0xa3` / `0xa4` additionally seed `DAT_8007BD10..` (with `1` / `3` / `2`).
 
-`DAT_8007b7fc` is a **transient** parameter: it is `0` in every captured Tetsu
-frame (the id is consumed and cleared by the time the battle is resident). The
-distinguishing signature is the cell *shape* - `FUN_8005567c` writes slots 0/1/2
-for a plain id (`[0x4F,0x4F,0x4F,0]`), whereas the Tetsu cell is `[0x4F,0,0,0]`
-(slot 0 only, slots 1-3 cleared), which is the `FUN_801DA51C` count-1 record path.
-So the Rim Elm fight uses the indexed-record path; `FUN_8005567c` is the
-formation source for battles cued by a battle-id rather than an entity record.
+Read the disassembly here, not the decompile: Ghidra's C ends with a synthesized `DAT_8007bd0d = DAT_8007bd0e;` and shows three fallback stores, both reordering artifacts. Slot 1 is written directly in the prologue.
 
-**Zeto is NOT on this path - it uses the record path in scene `garmel`.** A live
-PCSX-Redux firehose capture (three reproducible runs forward-played from the
-`chapter2_garmel_pre_zeto` bracket) shows the Zeto fight installs its formation
-via `FUN_801DA51C` - the `actor[+0x94]` entity-record path (`count=1`,
-`record[4]=0x4B`), storing `[0x4B,0,0,0]` directly into `DAT_8007bd0c` at the
-battle-launch tick (writer `ra` inside `FUN_801DA51C` body `0x801DA620..78`).
-A write-watch armed on `0x8007b7fc` stayed **silent across the entire fight**
-(field → `0x08` load → `0x15` orbit → back to field), and a mid-battle
-save-state reads `0x8007b7fc = 0`. Zeto is monster id `0x4B` (byte-confirmed
-from the PROT 867 name table: `Zeto`, HP 5000, gold 8000, exp 9000). Although
-`0x4B` falls in `FUN_8005567c`'s bespoke `0x49..=0x4d` boss-expansion band, the
-retail encounter carries the boss id in a **count-1 entity record**, not the
-`DAT_8007b7fc` global - so "boss id in-band ⇒ battle-id path" does **not** hold.
-The mid-battle cell `[0x4B,0,0,0]` matches the earlier `zeto_*_mid_cast` states
-byte-for-byte; those captures pinned the id, not the mechanism, and their `jou`
-scene attribution is superseded by the live forward-play (runtime scene buffer
-`0x8007050C` reads `garmel` through the whole fight). The from-scratch engine
-enters the fight through the MAN formation row selected by the beat record's
-`3E FF <row>` op (`World::trigger_scripted_battle`), producing the same
-`[0x4B]` cell from the disc bytes.
+**No retail battle is known to use this path.** Sweeps of all 47 loaded programs (SCUS + 46 overlays) in four forms - `lui`+`addiu` stores, `lui`+`ori`, gp-relative (`gp = 0x8007B318`), pointer tables - find only readers of `DAT_8007b7fc` (`FUN_8005567c` ×4, `FUN_80055b6c`, the post-battle mode gate `FUN_80046a20`) and no writer. Every capture reads the global as `0`, and battle init takes its "`== 0` ⇒ preserve the record formation" branch. Whether any retail encounter writes it stays open.
 
-Mt. Rikuroa's **Caruban** (id 73 = `0x49`, same band) is a *separate* boss and
-uses the **same record path**: its carrier is the rikuroa P1[3] boss-stager
-placement (park-gated on first-visit flag `0x142`, `3E FF 11` -> formation
-row 17 = lone `0x49`), which the engine runs on approach
-(`World::run_boss_stager_record`). The earlier "re-verify Caruban's mechanism"
-caveat is settled statically - both bosses are `3E FF` record-path fights.
+Bosses whose ids sit in a bespoke band still use the **record path**, so "boss id in band ⇒ battle-id path" does not hold:
 
-**Open - does any retail battle write `DAT_8007b7fc`?** Four exhaustive Ghidra
-sweeps across all 47 loaded programs (SCUS + 46 overlays) - `lui`+`addiu`
-absolute stores, `lui`+`ori`, gp-relative (`gp = 0x8007B318`, validated), and
-pointer-table occurrences - find only **readers** (`FUN_8005567c` ×4,
-battle-init `FUN_80055b6c`, and the per-frame post-battle mode gate
-`FUN_80046a20`), **zero writers** by any addressing mode. The earlier plan -
-catch the writer with a write-watch at the Zeto trigger - is falsified: the
-Zeto trigger uses the record path and never writes the global. Every capture to
-date (Tetsu frames, the `pre_zeto` bracket, the full Zeto fight) reads
-`DAT_8007b7fc = 0`, and battle-init `FUN_80055b6c` takes its "`== 0` ⇒ preserve
-the record formation" branch, so the global may be **always-0 / vestigial in
-retail** with all battles resolving through `FUN_801DA51C`. Whether any retail
-encounter exercises the `FUN_8005567c` battle-id path at all is now the open
-question; the writer (if one exists) still sits outside the static corpus.
+- **Zeto** (id `0x4B`; PROT 867: HP 5000, gold 8000, exp 9000) fights in scene `garmel`. A live PCSX-Redux capture shows `FUN_801DA51C` storing `[0x4B,0,0,0]` at battle launch, with a write-watch on `0x8007b7fc` silent across the whole fight. The engine enters through `3E FF 09` (`World::trigger_scripted_battle`).
+- **Caruban** (id `0x49`) is staged by the `rikuroa` P1[3] placement, park-gated on first-visit flag `0x142`: `3E FF 11` → formation row 17. The engine runs it on approach (`World::run_boss_stager_record`).
 
-**Port status.** `legaia_asset`-side, the decode of this path lives in
-`legaia_engine_core::encounter_record::expand_battle_id`, and no host calls it.
-That is a replacement rather than a wiring gap on both of its arms: the engine
-resolves a battle through a typed `FormationDef` looked up in
-`World::tables.formation_table`, so there is no four-byte cell that can be found
-empty and no fallback point for the `[4, 4, 4, 4]` arm to occupy; and the id arm
-depends on a global with no writer anywhere in retail, so wiring it would mean
-*adding* a hook rather than finding a missing caller. The live encounter path is
-`EncounterRecord::parse`, the `actor[+0x94]` record path above.
+The cell shape tells the two paths apart: the id path writes `[id, id, id, 0]` for a plain id, while a count-1 record leaves `[id, 0, 0, 0]`.
+
+**Port status.** `encounter_record::expand_battle_id` decodes this path and no host calls it. That is a replacement, not a wiring gap: the engine resolves a battle through a typed `FormationDef` in `World::tables.formation_table`, so there is no four-byte cell to find empty, and the id arm depends on a global with no retail writer. The live path is `EncounterRecord::parse`.
 
 ## Random-encounter trigger path
 
-The script-VM install opcodes above describe **scripted** encounter
-arms. Random encounters use a separate path:
+Random encounters come from `FUN_801D9E1C`, in the world-map overlay and co-resident under the dance / fishing / slot-machine / cutscene / debug-menu overlays (same code each time). Provenance: `ghidra/scripts/funcs/overlay_world_map_801d9e1c.txt`.
 
-**Roll function.** `FUN_801D9E1C` (in the world_map overlay; also paged
-in by dance / fishing / slot-machine / cutscene_mapview / dialog_typing /
-debug_menu overlays - same code each time) runs once per **game tick**: its
-caller is the entity handler `FUN_801DA51C`, whose state 0 calls it at
-`0x801DA5B0` (after a `DAT_8007B604` countdown and a non-zero rate setting
-`DAT_8007B5F8`), and the actor pool that runs the handler fires once every
-`DAT_1F800393` vsyncs - 2 in a field scene, 3 on the overworld. So the tile
-it compares is sampled at that cadence, not per display frame: a diagonal
-whose X and Z boundaries fall on different vsyncs of one game tick is one
-step (engine `FrameClock::game_tick_fired`). It first caches the player's tile (`world >> 7`) in the entity's
-`+0x8E` / `+0x8F` and leaves unless the new tile differs from the cached one
-by at most one on each axis (`slti 0x2` at `0x801D9EF0` / `0x801D9F08`), so a
-script seating the player across the map or a warp landing is not a step: it
-neither drains the counter nor rolls (engine
-`region_encounter::is_region_step`). It then runs the [condition walk](#the-condition-array-story-flag-gated-region-groups)
-to pick which slice of the per-scene **region table** at
-`*(_DAT_801C6EA4 + 0x28) + 1` is live, then matches the player's
-`(x, y)` against each region's AABB at `pbVar9[0..3]` **within that
-slice only**. The matching region descriptor supplies:
+**Cadence.** State 0 of `FUN_801DA51C` calls it at `0x801DA5B0`, after a `DAT_8007B604` countdown and a non-zero rate setting `DAT_8007B5F8`. The actor pool fires once every `DAT_1F800393` vsyncs - 2 in a field scene, 3 on the overworld - so the tile is sampled per **game tick**, not per display frame (engine `FrameClock::game_tick_fired`).
 
-- `pbVar9[4]`: per-step rate increment.
-- `pbVar9[6]`, `pbVar9[7]`: base + count of the formation slice the
-  region rolls into.
+**Step test.** The roll caches the player's tile (`world >> 7`) in `entity[+0x8E]` / `[+0x8F]` and leaves unless the new tile differs from the cached one by at most one on each axis (`slti 0x2` at `0x801D9EF0` / `0x801D9F08`). A scripted seat or warp landing is therefore not a step: it neither drains the counter nor rolls (engine `region_encounter::is_region_step`).
+
+**Region match.** The [condition walk](#the-condition-array-story-flag-gated-region-groups) picks the live slice of the region table at `*(_DAT_801C6EA4 + 0x28) + 1`; the player's tile is matched against each region's AABB within that slice only.
+
+| Region offset | Field |
+|---|---|
+| `+0..+3` | `(x_min, y_min, x_max, y_max)` tile AABB |
+| `+4` | per-step rate increment |
+| `+5` | not decoded (`RegionRecord::reserved_5`) |
+| `+6` / `+7` | base / count of the formation slice the region rolls into |
+| `+8` | low 5 bits = battle stage id (→ `DAT_8007BD60`); bit 5 = `DAT_8007B64B`, the backdrop's keep-object-1 flag |
+| `+9..` | stride-dependent extras |
 
 ### The condition array: story-flag-gated region groups
 
-The region array is not one flat list. The **condition array** partitions
-it into consecutive groups, one per story state, and exactly one group is
-live at a time. Each 4-byte condition record is
-`[u16 flag_id][s16 region_count]`.
+The condition array partitions the region array into consecutive groups, one per story state; exactly one group is live. Each 4-byte record is `[u16 flag_id][s16 region_count]`.
 
-The walk (`0x801d9f30..0x801d9fd8`) holds a region cursor that starts at
-region 0 and steps through the conditions in order:
+The walk (`0x801d9f30..0x801d9fd8`) holds a region cursor starting at region 0:
 
 - `flag_id == 0xFFFF` - stop; this group is the unconditional default.
-- `FUN_8003CE64(flag_id)` non-zero (the story flag is **set**) - stop;
-  this group wins.
-- otherwise - advance the cursor by `region_count` regions and continue.
+- `FUN_8003CE64(flag_id)` non-zero (story flag **set**) - stop; this group wins.
+- otherwise - advance the cursor by `region_count` and continue.
 
-If the walk reaches the end of the condition list without stopping, the
-function **returns without rolling** (`0x801d9fc8`) - that is a
-"no encounter this step" exit, not a fallback to the whole array. The
-same test makes a zero-length condition array mean "never rolls"; no
-retail scene has one.
+Running off the end of the list **returns without rolling** (`0x801d9fc8`); it is not a fallback to the whole array. No retail scene has an empty condition list. The winning group's `region_count` bounds the AABB search, so regions outside it are invisible in that story state.
 
-The group's own `region_count` (re-read from the selected condition at
-`+2`) bounds the AABB search, so regions outside it are invisible in that
-story state.
+Corpus-wide invariants: group lengths tile the region array exactly (`sum(region_count) == region_count byte`), and each list ends with exactly one `0xFFFF` record. A mid-playthrough RAM image reproduces the carve (`ctrl[+0x24] - ctrl[+0x20] == 1 + formation_count * formation_stride`) and the predicted group: in Drake Castle the `0x0142`-gated leading group is skipped and the 14-region tail is live.
 
-Two corpus-wide invariants hold across every retail scene bundle whose
-MAN decodes: the group lengths **tile the region array exactly**
-(`sum(region_count) == region_count byte`), and the condition list ends
-with exactly one `0xFFFF` record and contains no other. Runtime states
-agree with the disc bytes: reading `_DAT_801C6EA4`'s three pointers out
-of a mid-playthrough main-RAM image reproduces the carve
-(`ctrl[+0x24] - ctrl[+0x20] == 1 + formation_count * formation_stride`,
-and likewise for `+0x28`), and walking the live conditions against the
-`0x80085758` flag bank selects the group this page's model predicts -
-in Drake Castle, the `0x0142`-gated leading group is skipped and the
-14-region unconditional tail is live. A group commonly
-ends with a whole-map `rate 0` catch-all (the "outside every named
-region, roll nothing" row), and a *gated* group is frequently nothing but
-such a row - which is how a scene is made silent in one story state and
-noisy in another. Reading the array flat therefore lands on group 0 and
-stops on its placeholder row, which is what makes most scenes look
-encounter-free.
+A group commonly ends with a whole-map `rate 0` catch-all, and a *gated* group is often nothing but that row - which is how a scene is silent in one story state and noisy in another. Reading the array flat lands on group 0's placeholder and makes most scenes look encounter-free.
 
-The rate is then scaled by the user-config setting at `_DAT_8007B5F8`
-and by four sequential
-accessory / status modifiers whose magnitudes are statically pinned in
-the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
+### Rate modifiers
+
+The rate is scaled by the setting byte `_DAT_8007B5F8`, then by four modifiers (`0x801da1b8..0x801da200`):
 
 | Test | Source | Effect |
 |---|---|---|
@@ -548,53 +330,37 @@ the same dump (`overlay_world_map_801d9e1c.txt`, `0x801da1b8..0x801da200`):
 | `FUN_8003CE64(0x1D)` | system flag `0x1D` (the `_DAT_80085758` bank) | rate `<< 1` |
 | `FUN_8003CE64(0x1E)` | system flag `0x1E` | rate `>> 1` |
 
+Engine: `region_encounter::EncounterRateModifiers`, refreshed each step by `World::encounter_rate_modifiers`.
+
 #### The `_DAT_8007B5F8` setting byte
 
-The scale arm (`0x801da198..0x801da1b4`) compares the byte against `2` and
-against `3` and does nothing otherwise, so the four values are:
+The scale arm (`0x801da198..0x801da1b4`) compares the byte against `2` and `3` only:
 
 | Value | Effect |
 |---|---|
-| `0` | No roll at all. `FUN_801DA51C`'s state-0 arm tests the byte at `0x801da5a8` and skips the call to `FUN_801D9E1C`, so this is off rather than "rate 0". |
-| `1` | Rate increment used **as-is**. Retail save states carry this value. |
-| `2` | Rate increment `<< 2` - four times as many encounters. |
-| `3` | Rate increment `>> 2` - a quarter as many. |
+| `0` | No roll at all: state 0 tests the byte at `0x801da5a8` and skips the call. |
+| `1` | Rate increment used as-is. Retail save states carry this value. |
+| `2` | Rate increment `<< 2`. |
+| `3` | Rate increment `>> 2`. |
 
-The only writer in the static corpus is the world-map debug menu's `ENCOUNT`
-row (`FUN_801EA9B0` case 4), which cycles the byte `0 → 1 → 2 → 3 → 0`; the
-boot value is set from outside that corpus, and the runtime captures are what
-pin it. The engine mirrors the numbering in
-`region_encounter::EncounterRateSetting`, whose `Default` is the `1`
-pass-through.
+The only static writer is the world-map debug menu's `ENCOUNT` row (`FUN_801EA9B0` case 4), cycling `0 → 1 → 2 → 3 → 0`; the boot value is pinned by runtime captures. Engine: `region_encounter::EncounterRateSetting`, default `1`.
 
 #### Steps that do not roll
 
-Between the region's battle-setup half and the rate scale, the reader
-returns without touching the counter on any of these conditions, and on a
-zero second argument (`0x801DA130..0x801DA180`):
+Before the rate scale, the reader returns without touching the counter on any of these, and on a zero second argument (`0x801DA130..0x801DA180`):
 
 | Test | What it is |
 |---|---|
-| `*(_DAT_8007C364)+0x10 & 0x80000` | The player's engaged bit. A talk or touch raises it, and so does the script runner `FUN_80039B7C` on every frame it steps a context (`0x80039DB8..0x80039DD4`): a door record carrying the party out, a scripted walk and an open box all hold the roll. |
+| `*(_DAT_8007C364)+0x10 & 0x80000` | The player's engaged bit. A talk or touch raises it, and so does the script runner `FUN_80039B7C` on every frame it steps a context (`0x80039DB8..0x80039DD4`): a door, a scripted walk and an open box all hold the roll. |
 | `_DAT_8007B6B4 != 0` | The dialogue-pacing countdown the runner arms as a context closes. |
 | `_DAT_8007B6B0 > 0` | The kind-0 warp timer between a teleport tile and its landing. |
 | `_DAT_8007B600 != 0` | The Incense window (`0x801DA174`). |
 
-A step onto a door therefore never also starts a fight. The trigger itself
-raises the same engaged bit (below), so a step that does roll stops the
-player where it stands for the battle intro and cannot carry on onto a door.
-The engine reads the first three as `World::encounter_roll_held` (gating
-both roll sites) and the trigger's lock as `World::encounter_owns_player`
-(gating overworld locomotion and portal contact); the disc-gated
-`world_map_door_encounter_disc` test pins both on `map01`'s door to `dolk2`.
+A step onto a door therefore never also starts a fight, and a step that does roll raises the same engaged bit, stopping the player for the battle intro. The engine reads the first three as `World::encounter_roll_held` and the trigger's lock as `World::encounter_owns_player`; `world_map_door_encounter_disc` pins both on `map01`'s door to `dolk2`.
 
-The scaled rate is subtracted from the step counter at `_DAT_8007B5FC`.
-Engine port: `region_encounter::EncounterRateModifiers` (applied on both
-the region tracker and the mean-rate session), refreshed each step from
-the party ability mask + system-flag bank by
-`World::encounter_rate_modifiers`.
-When the counter goes ≤ 0, two RNG draws pick a formation id in
-`[pbVar9[6], pbVar9[6] + pbVar9[7])` and the roll function installs:
+### The trigger
+
+The scaled rate is subtracted from the step counter `_DAT_8007B5FC`. At `<= 0`, two RNG draws pick a formation in `[region[6], region[6] + region[7])` and the roll installs:
 
 ```c
 *(short *)(actor + 0x88) = formation_id;
@@ -604,185 +370,75 @@ When the counter goes ≤ 0, two RNG draws pick a formation id in
 _DAT_8007b5fc = (RNG % 0x1e7) - ((RNG % 0x1e7) - 0x3ce);
 ```
 
-Note the install at `+0x94` uses the same slot the scripted-encounter
-path uses, but raises a **different flag bit** (`0x80000`, not
-`0x400`). `FUN_801DA51C` reads `actor[+0x94]` without checking either
-flag, so a single reader serves both paths.
+It uses the same `+0x94` slot as the inline arm but a different flag bit (`0x80000`, not `0x400`). `FUN_801DA51C` checks neither flag, so one reader serves every arm.
 
 #### Engine port (region-keyed roll)
 
-The roll above is ported from-scratch as
-[`region_encounter`](../../crates/engine-battle/src/region_encounter.rs)
-(`PORT: FUN_801D9E1C`). `RegionEncounterTable` preserves each region's
-tile-AABB + rate increment + formation slice (built from the MAN via
-`region_encounter_table_from_man`, the position-routed companion to the
-aggregated [`encounter_man::encounter_table_from_man`](../../crates/engine-battle/src/encounter_man.rs)).
-The table also carries the condition partition as `RegionEncounterTable::groups`
-and a selected slice; `RegionEncounterTracker::select_group(flag_test)` re-runs
-the condition walk and both roll sites call it once per step from the live
-system-flag bank, so a flag set mid-scene swaps the region set (and with it the
-rates, formation ranges and battle backdrop) on the next step.
-`RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to
-a 128-unit tile (`coord >> 7`), selects the first region **of the active group**
-whose AABB contains it,
-subtracts the setting-scaled rate increment from the step counter, and on a
-`<= 0` counter rolls a formation uniformly from `[base, base + count)` with the
-one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` counter reset. The
-no-trigger path consumes zero RNG, matching retail (so it is replay-safe).
+The roll is ported as [`region_encounter`](../../crates/engine-battle/src/region_encounter.rs) (`PORT: FUN_801D9E1C`).
 
-Both scene modes route the tracker off the same MAN section. The **overworld**
-installs it via `World::set_world_map_regions` (rolled per tile in
-`live_world_map_tick`). A **field** scene installs it at scene entry via
-`World::set_field_regions` (`SceneHost::enter_field_scene`), and
-`World::on_field_step` rolls the active region and feeds a trigger through the
-aggregated [`EncounterSession`](../../crates/engine-battle/src/encounter.rs)'s
-transition / grace SM (`EncounterSession::trigger_with`) - so the field path now
-varies the rate + formation pick by region instead of using the single
-mean-rate table, while keeping the same transition bracketing. A field scene
-whose MAN has no encounter-region section (towns) installs no tracker and falls
-back to the mean-rate session. Pinned by
-`crates/engine-core/tests/field_region_encounter_disc.rs` (install + per-region
-rate variation + the full region→session→drain flow).
+- `RegionEncounterTable` (built by `region_encounter_table_from_man`) keeps each region's AABB, rate and formation slice, plus the condition partition as `groups`. The aggregated companion is [`encounter_man::encounter_table_from_man`](../../crates/engine-battle/src/encounter_man.rs).
+- `RegionEncounterTracker::select_group(flag_test)` re-runs the condition walk each step from the live flag bank, so a flag set mid-scene swaps the region set on the next step.
+- `RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to a tile, picks the first matching region of the active group, subtracts the scaled rate and, at `<= 0`, rolls uniformly from `[base, base + count)` with the one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` reset. The no-trigger path consumes no RNG, as in retail.
+- The **overworld** installs the tracker through `World::set_world_map_regions` (rolled in `live_world_map_tick`). A **field** scene installs it at entry through `World::set_field_regions`; `World::on_field_step` feeds a trigger into the [`EncounterSession`](../../crates/engine-battle/src/encounter.rs) transition / grace state machine. A MAN with no region section falls back to the mean-rate session. Pinned by `crates/engine-core/tests/field_region_encounter_disc.rs`.
+- **Scripted formations override the roll.** `World::install_man_formation` and `World::install_encounter_from_record` set `scripted_formation_pending`, which `on_field_step` checks before the region path. That is what starts the Tetsu fight in town01, whose effective random rate is 0% (`crates/engine-shell/tests/training_battle.rs`).
 
-**Scripted formations override the region roll.** A *scripted* arm
-(`World::install_man_formation` by index, or
-`World::install_encounter_from_record` from an inline `[count][ids]` window)
-is a one-shot that must fire on the next step regardless of the per-region
-random rate - retail copies the carrier's `entity[+0x94]` formation into the
-battle cell on confirm, independent of the `FUN_801D9E1C` roll. The engine
-models this with a `scripted_formation_pending` flag that `on_field_step`
-checks *before* the region path, driving the forced `0xFF`-rate session
-directly and consuming the flag. This is what lets the Rim Elm Tetsu tutorial
-fight start in town01 even though that scene installs a region tracker whose
-effective random rate is 0%. Pinned by
-`crates/engine-shell/tests/training_battle.rs`.
+### Encounter control block (`_DAT_801C6EA4`)
 
-**Encounter control block (`_DAT_801C6EA4`).** A 100-byte block
-allocated by `FUN_8003A024` and populated per-scene by `FUN_8003A110`
-("Mesworks set encount group table"). After scene load it carries:
+A 100-byte block allocated by `FUN_8003A024` and filled per scene by `FUN_8003A110` ("Mesworks set encount group table"):
 
 | Offset | Field |
 |---|---|
-| `+0x20` | Formation table base. Records of stride `+0x5d`; record at index `i` lives at `base + 1 + i * stride` (the `+1` skips a leading count byte). |
-| `+0x24` | Condition table base. Records of stride `+0x5e`; each is `[story flag id][region count]` and gates one slice of the region table. |
-| `+0x28` | Region table base. Records of stride `+0x5f` (AABB + rate + formation range), grouped by the condition table. |
-| `+0x5d` | Formation record stride. |
-| `+0x5e` | Condition record stride. |
-| `+0x5f` | Region record stride. |
+| `+0x00` | MAN section 1 pointer (motion-VM script table). |
+| `+0x04` | MAN section 3 pointer (camera-region table). |
+| `+0x20` | Formation table base; record `i` at `base + 1 + i * stride` (the `+1` skips the count byte). |
+| `+0x24` | Condition table base. |
+| `+0x28` | Region table base. |
+| `+0x5D` / `+0x5E` / `+0x5F` | Formation / condition / region record stride. |
 
-**Per-scene MAN file (asset type `0x03`).** The encounter data lives as
-the `Man` asset in each scene's
-[`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)
-7-asset bundle, descriptor index 2. The asset dispatcher
-(`FUN_8001F05C`) LZS-decompresses the Man payload into a heap buffer
-addressed by `_DAT_8007B898`; `FUN_8003AEB0` (the per-scene MAN
-walker, called from `FUN_801D6704` / family scene loaders) then walks
-the MAN's multi-section header and finally writes the encounter-
-section pointer into `ctrl[+0x20]` before calling `FUN_8003A110`.
+## The MAN header and section chain
 
-The MAN multi-section header is byte-exact across all 80 retail
-`scene_asset_table` bundles and lives at MAN offset `0`:
+The encounter data is the `Man` asset in each scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle, descriptor index 2. The asset dispatcher `FUN_8001F05C` LZS-decompresses it into the heap buffer at `_DAT_8007B898`. `FUN_8003AEB0` (called from `FUN_801D6704` and the sibling scene loaders) walks the header, writes the section-0 pointer into `ctrl[+0x20]` and calls `FUN_8003A110`. The header is byte-exact across all 80 retail `scene_asset_table` bundles. Parser: [`legaia_asset::man_section`](../../crates/asset/src/man_section.rs).
 
-> **`+0x22`/`+0x24`/`+0x26` are record *counts*, not section offsets.** They
-> are signed 16-bit counts of the 3-byte records that follow at `+0x2B`, and
-> `+0x28` is a **u24**, not a fourth s16. The header chains **six** sections,
-> not four. Summary tables elsewhere have repeatedly restated this block as
-> "four s16 section offsets at `+0x22..+0x28`" - that reading is wrong, and
-> the layout below (traced through `0x8003B04C..0x8003B120`: `lbu` pairs with
-> `sll 16` / `sra 16` for the counts, a three-byte assembly for the u24) is
-> the one to trust. The recurring shape is worth naming: the **detail page
-> stayed correct while the one-line summary drifted**, so when a summary and a
-> byte-level block disagree, the block wins.
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| `+0x00` | u16 LE | `status_flags` | Return value; bit `0x400` hints world-map bulk terrain (set on `map01` / `map02` / `map03`). |
+| `+0x01` | u8 | low bit | Secondary scene flag `DAT_8007B6A8`. |
+| `+0x02` | 16 × s16 LE | `depth_lut` | Written negated to the GTE scratchpad (`0x1F800314 + 0x48`), the per-scene depth-sample table. |
+| `+0x22` | s16 LE | `N0` | Partition-0 record count. |
+| `+0x24` | s16 LE | `N1` | Partition-1 record count (the actor placement list, consumed by `FUN_8003A1E4`). |
+| `+0x26` | s16 LE | `N2` | Partition-2 record count. |
+| `+0x28` | u24 LE | `u24_28` | Offset of section 0's length prefix, relative to the end of the record table. |
+| `+0x2B` | 3 × (N0+N1+N2) | record table | Concatenated `[P0][P1][P2]`; each record is a u24 LE offset into the data region. |
+| after | - | data region | Record payloads, then the section chain. |
 
-```text
-+0x00..+0x02   u16 LE  status_flags                 ; return value;
-                                                    ; bit 0x400 hints
-                                                    ; world-map bulk
-                                                    ; terrain (set on
-                                                    ; map01/map02/map03)
-+0x01          u8      low_bit_DAT_8007B6A8         ; secondary flag
-+0x02..+0x22   16 × s16 LE  depth_lut               ; written negated to
-                                                    ; the GTE scratchpad
-                                                    ; (0x1F800314+0x48)
-                                                    ; for per-scene fog
-                                                    ; / depth-of-field
-+0x22..+0x24   s16 LE  N0                           ; partition-0 record
-                                                    ; count (open)
-+0x24..+0x26   s16 LE  N1                           ; partition-1 record
-                                                    ; count (consumed by
-                                                    ; FUN_8003A1E4 as the
-                                                    ; per-scene NPC /
-                                                    ; actor placement
-                                                    ; list)
-+0x26..+0x28   s16 LE  N2                           ; partition-2 (open)
-+0x28..+0x2B   u24 LE  u24_28                       ; in-table byte
-                                                    ; offset of section
-                                                    ; 0's length prefix
-                                                    ; within the data
-                                                    ; region (relative
-                                                    ; to records-end)
-+0x2B..+0x2B+3*(N0+N1+N2)  3-byte records           ; concatenated
-                                                    ; [P0..P1..P2]
-                                                    ; partitions; each
-                                                    ; record is a u24 LE
-                                                    ; byte offset into
-                                                    ; the data region
-+0x2B + 3*(N0+N1+N2)     data region                ; encounter section,
-                                                    ; actor-placement
-                                                    ; payloads, etc.
+`+0x22` / `+0x24` / `+0x26` are record **counts**, not section offsets, and `+0x28` is a u24, not a fourth s16 (traced through `0x8003B04C..0x8003B120`: `lbu` pairs with `sll 16` / `sra 16`, a three-byte assembly for the u24).
+
+Section 0 starts at `records_end + u24_28`. Each section is `[u24 LE length][payload]`, and the next starts at `current + 3 + length`.
+
+```mermaid
+flowchart LR
+    H["Header<br/>+0x00..+0x2B"] --> R["Record table<br/>P0, P1, P2"]
+    R --> D["Data region"]
+    D --> S0["S0 encounter"]
+    S0 --> S1["S1 motion scripts"]
+    S1 --> S2["S2 scene name"]
+    S2 --> S3["S3 camera regions"]
+    S3 --> S4["S4 open"]
+    S4 --> S5["S5 terminator"]
 ```
-
-Section 0 (the encounter section) lives at
-`records_end + u24_28`. Sections 1..=5 chain via a 3-byte length
-prefix: each section is `[u24 LE length][length payload bytes]` and
-the next section starts at `current + 3 + length`. Section 5 is
-universally a zero-length terminator across the retail corpus.
-
-The six sections install into different globals (per FUN_8003AEB0):
 
 | Index | Install target | Role |
 |---|---|---|
-| 0 | `_DAT_801C6EA4[+0x20]` | Encounter / formation tables (consumed by `FUN_8003A110`; see below). |
-| 1 | `_DAT_801C6EA4[+0x00]` | (Open) - referenced by the field-script context dispatcher; the pointer is advanced past its length prefix immediately after the walk. |
-| 2 | `_DAT_801C6EA0` | (Open) - same advance-by-3 treatment. |
-| 3 | `_DAT_801C6EA4[+0x04]` | **Camera-region table** - count-prefixed 18-byte records queried by player tile (`FUN_801DBA20`); the camera-parameter payload split is [decoded below](#man-section-3-the-camera-region-table). |
-| 4 | `DAT_80073ED8` | (Open) - advances by 4 (skipping length + 1 byte); the byte at `+3` is copied into `DAT_80073EDC`, and a zero terminator there detaches the pointer (`DAT_80073ED8 = NULL`). |
-| 5 | `DAT_80073EE0` | Universally a zero-length terminator. Reserved-but-unused sentinel. |
+| 0 | `_DAT_801C6EA4[+0x20]` | Encounter section: formation, condition and region tables. |
+| 1 | `_DAT_801C6EA4[+0x00]` | Motion-VM script table, the per-actor `FUN_80038158` bytecode ([`motion-vm.md`](../subsystems/motion-vm.md); decoder `legaia_asset::man_motion`). Pointer advanced past the 3-byte prefix. |
+| 2 | `_DAT_801C6EA0` | Scene display name, a NUL-terminated string ([`place-names.md`](place-names.md)). Same advance-by-3. |
+| 3 | `_DAT_801C6EA4[+0x04]` | [Camera-region table](#man-section-3-the-camera-region-table). |
+| 4 | `DAT_80073ED8` | Open. Advances by 4; the byte at `+3` is copied to `DAT_80073EDC`, and a zero there detaches the pointer. |
+| 5 | `DAT_80073EE0` | Zero-length chain terminator in every scene. The pointer is live: kingdom MANs park the world-map label table in the bytes after it ([`place-names.md`](place-names.md)). |
 
-The encounter-section header (consumed by `FUN_8003A110`) is 4 bytes
-followed by three count-prefixed record arrays:
+**Worked example - `0086_map01`.** The MAN descriptor sits at file offset `0x3B238` (LZS 6537 → 11274 bytes):
 
 ```text
-+0x00          u8      formation_stride
-+0x01          u8      condition_stride
-+0x02          u8      region_stride
-+0x03          u8      formation_count
-+0x04          formation_count × formation_stride bytes   ; encounter records
-                   record_i[+0]     = scripted-fight predicate; non-zero raises
-                                      per-battle flag 0x80 (see above)
-                   record_i[+1..+2] = reserved (other-path scratch)
-                   record_i[+3]     = monster_count
-                   record_i[+4..]   = monster_ids
-+next          u8 condition_count + condition_count × condition_stride bytes
-                   cond_i[+0..+2]   = story flag id (0xFFFF = unconditional)
-                   cond_i[+2..+4]   = s16 count of regions this condition owns
-+next          u8 region_count + region_count × region_stride bytes
-                   region_j[+0..+3] = (x_min, y_min, x_max, y_max)
-                   region_j[+4]     = rate increment
-                   region_j[+6]     = formation-range base index
-                   region_j[+7]     = formation-range count
-                   region_j[+8..]   = battle-bg variant flags + extras
-```
-
-The regions are grouped, not flat: consecutive slices of the region array
-belong to the conditions in order. See
-[the condition array](#the-condition-array-story-flag-gated-region-groups).
-
-For `0086_map01` (Drake's kingdom field-scene bundle), the MAN
-descriptor sits at file offset `0x3B238` (LZS in 6537 → out 11274
-bytes). The decoded layout is:
-
-```
 status_flags=0x01B2, N0=12, N1=9, N2=42, u24_28=0x21D8,
 data_region @ 0xE8, section_0 (encounter) @ 0x22C0 len 0x43E
 section_1 @ 0x2701 len 0x15
@@ -795,69 +451,30 @@ encounter: formation_stride=8, condition_stride=4, region_stride=12;
 37 formations, 4 conditions, 64 regions.
 ```
 
-The four conditions own 16 regions each - four story-state variants of the
-same overworld region layout, differing only in per-region rate and battle
-backdrop byte, each ending with its own whole-map `rate 0` catch-all. The
-`0xFFFF` variant is last, so a cleared flag bank uses regions `48..64`.
-
-Formation 3 = `[00 00 00 02 04 04 00 00]` matches `mc2`'s in-RAM
-formation cell `04 04 00 00` byte-for-byte. The
-[`legaia_asset::man_section`](../../crates/asset/src/man_section.rs)
-crate exposes this parser plus per-record decoders for formation +
-region rows.
+The four conditions own 16 regions each: four story-state variants of one overworld layout, differing in rate and backdrop byte, each ending in a `rate 0` catch-all. The `0xFFFF` variant is last, so a cleared flag bank uses regions `48..64`. Formation 3 = `[00 00 00 02 04 04 00 00]` matches the in-battle formation cell `04 04 00 00`.
 
 ## MAN section 3: the camera-region table
 
-Section 3 (installed at `_DAT_801C6EA4[+0x04]`) is the per-scene **camera-region table**:
-`[u8 count]` then `count × 18-byte` records. The per-tile query `FUN_801DBA20` walks it
-(`tile = (player_pos - 0x40) >> 7`, first match wins; kind dispatch on `byte[0]` - see
-[`reference/functions.md`](../reference/functions.md)). The tile re-query helper
-`FUN_801DE3E0(tile_x, tile_z)` runs that query and hands the hit to the config loader
-**`FUN_801DBC20`**, which splits `bytes[5..17]` into the resident camera-parameter block at
-`0x8007B607..0x8007B627` (a query miss loads fixed defaults instead - see below). The
-re-query is **script-driven**: `FUN_801DE3E0` is reached from three field-VM arms -
-`[4C 38]` (query at the player's tile), `[4C 39]` (query, re-conform the footing, snap) and
-`[4C C4 x z]` (query at an explicit tile) - and op `0x45` LOAD hands the loader an inline
-record. The field camera arrival actor `FUN_801DBE9C` queries only on its
-`_DAT_8007B868 != 0` leg; that word is the dev/dual-mode gate and retail boots with it `0`,
-so the retail leg re-pins the focus and snaps (`FUN_801DB8EC`) without touching the block
-(an earlier reading here had the arrival handler doing the query). The camera-param
-builder `FUN_801DAB90` then composes the block into the same staging-struct slots the
-script-VM Camera Configure op `0x45` writes (pitch `+0x02`, yaw `+0x06`, eye-space
-`(dx, dy, depth)` `+0x0E/+0x12/+0x16`, GTE H `+0x26`; see
-[`subsystems/cutscene.md`](../subsystems/cutscene.md#timeline-execution-model-ghidra-traced)
-§ "Camera Configure op `0x45`") - so a zone record is a per-region camera preset in the
-op-`0x45` parameter space. How the staging pose then reaches the live camera globals is
-[below](#from-the-block-to-the-live-camera-compose-ease-snap).
+Section 3 is `[u8 count]` then `count × 18-byte` records. Each record is a per-region camera preset in the same parameter space as the script-VM Camera Configure op `0x45` ([`cutscene.md`](../subsystems/cutscene.md#timeline-execution-model-ghidra-traced)).
 
-Provenance: loader `see ghidra/scripts/funcs/overlay_fishing_801dbc20.txt` (byte-identical
-across the fishing / dance / debug_menu / slot_machine captures; the cutscene_dialogue /
-cutscene_mapview captures differ only in Ghidra label prefixes - the function sits in the
-co-resident camera cluster, while the `overlay_0897` and `overlay_baka_fighter` captures
-alias different bytes at this VA). Consumers: `overlay_cutscene_dialogue_801dab90.txt`
-(builder) + `overlay_cutscene_dialogue_801dbe9c.txt` (arrival handler + defaults).
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u8 | `kind` | `0` = anchor match, `1` = tile bbox, `2..=0x1F` = region-type mask bit (against `_DAT_8007B8F4`) | Confirmed |
+| `+0x01` | u8[4] | box | Kind 1: `[minX, minZ, maxX, maxZ]`. Kind 0: anchor `(rec[1], rec[2])`. Mask kinds: the visible tile window | Confirmed |
+| `+0x05` | u8 | mode byte | → `DAT_8007B607`; high nibble selects the split below | Confirmed |
+| `+0x06` | u8[12] | parameters | Split by mode into `0x8007B608..0x8007B627` | Confirmed |
 
-**Record header (`bytes[0..5]`, the query side):**
+**Query.** `FUN_801DBA20` walks the table with `tile = (player_pos - 0x40) >> 7`; first match wins ([`reference/functions.md`](../reference/functions.md)).
 
-- `+0x00` u8 `kind` - `0` = anchor `(rec[1], rec[2])` and the player tile both inside the
-  scratch attribute box, `1` = inclusive tile-bbox match, `2..=0x1F` = region-type mask
-  bit (matched against `_DAT_8007B8F4`).
-- `+0x01..+0x04` u8×4 - tile-space bbox `[minX, minZ, maxX, maxZ]` (kind 1) /
-  anchor `(rec[1], rec[2])` (kind 0).
-- For mask kinds with `byte[1] != 0`, the loader side-copies `bytes[3],[4],[1],[2]` to
-  scratchpad `0x1F8003E8..EB` and the mirror words `0x801F2778/80/7C/84` before the
-  split. Those four bytes are the camera's **visible tile window** - see
-  [the scratchpad window](#the-scratchpad-window-0x1f8003e8eb) below, which also says
-  why the earlier "consumer Unknown" reading survived as long as it did.
+- Kind `0`: the anchor `(rec[1], rec[2])` and the player tile are both inside the scratch attribute box.
+- Kind `1`: inclusive tile-bbox match.
+- Kinds `2..=0x1F`: region-type mask bit. When `byte[1] != 0`, the loader also copies `bytes[3],[4],[1],[2]` to scratchpad `0x1F8003E8..EB` and the mirror words `0x801F2778/80/7C/84` - the [visible tile window](#the-scratchpad-window-0x1f8003e8eb).
 
-**Camera payload `bytes[5..17]`** - `byte[5]` is stored whole to the camera **mode byte**
-`DAT_8007B607`; its high nibble selects both the loader split and the `FUN_801DAB90` build
-branch (low nibble = mode-specific strength). Mode `6` = *keep current camera*: the loader
-returns without writing any global, so the previous zone's parameters persist. `s16` =
-signed 16-bit LE read via the shared operand reader `FUN_8003CE9C` (`load_u16_le`,
-sign-extended at the call sites).
+**Who queries.** The re-query helper `FUN_801DE3E0(tile_x, tile_z)` runs the query and hands the hit to the loader **`FUN_801DBC20`**. It is script-driven, reached from three field-VM arms: `[4C 38]` (query at the player's tile), `[4C 39]` (query, re-conform the footing, snap) and `[4C C4 x z]` (query at an explicit tile). Op `0x45` LOAD hands the loader an inline record. The field camera arrival actor `FUN_801DBE9C` queries only on its `_DAT_8007B868 != 0` leg; retail boots that dev gate at `0`, so the retail leg re-pins the focus and snaps (`FUN_801DB8EC`) without touching the block.
 
-| offset | sweep split (every mode but 3/5/6) | mode 3 split (look-at anchor) | mode 5 split (fixed shot) |
+**Parameter split.** `byte[5]`'s high nibble selects the split and the build branch in `FUN_801DAB90`; the low nibble is a mode-specific strength. Mode `6` = *keep current camera*: the loader returns without writing. `s16` = signed 16-bit LE through the operand reader `FUN_8003CE9C`. `B6xx` = `0x8007B6xx`.
+
+| Offset | Sweep split (every mode but 3 / 5 / 6) | Mode 3 (look-at anchor) | Mode 5 (fixed shot) |
 |---|---|---|---|
 | `+5` | u8 → `B607` mode byte | same | same |
 | `+6` | u8 → `B608` pitch sweep | s16 `+6..7` → `B61C` anchor tile X | u8 → `B61C` focus tile X |
@@ -869,86 +486,47 @@ sign-extended at the call sites).
 | `+14..15` | s16 → `B614` eye depth | s16 → `B614` eye-depth bias | s16 → `B614` eye depth |
 | `+16..17` | s16 → `B618` GTE H | s16 → `B618` GTE H | s16 → `B618` GTE H |
 
-(`B6xx` = `0x8007B6xx`. Mode-5 `B620` is an s8: the loader ORs `0xFFFFFF00` in when
-`byte[8] >= 0x80`.)
+Mode-5 `B620` is an s8: the loader ORs `0xFFFFFF00` in when `byte[8] >= 0x80`.
 
-**Global roles** (consumer `FUN_801DAB90` unless noted; angles in the 4096 = 360° space,
-positions in world units, one tile = `0x80`):
+**Global roles** (consumer `FUN_801DAB90` unless noted; angles in `4096 = 360°`, one tile = `0x80` world units):
 
-- `B607` - mode byte. High nibble `1`/`2`: anchor-follow with a **position-proportional
-  yaw sweep** - `yaw = B610 ± (B607 & 0xF) · lerp(player X across the zone attribute box
-  at scratchpad 0x1F800384/386)`, sign by nibble. `3` = look-at anchor, `4` = pad-analog
-  yaw (pitch `B60C`, depth `B614`), `5` = fixed scripted shot, `6` = keep current.
-- `B608` - pitch sweep: high nibble `1`/`2` = sweep sign about the box Z midpoint
-  (`pitch = B60C ± (B608 & 0xF) · lerp(player Z)`); other values pin pitch to `0x1B8`.
-- `B609` - depth sweep: high nibble `n ∈ 1..=5` anchors the sweep `(n−1)/4` of the Z span
-  from the box max (`depth = B614 + (B609 & 0xF) · lerp(player Z)`); else depth = `B614`.
-- `B60A` - **floor-height**-coupled pitch adjust: high nibble `1..=4` → `pitch += (B60A & 0xF) ·
-  floor / 4`; `5` → `/ 8`, then the player's footing `+0x16` rotated by the new pitch out of
-  the eye height and depth: `dy -= cos(pitch) · footing · 6 >> 12` (halved when the scene's
-  `DAT_8007B6A8` bit is set), `depth -= sin(pitch) · footing >> 12`. `floor` is
-  `FUN_80019278(player)` - the floor-height sampler, run with the MAN's own elevation LUT
-  swapped into scratchpad `0x1F80035C` so a scripted floor-tier bob never moves the camera.
-  (An earlier reading here called this value a "heading"; it is the sampled floor
-  height. The LUT pointers: `_DAT_8007B81C` is the sine table, `_DAT_8007B7F8` the same
-  table a quarter turn on, i.e. cosine.)
-- `B60B` - high nibble `1..=0xB`: eye-space `dy = 0x200 − floor · (B60B & 0xF)`; else
-  `dy = 0x200`. The same high nibble indexes the per-frame **ease shift table** in the
-  follow-ease `FUN_801DB510` - see [below](#from-the-block-to-the-live-camera-compose-ease-snap).
+- `B607` - mode byte. High nibble `1` / `2`: anchor-follow with a position-proportional yaw sweep, `yaw = B610 ± (B607 & 0xF) · lerp(player X across the attribute box at scratchpad 0x1F800384/386)`, sign by nibble. `3` = look-at anchor, `4` = pad-analog yaw (pitch `B60C`, depth `B614`), `5` = fixed scripted shot, `6` = keep current.
+- `B608` - pitch sweep. High nibble `1` / `2` = sweep sign about the box Z midpoint (`pitch = B60C ± (B608 & 0xF) · lerp(player Z)`); other values pin pitch to `0x1B8`.
+- `B609` - depth sweep. High nibble `n ∈ 1..=5` anchors the sweep `(n−1)/4` of the Z span from the box max (`depth = B614 + (B609 & 0xF) · lerp(player Z)`); else depth = `B614`.
+- `B60A` - floor-height pitch coupling. High nibble `1..=4`: `pitch += (B60A & 0xF) · floor / 4`. `5`: `/ 8`, then the player's footing `+0x16` is rotated by the new pitch out of the eye height and depth: `dy -= cos(pitch) · footing · 6 >> 12` (halved when `DAT_8007B6A8` is set), `depth -= sin(pitch) · footing >> 12`. `floor` is the floor-height sampler `FUN_80019278(player)` (not a heading), run with the MAN's own elevation LUT swapped into scratchpad `0x1F80035C` so a scripted floor-tier bob never moves the camera. `_DAT_8007B81C` is the sine table and `_DAT_8007B7F8` the same table a quarter turn on (cosine).
+- `B60B` - high nibble `1..=0xB`: eye-space `dy = 0x200 − floor · (B60B & 0xF)`; else `dy = 0x200`. The same nibble indexes the ease shift table (below).
 - `B610` / `B60C` - base yaw / base pitch (staging struct `+0x06` / `+0x02`).
-- `B614` - eye-space depth (`tr_eye.z`, staging struct `+0x16`). Mode 3 treats it as a
-  bias: `depth = (dist3D(anchor, player) · ((B607 & 0xF) + 1) · 6 >> 10) + B614 − 0x4000`.
-- `B618` - **GTE H** (projection focal length, staging struct `+0x26`) in every mode.
-- `B61C` / `B624` - camera anchor/focus tile X / Z. Mode 3: the look-at target is world
-  `(B61C·0x80+0x40, B620·0x20, B624·0x80+0x40)` - yaw and pitch are aimed from it at the
-  player (`func_0x80019b28` arctan). Mode 5: the **focus tile** - the focus setter
-  `FUN_801DB8EC` writes focus `−(tile << 7) − 0x40` and `FUN_801DB510` smooth-scrolls
-  toward it.
-- `B620` - mode 3: anchor height (`× 0x20` world units). Mode 5: s8 height offset rotated
-  by pitch into `(dy, depth)` via the sin/cos LUTs.
+- `B614` - eye-space depth (`tr_eye.z`, staging `+0x16`). Mode 3 treats it as a bias.
+- `B618` - **GTE H**, the projection focal length (staging `+0x26`), in every mode.
+- `B61C` / `B624` - anchor / focus tile X / Z. Mode 3: the look-at target is world `(B61C·0x80+0x40, B620·0x20, B624·0x80+0x40)`, with yaw and pitch aimed from it at the player (`FUN_80019B28` arctangent). Mode 5: the focus tile; `FUN_801DB8EC` writes focus `−(tile << 7) − 0x40` and `FUN_801DB510` scrolls toward it.
+- `B620` - mode 3: anchor height (`× 0x20` world units). Mode 5: s8 height offset rotated by pitch into `(dy, depth)`.
 
-**Query-miss defaults** (`FUN_801DE3E0`'s miss arm at `0x801DE408..0x801DE464`, loaded when
-no record contains the player tile; the same nine stores sit in `FUN_801DBE9C`'s dev-only leg):
-`B607 = 0x10` (anchor-follow, sweep strength 0), `B608 = 0x10`, `B609 = 0x30`,
-`B60A = 0x51`, `B60B = 0x20`, `B610 = 0`, `B60C = 0x1B8`, `B614 = 0x4000`,
-`B618 = 0x300`.
+**Query-miss defaults** (`FUN_801DE3E0`'s miss arm at `0x801DE408..0x801DE464`; the same nine stores sit in `FUN_801DBE9C`'s dev-only leg): `B607 = 0x10`, `B608 = 0x10`, `B609 = 0x30`, `B60A = 0x51`, `B60B = 0x20`, `B610 = 0`, `B60C = 0x1B8`, `B614 = 0x4000`, `B618 = 0x300`.
 
-Confidence: the three byte splits and the global routing are **Confirmed** (direct
-disassembly + the builder's consumption), as is the mask-kind scratchpad side-write and
-its four consumers.
+Provenance: loader `ghidra/scripts/funcs/overlay_fishing_801dbc20.txt` (byte-identical across the fishing / dance / debug_menu / slot_machine captures; the `overlay_0897` and `overlay_baka_fighter` captures alias different bytes at this VA). Consumers: `overlay_cutscene_dialogue_801dab90.txt` (builder), `overlay_cutscene_dialogue_801dbe9c.txt` (arrival handler + defaults).
 
 ### From the block to the live camera: compose, ease, snap
 
-The block never reaches the GTE directly. Three routines in the field overlay (PROT 0897)
-stand between it and the live camera globals; all three are disassembly-traced
-(`see ghidra/scripts/funcs/overlay_cutscene_dialogue_801dab90.txt`, `overlay_0897_801db510.txt`,
-`overlay_0897_801db8ec.txt`) and ported in `legaia_engine_core::camera_zone`.
+Three routines in the field overlay (PROT 0897) stand between the block and the live camera globals. All are disassembly-traced (`overlay_cutscene_dialogue_801dab90.txt`, `overlay_0897_801db510.txt`, `overlay_0897_801db8ec.txt`) and ported in `camera_zone`.
 
-**Compose - `FUN_801DAB90(player, staging)`.** Seeds the staging pose from the live globals
-(pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, the eye trio `_DAT_800840B8/BC/C0`, `H`
-`_DAT_8007B6F4`), stores the negated player X/Z and the footing as the focus, forces roll
-`0`, samples the floor under the player as described under `B60A`, then overwrites pitch /
-yaw / eye / `H` per the mode arms above. Every store is a halfword (`sh`), so each target
-field wraps at 16 bits; the `mult`/`div` steps are 32-bit wrapping / truncating. Two details
-the per-global bullets do not carry: mode 4 aims the yaw from the **centre of the walk-region
-box** `((x_lo + x_hi) << 6, (z_lo + z_hi) << 6)` at the player (`FUN_80019B28` bearing,
-`0` = +X, `0x400` = +Z) and, before returning, masks both the live yaw and the target to
-one turn and adds `0x1000` to whichever is below `0x400` while the other is above `0xC00`,
-so the ease takes the short way round - the only place the composer writes a live global.
-Mode 3's depth is `sqrt0(dx² + dz² + (anchor_h·0x20 + footing)²) · (strength + 1) · 6 >> 10 +
-B614 − 0x4000`, where `sqrt0` is the PsyQ-shaped `FUN_8005B0B8` (`√a · 64`, from a
-192-entry mantissa table at `0x80078E84` = `trunc(√((64+i)/64) · 4096)`); the bearing's
-2049-entry arctangent table at `0x8006F4C8` is `trunc(atan(i/2048) · 4096/2π)`. Both tables
-are reproduced trigonometrically and pinned entry-for-entry by the disc-gated oracle.
+```mermaid
+flowchart LR
+    REC["Region record"] -->|"FUN_801DBC20"| BLK["Block 0x8007B607..27"]
+    BLK -->|"compose FUN_801DAB90"| STG["Staging pose"]
+    STG -->|"ease FUN_801DB510<br/>on player movement"| LIVE["Live camera globals"]
+    STG -->|"snap FUN_801DB8EC"| LIVE
+    LIVE -->|"clamp FUN_801DAA50"| FOC["Focus 0x80089118 / 20"]
+```
 
-**Ease - `FUN_801DB510(player)`**, from the player actor's per-frame handler (`FUN_801D2298`).
-Gated on `DAT_8007B606` (retail boots it to `1`: `FUN_80034A6C` stores `_DAT_8007B868 == 0`)
-and on the scratch lock `_DAT_1F800394 & 0x400` being clear; then **only on a frame the
-player's `(X, footing, Z)` changed** (or `_DAT_1F800394 & 0x40000` is set) it composes and
-walks a six-entry descriptor list at `0x801F2798` - `[live ptr][staging ptr][u16][u16 width]`,
-12 bytes each, terminated by a zero pointer:
+**Compose - `FUN_801DAB90(player, staging)`.** Seeds the staging pose from the live globals (pitch `_DAT_8007B790`, yaw `_DAT_8007B792`, eye trio `_DAT_800840B8/BC/C0`, `H` `_DAT_8007B6F4`), stores the negated player X / Z and the footing as the focus, forces roll `0`, samples the floor, then overwrites pitch / yaw / eye / `H` per the mode. Every store is a halfword (`sh`); the `mult` / `div` steps wrap and truncate at 32 bits.
 
-| live global | staging field | width |
+- Mode 4 aims the yaw from the centre of the walk-region box `((x_lo + x_hi) << 6, (z_lo + z_hi) << 6)` at the player (`FUN_80019B28` bearing, `0` = +X, `0x400` = +Z). Before returning it masks the live yaw and the target to one turn and adds `0x1000` to whichever is below `0x400` while the other is above `0xC00`, so the ease takes the short way round. This is the only live global the composer writes.
+- Mode 3 depth is `sqrt0(dx² + dz² + (anchor_h·0x20 + footing)²) · (strength + 1) · 6 >> 10 + B614 − 0x4000`, with `strength = B607 & 0xF`. `sqrt0` is the PsyQ-shaped `FUN_8005B0B8` (`√a · 64`, from a 192-entry mantissa table at `0x80078E84` = `trunc(√((64+i)/64) · 4096)`).
+- The bearing's 2049-entry arctangent table at `0x8006F4C8` is `trunc(atan(i/2048) · 4096/2π)`. Both tables are reproduced trigonometrically and pinned entry for entry by the disc-gated oracle.
+
+**Ease - `FUN_801DB510(player)`**, from the player actor's per-frame handler `FUN_801D2298`. Gated on `DAT_8007B606` (retail boots it to `1`: `FUN_80034A6C` stores `_DAT_8007B868 == 0`) and on scratch lock `_DAT_1F800394 & 0x400` clear. Then, **only on a frame the player's `(X, footing, Z)` changed** (or `_DAT_1F800394 & 0x40000` is set), it composes and walks a six-entry descriptor list at `0x801F2798` - `[live ptr][staging ptr][u16][u16 width]`, 12 bytes each, zero-pointer terminated:
+
+| Live global | Staging field | Width |
 |---|---|---|
 | `_DAT_8007B790` pitch | `+0x02` | 2 |
 | `_DAT_8007B792` yaw | `+0x06` | 2 |
@@ -957,247 +535,99 @@ walks a six-entry descriptor list at `0x801F2798` - `[live ptr][staging ptr][u16
 | `_DAT_800840C0` eye Z | `+0x16` | 4 |
 | `_DAT_8007B6F4` GTE `H` | `+0x26` | 2 |
 
-Roll has no entry - the follow camera never rolls. Each live value steps by
-`delta >> s` plus `sign(delta)`, where `delta = target − live` and `s` comes from the 16-byte
-table at `0x801F2804` indexed by `B60B >> 4`: `[0, 5, 4, 3, 2, 6, 7, 8, 0, 0x45, 0x44, 0x43, 0,
-0, 0, 0]`. A code `>= 0x40` selects the two-shift form `delta >> (s − 0x40)` +
-`delta >> (s − 0x40 + 1)`; code `0` is a one-frame snap. The default block's `B60B = 0x20`
-therefore eases at `>> 4`. A mode-5 block additionally eases the focus X/Z
-(`_DAT_80089118/20`) toward `−(anchor_tile << 7) − 0x40` with the same step. Because the
-walk is gated on movement, a player who stops mid-glide leaves the live camera wherever
-the ease had reached - retail finishes the glide only when he moves again, which is what a
-walkable save state can capture.
+Roll has no entry; the follow camera never rolls. Each value steps by `delta >> s` plus `sign(delta)`, where `s` comes from the 16-byte table at `0x801F2804` indexed by `B60B >> 4`: `[0, 5, 4, 3, 2, 6, 7, 8, 0, 0x45, 0x44, 0x43, 0, 0, 0, 0]`. A code `>= 0x40` selects the two-shift form `delta >> (s − 0x40)` + `delta >> (s − 0x40 + 1)`; code `0` is a one-frame snap. A mode-5 block also eases the focus X / Z (`_DAT_80089118/20`) toward `−(anchor_tile << 7) − 0x40`. Because the walk is gated on movement, a player who stops mid-glide leaves the camera wherever the ease had reached.
 
-**Snap - `FUN_801DB8EC(player)`.** The same compose and list walk with a plain copy (a
-halfword target sign-extends into the word eye globals), then `FUN_8003D254(H)`; mode 5
-sets the focus to the anchor tile outright, every other mode to the negated player
-position. Called by the arrival actor's retail leg, by `[4C 39]` / `[4C 3E]`, and by the
-leader-swap flow.
+**Snap - `FUN_801DB8EC(player)`.** The same compose and list walk with a plain copy (a halfword target sign-extends into the word eye globals), then `FUN_8003D254(H)`. Mode 5 sets the focus to the anchor tile outright; every other mode to the negated player position. Called by the arrival actor's retail leg, by `[4C 39]` / `[4C 3E]`, and by the leader-swap flow.
 
 ### Engine port
 
-`legaia_engine_core::camera_zone` carries the loader (`CameraZoneConfig::load_record`),
-the composer (`compose`), the ease step and the snap; `Camera::zone` owns the block and
-runs them from the per-frame camera tick, and both hosts read the result through
-`camera_view::field_follow_view`, so the native window and the browser play page frame
-each scene from the same record.
+[`camera_zone`](../../crates/engine-field/src/camera_zone.rs) (`legaia_engine_core::camera_zone`) carries the loader (`CameraZoneConfig::load_record`), the composer, the ease step and the snap. `Camera::zone` owns the block and runs them from the per-frame camera tick. Both hosts read the result through `camera_view::field_follow_view`, so the native window and the browser play page frame each scene from the same record.
 
-The query sites are retail's. The four `0x4C` arms queue a `CameraZoneRequest` on the
-world (`engine-core::world::camera_hooks`) which the camera tick drains, the player seat
-arms the same query-conform-snap the retail seat path runs in code, and the per-frame
-re-query honours scratchpad flag bit `22`
-([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)).
-Nothing re-queries on a bare tile crossing. The composer samples the floor through the
-MAN-header ladder, as `FUN_801DAB90` does, so a scripted floor-tier bob never shakes
-the camera (a `4C 9E` whole-ladder install writes that copy too, so the camera does follow it); the composed eye trio is fed to the view divided by the base matrix's `6x`
-world scale ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-where-tr-comes-from));
-and the focus edge clamp `FUN_801DAA50` runs after the ease or snap, with its script
-override `_DAT_8007B628` / `_DAT_8007B62A` still unwired (no port-side writer).
+- **Query sites are retail's.** The four `0x4C` arms queue a `CameraZoneRequest` (`engine-core::world::camera_hooks`) the camera tick drains; the player seat arms the same query-conform-snap; the per-frame re-query honours scratchpad flag bit `22` ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#0x4c-nibble-0x380x3e---the-camera-zone-arms)). Nothing re-queries on a bare tile crossing.
+- **Floor sampling** goes through the MAN-header ladder, so a scripted floor-tier bob never shakes the camera; a `4C 9E` whole-ladder install writes that copy too, so the camera does follow it.
+- The composed eye trio is divided by the base matrix's `6x` world scale ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-where-tr-comes-from)).
+- The focus clamp `FUN_801DAA50` runs after the ease or snap. Its script override `_DAT_8007B628` / `_DAT_8007B62A` has no port-side writer.
+- **One divergence:** a scripted shot handing the camera back snaps, as a backstop for a script that ends a shot without a `[4C 39]` / `[4C 3E]` arm.
+- **The visible tile window** follows retail's order: re-stamped from the field draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field entry through `Camera::reset_globals_for_scene_entry`, then replaced by a mask-kind record's side-write or by op `0x46` (`Camera::route_camera_events` → `ZoneFollow::view_window`).
 
-One divergence remains: a scripted shot handing the camera back snaps, as a backstop for a
-script that ends a shot without a `[4C 39]` / `[4C 3E]` arm. The visible-tile window the
-clamp widens the walk region by follows retail's own order - re-stamped from the field
-draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field
-entry, then replaced by whichever of a camera-region record's mask-kind side-write or
-field-VM op `0x46` the scene runs (`Camera::route_camera_events` consumes both op-`0x46`
-forms into `ZoneFollow::view_window`).
-
-The seam is `Camera::reset_globals_for_scene_entry`, which both hosts run per entry. Saying
-the window was seeded "at scene entry" understated where the port actually stood: it was
-seeded once at camera construction and only ever overwritten afterwards, so a scene that
-scripted a wide window handed it to the next scene's clamp. The primer is what makes the
-sentence true.
-
-The disc-gated oracle
-`crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save
-state in three tiers (zone selection, compose against retail's own staging descriptor,
-live pose with mid-glide states classified separately);
-`crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and
-asserts the hold-across-a-walk rule on `edbylon`.
+Oracles: `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save state in three tiers (zone selection, compose against retail's staging descriptor, live pose with mid-glide states classified separately). `crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and asserts the hold-across-a-walk rule on `edbylon`.
 
 ### The scratchpad window `0x1F8003E8..EB`
 
-The four bytes the mask-kind arm side-copies are the **visible tile window**: signed tile
-offsets from the camera's own tile to the edges of the ground the renderer draws. Every
-consumer loads them with `lb`, and they pair by component - `(E8, EA)` is the X pair and
-`(E9, EB)` the Z pair, near edge first. A mask-kind record's `bytes[1..4]` are therefore
-**not** the kind-1 query bbox: `[3]`/`[4]` are the near (negative) X / Z offsets and
-`[1]`/`[2]` the far ones, and the loader's `[3],[4],[1],[2]` order is exactly the
-permutation that lands them in `[E8, E9, EA, EB]`. Field-VM op `0x46`
-writes the same four slots (`0x801DF2AC..0x801DF350` in the field overlay), either from
-four explicit operands (`sub-op 0x24`: `[E8, E9, EA, EB] = op[1..4]`) or, in its 3-byte
-form, as a symmetric window of half-width `op[0] >> 1` in X about tile offset `-1` and
-`op[1] >> 1` in Z about `+2`.
+The four bytes are the **visible tile window**: signed tile offsets from the camera's own tile to the edges of the ground the renderer draws. Every consumer loads them with `lb`.
 
-The consumers, all disassembly-traced:
+| Address | Field | Mask-kind record byte |
+|---|---|---|
+| `0x1F8003E8` | near X offset (negative) | `rec[3]` |
+| `0x1F8003E9` | near Z offset (negative) | `rec[4]` |
+| `0x1F8003EA` | far X offset | `rec[1]` |
+| `0x1F8003EB` | far Z offset | `rec[2]` |
+
+So a mask-kind record's `bytes[1..4]` are **not** the kind-1 query bbox, and the loader's `[3],[4],[1],[2]` order is the permutation that lands them in `[E8, E9, EA, EB]`.
+
+Field-VM op `0x46` writes the same four slots (`0x801DF2AC..0x801DF350`): either from four operands (`sub-op 0x24`: `[E8, E9, EA, EB] = op[1..4]`) or, in its 3-byte form, as a symmetric window of half-width `op[0] >> 1` in X about tile offset `-1` and `op[1] >> 1` in Z about `+2`.
+
+Consumers, all disassembly-traced:
 
 | Consumer | What it does with the window |
 |---|---|
-| `FUN_801F7088`, the per-cell decoration pass in the slot-B render library (PROT 0900 / 0901) | Clamps the window against the current walk-region AABB at `0x1F800384..87`, then places the emit origin at `sub_x + (E8 << 7) − 0x40` / `sub_z + (E9 << 7) − 0x140` (`0x801F7434..0x801F746C` in the 0900 image) and walks `(EA - E8) + 1` columns out from it - which is what makes the four bytes *the* window rather than an arbitrary box. Sibling emitters in the same library read the same four scratchpad bytes (`0x801F6A10`, `0x801F6D6C` in 0900). |
-| `FUN_801DAA50`, in the co-resident camera cluster (11 `jal` sites: 2 in SCUS, 9 in the field overlay) | Clamps the negated camera focus `_DAT_80089118` (X) / `_DAT_80089120` (Z) so the window stays inside that same walk-region AABB. Gated on `DAT_1F80037C != 0`, skipped outright when the camera mode nibble `DAT_8007B607 >> 4` is `5` (fixed scripted shot), and overridden afterwards by `_DAT_8007B628` / `_DAT_8007B62A` when either is non-zero. |
-| `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles, i.e. only inside the drawn window. |
-| `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor behind those rows. |
+| `FUN_801F7088`, the per-cell decoration pass in the slot-B render library (PROT 0900 / 0901) | Clamps the window against the walk-region AABB `0x1F800384..87`, places the emit origin and walks the columns (steps below). Sibling emitters read the same bytes (`0x801F6A10`, `0x801F6D6C` in 0900). |
+| `FUN_801DAA50`, the camera focus clamp (11 `jal` sites: 2 in SCUS, 9 in the field overlay) | Clamps the negated focus `_DAT_80089118` / `_DAT_80089120` so the window stays inside the walk-region AABB. Gated on `DAT_1F80037C != 0`, skipped when `DAT_8007B607 >> 4` is `5`, and overridden by `_DAT_8007B628` / `_DAT_8007B62A` when either is non-zero. |
+| `FUN_801D6058`, the ambient particle emitter | Samples spawn points across `(EA − E8) − 1` by `(EB − E9) − 1` tiles. |
+| `FUN_801EAD98` dev-menu rows `0x12..0x15` | Prints all four as signed decimals; `FUN_801E9F64` is the `±1` editor. |
 
-**How the decoration pass turns the window into cells** (`FUN_801F7088`, the disassembly in
-`overlay_dance_801f7088.txt`):
+**How the decoration pass turns the window into cells** (`FUN_801F7088`, `overlay_dance_801f7088.txt`):
 
-1. The first cell is the focus tile plus the near offset. With `s = fx - (E8 << 7)`, `fx`
-   the stored (negated) focus `_DAT_80089118`, the column is `(0x7F - s) >> 7` - the
-   world focus plus `E8` tiles, rounded **up** on either sign (`0x801F722C..0x801F72D8`);
-   the row is the same over `_DAT_80089120` and `E9`. They land in scratchpad
-   `0x1F8002BC` / `0x1F8002C0`. The focus's sub-tile remainders `& 0x7F` go to
-   `0x1F80030C` / `0x1F800310`.
-2. The window is clamped against the walk-region box **and written back**
-   (`0x801F7304..0x801F7408`): a first column left of `0x384` moves right to it and `E8`
-   grows by the same amount; a last column past `0x386` shrinks `EA`; in Z the bounds are
-   `0x385 + 2` and `0x387 + 1`, each capped at `0x7E`, adjusting `E9` / `EB`. The
-   write-back is **scoped to the pass**: the prologue saves `0x384`, `0x385` and `E8..EB`
-   to `0x801F9064..0x801F9078` (`0x801F7178..0x801F71A4`) and the epilogue stores them
-   back (`0x801F7A00..0x801F7A5C`). So the clipped window is what the ground emitter the
-   pass calls at its end reads, and every later reader - the actor cull, the ambient
-   emitter, the next frame's prologue - sees the window the region record or op `0x46`
-   wrote.
-3. The emit origin is the sub-tile remainder plus `(E8 << 7) - 0x40` in X and
-   `(E9 << 7) - 0x140` in Z (`0x801F7434..0x801F746C`); the start cell steps back one
-   column and three rows, and the pass walks the **pre-clamp** `(EA - E8) + 10` columns by
-   `(EB - E9) + 10` rows (`sp+0x18` / `sp+0x20`, `0x801F78D4..0x801F7900`), skipping any
-   cell outside the region box (`[0x384, 0x386)` in X, `[0x385 - 1, 0x387)` in Z). A
-   drawn cell must also sit inside the clipped window widened by its record's `+0x1E`
-   cull radius `r`: with `i`, `j` the column and row counters,
-   `1 - r < i < (EA - E8) + 1 + r` and `-r < j < (EB - E9) + 2 + r`
-   (`0x801F7594..0x801F75D8`).
-4. At the end the pass calls the **ground emitter** - `FUN_801F6D48`, or its twin
-   `FUN_801F69EC` when `_DAT_8007BB4C` is non-zero - with the clipped first column and the
-   clipped first row minus one. It draws the `0x1000` ground quads over `EA - E8` columns by
-   `EB - E9` rows of the clipped window, both loops `do`-`while` (a non-positive count still
-   runs once), the row wrapping `& 0x7F`, with no region test of its own.
+1. **First cell.** With `s = fx - (E8 << 7)` and `fx` the stored (negated) focus `_DAT_80089118`, the column is `(0x7F - s) >> 7` - the world focus plus `E8` tiles, rounded up on either sign (`0x801F722C..0x801F72D8`). The row is the same over `_DAT_80089120` and `E9`. They land in scratchpad `0x1F8002BC` / `0x1F8002C0`; the focus's sub-tile remainders `& 0x7F` go to `0x1F80030C` / `0x1F800310`.
+2. **Clamp and write back** (`0x801F7304..0x801F7408`). A first column left of `0x384` moves right to it and `E8` grows by the same amount; a last column past `0x386` shrinks `EA`. In Z the bounds are `0x385 + 2` and `0x387 + 1`, each capped at `0x7E`, adjusting `E9` / `EB`. The write-back is scoped to the pass: the prologue saves `0x384`, `0x385` and `E8..EB` to `0x801F9064..0x801F9078` (`0x801F7178..0x801F71A4`) and the epilogue restores them (`0x801F7A00..0x801F7A5C`). Only the ground emitter called at the end sees the clipped window.
+3. **Walk.** The emit origin is the sub-tile remainder plus `(E8 << 7) - 0x40` in X and `(E9 << 7) - 0x140` in Z (`0x801F7434..0x801F746C`). The start cell steps back one column and three rows, and the pass walks the **pre-clamp** `(EA - E8) + 10` columns by `(EB - E9) + 10` rows (`sp+0x18` / `sp+0x20`, `0x801F78D4..0x801F7900`), skipping cells outside the region box (`[0x384, 0x386)` in X, `[0x385 - 1, 0x387)` in Z). A drawn cell must also sit inside the clipped window widened by its record's `+0x1E` cull radius `r`: `1 - r < i < (EA - E8) + 1 + r` and `-r < j < (EB - E9) + 2 + r` (`0x801F7594..0x801F75D8`).
+4. **Ground.** The pass ends by calling the ground emitter - `FUN_801F6D48`, or its twin `FUN_801F69EC` when `_DAT_8007BB4C` is non-zero - with the clipped first column and the clipped first row minus one. It draws the `0x1000` ground quads over `EA - E8` columns by `EB - E9` rows, both loops `do`-`while` (a non-positive count still runs once), the row wrapping `& 0x7F`, with no region test of its own.
 
-The engine port is `legaia_engine_core::field_view_window`: `view_cells` is steps 1-2,
-`ViewCells::decoration_visible` step 3's gate over the terrain draw list (each
-`EnvDraw` carries its grid cell and cull radius), `ViewCells::ground_visible` step 4's
-loop, and `field_ground::crop_indices` applies that loop to the heightfield's index list.
-Both play hosts ask the one policy entry `field_view_cells` per frame and gate the same
-two layers through it ([host-drift](../tooling/host-drift.md)). The crop holds at retail
-framing only - the [fidelity section](../subsystems/engine.md#fidelity-and-enhancements)
-has the knob - and is lifted under a cutscene timeline (the published view is the follow
-camera's, not the scripted shot's) and whenever the focus tile falls outside the latched
-region box, which retail's re-centre latch never allows but a seatless port entry can.
+**Engine port.** `legaia_engine_core::field_view_window`: `view_cells` is steps 1-2, `ViewCells::decoration_visible` step 3's gate over the terrain draw list, `ViewCells::ground_visible` step 4's loop, and `field_ground::crop_indices` applies it to the heightfield's index list. Both play hosts ask the one policy entry `field_view_cells` per frame ([host-drift](../tooling/host-drift.md)). The crop holds at retail framing only (knob in the [fidelity section](../subsystems/engine.md#fidelity-and-enhancements)); it is lifted under a cutscene timeline and whenever the focus tile falls outside the latched region box.
 
-The walk-region AABB those clamps read, `0x1F800384..87`, is a different box with a
-different writer: `FUN_800180EC` latches it from the `.MAP` region table, and the
-camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` runs that latch at the re-centre
-tile and then hands the same box to the sub-area window sweep `FUN_801D7B50`, which
-re-plans the scene's windowed static-object list from the placements inside it
-([`field-locomotion.md`](../subsystems/field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose)).
-So one re-centre moves both the ground clamp and the set of window-owned props.
+**The walk-region AABB `0x1F800384..87`** is a different box with a different writer. `FUN_800180EC` latches it from the kind-3 `.MAP` region table ([`field-map.md`](field-map.md)). The camera re-centre pair `FUN_80017DD4` / `FUN_80017EC8` runs that latch, then hands the box to the sub-area window sweep `FUN_801D7B50`, which re-plans the scene's windowed static-object list ([`field-locomotion.md`](../subsystems/field-locomotion.md#the-object-bind-which-sweep-owns-the-object-and-its-rest-pose)). One re-centre moves both the ground clamp and the set of window-owned props.
 
-The **mirror words `0x801F2778 / 7C / 80 / 84`** are `i32` copies with **no reader**. All
-three writers (the loader here, and op `0x46`'s two arms) store the byte and the word from
-the same register; the `DAT_1f8003e8 = (byte)DAT_801f2778` shape in the decompiled C is
-value re-use, not a load. A sweep in every reference form - literal word, `lui`+`addiu`,
-`jal`, `j`, branch, `disp(gp)`, `lui`+load, and materialised-base plus displacement - over
-`SCUS_942.54` and all 31 based overlay images returns those three store sites and nothing
-else.
+**The mirror words `0x801F2778 / 7C / 80 / 84`** are `i32` copies with **no reader**. All three writers (the loader, and op `0x46`'s two arms) store the byte and the word from the same register. A sweep in every reference form over `SCUS_942.54` and all 31 based overlay images returns those three store sites only.
 
-Provenance: `see ghidra/scripts/funcs/overlay_fishing_801daa50.txt` (clamp),
-`overlay_dance_801f7088.txt` (decoration pass),
-`overlay_cutscene_dialogue_801d6058.txt` (ambient emitter),
-`overlay_0897_801ead98.txt` + `overlay_cutscene_mapview_801e9f64.txt` (dev menu). The
-walk-region AABB the clamp works against is the kind-3 `.MAP` region table refreshed by
-SCUS `FUN_800180EC` - see [`field-map.md`](field-map.md) and
-[`field-locomotion.md`](../subsystems/field-locomotion.md).
+**Finding the readers.** Retail forms every scratchpad access as `lui rX,0x1f80; ori rX,rX,0x314; sb/lb rY,0xd4(rX)`, so neither `0x1F8003E8` nor `0x3e8` appears in any instruction. The base-plus-displacement walk in [`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) is what sees them ([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)).
 
-**Why "consumer Unknown" stood.** Retail forms every scratchpad access as `lui rX,0x1f80;
-ori rX,rX,0x314; sb/lb rY,0xd4(rX)`, so neither `0x1F8003E8` nor its low half `0x3e8` is
-present in any instruction, and the five-form scan cannot see the access at all. The
-base-plus-displacement walk in
-[`find-gp-relative-refs.py`](../../scripts/ghidra-analysis/find-gp-relative-refs.py) is
-what makes the readers visible ([`address-reference-scan.md`](../tooling/address-reference-scan.md#the-gp-relative-and-luiload-forms)).
+Provenance: `ghidra/scripts/funcs/overlay_fishing_801daa50.txt` (clamp), `overlay_dance_801f7088.txt` (decoration pass), `overlay_cutscene_dialogue_801d6058.txt` (ambient emitter), `overlay_0897_801ead98.txt` + `overlay_cutscene_mapview_801e9f64.txt` (dev menu).
 
-**Polled live.** `scripts/pcsx-redux/autorun_w3b_view_window.lua` reads the four
-signed bytes each vsync alongside the scene name and game mode, and logs a row per
-change. Over a 3000-vsync pad-driven walk of `town01` the window is never constant
-and never the field default: it alternates between `(-8, -6, 8, 12)` and
-`(-10, -6, 8, 14)`, four visits each, switching as the player crosses between
-regions. That is the camera-region side-write working as this section describes -
-the window is a property of where the player stands, not of the scene, so an engine
-that seeds it once per scene and leaves it there under-draws in the wide regions.
+**The window changes inside a scene.** `scripts/pcsx-redux/autorun_w3b_view_window.lua` polls the four bytes each vsync. Walking `town01`, the window alternates between `(-8, -6, 8, 12)` and `(-10, -6, 8, 14)` as the player crosses regions. It is a property of where the player stands, not of the scene.
+
 #### The window is not cleared with the scene
 
-The cross-scene half is now measured, with the same probe run across a real
-`map01` -> `town0c` door. The scene name word flips at vsync **37**; the four
-window bytes do not move with it. They keep the *previous* scene's values for
-78 more vsyncs and are re-stamped at vsync **115** to `(-7, -6, 5, 7)`, after
-which the per-region writes take over as they do inside a scene. So the window
-is neither inherited for the whole of the next scene nor cleared at the
-boundary: the incoming scene stamps it on its own beat, late enough that a
-frame drawn in between is drawn against the window of the scene the player has
-already left.
+Across a real `map01` → `town0c` door the scene-name word flips at vsync 37, while the window keeps the previous scene's values for 78 more vsyncs and is re-stamped at vsync 115 to `(-7, -6, 5, 7)`. The incoming scene stamps the window on its own beat, so a frame drawn in between uses the window of the scene the player has left.
 
-Two consequences for a port. Re-stamping the window on field entry is right -
-the measurement does not falsify that - but the value matters: retail's entry
-stamp here is `(-7, -6, 5, 7)`, and the engine's `FIELD_DEFAULT_VIEW_WINDOW`
-`(-8, -6, 6, 10)` is one of the *later* region windows rather than the one
-retail writes on entry. And a fixture for this question has to cross a scene:
-a Rim Elm **house door** does not, because an intra-town interior is an
-intra-scene warp - the scene word stays `town0c` across it.
+For a port:
+
+- Re-stamping on field entry is right, but the value differs: retail's entry stamp here is `(-7, -6, 5, 7)`, while the engine's `FIELD_DEFAULT_VIEW_WINDOW` is `(-8, -6, 6, 10)`.
+- A fixture for this has to cross a scene. A Rim Elm house door does not: an intra-town interior is an intra-scene warp.
 
 ## What this doesn't tell us
 
-- **Per-opcode encoding of the trailing operand bytes.** Each install
-  opcode (0x37/0x41, 0x38, 0x43, 0x47, 0x4C) packs its first 3 bytes
-  differently (target selector / sub-op / flag bits); the count + ids
-  layout at `+0x3..` is fixed by the reader but the opcode-header
-  bytes need a per-case decode in the dispatcher to interpret as
-  "encounter trigger from script X at PC Y".
-- **Sibling section roles (sections 1, 2, 4).** The MAN multi-section
-  walker pins exact offsets and lengths for every section across all
-  80 retail scene bundles, and section 3 is now decoded (the
-  [camera-region table](#man-section-3-the-camera-region-table)), but
-  the interior layout of sections 1, 2, and 4 (the pointers
-  `_DAT_801C6EA4 + 0`, `_DAT_801C6EA0`, and `DAT_80073ED8` install
-  onto) is still open. The lengths cluster small (often 1 byte,
-  occasionally a few hundred), suggesting per-scene callbacks / inline
-  state rather than record arrays.
-- **The pre-encounter live-pointer state.** No save state in the
-  current scenario corpus captures an actor with `+0x94` mid-armed -
-  the corpus's `mc0` carries a stale value and every other slot is
-  zero or `0xFFFFFFFF`. Byte-level verification of "the encounter
-  record bytes at the live `actor[+0x94]` match the parsed Man's
-  formation record" needs a fresh save-state capture taken in the
-  one-frame window between roll and `FUN_801DA51C` consumption.
+- **Per-opcode header bytes of the inline arm.** Each halt-acquire opcode packs its first 3 bytes differently (target selector / sub-op / flag bits). The count + ids layout at `+0x3..` is fixed by the reader.
+- **Section 4.** Its offset and length are pinned across all 80 scene bundles, but the interior layout behind `DAT_80073ED8` is open.
+- **Region byte `+5`**, and region bytes past `+8`.
+- **Whether anything writes `DAT_8007b7fc`** ([above](#scripted-battle-id-path-fun_8005567c)).
+- **A live mid-armed pointer.** No catalogued save state holds an actor with `+0x94` armed; capturing one needs the one-tick window between the roll and the `FUN_801DA51C` copy.
 
 ## Random vs scripted formations (the MAN encounter section)
 
-Separate from the per-actor scripted record above, section 0 of a scene's MAN
-holds the scene's **formation table** + **region table** that drive *random*
-encounters (`FUN_8003A110` carve; layout in
-[`legaia_asset::man_section`](../../crates/asset/src/man_section.rs) and the
-`EncounterSection` parser). Each region record is an AABB + a `rate_increment` +
-a `[formation_range_base, +formation_range_count)` slice; the position-aware roll
-`FUN_801D9E1C` adds `rate_increment` to an encounter counter while the player is
-inside the AABB and, on overflow, picks a formation from that region's slice.
+Scripted and boss formations live in the same formation array as random ones and are engaged by explicit row index.
 
-A region with **`rate_increment == 0`** never advances the counter, so it never
-triggers - it can list formations without ever rolling them. The scene's
-**scripted/boss** formations (the Rim Elm Tetsu fight, etc.) live in this same
-formation array but are engaged by explicit index from the field VM; they are
-reached only by rate-0 regions (or by no region at all), never by a rate>0 one.
-So a formation is a *random* encounter **iff some `rate_increment > 0` region
-reaches it**. Worked example - town01 (Rim Elm): rate-0 regions cover formations
-2..=4, but the only rate>0 regions reach 0..=2, so the Tetsu formation at index 4
-is scripted-only. The encounter randomizer relies on this to leave boss fights
-untouched (`legaia_patcher::encounter::random_formation_mask`). Its optional
-**solo-strong** pass reuses the same gate: it only ever thins a *random*
-formation (`enforce_solo_strong` skips scripted ones), collapsing a multi-monster
-formation whose strongest member is far above the scene's native average - its
-`count` byte set to 1, the dropped id bytes zeroed within the fixed record stride
-- so an out-of-area heavy hitter from a `kingdom`/`world` roll is faced alone
-rather than in a pack.
+A region with **`rate_increment == 0`** never advances the counter, so it never triggers - it can list formations without ever rolling them. Scripted rows are reached only by rate-0 regions or by no region at all. So a formation is a *random* encounter **iff some `rate_increment > 0` region reaches it**.
+
+Worked example - town01: rate-0 regions cover formations `2..=4`, but the only rate>0 regions reach `0..=2`, so the Tetsu formation at index 4 is scripted-only.
+
+The encounter randomizer relies on this to leave boss fights untouched (`legaia_patcher::encounter::random_formation_mask`). Its optional **solo-strong** pass reuses the gate: `enforce_solo_strong` thins only random formations, collapsing a multi-monster formation whose strongest member is far above the scene's native average to `count = 1` (dropped id bytes zeroed within the fixed stride).
 
 ## Files referencing this format
 
-- [`crates/engine-vm`](../../crates/engine-vm/) - the field VM dispatcher port reads the operand and writes the actor pointer slot.
-- [`crates/engine-battle::encounter_record`](../../crates/engine-battle/src/encounter_record.rs) - the runtime engine's `EncounterRecord` parser exposes `count` / `monster_ids` from a candidate byte slice.
+- [`crates/asset/src/man_section.rs`](../../crates/asset/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
+- [`crates/engine-battle/src/encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
+- [`crates/engine-battle/src/region_encounter.rs`](../../crates/engine-battle/src/region_encounter.rs) - the `FUN_801D9E1C` roll.
+- [`crates/engine-field/src/camera_zone.rs`](../../crates/engine-field/src/camera_zone.rs) - camera-region loader, composer, ease, snap, focus clamp.
+- [`crates/engine-vm`](../../crates/engine-vm/) - the field-VM dispatcher port that reads the operand and writes the actor pointer slot.
 - [`subsystems/world-map.md`](../subsystems/world-map.md) - world-map controller integration.
 - [`subsystems/script-vm.md`](../subsystems/script-vm.md) - the dispatcher op-handler family that installs the pointer.
