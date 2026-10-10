@@ -1625,8 +1625,8 @@ tile box `[0, 0 .. 44, 55]` and black elsewhere
 ([script-vm-menuctrl](../subsystems/script-vm-menuctrl.md#0x4c-nibble-1-sub-3---the-field-clear-colour)).
 `rim_elm_zoom_intro` holds black with the player at `(3456, 5632)`, inside
 that box, because the opening record took the player before the loop ran a
-pass at all. A seed that ran the loop at the seat picked brown, which showed
-through the semi-transparent sea; the opening states now start their record
+pass at all. A seed that runs the loop at the seat picks brown, which shows
+through the semi-transparent sea, so the opening states start their record
 at the install pass
 ([above](#a-record-that-took-the-player-at-the-install-pass)), and the
 selector bit and the colour stay down as retail's do.
@@ -1695,42 +1695,38 @@ engine draws the full tree where retail's frame shows the withered one.
 
 ### A dark wall is a lit row, not a missing one
 
-`cave01_attached_light`'s right-hand cave wall reads, in the side-by-side,
-as starting about 60 px further left in retail than in the port. It does
-not: read against the retail panel's own origin, both walls start at the
-same column (the third of the strip is the engine's), and every wall cell
-is drawn in both games. What differs is the brightness. The cave's rock
-columns (packs 29 and 37) are **light-source rows** - group flags `0x11`,
-dispatch kind 8, `NCCS` - so retail shades each face through the GTE light
-against its normal; under the scene-load light (back colour `0x202020`)
-the right wall, whose faces turn from the light, falls to an eighth of its
-texel and the left wall rises past neutral. A port that drew the lit rows
-at the neutral `0x80` painted both walls at their raw texel
+`cave01_attached_light`'s right-hand cave wall is darker in retail, which in a
+side-by-side reads as the wall starting about 60 px further left. It does not:
+read against the retail panel's own origin, both walls start at the same column
+and every wall cell is drawn in both games. The difference is brightness.
+
+The cave's rock columns (packs 29 and 37) are **light-source rows** - group
+flags `0x11`, dispatch kind 8, `NCCS` - so retail shades each face through the
+GTE light against its normal. Under the scene-load light (back colour
+`0x202020`) the right wall, whose faces turn from the light, falls to an eighth
+of its texel and the left wall rises past neutral. Drawing the lit rows at the
+neutral `0x80` paints both walls at their raw texel
 ([`renderer.md`](../subsystems/renderer.md#the-light-source-rows)).
 
 ### A translucent wall drawn from both sides
 
-`cort_evolved_pre_battle`'s flesh walls read uniformly brighter in the port
-than in retail, every band of the frame by the same margin. The draw census
-puts the difference on the semi-transparent strand overlays: retail's packets
-for those families all carry one winding, the port's split between both. The
-field pass culls back faces by a fragment test (`set_backface_cull`), and the
-textured and untextured semi-transparency passes re-draw the semi prims
-through their own fragment entries, which did not repeat the test - so every
-translucent strand whose far side faced the camera blended a second time.
-Retail's prim leaves apply `NCLIP` to a semi prim exactly as to an opaque one;
-both blend entries now discard the same winding the opaque entry does (the
-browser page runs one fragment program for both passes and already did).
+A frame whose translucent surfaces read uniformly brighter than retail, every
+band by the same margin, is a semi-transparent prim blended twice
+(`cort_evolved_pre_battle`'s flesh walls). Retail's prim leaves apply `NCLIP` to
+a semi prim exactly as to an opaque one, so its packets for the strand overlays
+all carry one winding. The field pass culls back faces by a fragment test
+(`set_backface_cull`), and the textured and untextured semi-transparency passes
+re-draw the semi prims through their own fragment entries; both blend entries
+discard the same winding the opaque entry does. The browser page runs one
+fragment program for both passes.
 
-What then looked like a residue - about ten front-facing strand triangles
-the port drew and the display list had no packet for - was the decoder's.
-The strand mesh carries two groups (32 `FT3`, flags `0x0020`; 100 `FT4`,
-flags `0x0022`), and the display-list walker accepted a `POLY_FT3` only at
-six payload words where the packet has seven (colour, then three `xy` /
-`uv` pairs; the field leaf `FUN_80044C14` tags it `0x07`), so every `FT3`
-in every decoded list was dropped - this state's own list holds 172. With
-the length fixed the family matches triangle for triangle: retail `55`, the
-port `54` front-facing of `128`.
+When comparing such a family draw by draw, mind the packet length. The strand
+mesh carries two groups (32 `FT3`, flags `0x0020`; 100 `FT4`, flags `0x0022`),
+and a `POLY_FT3` packet has **seven** payload words (colour, then three `xy` /
+`uv` pairs; the field leaf `FUN_80044C14` tags it `0x07`). A display-list walker
+that accepts it at six drops every `FT3` in the list - this state's own list
+holds 172. Decoded at seven the family matches triangle for triangle: retail
+`55`, the port `54` front-facing of `128`.
 
 ### One glide frame ahead, or a few frames into an arrival
 
@@ -1769,7 +1765,7 @@ a compose the port gets wrong:
   `FUN_8003BC08` steps the runner that raises the bit (`0x8003BD34`). On the
   frame a record first engages the player the routine still sees the bit
   clear and draws. Both hosts ask the rearm term one frame late
-  (`FieldPartyHud::rearm_term`), and the suppress kernel no longer hides the
+  (`FieldPartyHud::rearm_term`), and the suppress kernel does not hide the
   readout on a conversation or interaction record by itself - retail hides it
   under one only through that rearm. The capture is script-gated, so the
   image child cannot phase-align the countdown to a tick (its `capture_tick`
@@ -1835,7 +1831,7 @@ at `0x8003B510`), so a `son` whose loader had run could not hold it raised.
 The loaded-scene define settles it: `0x80084540` still reads `map01` (`85`)
 or `map03` (`391`) in all three. The corpus therefore scores them as the
 overworld ([above](#the-corpus)), where the word, the gate and the camera
-agree; scored under the label, every one of those channels had compared the
+agree. Scored under the label, every one of those channels would compare the
 overworld against the town.
 
 `s2_rimelm_town01` also holds none of `0x526..0x531`, the band `map01`'s
@@ -1918,12 +1914,12 @@ centre at `(6144, 13248)`, the four dancers present) and the frame reads as
 "dancers placed wrong". It is script progress, not placement; the retail
 frame is also partway into the load fade.
 
-The box an earlier engine frame held over the darkened scene was not this
-record's. Record 6 sets `0x59C` just before the wait the state is parked on,
-and the entry script reads that flag as the return from the dance floor; a
-card load over the captured flags spawned the judging record `P2[9]` ("Now
-for the judges' decision."). The seed now lands the save without the
-record's own latches ([above](#mid-script-states)). The push itself is drawn
+Record 6 sets `0x59C` just before the wait the state is parked on, and the
+entry script reads that flag as the return from the dance floor. A card load
+over the captured flags would spawn the judging record `P2[9]` ("Now for the
+judges' decision.") and hold its box over the darkened scene, so the seed
+lands the save without the record's own latches
+([above](#mid-script-states)). The push itself is drawn
 under any box, the order retail's ordering table gives a kind-2/8 push
 (`FUN_80024EE4` links at bucket `a0`, the MES glyphs at bucket 1 -
 [cutscene](../subsystems/cutscene.md)), and is framed at the displayed wait.
