@@ -21,8 +21,8 @@ legaia-engine export-glb --party --out glb-export              # Vahn, Noa, Gala
 
 Reads `extracted/` (default) or `--disc <image.bin>`. Flags: `--scale`
 (glTF meters per PSX world unit, default 1/128 - one 128-unit walk tile
-= 1 m; in-headset testing found the earlier 1/64 "2 m tile" oversized
-against real player scale, retail's field proportions being generous;
+= 1 m; a larger 1/64 "2 m tile" reads oversized in a headset against real
+player scale, retail's field proportions being generous;
 equipment-item glbs are raw PSX units regardless, scaled at placement
 time by the Unity builder), `--include-sky` (keep the sky-backdrop
 shells the site viewers hide), `--no-npcs`, `--no-props`, `--items` (the
