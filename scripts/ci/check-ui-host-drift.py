@@ -391,7 +391,8 @@ NATIVE_RENDER_STATE = "crates/engine-render/src/renderer/state.rs"
 # The enhanced-lighting model's constants live in the shared kernel; the
 # moods themselves reach the page from the engine (`play_lighting_frame`),
 # so only the shading-law constants have a hand-written JS twin.
-NATIVE_DYN_LIGHT = "crates/render-kernels/src/scene_lighting.rs"
+NATIVE_DYN_LIGHT = "crates/render-kernels/src/scene_lighting/mood.rs"
+NATIVE_DYN_WINDOWS = "crates/render-kernels/src/scene_lighting/windows.rs"
 
 # Geometry constants that exist once per host and must agree. See the module
 # docstring for the scope of the claim: equal values, nothing about use.
@@ -485,22 +486,22 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
 ] + [
     {
         "what": f"dynamic-light model constant {native}",
-        "native": (NATIVE_DYN_LIGHT, native),
+        "native": (path, native),
         "web": (WEB_SHADERS, web),
     }
-    for native, web in (
-        ("DIFFUSE", "DYN_DIFFUSE"),
-        ("TOTAL_MAX_GAIN", "DYN_TOTAL_MAX_GAIN"),
-        ("MAX_GAIN", "DYN_MAX_GAIN"),
-        ("LAMBERT_FALLBACK", "DYN_LAMBERT_FALLBACK"),
-        ("POOL_CENTER", "DYN_POOL_CENTER"),
-        ("POOL_INNER", "DYN_POOL_INNER"),
-        ("POOL_OUTER", "DYN_POOL_OUTER"),
+    for path, native, web in (
+        (NATIVE_DYN_LIGHT, "DIFFUSE", "DYN_DIFFUSE"),
+        (NATIVE_DYN_LIGHT, "TOTAL_MAX_GAIN", "DYN_TOTAL_MAX_GAIN"),
+        (NATIVE_DYN_LIGHT, "MAX_GAIN", "DYN_MAX_GAIN"),
+        (NATIVE_DYN_LIGHT, "LAMBERT_FALLBACK", "DYN_LAMBERT_FALLBACK"),
+        (NATIVE_DYN_LIGHT, "POOL_CENTER", "DYN_POOL_CENTER"),
+        (NATIVE_DYN_LIGHT, "POOL_INNER", "DYN_POOL_INNER"),
+        (NATIVE_DYN_LIGHT, "POOL_OUTER", "DYN_POOL_OUTER"),
         # Lit windows: the glass test and the pane colour of `shade_window`.
-        ("WINDOW_GLASS_MIN_BLUE", "DYN_WIN_GLASS_MIN_BLUE"),
-        ("WINDOW_RGB", "DYN_WIN_RGB"),
-        ("WINDOW_FLOOR", "DYN_WIN_FLOOR"),
-        ("WINDOW_GLASS_BLACK_MAX", "DYN_WIN_GLASS_BLACK_MAX"),
+        (NATIVE_DYN_WINDOWS, "WINDOW_GLASS_MIN_BLUE", "DYN_WIN_GLASS_MIN_BLUE"),
+        (NATIVE_DYN_WINDOWS, "WINDOW_RGB", "DYN_WIN_RGB"),
+        (NATIVE_DYN_WINDOWS, "WINDOW_FLOOR", "DYN_WIN_FLOOR"),
+        (NATIVE_DYN_WINDOWS, "WINDOW_GLASS_BLACK_MAX", "DYN_WIN_GLASS_BLACK_MAX"),
     )
 ] + [
     # The point lights' shadow maps: the page's depth-array pass
