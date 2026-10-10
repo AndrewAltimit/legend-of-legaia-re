@@ -47,6 +47,11 @@ const TOWN_SCENES: &[&str] = &["town01", "town0c"];
 const SUB: usize = 4;
 
 fn extracted_dir() -> Option<PathBuf> {
+    if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
+        && d.join("PROT.DAT").exists()
+    {
+        return Some(d);
+    }
     for c in ["extracted", "../extracted", "../../extracted"] {
         let d = PathBuf::from(c);
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
@@ -358,4 +363,59 @@ fn rasterise(a: &[f32; 2], b: &[f32; 2], c: &[f32; 2], cover: &mut [bool], n: us
             }
         }
     }
+}
+
+/// A decoration cell draws its record's `+0x10` mesh whatever the record's
+/// index: the per-cell pass `FUN_801F7088` tests the cell's `0x2000` and the
+/// record's placed flag and nothing else before it indexes the pack
+/// (`0x801F7568..0x801F7804`). `vozz` lays its ground fern - pack mesh 10, a
+/// single tilted quad on CLUT `(192, 505)` - through record **3**, and a
+/// retail frame of the forest draws the fern at cell `(105, 64)` beside the
+/// save point. Read as a protagonist id, the record lost every one of its
+/// cells.
+#[test]
+fn a_decoration_cell_on_record_three_is_drawn() {
+    let Some((_x, index)) = gate() else { return };
+    let scene = Scene::load(&index, "vozz").expect("load vozz");
+    let tiles = scene
+        .field_terrain_tiles(&index)
+        .expect("terrain tiles")
+        .expect("vozz has a field map");
+    let fern = tiles
+        .iter()
+        .find(|p| (p.col, p.row) == (105, 64))
+        .expect("cell (105, 64) is a decoration cell");
+    assert_eq!(fern.obj_idx, 3);
+    assert_eq!(fern.flags & field_objects::FLAG_PLACED, 0, "unplaced");
+    assert_eq!(fern.pack_index, Some(10), "the fern's pack mesh");
+    let cells = tiles
+        .iter()
+        .filter(|p| p.obj_idx == 3 && p.pack_index == Some(10))
+        .count();
+    assert!(cells >= 3, "record 3 dresses several cells, got {cells}");
+    // And it reaches the draw list.
+    let shared: Vec<Scene> = FIELD_SHARED_BLOCKS
+        .iter()
+        .filter_map(|n| Scene::load(&index, n).ok())
+        .collect();
+    let shared_refs: Vec<&Scene> = shared.iter().collect();
+    let (res, _) = SceneResources::build_targeted_with_options(
+        &scene,
+        &shared_refs,
+        BuildOptions {
+            kind: SceneLoadKind::Field,
+            upload_all_tims: true,
+            system_ui: None,
+        },
+    )
+    .expect("scene resources");
+    let env = field_env::env_pack_tmd_indices(&scene, &res);
+    let lut = scene.field_floor_height_lut(&index).expect("lut");
+    let (draws, _) = field_env::resolve_env_draws(&env, &tiles, lut);
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.cell == (105, 64) && d.env_slot == 10),
+        "the fern at (105, 64) is an env draw"
+    );
 }
