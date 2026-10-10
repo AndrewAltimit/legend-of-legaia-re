@@ -110,12 +110,6 @@
     </tbody>
   </table>
   <p><code>MV3.STR</code>'s four segments abut exactly. The <code>scene + spawn word</code> hand-offs write the next-scene name global (from the label table of seven CDNAME-shape names: <code>town0b</code>, <code>map01</code>, <code>chitei2</code>, <code>map02</code>, <code>jou</code>, <code>uru2</code>, <code>town0e</code>) plus a spawn/door word, then set field mode - so each mid-game FMV returns to a <em>specific</em> scene rather than the trigger scene. Every movie on the retail disc is dispatched. The path strings live in a packed null-terminated table at the overlay start; three of the nine (<code>MOV.STR</code>, <code>MOV15.STR</code>, <code>MV1A.STR</code>) are dev-only.</p>
-  <details class="disclosure">
-    <summary>History: the 64-byte-stride reading</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading used a 64-byte stride (a <code>sll v0,v0,6</code> transcription error), pairing wrong slot halves - it concluded <code>MV2</code>/<code>MV5</code> were never referenced and that several triggers pointed at cut movies. The disc bytes and the resident RAM capture both encode <code>sll v0,v0,0x5</code>; under the 32-byte stride every movie is dispatched. Superseded; see <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="per-scene-triggers">
@@ -140,12 +134,6 @@
 <section class="doc-section" id="dir-cache">
   <h2>The look-alike table: libcd's directory cache</h2>
   <p>A second, unrelated table shares the overlay's data section and has been mistaken for the FMV table: libcd's <code>CdSearchFile</code> per-directory file cache (libcd is the CD-ROM library of PsyQ, the PlayStation SDK) at <code>0x801CAE08</code> - one 24-byte <code>CdlFILE</code> record per file of the last-searched directory: 4-byte BCD location, 4-byte size, 16-byte name. It starts with the <code>.</code> / <code>..</code> entries; the contents change with whatever directory was searched last (the <code>XA</code> directory at the title screen, <code>MOV</code> during a movie). It describes the disc filesystem, not the cutscenes.</p>
-  <details class="disclosure">
-    <summary>History: the phase-shifted "compact MV-file table at 0x801CAE40"</summary>
-    <div class="disclosure-body">
-      <p>Earlier captures read this cache as a name-first 24-byte table starting at <code>0x801CAE40</code>. That parse was <strong>phase-shifted 8 bytes</strong>, pairing each name with the <em>next</em> record's location - manufacturing an apparent one-entry shift ("MV1 points at disc MV2"). At the <code>CdlFILE</code> phase every record is self-consistent. Convert <code>CdlLOC</code> to LBA with <code>LBA = ((M&times;60)+S)&times;75 + F &minus; 150</code>; a third copy of the six MV files appears nearby in raw ISO9660 directory-record form (<code>0x801CCA80</code>, 56-byte stride).</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="rust-api">

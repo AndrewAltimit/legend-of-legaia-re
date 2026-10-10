@@ -160,12 +160,6 @@
       <p>One column is not static in battle. Before enqueueing a cue the battle cue router <code>FUN_8004FE5C</code> overwrites byte <code>+4</code> (<code>id</code>, the category) of <code>record[cue_id - 0x200]</code> from a per-actor byte, reaching the bank through its own saved pointer <code>gp+0x678</code> rather than through the current-bundle slot. So a live cue's VAB slot is chosen by the actor that fired it, and the authored category is a default.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: the single-bank port</summary>
-    <div class="disclosure-body">
-      <p>Both viewers and the engine once staged one resident bank and fired every cue through it; peak, duration and "did a voice key on" all passed while the pause menu thumped. Slots 6 and 11 were listed as unpinned before PROT 0876 / 0889 were byte-matched. See <a href="../reference/re-do-not-re-walk.html#audio">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

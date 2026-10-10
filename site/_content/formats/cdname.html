@@ -144,12 +144,6 @@
       <p><code>Scene::load</code> converts the raw-TOC block range to the extraction frame so a scene's entries are its retail block: first the <code>.MAP</code>, then the v12 sidecar. An unshifted window is two entries late - it drops those and bleeds in the next block's first two, mis-framing any scene whose load-bearing entry sits at a block edge (an unshifted <code>rikuroa</code> window loads Jeremi's MAN). The two head defines (<code>init_data 0</code>, <code>gameover_data 1</code>) sit inside the TOC header rows and keep their unshifted legacy windows.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: "mislabeled block" findings that were the shift</summary>
-    <div class="disclosure-body">
-      <p>Several earlier findings that the developers had mislabeled blocks - <code>vab_01</code> "without VAB headers", <code>0895_bat_back_dat</code> being <code>init.pak</code>, the "battle_data 0865 vs monster archive 0867" tangle - were the filename shift, not dev mislabeling. Collected in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="the-loader-mangles-long-names">
@@ -187,12 +181,6 @@
     <li><strong>Index 990 is declared twice</strong> (<code>music_test</code>, then <code>music_01</code>). Retail emits two records; the tolerant map keeps the later name. Compare the two readers by declaration order, not by index.</li>
     <li>Retail really does populate the table: <code>main()</code> sets the source flag at cold boot so the loader reads <code>cdname.txt</code> off the disc rather than over the developer-station link.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the "writer-less flag" framing</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading held that the source flag <code>_DAT_8007B8C2</code> had no writer and the table might never be populated. The sweep behind it searched only the absolute <code>lui</code>+offset form and missed the <code>gp</code>-relative store. Catalogued in <a href="../tooling/ghidra.html">Ghidra tooling</a> under decompiler artifacts that have produced false claims.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

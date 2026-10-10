@@ -211,16 +211,6 @@
     </div>
   </details>
 
-  <details class="disclosure" id="history">
-    <summary>History: readings that were wrong</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>Dumps labelled <code>overlay_0897_*</code> / <code>overlay_magic_*</code> / <code>overlay_muscle_dome_*</code> carry the battle-overlay bytes at a wrong load base, which produced a claim that <code>0x801F3990</code> was a second damage kernel. At the real VA it is the cast audio-cue dispatcher and reads no field of the record. Take addresses from the extracted overlay image.</li>
-        <li><code>0x801f6418</code> is a CLUT source-x, not a per-effect sound id, and each effect list uses both side tables rather than one each. A &ldquo;~<code>0x20</code>-byte struct&rdquo; reading of the prototype table was a coincidence of one record's size.</li>
-      </ul>
-      <p>Full entries in <a href="../reference/re-do-not-re-walk.html#battle">do-not-re-walk &sect; battle</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="cli">

@@ -100,15 +100,6 @@ let move_descriptor = s.move_descriptor()?; // type_byte = 0x05</code></pre>
   program / path table (the block names <strong>MOV</strong>ie program numbers; see the <a href="str-fmv-table.html">STR
   FMV table</a>), not Tactical-Arts moves. <code>mdt classify</code> correctly reports that neither file matches the
   runtime layout above.</p>
-  <details class="disclosure">
-    <summary>History: the "flat 128-byte record array" reading</summary>
-    <div class="disclosure-body">
-      <p>Before the numbering shift was understood, 0972 / 0973 were parsed as a flat 128-byte record array of move
-      data; that was a loose parse of overlay code and data. <code>crates/mdt</code> still surfaces both verdicts
-      (<code>OffsetTableLayout</code> / <code>FlatRecordTable</code> / <code>Unknown</code>) so the CLI can say which shape a file has.
-      Other dissolved readings: <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
   <details class="disclosure" id="parse-caveat">
     <summary>Caveat: <code>MoveBuffer::parse</code> over-reads the offset table</summary>
     <div class="disclosure-body">

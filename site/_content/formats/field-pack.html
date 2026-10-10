@@ -159,15 +159,6 @@ if let Some(p) = field_pack::scene_pack(&amp;entry_bytes) {
       <code>0x62C00</code>-byte allocation.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: "124 entries, slots filled per scene"</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading had 124 PROT entries sharing a schema with a per-scene preamble filling its slots; a later
-      correction cut that to eight carriers and a shared template. Both were reading neighbouring entries through the
-      superseded <a href="prot.html">entry-size</a> expression, and both took a pack offset table for a schema. See
-      <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
-    </div>
-  </details>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/field-pack.md" target="_blank" rel="noopener"><code>docs/formats/field-pack.md</code></a>.</p>
 </section>
 

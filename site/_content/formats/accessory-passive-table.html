@@ -54,15 +54,6 @@ if index &lt; 0x40:
   <p>The same gate is read by the pause menu's Goods detail panel and the description resolver to fetch the
   display text. The battle damage path reads the first two bitfield words directly as the defender's
   elemental-resist / spirit words (details under <a href="#how-we-know">how we know</a>).</p>
-  <details class="disclosure">
-    <summary>History: the "constant 0x41 marker" reading</summary>
-    <div class="disclosure-body">
-      <p>The descriptor <code>+3</code> byte was previously documented as a "constant <code>0x41</code>
-      (<code>'A'</code>) marker" and the equip record's <code>+5</code> byte as "constant <code>0x40</code>".
-      Both are this index space's <strong>no-passive sentinels</strong>: <code>0x41</code> on every consumable
-      row, <code>0x40</code> on every retail equipment row.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="name-table">

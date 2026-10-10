@@ -125,16 +125,6 @@
   <p>In the port, a field scene load (<code>SceneLoadKind::Field</code>) mirrors this lazy upload: it leaves
   out every <code>scene_tmd_stream</code> entry - both its leading TMD (a battle character mesh) and its TIM
   chunks - so field VRAM matches a retail town (row 479 empty). The battle load kind uploads them.</p>
-  <details class="disclosure">
-    <summary>History: the falsified "two-list" shape of 0006_town01</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading gave <code>0006_town01.BIN</code> a "two-list" shape whose second list the battle-init
-      walker never reached. Falsified: the second pair of chunks is PROT entry <strong>0007</strong>'s own tail,
-      seen through a superseded over-reading entry-size expression, and the walker reaches it when it walks entry
-      0007. See <a href="scene-bundles.html#scene-tmd-stream-bare-tmd-prefix">scene-bundles &sect; one entry, one stream</a>
-      and <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="row510-band">
