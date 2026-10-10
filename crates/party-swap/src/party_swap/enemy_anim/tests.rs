@@ -1,4 +1,3 @@
-
 use super::block_entries::{
     ARRAY_OFF, COUNT_OFF, ENTRY_STREAM_OFF, EntryRewrite, TABLE_WORD_BIAS, parse_entry_table,
     rebuild_block_entries, transform_head,
