@@ -1,56 +1,64 @@
 # SEQ - PsyQ sequenced-music format
 
-PsyQ's `SsSeqOpen` / `SsSeqPlay` accepts a 13-byte-header SEQ file: a thin
-MIDI variant that names a single track with delta-time + event records.
-Legaia uses it for in-game music, paired with a [VAB](vab.md) sound bank
-that holds the instrument samples. For the human-readable map between each
-track's debug sound-test ID, the scene it plays in, and its official OST
-title, see [`reference/music-tracks.md`](../reference/music-tracks.md).
+A SEQ is the game's sheet music: a single track of timed note, controller and tempo events, in a format Sony's PsyQ sound library derived from MIDI. It holds no audio. Every piece of in-game music is a SEQ paired with a [VAB](vab.md) sound bank that supplies the instruments. If you know Standard MIDI Files, most of this page is familiar, and the two places Legaia's SEQ differs are the two that break a MIDI-minded parser: the **header's version field is 32 bits wide**, and **meta events carry no length byte**.
 
-The format is a publicly-documented PsyQ SDK shape (header layout +
-event encoding). This page describes byte order, the meaning of every
-header field, and how Sony's SsAPI sequencer consumes the event stream
-- **no Sony bytes appear here**.
+For the map between each track's sound-test id, the scene it plays in and its OST title, see [`reference/music-tracks.md`](../reference/music-tracks.md). Parser: [`crates/seq`](../../crates/seq/README.md). Retail decoder: `FUN_80063CEC`; loader `FUN_80062410` ([`subsystems/audio.md`](../subsystems/audio.md)).
+
+## At a glance
+
+| Property | Value | Confidence |
+|---|---|---|
+| Magic | `pQES` (`70 51 45 53`) | Confirmed |
+| Byte order | Big-endian header fields | Confirmed |
+| Header length | 15 bytes on the disc (13 in the PsyQ documentation) | Confirmed |
+| `version` | `1`, as a **u32** | Confirmed |
+| Resolution | `ppqn = 480` in every retail SEQ | Confirmed |
+| Header tempo | A 240 BPM placeholder (250000 µs per quarter note); the first body tempo event overrides it | Confirmed |
+| Meta events | `FF 51 tt tt tt` (tempo) and `FF 2F` (end of track); **no length field** | Confirmed |
+| Looping | Control change `0x63` with value 20 (start) / 30 (loop forever) | Confirmed |
+| Channel events used | `0x9n`, `0xBn`, `0xCn`, `0xEn` only | Confirmed |
 
 ## Header
 
-Two header shapes coexist in the wild:
+`crates/seq::parse_header` accepts two shapes. It reads `u32 BE` at `+4`; if that is `1` it takes the Legaia layout, otherwise the PsyQ-documented one. Every SEQ on the disc is the Legaia layout; the 13-byte shape is what synthetic test fixtures use.
 
-### Standard PsyQ shape (13 bytes)
+### Legaia layout (15 bytes, `HEADER_LEN_LEGAIA`)
 
-```text
-+0x00  u8[4]   magic   "pQES"  (0x70 0x51 0x45 0x53)
-+0x04  u16 BE  version          (typically 1)
-+0x06  u16 BE  resolution       PPQN - ticks per quarter note
-+0x08  u24 BE  initial tempo    microseconds per quarter note
-+0x0B  u8      time-sig num     (e.g. 4)
-+0x0C  u8      time-sig denom   power of 2 (2 means /4, 3 means /8)
-+0x0D  ...     event stream
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `0x00` | u8 x 4 | magic | `pQES` | Confirmed |
+| `0x04` | u32 BE | `version` | Always `1` | Confirmed |
+| `0x08` | u16 BE | `resolution` | PPQN - ticks per quarter note | Confirmed |
+| `0x0A` | u24 BE | initial tempo | Microseconds per quarter note | Confirmed |
+| `0x0D` | u8 | time-signature numerator | e.g. 4 | Confirmed |
+| `0x0E` | u8 | time-signature denominator | Power of 2 (`2` means /4, `3` means /8) | Confirmed |
+| `0x0F` | - | event stream | | Confirmed |
+
+### PsyQ-documented layout (13 bytes, `HEADER_LEN`)
+
+| Offset | Size | Field |
+|---|---|---|
+| `0x00` | u8 x 4 | magic `pQES` |
+| `0x04` | u16 BE | `version` |
+| `0x06` | u16 BE | `resolution` |
+| `0x08` | u24 BE | initial tempo |
+| `0x0B` | u8 | time-signature numerator |
+| `0x0C` | u8 | time-signature denominator |
+| `0x0D` | - | event stream |
+
+The SsAPI loader (`FUN_80062410`) verifies `version`; a file with `version != 1` emits `s_This_is_an_old_SEQ_Data_Format_*`.
+
+## SEQ meta events against Standard MIDI
+
+```
+                 Standard MIDI File              Legaia SEQ
+set tempo        FF 51 03 tt tt tt               FF 51 tt tt tt
+end of track     FF 2F 00                        FF 2F
+next meta        FF 51 03 tt tt tt               51 tt tt tt        (FF is a running status)
+length field     variable-length, every meta     none; fixed size per meta type
 ```
 
-### Legaia variant (15 bytes)
-
-Every retail Legaia SEQ examined uses a **u32 BE version** field rather
-than the u16 BE PsyQ-doc form, with two reserved zero bytes between the
-magic and the version word. The remaining fields shift by two bytes:
-
-```text
-+0x00  u8[4]   magic   "pQES"
-+0x04  u32 BE  version          (always 1 in retail)
-+0x08  u16 BE  resolution       PPQN
-+0x0A  u24 BE  initial tempo    microseconds per quarter note
-+0x0D  u8      time-sig num
-+0x0E  u8      time-sig denom   power of 2
-+0x0F  ...     event stream
-```
-
-`crates/seq::parse_header` accepts both shapes - it probes
-`u32 BE at +4..+8 == 1` and dispatches accordingly. `HEADER_LEN` is the
-standard length; `HEADER_LEN_LEGAIA` is the variant length.
-
-`version` is verified by the SsAPI loader (`FUN_80062410` in SCUS, see
-[`subsystems/audio.md`](../subsystems/audio.md)). Files with `version != 1`
-emit `s_This_is_an_old_SEQ_Data_Format_*`.
+A parser that expects the `03` reads the first tempo byte as a length, swallows the notes that follow as payload, and drops the tempo change. The track then plays at the 240 BPM header placeholder, about 3x too fast.
 
 ## Event stream
 
@@ -87,8 +95,7 @@ carry **no** length field (see below). See `legaia_seq::read_vlq`.
 
 ### Meta events
 
-**PSX SEQ meta events have no MIDI variable-length `length` field.** This is
-the one place the format diverges sharply from a Standard MIDI File: the
+**PSX SEQ meta events have no MIDI variable-length `length` field.** The
 SsAPI sequencer reads a meta-type byte and then a *fixed* number of payload
 bytes determined by the type. The two meta types that appear in retail data:
 
@@ -101,14 +108,11 @@ Any other meta type has an undefined fixed length, so the parser cannot
 safely skip it and stops the track there (the reference SsAPI reader behaves
 the same way).
 
-> **The tempo gotcha.** Reading a phantom MIDI length byte mis-decodes every
-> tempo event: `0x51` would consume the first tempo byte as a "length", then
-> swallow the following note events as a bogus payload, and the override would
-> be dropped. Retail tracks ship a **240 BPM (250000 µs/qn) init-placeholder**
-> header tempo that the *first body* `0xFF 0x51` event immediately overrides
+> **The tempo trap.** Retail tracks ship a **240 BPM (250000 µs/qn)
+> placeholder** header tempo that the *first body* `0xFF 0x51` event overrides
 > to the real musical tempo (e.g. `FF 51 0B 71 B0` = 750000 µs/qn = 80 BPM).
-> Dropping that override pins playback at the 240 BPM placeholder - a constant
-> ~3x-too-fast rate. Every retail SEQ has `ppqn = 480`.
+> Reading a phantom MIDI length byte drops that override and pins playback at
+> the placeholder.
 
 ### Loop markers
 
@@ -134,23 +138,23 @@ tracks that carry no markers.
 ### ProgramChange to an unused VAB slot
 
 A `0xCn` ProgramChange names a `ProgAtr` slot in the paired [VAB](vab.md).
-Retail's VAB-open (`FUN_80068d94`) writes a running used-program counter into
-each slot's `+8` word and the program-change consumer reads it back as the
-tone-page index, so a change to an **unused** slot aliases onto the next used
-slot's page (past the last used slot it reads garbage beyond the tone region).
-The engine port reproduces that aliasing (`engine-audio::vab_bind`): an
-unused slot inside the used range resolves to the next used slot's page, and a
-slot past the last used page stays empty and plays silence, where retail reads
-garbage.
+Retail resolves the slot to a tone page by its rank among the used slots, so a
+change to an **unused** slot aliases onto the next used slot's page. The alias
+is silent for the score: a note-on searches only the slot's own `ProgAtr.tones`
+rows, and an unused slot's count is zero, so its notes key no voice. The full
+mechanism (`FUN_80068D94`, `FUN_80068B98`, `FUN_80066308`, `FUN_80068568`) is on
+[`vab.md`](vab.md#program-slots-vs-packed-tone-pages).
 
-That behaviour is exercised on the retail corpus: a disc sweep of every
-in-container `[VAB][SEQ]` pair
-(`engine-audio/tests/real_seq_program_change_coverage.rs`) finds eight such
-ProgramChanges across four entries. Two are audible - retail aliases to a
-valid different page and notes follow (PROT 868 prog 5, PROT 996 prog 19) -
-and the port aliases them the same way. The rest are benign: retail's own
-alias index runs past the tone region so it reads garbage (PROT 994 prog 42),
-or no notes follow the change (PROT 988 prog 127).
+The retail corpus exercises it. A disc sweep of every in-container `[VAB][SEQ]`
+pair (`engine-audio/tests/real_seq_program_change_coverage.rs`) finds eight such
+ProgramChanges across four entries:
+
+| Entry | Program | Retail | Port (`engine-audio::vab_bind`) |
+|---|---|---|---|
+| PROT 868 | 5 | Aliases to the next used page; notes follow and key no voice | Same alias, same silence |
+| PROT 996 | 19 | As above (breakpoint census: the note reaches no voice allocation) | Same |
+| PROT 994 | 42 | Alias index runs past the tone region and reads garbage | Left an empty page |
+| PROT 988 | 127 | No notes follow the change | No effect |
 
 ## Stream termination and truncation
 
@@ -170,10 +174,9 @@ shorthand) is the only way to tell them apart, and anything that cares about
 getting a whole track - a player, a note-level parity oracle, a corpus sweep
 - must check it.
 
-Across the disc's SEQ-bearing PROT entries the corpus is almost entirely
-clean; `engine-audio/tests/real_seq_stream_integrity.rs` pins the count of
-non-clean streams so a parser change that starts truncating more tracks
-fails loudly. Every stream is clean.
+Every stream in the disc's SEQ-bearing PROT entries is clean.
+`engine-audio/tests/real_seq_stream_integrity.rs` pins the count of non-clean
+streams at zero, so a parser change that starts truncating tracks fails loudly.
 
 ### A meta is a running status
 
@@ -190,10 +193,9 @@ then `51 0F 42 40` (60 BPM). A parser that keeps the previous *channel*
 status across a meta reads `51 0F 42` as a note, falls one byte out of phase,
 reads the closing volume fade (`B5 07 nn` / `B6 07 nn`) as long deltas and
 notes, walks through the real `FF 2F 00`, and halts on a `0xF4` eleven bytes
-past it - the track's last bars garbled and its loop never reached. That was
-once recorded as a one-byte desync in an otherwise valid stream.
-`engine-audio/tests/real_seq_meta_running_status.rs` pins the rule and the
-track.
+past it - the track's last bars garbled and its loop never reached. The stream
+itself is valid. `engine-audio/tests/real_seq_meta_running_status.rs` pins the
+rule and the track.
 
 ## Tempo math
 

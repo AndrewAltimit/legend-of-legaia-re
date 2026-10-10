@@ -152,8 +152,7 @@ from `map01` into Rim Elm.
 
 The field overlay's fill-fade actor `FUN_801EE5D4` - and the two sibling
 state machines whose latching stores sit at `0x801EAC7C` / `0x801EEAE4` - also
-read `_DAT_801C6EA0`, and this page used to say they "open the banner panel
-with it". They do not. The panel script they
+read `_DAT_801C6EA0`, but they do not open the banner panel with it. The panel script they
 run, `0x801F32B4`, is a single `op 5` record (close every panel) followed by
 the terminator, read out of the PROT 0897 image at its `0x801CE818` base. What
 those actors do with the name is copy it into `_DAT_8007B44C`, in the delay

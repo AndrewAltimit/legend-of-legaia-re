@@ -9,9 +9,11 @@ Thanks for looking. This page covers the rules of engagement: what will never la
 Two tracks share one Cargo workspace:
 
 1. **Asset preservation.** Extract every asset on the disc, document every format with Ghidra-traced provenance, build round-trip parsers.
-2. **Engine reimplementation.** A from-scratch Rust port, written from the format docs and decompiled-C reference - the ScummVM / OpenRCT2 model, not a static recompilation of `SCUS_942.54`.
+2. **Engine reimplementation.** A from-scratch Rust port, written from the format docs and the Ghidra-traced disassembly - the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of `SCUS_942.54`.
 
-The end-user model is: ship the engine, the user supplies their own disc image, the engine extracts and runs it.
+The port plays: most of the game runs on the native window and in the browser, and the disc patcher and translation tools are in use. So a change here lands in something people run - which is why the gates below are strict, and why a regression in a working feature matters more than a missing one. The root [`README.md`](README.md#what-works-and-what-is-rough) says what works and what is still rough.
+
+The end-user model is: ship the engine, the user supplies their own disc image, the engine reads it and runs.
 
 Retail behaviour is the measured ground truth for game logic and simulation. That does not make this a strict 1:1 remake - the engine also carries an enhancement layer (enhanced lighting, volumetric fog, the camera-occlusion fade, precise movement, alternate cameras, VR), and the randomizer and translation toolchains are deliberate, shipped features. The rule enhancements follow: they may ship **enabled by default** where they are clearly the better experience, but each is a toggle, and with it off the faithful mode stays bit-identical - so retail is always one switch away and the parity oracles keep passing. [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements) is the authority on where the port boundaries sit and what each knob defaults to.
 

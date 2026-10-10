@@ -1235,6 +1235,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-arts-patch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-asset",
+ "legaia-code-hooks",
+ "legaia-disc-patch",
+ "legaia-iso",
+ "legaia-lzs",
+]
+
+[[package]]
 name = "legaia-asset"
 version = "0.1.0"
 dependencies = [
@@ -1325,6 +1338,24 @@ dependencies = [
  "legaia-asset",
  "legaia-disc-patch",
  "legaia-lzs",
+]
+
+[[package]]
+name = "legaia-delilas-party"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-art",
+ "legaia-arts-patch",
+ "legaia-asset",
+ "legaia-code-hooks",
+ "legaia-disc-patch",
+ "legaia-lzs",
+ "legaia-party-swap",
+ "legaia-texture-replace",
+ "legaia-translate",
+ "legaia-vab",
+ "legaia-xa",
 ]
 
 [[package]]
@@ -1512,6 +1543,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-motion-vm"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-battle-vm",
+]
+
+[[package]]
 name = "legaia-engine-render"
 version = "0.1.0"
 dependencies = [
@@ -1650,6 +1689,7 @@ dependencies = [
  "legaia-art",
  "legaia-asset",
  "legaia-engine-battle-vm",
+ "legaia-engine-motion-vm",
  "legaia-lzs",
  "legaia-prot",
  "serde_json",
@@ -1843,9 +1883,11 @@ dependencies = [
  "clap",
  "encoding_rs",
  "legaia-art",
+ "legaia-arts-patch",
  "legaia-asset",
  "legaia-bytes",
  "legaia-code-hooks",
+ "legaia-delilas-party",
  "legaia-disc-patch",
  "legaia-font",
  "legaia-gamedata",

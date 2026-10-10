@@ -137,9 +137,9 @@ and the table's file offset is its VA less the overlay base `0x801CE818`.
 
 Character `2` therefore accepts three art ids the other two reject, and most
 slots in every table are the shared epilogue `0x801D828C`. Thirteen distinct
-arm bodies exist. The earlier "seventeen per-art arms" reading generalised
-character `1`'s table to all three; the bounds `sltiu v0,v1,0x11` /
-`0x14` / `0x11` at `0x801D72E0` / `0x801D76C4` / `0x801D7B24` settle it.
+arm bodies exist. "Seventeen per-art arms" is character `1`'s table bound, not
+a property of all three: the bounds are `sltiu v0,v1,0x11` / `0x14` / `0x11` at
+`0x801D72E0` / `0x801D76C4` / `0x801D7B24`.
 
 ### There is no spare arm
 

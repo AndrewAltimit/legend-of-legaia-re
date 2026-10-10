@@ -113,6 +113,44 @@ pub fn retail_clear_rgb(ram: &[u8]) -> [u8; 3] {
     [0, 1, 2].map(|i| game_anchors::u8_at(ram, DRAW_ENV_CLEAR + i))
 }
 
+/// The field pager's state word `_DAT_801F2734` (`0x19` = a page waits).
+const PAGER_STATE: u32 = 0x801F_2734;
+/// The pager's automatic-press countdown `_DAT_80073F00`.
+const PAGER_AUTO_PRESS: u32 = 0x8007_3F00;
+/// The cursor sprite primitive's kind-1 frame index / timer
+/// (`0x801C6000 + 4`, `0x801C6010 + 4`; `FUN_8002B994`).
+const PAGE_MARK_FRAME: u32 = 0x801C_6004;
+const PAGE_MARK_TIMER: u32 = 0x801C_6014;
+
+/// Which frame of the dialogue page mark's two-frame strip a field state's
+/// **displayed** frame shows, or `None` when the pager draws no mark (no
+/// page waits, or an automatic press is counting down -
+/// `0x801D9804..0x801D9828`).
+///
+/// The strip flips every sixteen vsyncs of the kind's timer
+/// (`legaia_engine_core::cursor_sprite`), which counts from the first call
+/// at the box's height - time the seed does not replay. The frame on screen
+/// is two game frames older than the RAM, so the timer is taken back by the
+/// lag and the frame with it when that crosses a flip.
+pub fn retail_page_mark(ram: &[u8]) -> Option<u8> {
+    if game_anchors::u32_at(ram, PAGER_STATE) != 0x19
+        || game_anchors::i16_at(ram, PAGER_AUTO_PRESS) > 0
+    {
+        return None;
+    }
+    let frame = game_anchors::u32_at(ram, PAGE_MARK_FRAME);
+    let timer = game_anchors::u32_at(ram, PAGE_MARK_TIMER) as i32;
+    if frame > 1 || !(0..16).contains(&timer) {
+        return None;
+    }
+    let lag = 2 * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    Some(if timer < lag {
+        frame as u8 ^ 1
+    } else {
+        frame as u8
+    })
+}
+
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 pub(super) const PART_TICK: u32 = 0x8002_1DF4;
 
@@ -392,6 +430,77 @@ pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {
             }
             let id = i32::from(game_anchors::i16_at(ram, n + 0x64)) - base;
             (0..0xF0).contains(&id).then_some((record, id as i16))
+        })
+        .collect()
+}
+
+/// One drawn field actor's clip words: record `+0x50`, clip id `+0x5C`,
+/// cursor `+0x68`, control word `+0x62` and cursor step `+0x6A` - what the
+/// anim tick `FUN_800204F8` steps and the draw walker poses from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ObjectClipSeed {
+    pub record: u16,
+    pub clip: u8,
+    pub cursor: i16,
+    pub flags: u16,
+    pub rate: i16,
+}
+
+/// Every field actor with a clip bound, first in list order per record
+/// (as [`retail_object_models`] takes them). A placed object's clip is touch
+/// and walk history - a door the player has just pushed open, a lid mid
+/// swing - which a seat does not replay; the image child writes the cursor
+/// and control word over the matching prop's own on the frame it captures
+/// (`World::seed_object_prop_clip`, which leaves a prop on another clip
+/// alone).
+pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
+    let mut seen = std::collections::BTreeSet::new();
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8003_BC08)
+        .filter_map(|n| {
+            let record = game_anchors::u16_at(ram, n + 0x50);
+            if !seen.insert(record) {
+                return None;
+            }
+            let clip = game_anchors::u16_at(ram, n + 0x5C);
+            (1..0x100).contains(&clip).then(|| ObjectClipSeed {
+                record,
+                clip: clip as u8,
+                cursor: game_anchors::i16_at(ram, n + 0x68),
+                flags: game_anchors::u16_at(ram, n + 0x62),
+                rate: game_anchors::i16_at(ram, n + 0x6A),
+            })
+        })
+        .collect()
+}
+
+/// `LEGAIA_SEAT_OBJECT_CLIPS`: `record:clip:cursor:flags:rate`, `;`-joined.
+pub fn object_clips_env(clips: &[ObjectClipSeed]) -> String {
+    clips
+        .iter()
+        .map(|c| {
+            format!(
+                "{}:{}:{}:{}:{}",
+                c.record, c.clip, c.cursor, c.flags, c.rate
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`object_clips_env`]; a malformed entry is dropped.
+pub fn object_clips_from_env(v: &str) -> Vec<ObjectClipSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.split(':').map(str::trim);
+            Some(ObjectClipSeed {
+                record: f.next()?.parse().ok()?,
+                clip: f.next()?.parse().ok()?,
+                cursor: f.next()?.parse().ok()?,
+                flags: f.next()?.parse().ok()?,
+                rate: f.next()?.parse().ok()?,
+            })
         })
         .collect()
 }

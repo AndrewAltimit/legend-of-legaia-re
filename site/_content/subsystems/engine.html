@@ -17,11 +17,23 @@
   </dl>
 </section>
 
+<section class="doc-section" id="status">
+  <h2>Where it stands</h2>
+  <p>The port plays the game. From a cold New Game it runs the opening, the towns and dungeons, random and boss battles, the pause menu, shops and inns, the five minigames, the movies and the save screen, on both the native window and the browser page, with sound. A segmented <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/full-game-ladder.md" target="_blank" rel="noopener">full-game ladder</a> seeds the engine at each story milestone from a retail save and drives it to the next with pad input only, from the opening to the credits crawl; every segment of it clears.</p>
+  <p>What is still rough:</p>
+  <ul class="bullets">
+    <li><strong>It is not frame-identical to retail.</strong> The <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-compare.md" target="_blank" rel="noopener">retail comparison corpus</a> scores the engine against every catalogued save state and ranks the gaps worst first. Game state - scene, position, party, flags, bag, enemy roster - matches almost everywhere. The rendered frame is where the distance is: field, world-map and menu frames sit close to retail&rsquo;s, and the frame in the middle of a battle is the furthest off.</li>
+    <li><strong>The ladder proves the route, not every room.</strong> It drives the critical path. Optional content, rare script branches and long unscripted play are covered by a seeded <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/soak-harness.md" target="_blank" rel="noopener">soak harness</a> that hunts panics, softlocks and stalled scripts.</li>
+    <li><strong>Bugs happen.</strong> Expect the occasional visual or timing glitch outside the measured states. A report naming the scene and what you did to get there is the fastest way to a fix.</li>
+    <li><strong>NA disc first.</strong> The port targets the USA release; the Japanese and PAL builds differ in the executable and are not its target yet.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="crate-layout">
   <h2>How the crates stack</h2>
   <p>The port is a stack of small crates with one rule running through it: the lower a crate sits, the fewer things it may link. Format parsers know nothing about engines; the VMs know nothing about GPUs or speakers; the simulation draws nothing; and only the hosts at the top touch a window, a browser or an audio device. That is what lets the browser run the same engine as the native window - it simply links a different top row.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 670" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Kernels with no World, upper row: engine-ui (draw lists, no wgpu), engine-menus (menu front end), engine-field (field kernels), engine-effects (effect kernels), the last three linked by engine-core. Lower row: render-kernels (shared GTE and raster kernels, under engine-ui), engine-system (pad, streaming, sound state, fades), engine-minigames (minigame rules) and engine-battle (battle kernels). VMs: engine-vm (the VMs) over engine-battle-vm (the battle action state machine and formulas). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
+    <svg viewBox="0 0 880 670" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Crate dependency layers. Hosts: engine-shell (native window and the legaia-engine binary), web-viewer (browser play page), asset-viewer. Shared host glue: parity (oracles, native only), engine-screens (shop, prize, inn and level-up screens), engine-session (BootSession and the BGM director). Engine: engine-render (wgpu), engine-core (World and the game rules), engine-audio (SPU and sequencer). Kernels with no World, upper row: engine-ui (draw lists, no wgpu), engine-menus (menu front end, over engine-dialog), engine-field (field kernels), engine-effects (effect kernels), the last three linked by engine-core. Lower row: render-kernels (shared GTE and raster kernels, under engine-ui), engine-system (pad, streaming, sound state, fades), engine-minigames (minigame rules, over engine-fishing) and engine-battle (battle kernels). VMs: engine-vm (the VMs) over engine-battle-vm (the battle action state machine and formulas). Bottom: the format parser crates. The browser host links engine-session, engine-screens and engine-ui but never engine-render.">
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="868" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
@@ -51,7 +63,7 @@
       <rect class="dg-node" x="20" y="330" width="180" height="56" rx="5"/>
       <text class="dg-label" x="110" y="354">engine-ui</text><text class="dg-sub" x="110" y="372">draw lists, no wgpu</text>
       <rect class="dg-node" x="230" y="330" width="180" height="56" rx="5"/>
-      <text class="dg-label" x="320" y="354">engine-menus</text><text class="dg-sub" x="320" y="372">menu front end</text>
+      <text class="dg-label" x="320" y="354">engine-menus</text><text class="dg-sub" x="320" y="372">menus (+ engine-dialog)</text>
       <rect class="dg-node" x="440" y="330" width="190" height="56" rx="5"/>
       <text class="dg-label" x="535" y="354">engine-field</text><text class="dg-sub" x="535" y="372">field kernels</text>
       <rect class="dg-node" x="650" y="330" width="190" height="56" rx="5"/>
@@ -62,7 +74,7 @@
       <rect class="dg-node" x="230" y="430" width="180" height="56" rx="5"/>
       <text class="dg-label" x="320" y="454">engine-system</text><text class="dg-sub" x="320" y="472">pad, streams, fades</text>
       <rect class="dg-node" x="440" y="430" width="190" height="56" rx="5"/>
-      <text class="dg-label" x="535" y="454">engine-minigames</text><text class="dg-sub" x="535" y="472">minigame rules</text>
+      <text class="dg-label" x="535" y="454">engine-minigames</text><text class="dg-sub" x="535" y="472">rules (+ engine-fishing)</text>
       <rect class="dg-node" x="650" y="430" width="190" height="56" rx="5"/>
       <text class="dg-label" x="745" y="454">engine-battle</text><text class="dg-sub" x="745" y="472">battle kernels</text>
 
@@ -119,11 +131,13 @@
       <tr><td><code>engine-vm</code></td><td>The field / event, move, motion and effect VMs, the window-widget VM and the world-map entity state machine. Each talks to the game through a <code>Host</code> trait, so the crate has no GPU or audio dependency</td></tr>
       <tr><td><code>engine-battle</code></td><td>The battle kernels that never touch <code>World</code>: monster AI script, death spoils, AP gauge, stat aggregator, spell / monster / move-power catalogs, encounters, level-up, Seru learning. <code>engine-core</code> re-exports each module at its old path and keeps the stateful battle loop</td></tr>
       <tr><td><code>engine-core</code></td><td>The simulation: <code>World</code> (which implements every VM&rsquo;s <code>Host</code>), the scene host and scene resources, the mode seat, menus, shop / inn / level-up sessions, saves, the minigames&rsquo; <code>World</code> glue. Draws nothing</td></tr>
-      <tr><td><code>engine-minigames</code></td><td>The minigame rules engines that need no <code>World</code> - slot machine, Baka Fighter, dance, fishing, the prize exchange, the Muscle Dome contest ladder. <code>engine-core</code> re-exports each at its old path</td></tr>
+      <tr><td><code>engine-minigames</code></td><td>The minigame rules engines that need no <code>World</code> - slot machine, Baka Fighter, dance, the prize exchange, the Muscle Dome contest ladder - and, re-exported from the crate below it, fishing. <code>engine-core</code> re-exports each at its old path</td></tr>
+      <tr><td><code>engine-fishing</code></td><td>The fishing rules engine below <code>engine-minigames</code>: the pond session all three hosts run, the rod / lure / line actors, the venue chrome, the hub screen and the venue floor grid</td></tr>
       <tr><td><code>engine-minigame-scenes</code></td><td>The two minigame 3D surfaces that load through a PROT reader rather than a loaded scene: the Baka Fighter duel (arena camera, fighter clips, afterimage ghosts) and the Muscle Dome arena (shell, ground grid, the lead and the ladder&rsquo;s monster on the battle seats). <code>engine-core</code> re-exports both at their old paths</td></tr>
       <tr><td><code>engine-effects</code></td><td>The effect kernels that need no <code>World</code>: the action effect scripts, the ribbon and render-mode-4 emitters, the summon scene-graph driver, the screen effects and object effects. <code>engine-core</code> re-exports each at its old path</td></tr>
       <tr><td><code>engine-system</code></td><td>The <code>World</code>-free runtime system below <code>engine-core</code>: pad input and the retail pad pump, the stream chunk installer, MDEC DMA sync, sound state, fades, mode-entry initialisers, the RAM-cell map. <code>engine-core</code> re-exports each module at its old path</td></tr>
-      <tr><td><code>engine-menus</code></td><td>The <code>World</code>-free menu front end: item and equipment catalogs, the inventory-use and spell-menu sessions, the window-widget host, title and boot screens, the memory-card flow, the dialog pager, inn, shop, save, status and pause screens</td></tr>
+      <tr><td><code>engine-menus</code></td><td>The <code>World</code>-free menu front end: item and equipment catalogs, the inventory-use and spell-menu sessions, the window-widget host, title and boot screens, the memory-card flow, inn, shop, save, status and pause screens. Re-exports <code>engine-dialog</code> at the old paths</td></tr>
+      <tr><td><code>engine-dialog</code></td><td>The dialog layer below <code>engine-menus</code>: the dialog pager (panel, row window, typewriter pacing, the picker slide), the text balloon, and the inline-dialogue and cutscene-timeline context state</td></tr>
       <tr><td><code>engine-field</code></td><td>The <code>World</code>-free field kernels: actor programs, the follow camera&rsquo;s parameters and eases, player clip playback, the op-<code>0x49</code> submode, the field event queue, CLUT effects, the world-map controller, the MAN field-script decoders, the mode seat and field camera</td></tr>
       <tr><td><code>engine-ui</code></td><td>Renderer-agnostic draw lists (<code>TextDraw</code> / <code>SpriteDraw</code>) and the shared render kernels - the wgpu-free leaf both hosts can link</td></tr>
       <tr><td><code>render-kernels</code></td><td>The wgpu-free render kernels both hosts share - GTE math, the screen-primitive builder and its CPU rasteriser, VRAM capture, the effect emitters, battle numerals, enhanced scene lighting. <code>engine-ui</code> re-exports it</td></tr>

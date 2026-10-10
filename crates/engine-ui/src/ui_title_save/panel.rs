@@ -336,16 +336,47 @@ pub fn dialog_option_hand_sprite(
     }
 }
 
-/// The dialog **page-advance hand**: retail draws a hand sprite
-/// (`FUN_8002B994` kind 1) at `(0x10A, box_y + lines*0xF - 0x13)` -
-/// the lower-right rim of the standard 244-wide box - while the pager
-/// waits for confirm on a full page (state `0x19`). With the standard
-/// centre rect `(x, y, 0xF4, lines*0xF - 3)`, `0x10A = x + w - 0x10`
-/// and the y lands `0x10` above the centre-rect bottom; the engine
-/// keeps that relative anchor so non-standard widths stay attached.
-/// `dst_stage` is the same centre rect the chrome pass receives.
-/// Tinted gold: the retail kind-1 sprite decodes with the gold ramp
-/// CLUT rather than the silver cursor row.
+/// The dialogue **page mark**: the two-frame "press" icon the pager draws
+/// (`FUN_8002B994` kind 1, mode 1) at `(0x10A, box_y + lines*0xF - 0x13)` -
+/// the lower-right rim of the standard 244-wide box - while a page waits for
+/// confirm (state `0x19`) and no automatic press is counting down. `icon` is
+/// the atlas cell of the frame to draw
+/// (`legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON[frame]`,
+/// the frame from `OwnedDialogPanel::advance_icon`); the strip flips every
+/// sixteen vsyncs. Drawn untinted: the primitive's colour word is the
+/// neutral `0x808080` and the record's CLUT is row 7, the hand's.
+///
+/// With the standard centre rect `(x, y, 0xF4, lines*0xF - 3)`,
+/// `0x10A = x + w - 0x10` and the y lands `0x10` above the centre-rect
+/// bottom; the anchor is kept relative so a non-standard width stays
+/// attached. `dst_stage` is the centre rect the chrome pass receives.
+///
+/// REF: FUN_8002B994, FUN_801D84D0
+pub fn dialog_page_mark_sprite(
+    icon: (u32, u32, u32, u32),
+    dst_stage: (i32, i32, i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> SpriteDraw {
+    let scale = stage_scale.max(1) as i32;
+    let (px, py, pw, ph) = dst_stage;
+    let (_, _, w, h) = icon;
+    SpriteDraw {
+        dst: (
+            stage_origin.0 + (px + pw - 0x10) * scale,
+            stage_origin.1 + (py + ph - 0x10) * scale,
+            w * stage_scale,
+            h * stage_scale,
+        ),
+        src: icon,
+        color: [1.0, 1.0, 1.0, 1.0],
+    }
+}
+
+/// The page-advance mark drawn as the pointing hand's cell, tinted gold - a
+/// stand-in kept for the callers that have not moved to
+/// [`dialog_page_mark_sprite`] (the sparring tutorial box). Retail draws
+/// the kind-1 strip there too. Same anchor as [`dialog_page_mark_sprite`].
 pub fn dialog_advance_hand_sprite(
     rects: &SaveMenuAtlasRects,
     dst_stage: (i32, i32, i32, i32),

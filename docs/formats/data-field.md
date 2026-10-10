@@ -1,25 +1,39 @@
 # DATA_FIELD streaming format
 
-A stream of typed chunks consumed by `FUN_8002541C` on its `0x14` (DATA_FIELD) branch. The walker passes every chunk through the [asset-type dispatcher](asset-type.md) with `copy_only=1`, so chunks are always uncompressed.
+A DATA_FIELD stream is a run of typed chunks: a 4-byte header naming the chunk's asset type and length, the raw bytes, then the next header, until a header with a zero length ends the run. It is the uncompressed sibling of the [asset descriptor table](asset-descriptor.md) - same type bytes, same dispatcher, but the assets are stored inline and in order instead of behind an offset table. The battle-form party meshes and atlases, a set of scene bundles and the boot `init_data` entry are all stored this way.
 
-Implementation: `crates/asset/src/lib.rs::parse_streaming`.
+Retail walks the stream in `FUN_8002541C`, on its `0x14` (DATA_FIELD) branch, and passes every chunk through the [asset-type dispatcher](asset-type.md) with `copy_only = 1`, so chunks are always uncompressed. Implementation: `legaia_asset::parse_streaming` in [`crates/asset/src/lib.rs`](../../crates/asset/src/lib.rs).
 
-> **Scope note.** This doc covers the *typed-chunk streaming* shape that `FUN_8002541C` consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" Per-scene field bundles use multiple shapes; the typed map below identifies which shapes show up where.
+This page covers the typed-chunk shape only. What a whole per-scene CDNAME block carries is a wider question, summarised under [Per-scene field bundles](#per-scene-field-bundles).
 
 ## Layout
 
-```
-[u32 type_size] [size_bytes of raw data]
-[u32 type_size] [size_bytes of raw data]
-...
-[u32 terminator]    // type_size with low 24 bits all zero
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u32 | `type_size` | `(type_byte << 24) \| (size_bytes & 0x00FFFFFF)` | Confirmed |
+| `+0x04` | `size_bytes` | data | The asset's raw bytes; `type_byte` selects the handler from the [asset type table](asset-type.md) | Confirmed |
+| next | u32 | `type_size` | Next chunk header, at `pos + 4 + (size & ~3)` | Confirmed |
+| end | u32 | terminator | Any header whose low 24 bits are zero | Confirmed |
+
+```mermaid
+flowchart LR
+    H["read u32 header at pos"] --> Z{"size == 0?"}
+    Z -->|yes| E["end of stream<br/>(trailer may follow)"]
+    Z -->|no| D["dispatch(data, type_size, copy_only = 1)"]
+    D --> N["pos += 4 + (size AND NOT 3)"]
+    N --> H
 ```
 
-Where:
-- `type_size = (type_byte << 24) | (size_bytes & 0x00FFFFFF)`.
-- `type_byte` matches the [asset type table](asset-type.md).
-- The next chunk header starts at `current_pos + 4 + (size & ~3)` - i.e., header + size truncated to a 4-byte boundary. Sizes are always 4-aligned in practice.
-- Terminator: any header `u32` whose low 24 bits are zero.
+```
++-----------+----------------+-----------+----------------+-----+-----------+ - - - - -
+| type|size |  size bytes    | type|size |  size bytes    | ... | xx|000000 |  trailer
++-----------+----------------+-----------+----------------+-----+-----------+ - - - - -
+  chunk 0 header               chunk 1 header                     terminator
+```
+
+The step truncates the size to a 4-byte boundary. Sizes are 4-aligned in practice, so the truncation never bites on retail data.
+
+A second walker, `FUN_8001FE70`, reads the same chunk headers but ends on the first chunk whose **type byte is `0x02`** rather than on a zero size. It walks the battle-init and per-scene sound-pack streams ([`sound-driver.md`](sound-driver.md)); `parse_streaming_with(.., StreamTerminator::TypeTwo)` is its port.
 
 ## What's in the wild
 
@@ -42,7 +56,7 @@ The chunk layouts are **single assets** in the `other5` family (one TIM, one TMD
 
 ## Trailer data
 
-Some entries contain bytes past the streaming terminator. `asset extract` preserves these as `_trailer.bin` next to the extracted chunks. The function that consumes the trailer hasn't been located; tracing the caller of `FUN_8002541C` in the field/town overlay is the next move if a specific entry's trailer looks structured.
+Some entries contain bytes past the streaming terminator. `asset extract` preserves these as `_trailer.bin` next to the extracted chunks. No consumer of the trailer bytes is identified (Unknown). `FUN_8002541C` stops at the terminator and does not read them.
 
 ## Related shapes
 
@@ -50,11 +64,11 @@ Some entries contain bytes past the streaming terminator. `asset extract` preser
 - The [scene-VAB-prefixed streaming](scene-bundles.md) shape uses the same chunk0-header trick but with VAB content.
 - [Pack format](pack.md) lives *inside* TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.
 - One entry (extraction `0892`) matches the `data_field_truncated` detector (`crates/asset/src/data_field_truncated.rs`) - three clean leading chunks and an over-large fourth header. It is **not** a streaming carrier: the runtime reads it as an [`asset::pack`](pack.md), and the "chunks" are that pack's own header words. See [below](#entry-0892-card_data-is-a-pack-not-a-truncated-stream).
-- Three scene entries commonly cited in this class - `0157_rikuroa`, `0228_station`, `0373_taiku` - are **not** truncated. Each is one of the four-chunk `MAN / MES / MOVE / VDF` bundles above, and each is a case where the superseded `toc[p+5] - toc[p+3] + 4` span fell *short* of the real entry (`0157` declares 163840 bytes against a real 186368; the other two are short by 69632 and 8192), so the last chunk overran a buffer that ended early. Against their own sectors all three terminate cleanly. See [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).
+- `0157_rikuroa`, `0228_station` and `0373_taiku` are **not** truncated streams. Each is one of the four-chunk `MAN / MES / MOVE / VDF` bundles above and terminates cleanly inside its own sectors. They only look truncated through the `toc[p+5] - toc[p+3] + 4` span, which falls *short* of the real entry for all three (`0157`: 163840 bytes against a real 186368; the other two short by 69632 and 8192). See [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).
 
 ## Entry 0892 (`card_data`) is a pack, not a truncated stream
 
-Extraction entry `0892` is the only retail hit for the `data_field_truncated` class, and the hit is an artefact. The entry's first three words are an [`asset::pack`](pack.md) header - `count = 2`, `word_offsets = [3, 0x208B]` - and the streaming reader takes those three words for chunk headers of type `0x00` and sizes 2, 3 and 8331, which walks it to `+0x2094`, inside the first member's pixel data, where the next word declares a body far past the entry. Nothing in the entry is a `[u32 type_size]` chunk. The companion "12 MB LZS container" figure on [`cdname.md`](cdname.md#consequential-relabelings) came from the superseded declared span (`toc[p+5] - toc[p+3] + 4` = 5977 sectors); the entry is 33 sectors, 67,584 bytes.
+Extraction entry `0892` is the only retail hit for the `data_field_truncated` class, and the hit is an artefact. The entry's first three words are an [`asset::pack`](pack.md) header - `count = 2`, `word_offsets = [3, 0x208B]` - and the streaming reader takes those three words for chunk headers of type `0x00` and sizes 2, 3 and 8331, which walks it to `+0x2094`, inside the first member's pixel data, where the next word declares a body far past the entry. Nothing in the entry is a `[u32 type_size]` chunk. The entry is 33 sectors, 67,584 bytes; the `toc[p+5] - toc[p+3] + 4` expression gives 5977 sectors for it, which is where a "12 MB" reading comes from.
 
 ### What the runtime does
 
@@ -94,51 +108,22 @@ Per plane the glyph grid is a 12-pixel pitch with an 11x11 ink box: columns and 
 
 ### Which routine samples the page
 
-**Nothing does** - the page is loaded, parked and never drawn in this build.
-The GPU-FIFO watch this section asked for was run at card-screen entry (mode
-`0x16 -> 0x17`) and no primitive samples it
-([settled](../reference/re-settled-threads.md#text--fonts--dialog),
-body in [`save-screen.md`](../subsystems/save-screen.md#the-card-screens-kanji-page-is-never-sampled)).
-The narrowing that got there is kept below, because it is what makes the
-negative worth trusting.
+**Nothing does.** The page is loaded, parked and never drawn in this build. A GPU-FIFO watch at card-screen entry (mode `0x16 -> 0x17`) sees no primitive sample it ([settled](../reference/re-settled-threads.md#text--fonts--dialog), body in [`save-screen.md`](../subsystems/save-screen.md#the-card-screens-kanji-page-is-never-sampled)). The static evidence agrees.
 
-A sampler would have to carry two constants,
-and both are now pinned by the members' own headers: the pages are 4bpp at
-`(320, 256)` and `(384, 256)`, so their **tpage ids are `0x15` and `0x16`**
-(`(y >> 8) << 4 | x >> 6`, texture mode `0`), and a glyph draw has to pick its
-bit-plane by CLUT row, so its **CBA is `0x76C0 + plane * 0x40`** for
-`plane` `0..7` (rows `475..482`).
+A sampler would have to carry two constants, both pinned by the members' own headers. The pages are 4bpp at `(320, 256)` and `(384, 256)`, so their **tpage ids are `0x15` and `0x16`** (`(y >> 8) << 4 | x >> 6`, texture mode `0`). A glyph draw has to pick its bit-plane by CLUT row, so its **CBA is `0x76C0 + plane * 0x40`** for `plane` `0..7` (rows `475..482`).
 
-Neither constant appears anywhere on the disc. A byte-level sweep of
-`SCUS_942.54` and all 83 statically based overlay images, in **both** forms - an
-`addi` / `addiu` / `ori` / `lui` immediate, and a bare halfword at any even
-offset, which is what a sprite-descriptor table entry would be - finds:
+Neither constant is used anywhere on the disc. A byte-level sweep of `SCUS_942.54` and all 83 statically based overlay images, in **both** forms - an `addi` / `addiu` / `ori` / `lui` immediate, and a bare halfword at any even offset (what a sprite-descriptor table entry would be) - finds:
 
-- **no** materialisation of any of the eight CLUT ids `0x76C0`, `0x7700`, …,
-  `0x7880` outside incidental instruction halves (the `0x7700` / `0x77C0` hits
-  are `lui` upper halves and battle-overlay packet words, a different screen's
-  use of the same VRAM rows);
-- **two** `0x1DB` (`475`) immediates disc-wide, and both are already accounted
-  for: `0x8002586C` in `FUN_8002574C`'s third arm and `0x801DDCF4` in the menu
-  overlay's park - the two `MoveImage` sites above. Every other `0x1DB` in any
-  image is a data halfword in an unrelated ramp table (`0x800702E0..`, a
-  monotonic `+1`-per-six-entries curve) or the upper half of an instruction.
+- **no** materialisation of any of the eight CLUT ids `0x76C0`, `0x7700`, …, `0x7880` outside incidental instruction halves (the `0x7700` / `0x77C0` hits are `lui` upper halves and battle-overlay packet words, a different screen's use of the same VRAM rows);
+- **two** `0x1DB` (`475`) immediates disc-wide, both accounted for: `0x8002586C` in `FUN_8002574C`'s third arm and `0x801DDCF4` in the menu overlay's park - the two `MoveImage` sites above. Every other `0x1DB` in any image is a data halfword in an unrelated ramp table (`0x800702E0..`, a monotonic `+1`-per-six-entries curve) or the upper half of an instruction.
 
-The uploader does not leave a handle behind either: `FUN_800198E0` builds its
-rect straight from the TIM header and calls `LoadImage`; it records no CBA or
-tpage anywhere for a later draw to read
-(`see ghidra/scripts/funcs/800198e0.txt`).
+The uploader leaves no handle behind either: `FUN_800198E0` builds its rect straight from the TIM header and calls `LoadImage`, recording no CBA or tpage for a later draw to read (`see ghidra/scripts/funcs/800198e0.txt`).
 
-So a consumer would have had to compose the CBA at runtime from a value that is
-itself not a constant, and the capture found none doing so. The surrounding code
-already made that plausible: the live path parks the page into the world-map
-texture region `(704, 0)` on the way out, and the save/load screen's own text is
-pinned to the [dialog font](dialog-font.md) page at `(896, 0)`, not to this one
-([`save-screen.md`](../subsystems/save-screen.md)).
+The surrounding code fits: the live path parks the page into the world-map texture region `(704, 0)` on the way out, and the save/load screen's own text is pinned to the [dialog font](dialog-font.md) page at `(896, 0)` ([`save-screen.md`](../subsystems/save-screen.md)).
 
-## Per-scene field bundles - what's still open
+## Per-scene field bundles
 
-The CDNAME block for a typical field/town scene (e.g. `town01`, `bubu1`) carries 8–12 PROT entries. Categorize identifies several known shapes per block:
+<a id="per-scene-field-bundles---whats-still-open"></a>The CDNAME block for a typical field/town scene (e.g. `town01`, `bubu1`) carries 8–12 PROT entries. `categorize` identifies several known shapes per block:
 
 | Common slot | Class | Typical content |
 |---|---|---|
@@ -150,25 +135,17 @@ The CDNAME block for a typical field/town scene (e.g. `town01`, `bubu1`) carries
 | 5..7 | `PochiFiller` | reserved-but-unused dev fillers |
 | 6..8 | `SceneVabStream` (rare; only on scenes with custom audio) | per-scene VAB + SEQ |
 
-What's **NOT** modelled yet:
-- Cross-entry pointers (NPC references that point into other PROT entries - the asset chain in [asset-loader.md](../subsystems/asset-loader.md) is best-effort).
-- Which function consumes the post-terminator trailer bytes (see [Trailer data](#trailer-data)).
+Two neighbouring shapes are fully accounted for on their own pages:
 
-Two entries on this list are now closed, and both closed by shrinking rather than by new
-machinery:
+- **The scene texture pack.** A file opening with `0x01059B84` is a `(TIM_LIST << 24) | size` chunk header followed by the `[u32 count][u32 word_offsets]` [pack](pack.md) table of one scene's TIMs. 23 blocks carry such a file, one apiece. It is not a separate "field-pack" format; see [field-pack.md](field-pack.md).
+- **The per-scene asset table.** The walk is positional (`FUN_80020224`, `count` at `+0x00`, 8-byte descriptors from `+0x08`), and the bundle reaches the walker's base by a whole-sector block copy of the entry. `+0x04` is the sum of the descriptor sizes. See [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) and [asset-descriptor.md](asset-descriptor.md).
 
-- **The `field-pack` "slot semantics"** were the pack format on this page. The
-  `0x01059B84` "magic" is a `(TIM_LIST << 24) | size` chunk header, the "97-entry schema"
-  is that chunk's `[u32 count][u32 word_offsets]` [pack](pack.md) table, and the "124
-  entries" figure came from the superseded over-reading entry size - 23 blocks carry such
-  a file, one apiece. See [field-pack.md](field-pack.md).
-- **The per-scene asset-table indirection** needs no capture: the walk is positional
-  (`FUN_80020224`, `count` at `+0x00`, 8-byte descriptors from `+0x08`) and the bundle
-  reaches the walker's base by a whole-sector block copy of the entry. `+0x04` is the sum
-  of the descriptor sizes. `SceneScriptedAssetTable` fires on nothing - it was the same
-  over-read. See [scene-bundles.md](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle).
+Still open:
 
-The categorize sweep covers the bulk of bytes - every PROT entry classifies to *something*, and ~95% of bytes fall into known classes. Refining the residual classes is the work tracked under "Reverse-engineer DATA_FIELD per-scene layout" in [`docs/subsystems/engine.md`](../subsystems/engine.md).
+- Cross-entry pointers - NPC references that point into other PROT entries. The asset chain in [asset-loader.md](../subsystems/asset-loader.md) is best-effort here.
+- The consumer of the post-terminator trailer bytes (see [Trailer data](#trailer-data)).
+
+Every PROT entry classifies to *something* under `categorize`, and about 95% of bytes fall into known classes; [`tooling/byte-accounting.md`](../tooling/byte-accounting.md) tracks the residue per entry.
 
 ## See also
 

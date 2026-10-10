@@ -17,7 +17,7 @@
 //!    rewrites the glyph bytes in place. Editing only this (whether by moving the
 //!    `+8` pointer or overwriting the bytes) changes the menu but not the trigger.
 //!
-//! [`crate::apply::randomize_arts`] applies both with the same per-art combo.
+//! `legaia_patcher::apply::randomize_arts` applies both with the same per-art combo.
 //!
 //! ## Why a global content permutation is correct
 //!

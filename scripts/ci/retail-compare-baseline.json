@@ -90,7 +90,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "barra_summon_mid_cast": {
       "battle_party": 1.0,
@@ -112,7 +113,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
-      "image": 0.701,
+      "image": 0.718,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -125,7 +126,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
-      "image": 0.579,
+      "image": 0.62,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -138,7 +139,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
-      "image": 0.578,
+      "image": 0.608,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -151,7 +152,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.995,
-      "image": 0.921,
+      "image": 0.977,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -164,7 +165,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.926,
-      "image": 0.702,
+      "image": 0.768,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -177,7 +178,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.926,
-      "image": 0.705,
+      "image": 0.744,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -190,7 +191,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.926,
-      "image": 0.575,
+      "image": 0.59,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -229,12 +230,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.946,
+      "image": 0.993,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "casino_ticket_counter_dialog": {
       "bgm": 1.0,
@@ -243,14 +245,30 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.938,
+      "image": 0.976,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "cave01_attached_light": {
+      "bgm": 1.0,
+      "camera": 1.0,
+      "facing": 1.0,
+      "flags": 1.0,
+      "fog_gate": 1.0,
+      "footing": 1.0,
+      "image": 1.0,
+      "inventory": 1.0,
+      "mode": 1.0,
+      "party": 1.0,
+      "position": 1.0,
+      "scene": 1.0,
+      "view_window": 1.0
+    },
+    "chapter2_garmel_pre_songi": {
       "bgm": 1.0,
       "camera": 1.0,
       "facing": 1.0,
@@ -262,21 +280,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
-    },
-    "chapter2_garmel_pre_songi": {
-      "bgm": 1.0,
-      "camera": 1.0,
-      "facing": 1.0,
-      "flags": 1.0,
-      "fog_gate": 1.0,
-      "footing": 1.0,
-      "image": 0.997,
-      "inventory": 1.0,
-      "mode": 1.0,
-      "party": 1.0,
-      "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "chapter2_garmel_pre_zeto": {
       "bgm": 1.0,
@@ -285,12 +290,13 @@
       "flags": 0.992,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.998,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "che_delilas_megaton_press_mid_cast": {
       "battle_party": 1.0,
@@ -316,7 +322,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "chitei2_field_card_boot": {
       "bgm": 1.0,
@@ -330,7 +337,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "conc_field_card_boot": {
       "bgm": 1.0,
@@ -344,7 +352,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "cort_evil_seru_magic_mid_cast": {
       "battle_party": 1.0,
@@ -369,7 +378,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 0.0
     },
     "cort_evolved_battle_first_menu": {
       "battle_party": 1.0,
@@ -403,12 +413,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.846,
+      "image": 0.9,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "cort_evolved_ultra_charge_mid_cast": {
       "battle_party": 1.0,
@@ -573,12 +584,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.992,
+      "image": 0.994,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "doman_arrival_from_korb2": {
       "bgm": 1.0,
@@ -590,7 +602,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "doman_field_card_boot": {
       "bgm": 1.0,
@@ -604,7 +617,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "door_warp_rim_elm_to_mei_house": {
       "bgm": 1.0,
@@ -613,12 +627,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.958,
+      "image": 0.971,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "door_warp_town01_to_map01": {
       "bgm": 1.0,
@@ -632,7 +647,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "drake_castle_to_worldmap": {
       "bgm": 1.0,
@@ -646,7 +662,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "ending_banner_mask_closed": {
       "bgm": 1.0,
@@ -659,7 +676,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "ending_panel_corner": {
       "bgm": 1.0,
@@ -668,12 +686,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.922,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "ending_vignette_biron": {
       "bgm": 1.0,
@@ -687,7 +706,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "ending_vignette_fullscreen": {
       "bgm": 1.0,
@@ -701,7 +721,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "ending_vignette_rimelm_walkaway": {
       "bgm": 1.0,
@@ -723,7 +744,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.887,
+      "image": 0.973,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -819,7 +840,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "flute_lippian_midcast": {
       "battle_party": 1.0,
@@ -1037,7 +1059,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "keikoku_chest_pre": {
       "bgm": 1.0,
@@ -1051,7 +1074,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "keikoku_chest_preload": {
       "bgm": 1.0,
@@ -1078,7 +1102,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "kor5_post_436_organic": {
       "bgm": 1.0,
@@ -1092,7 +1117,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "kor5_post_43a_checkpoint": {
       "bgm": 1.0,
@@ -1106,7 +1132,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "korb2_field_card_boot": {
       "bgm": 1.0,
@@ -1120,7 +1147,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "koru_strip_forced": {
       "battle_party": 1.0,
@@ -1129,7 +1157,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.997,
-      "image": 0.743,
+      "image": 0.821,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1154,12 +1182,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.968,
+      "image": 0.982,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "mei_house_inside": {
       "bgm": 1.0,
@@ -1173,7 +1202,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "mei_house_inside_pcsx": {
       "bgm": 1.0,
@@ -1187,7 +1217,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "menu_equipment_field": {
       "bgm": 1.0,
@@ -1292,7 +1323,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "minigame_dance_pcsx": {
       "bgm": 1.0,
@@ -1301,12 +1333,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.704,
+      "image": 0.698,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "minigame_fishing_pcsx": {
       "bgm": 1.0,
@@ -1331,7 +1364,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "minigame_slot_machine_pcsx": {
       "bgm": 1.0,
@@ -1340,12 +1374,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.991,
+      "image": 0.99,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "mule_summon_mid_cast": {
       "battle_party": 1.0,
@@ -1384,7 +1419,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "new_game_cutscene_intro_a": {
       "bgm": 1.0,
@@ -1398,7 +1434,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "nighto_summon_mid_cast": {
       "battle_party": 1.0,
@@ -1420,12 +1457,13 @@
       "flags": 0.997,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.959,
+      "image": 0.961,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "nivora_duel_che_vs_gala_start": {
       "battle_party": 1.0,
@@ -1434,7 +1472,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.883,
+      "image": 0.967,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1447,7 +1485,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.998,
-      "image": 0.544,
+      "image": 0.563,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1460,7 +1498,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.792,
+      "image": 0.888,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1473,7 +1511,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.699,
+      "image": 0.877,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1486,7 +1524,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.878,
+      "image": 0.956,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1525,7 +1563,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.796,
+      "image": 0.817,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1556,7 +1594,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "orb_summon_mid_cast": {
       "battle_party": 1.0,
@@ -1681,7 +1720,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.91,
+      "image": 0.993,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1694,7 +1733,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.221,
+      "image": 0.238,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1707,7 +1746,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.577,
+      "image": 0.571,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1738,7 +1777,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "retock_inn_stay_prompt": {
       "bgm": 1.0,
@@ -1747,12 +1787,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.992,
+      "image": 0.993,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "retock_innkeeper_talk_open": {
       "bgm": 1.0,
@@ -1766,7 +1807,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "retona_field_card_boot": {
       "bgm": 1.0,
@@ -1780,7 +1822,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rikuroa_post_caruban": {
       "bgm": 1.0,
@@ -1789,12 +1832,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.982,
+      "image": 0.981,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rikuroa_post_genesis_tree": {
       "bgm": 1.0,
@@ -1808,7 +1852,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rikuroa_pre_caruban": {
       "bgm": 1.0,
@@ -1822,7 +1867,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rim_elm_gimard_seru_capture_after": {
       "battle_party": 1.0,
@@ -1831,7 +1877,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.933,
-      "image": 0.742,
+      "image": 0.737,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1844,7 +1890,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.933,
-      "image": 0.896,
+      "image": 0.882,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1857,7 +1903,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.662,
+      "image": 0.657,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -1875,7 +1921,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rim_elm_zoom_intro": {
       "bgm": 1.0,
@@ -1889,7 +1936,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rimelm_npc_press_tetsu": {
       "bgm": 1.0,
@@ -1903,7 +1951,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rimelm_wall_press_down": {
       "bgm": 1.0,
@@ -1912,12 +1961,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.998,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rimelm_wall_press_left": {
       "bgm": 1.0,
@@ -1926,12 +1976,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.978,
+      "image": 0.979,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "rugi_field_card_boot": {
       "bgm": 1.0,
@@ -1945,7 +1996,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "s1_newgame_field": {
       "bgm": 1.0,
@@ -1958,7 +2010,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "s2_rimelm_town01": {
       "bgm": 1.0,
@@ -1970,7 +2023,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "s4_rimelm_door_transition": {
       "bgm": 1.0,
@@ -1984,7 +2038,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "s5_tetsu_battle": {
       "battle_party": 1.0,
@@ -1993,7 +2048,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.871,
+      "image": 0.965,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2005,7 +2060,7 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.924,
+      "image": 0.925,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
@@ -2019,7 +2074,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 0.929,
-      "image": 0.838,
+      "image": 0.839,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2045,7 +2100,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.904,
+      "image": 0.911,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2075,7 +2130,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "son_arrival_from_doman": {
       "bgm": 1.0,
@@ -2087,7 +2143,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "super_queue_replace_gala_back_punch": {
       "battle_party": 1.0,
@@ -2153,7 +2210,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "terra_party_battle": {
       "battle_party": 1.0,
@@ -2205,7 +2263,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "town01_npc16_dialogue_first_page": {
       "bgm": 1.0,
@@ -2214,12 +2273,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.938,
+      "image": 0.939,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "town01_tetsu_topic_prompt": {
       "bgm": 1.0,
@@ -2228,12 +2288,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.998,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "tunnelb_field_card_boot": {
       "bgm": 1.0,
@@ -2247,7 +2308,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "uru_field_run": {
       "bgm": 1.0,
@@ -2261,7 +2323,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "v0_1_battle_command_menu": {
       "battle_party": 1.0,
@@ -2270,7 +2333,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.748,
+      "image": 0.858,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2283,7 +2346,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.927,
+      "image": 0.954,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2308,7 +2371,7 @@
       "enemies": 1.0,
       "enemy_hp": 1.0,
       "flags": 1.0,
-      "image": 0.849,
+      "image": 0.935,
       "inventory": 1.0,
       "mode": 1.0,
       "phase": 1.0,
@@ -2321,12 +2384,13 @@
       "flags": 0.944,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.998,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "v0_1_pre_battle_tetsu": {
       "bgm": 1.0,
@@ -2340,7 +2404,8 @@
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "v0_1_tetsu_dialogue_accept": {
       "bgm": 1.0,
@@ -2349,12 +2414,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.998,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "vahn_walks_out": {
       "bgm": 1.0,
@@ -2363,12 +2429,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.96,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "vell_fog_field": {
       "bgm": 1.0,
@@ -2377,12 +2444,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.981,
+      "image": 1.0,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "vera_summon_mid_cast": {
       "battle_party": 1.0,
@@ -2417,12 +2485,13 @@
       "flags": 1.0,
       "fog_gate": 1.0,
       "footing": 1.0,
-      "image": 0.967,
+      "image": 0.996,
       "inventory": 1.0,
       "mode": 1.0,
       "party": 1.0,
       "position": 1.0,
-      "scene": 1.0
+      "scene": 1.0,
+      "view_window": 1.0
     },
     "zenoir_summon_mid_cast": {
       "battle_party": 1.0,

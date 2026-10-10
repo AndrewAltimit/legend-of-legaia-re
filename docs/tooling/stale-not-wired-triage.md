@@ -1,16 +1,32 @@
 # Stale `NOT WIRED` triage
 
 [`port-catalog.py --live-audit`](port-catalog.md) opens with a section titled
-*Tagged `NOT WIRED` but analysed live*. Every row in it is a defect, and the two
-possible defects point opposite ways: either the port was wired and nobody
-removed the disclosure, or the reachability pass invented the edge that made it
-read live. The first inflates the wiring worklist; the second deflates the
-disclosed-inert count and hides a real gap.
+*Tagged `NOT WIRED` / `REPLACED-BY` but analysed live*. Every row in it is a
+defect, and the two possible defects point opposite ways. Either the port was
+wired and nobody removed the disclosure, which inflates the wiring worklist. Or
+the reachability pass invented the edge that made it read live, which hides a
+real gap. This page says how to tell which, lists the name-resolution
+mechanisms that invent edges, and gives the fix each one takes.
 
-This page is the per-row verdict, so the tag edits are mechanical rather than
-re-derived. It is a snapshot of a worklist, not a specification - a row
-disappears from it once the tag or the analysis is fixed. What outlives the rows
-is the mechanism list plus the fix recipe each mechanism takes, both below.
+## At a glance
+
+| | |
+|---|---|
+| Command | `python3 scripts/ci/port-catalog.py --live-audit` (first section of `target/port-catalog/live-audit.md`) |
+| Healthy state | the section is empty |
+| A row means | a stale tag (remove it) or a false edge (rename or re-anchor in source) |
+| Decide by | looking for a real non-test **caller** first; a name collision can always be found, a caller cannot |
+| After any edit | re-run the audit and compare both this section and the *undisclosed inert* section |
+
+```mermaid
+flowchart TD
+    row["row: tagged NOT WIRED, analysed live"] --> caller{"real non-test caller from a host root?"}
+    caller -->|"yes, body runs"| stale["STALE-TAG: remove the disclosure"]
+    caller -->|"yes, but a runtime gate never opens"| inert["wired, inert at runtime: reword without the token"]
+    caller -->|"no"| mech{"which name collides?"}
+    mech --> rename["rename the in-tree symbol"]
+    mech --> anchor["move the tag to the item that ports the address"]
+```
 
 ## Verdicts
 
@@ -34,8 +50,8 @@ has to be written as one.
 
 ## What the false edges are
 
-Six mechanisms produce every FALSE-EDGE row this page has recorded, and only
-the first is what `--live-audit` warns about. All six are name resolution
+Six mechanisms produce every FALSE-EDGE row recorded here, and only the first
+is what `--live-audit` warns about. All six are name resolution
 without type inference; they differ in *which* name space collides, and that is
 what decides the fix.
 
@@ -107,8 +123,8 @@ reads like a precise anchor unless the line is opened.
 
 Some are analysis defects and are fixed in the tool - those rows read
 *Implemented*. The rest are properties of the *names and anchors in source*, and
-the fix belongs there: sharpening the shared permissive graph is the wrong move
-and has been tried and reverted twice.
+the fix belongs there. Sharpening the shared permissive graph is the wrong move:
+its over-approximation is what makes `--not-live` a floor.
 
 | Mechanism | Fix |
 |---|---|
@@ -148,8 +164,8 @@ refactor undoes it and the false accusation returns. `footstep.rs`,
 
 ### The two-graph split (implemented)
 
-Sharpening the single shared graph would be wrong, and was tried and reverted
-once for that reason. The over-approximation is load-bearing for `--not-live`:
+Sharpening the single shared graph would be wrong. The over-approximation is
+load-bearing for `--not-live`:
 biasing every ambiguity toward "reachable" is what makes the not-live list a
 hard floor. It is only *this* question - is a disclosure stale - where a
 spurious edge does damage, by manufacturing a false accusation against a correct
@@ -210,10 +226,6 @@ fix is to write it at item level:
   wired item made a module blanket assert something false about it, and the
   file now carries a line per genuinely inert item instead.
   [`port-catalog.md`](port-catalog.md#replaced-by) has the precedence rules.
-  `scus_core_helpers::list_append_u16` used to be the example here, as the one
-  item in a replaced file that was not itself replaced; it is replaced too -
-  `engine-core::cutscene::sprite_stack_push` is the same address, live on both
-  hosts - so it illustrates the hazard's premise rather than the hazard.
 
 A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
@@ -259,10 +271,8 @@ block that does not mean it.
 The generalisation is worth more than the row: **the disclosure markers are
 matched as text over a whole comment block, so writing about a marker is
 indistinguishable from using one.** That applies to a fix as much as to the
-original - a corrected tag explaining "this used to say `NOT WIRED:` and here
-is why it was wrong" re-discloses the anchor it just wired. Both corrections
-recorded on this page hit that on the first attempt and had to paraphrase the
-marker instead of quoting it.
+original: a corrected tag that quotes the marker to explain why it was wrong
+re-discloses the anchor it just wired. Paraphrase the marker instead.
 
 **A leaf whose only caller is a sibling in the same file, reached from a CLI.**
 `legaia_asset::monster_archive::reaction_map` disclosed "no engine caller ...
@@ -324,16 +334,11 @@ which is the point. A drained disclosure worklist is not a statement about
 fidelity, and a re-read of an already-disclosed block is worth doing on its own
 terms.
 
-## Rows
-
-| addr | site | verdict | fix |
-|---|---|---|---|
-| *(none)* | | | |
-
 ## How the recorded rows were closed
 
-Kept as a record of which resolution each shape took, keyed by address and site
-so a recurrence is recognisable rather than re-derived.
+Every row this section of the audit has shown, with the resolution it took.
+All are closed. They are keyed by address and site so a recurrence is
+recognisable: match the mechanism, apply the same fix.
 
 | addr | site | verdict | resolution |
 |---|---|---|---|
@@ -373,7 +378,7 @@ so a recurrence is recognisable rather than re-derived.
 | `801d0e54` | `engine-battle-vm/src/battle_intro_tiles.rs` | STALE-TAG | Same shape: `step_tile` cited `tick_tile_grid`, which by then read `WIRED, without a draw`. |
 | `801d1a20` | `engine-battle-vm/src/battle_intro_swirl.rs` | STALE-TAG | Same shape: `swirl_band_draw` cited `tick_swirl`, likewise already `WIRED, without a draw`. |
 | `801e1934` | `engine-menus/src/card_flow.rs` | FALSE-EDGE | `save_title_digits` renamed `block_title_digits`; the live copy is `legaia_save::card::save_title_digits`, which the browser card rack writes through. A duplicate free-function name across two crates, never receiver-gated. Its own caller `save_block_summary` has no non-test call site. |
-| `8003cda8` | `engine-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
+| `8003cda8` | `engine-motion-vm/src/ambient_motion.rs` | STALE-TAG | `reset_pool` carried `REPLACED-BY:` ("a fresh scheduler per scene") after `World::install_field_player` started resetting the world-owned `player_scale_ramps`, the one scheduler that outlives a scene. The tag came off for a plain note. Retail has no reference to `0x8003CDA8` in SCUS or any PROT entry, so the engine's seat is its own and the note says so. |
 
 The `world_map_overlay.rs` rows are the worked example of the whole granularity
 shape: a genuinely wired item made a module blanket false, and through the
@@ -390,11 +395,12 @@ each reading as a declared wiring gap. A FALSE-EDGE verdict says the port is
 unreachable; before acting on one, look for the caller rather than for the
 collision, because a collision can always be found and a caller cannot.
 
-## Superseded rows
+<a id="superseded-rows"></a>
+## Wired but inert at runtime: `emit_horizon`
 
-`801d7ea0` (`emit_horizon`, `crates/engine-vm/src/world_map_horizon.rs`) was the
-one STALE-TAG an earlier snapshot carried, and it needed a rewrite rather than a
-deletion. `emit_horizon` is statically reachable through three unambiguous
+`801d7ea0` (`emit_horizon`, `crates/engine-vm/src/world_map_horizon.rs`) is the
+worked example of *wired, inert at runtime*: its tag needed a rewrite rather
+than a deletion. `emit_horizon` is statically reachable through three unambiguous
 non-test hops, so a tag clause reading "reached only from tests" is false - but
 the port is still inert, because the gate `run_horizon_emitter` consults is
 never armed: `EmitterGate::arm` has no non-test caller. That is a runtime fact

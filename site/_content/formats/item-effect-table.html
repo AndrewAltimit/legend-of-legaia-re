@@ -111,10 +111,6 @@
     <li>Tier <code>3+</code> HP heals do not read this table - they are character-relative, scaled off the per-character Seru-heal tables.</li>
     <li>Revive (class <code>4</code>) is not a flat amount: tier 0 restores <code>max_hp&times;0.4 + rand()%(max_hp/8)</code>, higher tiers a full revive.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: "the amounts are overlay-resident immediates"</summary>
-    <div class="disclosure-body"><p>An earlier reading placed the restore amounts in a switch of immediates inside an overlay-resident handler outside the dumped corpus. The HP / MP amounts are static tier tables read by the <strong>static</strong> apply handler; only the class 5/6/7 magnitudes are immediates. Recorded on <a href="../reference/re-settled-threads.html">settled threads</a>.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="stat-items">

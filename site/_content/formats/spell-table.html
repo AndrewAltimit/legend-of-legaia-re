@@ -94,10 +94,6 @@
   </tbody>
   </table>
   <p>One exception: the revive summon Horn ("Resurrector", <code>0x9C</code>) carries an enemy-side <code>0x24</code> even though it revives all allies - the summon projects toward the enemy field and the revive is special-cased by spell id. Decoder <code>SpellEntry::target_shape</code>.</p>
-  <details class="disclosure">
-    <summary>History: the "bit 0x40 = enemies" reading</summary>
-    <div class="disclosure-body"><p>Equivalent for the four player-block values but wrong for the internal enemy-attack tiers, whose byte is <code>0x04</code>: bit <code>0x40</code> clear yet enemy-targeting. The <code>0x02</code>-bit reading classifies them correctly. The curated chart's one target error (Mushura / "Crazy Driver" = single enemy) was corrected from this byte.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="cast-classes">
@@ -191,10 +187,6 @@
   </tbody>
   </table>
   <p>Whenever the arts index is <code>1 mod 3</code>, the arts name pointer and a phantom spell record's name pointer are the same four bytes (spell <code>0xD7</code> = arts record 1, Burning Flare). A rename through either coordinate is one write. <code>asset spell-names</code> sweeps 256 ids for inspection, so the aliased rows show above <code>0xD4</code>; the patcher stops at 190.</p>
-  <details class="disclosure">
-    <summary>History: "+4 is an animation id"</summary>
-    <div class="disclosure-body"><p>The <code>+4</code> byte was once recorded as an animation id. The summon animation is dispatched by <code>spell_id - 0x81</code>, and the menu overlay's info window pins <code>+4</code> as the description index.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="no-power-scalar">
@@ -207,10 +199,6 @@
     <li><strong>Capture-class casts</strong> carry baked constants in their <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a>.</li>
     <li>The per-move power scalar that <em>does</em> exist - the <a href="move-power.html">move-power table</a> - feeds the arts / physical branch and shares this id space (<code>0x25..=0x74</code> are the named monster attacks).</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the summon jump-table hypothesis</summary>
-    <div class="disclosure-body"><p>"The magnitude is in the summon jump table" is falsified: the table at <code>0x801F69D8</code> resolves into the resident render overlay - staggered entry points into one per-frame routine that blends animation banks and emits GPU packets, with no multiply and no HP write. The <code>0xC5</code>-entry substitution table at <code>DAT_80075EC4</code>, once mistaken for a spell-name source, is the Tactical Arts name table. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

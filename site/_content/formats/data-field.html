@@ -36,6 +36,31 @@
     <div class="bm-cell bm-accent" style="--w:2"><span class="bm-off">last</span><span class="bm-name">terminator</span><span class="bm-size">low 24 bits = 0</span></div>
     <div class="bm-cell bm-pad" style="--w:3"><span class="bm-off">after</span><span class="bm-name">trailer</span><span class="bm-size">optional, unparsed</span></div>
   </div>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 176" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="df-fig-title">
+      <title id="df-fig-title">A DATA_FIELD stream being walked: each 4-byte header carries a type byte and a size, the dispatcher routes the data that follows by type, the walker steps over it to the next header, and a header with size zero ends the stream.</title>
+      <defs><marker id="df-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="20">one stream, read front to back (type byte shown in each header)</text>
+      <rect class="dg-node-accent" x="20" y="30" width="60" height="44"/><text class="dg-label" x="50" y="49">hdr</text><text class="dg-sub" x="50" y="65">0x00</text>
+      <rect class="dg-node" x="80" y="30" width="130" height="44"/><text class="dg-label" x="145" y="49">TIM</text><text class="dg-sub" x="145" y="65">size bytes</text>
+      <rect class="dg-node-accent" x="210" y="30" width="60" height="44"/><text class="dg-label" x="240" y="49">hdr</text><text class="dg-sub" x="240" y="65">0x09</text>
+      <rect class="dg-node" x="270" y="30" width="130" height="44"/><text class="dg-label" x="335" y="49">TMD2</text><text class="dg-sub" x="335" y="65">size bytes</text>
+      <rect class="dg-node-accent" x="400" y="30" width="60" height="44"/><text class="dg-label" x="430" y="49">hdr</text><text class="dg-sub" x="430" y="65">0x0B</text>
+      <rect class="dg-node" x="460" y="30" width="130" height="44"/><text class="dg-label" x="525" y="49">MOVE2</text><text class="dg-sub" x="525" y="65">size bytes</text>
+      <rect class="dg-node-warn" x="590" y="30" width="110" height="44"/><text class="dg-label" x="645" y="49">hdr</text><text class="dg-sub" x="645" y="65">size = 0</text>
+      <path class="dg-edge" d="M50 74 V110" marker-end="url(#df-arrow)"/>
+      <path class="dg-edge" d="M240 74 V110" marker-end="url(#df-arrow)"/>
+      <path class="dg-edge" d="M430 74 V110" marker-end="url(#df-arrow)"/>
+      <path class="dg-edge" d="M645 74 V110" marker-end="url(#df-arrow)"/>
+      <rect class="dg-node" x="20" y="112" width="560" height="46" rx="5"/>
+      <text class="dg-label" x="300" y="132">asset-type dispatcher</text>
+      <text class="dg-sub" x="300" y="148">routes each chunk by its type byte; data is copied, never decompressed</text>
+      <rect class="dg-node" x="590" y="112" width="110" height="46" rx="5"/>
+      <text class="dg-label" x="645" y="132">stop</text>
+      <text class="dg-sub" x="645" y="148">end of stream</text>
+    </svg>
+    <figcaption>There is no count and no index: the only way to find chunk <em>n</em> is to walk the <em>n</em> headers before it. The example is the common three-chunk character stream (texture, mesh, animation).</figcaption>
+  </figure>
   <p>Every header is the dispatcher's own packed word, stored little-endian:</p>
   <div class="byte-map" role="img" aria-label="Chunk header: three size bytes then the type byte">
     <div class="bm-cell" style="--w:3"><span class="bm-off">+0x00</span><span class="bm-name">size (low 24 bits)</span><span class="bm-size">u24</span></div>
@@ -82,12 +107,6 @@
     <li><a href="pack.html">Pack format</a> lives <em>inside</em> TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.</li>
     <li>One entry (extraction <code>0892</code>) matches the <code>data_field_truncated</code> detector - three clean leading chunks, then an over-large fourth header - and the match is an artefact. The entry is an <a href="pack.html">asset::pack</a> (<code>count = 2</code>, word offsets <code>[3, 0x208B]</code>), and those "chunks" are the pack's own header words read as chunk headers. Mode-22 <code>CARD INIT</code> (<code>FUN_8002574C</code>) walks it as a pack and uploads each member through <code>FUN_800198E0</code>. See <a href="#card-font-pack">the card font pack</a>.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the "truncated" scene entries</summary>
-    <div class="disclosure-body">
-      <p>Three scene entries once cited in the truncated class - <code>0157_rikuroa</code>, <code>0228_station</code>, <code>0373_taiku</code> - are <strong>not</strong> truncated, and neither is <code>1205_other5</code>. Each scene entry is one of the four-chunk <code>MAN / MES / MOVE / VDF</code> bundles above; the superseded over-read entry size (<code>toc[p+5] - toc[p+3] + 4</code>) fell <em>short</em> of these entries (<code>0157</code> declared 163840 bytes against a real 186368; the other two were short by 69632 and 8192), so the last chunk overran a buffer that ended early. Against their own sectors all three terminate cleanly. The "runtime extends the chunk via streaming DMA continuation" explanation that accompanied the old reading is withdrawn with it. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="card-font-pack">
@@ -142,21 +161,6 @@
     <li>Which function consumes the post-terminator trailer bytes.</li>
   </ul>
   <p>The categorize sweep classifies every PROT entry to <em>something</em>; the items above are the residual edge. See <a href="../subsystems/engine.html">the engine page</a> for how scene loading consumes these shapes.</p>
-  <details class="disclosure">
-    <summary>History: the field-pack schema, the asset-table indirection and the "scripted asset table" class</summary>
-    <div class="disclosure-body">
-  <p>Two long-standing open items closed, and both closed by shrinking rather than by new machinery. The
-  <a href="field-pack.html">field-pack</a> "slot semantics" were this page's own chunk format plus the
-  <a href="pack.html">pack</a> format: the <code>0x01059B84</code> "magic" is a
-  <code>(TIM_LIST &lt;&lt; 24) | size</code> chunk header and the "97-entry schema" is that chunk's
-  <code>[count][word offsets]</code> table; the "124 entries" figure came from the superseded over-reading
-  <a href="prot.html">entry size</a>. And the per-scene asset-table indirection needs no capture: the walk is
-  positional, and <code>+0x04</code> of the header is the sum of the descriptor sizes - see
-  <a href="scene-bundles.html">scene bundles</a>.</p>
-
-      <p>A <code>SceneScriptedAssetTable</code> class - a descriptor table found at a sector-aligned offset inside an entry that led with an event prescript - was an artefact of the over-read entry size: every such offset was the next entry's start LBA, i.e. the neighbour's ordinary offset-0 table. Read against their own sectors, the prescript entries classify as event scripts and the 88 bare asset tables stay where they are. See <a href="prot.html#a-entry-offset-pair-is-only-a-coordinate-if-the-offset-is-inside-the-entry">PROT TOC &sect; history of the over-read</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

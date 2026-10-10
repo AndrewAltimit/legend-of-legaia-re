@@ -65,6 +65,53 @@
     <li>The TIM-catalog TSVs.</li>
     <li>The dialog-font artifacts.</li>
   </ol>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gs-fig-title">
+      <title id="gs-fig-title">One run of legaia-extract: the disc image goes in, eight steps run in order, and each step writes one part of the extracted tree - the raw files, the per-entry PROT folder, the classification, the streaming sub-assets and their PNGs, the audio WAVs, the texture catalogs and the dialog font.</title>
+      <defs><marker id="gs-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="285" y="20" text-anchor="middle">legaia-extract, in order</text>
+      <text class="dg-edge-label" x="436" y="20">what lands in extracted/</text>
+      <rect class="dg-node" x="20" y="133" width="110" height="52" rx="5"/>
+      <text class="dg-label" x="75" y="155">your disc</text>
+      <text class="dg-sub" x="75" y="172">.bin or .cue</text>
+      <path class="dg-edge" d="M130 159 H150 M150 47 V271" />
+      <path class="dg-edge" d="M150 47 H168" marker-end="url(#gs-arrow)"/>
+      <path class="dg-edge" d="M150 207 H168" marker-end="url(#gs-arrow)"/>
+      <rect class="dg-node-accent" x="170" y="34" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="51">1. ISO9660 walk</text>
+      <path class="dg-edge" d="M400 47 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="51">PROT.DAT, CDNAME.TXT, SCUS_942.54, MOV/</text>
+      <rect class="dg-node-accent" x="170" y="66" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="83">2. split PROT.DAT</text>
+      <path class="dg-edge" d="M400 79 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="83">PROT/ - one file per entry</text>
+      <rect class="dg-node" x="170" y="98" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="115">3. categorize entries</text>
+      <path class="dg-edge" d="M400 111 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="115">PROT/categorize.json</text>
+      <rect class="dg-node" x="170" y="130" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="147">4. unpack streaming entries</text>
+      <path class="dg-edge" d="M400 143 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="147">streaming/</text>
+      <rect class="dg-node" x="170" y="162" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="179">5. TIMs to PNG</text>
+      <path class="dg-edge" d="M400 175 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="179">PNGs under streaming/</text>
+      <rect class="dg-node" x="170" y="194" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="211">6. CD-XA demux</text>
+      <path class="dg-edge" d="M400 207 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="211">XA_WAV/</text>
+      <rect class="dg-node" x="170" y="226" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="243">7. TIM catalogs</text>
+      <path class="dg-edge" d="M400 239 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="243">prot_tim_*catalog.tsv</text>
+      <rect class="dg-node" x="170" y="258" width="230" height="26" rx="4"/>
+      <text class="dg-label" x="285" y="275">8. dialog font</text>
+      <path class="dg-edge" d="M400 271 H428" marker-end="url(#gs-arrow)"/>
+      <text class="dg-edge-label" x="436" y="275">font/</text>
+    </svg>
+    <figcaption>Steps 1 and 6 read the disc image itself; every other step works on what the steps before it wrote. Step 1 gives you the raw files, step 2 the per-entry folder most tools take as input.</figcaption>
+  </figure>
   <p>Skip flags exist for the verify pass and for each slow or optional step: <code>--skip-verify</code>, <code>--skip-png</code>, <code>--skip-xa</code>, <code>--skip-catalog</code>, <code>--skip-font</code>.</p>
   <h3>What lands where</h3>
 <pre><code>extracted/
@@ -113,7 +160,7 @@
   <table>
     <thead><tr><th>Binary</th><th>What it's for</th></tr></thead>
     <tbody>
-      <tr><td><code>legaia-engine</code></td><td>The from-scratch engine: play scenes, FMVs, record/replay - straight from your disc.</td></tr>
+      <tr><td><code>legaia-engine</code></td><td>The from-scratch engine: plays the game - field, battles, menus, minigames, movies, saves - straight from your disc, plus record / replay.</td></tr>
       <tr><td><code>asset-viewer</code></td><td>Windowed browser for textures, meshes, audio banks, and scene demos.</td></tr>
       <tr><td><code>legaia-patcher</code></td><td>Disc patcher: randomizer, translation toolchain, and manual record edits; emits shareable PPF patches.</td></tr>
       <tr><td><code>save-tool</code></td><td>PSX memory-card / save inspector: character records, save-block diffs.</td></tr>

@@ -485,6 +485,19 @@ pub struct BattleState {
     /// [`crate::scene::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
+    /// The sparring fight's first round start is waiting on the battle open
+    /// ([`crate::world::World::sparring_open_held`]): the side-band has not
+    /// yet seen the flow at `0x14`, so its caption is not up. Reset at
+    /// battle entry.
+    pub sparring_round_pending: bool,
+    /// The Y angle of the backdrop draw's slot 1, retail `0x800891D2` (the
+    /// second row of the per-slot angle table at `0x800891C8`), in 4096ths
+    /// of a turn. [`crate::world::World::tick_battle_backdrop_spin`] winds
+    /// it; nothing resets it, in retail or here, so it carries from one
+    /// fight to the next.
+    pub backdrop_slot_1_yaw: u16,
+    /// The battle frame [`Self::backdrop_slot_1_yaw`] last advanced on.
+    pub backdrop_spin_frame: Option<u64>,
     /// Battle VRAM `MoveImage`s a stage module issued this frame, in order.
     /// Applied to the host's battle VRAM by
     /// [`crate::world::World::apply_battle_vram_moves`]; cleared at battle
@@ -557,6 +570,19 @@ pub struct BattleState {
     /// than the tutorial: the battle-open formation banner
     /// ([`crate::world::World::raise_battle_open_banner`]) rides it too.
     pub tutorial_boxes: std::collections::VecDeque<crate::battle_flow::ActiveTutorialBox>,
+    /// The sparring tutorial's **standing prompt**: the last self-dismissing
+    /// box to leave [`Self::tutorial_boxes`]. Retail registers such a prompt
+    /// as a text actor under sort key `1` (`FUN_801F747C` -> `FUN_8003541C`
+    /// with `a0 = 1`) and never times it out - the next key-`1` registration
+    /// reuses the node (the compare at `0x80035520`), and the only removals
+    /// are the hook's `FUN_800319A8(0)` / `(1)` pair under a waiting box at
+    /// flow `0x5A` (`0x801F71BC..0x801F71D8`) and the teardown drain
+    /// `FUN_800355F0` - so it stays on screen over the surface it named
+    /// (`v0_1_battle_command_submenu`: the `[Begin]` arm's prompt over the
+    /// category ring). It holds nothing: the battle loop parks on the queue
+    /// alone. Hosts draw it with the queue's front group
+    /// ([`crate::world::World::battle_tutorial_boxes_on_screen`]).
+    pub tutorial_standing: Option<crate::battle_flow::ActiveTutorialBox>,
     /// The battle screen's chip / banner labels, read off the user's own disc
     /// ([`legaia_asset::battle_ui_strings`]). Empty when the host had no disc
     /// to read - the port's own wording is used then, so the surfaces still
@@ -795,6 +821,9 @@ impl BattleState {
             stage_id: 0,
             arrival: Default::default(),
             backdrop_rebound: false,
+            sparring_round_pending: false,
+            backdrop_slot_1_yaw: 0,
+            backdrop_spin_frame: None,
             vram_moves: Vec::new(),
             vram_scrolls: Vec::new(),
             frame_clock: Default::default(),
@@ -809,6 +838,7 @@ impl BattleState {
             tutorial: None,
             tutorial_script: crate::battle_tutorial::BattleTutorialScript::default(),
             tutorial_boxes: std::collections::VecDeque::new(),
+            tutorial_standing: None,
             ui_strings: legaia_asset::battle_ui_strings::BattleUiStrings::default(),
             spell_anim_pairs: legaia_asset::spell_anim_pairs::SpellAnimPairs::default(),
             spell_cam: None,

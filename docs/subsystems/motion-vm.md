@@ -1,45 +1,69 @@
 # Per-actor motion VMs
 
-**Two** distinct per-actor bytecode VMs live under the field actor tick
-`FUN_8003BC08`: the pursue / patrol / face-target VM at `FUN_8003774C`
-(dispatched when actor `+0x10 & 0x400`) and the scripted-motion / flag VM at
-`FUN_80038158` (dispatched when `+0x10 & 0x80`, bytecode carried in MAN
-tail-section 1 - [below](#the-second-motion-vm---fun_80038158)). Both live in
-`SCUS_942.54`.
+How field actors move on their own. **Two** small bytecode VMs run under the
+per-actor field tick `FUN_8003BC08`, both in `SCUS_942.54`:
 
-The first drives **per-actor pursue / patrol / face-target** logic - NPC movement on
-the field, camera follow paths, and scripted "face the speaker" posing. The
-second drives scripted actor choreography and writes story flags.
+- the **pursue / patrol / face-target VM** `FUN_8003774C` - NPC walks along a
+  compass direction or toward a target, turning to face something, and
+  pre-baked camera paths;
+- the **scripted-motion VM** `FUN_80038158` - a villager's ambient wander and
+  scripted choreography (steps, facing ramps, tweens, teleports, waits), which
+  also sets and clears story flags.
 
-**Which function turns an NPC when the player talks to it is a different
-one.** That write is not this VM's `0x4C` ramp: it is a single `sh` in the
-dialog SM `FUN_80039B7C` - see
-[Talk-time facing is not this VM](#talk-time-facing-is-not-this-vm).
+Both are ported and live on both play hosts: villagers wander, turn and are
+solid in the port as they are in retail.
 
-Both are distinct from the other three members of
-[the runtime VM family](move-vm.md#the-runtime-vm-family) - the
-[actor VM](actor-vm.md), the [move VM](move-vm.md), and the
-[field VM](script-vm.md).
+## At a glance
 
-**What catches people out: the scripted VM has a static decoder alongside its
-interpreter.** `FUN_8003774C` is
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs).
-`FUN_80038158`'s interpreter is
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs),
-which runs the whole op table (bodies split for length into
-[`ambient_motion_ops`](../../crates/engine-vm/src/ambient_motion_ops.rs)).
-Because its bytecode arrives as MAN tail-section data rather than through the
-actor tick's own buffer, a *static* decode of the same bytes exists too -
-[`legaia_engine_core::man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs),
-which answers which stream binds to which placement, at what wander pace, with
-what default-move harvest, without running anything.
+| | Pursue / patrol VM | Scripted-motion VM |
+|---|---|---|
+| Interpreter | `FUN_8003774C` | `FUN_80038158` |
+| Runs when | actor `+0x10 & 0x400` (the halt bit) | actor `+0x10 & 0x80` |
+| Dispatch | 22-slot jump table `0x80010EE0`, index `(op & 0x7F) - 0x37` | 32-slot jump table `0x80010FE8`, ops `0x01..=0x20` |
+| Bytecode source | the payload pointer a field-VM halt-acquire writes to `+0x94` | MAN tail-section 1, read at `*(actor+0x80) + *(u16*)(actor+0x84)` |
+| Opcode table | [Opcodes](#opcodes) | [The op table](#the-op-table) |
+| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
+
+```mermaid
+flowchart TD
+    T["field actor tick FUN_8003BC08<br/>(once per game tick, per actor)"] --> PRE["pre-update FUN_801D79E8:<br/>visibility cull bit"]
+    PRE --> HA["height arm:<br/>Y from the sampled floor"]
+    HA --> G1{"+0x10 & 0x400?"}
+    G1 -->|yes| V1["FUN_8003774C<br/>pursue / patrol / face-target"]
+    HA --> G2{"+0x10 & 0x80?"}
+    G2 -->|yes| V2["FUN_80038158<br/>scripted motion + story flags"]
+    V1 --> Y1{"op result"}
+    Y1 -->|"0: leg running"| NEXT["next tick"]
+    Y1 -->|"1: done"| CL["clear halt bit 0x400,<br/>zero +0x54 cursor"]
+    V2 --> NEXT
+```
+
+The diagram is the orientation; [the driver section](#the-driver-fun_8003bc08)
+has the exact gates.
+
+Three things that catch people out:
+
+- **Talking to an NPC does not turn it through this VM.** That write is a
+  single `sh` in the dialog state machine `FUN_80039B7C` - see
+  [Talk-time facing is not this VM](#talk-time-facing-is-not-this-vm).
+- **The scripted VM has a static decoder beside its interpreter.** Because its
+  bytecode is MAN tail-section data, the same bytes can be decoded without
+  running them:
+  [`man_field_scripts::npc_motion`](../../crates/engine-field/src/man_field_scripts/npc_motion.rs)
+  answers which stream binds to which placement, at what wander pace, with
+  what default-move harvest. The scene loader uses it to seed the channels the
+  interpreter then ticks. It is not a second port.
+- **These are not the [actor VM](actor-vm.md), the [move VM](move-vm.md) or
+  the [field VM](script-vm.md).** See
+  [the runtime VM family](move-vm.md#the-runtime-vm-family) and the
+  [VM inventory](vm-inventory.md).
 
 ## The driver: `FUN_8003BC08`
 
 The per-actor tick that gates and dispatches both VMs is itself two
 independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
 as `field_actor_plan` in
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs)).
+[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
 
 **Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
 gates the `FUN_801D79E8` pre-update) and not culled (`+0x10 & 2` clear).
@@ -367,7 +391,7 @@ scripted `0x3E` interact get the same behaviour.
 
 ## From-scratch port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 
@@ -685,7 +709,7 @@ PC; a blocked wander drops back to the pick phase.
 
 #### From-scratch port + wiring
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes all four walk ops alongside the facing ones, plus `0x17`. The
 collision service is the `AmbientBlocking` trait the host supplies, and
 `engine-core`'s implementation is the player box test above.
@@ -890,7 +914,7 @@ runs this tick per frame and `Camera::tick_globals` consumes the result.
 
 #### From-scratch port
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
 default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
 and carries the scheduler as `RampScheduler`; the other seventeen case bodies are in
@@ -1305,11 +1329,11 @@ in this repo's docs are both right about one field with two consumers.
 
 ### The whole table has one executing home
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-vm/src/ambient_motion.rs)
+[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 runs all twenty-four case bodies. They are split across two files for length
 only - the facing ramps, the walk ops, the waits, the restart and the ramp
 scheduler in `ambient_motion.rs`; `0x02`, `0x06`..`0x0C` and `0x0E`..`0x16` in
-[`ambient_motion_ops.rs`](../../crates/engine-vm/src/ambient_motion_ops.rs) as
+[`ambient_motion_ops.rs`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) as
 further `impl AmbientMotion` blocks. Nothing is stepped over by width.
 
 The per-tick op budget (`MAX_OPS_PER_TICK`) stays, but its job has changed:

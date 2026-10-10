@@ -14,8 +14,8 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   state snapshots, key-on/-off masks, master volume, reverb mode, the 32
   reverb coefficient registers + work area, and the per-voice reverb-send
   `EON` mask). The SPU accessor backs the audio-trace parity oracle in
-  `engine-shell`; the reverb-routing accessors pinned retail's global
-  Studio C reverb (the C7-REVERB hunt - see `docs/subsystems/audio.md`).
+  `legaia-parity`; the reverb-routing accessors are what pin retail's global
+  Studio C reverb (see `docs/subsystems/audio.md`).
 - Decode the frame's GPU primitive pool and libgpu ordering table
   (`prim_pool`, with `source_hunt` for the tables behind it): every standard textured and untextured polygon plus both
   sprite sizes, pool discovery, ordering-table discovery by the `ClearOTagR`
@@ -98,8 +98,8 @@ Three things decide whether a `display-list` report means anything:
   merged view and `--ot-addr` selects one explicitly.
 - **Absence is only as good as the acceptance table.** A packet whose
   `(command, length)` the decoder does not accept is walked past, not reported
-  as a primitive - which is how every `POLY_FT3` went missing from every list
-  while the table expected six payload words instead of seven. The report now
+  as a primitive - a table expecting six payload words for a seven-word
+  `POLY_FT3` drops every one of them silently. The report therefore
   lists every such link (`walked but not decoded`, from
   `prim_pool::chain_undecoded`) and says how many carry a polygon command.
   Across the save-state library that count is zero; what remains undecoded is
@@ -117,10 +117,10 @@ the flag you get whole VRAM (all texpages + CLUTs + both display buffers).
 renderer table (`0x8007657C`, 4 alpha rows × 20 slots) and the overlay
 variant (`0x801F8968`, 1 row - the overlay path skips the alpha offset).
 The eight overlay-resident high-mode renderers at `0x801F7644..0x801F8690`
-ARE the per-prim emit leaves the world-map top-view routes its TMD
-prims through - the bulk-continent emit mechanism that static `addprim`
-hunters missed (cmd byte loaded from a descriptor table, leaf addresses
-above the old `0x801F0000` overlay-capture cap).
+are the per-prim emit leaves the world-map top-view routes its TMD
+prims through - the bulk-continent emit mechanism. A static search for
+`addprim` call sites does not find them: the command byte is loaded from a
+descriptor table, and the leaves sit above `0x801F0000`.
 
 See `docs/tooling/mednafen-automation.md` for the full workflow.
 

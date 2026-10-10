@@ -131,10 +131,6 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
   </div>
   <p>Only kind 1 is populated: <code>param</code> (<code>0..=192</code>) four-byte records, grouped by byte 2 into regions, byte 3 always <code>0x01</code>. The entry ends at <code>0x800</code>; the prescript that follows is the <strong>next PROT entry</strong>.</p>
   <p>The three tied words (<code>N = 4 * param + 22</code>) make the detector exact: 97 hits, zero false positives. The scene's real field-VM scripts are not here - they live in the scene MAN (<a href="../subsystems/script-vm.html">script VM</a>).</p>
-  <details class="disclosure">
-    <summary>History: "prescript at +0x800 of the v12 entry"</summary>
-    <div class="disclosure-body"><p>This page once described the entry as a "scene header + event-script bundle" with the prescript at <code>0x800</code>. That was the over-read entry size appending the neighbour. See <a href="prot.html">prot</a> and <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="scene-asset-table-count-prefixed-asset-bundle">
@@ -210,10 +206,6 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 <section class="doc-section" id="scene-scripted-asset-table-scripted-prefix-canonical-bundle">
   <h2>scene_scripted_asset_table - a shape retail does not have</h2>
   <p>A composite pairing a prescript at offset 0 with a 7-asset table at the next sector boundary. <strong>It matches no retail entry</strong>: the real layout seats the prescript and the bundle as separate entries. The detector is kept only as a guard that must match nothing.</p>
-  <details class="disclosure">
-    <summary>History: the composite that ~6% of entries once matched</summary>
-    <div class="disclosure-body"><p>Every historical match was an over-read: the "table at the next 0x800 boundary" was the next PROT entry's ordinary offset-0 table seen through a window that ran past the entry (<a href="prot.html">prot</a>). The detector's gate: <code>u16[0]</code> count in <code>1..=4096</code>, <code>offsets[0] = 2 + count*2</code>, monotonic in-bounds offsets, and a valid count-7 table at the next <code>0x800</code>-aligned position.</p></div>
-  </details>
 </section>
 
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">

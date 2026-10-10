@@ -1,37 +1,32 @@
-# Standalone TIM-pack format
+# Standalone TIM-pack reader
 
-A reader for the multi-TIM scene texture packs that sit at raw-TOC `+4` of a
-CDNAME block. It is **not a distinct container**: the `byte[3] == 0x01` marker
-and the `word_index * 4 + 4` member math are a DATA_FIELD `TIM_LIST` chunk
-header `(0x01 << 24) | payload_len` followed by an ordinary [pack](pack.md),
-read with the 4-byte header skipped. Every retail member is such a carrier, and
-`categorize` now classes them `data_field_streaming` (chunk-headered) or `pack`
-(bare) rather than `tim_pack`. The reader below stays correct; the page keeps
-the header math because that is what the code does.
+`prot::timpack` reads the multi-TIM texture packs that sit near the head of a scene's CDNAME block (raw-TOC `+4`), plus the two boot-UI regions at the head of `PROT.DAT`. It is **not a distinct container**. What it reads is an ordinary [pack](pack.md) with a 4-byte DATA_FIELD `TIM_LIST` chunk header `(0x01 << 24) | payload_len` still in front of it. The reader's "marker" byte is that header's type byte, and its `+4` on every offset is the header's length.
 
-Implementation: `crates/prot/src/timpack.rs`.
+`categorize` classes the same carriers `data_field_streaming` (chunk-headered) or `pack` (bare), not `tim_pack`. The reader stays correct, and this page records its header math because that is what the code does.
+
+Implementation: [`crates/prot/src/timpack.rs`](../../crates/prot/src/timpack.rs) (`is_tim_pack`, `unpack`, `detected_ext`).
 
 ## Header (8 bytes)
 
-```
-u8  magic_lo            // arbitrary
-u8  magic_hi            // arbitrary
-u8  disc               // < 0x10  (discriminator byte, NOT the count)
-u8  marker              // == 0x01
-u32 tim_num             // entry count at +4; offset table follows at +8
-```
+| Offset | Size | Reader's name | What it is | Confidence |
+|---|---|---|---|---|
+| `+0x00` | u8 | `magic_lo` | Chunk payload length, bits 0..7 | Confirmed |
+| `+0x01` | u8 | `magic_hi` | Chunk payload length, bits 8..15 | Confirmed |
+| `+0x02` | u8 | `disc` (must be `< 0x10`) | Chunk payload length, bits 16..23 - a discriminator, **not** the count | Confirmed |
+| `+0x03` | u8 | `marker` (must be `0x01`) | The chunk's type byte, `TIM_LIST` | Confirmed |
+| `+0x04` | u32 | `tim_num` | The pack's member count; the offset table follows at `+0x08` | Confirmed |
 
-The `byte[3] == 0x01` / `byte[2] < 0x10` pair is the magic discriminator; the entry count is the `u32 tim_num` at `+4` (so the offset table begins at byte `+8`). The detection function `is_tim_pack` checks the signature pair, that `tim_num` is positive, and that the offset table fits within the blob.
+`is_tim_pack` checks the `byte[3] == 0x01` / `byte[2] < 0x10` pair, that `tim_num` is positive, and that the offset table fits within the blob.
 
 ## Offset table
 
-Each table entry is a `u32` word index, decoded as:
+Each table entry is a `u32` word index:
 
 ```
 byte_offset = word_index * 4 + 4
 ```
 
-The `+4` is the difference from the [pack format](pack.md): this format adds a constant offset, suggesting the offsets are relative to the END of the count word rather than the start of the pack.
+The `+4` is the chunk header. A [pack](pack.md) counts its offsets from the count word, and the count word sits 4 bytes into the blob this reader is handed.
 
 ## Item type detection
 
@@ -81,6 +76,6 @@ its scene VRAM pre-pass (`SceneResources::build_targeted_with_options` +
 
 ## See also
 
-- [asset::pack](pack.md) - the structurally similar in-DATA_FIELD pack.
-- [PROT.DAT TOC](prot.md) - the index whose standalone entries use this pack.
+- [asset::pack](pack.md) - the pack format this reader sees behind a chunk header.
+- [PROT.DAT TOC](prot.md) - the index, and the two raw-TOC head entries read here.
 - [PSX TIM](tim.md) - the texture sub-asset bundled here.

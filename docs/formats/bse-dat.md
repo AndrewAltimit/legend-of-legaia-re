@@ -32,8 +32,8 @@ the retail TOC index name the same asset: raw TOC `0x37A` = **extraction entry
 
 The size agrees. `byindex_sync_loader` resolves through `FUN_8003E8A8`, whose
 sector count is the entry's size - 2 sectors for entry 888, which fits the
-`0x1800`-byte destination. (The historical `toc[p+5] - toc[p+3] + 4` expression
-claims 88 sectors there; see
+`0x1800`-byte destination. (The `toc[p+5] - toc[p+3] + 4` expression
+gives 88 sectors there, which would not fit; see
 [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).)
 
 ### It is a battle load, not a boot load
@@ -47,12 +47,9 @@ the setup-phase gate `ctx[+0x11] == 0` (`ctx = gp[0xA0C]`), which the same block
 then increments. So the bank is loaded at **battle-scene setup** and reloaded on
 every battle.
 
-That corrects the earlier reading on this page - "the sound subsystem loads one
-bank at init and keeps a pointer for the rest of the session" - and the same
-"at init" phrasing in [`sfx-table.md`](sfx-table.md) and
-[`field-ambient-fx.md`](../subsystems/field-ambient-fx.md). The claim rested on
-`FUN_8001FA88` looking like a sound-init routine (it also loads the per-set
-`.dpk`, `byindex_sync_loader(param_1 + 5, …)`); nobody had resolved its caller.
+So the bank is **not** loaded once at sound init and kept for the session.
+`FUN_8001FA88` looks like a sound-init routine (it also loads the per-set
+`.dpk`, `byindex_sync_loader(param_1 + 5, …)`), but its caller is battle init.
 Sweeps: `find-address-word-refs.py 8001fa88 --prot` over SCUS, the 31 based
 overlay images and all 1233 PROT entries returns that one `jal` and no word,
 `j`, branch or materialisation pair.
@@ -93,9 +90,8 @@ the same column through the same pointer without that guarantee.
 
 ### How the consumer was found
 
-`gp+0x678` had no traced consumer for a long time, and the reason is a
-measurement gap rather than a scarcity of code. Two reference forms are
-invisible to
+`gp+0x678` looks consumer-less to an absolute-address sweep. Two reference
+forms are invisible to
 [`find-address-word-refs.py`](../tooling/address-reference-scan.md): a
 `disp(gp)` access carries no address at all, and a `lui rX, hi` + `lw rY,
 lo(rX)` pair puts the low half on the *load*, where that tool's pair scan
@@ -274,10 +270,9 @@ matches these two entries and nothing else - the per-scene banks do not match
 because in a scene bundle record 0 sits inside the prescript container rather
 than at offset 0 of the PROT entry.
 
-The zero-trailer test is the whole discriminator, and it used to be spelled as
-"the `u32` at `+4` is under `0x100`". That is the same predicate read through
-the superseded `u32 v` column: a category byte can never exceed `0xFF`, so the
-bound could only ever fail on a non-zero trailer.
+The zero-trailer test is the whole discriminator. "The `u32` at `+4` is under
+`0x100`" is the same predicate: a category byte can never exceed `0xFF`, so
+the bound can only fail on a non-zero trailer.
 
 ## See also
 

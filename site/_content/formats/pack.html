@@ -47,6 +47,37 @@
 <section class="doc-section" id="distinction-from-the-standalone-tim-pack">
   <h2>One format, two readers</h2>
   <p>A hex dump of a scene's texture entry looks like a second pack format: a marker byte <code>0x01</code> at <code>+3</code>, a count at <code>+4</code>, and member offsets that need an extra <code>+4</code>. It is not a second format. Those first four bytes are a DATA_FIELD chunk header, <code>(TIM_LIST &lt;&lt; 24) | payload_len</code>, and what follows is an ordinary pack. The older <code>prot::timpack</code> reader simply reads the pack with the header still attached, which is where both its marker test and its <code>+4</code> come from. The "field-pack" word <code>0x01059B84</code> is the same chunk header on town01's texture pack.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 246" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pack-fig-title">
+      <title id="pack-fig-title">A streaming chunk holding a pack: a 4-byte chunk header, then the pack's count word, its word-offset table and its members. One reader starts at the pack, the other starts four bytes earlier at the chunk header, and both land on the same member bytes.</title>
+      <defs><marker id="pack-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="20" y="24">one streaming chunk</text>
+      <rect class="dg-node-warn" x="20" y="34" width="120" height="50"/>
+      <text class="dg-label" x="80" y="55">chunk header</text>
+      <text class="dg-sub" x="80" y="72">type &lt;&lt; 24 | size</text>
+      <rect class="dg-node-accent" x="140" y="34" width="80" height="50"/>
+      <text class="dg-label" x="180" y="55">count</text>
+      <text class="dg-sub" x="180" y="72">u32</text>
+      <rect class="dg-node-accent" x="220" y="34" width="150" height="50"/>
+      <text class="dg-label" x="295" y="55">word_offset[ ]</text>
+      <text class="dg-sub" x="295" y="72">u32 x count</text>
+      <rect class="dg-node" x="370" y="34" width="110" height="50"/>
+      <text class="dg-label" x="425" y="63">member 0</text>
+      <rect class="dg-node" x="480" y="34" width="140" height="50"/>
+      <text class="dg-label" x="550" y="63">member 1</text>
+      <rect class="dg-node" x="620" y="34" width="80" height="50"/>
+      <text class="dg-label" x="660" y="63">...</text>
+      <path class="dg-edge" d="M250 84 V104 H372 V88" marker-end="url(#pack-arrow)"/>
+      <path class="dg-edge" d="M320 84 V114 H482 V88" marker-end="url(#pack-arrow)"/>
+      <text class="dg-edge-label" x="366" y="130" text-anchor="middle">member i starts word_offset[i] x 4 bytes after the count word</text>
+
+      <path class="dg-edge-dim" d="M140 160 V150 H700 V160"/>
+      <text class="dg-label" x="420" y="176">asset::pack - starts at the count word; member i at offset[i] x 4</text>
+      <path class="dg-edge-dim" d="M20 208 V198 H700 V208"/>
+      <text class="dg-label" x="360" y="224">prot::timpack - starts at the chunk header; member i at offset[i] x 4 + 4</text>
+    </svg>
+    <figcaption>One layout, two starting points. The extra <code>+4</code> in the older reader is the chunk header it did not step over; the "marker byte" it tests is that header's type.</figcaption>
+  </figure>
   <table>
     <thead><tr><th>Offset in the entry</th><th>Read as a chunk + pack</th><th>Read by <a href="tim-pack.html"><code>prot::timpack</code></a></th></tr></thead>
     <tbody>

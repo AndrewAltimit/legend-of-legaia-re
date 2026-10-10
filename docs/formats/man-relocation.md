@@ -28,9 +28,7 @@ This was pinned by a live PCSX-Redux dispatch trace (`autorun_door_dispatch_trac
 on the `drake_castle_to_worldmap` capture): the executing op's bytecode base
 minus the MAN base equalled `data_region + partition2[0]` exactly. Corpus census
 (clean partition walk, disc-wide): 160 destination ops across 48 scenes, 153 in
-partition 2. (That census also counted "absolute-reference ops" at/after a
-destination op and found none - a measurement of the falsified `0x45 0xC0`
-reading, and moot now that the op has no target to relocate.)
+partition 2.
 
 The practical consequence: the destination "index" *is* a structural offset
 table the MAN parser already exposes, so resizing a record is safe - fix the
@@ -76,20 +74,18 @@ fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
 ## Safety
 
 - **The field VM stores no absolute PC anywhere**, so a same-record shift
-  preserves every control-flow field it has. `0x45 0xC0` camera-apply was read
-  as the exception - an "absolute-reference op" whose trailing halfword named a
-  record-relative PC - and `apply_dest_edits` refused any edited record
-  containing one. That reading is falsified: the APPLY arm at
-  `0x801DF254..0x801DF288` hands the halfword to
+  preserves every control-flow field it has. `0x45 0xC0` camera-apply is **not**
+  an exception: its trailing halfword is not a record-relative PC. The APPLY arm
+  at `0x801DF254..0x801DF288` hands the halfword to
   `FUN_801DE084(0x801C6EA8, trigger, mode)`, the same call the CONFIGURE arm
   makes with its own apply trigger, and exits `j 0x801E3624` /
   `addiu s8,s8,0x4` - a 4-byte fall-through, never a jump
   (`see ghidra/scripts/funcs/overlay_0897_801de840.txt`). It is a camera
-  parameter, and relocating it would corrupt the camera; the editor now leaves
-  it alone and no longer refuses the record. The decoder names the field
-  `apply_trigger` accordingly.
+  parameter, and relocating it would corrupt the camera, so the editor leaves
+  it alone and edits records that contain one. The decoder names the field
+  `apply_trigger`.
 - **Validate-or-skip**: `man_edit::validate` re-parses + re-walks the rebuilt MAN
-  and confirms each edited op now decodes as a `0x3F` carrying the intended name.
+  and confirms each edited op decodes as a `0x3F` carrying the intended name.
 - **Footprint**: the recompressed MAN must fit the original asset's on-disc
   footprint (the gap to the next descriptor). A scene that can't grow in place -
   the big overworld hubs, whose next asset is flush after the MAN - is skipped

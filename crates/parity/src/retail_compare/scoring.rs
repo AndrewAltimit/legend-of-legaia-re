@@ -32,6 +32,7 @@ pub const CHANNELS: &[&str] = &[
     "facing",
     "bgm",
     "fog_gate",
+    "view_window",
     "party",
     "flags",
     "inventory",
@@ -450,6 +451,26 @@ pub fn compare(
         f64::from(u8::from(engine.fog_gate == retail.fog_gate)),
         format!("retail={} engine={}", retail.fog_gate, engine.fog_gate),
     );
+    if let Some(rw) = retail.view_window {
+        // A state is saved on an emulator frame boundary, which on a game
+        // frame of two or three vsyncs can fall inside the render pass: the
+        // decoration pass clips the four bytes against the region box and
+        // puts them back in its epilogue, so such a capture holds the
+        // clipped window. Either form is the engine's.
+        let same = |w: [i8; 4]| rw.iter().zip(w).filter(|(a, b)| **a == *b).count();
+        let stored = same(engine.view_window);
+        let in_pass = engine.view_window_in_pass.map_or(0, same);
+        put(
+            "view_window",
+            stored.max(in_pass) as f64 / 4.0,
+            format!(
+                "retail={rw:?} engine={:?} (in the decoration pass {:?}{})",
+                engine.view_window,
+                engine.view_window_in_pass,
+                if in_pass > stored { ", matched" } else { "" },
+            ),
+        );
+    }
     if let Some(rs) = &retail.save {
         let (s, d, diffs) = party_score(&rs.party, &engine.save.party);
         let d = if diffs.is_empty() {

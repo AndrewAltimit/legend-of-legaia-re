@@ -7,6 +7,28 @@
 <section class="doc-section" id="confidence">
   <h2>How this section is organised</h2>
   <p>Pages are grouped the way the disc is layered, outermost first: the disc and its one big archive, then how the game unpacks and routes what it loads, then the individual asset types, the stat tables baked into the executable, the bundles a scene loads as a unit, and the archive entries that hold code. New here? Start with <a href="disc.html">disc geometry</a> and <a href="prot.html">PROT.DAT</a> - every other page assumes those two.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 316" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fi-title">
+      <title id="fi-title">How the format pages stack. A disc image holds files; PROT.DAT holds numbered entries; an entry is decompressed and routed by type; scene bundles and packs hold many assets; each asset is a texture, mesh, sound bank or script. Beside that chain, the executable holds the stat tables and some archive entries hold code overlays.</title>
+      <defs><marker id="fi-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <a href="#disc-layer"><rect class="dg-node" x="20" y="10" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="30">Disc image</text><text class="dg-sub" x="230" y="46">sectors, ISO9660, 45 files</text></a>
+      <a href="#disc-layer"><rect class="dg-node-accent" x="20" y="72" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="92">PROT.DAT entry</text><text class="dg-sub" x="230" y="108">one of 1233, named by CDNAME.TXT</text></a>
+      <a href="#compression-dispatch"><rect class="dg-node" x="20" y="134" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="154">Unpack and route</text><text class="dg-sub" x="230" y="170">LZS decompression, type-byte dispatch</text></a>
+      <a href="#streaming-scene"><rect class="dg-node" x="20" y="196" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="216">Bundles and packs</text><text class="dg-sub" x="230" y="232">many assets streamed as one unit</text></a>
+      <a href="#per-asset"><rect class="dg-node-ok" x="20" y="258" width="420" height="46" rx="5"/><text class="dg-label" x="230" y="278">Single asset</text><text class="dg-sub" x="230" y="294">TIM, TMD, VAB, SEQ, MES, ANM ...</text></a>
+      <a href="#battle-stat-tables"><rect class="dg-node" x="500" y="10" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="30">SCUS_942.54</text><text class="dg-sub" x="600" y="46">the executable</text></a>
+      <a href="#battle-stat-tables"><rect class="dg-node" x="500" y="72" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="92">Stat tables</text><text class="dg-sub" x="600" y="108">items, spells, equipment</text></a>
+      <a href="#overlay-carriers"><rect class="dg-node" x="500" y="134" width="200" height="46" rx="5"/><text class="dg-label" x="600" y="154">Code overlays</text><text class="dg-sub" x="600" y="170">MIPS code in archive entries</text></a>
+      <path class="dg-edge" d="M230 56 V70" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M230 118 V132" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M230 180 V194" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M230 242 V256" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M440 33 H498" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M600 56 V70" marker-end="url(#fi-arrow)"/>
+      <path class="dg-edge" d="M440 95 H470 V157 H498" marker-end="url(#fi-arrow)"/>
+    </svg>
+    <figcaption>The route a byte takes from the disc to something the game can draw or play. Each box jumps to its group below; read top to bottom if you are new, or jump straight to the layer you are debugging.</figcaption>
+  </figure>
   <p>Each page carries a badge for how solid its decode is. The badge is a claim about <em>evidence</em>, not page length; a page's own confidence row is authoritative over the badge here.</p>
   <ul class="bullets">
     <li><span class="tag tag-done">Confirmed</span> - traced in the game's own code and verified end-to-end against real on-disc data.</li>
@@ -24,7 +46,7 @@
     </a>
     <a class="card" id="prot" href="prot.html">
       <div class="card-title"><span>PROT.DAT TOC</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The disc's single asset archive - 1233 numbered entries holding nearly every texture, model, script, sound bank and code overlay - and the table of contents that indexes it. An entry's size is the gap to the next entry; the in-RAM index space is +2 from the extraction's.</div>
+      <div class="card-body">The disc's single asset archive - 1233 numbered entries holding nearly every texture, model, script, sound bank and code overlay - and the table of contents that indexes it. An entry's size is the gap to the next entry.</div>
     </a>
     <a class="card" id="cdname" href="cdname.html">
       <div class="card-title"><span>CDNAME.TXT name map</span> <span class="tag tag-done">Confirmed</span></div>
@@ -63,11 +85,11 @@
     </a>
     <a class="card" href="field-pack.html">
       <div class="card-title"><span>&ldquo;Field-pack&rdquo;</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Not a format: the <code>0x01059B84</code> word is a DATA_FIELD chunk header (type byte + payload length) wrapping an <code>asset::pack</code> of one scene's TIM atlases at raw-TOC <code>+4</code> of its block. The page keeps the reading that made it look like a magic-prefixed bundle.</div>
+      <div class="card-body">Not a format: the <code>0x01059B84</code> word is a DATA_FIELD chunk header wrapping an ordinary pack of one scene's textures. The page records how it came to look like a magic number.</div>
     </a>
     <a class="card" href="battle-data-pack.html">
       <div class="card-title"><span>Player battle files</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The per-character battle-model files <code>data\battle\PLAYER1..4</code> (extraction 0863..0866): header + LZS art records + equip-slot descriptor table + per-slot mesh and texture streams. Also the in-battle pose source for the assembled meshes.</div>
+      <div class="card-body">The per-character battle files <code>data\battle\PLAYER1..4</code>: an LZS animation record, a descriptor table keyed by equipment item, and one mesh + texture slot per item.</div>
     </a>
     <a class="card" href="npc-palette.html">
       <div class="card-title"><span>Row-479 NPC CLUTs</span> <span class="tag tag-done">Confirmed</span></div>
@@ -86,7 +108,7 @@
     </a>
     <a class="card" id="tmd" href="tmd.html">
       <div class="card-title"><span>Legaia TMD</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The 3D mesh format - a custom variant of stock PSX TMD, magic <code>0x80000002</code>: offset pointers, an 8-byte primitive group header, and a 6-row shape table that sets each record's layout. No mesh is lit from its normals.</div>
+      <div class="card-body">The 3D mesh format - a custom variant of stock PSX TMD, magic <code>0x80000002</code>: primitives batched behind an 8-byte group header, with a 6-row shape table setting each record's layout. Most rows carry baked colour; the lit rows shade through the GTE light.</div>
     </a>
     <a class="card" id="vab" href="vab.html">
       <div class="card-title"><span>VAB sound bank</span> <span class="tag tag-done">Confirmed</span></div>
@@ -110,11 +132,11 @@
     </a>
     <a class="card" id="anm" href="anm.html">
       <div class="card-title"><span>ANM animation</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">The field animation container for party, NPCs and props: count + byte offsets, then frame-major records of 8-byte (bone, frame) entries - nibble-packed translations and byte angles, posed per object with no bone hierarchy. Rides asset type 5 (MOVE) despite the name.</div>
+      <div class="card-body">The animation container for party, NPCs and props: a frame-by-bone grid of 8-byte entries, each a packed translation and rotation that poses one mesh object directly. Rides asset type 5 (MOVE) despite the name.</div>
     </a>
     <a class="card" id="character-mesh" href="character-mesh.html">
       <div class="card-title"><span>Player-character meshes</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Where Vahn, Noa and Gala's models live. Field form = PROT 0874 §0; battle form is assembled per character from the player battle files' equipment sections, with PROT 1204 as the Baka Fighter / default-equipment sibling pack.</div>
+      <div class="card-body">Where Vahn, Noa and Gala's models live. The field form is one pack (PROT 0874); the battle form is assembled per character from the equipment slots of the player battle files.</div>
     </a>
     <a class="card" id="monster-animation" href="monster-animation.html">
       <div class="card-title"><span>Monster animation</span> <span class="tag tag-done">Confirmed</span></div>
@@ -130,7 +152,7 @@
     </a>
     <a class="card" id="art-data" href="art-data.html">
       <div class="card-title"><span>Art data - Tactical Arts records</span> <span class="tag tag-partial">Inferred</span></div>
-      <div class="card-body">Per-character art records (<code>0xD0</code>-stride, in each player battle file's <code>record[0]</code>): command sequence, power bytes at <code>+0x24</code> (Confirmed), hit-cue timing, impact-effect class. The menu's arrows are a separate SCUS table.</div>
+      <div class="card-body">Per-character Tactical Art records (in each player battle file): command sequence, power bytes, hit-cue timing, impact-effect class. The menu's arrows are a separate table in the executable.</div>
     </a>
     <a class="card" id="save-record" href="save-record.html">
       <div class="card-title"><span>Per-character save record</span> <span class="tag tag-done">Confirmed</span></div>
@@ -200,7 +222,7 @@
     </a>
     <a class="card" href="world-map-overlay.html">
       <div class="card-title"><span>World-map slot-4 records</span> <span class="tag tag-done">Confirmed</span></div>
-      <div class="card-body">Slot 4 of each kingdom bundle is the world-map scene's ANM animation bank - the same clip container every field scene carries: 8-byte entries of three 12-bit translations and three 8-bit rotations, frame-major, read by the clip selector and the animated-mesh renderer. Not a mesh library, and not the bulk continent terrain.</div>
+      <div class="card-body">Slot 4 of each kingdom bundle: the world-map scene's ANM animation bank, the same clip container every field scene carries. Not a mesh library and not the continent terrain.</div>
     </a>
     <a class="card" href="effect.html">
       <div class="card-title"><span>Effect bundles</span> <span class="tag tag-done">Confirmed</span></div>

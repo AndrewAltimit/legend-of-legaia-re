@@ -1,19 +1,51 @@
 # Asset extraction
 
-Tools for extracting assets from a user-supplied disc image. Per the project's from-scratch model, no Sony bytes ship in this repo - the user runs the extraction tools against their own disc.
-
-## Top-level pipeline
-
-`legaia-extract` (in `crates/extract`) drives the full pipeline:
+The extraction tools turn a user-supplied disc image into ordinary files:
+textures as PNG, streamed audio as WAV, meshes as OBJ, dialog as JSON, plus the
+raw archive entries every other tool in the repo reads. One command runs the
+whole pipeline; each stage also has its own binary for when only one step is
+wanted. No game data ships in this repository - the tools run against the
+user's own disc, and their output (`extracted/`) is gitignored.
 
 ```bash
+cargo build --release
 ./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-The input is a raw Mode2/2352 `.bin` dump; a `.cue` sheet is also accepted and
+The input is a raw Mode 2/2352 `.bin` dump; a `.cue` sheet is also accepted and
 resolved to the BINARY track it references.
 
-The pipeline runs verify → disc → PROT → categorize → streaming-format extract → PNG → CD-XA demux → TIM-catalog TSV → dialog font. Skip flags: `--skip-png` (the streaming-container TIM → PNG conversion - a quick step that emits only the couple of TIMs the streaming containers carry; the bulk texture inventory is the TIM catalogs); `--skip-xa` (the CD-XA audio demux); `--skip-catalog` (the texture-inventory TSVs `prot_tim_catalog.tsv` + `prot_tim_deep_catalog.tsv`); `--skip-font` (the `font/` dialog-font artifacts); `--skip-verify` (the SHA verification).
+## Top-level pipeline
+
+`legaia-extract` (in [`crates/extract`](../../crates/extract/README.md)) runs
+these stages in order. Each later stage reads what an earlier one wrote.
+
+```mermaid
+flowchart LR
+    bin["disc .bin"] --> verify["verify SHA-256"]
+    verify --> disc["ISO 9660 walk"]
+    disc --> prot["split PROT.DAT"]
+    prot --> cat["categorize entries"]
+    cat --> stream["extract streaming sub-assets"]
+    stream --> png["TIM to PNG"]
+    bin --> xa["CD-XA demux to WAV"]
+    prot --> tsv["TIM catalogs"]
+    prot --> font["dialog font"]
+```
+
+| Stage | Writes | Skip flag |
+|---|---|---|
+| Verify the image's SHA-256 | - | `--skip-verify` |
+| Walk ISO 9660, copy every file | `PROT.DAT`, `CDNAME.TXT`, `SCUS_942.54`, `XA/`, ... | - |
+| Split `PROT.DAT` into its 1233 entries | `PROT/####_<name>.BIN` | - |
+| Categorize each entry by format | `PROT/categorize.json` | - |
+| Extract DATA_FIELD streaming sub-assets | `streaming/####_<name>/chunk##_<TYPE>/` | - |
+| Convert the streaming containers' TIMs to PNG | `.png` beside each `.tim` | `--skip-png` |
+| Demux CD-XA audio per channel | `XA_WAV/` | `--skip-xa` |
+| Write the texture inventories | `prot_tim_catalog.tsv`, `prot_tim_deep_catalog.tsv` | `--skip-catalog` |
+| Build the dialog-font artifacts | `font/` | `--skip-font` |
+
+`--verbose` prints one line per file written.
 
 Output lands in `./extracted/` (gitignored):
 
@@ -89,10 +121,10 @@ title-screen overlay code is inside its footprint, not past it.
 `--clamp-footprint` is a deprecated no-op, accepted so existing invocations
 keep working.
 
-`list` prints the entry size next to `decl_span`, the historical
+`list` prints the entry size next to `decl_span`, the superseded
 `toc[p+5] - toc[p+3] + 4` expression, and flags with `ovr` the entries where
-that expression overshoots - the ones whose pre-correction `.BIN` carried a
-neighbour's tail (865/866 into the monster archive 867). `locate` maps a byte
+that expression overshoots into a neighbour (865 / 866 into the monster archive
+867). A coordinate measured under it may name the wrong owning entry. `locate` maps a byte
 offset (absolute, or in-`.BIN` via `--in-entry`) to the entry that really owns
 it and says so when the offset runs past that entry's end. `retail-names`
 shows what the **retail** loader reads back out of a `CDNAME.TXT` next to the
@@ -208,6 +240,11 @@ mdt classify <file>                       # detect runtime-buffer vs flat-record
 mdt records  <file> --limit 8
 mdt slots    <file> --limit 8
 ```
+
+Beyond these, `asset` carries the analysis subcommands documented on their own
+pages: `asset account` ([byte accounting](byte-accounting.md)), `asset overlay`
+([static overlay pipeline](static-overlay-pipeline.md)) and
+`asset field-op-census` ([field-op census](field-op-census.md)).
 
 ## Disc-gated tests
 

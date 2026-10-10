@@ -1562,9 +1562,8 @@ impl PlayWindowApp {
                 cursor,
                 picker_rect: panel.picker_rect(),
                 picker_hand: panel.picker_hand_drawn(),
-                // The advance hand shows at a page break AND on the final
-                // fully-typed page (retail waits for a confirm on both).
-                waiting: panel.is_waiting_for_input() || panel.is_done(),
+                hand_bob: panel.picker_hand_bob(),
+                advance_icon: self.session.host.world.page_mark_frame(panel),
             })
         };
         if let Some(panel) = self.active_dialog.as_ref() {
@@ -1786,17 +1785,18 @@ impl PlayWindowApp {
             if snap.picker_hand {
                 out.push(legaia_engine_render::dialog_option_hand_sprite(
                     &assets.rects,
-                    (prect.0, prect.1),
+                    (prect.0 + snap.hand_bob, prect.1),
                     snap.cursor,
                     stage_origin,
                     stage_scale,
                 ));
             }
-        } else if snap.waiting {
-            // Page-advance hand at the lower-right rim while the pager
-            // waits for confirm (FUN_8002B994 kind 1).
-            out.push(legaia_engine_render::dialog_advance_hand_sprite(
-                &assets.rects,
+        } else if let Some(frame) = snap.advance_icon {
+            // The two-frame page mark at the lower-right rim while the
+            // pager waits for confirm (FUN_8002B994 kind 1).
+            out.push(legaia_engine_render::dialog_page_mark_sprite(
+                legaia_engine_core::save_menu_atlas::ATLAS_RECT_ADVANCE_ICON
+                    [usize::from(frame) & 1],
                 lay.main,
                 stage_origin,
                 stage_scale,
@@ -1943,8 +1943,11 @@ pub(super) struct DialogSnapshot {
     pub picker_rect: Option<(i32, i32, i32, i32)>,
     /// The option hand is drawn (the slide rests).
     pub picker_hand: bool,
-    /// The panel is waiting for a confirm press (page fully typed).
-    pub waiting: bool,
+    /// The option hand's idle bob (X, stage pixels).
+    pub hand_bob: i32,
+    /// The page mark's strip frame, `None` when the pager draws none (no
+    /// wait, or an automatic press counting down).
+    pub advance_icon: Option<u8>,
 }
 
 /// Stage-pixel dialog box layout (see

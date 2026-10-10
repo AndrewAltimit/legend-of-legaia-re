@@ -1,559 +1,160 @@
 # Runtime reach triage
 
-[`replay-port-coverage.py`](port-catalog.md) joins `cargo llvm-cov` output for
-the pad-only replay ladders against the port catalog's `// PORT:` anchors and
-reports three sets. Two of them are defect lists and are normally empty. The
-third - *live but never entered* - is neither empty nor a defect list, and it is
-the one this page is for. (A fourth bucket, *not observable (const)*, holds the
-item anchors - see the note under the buckets below.)
+The port catalog says which ported functions a host *can* reach. This page is
+about which ones a scripted playthrough actually **executes**.
+[`replay-port-coverage.py`](../../scripts/ci/replay-port-coverage.py) joins
+`cargo llvm-cov` output for the replay ladders against the catalog's
+`// PORT:` anchors, and the set it calls *live but never entered* is the reach
+worklist. Each address in that set gets one verdict here - a gap in the port, a
+gap in the ladders, or neither - so the answer is not re-derived per reader.
 
-Its size is a property of the ladder set, not of the port, and the ladder set is
-what has moved. When the union was one headless binary the static live count was
-several times what a run executed; over the full canonical union it is now a
-**minority** of live anchors that no run enters. Two things follow, and the
-second is the one that changes how the page reads: a row here is now much more
-likely to be a real gate than a missing fixture, and the page's own residue is
-concentrated rather than spread - see
-[the cast-module band](#the-cast-module-band-the-largest-cluster-on-this-page-and-the-one-with-no-rows).
+```mermaid
+flowchart LR
+    L["Canonical ladders<br/>(CANONICAL_LADDERS)"] --> C["cargo llvm-cov<br/>one cov-*.json each"]
+    C --> J["replay-port-coverage.py<br/>join on PORT anchors"]
+    P["port-catalog.py --live<br/>catalog.csv"] --> J
+    J --> E["entered"]
+    J --> N["never entered"]
+    J --> X["not observable (const)<br/>or no record in any binary"]
+    N --> W["reach worklist:<br/>buckets (a)-(d) below"]
+    N --> D["disclosed and<br/>receiver-gated dead"]
+```
 
-This page is the per-row verdict for that third set, so the question "is this a
-gap in the port, a gap in the ladders, or neither" is answered once per address
-instead of re-derived. It is a snapshot of a worklist: a row leaves the page
-when a ladder reaches it or the wiring lands. What outlives the rows is the
-bucket definitions plus the structural facts below about what a pad-only ladder
-can and cannot execute at all.
+The counts the report prints are properties of the **ladder set**, not of the
+port: every ladder that lands moves all of them, so the page carries no totals.
+Re-derive them with a bare run. A row leaves this page when a ladder enters it,
+when the wiring lands, when its static verdict stops being `live`, or when an
+oracle that already drives it is promoted into the union.
 
-The export recipe is the script's own module docstring: one
-`target/cov-<test>.json` per ladder that `--list-ladders` prints as
-`<test> <package>`. A bare run joins every `target/cov-*.json` (`--json PATH`,
-repeatable, names them instead) and writes the report to `--out`, by default
-`target/port-catalog/replay-port-entry.md`. `--fail-on-disclosed` exits
-non-zero when a `NOT WIRED` anchor ran, `--page-audit` is the page check
-[below](#a-row-can-leave-this-page-without-a-ladder-reaching-it), and
-`--selftest` exercises the item-verdict resolver on a synthetic corpus. The
-script skips (exit 0) when no export is present.
+The current worklist is short: `8004629c` is bucket (b) (its gate is one disc
+carrier, `urudre1` stager record 14, driven by `dream_yaw_part_page_ladder`),
+and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` are bucket (d). `801f2134`,
+`800485bc`, `801dba90` and the battle-tutorial countdown arm `801f7628` (see
+[`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code))
+read entered.
 
-## The three figures, and the denominator they belong to
+## Running it
 
-The report opens with three counts over the canonical union: the `// PORT:`
-anchors the static graph calls **live**, how many of those some run
-**entered**, and how many **no run entered** - the third being the set this
-page verdicts. Over the current union they are **900 live / 853 entered / 18
-never entered, across 91 ladders**, with both defect lists empty (and 33
-addresses in the *not observable* bucket plus 2 const anchors, outside all
-three). Of the 18, 13 are [disclosed and receiver-gated
-dead](#a-live-row-its-own-tag-and-the-strict-graph-both-call-dead) and 5 are
-the reach worklist, every one of which carries a verdict below: `8004629c`
-(b), and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` (d). The three rows
-an earlier figure listed as awaiting a newer union member - `801f2134`,
-`800485bc` and `801dba90` - read entered. `8004629c`'s gate was a single disc
-carrier (`urudre1` stager record 14) rather than absent content, and
-`dream_yaw_part_page_ladder` - a member that joined after this union was
-taken, so the figures above do not count it - drives that carrier on the play
-page; the next full export should read it entered and leave the four (d) rows. The
-battle-tutorial countdown arm `801f7628`, a port site the ignore list had
-hidden as interior until the static images took the inherited-tail cut
-([`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code)),
-joined the live set in the same union and reads entered.
+```bash
+python3 scripts/ci/replay-port-coverage.py --list-ladders   # <test> <package> per union member
+python3 scripts/ci/replay-port-coverage.py                  # join every target/cov-*.json
+python3 scripts/ci/port-catalog.py --live                   # writes target/port-catalog/catalog.csv
+python3 scripts/ci/replay-port-coverage.py --page-audit     # no export needed
+```
 
-The ladder count belongs in the same breath as the other three, because none
-of them is a property of the port: every ladder that lands moves all three,
-and a figure quoted without its denominator reads like a measurement of the
-engine. That is also why this is the *only* count the page carries - the
-per-bucket totals below stay off it for reasons that are about rot and about
-concurrent editing, and are spelled out where the buckets are.
+The export recipe is the script's module docstring: one
+`target/cov-<test>.json` per ladder. `--json PATH` (repeatable) names exports
+instead of globbing; `--out` sets the report path (default
+`target/port-catalog/replay-port-entry.md`); `--fail-on-disclosed` exits
+non-zero when a `NOT WIRED` anchor ran; `--selftest` exercises the item-verdict
+resolver. The script exits 0 when no export is present.
 
-Two more buckets sit beside the three and are neither entered nor
-never-entered: the item anchors the report files *not observable (const)*,
-and the addresses [no binary in the union carries a record
-for](#a-row-can-also-be-neither-entered-nor-never-entered). The second is much
-the larger of the two and moves with the ladder set rather than with the port,
-so an address list joined against the never-entered set alone will read those
-as converted.
+<a id="a-row-can-leave-this-page-without-a-ladder-reaching-it"></a>
 
-One caveat travels with every figure and should be checked for the next
-one: whether each member of the union exited zero when it was taken. This
-one was a clean export of the whole list, on the default profile, with every
-member green and no member skipping for want of data (see
-[the worktree note](#a-worktree-export-is-a-disc-free-export-unless-the-data-is-found));
-an earlier
-figure on this page was taken while `v0_1_playthrough` exited non-zero, and a
-union taken while a member fails is a different number rather than a smaller
-one - see
-[the partial-union note](#a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line).
-The export must also be **clean** of any source edit made while it ran: an
-export built partly before and partly after an edit to a file mixes two line
-maps for it, and the reader scores an anchor against both. An edit that
-keeps every line where it was (a tag moved between two adjacent doc blocks of
-the same length) is the one exception, and a member whose own test file
-changed can be re-exported alone - its test file holds no anchors. The
-figure above used both. Re-deriving with a bare `replay-port-coverage.py` is
-cheaper than trusting this line.
+`--page-audit` joins every backticked address on this page against the catalog
+CSV and names the rows that are ported but no longer `live`, with the reason
+(`REPLACED-BY:` or a `NOT WIRED:` disclosure). Such a row belongs to
+`--live-audit` and [`live-audit-triage.md`](live-audit-triage.md), not here -
+remove its citation rather than explaining it. Run it before spending an
+export: an export is a full instrumented build per ladder.
 
-## Buckets
+## Reading the report
+
+<a id="buckets"></a>
+
+| Set | Meaning |
+|---|---|
+| entered | Some run executed a region of the anchor's function. |
+| never entered, worklist | Live, unexecuted, and owed a verdict in one of the buckets below. |
+| <a id="a-live-row-its-own-tag-and-the-strict-graph-both-call-dead"></a>never entered, disclosed and receiver-gated dead | Every permissively-live anchor carries `NOT WIRED:` or `REPLACED-BY:` and the strict graph reaches none of them (`disclosed_dead_addresses`). Three instruments agree, so it is not reach work. If a ladder later enters one it surfaces as *disclosed executed*. The memory-card I/O machines (`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the stream-file reader and `scene_name_sync.rs` have this shape. |
+| not observable (const) | A tag above a `const` / `static` / `type` alias has no lines to execute. It resolves through executed references (`port-catalog.py: item_reference_patterns` / `item_reference_hit`) and otherwise files here - never "entered", never "never entered". Type anchors resolve through the executed methods of the type's own `impl` blocks. |
+| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`, `battle_stream_slot.rs`, `battle_helpers.rs`, `code_lock_actor.rs`. |
+| defect lists | Disclosed `NOT WIRED` anchors that executed, and the item-verdict defects. Normally empty. |
+
+Worklist buckets:
 
 - **(a) NO-LADDER** - reachable in real play on at least one host, but no
-  existing ladder drives that content. The fix is a replay fixture, not a wire.
+  ladder drives that content. The fix is a fixture, not a wire.
 - **(b) GATED** - reachable only behind a story flag, scene or game state the
   ladders do not reach. The gate is named per row.
-- **(c) HOST-DEAD** - the static graph finds a caller, and nothing on any of the
-  three hosts reaches it in play. The valuable bucket: these are `live` in the
-  permissive graph, so `--live-audit`'s *undisclosed inert ports* section cannot
-  see them.
+- **(c) HOST-DEAD** - the static graph finds a caller, and nothing on any host
+  reaches it in play. These are `live` in the permissive graph, so
+  `--live-audit`'s *undisclosed inert ports* section cannot see them. Never
+  assigned off the static verdict: each rests on a strict caller scan with
+  comment lines dropped and `#[cfg(test)]` bodies excluded.
 - **(d) NOT-PLAYTHROUGH** - not playthrough-shaped. A preservation parser whose
-  host is a CLI subcommand is *wired* (a CLI subcommand is a host root, per
-  [`stale-not-wired-triage.md`](stale-not-wired-triage.md)); "no engine consumer"
-  is a different claim and is written as one.
+  host is a CLI subcommand is *wired*
+  ([`stale-not-wired-triage.md`](stale-not-wired-triage.md)); "no engine
+  consumer" is a different claim and is written as one.
 
-**A const anchor is never a row in these buckets' tables.** A `// PORT:` tag
-above a `const` / `static` / `type` alias anchors to an item with no lines to
-execute, so the report resolves it through attributable references - the
-catalog's strict item rule, one definition shared by both scripts
-(`port-catalog.py: item_reference_patterns` / `item_reference_hit`): the item
-reads *executed* when an executed non-test `fn` names it bare from the item's
-own file or module-/type-qualified from anywhere, and otherwise files under
-**not observable (const)** - deliberately neither "entered" nor "never
-entered", because no line of coverage can ever convert such a row. Type
-anchors (struct / enum / trait) resolve through the executed methods of the
-type's own `impl` blocks, with the same no-`impl`-in-file fallback the
-liveness pass uses. A const row in the report is therefore always a statement
-about its referencing functions, and a disclosed `NOT WIRED` const is accused
-only when executed code really references it.
+<a id="a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it"></a>
 
-Liveness is an upper bound, so bucket (c) is never assigned off the static
-verdict. Each (c) row below rests on a strict caller scan of the workspace with
-comment lines dropped and `#[cfg(test)]` bodies excluded - "the only caller is a
-unit test" is the finding, and it is not visible to a scan that counts doc
-comments as references.
+**Before writing a fixture for an (a) row, grep the test corpus for its
+address.** `CANONICAL_LADDERS` in the script is the only statement of union
+membership, and a green test outside it exports nothing.
+`w1f2_field_vm_op_arms_disc` drove the `4C EA` and `4C 52` rows off the disc's
+own bytecode for as long as they sat here. The bulk version of that grep is a
+measurement: build every engine integration test instrumented, export each
+alone, and join each against the never-entered set
+(<a id="the-fastest-converter-is-the-test-corpus-run-under-coverage"></a>about
+the cost of one canonical union). A hit is a candidate, not a promotion - only
+a test that drives the row through the path a host calls converts it. Declined
+as executors of the other kind: the move-VM census tests (a `NullHost`),
+`stream_file_real` (the test-only `StreamFileHost`), and `scene_chain_e2e`
+(calls `SceneHost::bgm_seq_bytes` itself; `FUN_800243F0`'s tag sits on
+`SceneHost::music_bank_entry_bytes`). A promoted oracle that is not pad-driven
+joins the list with the L3 members' disclosure (record-seated, driven through
+the ordinary engine path), and it counts **sites**, not disc occurrences.
 
-### A live row its own tag and the strict graph both call dead
+## Traps when reading a figure
 
-The catalog's `live` is the **permissive** graph, where a name-matched call
-edge is enough, and the receiver-gated sibling graph feeds only the
-stale-disclosure test (`port-catalog.py --live-audit`). So an address can be
-`live` on an edge the strict graph refuses while its own `PORT:` block says no
-host is owed a call - and then neither audit owns it: `--live-audit` skips it
-because it is live, and the stale test stays quiet because the strict graph
-agrees with the disclosure. It used to land here, as never-entered reach work
-that no ladder could ever convert: the memory-card I/O machines
-(`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the
-stream-file reader, `scene_name_sync.rs` and the disclosed battle helpers all
-had that shape, and together they were half the never-entered set.
+| Trap | What happens | What to do |
+|---|---|---|
+| <a id="a---release-export-cannot-tell-never-called-from-inlined"></a>`--release` export | `-C instrument-coverage` emits one counter per function; an optimised build inlines small ones and leaves the out-of-line record at zero. Measured: `advance_slice` 40 executions on the default profile against 0. | Re-measure an (a)/(b) row on the default profile. A (c) row is unaffected: its evidence is the source-side caller scan. |
+| <a id="a--p-scoped-export-reports-one-crate-however-many-it-ran"></a>`-p`-scoped export | `cargo llvm-cov -p <pkg> --test <name> --json` scopes the **report** to that package's sources. A ladder whose yield is in other crates reads as changing nothing. | Run with `--no-report`, then a bare `cargo llvm-cov report --json` over the profiles. |
+| <a id="a-ladder-that-fails-and-a-ladder-nobody-exported-are-the-same-line"></a>partial union | The `PARTIAL UNION` line names members with no `cov-*.json`; a member nobody exported and one whose run **failed** look the same. | Read the line against the export run's log. A red member silences every row it converts. |
+| <a id="a-worktree-export-is-a-disc-free-export-unless-the-data-is-found"></a>worktree export | Most members find `extracted/` and `saves/library` by relative path, and `critical_path_replay` / `minigame_replay` off the compile-time `CARGO_MANIFEST_DIR`. In a worktree they skip-pass and still export. | Newer members honour `LEGAIA_EXTRACTED_DIR` / `LEGAIA_SAVES_LIBRARY`. For the rest, run from a shadow crate directory whose `../..` links the real data. A member that found its data prints no `[skip]` line. |
+| dirty export | An export built partly before and partly after a source edit mixes two line maps for that file. | Export from a clean tree; a member whose own test file changed can be re-exported alone. |
+| <a id="a-tag-between-two-functions-is-scored-by-the-next-function-that-has-regions"></a>tag between two functions | `FileCoverage.verdict_at` falls through to the next span at or after the tag. The three `mode_init_bare` tags inherited a later function's "executed" and read as disclosed-anchor-executed. | Treat a "disclosed `NOT WIRED` anchor executed" row as a claim: confirm a caller exists. |
+| <a id="a-module-tag-answers-for-its-file-not-for-its-routine"></a>module tag | A `//! PORT:` tag reads as "something in this file executed". A function-level tag in the same file now decides; the module tag is consulted only for an address that has none. A `type` anchor does not silence it. | `FUN_801CFA48` read entered only because a sibling borrowed the file's `RetailTrig` LUT. |
+| <a id="the-other-way-that-category-misfires-a-disclosure-about-one-arm"></a>disclosure about one arm | The `NOT WIRED:` marker is anchor-level. Written about one branch, it disclaims the whole routine. | Write a gap in an arm's **data** as prose. `FUN_801DBF9C` (the party cast trigger) runs on every pre-cast expiry; only its `spell_id < 0x25` arm lacks the overlay table at `0x801F4E64` / `0x801F4EDC`. |
+| first-site attribution | The report emits one row per address carrying `sites[0]`. `8002174c`'s row names `apply_morph_weights`, while the address is live through `MorphWeightEnvelope::tick`. | Read the anchor list, not the row's symbol. |
+| file-scoped tags | A `//!` tag, or a `///` tag on a data `struct` with no `impl`, gets a file-wide verdict: "does anything in this file run". It can produce **pseudo-entries**: the seven `engine-vm/src/lib.rs` actor-VM addresses read entered while only `Position::new` executed ([`vm-inventory.md`](../subsystems/vm-inventory.md#ported-but-inert)). | Re-key the tag onto the implementing function. A tag above a `const` anchors to the item ([`port-catalog.md`](port-catalog.md)); `80037174` sits on `pub struct CutsceneNarration`, and `801d603c` on `choice_panel_draws_for`. |
+| group cells | A cell that names the *screen* an address is drawn on credits every routine on it. | A rung that reaches a screen is not a rung that reaches the code on it. |
 
-The report now splits them out. A never-entered address whose permissively
-live anchors **all** carry `NOT WIRED:` or `REPLACED-BY:`, and none of whose
-anchors the strict graph reaches, is listed under *disclosed and
-receiver-gated dead* (`disclosed_dead_addresses` in the script). Three
-instruments agree on it - the disclosure, the strict graph and the coverage -
-so it is not a reach row. The never-entered **total** is unchanged and the
-worklist line beside it is what this page verdicts; a row in the dead table
-that a ladder later enters surfaces as *disclosed executed*, the loudest
-bucket, so the split cannot hide a stale disclosure.
-
-### A `--release` export cannot tell "never called" from "inlined"
-
-`-C instrument-coverage` emits one counter per function. An optimised build
-inlines the small ones and leaves the out-of-line record at zero, and nothing
-downstream can distinguish that zero from a function no run entered. Measured
-on one ladder over the same disc, default profile against `--release`:
-`advance_slice` 40 executions against 0, `slice_word_count` 39 against 0, three
-more at 1-3 against 0. Two of those five were on the never-entered worklist for
-no other reason.
-
-This lands on the two bucket kinds very differently, and blanket-caveating the
-page would lose the distinction:
-
-- an **(a)** or **(b)** row whose only evidence is "no run entered it" is a
-  hypothesis when it was measured off a `--release` export - the routine may
-  have run and been inlined out of its own record;
-- a **(c)** row is unaffected. Its evidence is the source-side caller scan
-  above, which no compiler profile participates in; the coverage number only
-  ever corroborated it.
-
-So: re-measure an (a)/(b) row on the default profile before spending a fixture
-on it, and read a (c) row as it stands.
-
-### A `-p`-scoped export reports one crate, however many it ran
-
-`cargo llvm-cov -p <pkg> --test <name> --json` scopes the **report** to that
-package's sources, not only the build. Measured on the native minigame ladder
-over one set of profiles: the scoped export carries 42 files, every one under
-`crates/engine-shell/`, and reporting the same profiles with no `-p` carries
-652 across fifteen crates. The ladder's whole yield is in the second number -
-the dance HUD, the fishing chrome and actors, the Baka number drawers and the
-casino counter live in `engine-minigames` (re-exported by `engine-core`), and
-the draw builders under them are `engine-ui` - so a ladder under
-`engine-core`'s tests runs code in two other crates.
-
-The failure mode is quiet in exactly the wrong direction: a scoped export shows
-the ladder joining the union and changing nothing, which reads identically to a
-ladder that did not work. Export in two steps - `--no-report` to run, then a
-bare `cargo llvm-cov report --json` over the profiles - whenever the code a
-ladder drives lives outside the package the test does.
-
-It also lifts one of the structural exclusions below: `engine-render` is a hard
-wgpu link the browser composition ladder cannot carry, and the native window
-*is* that link, so a spawned `play-window` run reports executed regions there.
-
-### A ladder that fails and a ladder nobody exported are the same line
-
-`replay-port-coverage.py` opens its report with a `PARTIAL UNION` line naming
-every `CANONICAL_LADDERS` member with no `cov-*.json`, and that line cannot
-tell the two reasons apart. A member nobody exported and a member whose run
-**failed** both leave no export behind, so both arrive in the same list, and
-the second reads as an export somebody forgot rather than as a red test.
-
-The remedies are opposite. An unexported ladder is one command away from
-joining the union. A failing one silences its whole contribution until the
-failure is fixed - every row it was written to convert keeps reading *never
-entered*, and the page's verdict for those rows ("a ladder reaches it") is
-true of the source and false of the measurement.
-
-So a union taken while a member is red is a different number, not a smaller
-one, in the same way the module docstring already says a union over a subset
-is. Read the `PARTIAL UNION` line against the export run's own log before
-reading the never-entered set: a member that appears there *and* has a failing
-run is the one to fix first.
-
-### A worktree export is a disc-free export unless the data is found
-
-Most of the union finds its data by **relative path** - `extracted`,
-`../../extracted`, `saves/library` from the crate directory the test runs in -
-and two members (`critical_path_replay`, `minigame_replay`) resolve it off the
-**compile-time** `CARGO_MANIFEST_DIR`. `extracted/` and `saves/library/` are
-gitignored, so a worktree checkout has neither, and every data-reading member
-skip-passes there. The export then reads green end to end with no `PARTIAL
-UNION` line, because every member *did* export - an export of a skip.
-
-The members written since honour `LEGAIA_EXTRACTED_DIR` /
-`LEGAIA_SAVES_LIBRARY` before the relative fallback, but the older ones do not,
-so an environment variable is not enough. What works without copying the data
-into the tree is to run each test binary with its working directory in a
-**shadow** crate directory outside the checkout - a directory whose `../..`
-holds links to the real `extracted/` and `saves/`, and whose own entries link
-back to the crate - and to give the two compile-time readers a
-`CARGO_MANIFEST_DIR` pointing into the same shadow at build time (a
-pre-existing rustc wrapper behind `cargo-llvm-cov`'s own). The test logs are
-the check: a member that found its data prints no `[skip]` line and enters
-disc-only code, and a union taken any other way is not the figure above.
-
-### The fastest converter is the test corpus, run under coverage
-
-The [promoted-oracle exit](#a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it)
-asks for a grep of the test corpus per row. Run once, that grep is replaced by
-a measurement: build every integration test of the engine crates
-instrumented, run each with its own profile, export each alone, and join every
-export against the never-entered set. Each hit names a test that already
-enters the row, and the whole survey costs about what the canonical union
-costs.
-
-A hit is a **candidate**, not a promotion. Each one has to be read, because the
-join cannot tell a test that drives the row through the path a host calls
-from one that calls the kernel from its own body, and only the first converts
-anything. The promoted ones drive the host path (a live battle round, the
-pause-menu sub-session, the page's per-tick screen-prim cache, the disc's own
-bytecode through the field VM); three hits were declined as executors of the
-other kind:
-
-- the move-VM census tests step shipped move programs under a `NullHost` -
-  proof the carriers exist, not a host running them;
-- `stream_file_real` drives the test-only `StreamFileHost`, the disclosed
-  shim whose missing production owner is the reason its row is filed at all;
-- `scene_chain_e2e` calls `SceneHost::bgm_seq_bytes` itself - the
-  change-detection index an oracle reads, not the resolver play runs, which
-  is why `FUN_800243F0`'s tag sits on `SceneHost::music_bank_entry_bytes`.
-
-### A tag between two functions is scored by the next function that has regions
-
-`FileCoverage.verdict_at` resolves a `// PORT:` line to the enclosing function
-span, and failing that to the next span starting at or after the tag. When the
-tag's own symbol is absent from the export's line geometry, "the next span" is
-some later function, and the tag inherits *that* function's verdict.
-
-The `mode_init_bare` tags are the worked example. All three sit in a comment
-block between items, no exported span contains their lines, and the next span
-present starts 70-odd lines further down and executed - so the join reports
-three `NOT WIRED`-disclosed anchors as executed, which is the report's own
-highest-priority category. No caller exists: the only references to
-`mode_init_bare` outside its own definition are `#[cfg(test)]` unit tests in
-the same file, which no ladder builds. Scanning every export for the symbol
-finds it at count 0 in all of them.
-
-Two properties make it hard to spot. The export carries a record per binary
-built into the target dir, so one symbol appears under several crate hashes at
-several line geometries at once, and a stale record's span can sit hundreds of
-lines from the current source. And the fall-through is silent: an anchor whose
-owner genuinely never ran is exactly the anchor whose record carries no live
-regions, so the rows most likely to be mis-scored are the ones the category is
-meant to find.
-
-The joiner already knows each anchor's symbol - it prints it in the row - and
-already has `executed_overlapping` for resolving a symbol's *source* span
-against the export. Routing anchors with a known symbol through that path,
-instead of through the line fall-through, is what closes this. Until then, read
-a "disclosed `NOT WIRED` anchor executed" row as a claim to check rather than a
-finding: confirm a caller exists before treating it as a disclosure defect.
-
-### A module tag answers for its file, not for its routine
-
-A `//! PORT:` module tag has no span, so the join reads it as "something in
-this file executed". That is the right answer for a tag that is the address's
-only anchor, and the wrong one when the same address also carries
-function-level tags in the same file: then any sibling in the file credits the
-address, whatever the routine those tags name did. `FUN_801CFA48`, the effect
-ribbon, read entered for that reason alone - `effect_default_arm` borrows
-`effect_ribbon.rs`'s `RetailTrig` LUT, and that LUT was the only code in the
-file any ladder ran. No ribbon was ever built.
-
-So a function-level tag in the same file now decides, and the module tag is
-consulted only for an address that has none. Over the clean union that
-correction moved three addresses from entered to never entered: `801cfa48`,
-`801d9110` (the Magic screen's state-2 confirm dispatch, which only the list
-build had touched) and `801dba90`. The second is converted - see below - and
-the other two are rows:
+Three addresses moved from entered to never entered under the module-tag rule:
 
 | address | bucket | why |
 |---|---|---|
-| `801cfa48` | (a), **promoted** | wired on both battle hosts (`World::active_effect_ribbons`), but no pad ladder drives a battle whose move program issues op `0x42`. The oracle that does already existed: `effect_ribbon_carriers_real` stages all four shipped carriers (PROT 0923 / 0934 / 0957 / 0964) through `World::spawn_summon` and `World::tick_summon` and reads the list both hosts draw, so it is a canonical member now, under the promoted-oracle disclosure. Its `801d0290` row is the same gap: the ribbon is that generator's only consumer |
-| `801d9110` | (a), **converted** | `w7_pause_learned_content_ladder` seeds a learned field heal, MP and a hurt lead, confirms caster and spell by pad, and requires the phase the spell's `+2` flag selects plus an HP rise |
-| `801dba90` | (d), **converted** | `reward_banner`, live only through the Muscle Dome session's reward path. Retail reaches the routine from nowhere ([`battle_cast_dispatch.rs`'s note](#engine-vm)), but the minigames page composes its victory banner through it on every won contest; `dome_ladder_and_hub_real` plays a contest to `won` with the page's own commit / resolve sequence and requires the banner, against no banner before the contest |
-
-The rule is narrower than it could be on purpose: a `type` anchor in the same
-file does **not** silence the module tag, because a type's methods are a
-weaker witness than its file - `save_subscreen.rs`'s sub-screen enum is used
-by matching its variants, which no method count sees.
-
-### The other way that category misfires: a disclosure about one arm
-
-An anchor's disclosure is read anywhere in its doc block, and the marker is an
-**anchor-level** claim - "no host calls this port". A doc block that uses the
-same words about one *branch* of a two-branch routine therefore disclaims the
-whole routine, and `--fail-on-disclosed` then reports the ladders as having
-traversed a stub they did not.
-
-`FUN_801DBF9C`'s port is the worked case and it is not a stale disclosure. The
-routine is the party cast trigger, called on every pre-cast expiry, and the
-ladders run it; what is unimplemented is the `spell_id < 0x25` arm's per-spell
-anim-pair list, because the engine has no parse of the overlay table at
-`0x801F4E64` / `0x801F4EDC`. Both halves are true, and only one of them is
-about wiring.
-
-So a gap in an arm's **data** is written as prose, never in the disclosure form
-- the form is reserved for "nothing calls this". The alternative reading, that
-the routine should carry the marker because part of it is unfinished, makes the
-report's highest-priority category fire on exactly the routines a ladder
-proves are live.
-
-### A row can also be neither entered nor never-entered
-
-The report has a third answer, and reading a page row against the
-never-entered set **alone** turns it into the wrong one. An anchor whose file
-no binary in the union carries has no coverage record at all: it is outside
-both counts, and an address list joined against "never" finds it absent and
-reads that as converted. A missing measurement becomes a claim of progress,
-which is the one direction an instrument must never fail in.
-
-Measured over this page's own citations: of the addresses it names, a set the
-size of a small table is in that bucket, and **every one of them is in
-`engine-vm`** - module anchors on `scus_core_helpers.rs`, `overlay_rng.rs`,
-`world_map_clut_fade.rs`, and function anchors in `battle_stream_slot.rs`,
-`battle_helpers.rs`, `code_lock_actor.rs`. The shape is consistent with
-link-time dead-code removal: a function nothing in the linked binary
-references is not emitted, so no counter for it exists to be zero.
-
-`replay-port-coverage.py` names that set in the report (*Not observable in any
-of these binaries*) rather than only counting it, for the same reason the
-host-drift gate names its orphans: a count cannot tell "the ladders reached
-it" from "nothing looked". Converting such a row means linking the crate from
-a ladder, not wiring anything - and until one does, the row's reach verdict is
-**unmeasured**, which is a third word this page needs and did not have.
+| `801cfa48` | (a), **promoted** | Wired on both battle hosts (`World::active_effect_ribbons`); no pad ladder drives a move program issuing op `0x42`. `effect_ribbon_carriers_real` stages all four shipped carriers (PROT 0923 / 0934 / 0957 / 0964) through `World::spawn_summon` and `World::tick_summon`, and is a canonical member under the promoted-oracle disclosure. `801d0290` is the same gap: the ribbon is that generator's only consumer. |
+| `801d9110` | (a), **converted** | `w7_pause_learned_content_ladder` seeds a learned field heal, MP and a hurt lead, confirms caster and spell by pad, and requires the phase the spell's `+2` flag selects plus an HP rise. |
+| `801dba90` | (d), **converted** | `reward_banner`, live only through the Muscle Dome session's reward path. Retail reaches the routine from nowhere ([`battle_cast_dispatch.rs`'s note](#engine-vm)), but the minigames page composes its victory banner through it; `dome_ladder_and_hub_real` plays a contest to `won` and requires the banner. |
 
 ## What a pad-only ladder structurally cannot execute
 
-The *headless* ladders drive `BootSession`, which constructs no renderer, no
-audio device and no draw list; `crates/engine-session/src/boot.rs` names neither
-`engine-ui` nor `engine-render`. Under their union alone, four whole crates
-report **zero** executed regions - which is a fact about the harness, not the
-port, and it is what kept the largest NO-LADDER cluster on this page invisible
-to the reach report.
+The headless ladders drive `BootSession`, which constructs no renderer, no
+audio device and no draw list. Each exclusion below is a fact about a harness,
+and each has a union member that lifts it.
 
-`BootSession::tick` routes the naming prompt's pad edges as both hosts do
-(`World::step_name_entry_frame`), so a headless run that only ticks crosses
-the opening's op `0x49` (see the [full-game ladder](full-game-ladder.md#seeding)).
+| Exclusion | Why | What lifts it |
+|---|---|---|
+| draw-list builders (`engine-ui`) | `crates/engine-session/src/boot.rs` names neither `engine-ui` nor `engine-render`. | `play_compose_ladder` (`crates/web-viewer/tests/`) drives the play page's `LegaiaRuntime` by pad and composes its whole per-frame read surface. |
+| `engine-render` | A hard wgpu link `web-viewer` does not carry. | A spawned `play-window` run: `LLVM_PROFILE_FILE` is inherited by child processes, so a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the child's profile merged into the export. |
+| `bin/`-resident code | No `#[test]` can *call* into a `bin/` target. | The same spawn route: a ladder that runs the subcommand covers it. The native window's composition is library code (`crates/engine-shell/src/window/`). |
+| native minigames | The window opens each from `WindowEvent::KeyboardInput` (`K` dance, `U` how-to, `L` fishing, `O` slots, `M` Muscle Dome, `B` Baka, `P` prize exchange); `--pad-script` writes a pad word and that handler never runs. | `--key-script` (`TICK:KEY`), composed with `--pad-script`; `w5_native_minigame_ladder` asserts each rung's captured frame differs from the same tick with nothing open. Needs a display. |
+| the standalone minigames page | Neither `minigame_replay` nor `play_compose_ladder` drives it. | Its own oracles in `crates/web-viewer/tests/`. |
+| the BGM route | No pad ladder holds a `BgmDirector`: `critical_path_replay`, `minigame_replay` and `play_compose_ladder` never call `SceneHost::route_bgm_events`, and the `BootSession` ladders set `enable_audio: false`. Every `0x35` sub-op arm and the mixer path are unentered by construction. | `w1e_scene_bgm_transition_ladder` and `crates/engine-audio/tests/w1e_audio_session_ladder.rs` (through `legaia_engine_audio::TestAudioSink`). They are session-shaped, not pad-driven. |
+| `mdec` | The play page has no STR playback (its FMV arm auto-skips). | A spawned `play-str` run. |
+| render-pass callers | A row whose only callers are render passes needs a **composing** ladder; no headless fixture reaches it however deep it walks. | See [the fog rows](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one). |
 
-It also runs the **world side of the hosts' frame tail**. Both play hosts
-follow the scene tick with a tail of world-side steps - seat the pending
-move-FX, advance the three effect scene-graphs, route the battle effect-script
-spawns, drain the ANIMATE cues, drain the scripted VRAM effects - and for as
-long as only they ran it, a headless session dropped those queues and executed
-none of the code behind them: an effect a fight seated was never retired, a
-stager a scene spawned never advanced, a `4B` cue never latched its clip. The
-steps are one engine kernel now, `World::step_world_frame_tail`, which
-`BootSession::tick` calls for every caller that does not drain the queues
-itself (the play window does, and keeps its own interleaving of render work
-between the same steps), together with `World::step_field_vram_effects` over
-the scene's own VRAM image. What the tail hands back for drawing is dropped;
-the spawned move's sound cue reaches a director when one is attached. The
-summon-spawn request is deliberately not taken - its only consumer is a host's
-mesh seat - so a headless caller still reads it off the world.
-
-The union now carries a rendering host: `play_compose_ladder`
-(`crates/web-viewer/tests/`) drives the browser play page's `LegaiaRuntime` by
-pad and composes the page's whole per-frame read surface, so the draw-list
-builders execute under coverage. Per crate, what that converts and what it
-structurally cannot:
-
-| crate | files in the coverage data | executed, headless union only | executed, with the composition ladder |
-|---|---|---|---|
-| `engine-ui` | 42 | 0 | 22 |
-| `engine-render` | 28 | 0 | 0 - a hard wgpu link `web-viewer` does not carry; a spawned `play-window` run is that link and does report executed regions (see the scoping note above) |
-| `engine-audio` | 20 | 0 | 3 - the page's SFX channel; the mixer output path has no producer in the union (see below) |
-| `mdec` | 6 | 0 | 0 - the play page has no STR playback (its FMV arm auto-skips) |
-
-Those two columns are the measurement that motivated the ladders below them, and
-they are kept as that: each is a union over one named subset, not over the
-canonical set. What the **full** union says about the same four crates is that
-the exclusion is gone rather than narrowed - across all of them together, a
-handful of anchors are left unentered, and every one is a specific routine
-rather than a crate-wide blank. Re-derive it with `replay-port-coverage.py`
-rather than from this table, which answers a different question.
-
-Three more structural exclusions matter as much and are easy to misread as port
-gaps:
-
-**No `#[test]` can *call* into a `bin/` target - but it can still cover one.**
-The call half is a real exclusion for what a `bin/` target keeps - the `mdec
-str-plan` subcommand, the `legaia-engine` argument dispatch - since no
-integration test links against a binary. The native window's composition layer
-is not among them: it is library code (`crates/engine-shell/src/window/`), so a
-test can link it, though running it needs a wgpu surface.
-
-The coverage half of that claim was wrong and is corrected here, because it is
-the half that put rows on this page. `LLVM_PROFILE_FILE` is **inherited by
-child processes**: a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the
-child's own profile written and merged into the same export, measured at 40
-executions of a function whose only driver was such a spawn. So a `bin/`-
-resident address is reachable by a ladder that *runs the subcommand*, and a
-`bin/` row on this page names a fixture that could exist rather than a
-structural impossibility. The browser hosts never had either problem: their
-composition is in `crates/web-viewer/src`, a library, which is the seam the
-composition ladder drives.
-
-The spawn route is practical for the native window - `play-window` takes
-`--pad-script` and `--screenshot-tick`, which is exactly that shape of run.
-What it could not do was **enter a minigame**, and that had nothing to do with
-`bin/` either: the native host opens every minigame from
-`WindowEvent::KeyboardInput` (`K` dance, `U` dance how-to, `L` fishing, `O`
-casino slots, `M` Muscle Dome, `B` Baka Fighter in
-`window/event_handler/keyboard.rs`), as it does the fishing prize exchange
-(`P`) and the inline-dialogue option picker, while `--pad-script` writes a
-*pad word* and that handler never runs. No pad word names a minigame, so a
-pad-only run could not open one however long it ran.
-
-`--key-script` is that missing channel: `TICK:KEY` pairs delivered through the
-same keyboard arms a player's keys reach, injected from inside the per-tick
-loop. A scripted key that is *also* bound to a pad button becomes this tick's
-pad word as well: the key arm sets the bit, its release on the next line
-clears it, and the harness's neutral-pad write would then stamp the word to
-zero - so a key-only script could arm a window toggle and nothing else. The
-two scripts compose - keys open the surface, the pad plays it - and
-`w5_native_minigame_ladder` (`crates/engine-shell/tests/`) is the ladder built
-on it. It spawns one `play-window` per minigame and asserts on the **captured
-frame**: each rung requires the PNG to differ from the same tick of the same
-scene with nothing open, because a HUD builder that emits an empty draw list
-passes any "did it run" check.
-
-Two gates beyond the disc, both printed rather than inferred: the rungs need a
-display (`play-window` needs a real wgpu surface even for its offscreen
-readback), and a rung that opened a surface which painted nothing fails on the
-frame comparison rather than on the exit status.
-
-**No file move was needed**, and that is the reusable part. Moving the
-composition layer out of `bin/` into a library module was the obvious fix for
-a *call*-shaped exclusion, and this cluster never had one - it had a missing
-input channel. A wide file move is the riskiest change available; the CLI flag
-was one argument and one loop.
-
-**The browser minigames page is outside the union entirely.** `minigame_replay`
-drives the *engine-shell* minigame path, and `play_compose_ladder` drives the
-*play page* - neither is the standalone minigames page, so a port wired only on
-that page is never-entered by construction. Its own oracles live in
-`crates/web-viewer/tests/`.
-
-**No ladder in the union holds a `BgmDirector`, so the whole BGM route is
-unreachable from it.** This is sharper than "the ladders have no audio device",
-and it is two separate exclusions stacked. `critical_path_replay`,
-`minigame_replay` and `play_compose_ladder` drive `SceneHost` / `LegaiaRuntime`
-directly and never call `SceneHost::route_bgm_events` at all; the `BootSession`
-ladders, which do reach `boot.rs`'s call site, every one construct their session
-with `enable_audio: false`, so `BootSession::bgm` is `None` and the call site is
-skipped. Whether a cpal device could be opened never enters into it. Every
-`0x35` sub-op arm - the SEQ-byte resolve, the pause/resume pair, the volume
-re-apply, the swap-commit - is therefore never-entered by construction, and the
-same is true one layer down: nothing in the union attaches a sequencer, so the
-`engine-audio` mixing path has no producer either. The session ladders
-`crates/engine-core/tests/w1e_scene_bgm_transition_ladder.rs` and
-`crates/engine-audio/tests/w1e_audio_session_ladder.rs` supply that producer -
-the latter through `legaia_engine_audio::TestAudioSink`, the device-free twin of
-the cpal mixing core (see the crate README) - and both export as their own
-ladder JSONs. They are session-shaped rather than pad-driven, which the union
-should keep visible: they measure "code a mixer-attached frame loop executes",
-not "code a player pressing buttons executes".
-
-
-**An anchor is attributed to its first site, and a data anchor has no site.**
-The report emits one row per address carrying `sites[0]`, so the file and symbol
-it names may not be the anchor that made the address `live`, and for a
-multi-anchor address it is simply the first one the source walk found.
-`8002174c` is the worked example: the row names `apply_morph_weights`, which the
-liveness pass calls inert, while the address is `live` through the sibling
-`MorphWeightEnvelope::tick` in the same file. Separately, a tag on a plain data
-`struct` with no `impl` falls back to *module* scope - a file-wide verdict on
-both the liveness and the coverage side, answering "does anything in this file
-run", not "does this port run". The `mode.rs`, `sound_state.rs` and
-`scene_bundle.rs` rows below were that shape until their tags were re-keyed
-onto implementing functions. A tag above a `const` is not that shape: it
-anchors to the item and resolves through references on both sides (the
-const-anchor note under the buckets above), which is what gives `new_game.rs`'s
-`GAME_STATE_COLD_RESET` a defined verdict.
-
-**Two ways a tag ends up file-scoped, and only one of them looks like it.**
-A `//!` tag is file-scoped by definition and reads that way. A `///` tag on a
-data `struct` with no `impl` falls back, and reads like a type anchor. A third
-way used to exist and is closed: the collector once stopped its forward walk at
-a lookahead bound and did not recognise `pub const` as an item, so a tag above
-a long doc block or a value item silently became file-scoped while looking
-like a function tag. The walk is unbounded now and a `const` / `static` /
-`type` alias is an anchorable item ([`port-catalog.md`](port-catalog.md)), so
-a tag anchors to whatever it documents.
-`crates/engine-field/src/cutscene_narration.rs` was the worked case for
-`80037174` (tag at the foot of the module doc, first following line a
-`pub const`); it sits on `pub struct CutsceneNarration`, which has an `impl`,
-so the anchor is the type the port actually is.
-
-The same fallback also produces **pseudo-entries** - an address the report
-counts as *entered* whose routine never ran, because a module-scope anchor's
-entry verdict is "any region in the file executed". Two measured cases, both
-surfaced the first time a coverage source contained their files:
-
-- the seven `engine-vm/src/lib.rs` addresses (the actor VM and its SCUS
-  helpers) read entered under the composition ladder while the only executed
-  function in that file is `Position::new` - the exact one-type import
-  [`vm-inventory.md`](../subsystems/vm-inventory.md#ported-but-inert) names.
-  The interpreter's coverage record is unexecuted; the HOST-DEAD verdict below
-  stands.
-- `801d603c` (the casino prize confirm painter) once reported as a
-  **disclosed `NOT WIRED` anchor executed** - a red-flag row - because its
-  anchor resolution fell back to module scope: the tag sits above a 60-line
-  disclosure block, which the collector's then-bounded item lookahead never
-  crossed. `choice_panel_draws_for`'s own record is unexecuted with no
-  production caller in the workspace, so the disclosure was correct and the
-  report row was the fallback. The unbounded walk anchors the tag to the
-  function it documents, which dissolves the misreport; the row is kept
-  because the *shape* - a thorough disclosure pushing its own anchor off the
-  item - is exactly what a lookahead bound produces, and it accused the most
-  careful disclosures first.
-
+What a headless `BootSession::tick` does run: the naming prompt's pad edges
+(`World::step_name_entry_frame`, so a run that only ticks crosses the opening's
+op `0x49` - see the [full-game ladder](full-game-ladder.md#seeding)), and the
+world side of the hosts' frame tail through `World::step_world_frame_tail` plus
+`World::step_field_vram_effects`: the pending move-FX seat, the three effect
+scene-graphs, the battle effect-script spawns, the ANIMATE cues and the
+scripted VRAM effects. What the tail hands back for drawing is dropped, and the
+summon-spawn request is left on the world for a host's mesh seat.
 
 <!-- BEGIN engine-core -->
 
@@ -564,20 +165,9 @@ address in it has a row below **except the ones a refresh has just added** -
 see [the unverdicted rows](#rows-a-refresh-added-and-nobody-has-bucketed-yet),
 which is where an address goes the day the export first reports it.
 
-**Per-bucket totals are deliberately not written here.** They are a count of
-project state, which this page keeps out on the same grounds as the rest of
-`docs/`, and they are the fastest-rotting thing on it: every ladder that lands
-moves rows between buckets, and a stale total reads exactly like a fresh one.
-
-They are also the one part of the page that cannot survive concurrent editing.
-Row verdicts are independent - two people revising different rows produce a
-mergeable diff - but a total is a function of every row at once, so each
-revision writes a different number to the same line and no arithmetic over the
-diffs recovers the true one.
-
-The totals belong to the instrument. `replay-port-coverage.py` recomputes them
-from the coverage exports each run; the per-row verdicts below are what this
-page is for, and they stay valid whatever the totals are.
+Per-bucket totals are not written here: they are a function of every row at
+once, they rot with every ladder that lands, and `replay-port-coverage.py`
+recomputes them each run.
 
 ### The escape pair reads as a contradiction, and both halves are true
 
@@ -640,136 +230,27 @@ four (two in SCUS, two in the battle-action overlay), and `FUN_80025EEC` in
 twelve slots of the game-mode table at `0x8007078C` - every other entry, which
 is the odd-indexed per-frame modes the port's own tag claims.
 
-#### Ten of these rows stopped being wiring gaps without being wired
+#### `REPLACED-BY` rows are not reach work
 
-`replay-port-coverage.py --page-audit` joins every address this page cites
-against the catalog, and reports the ones that are ported but no longer live -
-because such a row belongs to `--live-audit`, not to a page about what a
-playthrough executes. It found fourteen, and the split is the interesting half:
+Most of the `cd_dma.rs` / `stream_file.rs` cluster carries `REPLACED-BY:
+crate::scene::ProtIndex`: a synchronous whole-entry read has nothing left to
+wait for, so the CD-DMA read's 127 `jal` sites are a heavily used *retail*
+routine whose job the port does by construction. The battle party panel's
+label-actor lifecycle is the same shape one layer up
+(`legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
+live model each frame). A `REPLACED-BY` row is in neither half of the wiring
+ratio ([`port-catalog.md`](port-catalog.md)). The rows that keep a
+`NOT WIRED:` disclosure - the CD-DMA entry point, `read` / `close` in
+`stream_file.rs`, the `DRAW_ENV_INIT` values, the field load-entry plan and the
+party panel's label build - are `--live-audit`'s declared wiring worklist.
 
-- **Ten carry `REPLACED-BY:`** - most of the `cd_dma.rs` / `stream_file.rs`
-  cluster above, plus the battle party panel's label-actor lifecycle. That
-  cluster is now exempt: a synchronous read through `crate::scene::ProtIndex`
-  has nothing left to wait for, so the CD-DMA read's 127 `jal` sites are a
-  heavily-used *retail* routine whose job the port does by construction, not a
-  port nobody calls. The panel row is the same shape one layer up - retail
-  registers a retained-mode SCUS text actor, and
-  `legaia_engine_ui::battle_hud_draws_for` rebuilds every `TextDraw` from the
-  live model each frame, so there is no handle to hold.
-- **Three carry `NOT WIRED:`** - the `DRAW_ENV_INIT` values, the field
-  load-entry plan, and the battle party panel's label build. These are still
-  the declared wiring worklist. The cross-out mark left it: both play hosts
-  draw it over the command ring.
-
-The distinction is not bookkeeping: a `REPLACED-BY` row is out of the wiring
-denominator entirely, so counting it as a gap states work that will never be
-done.
-
-All fourteen addresses have since been **removed from this page**, which is
-what the audit was asking for and not what it originally got: the first pass
-wrote the finding up here and left the citations in place, so the next
-`--page-audit` run reported the same fourteen and the section explaining them
-was itself the reason they were still cited. A disclosed `NOT WIRED:` row is
-`--live-audit`'s and
-[`live-audit-triage.md`](live-audit-triage.md)'s; the addresses live in
-`target/port-catalog/catalog.csv`, which is where a verdict should be read
-from anyway. Re-run `--page-audit` before quoting any row in this section - it
-needs no coverage export and answers in seconds.
-
-One rename fell out of the re-key pass and is worth knowing about, because it
-is a graph property rather than a style choice. `StreamFileHost::seek` was the
-workspace's **only** in-tree definition of that name, and the call graph's
-receiver gate deliberately declines to resolve a one-definition name - so every
-`File::seek` in every crate linked to the retail seek shim and made it
-reachable from a host root in **both** graphs. It is `seek_bytes` now.
-
-Six rows stay permissively `live` after the re-key for the mirror of that
-reason - a name with *many* in-tree definitions, where the permissive graph
-keeps every edge the gate would drop. They are `read` and `close` in
-`stream_file.rs`, and the four handler addresses now keyed to
-`mode::per_frame_stage`, reached through a `.tick(` collision on `ModeDriver`.
-The receiver-gated graph calls all six inert, which is what the stale-tag test
-reads, so their disclosures stand; what is left is an over-count in the
-permissive `ported + live` figure, not a contested verdict.
-
-The reading to resist is that a disclosure retires the row. It does the
-opposite: it moves the address into `--live-audit`'s *disclosed inert ports*
-list, which **is** the declared wiring worklist, and each disclosure names the
-one prerequisite that would let a wire be real rather than synthesised. For
-`mode` it is a seat for `ModeDriver`, the port of the 28-entry mode table,
-which the engine's hosts currently bypass entirely.
-
-`cd_dma` and `stream_file` were read the same way here - "a production owner of
-the trait / host type, which means routing the engine's loaders through them
-instead of through `ProtIndex` whole-entry reads" - and the tree has since
-answered that differently. Most of both clusters now carries `REPLACED-BY:
-crate::scene::ProtIndex` rather than a `NOT WIRED:` disclosure: `ProtIndex` is
-declared the *replacement* for the sector-DMA and streaming-read paths, not the
-thing to route around. A `REPLACED-BY:` row is in neither half of the wiring
-ratio ([`port-catalog.md`](port-catalog.md)), so those addresses are not owed a
-host and are not reach work. The rows that keep a `NOT WIRED:` disclosure inside
-those two files - the CD-DMA entry point, and `read` / `close` in
-`stream_file.rs` - still are.
-
-### A row can leave this page without a ladder reaching it
-
-The page's own framing is that "a row leaves when a ladder reaches it or the
-wiring lands", and there is a third exit that is neither: the **static verdict
-moves**. Bucket (c) exists because a host-dead address still reads `live` in the
-permissive graph, so `--live-audit` cannot see it; the moment a re-key, a
-disclosure or a `REPLACED-BY:` makes the same address read *inert*, it becomes
-`--live-audit`'s row and stops being this page's. Nothing about the runtime
-changed - no ladder ran - and the row is still work, just filed where the
-instrument that can see it lives.
-
-Checking that exit needs no coverage export at all, which is worth knowing when
-one is unaffordable - an export is a full instrumented build per ladder, and
-there are dozens of ladders:
-
-```bash
-python3 scripts/ci/port-catalog.py --live          # writes target/port-catalog/catalog.csv
-python3 scripts/ci/replay-port-coverage.py --page-audit
-```
-
-`--page-audit` joins every address this page cites against that CSV and names
-the rows whose `live` column is now `0`, with the reason (`REPLACED-BY:` or a
-`NOT WIRED:` disclosure). Run it *before* spending an export: a row that has
-already taken this exit is not work a ladder can convert. The whole `cd_dma` /
-`stream_file` replacement above shows up that way, as do the `sound_state` /
-`scene_bundle` pair and the party-panel trio below.
-
-### A third way a row closes: promote the oracle that already drove it
-
-The exits above are "a ladder reaches it", "the wiring lands" and "the static
-verdict moves". There is a fourth, it is the cheapest of the four, and the
-page's own framing keeps hiding it: **the fixture already exists and is not in
-`CANONICAL_LADDERS`.**
-
-`crates/engine-core/tests/w1f2_field_vm_op_arms_disc.rs` is the worked case. It
-walks every CDNAME scene's MAN carriers through the field-VM disassembler,
-takes each arm's sites at decoded instruction boundaries behind the census
-tools' own clean-resync run, and executes the carrying record in a real
-`World` - which is exactly the fixture the `4C EA` and `4C 52` rows above
-specified, written before they were written up. It was green the whole time
-and exported nothing, because membership of the union is the list and not the
-test.
-
-So the first thing to do with an (a) row is not to design a fixture: it is to
-grep the test corpus for the row's address. A test that names it is either the
-fixture (promote it, in the same commit as the row's closure) or an oracle
-that measures something else (say which, so the next pass does not re-check).
-The cost of the mistake is asymmetric - a fixture written next to an existing
-one is wasted work, while a promotion is one line.
-
-Two cautions came with this one. A promoted oracle changes what the union
-*means* when it is not pad-driven, so it belongs in the list with the L3
-members' disclosure - record-seated, driven through the ordinary engine path -
-rather than silently among the pad ladders. And a record-walking oracle counts
-**sites**, not disc occurrences: the op-arm oracle reports two `4C EA` sites
-against [the census's](#the-op-census-names-both-carriers) one coherent
-occurrence, which its own per-arm cap of two makes an *at least*, and a scene
-with two MAN carriers presents one record twice. The two counts are not
-comparable without settling that, and neither number is wrong on its own terms.
+Two call-graph properties surfaced in the re-key. `StreamFileHost::seek` was
+the workspace's only in-tree definition of that name, and the receiver gate
+declines to resolve a one-definition name, so every `File::seek` linked to the
+retail seek shim in both graphs; it is `seek_bytes` now. The mirror case keeps
+six rows permissively `live`: `read` and `close` in `stream_file.rs`, and the
+four handler addresses keyed to `mode::per_frame_stage` through a `.tick(`
+collision on `ModeDriver`. The receiver-gated graph calls all six inert.
 
 ### The mode-driver seat, and why `scene_mode` cannot be the bridge
 

@@ -1,0 +1,23 @@
+[package]
+name = "legaia-delilas-party"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_delilas_party"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+legaia-art.workspace = true
+legaia-arts-patch.workspace = true
+legaia-asset.workspace = true
+legaia-code-hooks.workspace = true
+legaia-disc-patch.workspace = true
+legaia-lzs.workspace = true
+legaia-party-swap.workspace = true
+legaia-texture-replace.workspace = true
+legaia-translate.workspace = true
+legaia-vab.workspace = true
+legaia-xa.workspace = true

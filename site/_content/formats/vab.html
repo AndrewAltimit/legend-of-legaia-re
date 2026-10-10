@@ -155,12 +155,6 @@
 <section class="doc-section" id="vag-size-table">
   <h2>The VAG size table is 1-indexed</h2>
   <p>The trailing table is 256 &times; <code>u16</code>; <code>vag_table[1..=vs]</code> hold each sample's size in 8-byte units, so <code>vag_table[0]</code> is a leading spacer. It is <code>0</code> in all 424 retail banks, and no pitch offset is derived from it - <code>VabReport::vag_table_spacer</code> surfaces the raw byte only.</p>
-  <details class="disclosure">
-    <summary>History: the "three multi-bank archives" and the 1191-header count</summary>
-    <div class="disclosure-body">
-      <p>Counts of 1191 <code>VABp</code> headers across 239 entries, with <code>0889</code> / <code>0890_sound_data2</code> as multi-bank archives, came from the superseded over-read entry window (<a href="prot.html">prot &sect; History</a>), which spans those two small entries into <code>0891</code>'s 6 MB archive. On their own sectors they hold one and zero banks; exactly one multi-bank archive exists. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

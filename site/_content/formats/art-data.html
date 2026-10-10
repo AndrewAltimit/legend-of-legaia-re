@@ -246,12 +246,6 @@
   </div>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: "PROT entry 0x05C4" and the SFX-table reading</summary>
-    <div class="disclosure-body">
-      <p><code>0x05C4</code> = 1476 is past the last PROT index; the label survives only as the name of the record schema and of <code>legaia_art::parse_record</code>. The records are <code>record[0]</code> of the player files, and "Vahn = 0861" matched the same bytes through an over-read window. Separately, the byte table at <code>0x801F6418</code> was long documented as an SFX id table; its readers end in <code>MoveImage</code> copying a 16-entry palette row to VRAM <code>(0xE0, 476)</code> - no battle effect id plays a sound, all art audio is CD-XA. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

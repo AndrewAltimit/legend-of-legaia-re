@@ -11,7 +11,7 @@ later rule, and a case fold that covers one operand instead of the string.
 
 | Piece | Class | What it navigates |
 |---|---|---|
-| Top bar | `.topbar` | Brand, zone tabs (Explore / Docs), search, disc chip, GitHub. |
+| Top bar | `.topbar` | Brand, zone tabs (Explore / Docs), search, disc chip, theme toggle, GitHub. |
 | Icon rail | `.rail` | The five top-level areas: Home, Play, Mods, Browse, Docs. |
 | Sidebar | `.sidebar` | The page list *within* the current zone. |
 | TOC rail | `.toc-rail` | Headings of the current docs page. |
@@ -19,6 +19,63 @@ later rule, and a case fold that covers one operand instead of the string.
 The rail and the sidebar are **different destination sets**. The rail crosses
 zones; the sidebar lists pages inside one. Neither is a subset of the other, so
 hiding one and keeping the other is not a safe simplification on its own.
+
+## The sidebar's page list
+
+`NAV` in `layout.js` is the single source of truth for page order, the docs
+sidebar, prev / next and the explore sidebar's groups. A page exists for the
+shell only when it has a `NAV` entry, and exists at all only when `_gen.py`
+writes it - a new page needs both.
+
+Three fields shape what a reader sees:
+
+- **`label` is a key, `title` is the text.** `label` keys `DOCS_SECTIONS`, the
+  persisted collapse state and the search index, so it never changes; `title`
+  is the reader-facing name (`subsystems` reads "How the game works").
+- **`{ heading: '...' }` rows are group subheads.** They render as
+  `.sidebar-subhead` inside a long section and are not pages: every walker of
+  `NAV` items skips a row with no `key`, which is what keeps them out of
+  prev / next and the explore groups.
+- **Long sections open collapsed.** `COLLAPSED_BY_DEFAULT` names the reference
+  sections; one opens when it holds the current page or the reader opened it
+  before. Five of them expanded at once is a 150-row list that buries the two
+  short sections a newcomer wants.
+
+## Themes
+
+Dark is the default; light is opt-in through the top-bar toggle
+(`buildThemeToggle`), which stores `site-theme` and sets `data-theme="light"`
+on the root element. The page template's head carries a one-line script that
+applies a stored choice before the stylesheet loads, so a light-theme reader
+never sees a dark first paint.
+
+The whole light palette is one block, `:root[data-theme="light"]`, restating
+the custom properties declared on `:root`. That only works while components
+take every colour from a property: a literal colour in a shared rule, a page
+`<style>` block or a doc SVG is a spot the light theme cannot reach. The game
+palette chips (element colours, art cards) are the deliberate exception - they
+keep a dark ground in both themes rather than being re-picked.
+
+## Shared components
+
+Content pages are built from a fixed vocabulary, indexed in the comment block
+at the top of `site/css/styles.css` with a longer note beside each rule.
+
+| Component | Classes |
+|---|---|
+| Callout | `.callout` + `.callout-tip` / `-warn` / `-trap` / `-provenance`, optional `.callout-title` |
+| Status badge | `.status-badge` + `.sb-confirmed` / `-inferred` / `-unknown` / `-works` / `-mostly` / `-partial` / `-rough` / `-planned` |
+| Status list | `ul.status-list` (+ `.cols-2`) |
+| Card index | `.card-grid` (+ `.cols-2..4`, `.compact`) of `a.card` |
+| Spec list | `dl.kv` |
+| Tables | `table.byte-layout`, `table.compact`, `table.narrow`, `td.num`, `td.hex` |
+| Byte map | `.byte-map` of `.bm-cell` |
+| Diagram | `figure.diagram` / `figure.pipeline` with the `dg-*` SVG classes; `ol.steps` |
+
+`.notice`, `.hint` and `.tag-*` are older names for the callout and the badge
+and render through the same rules. A card is itself the link, so it never
+contains one: a link nested in a link is closed early by the HTML parser and
+the card's remaining content lands outside it.
 
 ## Breakpoints
 
@@ -53,7 +110,10 @@ because the page is laid out to its widest min-content:
 - **A bare `<table>`.** It is `display: table`, and `overflow` does not make a
   scroll container out of a table box. `.table-wrap` is the scroller;
   `wrapWideTables()` in `layout.js` puts one around every prose table at layout
-  time, before any page script builds tables of its own.
+  time, before any page script builds tables of its own. A wrapped table keeps
+  its words whole below the breakpoint (`overflow-wrap: break-word`, headers
+  `nowrap`) and scrolls inside its frame - left to the `anywhere` rule below, a
+  five-column table shrinks to five columns of single letters instead.
 - **An unbreakable token** - `overlay_0897_801ef2b0`, `PTR_DAT_8007436C[id*3]`,
   a bare `ghidra/scripts/funcs/...` path in running text. `.content` takes
   `overflow-wrap: anywhere` below the breakpoint; it is inherited, so it
@@ -61,10 +121,21 @@ because the page is laid out to its widest min-content:
   rather than `break-word` on purpose - only `anywhere` lowers min-content
   width, which is the quantity being sized to. Scoped to the breakpoint so
   desktop column widths, computed from the same min-content, do not move.
-  `pre` is unaffected: `white-space: pre` never wraps.
+  `pre` is unaffected: `white-space: pre` never wraps. A table inside a
+  `.table-wrap` opts back out, as above; a table a page script builds is not
+  wrapped and keeps `anywhere`.
 - **A canvas sized by its HTML attributes.** `<canvas width="600">` with no CSS
   cap lays out at 600px. Cap it with `max-width: 100%` - hit-testing that
   already scales by `canvas.width / rect.width` costs nothing.
+
+### A sticky header needs a wrapper that is not a scroller
+
+A table header can stick to the page only if no ancestor of the table is a
+scroll container, and `.table-wrap` is one by design. `fitTables()` resolves
+it per table: where the table fits its column the wrapper takes `.fits`, which
+drops the scroller and turns on `position: sticky` under the top bar; where it
+is too wide the wrapper keeps the horizontal scroller and a static header. It
+runs in the docs zone only, on load, on resize and once fonts settle.
 
 ## The cascade-order trap
 
@@ -406,6 +477,10 @@ invisible in a single-width screenshot. Render it:
 
 The last assertion is the one that catches a "tidy" mobile layout that has
 quietly dropped a destination.
+
+Shoot both themes: set `localStorage['site-theme'] = 'light'` in an init
+script before navigation. A component that reads a literal colour looks
+correct in the dark screenshot and only shows in the light one.
 
 ### Reaching the play page's battle screen headlessly
 

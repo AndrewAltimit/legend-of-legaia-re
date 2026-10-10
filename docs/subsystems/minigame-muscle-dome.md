@@ -1,172 +1,163 @@
 # Muscle Dome minigame
 
-The **Muscle Dome** is an arena contest fought as a ladder of **ordinary Legaia battles**. The player picks one of three courses and fights its fixed sequence of rounds - 8 / 8 / 13 - one real monster per round, each staged into the ordinary battle formation cell; between legs the arena settles a running score. The player fields one party character, and each turn the fighter enters a directional command string under an AP budget - the same input the normal battle command screen takes - which plays out through the shared battle-action path. It is **distinct from the fishing / slot / dance / Baka Fighter minigame-hub family** - it does not share their controller library.
+The **Muscle Dome** is an arena contest fought as a ladder of **ordinary Legaia battles**. The player picks one of three courses and fights its fixed sequence of rounds (8 / 8 / 13), one real monster per round, with one party character. Between rounds ("legs") the arena shows a score tally that heals the fighter and banks casino coins; a finished contest pays the coins out.
 
-The course roster is disc data and is decoded below: see [Course ladder](#course-ladder-the-opponent-per-course-round). A round ends on a knockout and is **not** turn-limited - see [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else) - and the `Turns Left / HP Left` strip is **not** the dome's, see [The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome).
+Two pieces of code run it. The **contest hub** (`FUN_801CF870`, PROT 0977) owns the ladder: which course, which round, the intro / INTERVAL / ROUND screens, the tally and the settlement. Each **leg** is a normal battle on the shared battle round driver (`FUN_801D0748`, PROT 0898) with the usual command ring and directional arts input; nothing in a leg's damage, input or ending is dome-specific.
 
-It is **not a card battle**. The "hand of four cards" reading came from the deal loop building four slots; those four slots are the four *direction commands* `0xC..=0xF`, always the same four, each carrying that fighter's own AP cost. Nothing is drawn, discarded or reshuffled.
+Three things it is **not**:
 
-Instead, the Muscle Dome runs **inside the battle-action overlay** (PROT entry **0898**, base `0x801CE818` - the same overlay [`move-power.md`](../formats/move-power.md) reads): its match SM `FUN_801d0748` and all its data tables (deck `0x801f4b8c`, sub-draw script `0x801f4d34`, victory messages `0x801f4dfc`) are resident there, so they are statically extractable from the disc (parser [`legaia_asset::muscle_dome`], disc-gated `muscle_dome_real`).
+- **Not a card battle.** The four "cards" are the four direction commands `0xC..=0xF`, always the same four, each at that fighter's own AP cost. Nothing is drawn, discarded or reshuffled.
+- **Not turn-limited.** A leg ends on a knockout and on nothing else. The `Turns Left / HP Left` strip in the same overlay is the Koru boss fight's ([below](#the-koru-timed-fight-strip)).
+- **Not part of the minigame-hub family.** It shares no controller library with fishing, the slot machine, dance or Baka Fighter.
 
-This matches the design - the arena reuses the battle engine wholesale (its fighters are battle actors, entered directions resolve through the battle-action path). The "`overlay_muscle_dome.bin`" Duckstation capture was that battle-overlay slot resident during the arena, **not** a separate overlay; the `0977` "Ronginus" entry is only the mode-24 sub-id-5 door/init slot (arena roster + `other6` paths), not the match SM.
+## At a glance
 
-### The dump set is the whole battle overlay - a filename prefix is not dome evidence
+| What | Where |
+|---|---|
+| Contest init / re-entry | `FUN_801CEA6C`, PROT 0977 (slot-A base `0x801CE818`) |
+| Contest hub (per frame) | `FUN_801CF870`, PROT 0977; state byte `DAT_801D1A78`, 51-entry jump table `0x801CE990` |
+| Opponent installer | `FUN_801D1510`, PROT 0977 (file `+0x2CF8`) |
+| Score tally screen / row maths | `FUN_801CF074` / `FUN_801D1184`, PROT 0977 |
+| Contest settlement | `FUN_801D0F60`, PROT 0977 (file `+0x2748`), tail-calls the shared exit `FUN_80026018` |
+| Leg round driver | `FUN_801D0748`, PROT 0898 (battle-action overlay, base `0x801CE818`); phase byte `ctx+6` |
+| Leg action SM / end scans | `FUN_801E295C`, PROT 0898 |
+| Battle exit selector | `FUN_80046A20`, `SCUS_942.54` (stores mode `0x18` when `_DAT_8007BAC0 & 0x100`) |
+| Contest cursor | `_DAT_8007BAC0`: low byte = `(course, round)`, bits `0x100` / `0x200` = Item / Ra-Seru restriction |
+| Opponent cell | `0x8007BD0C` (formation slot 0), written by `FUN_801D1510` |
+| Score / coins | running tally `_DAT_80084440`, coin bank `0x800845A4` |
+| Battle context | `_DAT_8007BD24` (**ctx**), actors through `&DAT_801C9370` |
+| Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
+| Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
+| Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
+| Disc parsers | `legaia_asset::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
-`ghidra/scripts/funcs/overlay_muscle_dome_*.txt` is the **entire battle-action overlay** dumped at the arena, not a set of dome-unique functions. The shared battle context `_DAT_8007bd24` these dumps read is the **same** context the main battle system, magic-capture, Baka Fighter, dance and fishing overlays use. So the great majority of the "`overlay_muscle_dome`" functions are **shared battle-system code**, documented in [`battle-action.md`](battle-action.md) / [`battle-formulas.md`](battle-formulas.md), not dome findings. The cross-check is mechanical: an entry whose body is also dumped under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_baka_fighter_` / `overlay_dance_` / `overlay_fishing_` is shared, not dome-unique.
+Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_core::muscle_dome::X`.
 
-Representative confusables (each dumped under several non-dome overlays, so **shared battle**, not dome):
-
-| Address | What it is | Belongs to |
-|---|---|---|
-| `FUN_801d0748` | the round driver - **byte-identical to the main battle round loop** (also under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_magic_level_up_` / `overlay_0898_`); this page documents only its *dome role* (`ctx+6` match phases) | [`battle-action.md`](battle-action.md) |
-| `FUN_801d32bc` | next/prev **living-actor cursor** (skips actors with 0 HP at `+0x14c` or a set status mask `+0x16e & 0xf84`; steps `ctx+0x13/0x20/0x21/0x1f`) | [`battle-action.md`](battle-action.md) |
-| `FUN_801d84c0` | **battle-outcome message builder** ("won the battle / Gained Experience", "is out of strength", "escaped") into `ctx+0xa9/0x129/0x159/0x189` via the SCUS `strcpy`/`strcat` pair | [`battle-action.md`](battle-action.md) |
-| `FUN_801f44a0` | pushes one entry into an 8-slot **damage/number-popup ring** (`ctx+0x83c` value / `+0x318` param / `+0x85c` timer, counter `+0x262 & 7`) - also under dance / Baka Fighter / fishing / slot / debug-menu | [`battle-action.md`](battle-action.md) |
-| `FUN_801f3c34` | The Seru-magic **"No effect." banner pass** - not a guard: it rejects nothing and touches no queue state. At the summon's return-from-fade it finds the cast spell's magic level and, when that is `>= 3` and the side-effect stager left nothing pending in `0x801F6960`, installs the "No effect." string at `0x800775B4` and fires banner `0x66` - also dumped under dance / Baka Fighter / fishing / slot | [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch) |
-| `FUN_801f3d3c` | The Seru-magic **side-effect stager** the pass above pairs with: stages the element-keyed stat debuff (percent by magic level) the damage finisher applies per hit, behind the scripted-fight suppression roll and the base-vs-record compare. See [The side-effect pair](#the-side-effect-pair) | [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch) |
-
-Two entries are dumped **only** under `overlay_muscle_dome`, and both were
-carried here as "dome-vs-shared unconfirmed". Neither is the dome's; a caller
-sweep settles both, and the filename was the only thing that ever tied them to
-the arena.
-
-- **`FUN_801f2410`** - the **cast colour-wash emitter**. Its only callers on the
-  disc are the two cast dispatchers' epilogues, `FUN_801F1ED4` at `0x801F2144`
-  and `FUN_801F2160` at `0x801F23F4`, each gated on `ctx[+0x27A] != 0`
-  ([`cast-module.md`](cast-module.md)). It builds screen-wide `POLY_G4` packets
-  - GP0 code `0x38` OR'd into the colour word, tag length `8`, right-hand
-  vertices pinned to `x = 0x13F` - straight onto the scratchpad packet cursor
-  `*(0x1F8003A0)`, colouring them `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255` and
-  scrolling them by `ctx[+0x32A]`, which `ctx[+0x27C]` selects a mode for.
-  It is cast presentation, not a HUD number emitter and not the dome's.
-- **`FUN_801f2e10`** - the oriented-quad "beam" emitter (see
-  [Key functions](#key-functions)). It has **no reference of any kind** in SCUS
-  or in any overlay image; its only callers on the whole disc are **11 `jal`
-  sites inside PROT 0909**, a slot-B summon module, whose `FUN_801F7948`
-  (`0x801F7980` onward at base `0x801F69D8`) paces widening pairs of beams
-  against the counter `_DAT_8007BD1C`. It is summon-cast presentation.
-
-The genuinely dome-unique controller / presentation set is the
-[Key functions](#key-functions) table below (`FUN_801d0748`'s dome arms,
-`FUN_801d388c`, `FUN_801d5854`, `FUN_801d8de8`, and the panel helpers);
-everything else in the dump directory is battle-overlay furniture.
-
-### The side-effect pair
-
-`FUN_801F3C34` and `FUN_801F3D3C` are two halves of one mechanism, not two
-unrelated helpers, and reading either alone invites the "AI decision" guess.
-They share their whole preamble - resolve the acting actor out of
-`&DAT_801C9370` by `ctx[+0x13]`, take its queued action byte `+0x1DF`, scan
-the caster's spell-id array (character record `+0x13D`, `0x20` entries) for
-that action, read the parallel magic-level byte at record `+0x161`, and bail
-when the level is below `3`. Both then raise the same banner id `0x66`
-through `FUN_801D8DE8(0x66, 0)`.
-
-What separates them is which side of the latch each one is on:
-
-- `FUN_801F3D3C` runs at cast time from inside the spell's summon module and
-  **stages** the cast's side effect: it selects the `[summon element][level
-  band]` record of the table at `0x801F6870`, writes the record's percent to
-  `0x801F6960` (the value the damage finisher's per-element switch shaves
-  off the target on every hit) and its banner-string pointer to
-  `0x800775B4`, and seeds the hold `0x801F6964 = 0xB4`.
-- `FUN_801F3C34` runs at the summon's return-from-fade, **reads**
-  `0x801F6960`, and when it is still zero installs the "No effect." string
-  (`0x801CFA20`) instead - the miss is announced, the hit was announced by
-  the stager.
-
-The stager's gates - the scripted-fight suppression roll on `ctx[+0x287]`
-and the per-element base-vs-record compare - and the table itself are on
-[`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
-Two earlier readings of this pair are retired there: the index into
-`0x801F6870` is the summon record's **element** byte, not an "actor class",
-and the record's second word is a **banner string**, not a follow-up routine
-pointer (`0x801CFA20` is the text "No effect."). In the dome the pair runs
-exactly as in any battle; nothing about it is arena-specific.
-
-Port: `engine-vm::move_no_effect_guard` (the banner pass, live from state
-`0x36`) and `engine-vm::seru_side_effect` (the stager + finisher switch, pure
-kernels). `see ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
+```mermaid
+flowchart TD
+    door["koin1 course menu: fee, course flag, op 0x3E sub-id 5"] --> init["FUN_801CEA6C arena init"]
+    init -->|"word == 0: fresh contest"| start["seed word from unlock flags, FUN_801D0ED8 restore"]
+    init -->|"word != 0: a leg just ended"| verdict{"survived and course not exhausted?"}
+    start --> first["hub first visit: Welcome, title, course card"]
+    first --> card["ROUND card"]
+    verdict -->|yes| tally["INTERVAL tally: HP restore + coin tally"]
+    verdict -->|no| settle["FUN_801D0F60 settlement"]
+    tally --> card
+    card --> install["FUN_801D1510: monster id to formation slot 0, mode 0x14"]
+    install --> leg["leg = ordinary battle, FUN_801D0748 + FUN_801E295C"]
+    leg -->|"KO or Run"| exit["FUN_80046A20 stores mode 0x18"]
+    exit --> init
+    settle --> pay["FUN_80026018: coins += tally, War God Icon on first Master clear"]
+    pay --> field["back to the field"]
+```
 
 ## Entry from the field
 
-The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `legaia_engine_core::minigame_entry::MinigameSubId`.
+The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-field::minigame_entry::MinigameSubId`.
 
-A disc-wide walk of every scene MAN puts every dome door in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. That is why one record carries three warps. Notably `taiku` carries none: its only `0x3E` sites are `0xFF` interacts, so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
+Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
 
-**Why `FUN_801cf870` has no caller.** The hub is not called; it is the `+0x08` tick word of the static 24-byte actor template at `0x801D1A20`. The sub-id-5 init `FUN_801CEA6C` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CEAFC`), and the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
+**How the two routines are reached.**
 
-The match SM `FUN_801D0748` is the exception to that shape, and the reason is the one this page already makes: the arena reuses the battle engine, so the match runs as an ordinary battle and its driver is reached through the **battle** overlay's own template (`0x800767DC`, tick `FUN_80046A20`), not through the 0977 slot. `FUN_80046A20` is also the second of only two writers of game mode 24 on the disc: with `_DAT_8007BAC0 & 0x100` set it stores `0x18` rather than the field's `0x2`, which is what returns a finished round to the arena instead of to the field.
+- The hub `FUN_801CF870` has no caller: it is the `+0x08` tick word of the static 24-byte actor template at `0x801D1A20`. The sub-id-5 init `FUN_801CEA6C` materialises that template and spawns an actor from it (`jal FUN_80020DE0` at `0x801CEAFC`); the per-frame pool walk reaches it through `jalr actor[+0x0C]` in `FUN_8002519C`.
+- The round driver `FUN_801D0748` is reached through the **battle** overlay's own template (`0x800767DC`, tick `FUN_80046A20`), not through the 0977 slot. It has **exactly one** `jal` disc-wide - `0x80047014`, inside `FUN_80046A20`, with no test in front of it and the fall-through rejoining at `0x8004701C` - across `SCUS_942.54`, every based overlay image and every raw PROT entry. Every battle frame steps it; it is the shared round driver, not a dome-specific controller.
+- `FUN_80046A20` is also the second of only two writers of game mode 24 on the disc: with `_DAT_8007BAC0 & 0x100` set it stores `0x18` rather than the field's `0x2`, which is what returns a finished round to the arena instead of to the field.
 
-The bytes say the same thing without a capture. `FUN_801D0748` has **exactly one** `jal` disc-wide - `0x80047014`, inside `FUN_80046A20`, with no test in front of it and the fall-through rejoining at `0x8004701C` - across `SCUS_942.54`, every based overlay image and every raw PROT entry. So every battle frame steps it, and reading the routine as a dome-specific match controller was reading one of its callers' contexts for the routine.
+<a id="two-state-machines-not-one"></a>
 
-## Two state machines, not one
+## The contest hub
 
-The dome runs **two** state machines stacked, and confusing them for one is
-what makes a port of it feel wrong.
+The dome stacks **two** state machines. The inner one is the battle: `FUN_801D0748` plays a leg out and ends it on a knockout ([What ends a leg](#what-ends-a-leg)). It has exactly **one** contest-gated arm, at `0x801D322C`, where a `lw` of the mode-24 sub-id word `_DAT_8007BAC0` and a `beq …, zero` skip the block unless a contest is running. That block is the flee arm ([Leg opening and Run](#leg-opening-and-run)).
 
-The inner one is the battle: `FUN_801D0748` in the battle-action overlay
-(PROT 0898), the shared round driver, which plays a leg out and ends it on a
-knockout ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)).
-Almost nothing in it is dome-specific - it has exactly **one** contest-gated
-arm, at `0x801D322C`, where a `lw` of the mode-24 sub-id word `_DAT_8007BAC0`
-and a `beq …, zero` skip the whole block unless a contest is running. That
-block is the flee arm: on action state 5 (`actor+0x1DE == 5`) and a formation
-monster that is not one of the four unfleeable ids, it stores
-`_DAT_80084448 = 4`, which is how running reaches the arena.
+The outer one is the **contest** - the ladder above the legs - and lives entirely in PROT 0977:
 
-The outer one is the **contest** - the ladder run above the legs - and it
-lives entirely in the arena roster/init overlay (PROT 0977, slot-A base
-`0x801CE818`):
+- `FUN_801CEA6C` is its entry, re-entered after **every** leg. A zero sub-id word means a fresh contest; a non-zero one means a leg just finished, and the only thing that arm does before the common tail is `word += 1` (`0x801CEC00`).
+- `FUN_801CF870` is its per-frame hub, dispatching `DAT_801D1A78` through the **51-entry jump table at `0x801CE990`**. Fourteen states are real; the other 37 route to the table's default arm. Every state but `0x32` falls through the same tail at `0x801D00B8`, which re-packs `(course, round)` into the word.
 
-- `FUN_801CEA6C` is its entry, and is re-entered after **every** leg. A
-  zero sub-id word means a fresh contest; a non-zero one means a leg just
-  finished, and the only thing that arm does before the common tail is
-  `word += 1` (`0x801CEC00`).
-- `FUN_801CF870` is its per-frame hub, dispatching `DAT_801D1A78` through a
-  **51-entry jump table at `0x801CE990`**. Fourteen states are real - `0`,
-  `1`..`6`, `0x0A`..`0x0C`, `0x14`..`0x16` and `0x32`; the other 37 route to
-  the table's default arm. Every state but `0x32` falls through the same tail
-  at `0x801D00B8`, which re-packs `(course, round)` into the word.
+```mermaid
+stateDiagram-v2
+    state "0 Welcome fade-in" as S0
+    state "1 Welcome hold" as S1
+    state "2 Welcome fade-out" as S2
+    state "3 Title zoom" as S3
+    state "4 Course card fade-in" as S4
+    state "5 Course card hold" as S5
+    state "6 Wall drain" as S6
+    state "0x0A INTERVAL fade-in" as SA
+    state "0x0B Tally roll" as SB
+    state "0x0C HP restore" as SC
+    state "0x14 Backdrop return" as S14
+    state "0x15 ROUND card" as S15
+    state "0x16 ROUND card fade-out" as S16
+    state "0x32 Settle" as S32
+    [*] --> S0: fresh contest
+    [*] --> SA: leg survived, course continues
+    [*] --> S32: lost, ran or course exhausted
+    S0 --> S1
+    S1 --> S2
+    S2 --> S3
+    S3 --> S4
+    S4 --> S5
+    S5 --> S6: hold ends or pad
+    S6 --> S14: battle-load kick
+    SA --> SB
+    SB --> SC
+    SC --> S14
+    S14 --> S15
+    S15 --> S16: hold ends or pad
+    S16 --> [*]: FUN_801D1510 starts the fight
+    S32 --> [*]: FUN_801D0F60, exit to field
+```
+
+| State | Name | What it does | Exits |
+|---|---|---|---|
+| `0` | Welcome fade-in | "Welcome to the Muscle Dome!" strip climbs `+dt*4` | `1` at full |
+| `1` | Welcome hold | holds `0x7B` ticks | `2` |
+| `2` | Welcome fade-out | strip drains `-dt*4` while the brick wall rises; seeds title scale `0x1640` (`0x801CFA58`) | `3` |
+| `3` | Title zoom | course-title art scale ramps `0x1640` -> `0x1000`; starts the card level climbing (`0x801CFA74`) | `4` |
+| `4` | Course card fade-in | `FUN_801D042C` over the title art, `+dt*2` | `5` at full |
+| `5` | Course card hold | holds `0xB4` ticks, pad-skippable | `6` |
+| `6` | Wall drain | drains the backdrop level `-dt*4`; kicks the battle load (`0x801CFC88..0x801CFC94`) | `0x14` |
+| `0x0A` | INTERVAL fade-in | heading + backdrop climb `+dt*4`; arms the four tally cues | `0x0B` at full |
+| `0x0B` | Tally roll | `FUN_801CF074` drains the four lanes; backdrop eases to `0x40` | `0x0C` when the roll stops |
+| `0x0C` | HP restore | `hp_cur = min(hp_max, hp_cur + DAT_801D1AC8)` (`0x801CFE7C..0x801CFEA8`); heading drains | `0x14` |
+| `0x14` | Backdrop return | backdrop climbs back to `0x80` (`0x801CFEF4..0x801CFF34`); a single pass-through tick on a first visit | `0x15` |
+| `0x15` | ROUND card | `FUN_801D02F0` banner fades in `+dt*2`, holds `0x3D` ticks, pad-skippable | `0x16` |
+| `0x16` | ROUND card fade-out | card and backdrop drain `-dt*2` (`0x801D002C..0x801D0040`) | starts the fight (`FUN_801D1510`) |
+| `0x32` | Settle | contest settlement `FUN_801D0F60`; the one state that skips the re-pack tail | leaves the arena |
+
+The fade rates, holds and draws per screen are in [Hub screens](#hub-screens). The committed dump `overlay_0977_slotA_801cf870.txt` stops at `0x801D0094` while the function runs to the `jr ra` at `0x801D00F0` (extent `0x801CF870..0x801D00F8`), so arm `0x0B`'s body, the HP restore and the shared draw tail are read from the image, not the dump.
 
 ### The cursor: `(course, round)` packed in one word
 
-Both the course and the round live in the low byte of the mode-24 sub-id word
-`_DAT_8007BAC0`:
+Both the course and the round live in the low byte of the mode-24 sub-id word `_DAT_8007BAC0`:
 
 | Quantity | Expression | Site |
 |---|---|---|
-| course | `((word - 1) & 0xFF) >> 4` | `0x801CEBD4`, `0x801CEC30` |
+| course | `((word - 1) & 0xFF) >> 4` | `0x801CEBD4..0x801CEBE8`, `0x801CEC30` |
 | round | `(word - 1) & 0xF` | `0x801CEC18` |
-| next leg | `word + 1` | `0x801CEC00` |
-| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `0x801D00B8` |
+| next leg | `word + 1` | `0x801CEC00` / `0x801CEC08` |
+| re-pack | `(word & ~0xFF) + 1 + (course << 4) + round` | `FUN_801D0088`, `0x801D00B8..0x801D00E4` |
 
-The re-pack leaves every byte above the low one alone, which is why the three
-course-entry seeds can carry `0x100` / `0x300` in them and survive a whole
-contest untouched. Decoded course/round land in `DAT_801D1A90` /
-`DAT_801D1A94`, which is the same pair `FUN_801D1510` indexes the ladder with.
+The re-pack leaves every byte above the low one alone, so the restriction bits seeded at entry (`0x100` / `0x300` above the low byte) survive the whole contest. Decoded course / round land in `DAT_801D1A90` / `DAT_801D1A94`, the pair `FUN_801D1510` indexes the ladder with.
 
 ### Which course opens
 
-`FUN_801CEA6C` seeds the word `1` and then lets three story flags overwrite it
-in order, so the highest unlocked course wins:
+On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C` seeds the word `1` (`0x801CEB8C` stores `$s2`, loaded with `1` at `0x801CEAF8`) and then lets three story-flag tests (`jal 0x8003CE64`) overwrite it in order, so the highest unlocked course wins:
 
-| Flag | Seed | Course |
-|---|---|---|
-| *(none set)* | `0x001` | 0 - Beginner |
-| `0x536` | `0x101` | 0 - Beginner |
-| `0x537` | `0x111` | 1 - Expert |
-| `0x538` | `0x321` | 2 - Master |
+| Flag | Seed | Store | Course | Restriction bits |
+|---|---|---|---|---|
+| *(none set)* | `0x001` | `0x801CEB8C` | 0 - Beginner | none |
+| `0x536` | `0x101` | `0x801CEBA0` | 0 - Beginner | `0x100` (no Item) |
+| `0x537` | `0x111` | `0x801CEBB4` | 1 - Expert | `0x100` |
+| `0x538` | `0x321` | `0x801CEBC8` | 2 - Master | `0x100` + `0x200` (no Item, no Ra-Seru) |
 
-The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not this.
+That `0x538` is the Master unlock is inference from the three arms' course indices; the literals are disassembly. The default `1` is `muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`; the port's seed is `contest_entry_word`. The pad-driven three-column picker in `FUN_801D0CD4` is a dev screen, not the course choice.
 
 ### How long a course runs
 
-The course descriptor's own round count is the length - 8 / 8 / 13 - except on
-the **Master course**, and only there: the whole clamp block at
-`0x801CED28..0x801CEDA4` sits behind `bne course, 2`. Three story flags each
-shorten it, and each is consulted only once the run has actually reached its
-threshold:
+The course descriptor's round count is the length - 8 / 8 / 13 - except on the **Master course**: the clamp block at `0x801CED28..0x801CEDA4` sits behind `bne course, 2`. Three story flags each shorten it, each consulted only once the run has reached its threshold:
 
 | Reached round | Missing flag | Course stops at |
 |---|---|---|
@@ -174,1663 +165,61 @@ threshold:
 | 11 | `0x382` | 11 |
 | 12 | `0x471` | 12 |
 
-Retail applies them in that order and lets a later one overwrite an earlier
-one, so a run missing all three stops at 12 rather than at 8. That is
-reproduced rather than tidied. "Course exhausted" is then `round >= cap`
-(`0x801CEDB8`).
+Retail applies them in that order and lets a later one overwrite an earlier one, so a run missing all three stops at 12 rather than at 8; the port reproduces that. "Course exhausted" is `round >= cap` (`0x801CEDB8`).
 
-### Which arm decides a leg was survived
+<a id="which-arm-decides-a-leg-was-survived"></a>
 
-Neither of the two this page used to guess at. It is a single byte test at
-`0x801CEDD8` (and again at `0x801CEE1C`): `DAT_8007BD60 & 0x80`. The battle's
-own state-`0x5A` party-wipe scan clears the bit, and the shared minigame-exit
-routine `FUN_80026018` re-raises it (`ori 0x80`, `0x800260A4`) on the way back
-out - so on arena re-entry the bit reads "the party is still standing".
+### Leg outcome routing
 
-That settles the last open input of `settle_contest`: `continuing`
-(`DAT_801D1ADC`) is **derived**, not prompted. The latch has exactly three
-writers - zeroed on every arena entry (`0x801CECE0`), zeroed at settlement
-(`0x801D1058`), and raised at `0x801CEE08` on the one path that reaches it,
-which is *course exhausted **and** survived*. There is no continue prompt to
-build.
+"Survived" is a single byte test at `0x801CEDD8` (and again at `0x801CEE1C`): `DAT_8007BD60 & 0x80`. The battle's own state-`0x5A` party-wipe scan clears the bit, and the shared minigame-exit routine `FUN_80026018` re-raises it (`ori 0x80`, `0x800260A4`) on the way back out - so on arena re-entry the bit reads "the party is still standing".
 
-The resulting hub routing after a leg:
+`continuing` (`DAT_801D1ADC`) is **derived**, not prompted; there is no continue prompt. The latch has three writers: zeroed on every arena entry (`0x801CECE0`), zeroed at settlement (`0x801D1058`), and raised at `0x801CEE08` on the one path that reaches it - *course exhausted **and** survived*.
 
 | Leg | Next hub state |
 |---|---|
-| survived, course not exhausted | `0x0A` - the between-leg tally screen |
+| survived, course not exhausted | `0x0A` - the between-leg tally screen (seeded at `0x801CEE2C`) |
 | survived, course exhausted | `0x32` - settle, latch **up** |
 | not survived | `0x32` - settle, latch down |
 | ran (`_DAT_80084448 == 4`) | `0x32` - settle, latch down, `DAT_801D1A74 = 1` |
 
+<a id="the-intermission-is-per-fight-not-per-turn"></a>
+
 ### The intermission is per fight, not per turn
 
-The table above is a table of **legs**. No turn boundary reaches any row of
-it, because the two boundaries are written by different arms and only one of
-them leaves the battle:
+No turn boundary reaches the table above. The two boundaries are written by different arms of `FUN_801E295C`, and only one leaves the battle:
 
 | Boundary | Written at | What happens |
 |---|---|---|
 | turn | `0x801E67E8..0x801E6810` | `ctx[6] = 0x14` (the round driver's turn-top arm) and `ctx[+0x28a] += 1`; the driver re-enters its own command cluster `0x28` |
-| leg | `0x801E65D8` / `0x801E6674` | `DAT_8007BD71 = 0xFE` - party wipe (cause `5`, `-0x42D4`) / monster wipe (cause `0`); the exit selector routes to arena mode `0x18` |
+| leg | `0x801E65D8` / `0x801E6674` | `DAT_8007BD71 = 0xFE` - party wipe (cause `5`) / monster wipe (cause `0`); the exit selector routes to arena mode `0x18` |
 
-Both writes are in `FUN_801E295C`, the shared battle-action SM. While a leg
-runs the game is in battle mode, so `FUN_801CF870`'s hub - the only thing that
-draws the INTERVAL heading and the score tally - is not executing. Retail has
-**no beat between turns at all**: the command cluster comes straight back.
+While a leg runs the game is in battle mode, so the hub - the only thing that draws INTERVAL and the tally - is not executing. Retail has no beat between turns: the command cluster comes straight back.
 
-So the intermission is a fight boundary twice over. The hub has to be running
-to draw it, and even then only the first row above reaches state `0x0A`; a
-lost, run-from or course-exhausting leg settles instead.
+Both boundaries reach a port host as "the turn's playback ended", so the verdict lives in one shared place: `muscle_dome::leg_boundary_raises_interval` (`engine-minigames`), called at the leg boundary by the hub timer kernel both play hosts drive (`engine-core::muscle_ringside::HubTimers`) and by the browser dome page (the `muscle_leg_shows_interval` binding). `MusclePhase::ends_turn` / `ends_leg` name the same split on the session side. Locked by `engine-core/tests/muscle_intermission_cadence.rs` and `web-viewer/tests/muscle_page_cadence.rs`.
 
-The trap the split hides is that both boundaries reach a host as "the turn's
-playback ended". A host that keys the hub screen on the match phase alone
-draws an intermission every turn. The verdict therefore lives in one shared
-place, `engine-core::muscle_dome::leg_boundary_raises_interval`, called at the
-leg boundary by the hub's screen-timer kernel both play hosts drive
-(`engine-core::muscle_ringside::HubTimers`) and by the browser dome page
-(through the `muscle_leg_shows_interval` binding);
-`MusclePhase::ends_turn` / `ends_leg` name the same split on the session side.
-Locked by `engine-core/tests/muscle_intermission_cadence.rs` and
-`web-viewer/tests/muscle_page_cadence.rs`.
+<a id="course-ladder-the-opponent-per-course-round"></a>
 
-## What a cleared leg is worth
+## Course ladder
 
-`FUN_801D1184` computes four count-up rows, and they do **not** all mean the
-same thing. Three are scaled `× max_hp / 100` (retail's `0x51EB851F`
-reciprocal multiply); the fourth is not scaled at all:
+The opponent is a real monster id, pinned by two adjacent tables in PROT 0977 immediately after the score table:
 
-| Row | Value | Global |
-|---|---|---|
-| round | `round * 2 * max_hp / 100` | `DAT_801D1ACC` |
-| turns | `min(turns_taken, 8) * max_hp / 100` | `DAT_801D1AD0` |
-| outcome | `DAT_801D1A5C[min(outcome, 3)] * max_hp / 100` | `DAT_801D1AD4` |
-| score | `score_table[course][round - 1]` | `DAT_801D1AAC` |
-
-`DAT_801D1A5C` is `[8, 12, 4, 2]`. `turns_taken` is `_DAT_80084444` and
-`outcome` is `_DAT_80084448` - the same word the flee arm sets to 4.
-
-The tally screen `FUN_801CF074` then drains all four, one `step_scale` step
-per lane per frame with a voice blip per step - and the *sinks* are what makes
-this one mechanism instead of two. The first three lanes
-(`0x801CF0DC` / `0x801CF150` / `0x801CF1C8`) all drain into the **same**
-accumulator `DAT_801D1AC8`, which hub state `0x0C` then adds to the fighter's
-HP. Only the fourth (`0x801CF244`) drains into the coin tally `_DAT_80084440`.
-
-So three of the six rows on that screen are healing, not score, and a dome
-contest costs no permanent HP.
-
-The six rows are **not** one per lane, which is the reading that puts the
-wrong numbers on the screen: they are the three lane pendings, the shared HP
-accumulator `DAT_801D1AC8`, lane 3's pending and the running tally
-`_DAT_80084440`, and their brightness comes from only four fade counters in
-the order `[0, 1, 2, 0, 3, 3]`. Row by row, with the addresses:
-[`functions/minigames-debug.md`](../reference/functions/minigames-debug.md#the-contest-score-tally-screen-fun_801cf074).
-
-### The between-leg restore
-
-Hub state `0x0C` (`0x801CFE7C..0x801CFEA8`) does
-`hp_cur = min(hp_max, hp_cur + DAT_801D1AC8)` on the `+0x6CC` / `+0x6CE` pair
-of the game-state window `0x80084140`. That pair is the lead party record's
-own `+0x104` / `+0x106` HP fields (`0x80084708 - 0x80084140 = 0x5C8`).
-
-The restore raises the **current** HP only, so a later leg opens hurt. The
-next leg's battle init seeds the fighter actor's two HP words from two
-different record fields - current `+0x14C` and maximum `+0x14E`, the maximum
-off record `+0x104` (`FUN_80053CB8`, `0x80053DD4..0x80053DDC`) - so the status
-plate reads `hp / max` and never `hp / hp`. The port carries the maximum into
-the leg separately from the entry HP (`MuscleDomeSession::set_hp_max`, seated
-by the door warp from `SceneHost::dome_lead_fighter`).
-
-`FUN_801D0ED8` does the wider restores. It refills HP/MP/SP to their maxima at
-contest start, and - only when `course != 0`, behind a `bnez` at `0x801D0EE8`
-- first zeroes the four equipment bytes `+0x75E`/`+0x75F`/`+0x760`/`+0x762`.
-So "no equipment" is an **Expert/Master** rule; the Beginner course keeps its
-gear. Settlement (`0x801D0FDC`) restores the whole saved SC block.
-
-Two details separate it from the between-leg restore above. It is a **one-shot**:
-the arena entry reaches its `jal` at `0x801CEBF0` only on the `_DAT_8007BAC0 == 0`
-side of the `bnez` at `0x801CEB58`, and a re-entered arena jumps to `0x801CEC00`
-instead - so a leg boundary never refills. And the four bytes it zeroes are the
-*gear* slots only (record `+0x196` armour, `+0x197` head, `+0x198` weapon,
-`+0x19A` leg gear): the Seru-lock byte `+0x199` and the three accessory bytes
-`+0x19B..+0x19D` are untouched, so a stripped fighter keeps its accessories and
-its summon access. Port `engine-core::muscle_dome::apply_contest_start_restore`,
-handed to the host by `DomeContest::take_start_restore` and applied in
-`World::enter_muscle_dome`.
-
-## Contest settlement + the one-shot prize
-
-The `0977` door/init slot carries the **contest settlement** routine
-`FUN_801D0F60` (file `+0x2748`; historically mis-cited as `FUN_801C2748` from
-a `0x801C0000`-band import). After a contest leg it restores the SC block
-(`FUN_8001A8B0`) and settles the running score tally `_DAT_80084440`:
-
-- **Not continuing** halves the tally (signed `/2`); continuing keeps it and adds the per-`(course, round)` score-table cell `DAT_801d1860 + course*0x40 + (round-1)*4`.
-- **Gave up** (`DAT_801D1A74`, raised only by the flee path) zeroes the tally and drops the continue latch `DAT_801d1adc`. When the give-up landed on **round 1** it also sets flag `0x130 + course` - the three flags curated lore knows as the Muscle Paradise / Chicken King trigger ("run from the first battle in all three difficulties").
-- Continuing sets flag `0x50A`; giving up sets flag `0x35`. Both are cleared at the top of every settlement.
-- On the **Master-course final fight** (round counter `DAT_801d1a94 >= 0xD`) with the one-shot flag-bank bit `FUN_8003CE64(0x6CB)` still clear, it awards item `0xCD` (the **War God Icon**) via `FUN_800421D4(0xCD, 1)` - the once-per-save first-clear prize.
-
-The tally is then paid by the tail call to `FUN_80026018`, the **shared**
-minigame-exit routine - nothing dome-specific: `casino_coins += tally`
-saturating at `0x0098967F` (9,999,999), on the coin bank `0x800845A4`
-(`0x80026058..0x80026078`).
-
-That closes the reward question. A dome **leg** pays nothing at all; a dome
-**contest** pays coins. The victory caption's spell id (`ctx+0x269 + 0x80`) is
-a *string* index into `0x801F4DFC`, the shared battle-family cast-caption
-label table resident in every battle overlay and read by any cast - it is not
-a Seru award, and treating it as one put an invented capture on a dome win.
-
-Engine port: `engine-core::muscle_dome::{DomeContest, settle_contest}`, driven
-by `World::report_muscle_leg` / `World::settle_muscle_contest` on the native
-host and by the `muscle_contest_*` bindings on the browser host - one shared
-model, no per-host ladder rule. `see ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
-
-The score table's shape follows from that expression: three courses of sixteen
-`i32` cells, at file offset `0x3048` of the raw `0977` entry
-(`0x801D1860 - 0x801CE818`), reachable with the same fixed-offset read
-`engine-ui::other_game_hud::parse_sprite_table` already performs on that entry.
-Parser `engine-core::muscle_dome::parse_score_table`.
-
-A course's row summed is what a cleared run banks - each cell exactly once,
-the non-final legs through the tally screen and the last one at settlement.
-That is the join the curated `casino.toml` `reward_coins` column belongs to:
-Beginner 818 and Expert 1532 match the disc exactly, and the Master course's
-row sums to **13830**, correcting the 13856 the walkthrough table carried.
-
-### The arena's per-frame voice cue (`FUN_801D1288`)
-
-The same overlay keys one SPU voice per frame, rotating over `0x10 ..= 0x13` on
-the free-running counter `DAT_801D1AE4 & 3`. Its call is
-`FUN_80065034(voice, 0, 0, 1, 0x3C, 0x40, vol, vol)`, and that eight-argument
-shape is pinned by the SCUS cue drainer `FUN_80016B6C`, which fills the same
-slots from a cue descriptor: `(voice, level, program, tone, note, 0x40, vol_l,
-vol_r)`. So the arena cue is program `0`, tone `1`, note `0x3C`, at level `0`.
-
-Both volume slots are `(_DAT_80084580 << 0xf) >> 0x10` - the **voice/SFX volume
-config**, which the cold reset `FUN_8001FFA4` seeds to `200`, so a freshly
-booted game keys it at `100` per channel. Reading that pair as a *position*
-derived from a party-block word is **falsified**: `FUN_80016B6C` passes the
-identical expression into the identical two argument slots for every ordinary
-SFX cue in the game, and the dance overlay's own direct key-on `FUN_801D3D78`
-does the same. Port: `engine-core::other_game_overlay::cue_volume`.
-
-The whole contest runs on a shared context block at `_DAT_8007bd24` (referred to below as **ctx**). The fighters are ordinary battle actors reached through the global actor pointer table `&DAT_801c9370` (the same table the main battle system uses), so an entered direction ultimately resolves through the battle action machinery against actor records.
-
-## Arena backdrop (extraction 1225)
-
-The contest's 3D environment is an ordinary **battle backdrop** in the standard
-carrier shape ([`battle.md` § Battle background](battle.md#battle-background)),
-resident in the dome's own data file:
-
-- The `0977` door/init overlay loads the dome's data file by its dev path
-  `data\field\other6.lzs` - a string literal in the entry's own pool
-  (extraction `0977_other_game`, alongside its `mini_battle_flag %d` /
-  `round %d level %d` traces and the arena's monster-name roster).
-  CDNAME maps `other6` to raw TOC index **1222**, i.e. extraction block
-  **1220..=1225** (`legaia_prot::cdname::block_for_extraction_index`, the +2
-  filename skew - [`cdname.md`](../formats/cdname.md#numbering-space)).
-- The block's tail slot, extraction **1225**, is its only `scene_tmd_stream` -
-  the battle-backdrop carrier the battle init walker `FUN_8001FE70` records
-  into `_DAT_8007B864`: a leading arena-shell TMD (2 objects, 367 verts;
-  object 0 = the ring shell, authored at `X >= 0` with the open side facing
-  `-X` - the same half-stage authoring rule as `town01`'s dome) followed by
-  two type-`0x01` TIM chunks (`0x8220` bytes each, the town01-dome chunk
-  shape): 4bpp 256x256 pages at framebuffer `(768, 0)` / `(832, 0)` with CLUT
-  rows **473** / **479**.
-- `(832, 0)` through CLUT `(0, 479)` is exactly the constant address the
-  battle **ground grid** `func_0x801d02c0` samples, and that page's
-  `(192..255)^2` window is the dome's plain dirt tile; the rest of the two
-  pages is the arena furniture (chain-link fence, dirt/stone flooring, the
-  tiered ring wall).
-- The stream carries two **semi-transparent prim sets** (ABE set, ABR mode
-  1 = additive), in two different TMD objects. The shell (object 0) owns
-  the lamp-glow quads (mode `0x3F`, page `(768, 0)` window
-  `(48..109, 161..251)`, CLUT x 112 of row 473). **Object 1 is a separate
-  12-quad dust-decal object** (mode `0x2F`, page `(832, 0)` window
-  `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base.
-- **The dust decal is not part of the live match's visible backdrop.** Its
-  texels are genuinely bright - the CLUT ramp at `(16, 479)` climbs to
-  whitish `(208, 208, 248)`, window average luminance ~70/255 - so *any*
-  draw of it is conspicuous: opaque it reads as a solid dark "mist" band,
-  and even a correct ABR-1 additive draw reads as a white cloud band. The
-  retail match capture shows a mist-free interior (fence, wooden wall,
-  light-grey floor; capture: the `minigame_muscle_dome_pcsx` scenario run
-  forward into the live match). The lamp glows stay with the shell and blend
-  additively.
-
-  **The path that would draw it, and the gate that does not.** Object 1 is
-  dropped by the battle scene loader itself, one object at a time, and the
-  rule is not dome-specific - see
-  [Object 1 is trimmed by the loader](#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
-
-Confidence: the load chain, carrier shape and texture address are **Confirmed**
-(disassembly + structural decode of the entry); that a live contest's
-`_DAT_8007B864` holds this stream is **Inferred** - the dome runs as a battle
-with the battle overlay resident and 1225 is the only backdrop-shaped stream in
-the file its init loads, but no dome-battle save-state byte-match has been
-taken. The file's other slots: 1220 = an LZS container whose section 0 is
-the dome's **hub UI art** - two plain TIMs uploading the pages at
-`(320, 0)` / `(320, 256)` with CLUT rows 502/503 (the Welcome / INTERVAL /
-ROUND / course-name strips; see
-[HUD chrome](#hud-chrome-texture-sources-capture-pinned)),
-1221/1222 = the two ringside panel stills
-([below](#inttim--int2tim---the-ringside-panel-stills)), 1223/1224 = pochi
-fillers ([`pochi.md`](../formats/pochi.md)).
-
-### `int.tim` / `int2.tim` - the ringside panel stills
-
-Extraction **1221** and **1222** are not blobs. Each is exactly `0x28000`
-bytes, which is `320 * 256 * 2` to the byte, and each is a **16-bit BGR555
-still** that the runtime uploads as one VRAM rectangle at `(384, 0)`.
-
-The overlay that reads them is PROT **0978** (`field_back_read`, slot-B base
-`0x801F69D8`), whose own string pool names both files by their dev paths -
-`h:\prot\field\other6\tim\int.tim` at file `+0x20` and
-`…\int2.tim` at `+0x44` - putting them in this bundle's directory. Its
-streamer `FUN_801F6B24` (file `+0x14C`) is a phase machine on the counter
-`_DAT_8007B6C8` with **two** jump tables, one per family
-([below](#one-counter-two-tables-and-the-word-that-picks-one)).
-
-Nothing materialises the raw TOC index as a literal, which is why a
-literal-only sweep finds no loader. The index is **computed**:
-
-```text
-801f6b90  lhu   v0,0x4824(v0)      ; party slot 0 hp_max_record  (+0x11C)
-801f6b98  lhu   v1,0x480e(v1)      ; party slot 0 hp_curr_live   (+0x106)
-801f6ba4  srl   v0,v0,1
-801f6bac  sltu  s0,v1,v0           ; s0 = current HP < max/2
-...
-801f6c3c  addiu a0,s0,0x4c7        ; raw TOC 0x4C7 + s0
-801f6c40  jal   0x8003e8a8         ; LBA resolver
-```
-
-Raw `0x4C7` / `0x4C8` are extraction **1221** / **1222** under the
-[+2 correction](../formats/cdname.md#numbering-space), so `int.tim` is the
-default and `int2.tim` is the **below-half-HP** variant, chosen from the lead
-character's live record ([`save-record.md`](../formats/save-record.md)). The
-same `s0` selects between the two dev path strings on the dev branch
-(`lh` on `_DAT_8007B8C2` at `0x801F6C38`), which is what ties each index to
-its filename. Four such `addiu a0,s0,0x4c7` sites exist, at file `+0x264`,
-`+0x2F4`, `+0x398` and `+0x440` - one per strip.
-
-The upload is four passes over the same rect. `FUN_8003E964` seeks sector
-`0 / 0x14 / 0x28 / 0x3C` of the entry, `FUN_8003E800` reads 20 sectors
-(`0xA000` = `320 * 64 * 2`) into the staging buffer, and `FUN_800583C8`
-(`LoadImage`) uploads it with the rect's `y` set to `0 / 0x40 / 0x80 / 0xC0`
-in the `jal` delay slot. The rect itself lives at `0x801F735C` and its other
-three fields are written once, at `0x801F6BE4` / `0x801F6BF0` / `0x801F6BFC`:
-`x = 0x180` (384), `w = 0x140` (320), `h = 0x40` (64).
-
-The files' own layout matches the display window. The first five sectors of
-both are the halfword `0x5862` repeated - 5,120 halfwords, i.e. exactly
-**16 scanlines of 320** - then one zero sector, then pixels. So the 240-line
-picture occupies rows 16..255 of the 256-row rectangle, and the constant fill
-is a deliberate top pad rather than dev filler.
-
-Both stills are finished pre-rendered scenes of characters at the ring's
-rope-and-mesh fence, and the `int2` variant differs by their reaction, which is
-consistent with the HP test that selects it. **Confirmed** (disassembly) for
-the loader, the index arithmetic, the variant selector and the upload geometry.
-What the panel is used for on screen is **Confirmed** too (disassembly +
-capture): it is the backdrop of a **re-entered** hub - the `INTERVAL` +
-tally screen and the `ROUND` card that follow a finished leg - drawn by the
-hub's `FUN_801D00F8` at the backdrop level `*(0x801D1A7C)`. See
-[the INTERVAL screen](#the-interval-screen-draws-the-still-on-a-re-entered-hub)
-and [`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry);
-an earlier reading of the capture below took those screens for a live
-`koin1` render alone.
-
-#### What arms the load
-
-`ctx[+0xC]` is a battle-teardown state byte, and the SCUS post-battle routine
-`FUN_8004E568` drives the last two of its three values from two places
-(`0x8004E670..0x8004E6E4` and `0x8004F840..0x8004F8B0`, the same block twice):
-
-| `ctx[+0xC]` | What runs |
-|---|---|
-| `1` | Free the four enemy record buffers `0x801C9348[0..3]` (each gated on `ctx[+0x02 + i] != 0`) through `FUN_80017B94`, free the side-band stream buffer `*0x8007BD74`, then write `2`. |
-| `2` | Tick `FUN_80025358` once a frame, storing its "still loading" return in `ctx[+0xB]`. That is the staged load of PROT 0978, whose `FUN_801F6B24` streams the still into the space the `1` arm just freed. |
-
-The arm itself is neither of those. Sweeping `SCUS_942.54` and every statically
-based overlay image for the `li rX, 1` / `sb rX, 0xC(rY)` pair returns exactly
-one site, `0x800474CC` - the **per-frame battle anim-node tick**
-`FUN_80047430`, which writes `ctx[+0xC] = 1` for an enemy node only (`node[+0x5A] >= 3`) and under two further
-gates - `gp[+0xA48] & 0x80` set, and the per-battle enemy id byte `gp[+0x9F4]`
-not `0xB5`. The same two instructions also set the node's early-return flag
-(`node[+0x10] |= 8`), so the enemy stops ticking in the same frame the load is
-armed. `gp[+0xA48] |= 0x80` comes from the battle-end spoils path at
-`0x8004EDE0` (`FUN_8004E568`) and from a pad-gated branch at `0x80046D98`
-(`FUN_80046A20`, under `_DAT_8007B98C != 0` and pad mask `0x100`).
-
-So the load is a **battle-teardown** step: the still is streamed into slot B
-after the enemy records are freed, on either battle-end path. The
-`ctx[+0x7] == 0x67` gate on the first of the two blocks is not a separate
-condition on the streamer - it is the **escape** path's entry into the same
-shared teardown. `0x67` is written in one place: case `0x66` of the
-battle-action SM `FUN_801E295C` (`0x801E5A84`), the successful-escape teardown,
-which spawns the fade template at `DAT_801C9070` and raises the battle-end
-signal `DAT_8007BD71 = 0xFE`. `0x67` has no case body of its own
-([`battle-action.md`](battle-action.md)), so it is a terminal hold meaning "the
-party ran and the fade is playing". The second block
-(`0x8004F7A4..0x8004F8B0`) is the ordinary victory tail, reached under
-`gp[+0xA54] >= 0x100`, `ctx[+0xB] == 0` and `ctx[+0x6CE] == 1`; a third tick
-site sits in the battle side-band pass `FUN_80056208` at `0x80056428` (stage
-`_DAT_8007B64A == 1`, phase `ctx[+0x289] == 3`).
-
-**What is still open is only the draw.** No image on the disc materialises
-`384` as a primitive or display coordinate outside the two loaders themselves:
-sweeping every statically based overlay image plus `SCUS_942.54` for
-`addiu rX, zero, 0x180` / `ori rX, rX, 0x180` yields 33 sites, and the only
-ones that pair it with `(384, 0)` are `FUN_801F6B24`'s own two rect writes
-(`0x801F6BE4`, `0x801F6FC8`), the dev VRAM round-trip utility `FUN_8001E890`
-(which `StoreImage`s `(384, 0)` 256x256 back out in four `0x8000`-byte strips),
-and the battle scene loader `FUN_800542C8` at `0x80054928`, whose rect is
-`(384, **256**)` - a different page.
-
-Read with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin
---base 0x801F69D8 --addr 0x801F6B24`.
-
-#### What a live teardown shows
-
-Capture reproduces the arming chain exactly and adds the one figure the static
-read could not supply - **which** entry the `ctx[+0xC] == 2` arm stages. Probe
-`scripts/pcsx-redux/autorun_battle_teardown_hook.lua`, run on an ordinary
-self-resolving fight (`rim_elm_gimard_victory`) and on a Muscle Dome match:
-
-| Observation | Ordinary victory | Dome match (escaped) |
-|---|---|---|
-| `0x800474CC` arm hits | 1, `ra = 0x800252BC` | 1, same `ra` |
-| `gp[+0xA48]` | `0x00` -> `0x80` on the arm frame | already `0x80` from the hub |
-| `ctx[+0xC]` | `1` next frame, `2` two frames later | same shape |
-| loader-B tracker `0x8007BC4C` | `-1` -> **83** four frames after the arm | `-1` -> **83** |
-
-The tracker holds `extraction - 895`, so `83` is **PROT 0978** - the load is
-byte-pinned live, on both battle-end paths, and `ra = 0x800252BC` is the
-actor-list tick iterator the settled `FUN_80047430` caller finding names.
-
-#### The teardown streams the *other* family - `0x36C`, not `0x4C7`
-
-PROT 0978 carries **two** streaming families, each behind its own jump table
-([below](#one-counter-two-tables-and-the-word-that-picks-one)), and they
-differ in every field that matters. Each has its own rect initialiser writing
-the same `RECT` at `0x801F735C`:
-
-| | panel-still family | field-restore family |
-|---|---|---|
-| rect init | `0x801F6BE4..0x801F6C20` | `0x801F6FC8..0x801F6FF0` |
-| rect | `x = 0x180`, `w = 0x140`, `h = 0x40` | `x = 0x180`, `w = 0x40`, `h = 0x100` |
-| stepped field | `y` `+= 0x40` (`0x801F6D2C`) | `x` `+= 0x40` (`0x801F70F8`) |
-| bytes per strip | `0xA000` | `0x8000` |
-| raw TOC index | `0x4C7` / `0x4C8` (`int.tim` / `int2.tim`) | `0x36C` |
-
-An exec-breakpoint census of the libgpu entry points across the ordinary
-victory (`rim_elm_gimard_victory`, probe
-`scripts/pcsx-redux/autorun_gpu_call_census.lua`) catches the teardown load
-in the act, and it is the **second** family. Four `LoadImage` calls, from the
-four `jal 0x800583C8` sites at `0x801F7078` / `0x801F7108` / `0x801F7190` /
-`0x801F7224`, upload `(384, 0)`, `(448, 0)`, `(512, 0)`, `(576, 0)`, each
-`64 x 256` - `0x8000` bytes apiece, `0x20000` in all - on the four vsyncs
-after the tracker flips to `83`. Sixty-four by two hundred fifty-six at those
-origins is not a picture rect: it is **PSX texture pages 6, 7, 8 and 9**.
-
-Raw `0x36C` is extraction **874** under the
-[+2 correction](../formats/cdname.md#numbering-space) - the head of the
-`player_data` block, whose four `0x8000` chunks the arm re-seeks at sectors
-`0`, `0x10`, `0x20`, `0x30`. So the entry's own strings are literal: the
-battle-teardown arm is the **`FIELD BACK READ NOW`** path, restoring the
-field party's texture pages over the VRAM the battle borrowed. The panel
-stills are a different arm of the same machine and did not run here.
-
-This corrects the upload geometry recorded above for the teardown: the four
-passes are vertical `64 x 256` strips stepping `x`, not horizontal `320 x 64`
-bands stepping `y`. The `320 x 64` reading is the *panel-still* family's, and
-it stands for that family.
-
-#### One counter, two tables, and the word that picks one
-
-`FUN_801F6B24` is not one phase machine with the two families interleaved in
-it. It is two, sharing one counter, and the branch that picks between them is
-three instructions into the body:
-
-```text
-801f6b9c  lui   a0,0x8008
-801f6ba0  lw    a0,-0x4540(a0)      ; _DAT_8007BAC0, the special-battle word
-801f6ba8  beqz  a0,0x801f6ed0       ; zero -> the field-restore dispatcher
-...
-801f6bbc  sltiu v0,v1,0xc           ; panel-still family: 12 arms
-801f6bd0  lw    v0,0x6aa8(at)       ;   table 0x801F6AA8
-...
-801f6edc  sltiu v0,v1,0x13          ; field-restore family: 19 arms
-801f6ef0  lw    v0,0x6ad8(at)       ;   table 0x801F6AD8
-```
-
-`_DAT_8007BAC0` is the special-battle / arena word
-([`re-settled-threads.md`](../reference/re-settled-threads.md)) - non-zero for
-the length of a contest, zeroed by the mode-24 door-warp arm of field-VM op
-`0x3E`. So the panel stills are not "a different arm" of one machine that an
-ordinary teardown happens to skip: an ordinary teardown reads a **different
-table** and cannot reach them at all. That is why an exec census over a
-self-resolving fight finds the field-restore family four times and the
-`int.tim` family zero, and it is why the bracket that reaches the stills has
-to be a live dome match rather than a load transition.
-
-Both tables send indices `0` and `1` to their terminal arm (`0x801F6EC8` /
-`0x801F7304`), because those two counts belong to the **caller**: SCUS
-`FUN_80025358` advances the same `_DAT_8007B6C8` through its own states `0`
-and `1` while the overlay pages in, and only calls this tick at state `2`.
-The module's own phases therefore run `2` upward - `2..=11` on the panel-still
-table and `2..=18` on the field-restore one, which is the walk a capture sees
-reaching `18`. Neither bound is the other's: "a 12-arm phase machine" is the
-panel-still half named as the whole.
-
-<a id="the-interval-screen-is-a-live-render-not-the-still"></a>
-
-#### The `INTERVAL` screen draws the still on a re-entered hub
-
-An earlier reading of this section held that the `INTERVAL` screen is a live
-`koin1` render and that nothing samples `(384, 0)` after the first battle
-end. The checkpoints that sweep wrote contradict its second half: at the
-first `0x19` checkpoint of the **second** and **third** hub visits (vsyncs
-4824 and 7867 of the same `autorun_muscle_hud_capture.lua` run), the
-re-entry latch `_DAT_801D1AE0` reads `1`, the hub arm `*(0x801D1A78)` reads
-`0x0A` and the backdrop level `*(0x801D1A7C)` reads `8` - two ticks into
-arm `0x0A`'s `+= 4` climb, in lockstep with the heading level
-`*(0x801D1A84)`, also `8` - and the frame's primitive pool holds both
-`POLY_FT4` still packets, tpage `0x106` at screen `(0,-20)-(192,220)` and
-`0x109` at `(192,-20)-(320,220)`, code word `0x2C080808`. So the `INTERVAL`
-screen of a re-entered hub **is** drawn over the still, exactly as
-`FUN_801CF870`'s arms read; what the sweep below measured is the live scene
-geometry in the same frames, and whether its ordering-table walk reached the
-still's far-end slot (`OT + 0xFA0`) is not re-derived here. The envelope the
-still is drawn at, arm by arm, is on
-[`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry).
-
-The rest of this section is the original sweep, kept for its method notes.
-Walking the frame's **real ordering table** - `mednafen-state
-display-list` over the main-RAM dump each checkpoint of
-`autorun_muscle_hud_capture.lua` writes - decodes 1822 packets of live `koin1`
-geometry (971 `POLY_GT4`, 406 `POLY_GT3`) across 22 texture families, and none
-of them sits on a page whose x origin is `384`.
-
-The same sweep does find the `(384, 0)` page being sampled, but **only before
-the first match**: every checkpoint from the dome hub through the first battle
-carries one family with `tpage 0x0006` / `clut 0x7702` - 27 packets covering
-screen `x[25,151] y[91,101]`, a ~127x11 label strip, not a 320x256 backdrop.
-From the first battle-end onwards - the point at which PROT 0978 streams the
-still over that page - no checkpoint's ordering table carries a family there at
-all.
-
-**What is still open is the emit**, and three channels are now ruled out over
-roughly 14,000 vsyncs spanning an ordinary battle end, two dome matches and
-their intervals: no `DISPENV`-shaped rect at `(384, 0)` with a screen-sized
-`w`/`h`; no libgpu blit sourcing `(384, 0)` (GP0 `0x80..0x83` with the command
-word's low 24 bits zero and a transferable size - the loose form of that test
-reports a false hit for every `0x80`-prefixed KSEG0 pointer that happens to
-precede the constant `0x180`, which is why the filter lives in the scanner);
-and no ordering-table family on the page after the still lands.
-
-Two method notes the negatives depend on. A **periodic RAM sweep cannot see a
-one-shot** - a blit that runs on the frame a screen opens is gone before the
-next sample, and a miss reads exactly like an absence, which is why the probe
-takes `LEGAIA_SCAN_MODES` to sweep every vsync inside named modes. And a
-**two-byte tpage needle is not separable from data** even after a
-screen-coordinate filter, so RAM-scanned `(384, 0)` tpage candidates are not
-evidence of a draw; the ordering-table walk is what carries weight here.
-
-#### A call-site census closes the sampling question
-
-The way past both method limits is to watch the libgpu **entry points**
-rather than RAM, because a one-shot cannot fall between two samples that do
-not exist. `autorun_gpu_call_census.lua` breakpoints `LoadImage`
-(`0x800583C8`), `StoreImage` (`0x8005842C`), `MoveImage` (`0x80058490`),
-`PutDispEnv` (`0x800589D0`), the GP1 command issue (`0x8005A094`) and the
-direct GP0 FIFO write (`0x8005A0D0`), and reads each call's `RECT` / command
-word as it is made. Over 1800 vsyncs spanning a battle, its teardown and the
-return to field:
-
-| Call | Count | At `x = 384` |
-|---|---|---|
-| `PutDispEnv` / GP1 `0x05` display start | 641 / 641 | **0** |
-| `MoveImage` | 632 | **0** |
-| `LoadImage` | 214 | 4 - the teardown's texture-page strips |
-| `StoreImage` | 5 | 4 - the dev round-trip `FUN_8001E890` reading it back |
-| direct GP0 list carrying `0x80` / `0xA0` / `0xC0` | 0 | 0 |
-
-No display origin is ever moved to the page, nothing blits out of it, and
-the only writers are the teardown upload and a dev readback. Together with
-the ordering-table result above, that answers the sampling question the way
-the geometry already suggested: `(384, 0)` is not a still's display rect on
-this path but four ordinary texture pages, sampled by ordinary
-tpage-addressed primitives - the `tpage 0x0006` family the sweep already
-found. What remains open is only the **panel-still family's** own consumer,
-on whatever arm loads `int.tim` / `int2.tim`.
-
-Where to look next is in the entry's own strings: PROT 0978 opens with
-`f_read %d size %d KB` and **`FIELD BACK READ NOW`**, which reads as a
-background-read cover rather than an arena screen.
-
-#### The panel-still consumer is in the hub, not the battle overlay
-
-It is `FUN_801D00F8` in **PROT 0977** at file `+0x18E0`, and it emits two
-`POLY_FT4` quads that between them form one 320x240 image out of VRAM
-`(384, 0)..(704, 240)` - tpage `0x106` for the left 192 columns and `0x109`
-for the right 128. The full geometry, the ordering-table path and the
-fade byte are on
-[`ringside-still.md`](../formats/ringside-still.md#what-draws-it).
-
-Two things that search missed follow from where it turned out to be. The
-sampling primitives are `tp = 2` (16-bit direct), not the `tpage 0x0006` 4bpp
-family the sweep above found, so the two consumers of the page are different
-primitive kinds addressing the same VRAM. And the emitter sits in the
-**contest hub**, which is the screen a finished match returns to - so the
-still is drawn a mode later than it is loaded, by an image that is not
-resident when the load runs. A census bracketed on one teardown cannot see it
-for that reason alone.
-
-The arming is the hub's own, not the teardown's: `FUN_801CEA6C` forks on the
-arena word `_DAT_8007BAC0` and stores the still latch `_DAT_801D1AE0` zero on
-the first entry (where op `0x3E` left the word at zero) and `1` on every
-re-entry. A probe run that walks into the arena from `koin1` enters the
-emitter 79 times over 3600 vsyncs and takes the six-tile arm every time; the
-still arm needs a second visit. See
-[`ringside-still.md`](../formats/ringside-still.md#measured-live).
-
-### Object 1 is trimmed by the loader (`_DAT_8007B64B`)
-
-Nothing in the arena's own code touches the backdrop. `_DAT_8007B864` - the
-pointer `FUN_8001FE70` writes at `0x8001FEC0` after copying the stream's leading
-TMD chunk out to its own buffer - has exactly **two** references on the whole
-disc, and the second is the SCUS battle scene loader `FUN_800513F0` reading it
-at `0x80051A5C`. The arena-init overlay 0977 and the battle-action overlay 0898
-reference it in no form (word, `lui`+load, `jal`, `j`, branch, `gp`-relative).
-
-What `FUN_800513F0` does with it, in order:
-
-1. `FUN_80026B4C(_DAT_8007B864, 0)` at `0x80051A60` - magic-checks `0x80000002`,
-   relocates **every** object via `FUN_800268DC`, and registers the whole TMD
-   into the shared model bank `0x8007C018[n++]` (`n` at `0x8007B774`).
-2. Writes the returned slot index into the backdrop template `0x8007680C+4`
-   (`0x80051A80`) and spawns **two** backdrop actors from it
-   (`FUN_80020DE0` at `0x80051A7C` / `0x80051AA8`), parked at battle-ctx
-   `+0x106C` and `+0x1070`. The spawn copies `template+4` into `actor+0x64`
-   (`0x80020E70`), and `FUN_80021B04` binds every object of that model into the
-   actor's part array `actor+0x44` - count at word `0`, one descriptor per slot
-   after it.
-3. Tests the byte `_DAT_8007B64B` at `0x80051ABC`. **When it is zero** - and only
-   then - it decrements both actors' part counts (`0x80051AD4..0x80051B10`) and
-   then shifts each list down one slot from index `1`
-   (`0x80051B14..0x80051BAC`). The net effect for any object count is the same:
-   **object index 1 is removed from the draw list.** A non-zero byte skips both
-   loops and every object stays.
-
-`_DAT_8007B64B` has **one writer on the disc**: the field overlay's battle
-handoff `FUN_801D9E1C` at `0x801DA0AC`, `= (s2[+8] >> 5) & 1` - bit 5 of the
-handoff's per-encounter setup byte, written only on the
-`(*_DAT_801C6EA4)[+0x5F] >= 0xC` arm. It is one of three options packed into
-that byte: bit 7 clears the render flag `0x00100000` on the actor's `+0x80`
-(`0x801DA0B8`) and bit 6 takes a third arm (`0x801DA0D8`). (The
-field-battle-intro overlay 0979 reads the byte too, at `0x801CF700`; SCUS reads
-it a second time at `0x80046D34` as `gp+0x333`.)
-
-So the "candidate: a phase-gated effect draw" guess is **falsified**. There is no
-effect path for object 1 at all. It is ordinary backdrop geometry that the
-loader trims by default, and it draws only for an encounter whose record sets
-bit 5 - a per-battle background option, not a dome feature.
-
-**The arena really does leave the byte clear** - measured, not inferred.
-`scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua` drives the dome contest
-(`koin1`) from its load-transition state through the mode chain
-`0x03 -> 0x18 -> 0x19 -> 0x14 -> 0x15` and breakpoints the consumer. The battle
-scene loader `FUN_800513F0` is entered once, from `ra = 0x80046F7C`, with
-`_DAT_8007B64B` reading `0x00`; at the test `0x80051ACC` the loaded byte is `0x00`,
-so the loader takes the fall-through arm and **trims object index 1** from both
-backdrop actors. A width-1 write watch on the byte logs **zero** writes across the
-whole capture - the field handoff `FUN_801D9E1C` never runs on the arena's path, so
-nothing sets bit 5 and the dust decal is not drawn. The mist-free frame capture and
-the site panel's omission of the decal both agree with the mechanism.
-
-**The shell is drawn twice.** Like every battle stage, the arena is two
-backdrop actors over the one registered TMD
-([`battle.md` § Two actors, one registered mesh](battle.md#two-actors-one-registered-mesh)):
-copy A at raw coordinates, copy B half-turned about Y, which closes the
-`X >= 0` half-stage into the full ring. The half turn is the default arm of
-the `DAT_80078B50` mirror list: the dome contest leaves `_DAT_80084540` and
-`DAT_8007BD60` at `3` each (the retail `minigame_muscle_dome` state), and
-backdrop id `6` is not on the list. The choice is visible here - only about a
-third of the shell's vertices are symmetric in `z`. Kernel
-`engine-minigame-scenes::muscle_dome_scene::arena_ring`, shared by every dome host.
-
-Site consumer: the minigames page's dome panel draws the ring + the retail
-ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
-with the shell's ABE lamp glows routed through the renderer's two-pass PSX
-blend (`site/js/minigame-muscle.js`, `semiTwoPass`) and the object-1 dust
-decal omitted per the capture above (`muscle_arena_hybrid` filters it).
-
-In the play hosts (the native window and the browser play page) the same
-shell, grid, fighter and monster come from one engine surface,
-`engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface`: it seats the course
-ladder's current rung, loads the bodies and the merged VRAM once per seated
-pair, replays a resolved turn's plays as swings (the defender flinching on a
-connecting one), holds the loser's knockdown when the leg settles, and hands
-both hosts one view-projection (`DomeCamera::vp_raw`). The choreography and
-the framing are the port's, not a retail track.
-
-The browser play page draws that surface through the WebGL renderer's
-single-mesh path (`TmdRenderer.render`), on the same program the field's
-assembled pass has just used. Every scene-pass uniform that path does not
-own - the NCLIP rejection word, the prologue grade, the palette collapse
-and the depth cue - is staged to its identity there, because uniforms persist
-on a shared program: with the field's NCLIP word left at `2`, every
-front-facing shell fragment was discarded and the in-world dome drew as a
-bare dirt floor with the two fighters on it, while the native window, on
-the same surface, showed the walls, fence and lamps.
-
-The shell, the assembled fighter and the monster all upload their prims'
-baked **packet colour** on the `a_flat_rgba` attribute, because the page
-shades the retail way - `texel * colour / 128`, no light source. The dome's
-own packet colours run well under the neutral `0x80` (much of the shell sits
-near `0x60`), so this is the difference between a lit interior and a washed
-one. Uploading white instead does not read as *unlit*, it reads as
-**over-lit** at `texel * 255/128`, which is why nothing about the frame
-points at a dropped colour stream; `legaia_web_viewer::packet_color` is the
-one place the two halves (textured = modulation off the mesh, untextured =
-fill off the shading) get split correctly.
-
-## Retail presentation
-
-Retail presents the contest as a **standard battle** - the normal Legaia
-battle chrome with the course restrictions applied - not a bespoke card UI.
-Capture evidence: retail captures of the contest entry, the command menu and
-an art playing out.
-
-- **Intro card.** Contest entry opens on a pure black frame with a single
-  centred line of white cursive script, soft blue-white glow:
-  "Welcome to the Muscle Dome!". Then the fight begins.
-- **Fighter roster.** The player fields Vahn, Noa or Gala in their normal
-  **assembled battle form** (fighter form, [`character-mesh.md`](../formats/character-mesh.md)) -
-  not the PROT 1204 Baka form.
-- **Command menu.** The standard battle command cluster: two bevelled gold
-  chips top-left ("Begin" and the fighter's name); on the right the **Item**
-  chip **crossed out with a red X** (the course forbids items), below it
-  "Attack" (left) + a grey D-pad glyph + the character's **Ra-Seru name**
-  ("Meta" for Vahn - the magic command) + "Spirit"; chips are blue-marble
-  plates with gold borders. Bottom: the pointed blue status plate (fighter
-  name, gold "HP" `cur/max`, teal "MP" `cur/max`) with the pointed **AP**
-  plate above-right (red "AP" label, orange gauge, remaining-points
-  numeral). Which chips are live is not a course table: it is the
-  special-battle word's restriction bits and the fighter's own status /
-  Ra-Seru gate, and the Ra-Seru chip's bit is never raised by a dome round -
-  see [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
-  The curated course rules (`data/gamedata/casino.toml`: no equipment, no
-  items on every course, magic forbidden on Master) are walkthrough labels;
-  the *magic* half of them has no writer on the disc.
-- **Arts banner.** A committed directional sequence that performs a
-  Tactical Art raises the art-class banner during playback - block-capital
-  orange-gradient text with a dark outline ("HYPER ARTS!!") over white
-  radial speed-line rays, the attacker's gold name chip top-left and the
-  defender's blue name chip bottom-right. The commit path appends raw
-  direction ids `0xC..=0xF` into `actor+0x1df`, so the recognition happens
-  on the battle-action side as it does for a normal battle's input string.
-- **The enemy's HP is *not* shown here, and there is no mist.** A normal
-  Legaia battle never draws the enemy's HP, and the dome is no exception:
-  the `Turns Left / HP Left` strip that would print it is gated on formation
-  slot 0 `== 0xB6`, which no dome round can satisfy
-  ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)).
-  The earlier reading of this bullet - that the dome is the one battle that
-  shows it, "which is what makes a timed-out leg scoreable" - is **falsified
-  twice over**: the strip is Koru's, and a dome leg has no timeout to score
-  ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)). The
-  per-fighter status plate is the usual one (no enemy plate). The arena
-  interior is mist-free (see
-  [Arena backdrop](#arena-backdrop-extraction-1225) for the ABE-prim defect
-  that fakes a mist band).
-
-Site consumer: the minigames page's dome panel mirrors this presentation -
-the intro card, the command cluster with Item crossed out, the AP/status
-plates and the arts banner - with the fighter body from the assembled
-battle form (`muscle_fighter_*`), the chrome drawn from the disc sources
-below (`muscle_hud_json` / `muscle_hud_sheet_rgba`), and the queue -> art
-resolution done against the SCUS arts-name table's combo strings
-(`muscle_round_arts_json`, kind labels joined from the curated gamedata
-arts table). The **Ra-Seru (magic) chip** is a real command class on both
-hosts: `MuscleDomeSession` carries the ring gates, the learned-Seru list
-priced by the ability-bit discount, the MP gate at the pick and the debit at
-the play-out, and the cast resolves through the same
-`engine-core::spells::cast_spell` rule the regular battle's cast band folds
-with. Neither host crosses the chip out any more, because retail does not:
-its bit is never raised by a dome round
-([the gates](#what-makes-a-ra-seru-chip-render)). The sibling gap - "the
-ported rules resolve each queued command as a basic strike" - is closed:
-see [the queue the dome resolves](#the-queue-the-dome-resolves-is-the-tokenizers).
-
-The in-world dome (the `koin1` arena door, on the native `play-window` and
-the browser play page) runs the selection as the battle's own command flow
-and draws it with the battle HUD - see
-[The selection is the battle's command flow](#the-selection-is-the-battles-command-flow).
-
-## HUD chrome texture sources (capture-pinned)
-
-The dome match's entire on-screen chrome resolves to five disc sources, and
-its screen geometry to one SCUS-static table. Provenance: a live PCSX-Redux
-dome battle (the `minigame_muscle_dome_pcsx` scenario driven forward with a
-scripted pad, capture tool
-`scripts/pcsx-redux/autorun_muscle_hud_capture.lua`) snapshotted at the
-command cluster, an enemy art, and a player HYPER ARTS!! playback; the GP0
-packet stream was read out of the live prim arena and every texture page was
-byte-matched between the snapshot VRAM and the disc bytes.
-
-**Layout.** The screen-element placement table at SCUS `0x80076C10`
-(24-byte stride,
-80 records, initialised data in `SCUS_942.54` at file `0x67410`) carries per
-element: two sprite/style selector bytes (`+0`/`+1`), two screen anchors
-`(x, y)` at `+2`/`+4` and `+0xA`/`+0xC` (the glide endpoints the
-`FUN_801db7b0` slide moves between), width/height at `+6`/`+8`, per-variant
-style bytes at `+0xE`/`+0xF`, a kind byte at `+0x10` and a text pointer at
-`+0x14` (rewired at runtime - `FUN_801d8de8`'s labelled cases write it).
-Confirmed anchors: element 8 = the Item chip arriving at `(204, 34)`,
-9 = Attack at `(160, 66)`, `0xA` = the Ra-Seru chip at `(248, 66)`,
-`0xB` = Spirit at `(204, 98)`, 0..5 = the Begin / Run centre-menu chips,
-7 / `0x34` = the 288-wide status plate at `(16, 236 -> 194)`,
-`0x29`/`0x2A` = the opponent name chip at `(200, 162)`. Sprites emit
-through the SCUS text-actor pipeline (`FUN_8003541C`), not the battle
-overlay.
-
-**Textures.** Per element family, `(page, uv)` from the captured packets,
-byte-matched to its disc source:
-
-| Chrome | Page / CLUT | Piece rects (texels) | Disc source |
+| Table | VA | File offset | Shape |
 |---|---|---|---|
-| Chip / plate 3-slice art | `(896,256)`; CLUT row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)`/`(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
-| D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 between Attack and the Ra-Seru chip | same TIM |
-| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end box `(176,64)` 16×16, cap `(184,80)` 8×16; drawn at `(208..312, 172)`. The end box's value numeral at a full gauge is the baked "100" tile `(64,136)` 16×6 (sub-pal 1). The meter itself is **not on this sheet** - see "The meter is not a tile" below | same TIM |
-| Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |
-| Chip / caption text | `(896,0)`; menu-atlas bank sub-pal 13 = CLUT `(208,510)` | 16×16 cells drawn 14×15; cell = ASCII − 0x20, column-major 16/row; pen advance = glyph texel width (`i`/`m`/`M` +1, space 5 - capture-measured) | boot-gap ASCII font TIM `PROT.DAT 0x7F40` |
-| Small digits | `(960,256)`; sub-pal 13 | `u = digit*8`, `v=208`, 8×12 | menu-glyph atlas `PROT.DAT 0x11218` |
-| Red cross-out X | `(448,0)`; CLUT row 476 sub-pal 4 | `(0,96)` 64×16 drawn over the forbidden chip (`(196,30)` for Item) | `etim` (extraction 0870) third TIM at file `+0x10450` |
-| Arts banner words | `(448,0)`; sub-pal 3 | SUPER `(3,152)` 105×24, HYPER ARTS!! full row `(0,176)` 216×24, MIRACLE `(0,200)` 127×24, NEW `(132,200)` 64×24; the pinned draw: two FT4s covering `(52,144)-(268,178)` - 1:1 wide, 24 texels stretched to 34 px | same `etim` TIM |
-| Damage numerals + words | `(448,0)`; sub-pal 3 | digits 24×24 cells at `v=64`, `u=(d−1)*24`, `0` at `u=216`; DAMAGE `(0,224)` 52×14, HIT `(0,240)` 32×16, TOTAL `(32,240)` 48×16; hit numbers drawn 24×23, tally row 16×15 | same `etim` TIM |
-| "Welcome to the Muscle Dome!" / INTERVAL / ROUND / hub digits | `(320,0)` + `(320,256)`; CLUT rows 502/503 | geometry = the PROT 0977 sprite descriptor table at VA `0x801D170C` (file `+0x2EF4`, 17 × `0x14`-byte records; parser `legaia_engine_ui::other_game_hud::parse_sprite_table`): record 3 = the Welcome strip `(0,224)` 240×18, 16 = INTERVAL `(0,192)` 192×32, 0 = ROUND `(0,0)` 144×32, 1 = the 24×32 hub digit strip | extraction **1220** (`other6.lzs` slot 0): LZS section 0 = `[12-byte header][TIM -> (320,0), CLUT row 502][TIM -> (320,256), CLUT row 503]`, byte-identical to the live course-menu VRAM |
+| Score table | `0x801D1860` | `+0x3048` | 3 courses x 16 `i32` cells: `DAT_801D1860 + course*0x40 + (round-1)*4` |
+| Round roster | `0x801D1920` | `+0x3108` | 29 x 8 bytes: `{ u32 name_ptr; u32 monster_id }` |
+| Course descriptors | `0x801D1A08` | `+0x31F0` | 3 x 8 bytes: `{ i32 round_count; ptr first_round }` |
 
-The CLUT-bank packing rule the capture pinned: a gap TIM's 16-row CLUT
-block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes
-(widget bank -> row 511, menu-atlas bank -> row 510), which is what the
-packets' CLUT words (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`,
-`0x7F8D` = `(208,510)`, ...) address.
+The descriptors are `(8, 0x801D1920)`, `(8, 0x801D1960)`, `(13, 0x801D19A0)` - contiguous, 8 + 8 + 13 = 29.
 
-### The meter is not a tile
-
-The AP plate's orange meter has **no source rect**, on this sheet or any
-other. Retail draws it as two untextured 3-px gouraud strips - the same
-`FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)`
-to gold `(0xC0,0xA0,0x40)` and back, over the span pinned in the arts-input
-table below. Only the *value* is art: the 6-px digit strip has no 3-digit
-seat, so the sheet carries one baked "100" tile for the end box.
-
-That leaves a trap in the sheet's neighbourhood, because the "100" tile is
-16×6 - exactly a plausible fill-tile shape, sitting two rows under the digit
-strip. Read as a fill and stretched across the trough, it draws a wide "100"
-where the meter belongs and leaves the value box blank, which is what the
-browser dome page did. The plate is one widget with two callers (command
-menu, direction entry); both take their fill from
-`legaia_engine_ui::arts_input`'s span + gouraud endpoints, so neither can
-re-acquire a tile.
-
-## Arts command input (packet-pinned)
-
-The dome's Attack command runs the **standard battle arts input** verbatim -
-the same `FUN_801D0748` state `0x50` gauge-input arm and `FUN_801D388C`
-case-`9`/`0xB` accounting [`arts-command-gauge.md`](arts-command-gauge.md)
-documents. This section pins the *presentation*: what the input screen and
-its Triangle arts list draw, from where. Provenance: a live dome match in
-the static recomp (savestate + scripted pad over the debug TCP server,
-[`recomp-differential.md`](../tooling/recomp-differential.md)), read out
-with the runtime's `gpu_frame_dump` per-frame GP0 packet ring - every rect,
-palette and screen seat below is byte-read from captured SPRT / FT4 /
-shaded-quad words, cross-checked against a full-VRAM dump of the same
-moment.
-
-**Flow** (phase byte `ctx+6`, captured transitions): command cluster
-(`0x28`) -> Attack opens an **Auto | Command** pick (`0x78`, chips at the
-Attack / Ra-Seru element anchors) -> Command opens the input screen
-(`0x50`). Directions append commands (each press debits `ctx+0x6dc` by the
-command's `+0x74` cost and appends to `actor+0x1df` - RAM-verified per
-press); entry **ends by itself** the moment no command is affordable
-(`0x50 -> 0x5a` on the exhausting press, no confirm). `0x5a` reviews the
-committed bar; any press reaches the **Begin | Reselect** menu (`0x6e`) -
-the party-wide commit confirm, which a one-fighter dome reaches straight off
-the entry ([`battle.md`](battle.md#the-commit-confirm-screen-0x6e)). Begin
-plays the round out; Reselect steps the member cursor back onto the fighter,
-whose ring reopens. The previous
-round's pennants persist in the bar when the input reopens and clear on
-the first fresh press. **Triangle** cycles the learned-arts list: closed ->
-page 1 -> ... -> last page -> closed; it is inert when the character's
-learned-art constant ([`art-data.md`](../formats/art-data.md#learned-art-constant))
-names no art. The right-hand AP plate reads the **Spirit gauge**
-(`actor+0x170`) and never moves during entry - the input budget's visible
-form is the bar itself filling with pennants.
-
-**Input screen pieces.** All from the boot-gap widget TIM's page
-(`(896,256)`; sub-palette = row-511 CLUT x/16) unless noted:
-
-| Piece | Sub-pal | Rects (texels) | Screen seats |
+| Course | Rounds | Monster ids (round order) | Score-row sum (coins for a cleared run) |
 |---|---|---|---|
-| Direction chip | 6 | body `(215,96)` 24x26, caps `(200,96)`/`(239,96)` 15x26 | body anchors: High `(216,26)`, Left `(176,58)`, Right `(256,58)`, Low `(216,90)`; caps at body -15 / +24 |
-| Chip label strip | 5 | `u=104` 24x18; `v`: Left 20, Low 40, Right 84, High 104 (Arms 0, RaSeru 64 sheet-read) | FT4 at body `+ (0,4)` |
-| Diamond ends | 5 | `(192,24)` / `(204,24)` 9x18 | body -9 / +24, `y+4` |
-| D-pad glyph | 7 | `(0,112)` 16x16 | FT4 `(220,62)`-`(235,77)` |
-| Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
-| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 16 + spent-AP-before, width `cost - 6`, y 192 - see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost) |
-| AP plate | 4 | the pinned label/trough/end/cap pieces | `(208,172)`; fill = two 3-px **gouraud strips** x `235..285`, y `177..183`, RGB `(128,32,16)` dark <-> `(192,160,64)` orange (dark-orange-dark sheen) |
-| Triangle caption | own TIM | green Triangle circle: the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(12,170)` closed; caption text (white font) "Button: View Next page" / "Button: View Hyper Arts list" at glyph `+ (16, 2)` |
+| 0 Beginner | 8 | `13 0D 10 49 62 4B 86 8B` | 818 |
+| 1 Expert | 8 | `14 06 6D 3C 81 49 50 8B` | 1532 |
+| 2 Master | 13 | `81 86 3C 49 4B 4D 8B 8A A4 A3 A2 A9 AA` | 13830 |
 
-The status plate is parked off-screen during input (its draws move to
-`y=230`, below the 228-line display window).
+Resolved against the monster archive (PROT 867, slot `(id-1) * 0x14000`) the names reproduce the curated `[[muscle_dome_course]]` line-ups in `data/gamedata/casino.toml` 29 of 29, in order. The score rows carry 8 / 8 / 13 populated cells; 818 and 1532 equal the curated `reward_coins` exactly, and the disc's Master sum of **13830** corrects the walkthrough table's 13856.
 
-**Arts list window** (Triangle): rect `(6,28)`-`(160,188)`. Interior =
-the system-UI panel tile `(128,0)` 32x32 (sub-pal **2** - the same
-`OVERLAY_SYSTEM_UI_PANEL_INTERIOR` region the pause menu tiles,
-[`field-menu.md`](field-menu.md)), tiled 32x32 as shaded-textured quads
-under a per-window vertical gouraud, `0x40` top -> `0x88` bottom. Borders
-(sub-pal 2): edge strips `(164,0)`/`(164,28)` 24x4 and `(160,4)`/`(188,4)`
-4x24, corners at `(160,0)`/`(188,0)`/`(160,28)`/`(188,28)` 4x4. Five rows
-per page at `y = 36 + 30n`: art name (battle font, 14x15 glyphs) and AP
-cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the
-**orange sub-palette 15** of CLUT row 510, and the art's command string at
-`(44 + 12k, y+14)` as 12x12 menu-atlas arrow glyphs at `v=208`,
-`u`: Up 208, Down 220, Right 232, Left 244. Name / AP / command string are
-the SCUS arts-name table's own columns
-([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
-
-Still unpinned here: the review screen's piece decomposition (screenshot-read
-only). The Begin-Reselect screen's is packet-pinned in
-[`battle.md`](battle.md#the-commit-confirm-screen-0x6e). The pennant's cost law and spawn anchor are pinned
-[below](#the-pennant-geometry-is-linear-in-the-commands-ap-cost); so is the
-**Auto arm**.
-
-### The `dd0ac` chain is not a direction swing's
-
-`FUN_801E09F8` has exactly one `jal 0x801dd0ac` (`0x801E188C`), and its `a0`
-is not the queued byte - it is `map[queued byte]`, read from the byte table at
-`0x801F4E63` (`lui`+`addiu 0x4e64`, then `lbu a0,-0x1(v1)` at
-`0x801E1874..0x801E1888`). `FUN_801DD0AC` in turn uses `a0` as a **26-byte
-stride index** into the move-power table at `0x801F4F5C`
-(`0x801DD1A4..0x801DD1BC`) and takes the row's `+0` halfword arithmetic-shifted
-right by two as its power. So `0x801F4E63` is the move-id → power-index map
-([`move-power.md`](../formats/move-power.md)), and the whole chain is
-"queue byte → power row".
-
-That map's four **direction** entries are zero: `map[0x0C..=0x0F] = 0`, and the
-disc ships move-power row 0 as 26 zero bytes. A bare swing therefore resolves
-at power **zero** through this route, which is what says the route is not where
-a swing's damage comes from - it is the arts / magic / summon route (the map's
-44 non-zero entries include every art constant: `0x1B` → 12, `0x1F` → 15,
-`0x25..0x28` → 16..19, and so on). A swing's tier is the melee kernel's own
-per-command scalar `0x801F64EC[(id - 0x0C) % 5]` = `12 / 18 / 20 / 22 / 28` -
-the same five-value scale an art record's power byte decodes to. *(Evidence:
-the map and table bytes plus the two `a0` derivations are `disassembly`; that
-the swing's damage is therefore `FUN_801EC3E4`'s is `inference`.)*
-
-Port: `DomeDamageModel::damage` falls back to
-`battle_formulas::command_power_scalar` for a byte with no move-power row,
-instead of resolving it at zero.
-
-### The queue the dome resolves is the tokenizer's
-
-Selection appends **raw direction ids** to `actor+0x1DF`, but what plays out is
-the retail action queue: the same tokenizer pass the battle's Arts command
-runs, so a matched art's constant replaces the swings it consumed and indexes
-its own move-power row. The dome is a restricted normal battle sharing that
-machinery, so the port runs the same pass -
-`MuscleDomeSession::install_art_catalog` + `tokenized_queue`, over
-`legaia_art::tokenize`. Without a catalog the string stays four swings, which
-is retail's own answer for a character with no arts.
-
-The catalog is built through one shared filter, `muscle_dome::art_catalog_for`
-(this character's rows, real arts only, two arrows or more, grid order), and
-installed on the arena-door warp path and at the native window's own dome
-entry. The **minigames page's** standalone dome panel still installs none: its
-only art source is the SCUS arts-*name* table, which carries a display index
-rather than an action constant, so it owes the per-character art-record decode
-(PROT `0x05C4`) before it can build the same rows. Its arts banner is
-unaffected - that runs off the name table's combo strings.
-
-### The pennant geometry is linear in the command's AP cost
-
-`30` is not a threshold and not a table index - it is the zero point of one
-subtraction, and it appears exactly twice in `FUN_801D388C` (`0x801D3B6C` and
-`0x801D3B98`). The pennant itself has no cost special-case at all. Case `0xB`,
-the per-press arm (called from `FUN_801D0748` at `0x801D1F90`), copies the
-pressed direction chip's record into the pennant's:
-
-```
-0x801D3D00/0x801D3D08   pennant width = chip width          (= cost - 6)
-0x801D3D0C/0x801D3D18   landing x     = ctx[+0x6D8]
-0x801D3D10/0x801D3D14   landing y     = 0xC0                (immediate)
-0x801D3D1C..0x801D3D38  style         = chip style + 6
-```
-
-The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` /
-`0x801D3A44`) and advanced by the command's **own** `+0x74` cost, not by 30
-(`0x801D3D68..0x801D3D74`); the `cost - 6` width is set in case `9` at
-`0x801D3B44`. So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is
-`cost(n) - 6` wide, and lands on `y = 192`. The captured `x = 7` is the left
-diamond cap, drawn at `anchor - cap_width` = `16 - 9`. The same algebra
-reproduces the bar: record `0x0F` is anchored at `16` and `pool - 6` wide, so a
-100-AP pool spans `0..128` end-to-end, which is the captured figure.
-
-Where the cost geometry *does* branch is the **direction chip** the pennant is
-copied from. Case `9`'s four-iteration loop pulls each chip's seat x from the
-12-byte-stride array at `0x80076BBC` (immediately before the placement table;
-SCUS file `0x673BC`, values `176 / 216 / 216 / 256` - the captured chip
-anchors) and then subtracts `(cost - 30) * K[slot] / 2`, with
-`DAT_8007B650 = [2, 1, 1, 0]` (SCUS file `0x6BE50`, immediately followed by the
-`Auto` / `Command` strings, which is what fixes the file/VA pairing):
-
-| slot | command | anchor x | `K` | how it widens |
-|---|---|---|---|---|
-| 0 | `0x0C` arm (Vahn / Gala) | 176 | 2 | right edge pinned at 200, grows left |
-| 1 | `0x0F` High | 216 | 1 | centred on 228 |
-| 2 | `0x0E` Low | 216 | 1 | centred on 228 |
-| 3 | `0x0D` arm (Noa) / Right | 256 | 0 | left edge pinned at 256, grows right |
-
-i.e. `K` makes the arm chip grow *away* from the D-pad glyph between them.
-
-The shift lands on **both** of the record's `x` seats, not just the resting
-one. The 12-byte array's `+0` halfword goes to the record's seat A `x`
-(`sh v0,0x2(a1)` at `0x801D3B54`) and its `+2` halfword to seat B `x`
-(`sh v0,0xa(a1)` at `0x801D3B60`), and the same `(cost - 30) * K / 2` product
-is subtracted from each - `0x801D3B64..0x801D3B8C` for seat A and
-`0x801D3B90..0x801D3BC4` for seat B. The disc rows read
-`(352, 176) / (392, 216) / (392, 216) / (424, 256)`: seat A is the off-screen
-glide start and seat B the resting anchor, which is why the four "anchor x"
-values in the table above are the `+2` field. In each case the halving is the
-compiler's signed divide-by-two (`srl 31` / `addu` / `sra 1`), so it truncates
-toward zero rather than flooring.
-
-Port: `engine-ui::arts_input` carries the law
-(`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`,
-`COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts
-already resolve.
-
-**The spawn anchor is the pressed chip, not the fighter.** `0x801D3CE8` /
-`0x801D3CF0` and `0x801D3CF4` / `0x801D3CFC` copy the chip record's seat-B
-`(x, y)` verbatim into the pennant record's seat A, then `0x801D3D40` clears the
-seat-mode byte and `0x801D3D48` sets a 24-frame glide before
-`FUN_801D8DE8(0x20 + n, 0)` spawns it. Nothing on that path reads an actor
-screen position. `FUN_801D9BBC` is the per-frame stepper; the registration is
-`FUN_801D8DE8` -> `FUN_801DB7B0`, which takes the glide's *start* from the
-just-created node (`0x801DB7FC` / `0x801DB810`) and its target from the
-record's other seat.
-
-**There are exactly nine pennant seats**, placement records `0x20..0x28` (ids
-`05 05` .. `0d 0d`, `h = 0x0C`, seat-B `y = 0xC2`, kind `0`, no string), and the
-bar-clear loop frees exactly the handles with id `5..13`
-(`0x801D3C50..0x801D3C88`). Nine is the floor of the `0x120` AP clamp over the
-30-AP minimum. A mod that lowers a cost below 30 lets `ctx[+0x19]` run past 8
-and `0x801D3CF0` writes into record `0x29` - the opponent-name chip.
-
-The pennant carries **no text**: indices `0x20..0x28` land on
-`FUN_801D8DE8`'s default arm, so `+0x14` stays the record's static `0` and
-`FUN_8003541C` skips its measure loop. The label between the caps is a sprite
-strip selected by the style byte (`chip icon + 6`), the chip icons being
-`DAT_801F4B94 = [0D 10 11 0C]`.
-
-One pixel-level constant is still inferred rather than measured: the bar's
-record is anchored at seat-B `y = 194` and the pennant's landing `y` is the
-immediate `192`, so the pennant should draw two pixels above the bar row - the
-captured `BAR_Y = 188` predicts a pennant top edge of 186. Confirming that (and
-the off-class widths) wants a placement-table read on
-`arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against
-`arts_bar_ideal_gala_club`.
-
-### The Auto arm reloads a saved string, and the round rebuilds it
-
-The command SM itself picks nothing for Auto. The string the review screen
-shows was **already in the actor's queue** before the Auto/Command menu
-opened, copied there out of the character's own save record, and the pick's
-job on this screen is to skip the editing screen. What the round then *plays*
-is not that string: the pick sets the per-fighter flag `ctx[+0x266 + seat]`,
-and the action SM's state `0x00` - entered every round, through the flow's
-`0xFE` arm - runs `FUN_801F0450`, whose pool arm rebuilds a flagged Attack
-seat's queue from a weighted, AP-budgeted draw of the four direction commands
-and splices learned arts over it
-([`battle-action.md`](battle-action.md#the-routine-runs-every-round-and-auto-rebuilds-the-queue)).
-That reader is in the same battle overlay the dome runs; the dome-side effect
-is read off the disassembly, not captured.
-
-The two halves, both in the battle overlay:
-
-- **Load.** `FUN_801DA34C` is called at `0x801D15C8`, on the phase-`0x28`
-  **Attack confirm** - in the same breath as the `actor+0x1DE = 3` stamp
-  (`0x801D15CC`) the saver below requires - and before that arm branches on the
-  option global. Gated on
-  `_DAT_8007BD04`, it copies **16 bytes** out of the acting character's record
-  (`0x80084140 + 0x414*(char-1)`, stride matching the `0x414` party records)
-  into `actor+0x1DF..+0x1EE`. It prefers record field **`+0x1A7`** when
-  `actor+0x156 < actor+0x154` and field **`+0x1B7`** otherwise, falls back from
-  `+0x1A7` to `+0x1B7` when the first byte is zero, and zero-fills the queue
-  when neither is set (`0x801DA3CC` / `0x801DA41C` / `0x801DA4C4` /
-  `0x801DA51C`). The two AP-band slots exist because the round budget is not
-  the pool: `FUN_801D88CC` writes `actor+0x154 = (7 * actor+0x156) / 10 + 8`
-  (clamped at `0x120`) on the restricted arm and `= actor+0x156` on the other
-  (`0x801D8954..0x801D89BC`).
-- **Save.** `FUN_801DA59C(fighter)` at `0x801D22BC`, on the **confirm at queue
-  review** (phase `0x5A`), copies the 16-byte queue back into the same record
-  field - `+0x1A7` or `+0x1B7` by the same `+0x156 < +0x154` test - for a live
-  actor whose action state `+0x1DE == 3` (`0x801DA638` / `0x801DA69C`).
-
-Both halves are already in the function directory as the battle system's
-command-block restore / persist pair
-([`functions/battle.md`](../reference/functions/battle.md)); what was missing is
-that they *are* the Auto arm - nothing else supplies its string.
-
-So on this screen Auto = *show the last string you confirmed for this
-character, in this AP band*, and let the round's pool arm replace it. Two corollaries fall out of the same code and are worth stating because
-they read as separate features:
-
-- The doc's "previous round's pennants persist in the bar when the input
-  reopens" is this same reload, seen from the Command side.
-- Confirming in the entry screen with **nothing entered** accepts the reloaded
-  string outright: `0x801D1FA0` checks the same `_DAT_8007BD04`, that no
-  direction has been entered yet (`ctx+0x19 == 0`) and that `actor[+0x1DF]` is
-  non-zero, then measures the string's length into `ctx+0x19` and jumps to
-  phase `0x5A`.
-
-What the `0x78` arm itself does is only bookkeeping: the Command branch
-(`s2 & 0x2000`) calls `FUN_801da34c` again, sets phase `0x50`, writes the
-per-fighter Auto flag `ctx[+0x266 + ctx[+0x13]] = 0` and opens the entry screen
-(`FUN_801dbb8c`); the Auto branch (`s2 & 0x8000`, or the confirm mask
-`*(0x800846D0)`) sets phase `0x5A` and writes that flag `1`. The flag is a
-*mode*, not a memo: besides the cancel arm of phase `0x5A` at `0x801D23A0`
-(back to `0x78` when set, `0x50` when clear) and two HUD gates (`0x801D5198`,
-`0x801D54BC`), `FUN_801F0450` reads it at `0x801F0704` and rebuilds the seat's
-queue. An earlier reading here missed that reader and called the flag a memo. Whether the pick screen is shown at all comes from the option
-global `*(0x800846C4)` at `0x801D15DC` - `0` opens the `0x78` menu, `1` goes
-straight to review, `2` takes a third arm.
-
-Because the dome runs this screen verbatim, its geometry is **not** dome
-data: the composition (chip anchors, D-pad seat, bar and pennant seats, AP
-plate span, list window) lives in `legaia_engine_ui::arts_input`, which the
-battle hosts draw through directly and which the dome page builds its
-`arts_input` JSON from. The per-command AP price is shared the same way -
-both screens read the equipped set's `+0x74` bytes through
-`legaia_asset::battle_char_assembly::swing_command_costs`
-([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
-
-The session object is shared too: the dome's command flow embeds the
-battle's `engine_core::arts_command_input` entry session and mirrors its
-buffer into `MuscleDomeSession`'s budget / spent / queue triple after every
-press - the same retail state (`ctx+0x6dc`, `ctx+0x6d8`, `actor+0x1df`) in
-the same units.
-
-### Three marks for "you cannot pick this", and the gates that raise them
-
-The dome's course restriction and a plain unavailable command are **not the
-same widget**. There are in fact **three** mark emitters, all in the battle
-overlay and all called from the phase-`0x28` cluster arm of `FUN_801D0748`:
-
-| Emitter | Source rect on the `etim` page | CLUT | Raised by |
-|---|---|---|---|
-| `FUN_801DBC30` | `(0,96)` 64x16 - the red cross-out X | `0x7704` | the special-battle word's restriction bit |
-| `FUN_801DBD04` | `(80,96)` 32x24 - the blue Rot stamp | `0x770B` | `actor+0x16E & 0x38 == 0x38`, all three Rot limbs (over the Attack chip) |
-| `FUN_801DBEC4` | `(120,96)` 64x16 - the blue Curse plate | `0x7700` | `actor+0x16E & 0x1000`, Curse (over the Ra-Seru chip) |
-
-All three take `(x, y)` and emit one `POLY_FT4` (tag `0x09000000`, code
-`0x2C808080`, tpage `7`) covering `(x-8, y-4)` to `(x+0x37, y+0xB)` - a
-64x16 screen quad at the chip's plate box, which is why a 32x24 source is
-stretched into it. Each returns early when `ctx+0x6CE` is non-zero.
-
-A command that is merely **unavailable** draws none of the three: it keeps
-its chip and its label becomes a single `-` (`FUN_801D8DE8` record `0xA`'s
-own blank arm), which the shared cluster builder
-`legaia_engine_ui::battle_command_ui` implements for both battle hosts. A
-fighter carrying no Ra-Seru is that case, not a crossed-out chip.
-
-The earlier reading that a restricted caller "most likely" expressed itself
-with the `-` glyph is superseded: the marks coexist, and the X is the one a
-course restriction draws.
-
-### What makes a Ra-Seru chip render
-
-The ring is direction-selected, and each arm carries its own gate. Pad bits
-are the Legaia mask's (`Up 0x1000`, `Right 0x2000`, `Down 0x4000`), and
-**Attack is the configured confirm button** (`0x800846D0`), not Left:
-
-| Chip | Arm | Refuses when |
-|---|---|---|
-| Item (Up) | `0x801D1364..0x801D137C` | `special & 0x100` |
-| Ra-Seru (Right) | `0x801D1400..0x801D1454` | `ctx[+0x25F + member] == 0`, then `actor+0x16E & 0x1000`, then `special & 0x200` |
-| Attack (confirm) | `0x801D1534..0x801D156C` | `actor+0x16E & 0x38 == 0x38` |
-| Spirit (Down) | `0x801D1670..0x801D1690` | never |
-
-`special` is the word at `0x8007BAC0`, and the arena **does** own its high
-bits. On the fresh-entry side of the `bnez` at `0x801CEB58`, `FUN_801CEA6C`
-seeds the whole word from three story-flag tests (`jal 0x8003CE64`): flag
-`0x536` writes `0x101` (`0x801CEBA0`), `0x537` writes `0x111` (`0x801CEBB4`)
-and `0x538` writes **`0x321`** (`0x801CEBC8`) - the last of which carries bit
-`0x200`. The seed before the three tests is **`1`**, not `0`: `0x801CEB8C`
-stores `$s2`, and `$s2` was loaded with `1` at `0x801CEAF8`, forty-three
-instructions earlier. (`1` decodes to course `0` with neither restriction bit,
-where a literal `0` would decode to course `0xF`; the same constant is
-`muscle_dome::CONTEST_ENTRY_WORD_DEFAULT`, which the contest layer already
-carried.) The tests run in order with the last match winning. Note that all
-three **flagged** seeds carry bit `0x100`, so a dome visit with any course
-unlocked forbids the **Item** chip; the low byte is where the course itself
-comes from,
-`((word - 1) & 0xFF) >> 4` at `0x801CEBD4..0x801CEBE8` giving `0` / `1` / `2`.
-Thereafter only the low byte moves: `FUN_801D0088`
-(`0x801D00B8..0x801D00E4`) writes `(old & ~0xFF) + (course << 4) + round + 1`
-and the per-leg bump at `0x801CEC08` adds one, so the seeded high bits survive
-the whole visit.
-
-The `0x200` (magic-forbidden) bit therefore has **three** raisers on the disc.
-Two are in `SCUS_942.54`'s battle init, keyed on the first enemy's monster id
-at `0x8007BD0C`: `0x800519DC..0x80051A04` for monster `0xAF`, and
-`0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode word
-`0x80084540` is `0xC` or `0x15`. Neither fires for a dome round - the ladder
-tops out at `0xAA`
-([Course ladder](#course-ladder-the-opponent-per-course-round)). The third is
-the arena's own seed, and `0x321` decodes to course `2` (Master), so **once the
-Master course is unlocked, every dome round in that visit crosses out the
-Ra-Seru chip**. *(Evidence: `disassembly` - the two SCUS arms, the arena's four
-seed stores and its low-byte stamp, and an unwindowed store sweep of
-`0x8007BAC0` over `SCUS_942.54` plus all 83 mapped overlays: 13 stores, 5 of
-which clear the word. The earlier "only two writers" reading came from
-`find-gp-relative-refs.py`, which caps `lui`-to-use pairing at 24 instructions
-and cannot see the four seed stores 34..49 instructions past their `lui`. That
-`0x538` is the Master unlock is inference from the three arms' course indices
-0/1/2; the literal `0x321` and its `0x200` bit are not.)*
-
-The member gate `ctx[+0x25F + member]` is the same byte the battle command
-ring's element chip reads - written once by the party battle-actor init
-`FUN_80053CB8` from the record's Ra-Seru equipment slot, mirrored at
-`engine-core::battle_hud::battle_member_has_raseru`. So "does the chip
-render live" has one answer across the dome and the ordinary battle.
-
-Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the picked spell
-id straight into `actor+0x1DF[0]` with `actor+0x1DE = 2` and
-`actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`).
-Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`: **a cast spends MP,
-not AP**, and it replaces the whole direction string rather than joining it.
-The cost is the static spell table's `+3` byte
-(`DAT_800754C8 + id*12`) discounted by the character record's ability
-bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off
-(`0x801D1A38..0x801D1B70`) - and the confirm arm compares it against
-`actor+0x150`, refusing without committing when the gauge is short
-(`0x801D1C0C..0x801D1C28`). The debit itself is the shared band's
-(`FUN_801E295C` state `0x28`), not the ring's.
-
-Port: `engine-core::muscle_dome`'s `DomeRing` / `ChipMark` /
-`DomeMagic` carry the gates and the marks, `MuscleDomeSession::commit_cast`
-the pick, and `MuscleDomeSession::select_input` the shared surface both
-hosts drive. A dome cast resolves through `engine-core::spells::cast_spell`,
-the same rule the regular battle's cast band folds with, so the two cannot
-disagree about a spell's outcome.
-
-The word itself is the **session's**, not a fighter's: `set_special_word`
-seeds it at dome entry and `MuscleDomeSession::ring` overlays it on whatever
-the fighter's installed `DomeMagic` carried, which is what makes the Item chip
-gate for a fighter with no magic loadout at all. Both hosts seed it from the
-same three story flags through `contest_entry_word` - the native side reads
-them off the world's flag bank (`World::dome_special_word`), the browser dome
-page has no save and latches the word from the `unlock` mask its own
-`muscle_contest_start` is handed (`muscle_special_word` reads it back). A page
-that opens a standalone leg without a contest keeps the word at `0`, which
-forbids nothing.
-
-### The selection is the battle's command flow
-
-A dome round is a round of the battle overlay's own driver, so the port runs
-its selection through the battle's sessions rather than a dome-only input
-rule: `muscle_dome::DomeMenu` holds a `battle_input::BattleCommandSession`
-for the ring (`0x28`), the `Auto | Command` prompt (`0x78`) and the
-`Begin | Reselect` confirm (`0x6E`), an `arts_command_input` entry session for
-the direction entry (`0x50`) and its review (`0x5A`), or the Ra-Seru list
-(`0x46`, off the ring's right arm). `MuscleDomeSession::select_input` steps
-whichever owns the pad; only `Begin` closes the turn. The review's commit goes
-straight to the confirm - the captured dome chain has no target cursor
-between `0x5A` and `0x6E`, and a dome round fields one opponent.
-
-The HUD is the battle's for the same reason. During a leg
-`battle_hud::battle_command_chips`, `battle_ring_marks`,
-`World::arts_input_view` and `sync_battle_hud_rows` answer from the dome
-session (`battle_hud_phase` reads its selection as command entry), so both
-play hosts draw the chips, the cross-out / Rot / Curse marks, the entry
-chrome, the readout bar and the AP plate through the builders a battle uses.
-They hold the chrome while a hub screen covers the leg
-(`muscle_ringside::HubTimers::covers_leg` - the first visit and the leg-open
-ROUND card run in the arena before the round driver raises its cluster).
-
-Disclosed host models inside the flow: the ring's Item arm refuses (the
-session carries no bag; every unlocked course forbids items anyway), Auto
-fills the string greedily in deal order rather than reloading the saved
-string ([the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it)),
-and Spirit commits an empty string. The Ra-Seru list itself stays a text
-stand-in: its window's pieces are not pinned. The standalone minigames page
-drives the same flow: its keys reach `MuscleDomeSession::select_input`
-through `muscle_select`, and it draws whichever screen `muscle_menu_json`
-names. It used to run its own screen sequence over the session's low-level
-commit / end-selection calls, with no round prompt and Spirit fighting on the
-spot instead of raising `Begin | Reselect`.
-
-### The command cluster is the battle cluster
-
-The dome's chip anchors are the same cluster the battle command menu draws,
-which is what the element table says: element 8 Item `(204, 34)`, 9 Attack
-`(160, 66)`, `0xA` the Ra-Seru chip `(248, 66)`, `0xB` Spirit `(204, 98)`.
-Run each through the plate law (`plate = (rec.x - 8, rec.y - 6)`) and they
-are exactly `legaia_engine_ui::battle_command_ui::CLUSTER_COMMAND`'s four
-arms - `(196, 28)` / `(152, 60)` / `(240, 60)` / `(196, 92)` about a centre
-of `(228, 70)`. Two independent captures, one geometry; the dome page and
-the battle hosts draw it from the one module.
-
-Site consumer: `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` +
-`muscle_hud_sheet_rgba`) decodes these sources per sheet/sub-palette and the
-dome panel draws the chrome from them - including the whole
-[arts command input](#arts-command-input-packet-pinned) (`arts_input`
-pieces + `muscle_arts_list_json`); the disc-gated oracle is
-`crates/web-viewer/tests/muscle_web_real.rs`
-(`muscle_hud_chrome_decodes_from_the_disc`). Still fitted on the page: the
-banner's speed-line rays (retail draws untextured polys), the SUPER/MIRACLE
-word composition (atlas layout; only the HYPER strip's draw is
-packet-pinned), and the chips' glide-in motion.
-
-The **hub screens** draw on both hosts through the shared
-`engine-ui::other_game_hud` emitters. The browser dome page reaches them via
-`muscle_hub_quads_json` (screen-selected by the page); the native
-play-window bakes the two hub page TIMs per referenced sub-palette into a
-sprite atlas and runs the same builders itself (`window/minigames.rs`,
-`muscle_hub_sprite_draws`): the hub's first visit (intro strip, wall, title
-zoom, course card, ROUND card) over a fresh contest's first leg, the INTERVAL
-heading + six-row score tally between legs, the tally fed the
-same `DomeContest` rows / tally / coin-bank model on both hosts. *Between
-legs* is the whole of it - see [The intermission is per fight, not per
-turn](#the-intermission-is-per-fight-not-per-turn) for why a turn boundary
-draws no hub screen and where the shared verdict lives. Both hosts run each
-screen on the hub controllers' own counters - see
-[the hub screen envelopes](#the-hub-screens-are-envelopes-not-frame-counts).
-
-### Between legs the arena keeps the frame
-
-A survived leg with the course not exhausted never leaves the arena: the
-battle exits to arena mode `0x18`, the re-entered hub runs `0x0A..0x0C` (the
-INTERVAL tally over the ringside still) and `0x14..0x16` (the ROUND card), and
-the end of arm `0x16` starts the next fight itself (`FUN_801D1510`). In the
-port the in-world dome's decided leg closes on Cross through
-`World::tick_muscle_dome`, which reports it and asks the shared verdict
-(`leg_boundary_raises_interval`): a continuing contest sets
-`MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome`
-with no leg open (`World::muscle_hub_between_legs`); every other leg settles
-and hands the field back. The hub kernel `HubTimers` lives on the world
-(`MinigameState::muscle_hub`) and `World::tick_muscle_hub` runs it every tick,
-called by the shared scene host right after `World::tick` - so both play
-hosts and a headless harness run one hub. It raises
-`HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained,
-answered by `World::begin_next_muscle_leg`, which stages the next fight
-through the same mode-24 drain the arena door uses without re-arming the
-round trip. While the hub owns the frame neither host
-draws the field (no 3D, and the field party HUD is suppressed outside the
-field modes) nor battle chrome; a decided leg puts no text up - the KO is the
-battle's, and the tally is the hub's. Start between legs is the give-up arm
-(the contest ends and the tally is void). Locked by
-`engine-core/tests/muscle_contest_world.rs` and
-`web-viewer/tests/play_ringside_still_disc.rs`.
-
-### The hub screens are envelopes, not frame counts
-
-A hub screen is not "up for N frames at full brightness". Each is a **fade-in
-at its own rate, a hold, and a fade-out**, and two of the four holds end early
-on a pad press - so a single per-screen frame count cannot describe any of
-them. `FUN_801CF870` dispatches its phase byte `DAT_801D1A78` through the
-51-entry jump table at `0x801CE990`; the counter family
-`DAT_801D1A70 / 1A7C / 1A80 / 1A84 / 1A88 / 1A8C` lives entirely inside the
-PROT 0977 image (no other image references any of them) and every step is
-scaled by the adaptive frame-skip factor `_DAT_1F800393`, so the figures below
-are ticks, and frames at the normal cadence.
-
-`DAT_801D1A80` is a **brightness level**, not a tick count: the emitter
-`FUN_801D050C` scales each stored channel by `c * a3 / 256` (`mult` then
-`sra 8`), and the counter clamps at `0x80` - a PSX textured primitive's
-neutral modulation. A host that draws a hub screen at `0x100` therefore draws
-it at *twice* retail's brightness.
-
-| Screen | Phases | Fade in | Hold | Skippable | Fade out |
-|---|---|---|---|---|---|
-| "Welcome to the Muscle Dome!" strip | `0` / `1` / `2` | `+dt*4`, 32 ticks | `0x7B` = 123 ticks (`slti 0x7b`, `0x801CF9A0`) | no | `-dt*4` |
-| Course-title art | `3` | scale ramp `0x1640` -> `0x1000` at `dt<<7`, 13 ticks | - | - | - |
-| Course card (`FUN_801D042C`) over the title art | `4` / `5` / `6` | `+dt*2`, 64 ticks | `0xB4` = 180 ticks (seed `li v1,0xb4`, `0x801CFB68`) | yes | cleared on arm `5`'s exit; arm `6` drains the backdrop level `-dt*4` |
-| Opponent / ROUND-n card | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
-| INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | no | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
-
-The `4` / `5` / `6` row was read as the ROUND banner for a while. The draws
-say otherwise: arms `4` and `5` call the course card `FUN_801D042C` at
-`*(0x801D1A84)` beside the title art at a fixed `0x80`, and arm `6` draws
-nothing but the backdrop it drains. The ROUND banner `FUN_801D02F0` is drawn
-only by arm `0x15`, the opponent-card row. `FUN_801D042C` is six
-corner-anchored draws: the course-name strip (record `5 + course`,
-`*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and
-variant 2 again at `(0x10, 0x80)`, then record `8` the same way at
-`(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face once
-painted in OT order. The variant-2 packets subtract a white knockout
-palette and the variant-1 face adds over it: the arena uploads the hub CLUTs
-STP-set, so both marks reach the GPU
-([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). Arm `3` also starts the card's level
-climbing (`0x801CFA74`, `+dt*2`) while the title zooms, so the card enters
-arm `4` part-lit. Port: `other_game_hud::course_card_draws`; the first visit
-as a whole is `muscle_ringside::FirstVisitHub`
-([`ringside-still.md`](../formats/ringside-still.md#in-the-port)).
-
-A skippable hold reads the arm's pad-edge snapshot `DAT_801D1A9C`
-(`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any
-bit of `& 0xF4` (`0x801CFBE0`, `0x801CFFE4`).
-
-The tally roll has its own literals: the four lanes' tick counters
-`DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in)
-and reseed to `0x10`, and the arm writes the cue ring
-`DAT_8007B6D8 = [0x202, 0x202, 0x202, 0x203]` alongside the parallel vsync
-countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - the four "ka-ching" cues
-staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
-
-### The tally cues key the arena's own bank
-
-Both ids are at or above `0x200`, so the drainer resolves them against the
-current-bundle slot `_DAT_8007B8D0` ([`sfx-table.md`](../formats/sfx-table.md)),
-and the arena points that slot at its own bundle. `FUN_801CEA6C` allocates a
-`0x14000` buffer, stores `buffer + 0x12800` to `_DAT_8007B8D0`
-(`0x801CEEDC..0x801CEEFC`) and fills it with `FUN_8003EB98(0x220, …)` at
-`0x801CEF14` - raw TOC `0x220`, extraction **542**, the third slot of the
-`koin1` block. A `minigame_muscle_dome` state parked in the hub reads those
-exact bytes at `*(0x8007B8D0)`. Its record table carries four rows:
-
-| Cue | Program | Tone | Voices | Category |
-|---|---|---|---|---|
-| `0x200` | 0 | 0 | 2 | 3 |
-| `0x201` | 0 | 2 | 1 | 3 |
-| `0x202` | 0 | 3 | 1 | 3 |
-| `0x203` | 0 | 4 | 2 | 3 |
-
-Category `3` is VAB slot 3, which the same init fills with extraction **1157**
-(`vab_01 + 0x57`, one program of six tones) - every tone the rows name. Only
-`0x202` and `0x203` have a writer anywhere in the arena image; `0x200` /
-`0x201` are carried but never queued by it.
-
-Port: the scene host stages the bundle on the warp
-(`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`) and
-`World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`;
-`World::tail_side_band_bank` names the slot-3 bank there, which both hosts'
-BGM-tail stagers take. `HubTimers` emits the four slot writes on the INTERVAL
-arm's first frame as `SfxRingOp::ArmSlot` (id and countdown of one ring slot),
-and both hosts replay them onto their cue ring.
-
-Port: `engine-core::muscle_dome::HubScreen` carries the envelope,
-`engine-core::muscle_ringside::HubTimers` arms and ticks it once per world
-tick (`World::tick_muscle_hub`, from the shared scene host; each play host's
-own `tick_muscle_hub` only sounds what it fired, via
-`World::take_muscle_hub_sounds`), and the standalone page samples the same
-kernel through `muscle_hub_screen_json` - so no host picks a count or a
-brightness of its own.
-
-Two instrument notes fall out of pinning this. `find-address-word-refs.py`
-reports **no reference at all** for `0x801D1A80`: it scans the address
-*materialisation* forms (`lui`+`addiu`/`ori`) and not `lui rX,hi` +
-`lw/sw rY,lo(rX)`, which is how MIPS touches a global - for a data address,
-reach for `find-gp-relative-refs.py` instead. And the committed dump
-`overlay_0977_slotA_801cf870.txt` stops at `0x801D0094` while the function
-runs to the `jr ra` at `0x801D00F0`, so arm `0x0B`'s body, the HP restore and
-the shared draw tail every arm jumps to are absent from it; the figures above
-come from disassembling the image.
-
-## Sound
-
-**Cues.** The match SM fires its UI blips through the one-arg cue funnel
-`FUN_8004fcc8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor
-row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`,
-ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)).
-`FUN_801d0748` carries **37** immediate call sites - ids `0x21` (15 sites),
-`0x22` (7), `0x23` (15) - i.e. static rows `0x20`/`0x21`/`0x22`, whose category
-byte routes them to the slot-0 system bank (extraction PROT **0868**). *(The
-earlier "34 sites - 13 / 7 / 14" count is superseded; a `jal 0x8004fcc8` census
-over the disassembled body returns 37, and both undercounted classes were the
-outcome arms.)* Which blip is which is
-[pinned below](#which-blip-is-which-0x21--0x22--0x23). The **melee impact** is the shared battle
-path's: an entered direction resolves through the same battle-action machinery as an
-ordinary strike, and the shared battle/duel bank's impact cue is static row
-`0x09` (category 2 -> extraction PROT **0869**; pinned at the top of the Baka
-duel damage kernel `FUN_801D3B18`, the same bank the battle scene loader
-stages). The dome's basic swing commands map to move-power record 0, whose
-per-move sound-cue byte (`+0x0d`) is **0** - so no per-move cue overrides the
-shared impact.
-
-**The bank at the hub is the field's.** A retail state parked at the contest hub
-(`minigame_muscle_dome`, mode `0x19`) has the class-2 slot `2` **closed** and slot
-`6` open over PROT 0876's header - the field bank the warp left behind, since the
-warp clears the latch without closing anything
-([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)). So a
-category-`2` cue (row `0x09` included) is silent at the hub. A round is entered
-through the arena's store of mode word `0x14` (below), the value
-`FUN_8001DCF8`'s close-6 / clear-latch arm is keyed on, so a round takes the
-ordinary battle residency - slot 6 closed, PROT 0869 staged into slot 2 - by the
-same path the field-to-battle capture observes; no retail capture of a round's
-residency exists yet. The port's `SceneMode::MuscleDome` is a leg, so
-`World::sync_sfx_residency` gives it the battle arm.
-
-### Which blip is which (`0x21` / `0x22` / `0x23`)
-
-Every site is inside a `ctx+6` phase arm (or the input pre-pass that runs before
-the dispatch at `0x801D0C84`), and the arms' address ranges come straight from
-the compare chain `0x801D0C84..0x801D0DCC`. Reading the sites in context gives
-one meaning per id, consistent across all 37:
-
-| id | static row | meaning | representative site |
-|---|---|---|---|
-| `0x21` | `0x20` | **accept / confirm** - a direction press taken into the string, and every confirm that advances the phase byte | `0x801D20D4` (phase `0x50`: the accepted press, and the exhausted-budget commit to `0x5A`) |
-| `0x22` | `0x21` | **highlight moved** - the pre-pass fires it when the pressed direction differs from the latched `ctx+0x880`, and the target-select arms when the cursor changes seat | `0x801D082C` (pre-pass, `s2 & 0x8000`) |
-| `0x23` | `0x22` | **refused / back** - a direction the actor's status mask `+0x16E` blocks, and every press of the cancel mask `*(0x800846D4)` | `0x801D1EA0` (phase `0x50`: `+0x16E & 8` set, so the press is rejected) |
-
-Per-arm, with the arm each site's address falls in:
-
-| phase | `0x21` (accept) | `0x22` (move) | `0x23` (refuse/back) |
-|---|---|---|---|
-| pre-pass | - | `082C` `08D0` `0988` `0A40` (one per direction bit `0x8000` / `0x2000` / `0x4000` / `0x1000`) | - |
-| `0x32` | `1158` | - | `1130` |
-| `0x28` | `15D0` | - | - |
-| `0x78` | `175C` (Command) `17CC` (Auto) | - | via the shared tail `2968` |
-| `0x50` | `20D4` | - | `1EA0` `1EE8` `1F30` `1F78` (one per blocked direction) + `2104` (cancel) |
-| `0x5A` | `22B0` | - | `2320` |
-| `0x5B` / `0x5C` / `0x5D` | `24AC` / `2690` / `2828` | - / `263C` / - | `2560` / `26F4` / - |
-| `0x5E` / `0x64` / `0x65` | `29B8` / `2AA4` / `2D6C` | - / - / `2BE8` `2C78` | `2968` / `2A1C` / `2B58` |
-| `0x66` / `0x67` / `0x6E` | `2E5C` / `2FDC` / `31A4` | - | `2DD0` / `2F10` / `3054` |
-
-Two caveats the address-interval method has to state. `0x801D20D4` is a `j`
-target from twice inside its own arm, which is harmless; `0x801D2968` is a `j`
-target from phase `0x78`'s cancel branch at `0x801D1720`, so it is a **shared
-back tail** and belongs to both arms. Those are the only two cue sites any `j`
-in the function targets.
-
-The arm boundaries the attribution rests on. `FUN_801d0748` dispatches `ctx+6`
-through a **compare chain**, not a jump table, so the arms are laid out in
-source order rather than numeric order - which is why `0x32` precedes `0x28` and
-`0x78` sits between `0x28` and `0x3C`:
-
-| phase | arm | phase | arm | phase | arm |
-|---|---|---|---|---|---|
-| `0x00` | `0x801D0DD0` | `0x50` | `0x801D1D84` | `0x64` | `0x801D2A00` |
-| `0x0A` | `0x801D0DE0` | `0x5A` | `0x801D21CC` | `0x65` | `0x801D2B3C` |
-| `0x0B` | `0x801D0E3C` | `0x5B` | `0x801D23F0` | `0x66` | `0x801D2DB4` |
-| `0x14` | `0x801D0EC4` | `0x5C` | `0x801D2590` | `0x67` | `0x801D2EF4` |
-| `0x1E` | `0x801D102C` | `0x5D` | `0x801D278C` | `0x6E` | `0x801D3024` |
-| `0x32` | `0x801D10F8` | `0x5E` | `0x801D28C0` | `0xFE` | `0x801D31E8` |
-| `0x28` | `0x801D1188` | `0x3C` | `0x801D17DC` | default | `0x801D3290` |
-| `0x78` | `0x801D16E8` | `0x46` | `0x801D19F8` | | |
-
-The pre-pass ahead of the dispatch has one arm per direction bit and its own
-gate: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when
-`ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions
-and plays no blip for the missing ones.
-
-**BGM.** The arena loads its music itself, through the streaming pair the other minigame inits use - not through the BGM-id word. Its init `FUN_801CEA6C` (PROT 0977) runs two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `0x3F8` into slot `5` at `0x801CF000..0x801CF020` - extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026` - and raw `*(0x8007BBE4) + 0x57` into slot `3` at `0x801CEF50..0x801CEF70` (`vab_01` + `0x57`, extraction **1157**, a four-program side bank).
-
-Because the load bypasses `_DAT_8007BAC8`, a state parked in the hub still reads the host scene's id there (`minigame_muscle_dome`: `0x7E0`, `town01`'s track). The earlier reading - "no streaming-loader call, the music is inherited" - came from a sweep of the dumped functions, which do not include the init's load block.
-
-The engine and the site represent that with the standard battle theme
-(`M26B1`, global BGM `2026`). `MinigameSubId::bgm_id` names it, and the shared
-door-warp drain queues it as an op-`0x35` start, so both hosts swap to it on
-entry through their own BGM director and `World::restore_minigame_bgm` puts
-the venue's own track back on the way out.
-
-The *field* track the player hears on the way in is the host scene's, and that
-scene is now named: the arena's three door-warps (`0x3E`, `op0 = 105`) all sit
-in `koin1`'s MAN (PROT 543), alongside the slot-machine and Baka Fighter doors,
-and `koin1`'s casino-floor entry arm plays global BGM `2018`
-([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)).
-
-## Match state machine
-
-The per-frame controller is `FUN_801d0748` (`overlay_muscle_dome_801d0748.txt`). It is the largest function in the overlay and drives one **leg** - not the contest, which is the arena hub's ([Two state machines](#two-state-machines-not-one)):
-
-1. **Read input.** It folds the current pad-edge masks (`_DAT_8007b874` and `_DAT_8007b938`) into a single press mask `s2`. The four card-selection directions are the standard PSX face/d-pad bits `0x8000`, `0x2000`, `0x1000`, `0x4000`; the controller maps the pressed direction to one of the four queued input slots `ctx+0x1114 / +0x1118 / +0x111c / +0x1120` and records the chosen direction in `ctx+0x880`.
-2. **Dispatch on the phase byte `ctx+6`.** This byte is the match phase. Confirmed phase values include `0x00`, `0x0a`, `0x0b`, `0x14`, `0x1e`, `0x28`, `0x32`, `0x3c`, `0x46`, `0x50`, `0x5a`, `0x5b`, `0x5c`, `0x5d`, `0x5e`, `0x64`, `0x65`, `0x66`, `0x67`, `0x6e`, `0x78`, `0xfe`. Phases advance by writing the next value back into `ctx+6` (`s3`). The terminal/idle phases `0x1e / 0x32 / 0x6e / 0xfe` also tick a spin/azimuth global at `_DAT_8007b938+2` each frame (the rotating dome camera). **(Confirmed: the dispatch is a `ctx+6` switch.) (Inferred: the exact ordering of phases is the deal → select → confirm → resolve → turn-top loop; individual phase semantics below are partially confirmed.)**
-
-   The loop closes back on the turn-top arm `0x14`, never on a score screen - see [The intermission is per fight, not per turn](#the-intermission-is-per-fight-not-per-turn).
-3. **Run the presentation + camera.** Most phase arms call the presentation driver `FUN_801d388c` (command/sprite layout, see below) and the camera director `FUN_801d5854`, then play a UI/SFX cue through `func_0x8004fcc8`.
-
-A small number of phase arms are confirmed by content:
-- Phase `0x14` arm (`0x801d0ef0..0x801d1010`): the **turn-top** arm. It resets the direction handles, then - gated on the dome battle type - computes and stamps the `Turns Left / HP Left` strip (below). The shared battle-action SM parks the phase byte here at the end of every turn.
-- Phase `0x3c` / `0x46` / `0x50` arms: write the chosen action id into the fighter actor's `+0x1dd` (action) and `+0x1de` (action-state) fields and kick the battle action - this is **commit the entered command string and play it out**.
-- Phase `0x6e` arm (`0x801d3010..0x801d3178`): the confirm / reselect menu (`FUN_801db8f4(0x98,0x58)`, cursor result via `FUN_801dba04`). It **re-stamps** the strip from the two globals the `0x14` arm already wrote; it computes nothing. The whole function contains exactly **two** ratio computations and both are the `× 100` chain in the `0x14` arm.
-
-## The four-turn strip belongs to Koru, not the dome
-
-The `Turns Left / HP Left` strip is a real battle-overlay HUD element and its
-arithmetic is pinned, but it is **not the Muscle Dome's**. It is the HUD of
-the one turn-limited boss fight in the game.
-
-| Piece | Where |
-|---|---|
-| Format string | `"      Turns Left:          HP Left: "` at PROT 0898 file offset `0x0` = overlay VA `0x801CE818` (extraction `overlays/overlay_battle_action_0898.bin`). |
-| Gate | `*(u8*)0x8007BD0C == 0xB6`; every draw site tests it first and returns otherwise (`0x801D0F18`: `lui v0,0x8008` / `lbu v1,-0x42f4(v0)` / `addiu v0,zero,0xb6` / `bne`). |
-| Turns-Left digit | `DAT_801f6958 = 4 - ctx[+0x28a]`, drawn at x=`0x68`, **1** digit. |
-| HP-Left number | `DAT_801f6959 = DAT_801c937c[+0x14c] * 100 / DAT_801c937c[+0x14e]`, drawn at x=`0xd2`, **3** digits. |
-| Draw calls | `func_0x8003541c` registers the label; one `func_0x8003563c` per number. Both are register-and-draw primitives - `8003563C` is the per-actor draw-record queue append ([`script-vms.md`](../reference/functions/script-vms.md)), **not** a bar/gauge routine. |
-
-`0x8007BD0C` is not a battle-type byte. It is the **four-slot monster-id
-formation cell** the rest of this repo already models - the cell the
-encounter reader fills (`[`encounter.md`](../formats/encounter.md),
-`engine-core::encounter_record`), the cell the capture harness watched go
-`00 00 00 00` -> `04 04 00 00` on a two-monster encounter
-(`engine-core::capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`),
-and the cell the charm and shiny-Seru patcher hooks read as "first monster
-id". So the gate says *the first enemy is monster `0xB6`*, and monster `0xB6`
-is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`; the neighbouring `0xB5`
-tested at `0x801D0DEC` is the final-form Cort, which is why
-`engine-core::overlay_loader` already special-cases `0xB5` there).
-
-Three independent facts settle it:
-
-- The dome stages its own opponent into that same cell, and its highest
-  roster id is `0xAA` - see [Course ladder](#course-ladder-the-opponent-per-course-round).
-  No dome round can ever satisfy `== 0xB6`.
-- `0x8007BD0C` has **one** writer in the arena overlay (`FUN_801D1510`) and
-  **zero** writers in the battle overlay, which only reads it.
-- The curated boss table (`data/gamedata/casino.toml`'s sibling
-  `bosses.toml`, walkthrough-derived) records Koru as a *four-turn timed
-  kill whose failure is a game over* - exactly a `4 - turn` readout with the
-  boss's own HP percentage next to it.
-
-**Where the four turns end.** No code compares `ctx[+0x28A]` against a bound.
-The limit is Koru's own AI arm: the per-monster AI switch indexes its jump
-table at `0x801CF1CC` by `formation_cell[slot] - 4` (`0x801EA9C0..0x801EA9FC`),
-entry `178` is Koru's (`0x801EB52C`), and that arm switches on the round counter
-(`sltiu v0,v1,5` at `0x801EB540`, table `0x801CF49C`): rounds `0..=3` cast spell
-ids `0xA2`..`0xA5` and round `4` casts `0xA1`, the all-party finisher. The
-engine already runs that arm (`engine-core::monster_ai::decide`, case `0xB6`).
-
-**How long the strip stays up.** It is text actor `1` on the `gp+0x148` list,
-and `FUN_800355F0` drains that list whole in two places: the intro countdown
-arm right before it stores `0x14` (`0x801D0EB4`), and `FUN_801D99BC`
-(`0x801D9A24`), which the `0xFE` arm calls as the round starts to play out
-(`0x801D31E8`). So the strip is up from each round's start until `Begin` - the
-command phase - and gone for the action playback. The ring's cancel back to
-`0x1E` (`0x801D11EC`) and the commit confirm's `Reselect` (`0x801D30E4`)
-re-register it from the two stored bytes.
-
-**Port.** `engine-core::timed_fight` (gate, numbers, lifetime) and
-`legaia_engine_ui::battle_timed_fight_strip` (the draw: the format string off
-the user's PROT 0898 at the registered rect, in the tutorial box's skin, the
-two numbers at `+0x68` / `+0xD2`), drawn by both hosts.
-
-**The strip draws over the name plaque.** Both are text actors on the one
-`gp+0x148` list, which `FUN_8003541C` keeps sorted by key: it walks from the
-head while the node's key is below the new one (`0x800354FC..0x80035518`) and
-links the new node in front of the first that is not. The strip registers key
-`1` (`addiu a0,zero,1` at `0x801D0F98`); the plaque registers its placement
-record's element id (`lbu a0,0(s0)` at `0x801D92E8`), `0x23` for record 68 in
-the executable's rodata. The per-frame walker `FUN_80031D00` visits the list
-head to tail, and every glyph and frame packet of every node goes on the same
-ordering-table entry, `[0x1F8003F4] + 4`, through `FUN_8003D2C4`, which links
-at the head - so the GPU meets the last-walked node first. The plaque is
-therefore drawn first and the strip's frame, translucent fill and text land
-over it. The port cannot put a text run under a later frame (each host draws
-all chrome sprites, then all text), so while the strip is up both hosts park
-the plaque (`plaque_seat_taken`) rather than draw its name over the strip.
-
-Three facts the earlier readings of the *arithmetic* got wrong, each corrected from the disassembly, and all still standing:
-
-- **The multiplier is 100, not `0x6C`.** The compiler emits the `× 100` as a shift-add chain at `0x801d0f38..0x801d0f4c` - `sll 1` (2x), `addu` (3x), `sll 3` (24x), `addu` (25x), `sll 2` (**100x**). Reading only the first three instructions yields `0x6C` (108). Ghidra's own C prints `* 100`, and an independently based dump of the same code (`overlay_0896_801f04b0.txt`) reproduces it.
-- **The arm is phase `0x14`, not `0x6e`.** `0x14` computes and stamps; `0x6e` (and the input-pad arm around `0x801d2900`) only re-stamps the globals.
-- **The percentage is the *opponent's*, not each fighter's own.** It reads `DAT_801c937c`, which is actor-table index 3 - the first **enemy** slot, since the party occupies 0..=2. There is one number on screen, not one per fighter.
-
-`ctx+0x28a` is the shared **battle turn counter**: the battle-action SM's case `0xff` (`FUN_801e295c`) does `ctx[6] = 0x14; ctx[+0x28a] += 1`, i.e. it bumps the counter and parks the round driver on the strip arm. Enemy AI in the same overlay keys its behaviour off the same byte. That is shared battle machinery; only the `0xB6`-gated strip arm is Koru's.
-
-### What the strip looks like in retail
-
-A PCSX-Redux capture draws it
-([`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua),
-scenario `koru_strip_forced`). The formation is **installed**, not rolled
-or scripted - cells `0x8007BD0C..0F = [0xB6, 0, 0, 0]` and master mode 8
-from a field state, with Gala alone in the party - and the gate reads only
-that cell, so the draw is the one Koru's fight makes.
-
-- **Timeline.** `ctx[+0x28A]` starts at `0` and rises by one per round;
-  each round the round driver's phase byte `ctx[+6]` steps `0x14 -> 0x1E ->
-  0x28 -> 0x3C -> 0x64 -> 0x6E -> 0xFE -> 0xFF`, and `DAT_801F6958` takes
-  its new value (`4, 3, 2, 1, 0` over five rounds) on the `0x14 -> 0x1E`
-  step. `DAT_801F6959` read `100` throughout (the mash never damaged Koru).
-- **Seat.** The strip is one framed window across the top of the frame:
-  its gold border runs from framebuffer column `9` to `309`, top edge on
-  row `11`, the two numbers inside it. The per-actor name plate (`Gala`,
-  `Koru`) sits in the same top-left seat, from column `9`, rows `13..28`.
-- **They never share a frame.** The strip is up while the round's
-  `Begin / Run` prompt is (phase `0x1E` onward); once actions play (phase
-  `0xFF`) it is gone and the acting fighter's name plate holds the seat.
-  Of the run's 27 checkpoints, the three taken at a `Begin / Run` prompt
-  show the strip, the plate shows only in action frames, and no frame
-  shows both.
-
-In the port a leg resolves its turn in one tick, so the round driver's
-action band has a stand-in: after `Resolve` the leg holds at `TurnOver`
-for the dome surface's replay of the turn's plays
-(`muscle_dome_scene::turn_playback_ticks`, one play every `PLAY_CADENCE_TICKS`;
-`World::muscle_playback_frames`), and the turn top that follows stays
-automatic. The shared HUD kernels read that hold as an action frame
-(`battle_hud::battle_hud_phase`): the acting side's plaque holds the
-top-left seat, a fighter play names the opponent on the target plaque, an
-opponent play raises the fighter's bar, and the running tally of the side
-acting (`World::muscle_playback_tally`) rides the status rows. Both play
-hosts draw all of it through those kernels. The tally is text, not the
-`etim` TOTAL cells: the dome VRAM carries no `(448, 0)` page.
-
-## What ends a leg: a knockout, and nothing else
-
-The arena has no battle loop of its own, so it has nothing to bound. It picks
-the opponent and hands the round to the ordinary battle, which ends the way
-every battle ends.
-
-`FUN_801D1510` (`0x801D1510`, arena overlay) is the whole handoff. It resolves
-the round through the course descriptor and the roster, stores the id into
-formation slot 0, clears slots 1..3, and sets the global game-mode word:
+**The installer** `FUN_801D1510` is the whole handoff from arena to battle:
 
 ```mips
 801d1564  lui   a1,0x8008
@@ -1843,424 +232,851 @@ formation slot 0, clears slots 1..3, and sets the global game-mode word:
 801d15bc  sb    a0,-0x42f4(a1)   ; slot 0 = monster_id
 ```
 
-That `sh` is the arena overlay's **only** write of `0x8007B83C`, and mode
-`0x14` is `BattleInit`, whose initializer `FUN_80055B6C` builds the battle
-scene from the very cell the line above filled.
+It indexes the descriptor by `DAT_801D1A90 << 3`, the round pointer by `DAT_801D1A94 << 3`, and writes one enemy with no formation variety. That `sh` is the arena overlay's **only** write of the stage word `0x8007B83C`, and mode `0x14` is `BattleInit`, whose initializer `FUN_80055B6C` builds the battle from the cell just filled.
 
-From there the round is an ordinary battle:
+`FUN_801D0CD4` reads the other two fields: it walks all three descriptors to draw the dev course menu (`+0x00` count as the loop bound, each round's `+0x00` name pointer through the text drawer at `0x80036888`) and clamps the round counter against the count.
+
+Parsers: `muscle_dome::parse_course_ladder`, `parse_score_table`, `course_score_cell` (`crates/engine-minigames/src/muscle_dome/course.rs`), all reading the raw PROT 0977 entry.
+
+<a id="what-a-cleared-leg-is-worth"></a>
+
+## Score tally and restores
+
+`FUN_801D1184` computes four count-up rows. Three are scaled `× max_hp / 100` (the `0x51EB851F` reciprocal multiply); the fourth is not scaled:
+
+| Row | Value | Global | Drains into |
+|---|---|---|---|
+| round | `round * 2 * max_hp / 100` | `DAT_801D1ACC` | HP accumulator `DAT_801D1AC8` (`0x801CF0DC`) |
+| turns | `min(turns_taken, 8) * max_hp / 100` | `DAT_801D1AD0` | `DAT_801D1AC8` (`0x801CF150`) |
+| outcome | `DAT_801D1A5C[min(outcome, 3)] * max_hp / 100` | `DAT_801D1AD4` | `DAT_801D1AC8` (`0x801CF1C8`) |
+| score | `score_table[course][round - 1]` | `DAT_801D1AAC` | coin tally `_DAT_80084440` (`0x801CF244`) |
+
+`DAT_801D1A5C` is `[8, 12, 4, 2]`. `turns_taken` is `_DAT_80084444` and `outcome` is `_DAT_80084448` - the word the flee arm sets to 4.
+
+The tally screen `FUN_801CF074` drains all four, one `step_scale` step per lane per frame with a voice blip per step. Three lanes are **healing**, not score; only the fourth is coins. So a contest costs no permanent HP.
+
+The screen shows six rows, not one per lane: the three lane pendings, the shared HP accumulator `DAT_801D1AC8`, lane 3's pending and the running tally `_DAT_80084440`, with brightness from four fade counters in the order `[0, 1, 2, 0, 3, 3]`. Row by row: [`functions/minigames-debug.md`](../reference/functions/minigames-debug.md#the-contest-score-tally-screen-fun_801cf074).
+
+### The between-leg restore
+
+Hub state `0x0C` adds the accumulator to the `+0x6CC` / `+0x6CE` pair of the game-state window `0x80084140` - the lead party record's own `+0x104` / `+0x106` HP fields (`0x80084708 - 0x80084140 = 0x5C8`).
+
+The restore raises **current** HP only, so a later leg can open hurt. The next leg's battle init seeds the actor's two HP words from two record fields - current `+0x14C` and maximum `+0x14E`, the maximum off record `+0x104` (`FUN_80053CB8`, `0x80053DD4..0x80053DDC`) - so the status plate reads `hp / max`. The port carries the maximum separately from the entry HP (`MuscleDomeSession::set_hp_max`, seated by the door warp from `SceneHost::dome_lead_fighter`).
+
+### The contest-start restore (`FUN_801D0ED8`)
+
+- Refills HP / MP / SP to their maxima at contest start.
+- Only when `course != 0` (behind a `bnez` at `0x801D0EE8`), first zeroes the four gear bytes `+0x75E` / `+0x75F` / `+0x760` / `+0x762` - record `+0x196` armour, `+0x197` head, `+0x198` weapon, `+0x19A` leg gear. "No equipment" is an **Expert / Master** rule; Beginner keeps its gear.
+- The Seru-lock byte `+0x199` and the accessory bytes `+0x19B..+0x19D` are untouched, so a stripped fighter keeps accessories and summon access.
+- It is a **one-shot**: its `jal` at `0x801CEBF0` is on the `_DAT_8007BAC0 == 0` side of the `bnez` at `0x801CEB58`; a re-entered arena jumps to `0x801CEC00` instead, so a leg boundary never refills.
+- Settlement (`0x801D0FDC`) restores the whole saved SC block.
+
+Port: `muscle_dome::apply_contest_start_restore`, handed to the host by `DomeContest::take_start_restore` and applied in `World::enter_muscle_dome`.
+
+<a id="contest-settlement--the-one-shot-prize"></a>
+
+## Contest settlement and prize
+
+`FUN_801D0F60` (PROT 0977 file `+0x2748`; cited as `FUN_801C2748` in older `0x801C0000`-band imports) restores the SC block (`FUN_8001A8B0`) and settles the running tally `_DAT_80084440`:
+
+| Case | Effect |
+|---|---|
+| Continuing (`DAT_801D1ADC` up) | keeps the tally and adds the final `(course, round)` score cell; sets flag `0x50A` |
+| Not continuing | halves the tally (signed `/2`) |
+| Gave up (`DAT_801D1A74`, raised only by the flee path) | zeroes the tally, drops the continue latch, sets flag `0x35` |
+| Gave up on **round 1** | also sets flag `0x130 + course` - the Muscle Paradise / Chicken King trigger ("run from the first battle in all three difficulties") |
+| Master final fight (`DAT_801D1A94 >= 0xD`) with flag-bank bit `FUN_8003CE64(0x6CB)` clear | awards item `0xCD`, the **War God Icon**, via `FUN_800421D4(0xCD, 1)` - once per save |
+
+Flags `0x50A` and `0x35` are both cleared at the top of every settlement.
+
+The tally is then paid by the tail call to the **shared** minigame-exit routine `FUN_80026018`: `casino_coins += tally`, saturating at `0x0098967F` (9,999,999), on the coin bank `0x800845A4` (`0x80026058..0x80026078`).
+
+So a **leg** pays nothing and a **contest** pays coins: each score cell exactly once, the non-final legs through the tally screen and the last one at settlement. The victory caption's spell id (`ctx+0x269 + 0x80`) is a *string* index into `0x801F4DFC`, the shared battle-family cast-caption label table read by any cast in any battle overlay. It is not a Seru award; nothing in the arena overlay grants anything but the War God Icon.
+
+Port: `muscle_dome::{DomeContest, settle_contest}`, driven by `World::report_muscle_leg` / `World::settle_muscle_contest` on the play hosts and by the `muscle_contest_*` bindings on the minigames page - one model, no per-host ladder rule. `World::exit_muscle_dome` credits no capture. See `ghidra/scripts/funcs/overlay_0977_slotA_801d0f60.txt`.
+
+## Hub screens
+
+<a id="the-hub-screens-are-envelopes-not-frame-counts"></a>
+
+### Screen envelopes
+
+Each hub screen is a **fade-in at its own rate, a hold, and a fade-out**, and two of the holds end early on a pad press. The counter family `DAT_801D1A70 / 1A7C / 1A80 / 1A84 / 1A88 / 1A8C` lives entirely inside the PROT 0977 image, and every step is scaled by the adaptive frame-skip factor `_DAT_1F800393`, so the figures are ticks (frames at the normal cadence).
+
+`DAT_801D1A80` is a **brightness level**, not a tick count: the emitter `FUN_801D050C` scales each stored channel by `c * a3 / 256` (`mult` then `sra 8`), and the counter clamps at `0x80` - a PSX textured primitive's neutral modulation. Drawing a hub screen at `0x100` is twice retail's brightness.
+
+| Screen | States | Fade in | Hold | Skippable | Fade out |
+|---|---|---|---|---|---|
+| "Welcome to the Muscle Dome!" strip | `0` / `1` / `2` | `+dt*4`, 32 ticks | `0x7B` = 123 ticks (`slti 0x7b`, `0x801CF9A0`) | no | `-dt*4` |
+| Course-title art | `3` | scale ramp `0x1640` -> `0x1000` at `dt<<7`, 13 ticks | - | - | - |
+| Course card (`FUN_801D042C`) over the title art | `4` / `5` / `6` | `+dt*2`, 64 ticks | `0xB4` = 180 ticks (seed `li v1,0xb4`, `0x801CFB68`) | yes | cleared on `5`'s exit; `6` drains the backdrop `-dt*4` |
+| ROUND-n card (`FUN_801D02F0`) | `0x15` / `0x16` | `+dt*2`, 64 ticks | `0x3D` = 61 ticks (`slti 0x3d`, `0x801CFFB8`) | yes | `-dt*2` |
+| INTERVAL + score tally | `0x0A` / `0x0B` / `0x0C` | `+dt*4`, 32 ticks | the tally roll (data-dependent) | no | `-dt*2` to the `0x40` floor (`slti 0x40`, `0x801CFDAC`), then `-dt*4` |
+
+- **Skip.** A skippable hold reads the pad-edge snapshot `DAT_801D1A9C` (`_DAT_8007B874 | _DAT_8007B938`, stored at `0x801CF8C4`) and leaves on any bit of `& 0xF4` (`0x801CFBE0`, `0x801CFFE4`).
+- **Course card.** `FUN_801D042C` (drawn at `*(0x801D1A84)` beside the title art at a fixed `0x80`) is six corner-anchored draws: the course-name strip (record `5 + course`, `*(0x801D1A90)`) as variant 1 at `(8, 0x78)`, variant 2 at the same seat and variant 2 again at `(0x10, 0x80)`, then record `8` the same way at `(0xB8, 0x7B)` / `(0xC0, 0x83)` - a shadow, an under-layer and a face in OT order. Variant-2 packets subtract a white knockout palette and the variant-1 face adds over it; the arena uploads the hub CLUTs STP-set ([`ringside-still.md`](../formats/ringside-still.md#which-hub-packets-blend)). The ROUND banner `FUN_801D02F0` is drawn only by state `0x15`.
+- **Other seats.** The Welcome strip (record 3) is centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` with a variant-2 shadow at `(168, 72)`, the INTERVAL heading (record 16) at `(160, 32)`.
+- **Tally roll.** The four lanes' tick counters `DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in) and reseed to `0x10`.
+
+Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `other_game_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
+
+<a id="the-tally-cues-key-the-arenas-own-bank"></a>
+
+### Tally cues
+
+State `0x0A` writes the cue ring `DAT_8007B6D8 = [0x202, 0x202, 0x202, 0x203]` alongside the vsync countdown `DAT_8007C338 = [0, 0x1E, 0x3C, 0x5A]` - four "ka-ching" cues staggered 0 / 30 / 60 / 90 frames (`0x801CFCAC..0x801CFCEC`).
+
+Both ids are `>= 0x200`, so the drainer resolves them against the current-bundle slot `_DAT_8007B8D0` ([`sfx-table.md`](../formats/sfx-table.md)), which the arena points at its own bundle: `FUN_801CEA6C` allocates a `0x14000` buffer, stores `buffer + 0x12800` to `_DAT_8007B8D0` (`0x801CEEDC..0x801CEEFC`) and fills it with `FUN_8003EB98(0x220, …)` at `0x801CEF14` - raw TOC `0x220`, extraction **542**, the third slot of the `koin1` block. A `minigame_muscle_dome` state parked in the hub reads those bytes at `*(0x8007B8D0)`.
+
+| Cue | Program | Tone | Voices | Category |
+|---|---|---|---|---|
+| `0x200` | 0 | 0 | 2 | 3 |
+| `0x201` | 0 | 2 | 1 | 3 |
+| `0x202` | 0 | 3 | 1 | 3 |
+| `0x203` | 0 | 4 | 2 | 3 |
+
+Category `3` is VAB slot 3, which the same init fills with extraction **1157** (`vab_01 + 0x57`, one program of six tones). Only `0x202` and `0x203` have a writer in the arena image.
+
+Port: the scene host stages the bundle on the warp (`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
+
+<a id="the-arenas-per-frame-voice-cue-fun_801d1288"></a>
+
+### Per-frame voice cue (`FUN_801D1288`)
+
+The overlay keys one SPU voice per frame, rotating over `0x10 ..= 0x13` on the free-running counter `DAT_801D1AE4 & 3`: `FUN_80065034(voice, 0, 0, 1, 0x3C, 0x40, vol, vol)`. The eight-argument shape is pinned by the SCUS cue drainer `FUN_80016B6C`, which fills the same slots from a cue descriptor `(voice, level, program, tone, note, 0x40, vol_l, vol_r)` - so the cue is program `0`, tone `1`, note `0x3C`, level `0`.
+
+Both volume slots are `(_DAT_80084580 << 0xf) >> 0x10` - the **voice/SFX volume config**, seeded to `200` by the cold reset `FUN_8001FFA4`, so a freshly booted game keys it at `100` per channel. Not a position: `FUN_80016B6C` passes the same expression for every ordinary SFX cue, as does the dance overlay's direct key-on `FUN_801D3D78`. Port: `engine-minigames::other_game_overlay::cue_volume`.
+
+### Between legs the arena keeps the frame
+
+A survived leg with the course not exhausted never leaves the arena: the battle exits to mode `0x18`, the re-entered hub runs `0x0A..0x0C` and `0x14..0x16`, and the end of state `0x16` starts the next fight itself.
+
+In the port the in-world dome's decided leg closes on Cross through `World::tick_muscle_dome`, which reports it and asks `leg_boundary_raises_interval`. A continuing contest sets `MinigameState::muscle_hub_between_legs` and keeps `SceneMode::MuscleDome` with no leg open; every other leg settles and hands the field back. `HubTimers` raises `HubTimersFrame::next_leg` once its INTERVAL and backdrop arms have drained, answered by `World::begin_next_muscle_leg`, which stages the next fight through the same mode-24 drain the arena door uses without re-arming the round trip.
+
+While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.
+
+Both hosts draw the hub screens through the shared `engine-ui::other_game_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
+
+<a id="arena-backdrop-extraction-1225"></a>
+
+## Arena data file (`other6`, extraction 1220..=1225)
+
+The 0977 overlay loads the dome's data file by its dev path `data\field\other6.lzs` - a string literal in the entry's pool, alongside its `mini_battle_flag %d` / `round %d level %d` traces and the monster-name roster. CDNAME maps `other6` to raw TOC index **1222**, i.e. extraction block **1220..=1225** (`legaia_prot::cdname::block_for_extraction_index`; [`cdname.md`](../formats/cdname.md#numbering-space)).
+
+| Extraction | Content |
+|---|---|
+| 1220 | LZS container; section 0 = the **hub UI art**: two TIMs uploading `(320, 0)` / `(320, 256)` with CLUT rows 502 / 503 ([HUD chrome](#hud-chrome-texture-sources)) |
+| 1221 / 1222 | the two ringside panel stills `int.tim` / `int2.tim` ([below](#ringside-panel-stills)) |
+| 1223 / 1224 | pochi fillers ([`pochi.md`](../formats/pochi.md)) |
+| 1225 | the arena **battle backdrop**, the block's only `scene_tmd_stream` |
+
+### Arena backdrop (extraction 1225)
+
+An ordinary battle backdrop in the standard carrier shape ([battle background](battle-stage-camera.md#battle-background)), the stream the battle init walker `FUN_8001FE70` records into `_DAT_8007B864`:
+
+- A leading arena-shell TMD (2 objects, 367 verts). Object 0 is the ring shell, authored at `X >= 0` with the open side facing `-X` - the half-stage rule `town01`'s dome also follows.
+- Two type-`0x01` TIM chunks (`0x8220` bytes each): 4bpp 256x256 pages at framebuffer `(768, 0)` / `(832, 0)` with CLUT rows **473** / **479**.
+- `(832, 0)` through CLUT `(0, 479)` is the constant address the battle **ground grid** `func_0x801d02c0` samples; that page's `(192..255)^2` window is the dome's plain dirt tile. The rest of the two pages is arena furniture (chain-link fence, flooring, the tiered ring wall).
+- Two **semi-transparent prim sets** (ABE set, ABR mode 1 = additive). The shell owns the lamp-glow quads (mode `0x3F`, page `(768, 0)` window `(48..109, 161..251)`, CLUT x 112 of row 473). **Object 1** is a separate 12-quad dust decal (mode `0x2F`, page `(832, 0)` window `(128..190, 192..253)`, CLUT x 16 of row 479) ringing the wall base.
+
+The dust decal is **not drawn** in a live match: the loader trims it (next section). Its texels are bright (the CLUT ramp at `(16, 479)` climbs to `(208, 208, 248)`), so any draw of it reads as a mist band; the retail match interior is mist-free (capture: the `minigame_muscle_dome_pcsx` scenario run forward into a match).
+
+Confidence: load chain, carrier shape and texture addresses are **Confirmed** (disassembly + structural decode). That a live contest's `_DAT_8007B864` holds this stream is **Inferred** - 1225 is the only backdrop-shaped stream in the file - with no dome-battle save-state byte-match taken.
+
+<a id="object-1-is-trimmed-by-the-loader-_dat_8007b64b"></a>
+
+### Object 1 is trimmed by the battle scene loader
+
+Nothing in the arena's own code touches the backdrop. `_DAT_8007B864` (written by `FUN_8001FE70` at `0x8001FEC0`) has exactly two references on the disc; the second is the SCUS battle scene loader `FUN_800513F0` reading it at `0x80051A5C`. Overlays 0977 and 0898 reference it in no form. The loader:
+
+1. `FUN_80026B4C(_DAT_8007B864, 0)` at `0x80051A60` magic-checks `0x80000002`, relocates every object via `FUN_800268DC`, and registers the TMD into the shared model bank `0x8007C018[n++]` (`n` at `0x8007B774`).
+2. Writes the slot index into the backdrop template `0x8007680C+4` (`0x80051A80`) and spawns **two** backdrop actors (`FUN_80020DE0` at `0x80051A7C` / `0x80051AA8`), parked at ctx `+0x106C` / `+0x1070`. The spawn copies `template+4` into `actor+0x64` (`0x80020E70`), and `FUN_80021B04` binds every object into the part array `actor+0x44`.
+3. Tests the byte `_DAT_8007B64B` at `0x80051ABC` / `0x80051ACC`. **When it is zero** it decrements both actors' part counts (`0x80051AD4..0x80051B10`) and shifts each list down one slot from index `1` (`0x80051B14..0x80051BAC`): **object index 1 is removed from the draw list.** Non-zero keeps every object.
+
+`_DAT_8007B64B` has **one writer**: the field overlay's battle handoff `FUN_801D9E1C` at `0x801DA0AC`, `= (s2[+8] >> 5) & 1` - bit 5 of the per-encounter setup byte, written only on the `(*_DAT_801C6EA4)[+0x5F] >= 0xC` arm. Bit 7 of the same byte clears the render flag `0x00100000` on the actor's `+0x80` (`0x801DA0B8`) and bit 6 takes a third arm (`0x801DA0D8`). The field-battle-intro overlay 0979 reads the byte at `0x801CF700`, and SCUS reads it again at `0x80046D34` as `gp+0x333`.
+
+So object 1 is a per-encounter background option, not a dome feature and not an effect draw. The arena leaves the byte clear - measured: `scripts/pcsx-redux/autorun_w4d_dome_decal_flag.lua` drives the contest through modes `0x03 -> 0x18 -> 0x19 -> 0x14 -> 0x15`; `FUN_800513F0` is entered once from `ra = 0x80046F7C` with the byte `0x00`, and a write watch logs zero writes (`FUN_801D9E1C` never runs on the arena's path).
+
+**The shell is drawn twice.** Like every battle stage, the arena is two backdrop actors over one registered TMD ([two actors, one registered mesh](battle-stage-camera.md#two-actors-one-registered-mesh)): copy A at raw coordinates, copy B half-turned about Y, closing the half-stage into the full ring. The half turn is the default arm of the `DAT_80078B50` mirror list: the contest leaves `_DAT_80084540` and `DAT_8007BD60` at `3` each (the retail `minigame_muscle_dome` state), and backdrop id `6` is not on the list. Only about a third of the shell's vertices are symmetric in `z`. Kernel: `engine-minigame-scenes::muscle_dome_scene::arena_ring`.
+
+<a id="inttim--int2tim---the-ringside-panel-stills"></a>
+
+### Ringside panel stills
+
+Extraction **1221** / **1222** (`int.tim` / `int2.tim`) are headerless 16-bit BGR555 stills, each exactly `0x28000` bytes = `320 * 256 * 2`, uploaded as one VRAM rectangle at `(384, 0)`. They are the backdrop of a **re-entered** hub - the INTERVAL + tally screen and the ROUND card after a finished leg. The format, the draw and the port are owned by [`ringside-still.md`](../formats/ringside-still.md); this section keeps the loader mechanics.
+
+**File layout.** The first five sectors of both are the halfword `0x5862` repeated - 5,120 halfwords = 16 scanlines of 320 - then one zero sector, then pixels. The 240-line picture occupies rows 16..255. Both are pre-rendered scenes of characters at the ring fence; `int2` differs by their reaction.
+
+**Loader.** PROT **0978** (`field_back_read`, slot-B base `0x801F69D8`) names both files by dev path - `h:\prot\field\other6\tim\int.tim` at file `+0x20`, `…\int2.tim` at `+0x44`. Its streamer `FUN_801F6B24` (file `+0x14C`) computes the raw TOC index rather than carrying a literal:
+
+```text
+801f6b90  lhu   v0,0x4824(v0)      ; party slot 0 hp_max_record  (+0x11C)
+801f6b98  lhu   v1,0x480e(v1)      ; party slot 0 hp_curr_live   (+0x106)
+801f6ba4  srl   v0,v0,1
+801f6bac  sltu  s0,v1,v0           ; s0 = current HP < max/2
+...
+801f6c3c  addiu a0,s0,0x4c7        ; raw TOC 0x4C7 + s0
+801f6c40  jal   0x8003e8a8         ; LBA resolver
+```
+
+Raw `0x4C7` / `0x4C8` are extraction 1221 / 1222, so `int.tim` is the default and `int2.tim` the **below-half-HP** variant, chosen from the lead character's live record ([`save-record.md`](../formats/save-record.md)). The same `s0` selects between the two dev path strings on the dev branch (`lh` on `_DAT_8007B8C2` at `0x801F6C38`). Four `addiu a0,s0,0x4c7` sites exist, at file `+0x264`, `+0x2F4`, `+0x398`, `+0x440` - one per strip. Port: `muscle_ringside::still_prot_index`.
+
+<a id="one-counter-two-tables-and-the-word-that-picks-one"></a>
+
+**Two families behind one counter.** `FUN_801F6B24` is two phase machines sharing the counter `_DAT_8007B6C8`. Three instructions in, `lw a0,-0x4540(a0)` (`0x801F6BA0`) loads `_DAT_8007BAC0` and `beqz a0,0x801f6ed0` (`0x801F6BA8`) picks the table: the special-battle word is non-zero for the length of a contest and zeroed by the door-warp arm of op `0x3E` ([`re-settled-threads.md`](../reference/re-settled-threads.md)). An ordinary battle teardown therefore reads a different table and cannot reach the stills at all.
+
+| | Panel-still family (`word != 0`) | Field-restore family (`word == 0`) |
+|---|---|---|
+| jump table | `0x801F6AA8`, 12 arms (`sltiu v0,v1,0xc`, `0x801F6BBC`) | `0x801F6AD8`, 19 arms (`sltiu v0,v1,0x13`, `0x801F6EDC`) |
+| module phases | `2..=11` | `2..=18` |
+| terminal arm | `0x801F6EC8` | `0x801F7304` |
+| rect init | `0x801F6BE4..0x801F6C20` | `0x801F6FC8..0x801F6FF0` |
+| rect (at `0x801F735C`) | `x = 0x180`, `w = 0x140`, `h = 0x40` | `x = 0x180`, `w = 0x40`, `h = 0x100` |
+| stepped field | `y += 0x40` (`0x801F6D2C`) | `x += 0x40` (`0x801F70F8`) |
+| bytes per strip | `0xA000` (20 sectors) | `0x8000` |
+| seeks | sectors `0 / 0x14 / 0x28 / 0x3C` | sectors `0 / 0x10 / 0x20 / 0x30` |
+| raw TOC index | `0x4C7` / `0x4C8` | `0x36C` = extraction **874** (`player_data` head) |
+
+Both tables send indices `0` and `1` to their terminal arm because those counts belong to the caller: SCUS `FUN_80025358` advances `_DAT_8007B6C8` through its own states `0` and `1` while the overlay pages in, and only calls this tick at state `2`.
+
+The panel-still family is four passes over one rect: `FUN_8003E964` seeks, `FUN_8003E800` reads 20 sectors (`320 * 64 * 2`) into the staging buffer, and `FUN_800583C8` (`LoadImage`) uploads with the rect's `y` set to `0 / 0x40 / 0x80 / 0xC0` in the `jal` delay slot. The rect's fixed fields are written once at `0x801F6BE4` / `0x801F6BF0` / `0x801F6BFC`.
+
+The field-restore family is the entry's literal `FIELD BACK READ NOW` path (beside its `f_read %d size %d KB` string): four `LoadImage` calls from `0x801F7078` / `0x801F7108` / `0x801F7190` / `0x801F7224` upload `(384, 0)`, `(448, 0)`, `(512, 0)`, `(576, 0)`, each `64 x 256` - **PSX texture pages 6..9**, restoring the field party's textures over the VRAM the battle borrowed (`0x20000` bytes in all).
+
+Disassemble with `disasm-overlay-fn.py extracted/overlays/overlay_field_back_read_0978.bin --base 0x801F69D8 --addr 0x801F6B24`.
+
+<a id="what-arms-the-load"></a>
+
+**What arms the load.** `ctx[+0xC]` is a battle-teardown state byte:
+
+| `ctx[+0xC]` | What runs |
+|---|---|
+| `1` | Free the four enemy record buffers `0x801C9348[0..3]` (each gated on `ctx[+0x02 + i] != 0`) through `FUN_80017B94`, free the side-band stream buffer `*0x8007BD74`, then write `2`. |
+| `2` | Tick `FUN_80025358` once a frame, storing its "still loading" return in `ctx[+0xB]` - the staged load of PROT 0978, whose `FUN_801F6B24` streams into the space the `1` arm freed. |
+
+- The SCUS post-battle routine `FUN_8004E568` drives values `1` / `2` from two identical blocks. `0x8004E670..0x8004E6E4` is gated on `ctx[+0x7] == 0x67`, the **escape** path: `0x67` is written only by case `0x66` of `FUN_801E295C` (`0x801E5A84`), which spawns the fade template at `DAT_801C9070` and raises `DAT_8007BD71 = 0xFE`; `0x67` has no case body ([`battle-action.md`](battle-action.md)). `0x8004F7A4..0x8004F8B0` (state arms at `0x8004F840..0x8004F8B0`) is the victory tail, under `gp[+0xA54] >= 0x100`, `ctx[+0xB] == 0` and `ctx[+0x6CE] == 1`.
+- A third tick site sits in the battle side-band pass `FUN_80056208` at `0x80056428` (stage `_DAT_8007B64A == 1`, phase `ctx[+0x289] == 3`).
+- `ctx[+0xC] = 1` has one writer on the disc: `0x800474CC` (store pair from `0x800474C4`) in the per-frame battle anim-node tick `FUN_80047430`, for an enemy node only (`node[+0x5A] >= 3`), under `gp[+0xA48] & 0x80` set and the enemy id byte `gp[+0x9F4]` not `0xB5`. The same instructions set `node[+0x10] |= 8`, so the enemy stops ticking that frame.
+- `gp[+0xA48] |= 0x80` comes from the battle-end spoils path at `0x8004EDE0` (`FUN_8004E568`) and from a pad-gated branch at `0x80046D98` (`FUN_80046A20`, under `_DAT_8007B98C != 0` and pad mask `0x100`).
+
+Capture (`scripts/pcsx-redux/autorun_battle_teardown_hook.lua`, on `rim_elm_gimard_victory` and on an escaped dome match) reproduces the chain on both paths: one arm hit at `0x800474CC` with `ra = 0x800252BC` (the actor-list tick iterator); `gp[+0xA48]` goes `0x00 -> 0x80` on the arm frame in the ordinary fight and is already `0x80` from the hub in the dome; `ctx[+0xC]` reads `1` next frame and `2` two frames later; and the loader-B tracker `0x8007BC4C` (which holds `extraction - 895`) goes `-1 -> 83` four frames after the arm - **PROT 0978**.
+
+<a id="a-call-site-census-closes-the-sampling-question"></a>
+
+**Who uses VRAM `(384, 0)`.** An exec-breakpoint census of the libgpu entry points (`scripts/pcsx-redux/autorun_gpu_call_census.lua`: `LoadImage` `0x800583C8`, `StoreImage` `0x8005842C`, `MoveImage` `0x80058490`, `PutDispEnv` `0x800589D0`, GP1 issue `0x8005A094`, direct GP0 FIFO write `0x8005A0D0`) over 1800 vsyncs of an ordinary battle, its teardown and the return to field:
+
+| Call | Count | At `x = 384` |
+|---|---|---|
+| `PutDispEnv` / GP1 `0x05` display start | 641 / 641 | 0 |
+| `MoveImage` | 632 | 0 |
+| `LoadImage` | 214 | 4 - the field-restore texture-page strips |
+| `StoreImage` | 5 | 4 - the dev round-trip `FUN_8001E890` reading `(384, 0)` 256x256 back in four `0x8000`-byte strips |
+| direct GP0 list carrying `0x80` / `0xA0` / `0xC0` | 0 | 0 |
+
+So on an ordinary teardown `(384, 0)` is four texture pages sampled by ordinary tpage-addressed primitives (a `tpage 0x0006` / `clut 0x7702` 4bpp family: before the first dome match it is 27 packets covering screen `x[25,151] y[91,101]`, a label strip). Statically, of 33 `addiu rX, zero, 0x180` / `ori rX, rX, 0x180` sites in SCUS and the based overlays, only `FUN_801F6B24`'s two rect writes (`0x801F6BE4`, `0x801F6FC8`), `FUN_8001E890` and the battle scene loader `FUN_800542C8` at `0x80054928` (rect `(384, 256)`, a different page) pair it with a rect.
+
+<a id="the-interval-screen-is-a-live-render-not-the-still"></a>
+<a id="the-interval-screen-draws-the-still-on-a-re-entered-hub"></a>
+
+**What draws the still.** `FUN_801D00F8` in PROT 0977 (file `+0x18E0`), called by the hub at the backdrop level `*(0x801D1A7C)`. It emits two `POLY_FT4` quads forming one 320x240 image out of VRAM `(384, 0)..(704, 240)` - tpage `0x106` at screen `(0,-20)-(192,220)` and `0x109` at `(192,-20)-(320,220)`, `tp = 2` (16-bit direct), code word `0x2C080808` at level `8`. Geometry, OT path and fade byte: [`ringside-still.md`](../formats/ringside-still.md#what-draws-it).
+
+The emitter draws the still only when the re-entry latch `_DAT_801D1AE0` is set. `FUN_801CEA6C` stores it zero on the first entry (the word is zero) and `1` on every re-entry; a first visit takes the emitter's six-tile brick-wall arm instead (79 of 79 entries over 3600 vsyncs of a walk-in from `koin1`, [measured](../formats/ringside-still.md#measured-live)).
+
+On a natural re-entry (`autorun_muscle_hud_capture.lua`, the first `0x19` checkpoint of the second and third hub visits, vsyncs 4824 and 7867) the latch reads `1`, the hub state `0x0A`, the backdrop and heading levels (`*(0x801D1A7C)`, `*(0x801D1A84)`) both `8`, and the prim pool holds both still packets ([envelope per arm](../formats/ringside-still.md#on-a-natural-re-entry)). The still is loaded at battle teardown and drawn a mode later by an image that is not resident when the load runs.
+
+Not established: whether the live `koin1` scene geometry also present in those frames (1822 packets across 22 texture families in a `mednafen-state display-list` walk, 971 `POLY_GT4` and 406 `POLY_GT3`, none on a page at x `384`) is ordered in front of or behind the still's far-end OT slot (`OT + 0xFA0`).
+
+### Drawing the arena in the port
+
+- **One surface for every host.** `engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface` seats the ladder's current rung, loads the bodies and the merged VRAM once per seated pair, replays a resolved turn's plays as swings (the defender flinching on a connecting one), holds the loser's knockdown when the leg settles, and hands hosts one view-projection (`DomeCamera::vp_raw`). The native window, the browser play page and the minigames page (`muscle_surface_*`) all draw it. The choreography clock is the port's, not a retail track.
+- **Minigames page panel.** The ring + ground grid come through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`), the lamp glows through the renderer's two-pass PSX blend (`site/js/minigame-muscle.js`, `semiTwoPass`), and the object-1 decal is omitted (`muscle_arena_hybrid` filters it).
+- **Browser play page.** It draws the surface through the WebGL renderer's single-mesh path (`TmdRenderer.render`) on the program the field pass just used, so every scene-pass uniform that path does not own (NCLIP rejection word, prologue grade, palette collapse, depth cue) is staged to its identity there - uniforms persist on a shared program.
+- **Packet colour.** Shell, fighter and monster upload their prims' baked packet colour on `a_flat_rgba`, because the page shades the retail way (`texel * colour / 128`, no light source). The dome's packet colours run well under the neutral `0x80` (much of the shell near `0x60`); a missing colour stream reads as over-lit, not unlit. `legaia_web_viewer::packet_color` splits textured (modulation off the mesh) from untextured (fill off the shading).
+
+## The leg: an ordinary battle
+
+`FUN_801D1510` picks the opponent and hands the round to the ordinary battle. The fighters are battle actors in `&DAT_801C9370`: the active fighter index is `ctx+0x13`, the player party member id `ctx+0x20`, the opponent id `ctx+0x21` (clamped to <= 2 in `FUN_801D8DE8`), and `&DAT_8007BD10` maps a per-actor character id onto the `0x414`-byte party records.
+
+### Round driver phases (`ctx+6`)
+
+`FUN_801D0748` each frame:
+
+1. **Reads input.** It folds the pad-edge masks `_DAT_8007B874` and `_DAT_8007B938` into one press mask `s2`. The four directions are bits `0x8000`, `0x2000`, `0x1000`, `0x4000`; the pressed direction maps to one of the four input slots `ctx+0x1114 / +0x1118 / +0x111C / +0x1120` and is recorded in `ctx+0x880`.
+2. **Dispatches on `ctx+6`** through a compare chain at `0x801D0C84..0x801D0DCC` (not a jump table, so arms sit in source order). Phases advance by writing the next value back (`s3`). Phases `0x1E / 0x32 / 0x6E / 0xFE` also tick the azimuth global at `_DAT_8007B938+2` each frame (the idle orbit).
+3. **Runs presentation + camera.** Most arms call the presentation driver `FUN_801D388C` and the camera director `FUN_801D5854`, then a UI cue through `FUN_8004FCC8`.
+
+| Phase | Arm | Phase | Arm | Phase | Arm |
+|---|---|---|---|---|---|
+| `0x00` | `0x801D0DD0` | `0x50` | `0x801D1D84` | `0x64` | `0x801D2A00` |
+| `0x0A` | `0x801D0DE0` | `0x5A` | `0x801D21CC` | `0x65` | `0x801D2B3C` |
+| `0x0B` | `0x801D0E3C` | `0x5B` | `0x801D23F0` | `0x66` | `0x801D2DB4` |
+| `0x14` | `0x801D0EC4` | `0x5C` | `0x801D2590` | `0x67` | `0x801D2EF4` |
+| `0x1E` | `0x801D102C` | `0x5D` | `0x801D278C` | `0x6E` | `0x801D3024` |
+| `0x32` | `0x801D10F8` | `0x5E` | `0x801D28C0` | `0xFE` | `0x801D31E8` |
+| `0x28` | `0x801D1188` | `0x3C` | `0x801D17DC` | default | `0x801D3290` |
+| `0x78` | `0x801D16E8` | `0x46` | `0x801D19F8` | | |
+
+The **input chain** is capture-pinned (recomp phase-byte watch across a driven round): `0x1E` Begin | Run -> `0x28` command ring -> `0x78` Auto | Command -> `0x50` direction entry -> `0x5A` queue review -> `0x6E` Begin | Reselect -> `0xFE` / `0xFF` playback -> `0x14` turn top -> `0x1E`. Arms confirmed by content:
+
+- `0x14` (`0x801D0EF0..0x801D1010`): the **turn-top** arm. Resets the direction handles and, for the Koru fight only, computes and stamps the timed-fight strip. `FUN_801E295C` parks the phase byte here at the end of every turn.
+- `0x3C` / `0x46` / `0x50`: write the chosen action id into the actor's `+0x1DD` (action) and `+0x1DE` (action-state) and kick the battle action.
+- `0x6E` (`0x801D3010..0x801D3178`): the confirm / reselect menu (`FUN_801DB8F4(0x98,0x58)`, cursor result via `FUN_801DBA04`).
+- `0x64` / `0x65` / `0x66` / `0x67`: the win / lose phases, branching on the HP fields.
+
+The deal / interval arms outside the input chain are not walked individually; full state semantics are on [`battle-command-flow.md`](battle-command-flow.md) and [`battle-round-loop.md`](battle-round-loop.md).
+
+The pre-pass ahead of the dispatch has one arm per direction bit: the `0x4000` arm is skipped when `ctx+0x275 < 4` and the `0x1000` arm when `ctx+0x275 < 3`, so a panel with fewer than four slots takes fewer directions.
+
+### Leg opening and Run
+
+A leg opens through flow `0x0A` / `0x0B`: `0x0A` composes the enemy-name banner (`FUN_801D9D3C`) and seeds `ctx[+0x6D6] = 0x5A`, `0x0B` drains it, and the turn top `0x14` raises the round prompt `0x1E` (`0x801D0DE0..0x801D0EB8`). `0x14` is the only writer of `0x1E` and stores it unconditionally (`0x801D0ED4`), so **every** turn opens on `Begin | Run` with the far framing; Begin opens the ring with the highlight on its Left (Attack) arm, seeded into `ctx[+0x880]` at `0x801D0ECC`.
+
+Run is offered like anywhere else - the `0x1E` arm has no contest test. The contest gives it its meaning in the `0xFE` arm, behind the sub-id test at `0x801D322C`: on action state 5 (`actor+0x1DE == 5`) it stores `_DAT_80084448 = 4` (`0x801D3228..0x801D328C`) unless the formation monster is `0xAF` / `0x3D` / `0x3E` / `0x3F`, and the re-entered hub settles that as a give-up.
+
+Port: `MuscleDomeSession::arm_intro` / `tick_intro` / `intro_up` carry the banner hold (armed by `World::enter_muscle_dome`, drained once no hub screen covers the leg); `battle_hud::battle_intro_names` lays the opponent's name over the lone monster seat. `DomeMenu` opens each turn on the round prompt, and Run reports the leg as ran through `World::leave_muscle_dome`. The escape roll a retail Run makes is not modelled - the leg ends on the press.
+
+<a id="what-ends-a-leg-a-knockout-and-nothing-else"></a>
+
+### What ends a leg
+
+A knockout, and nothing else. The arena has no battle loop of its own to bound.
 
 | Step | Where |
 |---|---|
-| End detection | The `0x5A` end-of-action gate of `FUN_801E295C` walks the actor table; with no combatant standing on a side it sets the battle-end signal `DAT_8007BD71 = 0xFE` (party wipe: cause `5`; monster wipe: cause `0`). See [battle.md](battle.md#party-wipe--the-game-over-overlay). |
-| Exit routing | `FUN_80046A20` (SCUS) picks the next mode. With `_DAT_8007BAC0 & 0x100` set it stores `0x18` (mode 24 OTHER) at `0x80046E50` rather than the field's `0x2` at `0x80046E0C` - which is what returns a dome round to the arena. |
+| End detection | The `0x5A` end-of-action gate of `FUN_801E295C` walks the actor table; with no combatant standing on a side it sets `DAT_8007BD71 = 0xFE` (party wipe: cause `5`, `-0x42D4`; monster wipe: cause `0`). See [`battle-round-loop.md`](battle-round-loop.md#party-wipe--the-game-over-overlay). |
+| Exit routing | `FUN_80046A20` picks the next mode. With `_DAT_8007BAC0 & 0x100` set it stores `0x18` at `0x80046E50` rather than the field's `0x2` at `0x80046E0C`. |
 
-**The turn counter is a counter, not a budget.** `ctx+0x28a` has exactly one
-writer in the battle overlay - the increment at `0x801E6800`/`0x801E6810` -
-and every one of its reads selects *scripted per-turn enemy behaviour* (turn
-`0` openers at `0x801DAAD4` / `0x801EB994`, parity alternation at
-`0x801EA0B8` / `0x801EB4C8`, a five-entry per-turn action table at
-`0x801EB538`, turn-`1`/`3` dispatch at `0x801EBE08` / `0x801EEDB0`) or draws
-Koru's countdown. No read of it reaches the battle-end signal.
+**The turn counter is a counter, not a budget.** `ctx+0x28a` has one writer in the battle overlay - the increment at `0x801E6800` / `0x801E6810` (case `0xFF` of `FUN_801E295C`: `ctx[6] = 0x14; ctx[+0x28a] += 1`). Every read selects scripted per-turn enemy behaviour (turn-`0` openers at `0x801DAAD4` / `0x801EB994`, parity alternation at `0x801EA0B8` / `0x801EB4C8`, a five-entry per-turn action table at `0x801EB538`, turn-`1`/`3` dispatch at `0x801EBE08` / `0x801EEDB0`) or draws Koru's countdown. No read reaches the battle-end signal, whose only two writers are the KO scans.
 
-So the leg-end condition is the HP fields the win/lose phases already branch
-on, and there is nothing else. This is a negative result: it is not that the
-timeout arm has yet to be found, it is that the only two writers of the
-end signal are KO scans.
+<a id="hand-deck-decoded"></a>
 
-## Course ladder: the opponent per (course, round)
+### Direction commands (the "deck")
 
-The arena's opponent is **pinned to a real monster id** by two adjacent
-tables in the PROT 0977 door/init entry, immediately after the score table:
+The fighter's four selectable actions are its four direction commands, laid out by `FUN_801D388C` case `9` / `0x2C`. Tables in the battle-overlay rodata (parser `legaia_asset::muscle_dome`: `hand_command_ids` / `hand_sprite_ids` / `victory_message_count`; disc-gated `muscle_dome_real`):
 
-| Table | VA | File offset | Shape |
-|---|---|---|---|
-| Round roster | `0x801D1920` | `+0x3108` | 29 x 8 bytes: `{ u32 name_ptr; u32 monster_id }` |
-| Course descriptors | `0x801D1A08` | `+0x31F0` | 3 x 8 bytes: `{ i32 round_count; ptr first_round }` |
+| Table | Content |
+|---|---|
+| `DAT_801F4B8C[0..4]` | the four command ids `0xC..=0xF` (the weapon-swing runtime slots); the commit path appends the id verbatim into `actor+0x1DF` |
+| `DAT_801F4B94[0..4]` | per-slot chip sprite ids `[0D 10 11 0C]`, with a `+2` "unlearned" face variant gated on the character record's per-move flag at `record+0x18C+move_id` |
+| `DAT_801F4B84[move_id]` | per-move display lookup used by the sub-draw path |
+| `DAT_801C9360[char][cmd]+0x74` | the command's **AP cost** - the byte the Arts gauge reads as the arm width, copied at battle load from the equipment sections' swing records (`FUN_800557B8`; `legaia_asset::battle_char_assembly::SwingAnimation::cost`). Retail values: favored `0x1E` / off-class `0x2A` / far `0x36` |
 
-The descriptors are `(8, 0x801D1920)`, `(8, 0x801D1960)`, `(13,
-0x801D19A0)` - contiguous, 8 + 8 + 13 = 29, and the counts match the
-populated-cell counts of the score table's three rows exactly.
+- The deal is a four-iteration loop (`uVar17 < 4`); each slot's cost byte is cached in `ctx[slot + 0x14]` and normalised against a `0x1E` baseline to size the chip. The per-slot screen layout is read from a parallel table walked at stride 6.
+- For party character index `2` slots `0` and `3` exchange (the layout is mirrored for that fighter).
+- The turn budget is `ctx+0x6DC`, seeded from actor `+0x154`; the running spent total is `ctx+0x6D8`; the count of directions entered is `ctx+0x19`; the slot being committed is `ctx+0x1A`.
+- **Commit** (`FUN_801D388C` case `0xB`): rejects when the remaining budget is smaller than the direction's cost (`ctx[ctx+0x1A + 0x14]`); otherwise spawns the pennant sprite, writes the id to `actor+0x1DF + ctx+0x19`, debits `ctx+0x6DC`, adds to `ctx+0x6D8` and increments `ctx+0x19`.
+- Case `3` clears `+0x1E7` / `+0x1DE` at the start of each round.
 
-`FUN_801D1510` (file `+0x2CF8`) is the installer, and its tail is the whole
-chain in eight instructions: index the descriptor by the course
-(`DAT_801D1A90 << 3`), take its `+4` round pointer, index that by the round
-(`DAT_801D1A94 << 3`), `lbu` the `+4` id, clear formation slots 1..3, write
-`0x14` to the stage word `0x8007B83C`, and `sb` the id into formation slot 0
-at `0x8007BD0C`. One enemy, no formation variety.
+The opponent's selection runs through the same deal / commit paths keyed on its own `ctx+0x13`; no dome-specific AI table exists in the overlay *(inference from the symmetric use of `ctx+0x13`)*.
 
-`FUN_801D0CD4` reads the other two fields: it walks all three descriptors to
-draw the course menu (`+0x00` count as the loop bound, each round's `+0x00`
-name pointer through the text drawer at `0x80036888`) and clamps the round
-counter against the count.
+<a id="round-resolution"></a>
 
-The 29 ids, in course/round order:
+### Presentation script (`FUN_801D388C`)
 
-| Course | Rounds | Monster ids |
-|---|---|---|
-| 0 Beginner | 8 | `13 0D 10 49 62 4B 86 8B` |
-| 1 Expert | 8 | `14 06 6D 3C 81 49 50 8B` |
-| 2 Master | 13 | `81 86 3C 49 4B 4D 8B 8A A4 A3 A2 A9 AA` |
+`FUN_801D388C` (7820 bytes, `overlay_muscle_dome_801d388c.txt`) is a `switch` over presentation step ids `0..0x31`. It computes no damage; it lays out sprites, runs the deal / commit loops, and at its tail walks the per-step script table `PTR_DAT_801F4D34[step]` (battle-overlay rodata at file offset `0x2651C`):
 
-Resolved against the monster archive (PROT 867, slot `(id-1) * 0x14000`)
-the names reproduce the curated `[[muscle_dome_course]]` line-ups in
-`data/gamedata/casino.toml` **29 of 29, in order** - an independent,
-walkthrough-derived cross-check that the tables are what they look like.
-Parser: `legaia_engine_core::muscle_dome::parse_course_ladder`.
+| Byte | Meaning |
+|---|---|
+| `[0]` | sub-draw count |
+| `[1]` | animation selector: `1/2/3` -> the panel-sprite reset / teardown pair `FUN_801D99BC` / `FUN_801D9AE8` |
+| `[2]` | dual role: active-panel id (compared against `ctx+0x275`; `record[2] + ctx+0x275 == 6` triggers a panel-swap reset of `ctx+0x880..0x883`) **and** the count of leading sub-draw handles bound to the four input slots `ctx+0x1114[]` (flagged `+0x1D = 2`) |
+| `[3+2k]`, `[4+2k]` | `(element id, mode)` pairs fed to `FUN_801D8DE8` |
 
-The score table's own rows corroborate the same shape: 8 / 8 / 13 populated
-`i32` cells summing to 818 / 1532 / 13830, and 818 and 1532 are the exact
-`reward_coins` of the curated Beginner and Expert rows.
+When `_DAT_800846C8` is set, the returned sprite handles are stashed into `ctx+0x1114[]`. The `func_0x80035f04` calls are the shared screen-projection helper anchoring sprites over the 3D fighters.
 
-## Distinguish it from the status-plate readouts
+**Resolution.** In the commit phases the driver walks the actor's `+0x1DF` queue, sets `+0x1DD` / `+0x1DE`, and the shared battle-action path plays each queued action against the opponent record (HP `+0x14C`, max `+0x14E`). Per-command damage uses the shared battle formulas unmodified; there is no dome-local scaling.
 
-`FUN_801d8de8` is a **different widget** and must not be collapsed into the strip. It is the shared battle **status-plate composer** (dumped under ten overlays - dance, fishing, slot, Baka Fighter, debug menu, magic capture …), and its numeric work is four `func_0x8003563c` registrations at `0x801d959c..0x801d9648`, one per plate field: `+0x172` / `+0x14e` (HP `cur` / `max`, 4 digits) and `+0x174` / `+0x152` (MP `cur` / `max`, 3 digits). Its elems `0x52` / `0x53` stage the fighters' `+0x170` gauge values into `_DAT_800773c8` / `_DAT_800773e0`.
+<a id="hud-elements-fun_801d8de8"></a>
 
-So a dome match shows exactly one of the two: the per-fighter `cur/max` **numerals + bars** on the status plate (shared battle chrome, no percentage anywhere). The **single percentage** the phase-`0x14` arm of `FUN_801d0748` computes belongs to the *other* readout - Koru's strip - and its `== 0xB6` gate keeps it off every dome frame. Calling it "dome-only" inverts what the gate says.
+### HUD elements (`FUN_801D8DE8`)
 
-Auxiliary per-frame helpers the controller calls every frame:
-- `FUN_801d3444` - animates the round **time meter**: ramps a 0..0xc counter `DAT_801f4e0a` up by the frame delta while the phase tag `ctx+6 == 'P'` (0x50) and an enable flag is set, drains it otherwise, and maps it to the bar Y `counter * 160 / 12 - 0x92`. Core ramp + mapping ported as `engine-core::muscle_dome::time_meter_step`. (`overlay_muscle_dome_801d3444.txt`.)
-- `FUN_801d9bbc` - advances every **active animated sprite handle** (`ctx+0x1074[]`, up to 0x28 entries) one linear-ease step toward its target screen position over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total/elapsed frames + target/start positions; arrival snaps and deactivates). Per-handle step ported as `engine-core::muscle_dome::SpriteGlide::step`. (`overlay_muscle_dome_801d9bbc.txt`.)
-
-The glide step has **no producer** in the engine: nothing writes a
-`(start, target, total)` record, so no session reaches it - the same shape as
-`camera_rel_glide`'s declined row. The kernel's contract is pinned by
-`crates/engine-core/tests/w1b_dome_leg_ladder.rs`, and the wire it is waiting
-on is a host that spawns the pennant / chip sprites this table animates.
-
-## Direction commands + selection
-
-The fighter's four selectable actions are its four **direction commands**, laid out by `FUN_801d388c` case `9` / `0x2c` (the **deal** step):
-
-- There are **four slots**, built in a `do { … } while (uVar17 < 4)` loop - one per d-pad direction, and always the same four command ids `0xC..=0xF`.
-- Each slot's command id comes from a small **deck-order table** at `&DAT_801f4b8c` / `&DAT_801f4b94` (a per-slot move-index list); the per-slot screen layout (X/Y/size) is read from a parallel layout table walked at stride 6. **(Confirmed: 4-slot loop reading `&DAT_801f4b8c`/`&DAT_801f4b94`.)**
-- Each slot carries an **AP cost** read from the fighter record: the loop loads a per-move cost byte (stored into `ctx[uVar17 + 0x14]`), normalises it against a `0x1e` baseline, and uses it both to size the slot's sprite and to debit the turn's point budget.
-- For party character index `2` the slot order is swapped (slots `0` and `3` exchange), i.e. the layout is mirrored for one of the fighters.
-
-The **turn's point budget** lives at `ctx+0x6dc`, seeded from the fighter record field `+0x154` (the character's available "spirit"/AP pool); the running spent total is `ctx+0x6d8`. The number of directions already entered this turn is the **selection index `ctx+0x19`**, and the slot currently being committed is `ctx+0x1a`.
-
-`FUN_801d388c` case `0xb` is **commit one entered direction**:
-- It rejects the commit if the remaining budget `ctx+0x6dc` is smaller than that direction's cost (`ctx[ctx+0x1a + 0x14]`) - you cannot overspend.
-- Otherwise it spawns the entered-command sprite, **records the chosen move id into the fighter actor's queue** at `actor+0x1df + ctx+0x19` (an in-actor list of queued action ids), debits the cost from `ctx+0x6dc`, adds it to `ctx+0x6d8`, and increments `ctx+0x19`.
-
-So selection = repeatedly press a direction, which appends that slot's move id into the actor's `+0x1df` action queue while there is budget left - exactly the normal battle command-string input, bounded by AP instead of by a fixed string length.
-
-## Round resolution
-
-`FUN_801d388c` (`overlay_muscle_dome_801d388c.txt`, the 7820-byte presentation driver) is a large `switch(param_1)` over **presentation/animation step ids** (0..0x31). It does *not* itself compute damage; it lays out the command and label sprites, runs the deal/commit loops above, and at its tail walks a **per-step script-record table** `PTR_DAT_801f4d34[param_1]`:
-
-The record is variable-stride - `[u8 count][u8 anim_sel][u8 panel_id/bind_count]`
-followed by `count` `(u8 elem_id, u8 mode)` pairs (reader `FUN_801d388c`):
-
-```
-record = PTR_DAT_801f4d34[step]
-record[0] = sub-draw count
-record[1] = side/animation selector (1/2/3 → the panel-sprite reset/teardown pair FUN_801d99bc / FUN_801d9ae8; see Key functions - a full-table rebuild and a full-table release, not slides)
-record[2] = DUAL ROLE:
-              (a) active-panel id - compared against ctx+0x275; record[2]+ctx+0x275 == 6
-                  triggers a panel-swap reset of ctx+0x880..0x883, AND
-              (b) count of the leading sub-draw handles bound back to the four input
-                  input slots (ctx+0x1114[]); the first record[2] sub-draws are the
-                  directional selection sprites, flagged +0x1d = 2
-record[3+2k], record[4+2k] = (element id, mode) pairs fed to FUN_801d8de8 for each sub-draw
-```
-
-Each sub-draw calls the HUD/element renderer `FUN_801d8de8(id, mode)` (see below). When the global `_DAT_800846c8` is set, the returned sprite handles are also stashed into `ctx+0x1114[]` and some are flagged `+0x1d = 2` (the four directional selection sprites), tying the drawn sprites back to the input slots.
-
-The **resolution of the queued command string** happens when the match controller advances into the commit phases (`0x3c`/`0x46`/`0x50` in `FUN_801d0748`): it walks the actor's `+0x1df` action queue, sets the actor's `+0x1dd`/`+0x1de` (action / action-state), and lets the shared battle-action path play each queued action and apply its effect to the opponent actor record (HP at actor `+0x14c`, max-HP at `+0x14e`). The `+0x1df` queue is re-zeroed at the start of each round (`FUN_801d388c` case `3` clears `+0x1e7`/`+0x1de`; case `0xb` re-seeds the budget and re-walks the queue).
-**(Confirmed: queue lives at actor+0x1df, budget gating.) (Confirmed: per-command damage uses the shared `battle_formulas` *unmodified* - there is no dome-local scaling.** The match controller `FUN_801d0748` is byte-identical to the main battle round driver, and a queued action reaches damage exactly as an ordinary battle action does, with no dome-specific arithmetic on the way.)**
-
-That chain is `actor+0x1df` → `FUN_801e09f8` → `FUN_801dd0ac`, and it carries
-**arts and magic, not bare direction swings** - see
-[what the swing chain is not](#the-dd0ac-chain-is-not-a-direction-swings).
-
-The `func_0x80035f04` calls throughout are the shared screen-projection helper (project a world position to screen), used to anchor the command and label sprites over the 3D fighters.
-
-### HUD elements (`FUN_801d8de8`)
-
-`FUN_801d8de8(elem_id, mode)` is the **HUD element renderer** the sub-draw script calls per `(elem_id, mode)` pair. It switches on `elem_id` through an 80-entry `jr` table at `0x801CEB68` (`sltiu v0,elem_id,0x50`; `overlay_muscle_dome_801d8de8.txt`, dispatch ~`0x801d8ec0`). The `mode` byte (the pair's second value) is consumed by the shared post-switch layout tail - it selects the sprite/anchor variant and, for `0x59`, gates the reward branch. The active fighter's character-record id is `charid = (&DAT_8007bd10)[ctx+0x13]`; the opponent uses `ctx+0x21`. The labelled cases:
+`FUN_801D8DE8(elem_id, mode)` is the shared battle **HUD element / status-plate composer** (dumped under ten overlays). It switches on `elem_id` through an 80-entry `jr` table at `0x801CEB68` (`sltiu v0,elem_id,0x50`, dispatch near `0x801D8EC0`); `mode` selects the sprite / anchor variant in the shared layout tail. The active fighter's record id is `charid = (&DAT_8007BD10)[ctx+0x13]`. Labelled cases:
 
 | `elem_id` | HUD element |
 |---|---|
-| `0x0A` | Current fighter Spirit / move name → `_DAT_80076d14`; blank-gated on the per-fighter flag `ctx[fighter+0x25F]` (blank = `&DAT_801f4bc6`, else name string `s_Spirit_801f4b98 + charid*0xA + 6`). |
-| `0x0B` | "Spirit" heading string (`_DAT_80076d2c = s_Spirit_801f4b98`). |
-| `0x0E` | Spirit-name second panel → `_DAT_80076d74` (same blank-gate as `0x0A`). |
-| `0x16`–`0x19` | The four direction-command portraits; sets `_DAT_8007bb8c = charid-1`, frame = `elem_id-0x13`. |
-| `0x1A` | Formatted number (score / count) - `func_0x80035f04` on actor `+0x1BC` → `_DAT_80076e86`/`_DAT_80076e94`. |
-| `0x52` | Player HP-bar value: copies actor `+0x170` into the char record, sets `DAT_8007bd00 = charid-1` and `_DAT_800773c8`. |
-| `0x53` | Opponent HP-bar value (opponent actor `+0x170` → `_DAT_800773e0`). |
-| `0x58` | Opponent Spirit name → `_DAT_80077464` (blank-gated, keyed on the opponent id). |
-| `0x59` (`mode`/`param_2 == 0`) | Victory banner assembly: `func_0x8003ca78(ctx+0x1F9, "…acquired the power of…")` + reward spell name (`DAT_800754d0[(ctx+0x269)+0x80]`) + suffix `DAT_801f4c28`. |
+| `0x0A` | Ra-Seru / Spirit name -> `_DAT_80076D14`; blank-gated on `ctx[fighter+0x25F]` (blank = `&DAT_801F4BC6`, else `s_Spirit_801F4B98 + charid*0xA + 6`) |
+| `0x0B` | "Spirit" heading (`_DAT_80076D2C = s_Spirit_801F4B98`) |
+| `0x0E` | name second panel -> `_DAT_80076D74` (same blank gate) |
+| `0x16`-`0x19` | the four direction-command portraits; sets `_DAT_8007BB8C = charid-1`, frame = `elem_id-0x13` |
+| `0x1A` | formatted number - `func_0x80035f04` on actor `+0x1BC` -> `_DAT_80076E86` / `_DAT_80076E94` |
+| `0x52` | player gauge value: copies actor `+0x170` into the char record, sets `DAT_8007BD00 = charid-1` and `_DAT_800773C8` |
+| `0x53` | opponent gauge value (opponent actor `+0x170` -> `_DAT_800773E0`) |
+| `0x58` | opponent name -> `_DAT_80077464` (blank-gated, keyed on the opponent id) |
+| `0x59` (`mode == 0`) | victory caption: `func_0x8003ca78(ctx+0x1F9, "…acquired the power of…")` + spell name `DAT_800754D0[(ctx+0x269)+0x80]` (12-byte stride) + suffix `DAT_801F4C28`. A caption, not a reward ([settlement](#contest-settlement-and-prize)) |
 
-Every other `elem_id` falls to the shared layout tail (sprite emit + optional bar draw) without a case-specific label.
+Its numeric work is four `func_0x8003563c` registrations at `0x801D959C..0x801D9648`, one per plate field: `+0x172` / `+0x14E` (HP `cur` / `max`, 4 digits) and `+0x174` / `+0x152` (MP `cur` / `max`, 3 digits). A dome match shows these per-fighter numerals and no percentage.
 
-## Opponent + scoring
+Per-frame helpers the driver also calls:
 
-- The fighters are battle actors in `&DAT_801c9370`; the active fighter index is `ctx+0x13`, the player party member id is `ctx+0x20`, and the opponent id is `ctx+0x21` (clamped to ≤ 2 in `FUN_801d8de8`). The character→record mapping uses `&DAT_8007bd10` (per-actor character id) to index the 0x414-byte party records.
-- The opponent's deal is built by the **same** deal/commit code paths (`FUN_801d388c` cases `9`/`0x2c`/`0xb`) keyed on the opponent's `ctx+0x13`; the AI simply commits commands from its own move set against the same budget rule. There is **no separate scripted AI table** in this overlay - the opponent uses the shared selection logic with its own record. **(Inferred from the symmetric use of `ctx+0x13` across both fighters; no dome-specific AI scorer was found.)**
-- The opponent itself is not chosen by the match code at all - it is a monster id staged into the ordinary formation cell before the battle starts, per (course, round); see [Course ladder](#course-ladder-the-opponent-per-course-round).
-- A leg ends on the fighter HP fields, which the win/lose phases (`0x64`/`0x65`/`0x66`/`0x67`) branch on, and on nothing else ([What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else)). The `4 - ctx[+0x28a]` / opponent-HP-percentage strip is **not** part of that - it is the Koru fight's ([The four-turn strip belongs to Koru](#the-four-turn-strip-belongs-to-koru-not-the-dome)).
-- Separately, the shared status plate draws each fighter's own HP/MP `cur`/`max` from record fields `+0x172`/`+0x14e`/`+0x174`/`+0x152` (`FUN_801d8de8`) - unrelated numbers, no percentage. **(Superseded: an earlier revision of this line put the readout in phase `0x6e`, scaled it by `108`, sourced it from the fighter's own record, and glossed `func_0x8003563c` as "the bar/gauge primitive". All four are wrong; the strip section has the disassembly.)**
-- **Caption, not reward:** `FUN_801d8de8` case `0x59` composes a victory *message* from the label table at `0x801f4dfc` plus a spell name from the static spell-name table `DAT_800754d0` (12-byte stride, indexed by `ctx+0x269 + 0x80`). Reading that as "the dome awards a Seru" is **falsified**: `0x801F4DFC` is the shared battle-family cast-caption label table, byte-identical across the battle-action / magic-capture / magic-level-up / dome overlays and reached by any cast, and nothing in the arena overlay grants an item but the one-shot War God Icon. A leg pays nothing; a contest pays coins - see [Contest settlement](#contest-settlement--the-one-shot-prize).
+- `FUN_801D3444` - a 0..`0xC` meter counter `DAT_801F4E0A`, ramped up by the frame delta while `ctx+6 == 0x50` and an enable flag is set, drained otherwise, mapped to a bar Y of `counter * 160 / 12 - 0x92`. Port: `muscle_dome::time_meter_step`, ticked by the session.
+- `FUN_801D9BBC` - advances every active sprite handle (`ctx+0x1074[]`, up to `0x28`) one linear-ease step toward its target over a per-handle frame count (`ctx+0x11B4 + i*0xC` records: total / elapsed frames + target / start positions; arrival snaps and deactivates). Port: `muscle_dome::SpriteGlide::step`. The kernel has **no producer** in the engine - no host spawns the pennant / chip sprites this table animates; its contract is pinned by `crates/engine-core/tests/w1b_dome_leg_ladder.rs`.
+
+## Retail presentation
+
+Retail presents the contest as a **standard battle** with the course restrictions applied:
+
+- **Intro card.** A black frame with one centred line of white cursive script: "Welcome to the Muscle Dome!".
+- **Fighter.** Vahn, Noa or Gala in the normal assembled battle form ([`character-mesh.md`](../formats/character-mesh.md)), not the PROT 1204 Baka form.
+- **Command menu.** The standard cluster: gold "Begin" and name chips top-left; the **Item** chip crossed out with a red X; "Attack", a grey D-pad glyph, the character's Ra-Seru name ("Meta" for Vahn) and "Spirit" on blue-marble plates. Bottom: the pointed blue status plate (name, HP `cur/max`, MP `cur/max`) with the AP plate above-right.
+- **Arts banner.** A committed string that performs an art raises the art-class banner during playback ("HYPER ARTS!!" over white speed-line rays, attacker's gold name chip top-left, defender's blue chip bottom-right). Recognition happens on the battle-action side, as in a normal battle.
+- **No enemy HP, no mist.** As in any battle, the enemy's HP is not drawn, and the interior is mist-free.
+
+Which chips are live is not a course table: it is the special-battle word's restriction bits and the fighter's own status / Ra-Seru gate ([chip gates](#command-ring-gates)). The curated course rules in `data/gamedata/casino.toml` (no equipment, no items, magic forbidden on Master) are walkthrough labels.
+
+<a id="hud-chrome-texture-sources-capture-pinned"></a>
+
+## HUD chrome texture sources
+
+The match's chrome resolves to five disc sources and one SCUS-static layout table. Provenance: a live PCSX-Redux dome battle (`minigame_muscle_dome_pcsx` driven with a scripted pad, `scripts/pcsx-redux/autorun_muscle_hud_capture.lua`) snapshotted at the command cluster, an enemy art and a HYPER ARTS!! playback; GP0 packets read from the live prim arena, every texture page byte-matched between snapshot VRAM and disc.
+
+**Layout.** The screen-element placement table at SCUS `0x80076C10` (24-byte stride, 80 records, file `0x67410`):
+
+| Offset | Field |
+|---|---|
+| `+0` / `+1` | sprite / style selector bytes |
+| `+2` / `+4` | seat A `(x, y)` |
+| `+6` / `+8` | width / height |
+| `+0xA` / `+0xC` | seat B `(x, y)` - the glide endpoints the `FUN_801DB7B0` slide moves between |
+| `+0xE` / `+0xF` | per-variant style bytes |
+| `+0x10` | kind byte |
+| `+0x14` | text pointer (rewired at runtime by `FUN_801D8DE8`'s labelled cases) |
+
+Confirmed elements: 0..5 = the Begin / Run centre-menu chips; 7 / `0x34` = the 288-wide status plate at `(16, 236 -> 194)`; 8 = Item at `(204, 34)`; 9 = Attack at `(160, 66)`; `0xA` = Ra-Seru at `(248, 66)`; `0xB` = Spirit at `(204, 98)`; `0x29` / `0x2A` = the opponent name chip at `(200, 162)`. Sprites emit through the SCUS text-actor pipeline (`FUN_8003541C`).
+
+<a id="the-command-cluster-is-the-battle-cluster"></a>
+
+The four command anchors run through the plate law (`plate = (rec.x - 8, rec.y - 6)`) give `(196, 28)` / `(152, 60)` / `(240, 60)` / `(196, 92)` about a centre of `(228, 70)` - exactly `CLUSTER_COMMAND` (`legaia_engine_ui::battle_chrome`, used by `battle_command_ui`). The dome cluster is the battle cluster, drawn from that one module on every host.
+
+**Textures.** `(page, uv)` from the captured packets, byte-matched to the disc source:
+
+| Chrome | Page / CLUT | Piece rects (texels) | Disc source |
+|---|---|---|---|
+| Chip / plate 3-slice art | `(896,256)`; row 511 sub-pal 4 (blue) / 12 (gold) | caps `(208,v)` / `(216,v)` 8×20, body `(192,v)` 16×20; blue `v=0`, gold `v=64` | boot-gap TIM `PROT.DAT 0x18E0` ([`boot.md`](boot.md#pre-init_data-system-ui-gap-menu-glyph-atlas--boot-cursors)) |
+| D-pad glyph | `(896,256)`; sub-pal 7 | `(0,112)` 16×16, drawn 15×15 | same TIM |
+| AP plate | `(896,256)`; sub-pals 4 + 1 | label `(128,64)` 24×16, trough `(128,80)` 56×16, end box `(176,64)` 16×16, cap `(184,80)` 8×16; drawn at `(208..312, 172)`; "100" numeral tile `(64,136)` 16×6 (sub-pal 1) | same TIM |
+| Status plate row | `(896,256)`; sub-pals 4 / 1 / 5 | plate slices at `y=188`, HP badge `(208,86)` 16×10 at `(80,194)`, MP badge `(224,86)` at `(192,194)`, `/` separator `(96,64)` 8×16 | same TIM |
+| Chip / caption text | `(896,0)`; menu-atlas sub-pal 13 = CLUT `(208,510)` | 16×16 cells drawn 14×15; cell = ASCII − 0x20, column-major 16/row; pen advance = glyph texel width (`i`/`m`/`M` +1, space 5) | boot-gap ASCII font TIM `PROT.DAT 0x7F40` |
+| Small digits | `(960,256)`; sub-pal 13 | `u = digit*8`, `v=208`, 8×12 | menu-glyph atlas `PROT.DAT 0x11218` |
+| Red cross-out X | `(448,0)`; row 476 sub-pal 4 | `(0,96)` 64×16, drawn over the forbidden chip (`(196,30)` for Item) | `etim` (extraction 0870) third TIM at file `+0x10450` |
+| Arts banner words | `(448,0)`; sub-pal 3 | SUPER `(3,152)` 105×24, HYPER ARTS!! `(0,176)` 216×24, MIRACLE `(0,200)` 127×24, NEW `(132,200)` 64×24; pinned draw: two FT4s covering `(52,144)-(268,178)` | same `etim` TIM |
+| Damage numerals + words | `(448,0)`; sub-pal 3 | digits 24×24 at `v=64`, `u=(d−1)*24`, `0` at `u=216`; DAMAGE `(0,224)` 52×14, HIT `(0,240)` 32×16, TOTAL `(32,240)` 48×16; hit numbers drawn 24×23, tally row 16×15 | same `etim` TIM |
+| Hub strips + digits | `(320,0)` + `(320,256)`; rows 502 / 503 | PROT 0977 sprite descriptor table at VA `0x801D170C` (file `+0x2EF4`, 17 × `0x14`-byte records): record 3 = Welcome `(0,224)` 240×18, 16 = INTERVAL `(0,192)` 192×32, 0 = ROUND `(0,0)` 144×32, 1 = the 24×32 digit strip | extraction **1220**: LZS section 0 = `[12-byte header][TIM -> (320,0), row 502][TIM -> (320,256), row 503]`, byte-identical to live VRAM |
+
+A gap TIM's 16-row CLUT block uploads **packed into one VRAM row** as 16 side-by-side sub-palettes (widget bank -> row 511, menu-atlas bank -> row 510), which is what the packets' CLUT words address (`0x7FC4` = `(64,511)`, `0x7FCC` = `(192,511)`, `0x7F8D` = `(208,510)`). Sprite-table parser: `legaia_engine_ui::other_game_hud::parse_sprite_table`.
+
+**The AP meter has no source rect.** Retail draws it as two untextured 3-px gouraud strips - the `FUN_8002C0B0` fill the status screen's AP gauge uses, dark `(0x80,0x20,0x10)` to gold `(0xC0,0xA0,0x40)` and back. Only the value is art: the 6-px digit strip has no 3-digit seat, so the sheet carries one baked "100" tile for the end box. That tile is not a fill tile. Both callers of the plate (command menu, direction entry) take their fill from `legaia_engine_ui::arts_input`'s span + gouraud endpoints.
+
+**Minigames page.** `legaia-web-viewer::minigames_muscle` (`muscle_hud_json` + `muscle_hud_sheet_rgba`) decodes these sources per sheet / sub-palette; the disc-gated oracle is `crates/web-viewer/tests/muscle_web_real.rs` (`muscle_hud_chrome_decodes_from_the_disc`). Fitted rather than pinned on that page: the banner's speed-line rays (retail draws untextured polys), the SUPER / MIRACLE word composition, and the chips' glide-in motion.
+
+<a id="arts-command-input-packet-pinned"></a>
+
+## Command input
+
+The dome's Attack command runs the **standard battle arts input** verbatim - the `FUN_801D0748` state `0x50` gauge-input arm and `FUN_801D388C` case-`9` / `0xB` accounting of [`arts-command-gauge.md`](arts-command-gauge.md). This section pins the presentation. Provenance: a live dome match in the static recomp ([`recomp-differential.md`](../tooling/recomp-differential.md)), read with the runtime's per-frame GP0 packet ring and cross-checked against a full-VRAM dump.
+
+### Flow
+
+- Command cluster (`0x28`) -> Attack opens an **Auto | Command** pick (`0x78`, chips at the Attack / Ra-Seru anchors) -> Command opens the input screen (`0x50`).
+- Each direction press debits `ctx+0x6DC` by the command's `+0x74` cost and appends to `actor+0x1DF` (RAM-verified per press). Entry **ends by itself** when no command is affordable (`0x50 -> 0x5A` on the exhausting press, no confirm).
+- `0x5A` reviews the committed bar; any press reaches **Begin | Reselect** (`0x6E`), the party-wide commit confirm ([`battle-command-flow.md`](battle-command-flow.md#the-commit-confirm-screen-0x6e)). Begin plays the round; Reselect reopens the ring. There is no target cursor between `0x5A` and `0x6E`.
+- The previous round's pennants persist when the input reopens and clear on the first fresh press (the [Auto reload](#the-auto-arm) seen from the Command side).
+- **Triangle** cycles the learned-arts list: closed -> page 1 -> ... -> last page -> closed; inert when the character's learned-art constant ([`art-data.md`](../formats/art-data.md#learned-art-constant)) names no art.
+- The right-hand AP plate reads the **Spirit gauge** (`actor+0x170`) and never moves during entry; the budget's visible form is the bar filling with pennants.
+
+### Input screen pieces
+
+All from the boot-gap widget TIM's page (`(896,256)`; sub-palette = row-511 CLUT x/16) unless noted:
+
+| Piece | Sub-pal | Rects (texels) | Screen seats |
+|---|---|---|---|
+| Direction chip | 6 | body `(215,96)` 24x26, caps `(200,96)` / `(239,96)` 15x26 | body anchors: High `(216,26)`, Left `(176,58)`, Right `(256,58)`, Low `(216,90)`; caps at body -15 / +24 |
+| Chip label strip | 5 | `u=104` 24x18; `v`: Left 20, Low 40, Right 84, High 104 (Arms 0, RaSeru 64 sheet-read) | FT4 at body `+ (0,4)` |
+| Diamond ends | 5 | `(192,24)` / `(204,24)` 9x18 | body -9 / +24, `y+4` |
+| D-pad glyph | 7 | `(0,112)` 16x16 | FT4 `(220,62)`-`(235,77)` |
+| Input bar | 6 | left end `(240,0)` 16x18, body tile `(224,0)` 16x18, arrow end `(192,44)` 18x18 | y=188, x `0..128` at a 100-AP pool |
+| Command pennant | 5 | caps `(192,24)` / `(216,24)` 9x18 + the label strip between | slot `n` at x = 16 + spent-AP-before, width `cost - 6`, y 192 ([cost law](#pennant-and-chip-geometry)) |
+| AP plate | 4 | the pinned label / trough / end / cap pieces | `(208,172)`; fill = two 3-px gouraud strips x `235..285`, y `177..183`, RGB `(128,32,16)` <-> `(192,160,64)` |
+| Triangle caption | own TIM | the 64x32 button-glyph gap TIM at `PROT.DAT 0x7B00` (uploads `(928,352)`, own CLUT `(304,511)`), local rect `(48,0)` 16x16 | glyph `(162,154)` open / `(12,170)` closed; caption "Button: View Next page" / "Button: View Hyper Arts list" at glyph `+ (16, 2)` |
+
+The status plate is parked off-screen during input (its draws move to `y=230`, below the 228-line display window).
+
+**Arts list window** (Triangle): rect `(6,28)`-`(160,188)`. Interior = the system-UI panel tile `(128,0)` 32x32 (sub-pal 2, the `OVERLAY_SYSTEM_UI_PANEL_INTERIOR` region the pause menu tiles, [`field-menu.md`](field-menu.md)), tiled as shaded-textured quads under a vertical gouraud `0x40` top -> `0x88` bottom.
+
+- Borders (sub-pal 2): edge strips `(164,0)` / `(164,28)` 24x4 and `(160,4)` / `(188,4)` 4x24, corners at `(160,0)` / `(188,0)` / `(160,28)` / `(188,28)` 4x4.
+- Five rows per page at `y = 36 + 30n`: art name (battle font, 14x15 glyphs) and AP cost (menu-atlas 8x12 digits, right-aligned ending x=152) through the orange sub-palette 15 of CLUT row 510, and the command string at `(44 + 12k, y+14)` as 12x12 menu-atlas arrow glyphs at `v=208`, `u`: Up 208, Down 220, Right 232, Left 244.
+- Name / AP / command string are the SCUS arts-name table's columns ([`art-data.md`](../formats/art-data.md#arts-name-table-dat_80075ec4)).
+
+The review screen's piece decomposition is screenshot-read only.
+
+<a id="the-pennant-geometry-is-linear-in-the-commands-ap-cost"></a>
+
+### Pennant and chip geometry
+
+The pennant has no cost special-case. `FUN_801D388C` case `0xB` (called from `FUN_801D0748` at `0x801D1F90`) copies the pressed chip's record into the pennant's:
+
+| Site | Effect |
+|---|---|
+| `0x801D3D00` / `0x801D3D08` | pennant width = chip width (= `cost - 6`, set in case `9` at `0x801D3B44`) |
+| `0x801D3D0C` / `0x801D3D18` | landing x = `ctx[+0x6D8]` |
+| `0x801D3D10` / `0x801D3D14` | landing y = `0xC0` (immediate) |
+| `0x801D3D1C..0x801D3D38` | style = chip style + 6 |
+| `0x801D3CE8` / `0x801D3CF0`, `0x801D3CF4` / `0x801D3CFC` | spawn seat A = the chip record's seat-B `(x, y)` |
+| `0x801D3D40`, `0x801D3D48` | clear the seat-mode byte; 24-frame glide, then `FUN_801D8DE8(0x20 + n, 0)` spawns it |
+| `0x801D3D68..0x801D3D74` | advance the cursor by the command's own `+0x74` cost |
+
+The cursor `ctx[+0x6D8]` is seeded to `16` on the gauge build (`0x801D3A3C` / `0x801D3A44`). So pennant `n` sits at `x = 16 + sum(cost of 0..n-1)`, is `cost(n) - 6` wide, and lands on `y = 192`; the captured `x = 7` is the left diamond cap at `16 - 9`. The bar record `0x0F` is anchored at `16` and `pool - 6` wide, so a 100-AP pool spans `0..128`.
+
+The spawn anchor is the pressed chip, not the fighter: nothing on the path reads an actor screen position. `FUN_801D9BBC` is the per-frame stepper; registration is `FUN_801D8DE8` -> `FUN_801DB7B0`, which takes the glide start from the just-created node (`0x801DB7FC` / `0x801DB810`) and its target from the record's other seat.
+
+**The direction chip** is where cost geometry branches. Case `9`'s loop pulls each chip's seats from the 12-byte-stride array at `0x80076BBC` (SCUS file `0x673BC`, immediately before the placement table) and subtracts `(cost - 30) * K[slot] / 2`, with `DAT_8007B650 = [2, 1, 1, 0]` (SCUS file `0x6BE50`, immediately followed by the `Auto` / `Command` strings). `30` appears exactly twice (`0x801D3B6C`, `0x801D3B98`) as the zero point of that subtraction.
+
+| Slot | Command | Seats `(A x, B x)` | `K` | How it widens |
+|---|---|---|---|---|
+| 0 | `0x0C` arm (Vahn / Gala) | `(352, 176)` | 2 | right edge pinned at 200, grows left |
+| 1 | `0x0F` High | `(392, 216)` | 1 | centred on 228 |
+| 2 | `0x0E` Low | `(392, 216)` | 1 | centred on 228 |
+| 3 | `0x0D` arm (Noa) / Right | `(424, 256)` | 0 | left edge pinned at 256, grows right |
+
+The array's `+0` halfword goes to the record's seat A `x` (`sh v0,0x2(a1)` at `0x801D3B54`, the off-screen glide start) and its `+2` halfword to seat B `x` (`sh v0,0xa(a1)` at `0x801D3B60`, the resting anchor); the same product is subtracted from each (`0x801D3B64..0x801D3B8C`, `0x801D3B90..0x801D3BC4`). The halving is the compiler's signed divide (`srl 31` / `addu` / `sra 1`), truncating toward zero.
+
+**Nine pennant seats.** Placement records `0x20..0x28` (ids `05 05` .. `0d 0d`, `h = 0x0C`, seat-B `y = 0xC2`, kind `0`, no string); the bar-clear loop frees exactly the handles with id `5..13` (`0x801D3C50..0x801D3C88`). Nine is the floor of the `0x120` AP clamp over the 30-AP minimum. A mod that lowers a cost below 30 lets `ctx[+0x19]` run past 8, and `0x801D3CF0` writes into record `0x29` - the opponent-name chip. The pennant carries no text: indices `0x20..0x28` land on `FUN_801D8DE8`'s default arm, so `+0x14` stays `0`; the label between the caps is a sprite strip selected by the style byte.
+
+Inferred, not measured: the bar's record is anchored at seat-B `y = 194` and the pennant lands on `192`, so with the captured `BAR_Y = 188` the pennant top edge should be 186. Confirming it (and off-class widths) wants a placement-table read on `arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against `arts_bar_ideal_gala_club`.
+
+Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_asset::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
+
+<a id="the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it"></a>
+
+### The Auto arm
+
+Auto is not a picker. The string the review screen shows was already in the actor's queue, copied out of the character's save record; the pick skips the editing screen and sets a per-fighter mode flag that makes the round rebuild the queue.
+
+- **Load.** `FUN_801DA34C`, called at `0x801D15C8` on the phase-`0x28` Attack confirm (beside the `actor+0x1DE = 3` stamp at `0x801D15CC`). Gated on `_DAT_8007BD04`, it copies **16 bytes** from the acting character's record (`0x80084140 + 0x414*(char-1)`) into `actor+0x1DF..+0x1EE`: field **`+0x1A7`** when `actor+0x156 < actor+0x154`, **`+0x1B7`** otherwise, falling back from `+0x1A7` to `+0x1B7` when the first byte is zero and zero-filling when neither is set (`0x801DA3CC` / `0x801DA41C` / `0x801DA4C4` / `0x801DA51C`).
+- **Two AP bands.** `FUN_801D88CC` writes `actor+0x154 = (7 * actor+0x156) / 10 + 8` (clamped at `0x120`) on the restricted arm and `= actor+0x156` on the other (`0x801D8954..0x801D89BC`), which is why two slots exist.
+- **Save.** `FUN_801DA59C(fighter)` at `0x801D22BC`, on the review confirm (phase `0x5A`), copies the queue back into the same field by the same test, for a live actor whose `+0x1DE == 3` (`0x801DA638` / `0x801DA69C`).
+- **Empty confirm.** Confirming the entry screen with nothing entered accepts the reloaded string: `0x801D1FA0` checks `_DAT_8007BD04`, `ctx+0x19 == 0` and a non-zero `actor[+0x1DF]`, measures the string into `ctx+0x19` and jumps to phase `0x5A`.
+- **The `0x78` arm.** Command (`s2 & 0x2000`) calls `FUN_801DA34C` again, sets phase `0x50`, writes `ctx[+0x266 + ctx[+0x13]] = 0` and opens the entry screen (`FUN_801DBB8C`). Auto (`s2 & 0x8000`, or the confirm mask `*(0x800846D0)`) sets phase `0x5A` and writes the flag `1`.
+- **The flag's readers.** The cancel arm of phase `0x5A` at `0x801D23A0` (back to `0x78` when set, `0x50` when clear), two HUD gates (`0x801D5198`, `0x801D54BC`), and `FUN_801F0450` at `0x801F0704`: run by the action SM's state `0x00` every round, its pool arm rebuilds a flagged Attack seat's queue from a weighted, AP-budgeted draw of the four direction commands and splices learned arts over it ([`battle-action-helpers.md`](battle-action-helpers.md#the-routine-runs-every-round-and-auto-rebuilds-the-queue)). The dome-side effect is read off the disassembly, not captured.
+- **Whether the pick is shown.** The option global `*(0x800846C4)` at `0x801D15DC`: `0` opens the `0x78` menu, `1` goes straight to review, `2` takes a third arm.
+
+Both halves are the battle system's command-block restore / persist pair ([`functions/battle.md`](../reference/functions/battle.md)).
+
+<a id="three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them"></a>
+<a id="what-makes-a-ra-seru-chip-render"></a>
+
+### Command ring gates
+
+The ring is direction-selected; each arm carries its own gate. Pad bits are the Legaia mask's (`Up 0x1000`, `Right 0x2000`, `Down 0x4000`), and **Attack is the configured confirm button** (`0x800846D0`), not Left. `special` is the word at `0x8007BAC0`.
+
+| Chip | Arm | Refuses when |
+|---|---|---|
+| Item (Up) | `0x801D1364..0x801D137C` | `special & 0x100` |
+| Ra-Seru (Right) | `0x801D1400..0x801D1454` | `ctx[+0x25F + member] == 0`, then `actor+0x16E & 0x1000`, then `special & 0x200` |
+| Attack (confirm) | `0x801D1534..0x801D156C` | `actor+0x16E & 0x38 == 0x38` |
+| Spirit (Down) | `0x801D1670..0x801D1690` | never |
+
+Three mark emitters, all called from the phase-`0x28` arm, draw "you cannot pick this":
+
+| Emitter | Source rect on the `etim` page | CLUT | Raised by |
+|---|---|---|---|
+| `FUN_801DBC30` | `(0,96)` 64x16 - the red cross-out X | `0x7704` | the special-battle word's restriction bit |
+| `FUN_801DBD04` | `(80,96)` 32x24 - the blue Rot stamp | `0x770B` | `actor+0x16E & 0x38 == 0x38`, all three Rot limbs (over Attack) |
+| `FUN_801DBEC4` | `(120,96)` 64x16 - the blue Curse plate | `0x7700` | `actor+0x16E & 0x1000`, Curse (over Ra-Seru) |
+
+Each takes `(x, y)` and emits one `POLY_FT4` (tag `0x09000000`, code `0x2C808080`, tpage `7`) covering `(x-8, y-4)` to `(x+0x37, y+0xB)` - a 64x16 quad at the chip's plate box - and returns early when `ctx+0x6CE` is non-zero. A command that is merely **unavailable** draws none of them: its label becomes a single `-` (`FUN_801D8DE8` record `0xA`'s blank arm; `legaia_engine_ui::battle_command_ui`). A fighter with no Ra-Seru is that case.
+
+**Who raises the restriction bits.** The arena's entry seed carries them ([Which course opens](#which-course-opens)): every flagged seed has `0x100`, so a visit with any course unlocked forbids Item, and the Master seed `0x321` has `0x200`, so **once the Master course is unlocked every dome round in that visit crosses out the Ra-Seru chip**.
+
+Bit `0x200` has two more raisers, in `SCUS_942.54`'s battle init keyed on the first enemy id at `0x8007BD0C`: `0x800519DC..0x80051A04` for monster `0xAF`, and `0x8005200C..0x8005205C` for a first enemy in `0x3D..=0x3F` while the mode word `0x80084540` is `0xC` or `0x15`. Neither fires for a dome round (the ladder tops out at `0xAA`). *(Evidence: disassembly, plus an unwindowed store sweep of `0x8007BAC0` over SCUS and all 83 mapped overlays: 13 stores, 5 of which clear the word. `find-gp-relative-refs.py` caps `lui`-to-use pairing at 24 instructions and misses the four seed stores, 34..49 instructions past their `lui`.)*
+
+The member gate `ctx[+0x25F + member]` is written once by the party battle-actor init `FUN_80053CB8` from the record's Ra-Seru equipment slot; port mirror `engine-core::battle_hud::battle_member_has_raseru`.
+
+**A cast spends MP, not AP.** Taking the chip writes `ctx+6 = 0x46` and, at the confirm, the spell id into `actor+0x1DF[0]` with `actor+0x1DE = 2` and `actor+0x1E7 = 9` (`0x801D1A14..0x801D1A34`, `0x801D14A4`, `0x801D14C0`). Nothing on that path reads `ctx+0x6D8` / `ctx+0x6DC`; the cast replaces the direction string. The cost is the static spell table's `+3` byte (`DAT_800754C8 + id*12`) discounted by the record's ability bitfield `+0xF4` - bit `0x20` halves it, bit `0x10` takes a quarter off (`0x801D1A38..0x801D1B70`) - and the confirm arm refuses when `actor+0x150` is short (`0x801D1C0C..0x801D1C28`). The debit is the shared band's (`FUN_801E295C` state `0x28`).
+
+Port (`crates/engine-menus/src/muscle_dome/ring.rs`, `session.rs`): `DomeRing` / `ChipMark` / `DomeMagic` carry the gates, marks and the learned list with its ability-bit price; `MuscleDomeSession::commit_cast` is the pick; the cast resolves through `engine-battle::spells::cast_spell`, the rule the regular battle's cast band uses. The special word is the session's (`set_special_word`, overlaid by `MuscleDomeSession::ring`), seeded on both hosts through `contest_entry_word` - the play hosts from the world's flag bank (`World::dome_special_word`), the minigames page from the `unlock` mask its `muscle_contest_start` is handed (`muscle_special_word` reads it back). A standalone leg opened without a contest keeps the word at `0`, which forbids nothing.
+
+<a id="the-dd0ac-chain-is-not-a-direction-swings"></a>
+<a id="the-queue-the-dome-resolves-is-the-tokenizers"></a>
+
+### Queue resolution and swing power
+
+Selection appends raw direction ids to `actor+0x1DF`, but what plays out is the retail action queue: the tokenizer pass the battle's Arts command runs, so a matched art's constant replaces the swings it consumed.
+
+The damage route for arts and magic is `actor+0x1DF` -> `FUN_801E09F8` -> `FUN_801DD0AC`. `FUN_801E09F8` has exactly one `jal 0x801dd0ac` (`0x801E188C`), whose `a0` is `map[queued byte]` from the byte table at `0x801F4E63` (`lui` + `addiu 0x4e64`, then `lbu a0,-0x1(v1)` at `0x801E1874..0x801E1888`). `FUN_801DD0AC` uses `a0` as a 26-byte-stride index into the move-power table at `0x801F4F5C` (`0x801DD1A4..0x801DD1BC`) and takes the row's `+0` halfword arithmetic-shifted right by two as its power ([`move-power.md`](../formats/move-power.md)).
+
+That route is **not** a bare swing's: `map[0x0C..=0x0F] = 0`, and move-power row 0 is 26 zero bytes (its per-move sound-cue byte `+0x0D` included). The map's 44 non-zero entries include every art constant (`0x1B` -> 12, `0x1F` -> 15, `0x25..0x28` -> 16..19). A swing's tier is the melee kernel's per-command scalar `0x801F64EC[(id - 0x0C) % 5]` = `12 / 18 / 20 / 22 / 28`. *(The map, table bytes and `a0` derivations are disassembly; that swing damage is therefore `FUN_801EC3E4`'s is inference.)*
+
+Port: `MuscleDomeSession::install_art_catalog` + `tokenized_queue` over `legaia_art::tokenize`; without a catalog the string stays swings, retail's own answer for a character with no arts. `DomeDamageModel::damage` falls back to `battle_formulas::command_power_scalar` for a byte with no move-power row. The catalog is built by `muscle_dome::art_catalog_for` (this character's rows, real arts only, two arrows or more, grid order) and installed on the arena-door warp path, which the native `M` launcher also takes.
+
+## Sound
+
+**UI cues.** The round driver fires its blips through the one-arg cue funnel `FUN_8004FCC8`, whose `< 0x40` leg enqueues `id - 1` as the static descriptor row (`sltiu $s0, 0x40` at `0x8004FD94`, `addiu $a1, $s0, -1` at `0x8004FD9C`, ring append at `0x8004FE28`; [`sfx-table.md`](../formats/sfx-table.md)). `FUN_801D0748` carries **37** immediate call sites: ids `0x21` (15), `0x22` (7), `0x23` (15), i.e. static rows `0x20` / `0x21` / `0x22`, whose category routes them to the slot-0 system bank (extraction PROT **0868**).
+
+<a id="which-blip-is-which-0x21--0x22--0x23"></a>
+
+| id | Row | Meaning | Representative site |
+|---|---|---|---|
+| `0x21` | `0x20` | **accept / confirm** - a direction taken into the string, and every confirm that advances the phase | `0x801D20D4` (phase `0x50`) |
+| `0x22` | `0x21` | **highlight moved** - the pre-pass when the pressed direction differs from the latched `ctx+0x880`, and target-select cursor moves | `0x801D082C` (pre-pass, `s2 & 0x8000`) |
+| `0x23` | `0x22` | **refused / back** - a direction the status mask `+0x16E` blocks, and every press of the cancel mask `*(0x800846D4)` | `0x801D1EA0` (phase `0x50`: `+0x16E & 8`) |
+
+Per arm (site addresses are `0x801D....`):
+
+| Phase | `0x21` (accept) | `0x22` (move) | `0x23` (refuse / back) |
+|---|---|---|---|
+| pre-pass | - | `082C` `08D0` `0988` `0A40` (bits `0x8000` / `0x2000` / `0x4000` / `0x1000`) | - |
+| `0x32` | `1158` | - | `1130` |
+| `0x28` | `15D0` | - | - |
+| `0x78` | `175C` (Command) `17CC` (Auto) | - | via the shared tail `2968` |
+| `0x50` | `20D4` | - | `1EA0` `1EE8` `1F30` `1F78` (one per blocked direction) + `2104` (cancel) |
+| `0x5A` | `22B0` | - | `2320` |
+| `0x5B` / `0x5C` / `0x5D` | `24AC` / `2690` / `2828` | - / `263C` / - | `2560` / `26F4` / - |
+| `0x5E` / `0x64` / `0x65` | `29B8` / `2AA4` / `2D6C` | - / - / `2BE8` `2C78` | `2968` / `2A1C` / `2B58` |
+| `0x66` / `0x67` / `0x6E` | `2E5C` / `2FDC` / `31A4` | - | `2DD0` / `2F10` / `3054` |
+
+Only two cue sites are `j` targets: `0x801D20D4` (from inside its own arm) and `0x801D2968`, targeted from phase `0x78`'s cancel branch at `0x801D1720` - a shared back tail belonging to both arms.
+
+**Melee impact.** The shared battle path's: static row `0x09` (category 2 -> extraction PROT **0869**; pinned at the top of the Baka duel damage kernel `FUN_801D3B18`). A swing's move-power row carries cue `0`, so no per-move cue overrides it.
+
+**Bank residency.** A retail state parked at the hub (`minigame_muscle_dome`, mode `0x19`) has class-2 slot `2` closed and slot `6` open over PROT 0876's header - the field bank the warp left behind ([capture](audio.md#retail-capture-of-the-slot-2--slot-6-residency)) - so a category-`2` cue is silent at the hub. A round is entered through mode word `0x14`, the value `FUN_8001DCF8`'s close-6 / clear-latch arm keys on, so a round takes the ordinary battle residency (PROT 0869 staged into slot 2); no retail capture of a round's residency exists. The port's `SceneMode::MuscleDome` is a leg, so `World::sync_sfx_residency` gives it the battle arm.
+
+**BGM.** The arena loads its music itself, bypassing the BGM-id word `_DAT_8007BAC8`. `FUN_801CEA6C` runs two `FUN_8001FC00` / `FUN_8001E54C` pairs: raw `0x3F8` into slot `5` at `0x801CF000..0x801CF020` - extraction **1014**, `music_01` sound-test #26 `M26B1`, the standard battle theme, global `2026` - and raw `*(0x8007BBE4) + 0x57` into slot `3` at `0x801CEF50..0x801CEF70` (extraction **1157**). A state parked in the hub therefore still reads the host scene's id in `_DAT_8007BAC8` (`0x7E0`, `town01`'s track).
+
+Port: `MinigameSubId::bgm_id` names `2026`; the shared door-warp drain queues it as an op-`0x35` start, both hosts swap to it through their BGM director, and `World::restore_minigame_bgm` restores the venue's track on exit. The venue is `koin1` (PROT 543), whose casino-floor entry arm plays global BGM `2018` ([`minigame-slot-machine.md` § Sound](minigame-slot-machine.md#sound)).
+
+<a id="the-four-turn-strip-belongs-to-koru-not-the-dome"></a>
+
+## The Koru timed-fight strip
+
+The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14` arm runs in every battle, but it is gated to the game's one turn-limited boss fight and no dome round can raise it.
+
+| Piece | Where |
+|---|---|
+| Format string | `"      Turns Left:          HP Left: "` at PROT 0898 file offset `0x0` = VA `0x801CE818` |
+| Gate | `*(u8*)0x8007BD0C == 0xB6`, tested at every draw site (`0x801D0F18`: `lui v0,0x8008` / `lbu v1,-0x42f4(v0)` / `addiu v0,zero,0xb6` / `bne`) |
+| Turns-Left digit | `DAT_801F6958 = 4 - ctx[+0x28a]`, drawn at x=`0x68`, 1 digit |
+| HP-Left number | `DAT_801F6959 = DAT_801C937C[+0x14c] * 100 / DAT_801C937C[+0x14e]`, drawn at x=`0xD2`, 3 digits |
+| Draw calls | `func_0x8003541c` registers the label (key `1`, `addiu a0,zero,1` at `0x801D0F98`); one `func_0x8003563c` per number - the per-actor draw-record queue append ([`script-vms.md`](../reference/functions/script-vms.md)), not a gauge routine |
+
+- `0x8007BD0C` is the four-slot **formation cell** the encounter reader fills ([`encounter.md`](../formats/encounter.md), `engine-battle::encounter_record`, `capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`). Monster `0xB6` is **Koru** (PROT 867 slot `(0xB6-1) * 0x14000`); the neighbouring `0xB5` tested at `0x801D0DEC` is the final-form Cort, which `engine-core::overlay_loader` special-cases.
+- The dome cannot satisfy the gate: its highest roster id is `0xAA`, the cell has one writer in the arena overlay (`FUN_801D1510`) and none in the battle overlay.
+- The `× 100` is a shift-add chain at `0x801D0F38..0x801D0F4C` (`sll 1`, `addu`, `sll 3`, `addu`, `sll 2`); an independently based dump (`overlay_0896_801f04b0.txt`) reproduces it. `DAT_801C937C` is actor-table index 3, the first **enemy** slot, so the percentage is the opponent's and there is one number on screen.
+- Phase `0x14` computes and stamps; phase `0x6E` (and the input arm around `0x801D2900`) only re-stamps the two globals. The function contains exactly two ratio computations, both in the `0x14` arm.
+- **Where the four turns end.** No code compares `ctx[+0x28A]` to a bound. The per-monster AI switch indexes its jump table at `0x801CF1CC` by `formation_cell[slot] - 4` (`0x801EA9C0..0x801EA9FC`); entry `178` is Koru's (`0x801EB52C`), which switches on the round counter (`sltiu v0,v1,5` at `0x801EB540`, table `0x801CF49C`): rounds `0..=3` cast spell ids `0xA2`..`0xA5` and round `4` casts `0xA1`, the all-party finisher. Port: `engine-battle::monster_ai::decide`, case `0xB6`. The curated `bosses.toml` records the same four-turn timed kill.
+- **Lifetime.** The strip is text actor `1` on the `gp+0x148` list, which `FUN_800355F0` drains whole in the intro countdown arm before it stores `0x14` (`0x801D0EB4`) and in `FUN_801D99BC` (`0x801D9A24`), called by the `0xFE` arm as the round plays out (`0x801D31E8`). So it is up from each round's start until `Begin`. The ring's cancel back to `0x1E` (`0x801D11EC`) and `Reselect` (`0x801D30E4`) re-register it.
+- **Draw order.** `FUN_8003541C` keeps the list sorted by key (walk at `0x800354FC..0x80035518`). The name plaque registers its placement record's element id (`lbu a0,0(s0)` at `0x801D92E8`), `0x23` for record 68. The per-frame walker `FUN_80031D00` visits head to tail and every packet goes on one OT entry, `[0x1F8003F4] + 4`, through the head-linking `FUN_8003D2C4` - so the plaque is drawn first and the strip lands over it.
+
+<a id="what-the-strip-looks-like-in-retail"></a>
+
+**In retail** (PCSX-Redux capture [`autorun_w1a_koru_strip.lua`](../../scripts/pcsx-redux/autorun_w1a_koru_strip.lua), scenario `koru_strip_forced`: cells `0x8007BD0C..0F = [0xB6, 0, 0, 0]` and master mode 8 installed from a field state, Gala alone):
+
+- `ctx[+0x28A]` rises by one per round; each round `ctx[+6]` steps `0x14 -> 0x1E -> 0x28 -> 0x3C -> 0x64 -> 0x6E -> 0xFE -> 0xFF`, and `DAT_801F6958` takes its new value (`4, 3, 2, 1, 0`) on the `0x14 -> 0x1E` step. `DAT_801F6959` read `100` throughout.
+- The strip is one framed window across the top: gold border from framebuffer column `9` to `309`, top edge on row `11`. The per-actor name plate sits in the same top-left seat, from column `9`, rows `13..28`.
+- They never share a frame. Of 27 checkpoints, the three at a `Begin / Run` prompt show the strip, and the plate shows only in action frames (phase `0xFF`).
+
+Port: `engine-menus::timed_fight` (gate, numbers, lifetime; re-exported by `engine-core`) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
+
+<a id="the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence"></a>
+
+## Shared battle code in the `overlay_muscle_dome_*` dumps
+
+`ghidra/scripts/funcs/overlay_muscle_dome_*.txt` is the **entire battle-action overlay** dumped while the arena was resident (the "`overlay_muscle_dome.bin`" capture is the PROT 0898 slot, not a separate overlay). A filename prefix is not dome evidence: an entry also dumped under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_baka_fighter_` / `overlay_dance_` / `overlay_fishing_` is shared battle code, documented in [`battle-action.md`](battle-action.md) / [`battle-formulas.md`](battle-formulas.md).
+
+| Address | What it is |
+|---|---|
+| `FUN_801D0748` | the shared battle round driver (also under `overlay_battle_action_` / `overlay_magic_capture_` / `overlay_magic_level_up_` / `overlay_0898_`) |
+| `FUN_801D32BC` | next / prev **living-actor cursor**: skips actors with 0 HP at `+0x14C` or a set status mask `+0x16E & 0xF84`; steps `ctx+0x13 / 0x20 / 0x21 / 0x1F` |
+| `FUN_801D84C0` | battle-outcome message builder ("won the battle / Gained Experience", "is out of strength", "escaped") into `ctx+0xA9 / 0x129 / 0x159 / 0x189` |
+| `FUN_801F44A0` | pushes one entry into the 8-slot damage / number-popup ring (`ctx+0x83C` value / `+0x318` param / `+0x85C` timer, counter `+0x262 & 7`) |
+| `FUN_801F3C34` | the Seru-magic **"No effect." banner pass** |
+| `FUN_801F3D3C` | the Seru-magic **side-effect stager** |
+| `FUN_801F2410` | the **cast colour-wash emitter**, dumped only under this prefix. Its only callers are the two cast dispatchers' epilogues, `FUN_801F1ED4` at `0x801F2144` and `FUN_801F2160` at `0x801F23F4`, gated on `ctx[+0x27A] != 0` ([`cast-module.md`](cast-module.md)). It builds screen-wide `POLY_G4` packets (GP0 code `0x38`, tag length `8`, right vertices at `x = 0x13F`) on the scratchpad packet cursor `*(0x1F8003A0)`, coloured `ctx[+0x27E..+0x280] * ctx[+0x27A] / 255` and scrolled by `ctx[+0x32A]` in a mode `ctx[+0x27C]` selects |
+| `FUN_801F2E10` | the oriented-quad **beam emitter**, dumped only under this prefix. One textured `POLY_FT4` between two endpoints: angle + length from an atan2 helper (`func_0x80019b28`) and the SCUS sin / cos LUTs (`_DAT_8007B7F8` / `_DAT_8007B81C`), per-edge width jitter via BIOS `rand` (`func_0x80056798`), a random 32px texture column, greyscale tint and OT depth from args. Its only callers are 11 `jal` sites in the slot-B summon module PROT 0909, whose `FUN_801F7948` (`0x801F7980` onward at base `0x801F69D8`) paces widening beam pairs against `_DAT_8007BD1C` |
+
+<a id="the-side-effect-pair"></a>
+
+**The side-effect pair.** `FUN_801F3C34` and `FUN_801F3D3C` are two halves of one mechanism and run in the dome exactly as in any battle. They share a preamble - resolve the acting actor by `ctx[+0x13]`, take its queued action byte `+0x1DF`, scan the caster's spell-id array (record `+0x13D`, `0x20` entries), read the parallel magic-level byte at `+0x161`, bail below level `3` - and both raise banner `0x66` through `FUN_801D8DE8(0x66, 0)`.
+
+- `FUN_801F3D3C` runs at cast time from the spell's summon module and **stages**: it selects the `[summon element][level band]` record of the table at `0x801F6870`, writes its percent to `0x801F6960` (shaved off the target per hit by the damage finisher's element switch) and its banner-string pointer to `0x800775B4`, and seeds the hold `0x801F6964 = 0xB4`.
+- `FUN_801F3C34` runs at the summon's return-from-fade, **reads** `0x801F6960`, and when it is still zero installs the "No effect." string (`0x801CFA20`) instead.
+
+The stager's gates (the scripted-fight suppression roll on `ctx[+0x287]`, the per-element base-vs-record compare) and the table are on [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). Port: `engine-battle-vm::move_no_effect_guard` (the banner pass, live from state `0x36`) and `engine-vm::seru_side_effect` (stager + finisher switch). See `ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
 ## RAM state
 
-All offsets are relative to the context base `_DAT_8007bd24` unless noted otherwise. Globals outside the context are listed with their absolute address.
+Hub globals (PROT 0977 image):
+
+| Address | Role |
+|---|---|
+| `DAT_801D1A78` | hub state |
+| `DAT_801D1A7C` | backdrop level (still / brick wall) |
+| `DAT_801D1A80` | screen brightness level, clamp `0x80` |
+| `DAT_801D1A84` | heading / card level (intro hold counter in state `1`) |
+| `DAT_801D1A70`, `DAT_801D1A88`, `DAT_801D1A8C` | further fade / hold counters of the same family |
+| `DAT_801D1A90` / `DAT_801D1A94` | decoded course / round |
+| `DAT_801D1A9C` | pad-edge snapshot |
+| `DAT_801D1A74` | gave-up flag |
+| `DAT_801D1ADC` | continuing latch |
+| `_DAT_801D1AE0` | re-entry latch (still vs brick wall) |
+| `DAT_801D1AE4` | free-running voice-cue counter |
+| `DAT_801D1ACC` / `1AD0` / `1AD4` / `1AAC` | tally row pendings; `DAT_801D1AC8` HP accumulator; `DAT_801D1AB8..1AC4` lane tick counters |
+| `DAT_801D1A5C` | outcome weights `[8, 12, 4, 2]` |
+
+Contest-wide globals:
+
+| Address | Role |
+|---|---|
+| `_DAT_8007BAC0` | mode-24 sub-id / special-battle word (cursor + restriction bits) |
+| `_DAT_80084440` / `_DAT_80084444` / `_DAT_80084448` | running coin tally / turns taken / leg outcome (4 = ran) |
+| `0x800845A4` | casino coin bank |
+| `0x8007BD0C..0F` | formation cell |
+| `DAT_8007BD60` | bit `0x80` = party still standing |
+| `DAT_8007BD71` | battle-end signal (`0xFE`) |
+| `0x8007B83C` | game-mode stage word |
+
+Battle context (offsets relative to `_DAT_8007BD24` unless noted):
 
 | Address / offset | Type | Role | Confidence |
 |---|---|---|---|
-| `_DAT_8007bd24` | ptr | Muscle Dome context base (**ctx**) | Confirmed |
 | `ctx+0x00` | u8 | fighter count (loop bound for per-fighter HUD draws) | Inferred |
-| `ctx+0x06` | u8 | **match phase id** (the `FUN_801d0748` dispatch byte) | Confirmed |
-| `ctx+0x0d` | u8 | camera/view sub-mode (selects `FUN_801d5854` view offsets) | Inferred |
-| `ctx+0x13` | u8 | active fighter index into `&DAT_801c9370` | Confirmed |
+| `ctx+0x06` | u8 | round-driver phase id | Confirmed |
+| `ctx+0x0d` | u8 | camera / view sub-mode (selects `FUN_801D5854` view offsets) | Inferred |
+| `ctx+0x13` | u8 | active fighter index into `&DAT_801C9370` | Confirmed |
 | `ctx+0x14 … +0x17` | u8[4] | per-slot AP cost cache | Confirmed |
-| `ctx+0x19` | u8 | **directions entered this turn** (selection index) | Confirmed |
-| `ctx+0x1a` | u8 | deal slot currently being committed | Confirmed |
+| `ctx+0x19` | u8 | directions entered this turn | Confirmed |
+| `ctx+0x1a` | u8 | slot currently being committed | Confirmed |
 | `ctx+0x1b`, `ctx+0x1c` | u8 | sprite step / advance used during the deal layout | Inferred |
 | `ctx+0x1e` | u8 | pending HUD element id to redraw | Inferred |
-| `ctx+0x1f` | u8 | panel-layout variant (1/2/3 → different on-screen panel arrangement) | Confirmed |
-| `ctx+0x20` | u8 | player party member id | Confirmed |
-| `ctx+0x21` | u8 | opponent id (clamped ≤ 2) | Confirmed |
-| `ctx+0x269` | u8 | awarded spell/seru id (offset into spell-name table at `+0x80`) | Confirmed |
-| `ctx+0x275` | u8 | active panel id (vs `PTR_DAT_801f4d34` record `[2]`, whose byte doubles as the count of leading sub-draw handles bound to the input direction slots) | Confirmed |
-| `ctx+0x6b2` | u16 | per-frame tick counter (bumped each `FUN_801d388c` call) | Confirmed |
-| `ctx+0x6d6` | - | scratch sub-block used for HUD layout (`pbVar10` base) | Inferred |
-| `ctx+0x6d8` | u16 | **points spent this round** | Confirmed |
-| `ctx+0x6dc` | u16 | **remaining point budget** (seeded from record `+0x154`) | Confirmed |
-| `ctx+0x880` | u32 | chosen direction bitmask (`0x8000`/`0x2000`/`0x1000`/`0x4000`) | Confirmed |
+| `ctx+0x1f` | u8 | panel-layout variant (1/2/3) | Confirmed |
+| `ctx+0x20` / `ctx+0x21` | u8 | player party member id / opponent id (clamped <= 2) | Confirmed |
+| `ctx+0x25F + member` | u8 | member carries a Ra-Seru | Confirmed |
+| `ctx+0x266 + seat` | u8 | per-fighter Auto mode flag | Confirmed |
+| `ctx+0x269` | u8 | victory-caption spell index (`+0x80` into the spell-name table) | Confirmed |
+| `ctx+0x275` | u8 | active panel id / direction-slot count | Confirmed |
+| `ctx+0x28a` | u8 | battle turn counter | Confirmed |
+| `ctx+0x6b2` | u16 | per-frame tick counter (bumped each `FUN_801D388C` call) | Confirmed |
+| `ctx+0x6d6` | - | scratch sub-block for HUD layout; intro banner hold | Inferred |
+| `ctx+0x6d8` | u16 | AP spent this round (pennant cursor) | Confirmed |
+| `ctx+0x6dc` | u16 | remaining AP budget (seeded from actor `+0x154`) | Confirmed |
+| `ctx+0x880` | u32 | chosen direction bitmask | Confirmed |
 | `ctx+0x884` | u32 | latched input mask for the round | Inferred |
-| `ctx+0x1074[0..0x27]` | ptr[40] | active animated **sprite-handle** array | Confirmed |
-| `ctx+0x1114 … +0x1120` | ptr[4] | the four directional **card-slot** sprite handles | Confirmed |
-| `ctx+0x11b4[0..0x27]` | u8[40] | per-handle "active" flags (walked by `FUN_801d9bbc`) | Confirmed |
-| actor `+0x14c` | u16 | fighter current HP | Confirmed |
-| actor `+0x14e` | u16 | fighter max HP | Confirmed |
-| actor `+0x154` | u16 | fighter point/AP pool (seeds the round budget) | Confirmed |
-| actor `+0x1dd` | u8 | current action id | Confirmed |
-| actor `+0x1de` | u8 | action state | Confirmed |
-| actor `+0x1df + n` | u8[] | **queued card/action ids** for the round | Confirmed |
-| `&DAT_801c9370` | ptr[] | global actor pointer table (fighters) | Confirmed |
-| `&DAT_8007bd10` | u8[] | per-actor character id → party-record selector | Confirmed |
-| `&DAT_801f4b8c` / `&DAT_801f4b94` | u8[] | hand deck-order / move-index tables | Confirmed |
-| `&PTR_DAT_801f4d34` | ptr[] | per-step **sub-draw script-record** table | Confirmed |
-| `&DAT_800754d0` | ptr[] | shared spell-name pointer table (reward name source) | Confirmed |
-| `_DAT_8007b874`, `_DAT_8007b938` | u32 | pad-edge masks folded into the press mask | Confirmed |
-| `_DAT_800846c0` | u32 | global contest sub-mode flag (gates camera/HUD arms) | Inferred |
-| `_DAT_800846c8` | u32 | "store handles back into card slots" enable | Confirmed |
-| `DAT_801f4e0a` | u8 | round time-meter counter (0..0xc) | Confirmed |
+| `ctx+0x1074[0..0x27]` | ptr[40] | active sprite-handle array (flags at `ctx+0x11B7` / `ctx+0x11B4`) | Confirmed |
+| `ctx+0x1114 … +0x1120` | ptr[4] | the four direction-slot sprite handles | Confirmed |
+| `ctx+0x11b4[0..0x27]` | u8[40] / `+ i*0xC` records | per-handle active flags and glide records (walked by `FUN_801D9BBC`) | Confirmed |
+| actor `+0x14c` / `+0x14e` | u16 | current / max HP | Confirmed |
+| actor `+0x154` / `+0x156` | u16 | round AP budget / AP pool | Confirmed |
+| actor `+0x16e` | u16 | status mask (Rot `0x38`, Curse `0x1000`) | Confirmed |
+| actor `+0x170` | u16 | Spirit gauge | Confirmed |
+| actor `+0x1dd` / `+0x1de` | u8 | current action id / action state | Confirmed |
+| actor `+0x1df + n` | u8[16] | queued action ids for the round | Confirmed |
+| `&DAT_8007bd10` | u8[] | per-actor character id -> party-record selector | Confirmed |
+| `&DAT_800754d0` | ptr[] | shared spell-name pointer table | Confirmed |
+| `_DAT_800846c0` | u32 | global sub-mode flag (gates camera / HUD arms) | Inferred |
+| `_DAT_800846c8` | u32 | "store handles back into the direction slots" enable | Confirmed |
+| `DAT_801f4e0a` | u8 | meter counter (0..`0xC`) | Confirmed |
 
 ## Key functions
 
-| Address | Role | Provenance |
+Arena overlay (PROT 0977):
+
+| Address | Role |
+|---|---|
+| `FUN_801CEA6C` | contest init / re-entry: seeds or bumps the cursor, routes the hub state, loads SFX bundle + BGM |
+| `FUN_801CF870` | contest hub (dump `overlay_0977_slotA_801cf870.txt`, truncated) |
+| `FUN_801CF074` | score tally screen |
+| `FUN_801D00F8` | hub backdrop emitter (ringside still / brick wall) |
+| `FUN_801D0088` | `(course, round)` re-pack tail |
+| `FUN_801D02F0` / `FUN_801D042C` / `FUN_801D050C` | ROUND banner / course card / scaled sprite emitter |
+| `FUN_801D0CD4` | dev course / round picker |
+| `FUN_801D0ED8` | contest-start restore |
+| `FUN_801D0F60` | settlement (dump `overlay_0977_slotA_801d0f60.txt`) |
+| `FUN_801D1184` | tally row maths |
+| `FUN_801D1288` | per-frame voice cue |
+| `FUN_801D1510` | opponent installer |
+
+Battle overlay (PROT 0898), in the dome's role:
+
+| Address | Role | Dump |
 |---|---|---|
-| `FUN_801d0748` | Per-frame **match** controller: reads pad, dispatches on `ctx+6`, drives direction pick / commit / resolve. It owns no score loop and no hub screen - both belong to the arena's own SM ([Two state machines](#two-state-machines-not-one)) | `overlay_muscle_dome_801d0748.txt` |
-| `FUN_801d388c` | Card/presentation driver: deal-hand (4 slots), commit-card, per-step sprite layout, runs the `PTR_DAT_801f4d34` sub-draw script | `overlay_muscle_dome_801d388c.txt` |
-| `FUN_801d5854` | Camera / view director: 10-way (`param_2` 0..9) switch computing the dome view transform per phase | `overlay_muscle_dome_801d5854.txt` |
-| `FUN_801d8de8` | HUD / element renderer: draws labels, HP/stat bars, card numbers, and the reward message; returns a sprite handle | `overlay_muscle_dome_801d8de8.txt` |
-| `FUN_801d3444` | Round time-meter bar animation | `overlay_muscle_dome_801d3444.txt` |
-| `FUN_801d9bbc` | Advances active sprite handles toward target screen positions | `overlay_muscle_dome_801d9bbc.txt` |
-| `FUN_801d99bc` | Panel-sprite table hard reset + rebuild: zeroes all `0x28` handle slots (ptr `ctx+0x1074`, flags `ctx+0x11b7`/`ctx+0x11b4`) and the 16-word scratch `DAT_801c8fa0`, then re-creates the panel sprites | `overlay_muscle_dome_801d99bc.txt` |
-| `FUN_801d9ae8` | Panel-sprite teardown: for each of the `0x28` slots with flag `ctx+0x11b7` set and a live handle at `ctx+0x1074[i]`, destroys the sprite via the shared object destructor `FUN_800319a8(handle+8)` and clears its slot, then zeroes the 16-word scratch `DAT_801c8fa0` | `overlay_muscle_dome_801d9ae8.txt` |
-| `FUN_801f19ec` | Fighter model installer: relocates a TMD model bundle, uploads it, and binds it to a dome actor | `overlay_muscle_dome_801f19ec.txt` |
-| `FUN_801f2e10` | **Oriented-quad "beam" emitter** (render-track): draws one textured `POLY_FT4` between two endpoints - angle+length from an atan2 helper (`func_0x80019b28`) plus the SCUS sin/cos LUTs (`_DAT_8007b7f8` / `_DAT_8007b81c`), width jittered per-edge via BIOS `rand` (`func_0x80056798`), a random 32px texture column, greyscale tint from an arg, OT depth from an arg. Touches no dome ctx, and it is **not the dome's**: its only callers on the disc are 11 `jal` sites in the slot-B summon module PROT 0909 (see [The dump set is the whole battle overlay](#the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence)). Listed here only because the dump directory is where it was found | `overlay_muscle_dome_801f2e10.txt` |
-
-## Hand deck decoded
-
-The deck tables are decoded from the battle-overlay rodata (parser
-[`legaia_asset::muscle_dome`]: `hand_command_ids` / `hand_sprite_ids` /
-`victory_message_count`; disc-gated `muscle_dome_real`):
-
-- `&DAT_801f4b8c[0..4]` - the four hand **command ids**, the
-  direction-command ids `0xC..=0xF` (the weapon-swing runtime slots the
-  Tactical-Arts queue stages). A card *is* one of the four basic strike
-  commands; the commit path appends this id verbatim into the fighter's
-  `+0x1df` action queue.
-- A card's **cost** is `DAT_801c9360[char][cmd]+0x74` - the same per-command
-  AP byte the Arts gauge reads as the arm width, copied at battle load from
-  the equipment sections' swing records (`FUN_800557B8`;
-  `legaia_asset::battle_char_assembly::SwingAnimation::cost`). Retail value
-  set: favored `0x1E` / off-class `0x2A` / far `0x36`, disc-validated.
-- `&DAT_801f4b94[0..4]` - per-slot card **sprite ids** (with a `+2`
-  "unlearned" face variant gated on the character record's per-move flag at
-  `record+0x18C+move_id`).
-- `&DAT_801f4b84[move_id]` - the per-move display lookup the sub-draw path
-  uses (presentation).
+| `FUN_801D0748` | per-frame round driver: pad, `ctx+6` dispatch, direction pick / commit / resolve | `overlay_muscle_dome_801d0748.txt` |
+| `FUN_801D388C` | presentation driver: deal, commit, sprite layout, `PTR_DAT_801F4D34` script | `overlay_muscle_dome_801d388c.txt` |
+| `FUN_801D5854` | battle camera director: 10-way (`param_2` 0..9) view switch | `overlay_muscle_dome_801d5854.txt` |
+| `FUN_801D8DE8` | HUD element / status-plate composer; returns a sprite handle | `overlay_muscle_dome_801d8de8.txt` |
+| `FUN_801D3444` | meter bar animation | `overlay_muscle_dome_801d3444.txt` |
+| `FUN_801D9BBC` | sprite-handle glide stepper | `overlay_muscle_dome_801d9bbc.txt` |
+| `FUN_801D99BC` | panel-sprite table reset + rebuild: zeroes all `0x28` handle slots and the 16-word scratch `DAT_801C8FA0`, drains the text-actor list, re-creates the panel sprites | `overlay_muscle_dome_801d99bc.txt` |
+| `FUN_801D9AE8` | panel-sprite teardown: for each slot with flag `ctx+0x11B7` set and a live handle, destroys the sprite via `FUN_800319A8(handle+8)`, clears the slot, zeroes `DAT_801C8FA0` | `overlay_muscle_dome_801d9ae8.txt` |
+| `FUN_801DA34C` / `FUN_801DA59C` | command-string load / save (the Auto arm) | - |
+| `FUN_801DBC30` / `FUN_801DBD04` / `FUN_801DBEC4` | cross-out X / Rot stamp / Curse plate emitters | - |
+| `FUN_801F19EC` | fighter model installer: relocates a TMD bundle, uploads it, binds it to an actor | `overlay_muscle_dome_801f19ec.txt` |
 
 ## Engine port
 
-The match rules run from-scratch as `legaia_engine_core::muscle_dome`
-(`MuscleDomeSession`): the four-direction deal (deck command ids +
-per-fighter AP costs), the budget-gated commit into the `+0x1df`-model queue
-(`FUN_801d388c` case `0xb` accounting: reject overspend, debit `ctx+0x6dc`,
-accrue `ctx+0x6d8`), win/lose on the HP fields, and the Seru reward id
-(`ctx+0x269 + 0x80`). The course ladder is `parse_course_ladder` +
-`course_score_cell`, both reading the raw PROT 0977 entry.
+The port models the same two layers and shares every rule between the native `play-window`, the browser play page and the site's minigames page.
 
-A turn resolves each fighter's **whole** queued string in order - the
-player's, then the opponent's - matching how a retail battle turn plays one
-actor's `+0x1df` string to completion before the next actor acts. The strings
-are not interleaved command-by-command.
+| Layer | Module | Notes |
+|---|---|---|
+| Ladder + score tables | `engine-minigames::muscle_dome` (`course.rs`) | `parse_course_ladder`, `parse_score_table`, `course_score_cell` off raw PROT 0977 |
+| Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
+| Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
+| Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-core::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
+| Leg session | `engine-menus::muscle_dome` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
+| Command flow | `engine-menus::muscle_dome` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::muscle_dome::magic_loadout_for` |
+| World | `engine-core` (`world/frame_tick/minigame_sessions.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
+| 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera`, `turn_timeline` |
+| Minigames page | `web-viewer::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 
-Damage goes through one shared kernel, `muscle_dome::DomeDamageModel`,
-installed on the session by whichever host started the contest: the
-move-power record via the id → index map, the arts/physical predamage roll
-(`FUN_801dd0ac`), the element-affinity scale (`FUN_801dd864`) and the damage
-finisher (`FUN_801ddb30`), on a PsyQ `rand()` stream in retail call order,
-with the defender's `+0x170` gauge accruing per hit. The native play-window
-and the browser page resolve through this same kernel; neither carries a
-damage rule of its own, and a session with no model installed resolves to no
-damage rather than to invented constants.
+**Entry.** Both play hosts enter through the mode-24 door warp (the `koin1` arena door, or the native window's `M` key, which requests the same warp). The warp opens the contest off the party's unlock flags (`DomeContest::from_overlay`), resolves `(course, round)` through `parse_course_ladder` to a monster id, reads that monster's PROT 867 record for the stat block, and installs the lead's art catalog, magic loadout and the battle-theme swap. The minigames page fills a foe picker from the ladder (`muscle_course_ladder_json`, `muscle_start_vs`) or runs a contest (`muscle_contest_*`). Stand-in fighter / opponent constants survive only as the fallback for a disc whose ladder or archive does not decode.
 
-The **Ra-Seru (magic) command class** is the session's too: `DomeRing` carries
-retail's three chip gates and `ChipMark` its three mark emitters, `DomeMagic`
-the learned list with its ability-bit price, `commit_cast` the pick (which
-clears the direction string and leaves the AP budget alone, because retail's
-arm never reads `ctx+0x6D8` / `ctx+0x6DC`), and the debit lands at the
-play-out, where the shared band's `0x28` charges it. The outcome runs through
-`engine-core::spells::cast_spell` - the same rule an ordinary battle's cast
-band folds with. `select_input` is the one selection surface both world hosts drive
-([the battle's command flow](#the-selection-is-the-battles-command-flow));
-the loadout comes from `magic_loadout_for`, the door both native dome entry
-paths install through. See
-[What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render).
+<a id="the-selection-is-the-battles-command-flow"></a>
 
-The world hosts the contest as the suspending `SceneMode::MuscleDome`
-(play-window `M` key, or the arena door; the selection is the battle's
-command screens, Cross confirms/continues). A KO of the opponent inside
-the limit credits the reward Seru through the engine's capture kernel.
+**Selection is the battle's command flow.** `DomeMenu` holds a `battle_input::BattleCommandSession` for the ring (`0x28`), the `Auto | Command` prompt (`0x78`) and the `Begin | Reselect` confirm (`0x6E`), an `arts_command_input` entry session for direction entry (`0x50`) and review (`0x5A`), or the Ra-Seru list (`0x46`). `MuscleDomeSession::select_input` steps whichever owns the pad; only `Begin` closes the turn. The entry session's buffer is mirrored into the session's budget / spent / queue triple after every press (retail's `ctx+0x6DC`, `ctx+0x6D8`, `actor+0x1DF`). The minigames page drives the same flow through `muscle_select` and draws whichever screen `muscle_menu_json` names.
 
-The opponent is the disc's own: both hosts resolve `(course, round)` through
-`parse_course_ladder` to a monster id and read that monster's PROT 867
-record for the stat block the damage kernel takes. The play window has no
-course-select screen, so it walks the Beginner course one round per contest;
-the browser page fills its foe picker from the ladder. The stand-in constants
-survive only as the fallback for a disc whose ladder or archive does not
-decode, and a log line says so when they are used.
+**HUD is the battle's.** During a leg `battle_hud::battle_command_chips`, `battle_ring_marks`, `World::arts_input_view` and `sync_battle_hud_rows` answer from the dome session, so both play hosts draw the chips, the cross-out / Rot / Curse marks, the entry chrome, the readout bar and the AP plate through the builders a battle uses. They hold the chrome while a hub screen covers the leg (`muscle_ringside::HubTimers::covers_leg`). The minigames page builds its `arts_input` JSON and `muscle_arts_list_json` from the same `legaia_engine_ui::arts_input` composition, and resolves its arts banner against the SCUS arts-name table's combo strings (`muscle_round_arts_json`).
 
-### The leg is filmed by the battle camera
+**Turn resolution.** A turn resolves each fighter's whole queued string in order - the player's, then the opponent's - as a retail turn plays one actor's `+0x1DF` string to completion before the next. Damage goes through the one `DomeDamageModel` installed by whichever host started the contest; a session with no model installed resolves to no damage. A leg ends only on a knockout, and pays nothing.
 
-Because a leg is an ordinary battle, its camera is the battle camera
-director `FUN_801D5854` driven by the round and action state machines - not
-a dome-specific shot. The 3D surface every dome host draws
-(`engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface`) therefore seats the
-fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)`
-(`battle_seats`, facings `0` / `0x800`) at the battle world scale, and steps
-the shared `legaia_engine_vm::battle_cam_script` once a frame with the phase
-each moment of the leg is in a battle:
+<a id="the-leg-is-filmed-by-the-battle-camera"></a>
+
+**Camera.** A leg's camera is the battle camera director `FUN_801D5854`. `MuscleDomeSurface` seats the fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)` (`engine-minigame-scenes::battle_seats`, facings `0` / `0x800`) at the battle world scale and steps the shared `engine-battle-vm::battle_cam_script` once a frame:
 
 | Dome moment | Battle state | Framing |
 |---|---|---|
 | Begin / Reselect confirm | flow `0x6E` | case 9 far framing + idle orbit |
-| the command ring, the direction entry, the Ra-Seru list | flow `0x28` / `0x50` / `0x46` | case 0 over-the-shoulder close-up |
+| command ring, direction entry, Ra-Seru list | flow `0x28` / `0x50` / `0x46` | case 0 over-the-shoulder close-up |
 | Auto / Command prompt | flow `0x78` | case 1, the member turned toward the opponent |
 | the closing walk | action `0x14` | case 6 in-fight arm |
 | each strike | action `0x1E` | case 7 two-shot |
 | an attacker's done tail | action `0x50`, category Attack | case 8 on the target |
 | a won leg | battle-end signal up | case 6 battle-over arm |
 
-`DomeCamera::vp_raw` projects the script's pose through `battle_vp` over the
-stage model, so the native window and the browser play page (both upload that
-one matrix) frame a leg exactly as they frame a fight. The standalone
-minigames page draws through the same surface (`muscle_surface_*`), naming the
-selection screen the engine's flow has up with
-`MuscleDomeSurface::set_select_framing` (it has no world to read the screen
-off), and times its hit numerals off the
-surface's beat (`muscle_surface_beat_json`). The case-6 depth is
-`FUN_801F0348` over the seated monster's size class, the close-up height the
-character's `0x801F4D2C` row.
+`DomeCamera::vp_raw` projects the script's pose through `battle_vp`; all three hosts upload that one matrix. The minigames page names its selection screen with `MuscleDomeSurface::set_select_framing` and times its hit numerals off `muscle_surface_beat_json`. The case-6 depth is `FUN_801F0348` over the seated monster's size class, the close-up height the character's `0x801F4D2C` row.
 
-The playback the camera follows is one schedule, `turn_timeline`, which the
-surface, the world's `TurnOver` hold and the play-out tally all read: the
-leg's first acting play walks its attacker in from the seat on its walk clip
-(tag `1`) - battle locomotion has no walk home, so later turns swing from where
-the pair stands - each play swings, and each attacker's string closes on the
-done band's `0x3C`-frame tail. The defender's knockdown lands on the play that
-ends the leg. The approach length and the per-swing cadence are the port's
-clock, not retail's root-motion arithmetic.
+**Playback.** The port resolves a turn in one tick, so the action band has a stand-in: after `Resolve` the leg holds at `TurnOver` for the surface's replay (`muscle_dome_scene::turn_playback_ticks`, one play every `PLAY_CADENCE_TICKS`; `World::muscle_playback_frames`). One schedule, `turn_timeline`, feeds the surface, the hold and the tally: the leg's first acting play walks its attacker in on its walk clip (tag `1`), each play swings, and each attacker's string closes on the done band's `0x3C`-frame tail; the knockdown lands on the play that ends the leg.
 
-### The leg opens like a battle: the name banner, then `Begin | Run`
+The HUD kernels read the hold as an action frame (`battle_hud::battle_hud_phase`): the acting side's plaque holds the top-left seat and the running tally of the side acting (`World::muscle_playback_tally`) rides the status rows as text - the dome VRAM carries no `(448, 0)` page for the `etim` TOTAL cells.
 
-A leg opens through the round driver's flow `0x0A` / `0x0B`: `0x0A` composes
-the enemy-name banner (`FUN_801D9D3C`) and seeds `ctx[+0x6D6] = 0x5A`, `0x0B`
-drains it, and the turn top `0x14` then raises the round prompt `0x1E`
-(`0x801D0DE0..0x801D0EB8`). `0x14` is the only writer of `0x1E` and stores it
-unconditionally (`0x801D0ED4`), so **every** turn opens on `Begin | Run`, with
-the far framing and its idle orbit; Begin opens the ring with the highlight on
-its Left (Attack) arm, which `0x14` seeds into `ctx[+0x880]` at `0x801D0ECC`.
+**Host models** (where the port runs something other than retail's mechanism):
 
-Run is offered in the dome like anywhere else - the `0x1E` arm has no contest
-test - and the contest gives it its meaning: the `0xFE` arm, behind the sub-id
-test at `0x801D322C`, turns a party Run into the arena's ran outcome
-(`_DAT_80084448 = 4`, `0x801D3228..0x801D328C`) unless the formation monster
-is `0xAF` / `0x3D` / `0x3E` / `0x3F`, and the re-entered hub settles that as
-a give-up.
+- The opponent commits greedily in deal order out of the player's own direction deck. Only the monster's stats are real; its own action stream is not modelled.
+- **Auto** fills the string greedily in deal order rather than reloading the saved string and rebuilding it per round.
+- The ring's **Item** arm always refuses (the session carries no bag). **Spirit** commits an empty string.
+- The **Ra-Seru list** is drawn as text rows (`engine-core::minigame_status::muscle_status_rows`); its window's pieces are not pinned.
+- **Run** ends the leg on the press; the escape roll is not modelled.
+- The approach length and per-swing cadence are the port's clock, not retail's root-motion arithmetic.
+- The **minigames page's** standalone panel installs no art catalog, so its turn resolves the raw direction string: its only art source is the SCUS arts-*name* table, which carries a display index rather than an action constant, and it does not decode the per-character art records (PROT `0x05C4`). Its arts banner is unaffected.
 
-Port: `MuscleDomeSession::arm_intro` / `tick_intro` / `intro_up` carry the
-hold (armed by `World::enter_muscle_dome`, drained once no hub screen covers
-the leg); while it runs the session takes no input and the HUD phase is
-`Idle`, and `battle_hud::battle_intro_names` lays the opponent's name out over
-the lone monster seat as the composer lays out a group label. `DomeMenu`
-opens each turn on the round prompt, and Run reports the leg as ran through
-`World::leave_muscle_dome`. The escape roll a Run makes in retail is not
-modelled - the leg ends on the press.
-
-Documented host models, each disclosed rather than presented as retail:
-
-- The opponent **acts** through the same selection logic, greedily in deal
-  order out of the player's own direction deck. Retail has no dome-specific
-  AI table, and the monster's own action stream is not modelled - only its
-  stats are.
-The session bounds a leg by **nothing but a knockout**, which is what retail
-does - see [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
-`TIMED_FIGHT_TURN_LIMIT` survives as the numerator of Koru's own countdown
-(`timed_fight_turns_left`), reachable by no dome session.
-
-Disc-gated oracles: `engine-core/tests/muscle_dome_minigame_real.rs` (real
-deck + the lead's real swing costs drive a leg to a decision through the
-world tick), `engine-core/tests/dome_leg_ends_on_ko_real.rs` (the arena's
-sole game-mode write is `BattleInit`, the arena holds the only write of the
-formation cell and the battle overlay only reads it, and the ladder tops out
-below the timed fight's id) and `web-viewer/tests/dome_ladder_and_hub_real.rs`
-(the ladder decodes to 29 real monster records, its round counts agree with
-the score table, and every hub draw row's cited call site still holds a `jal`
-to the emitter it names).
+**Tests.** `engine-core/tests/muscle_dome_minigame_real.rs` (real deck + real swing costs drive a leg to a decision), `dome_leg_ends_on_ko_real.rs` (the arena's sole game-mode write is `BattleInit`; the formation cell's only writer is the arena; the ladder tops out below the timed fight's id), `muscle_contest_real.rs` / `muscle_contest_world.rs`, `muscle_hub_tally_cues_disc.rs`, `muscle_dome_lead_max_hp_disc.rs`, and `web-viewer/tests/dome_ladder_and_hub_real.rs` (29 real monster records, round counts agree with the score table, every hub draw row's cited call site still holds a `jal` to its emitter).
 
 ## Open
 
-- The exact phase ordering and meaning of every `ctx+6` value - partially confirmed. The **input chain is now capture-pinned**: `0x1e` menu idle -> `0x28` command cluster -> `0x78` Auto|Command -> `0x50` direction entry -> `0x5a` queue review -> `0x6e` Begin|Reselect -> `0xfe/0xff` playback -> `0x1e` (recomp phase-byte watch across a driven round); the deal/interval arms outside that chain remain to be walked.
-- ~~The Auto arm's command picker~~ **resolved**: the command SM has no picker - the review screen shows the 16-byte string `FUN_801DA34C` reloaded out of the character record (`+0x1A7` / `+0x1B7`, chosen by the `actor+0x156 < actor+0x154` AP-band test) and `FUN_801DA59C` saves back on the review confirm - and the round's `FUN_801F0450` pool arm rebuilds the flagged queue - see [the Auto arm](#the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it). ~~Still open on the same screen: the pennant/bar geometry for off-class (non-30) costs~~ **resolved** - the pennant is `cost - 6` wide at `x = 16 + spent-AP-before` and the chip recentres by `(cost - 30) * K[slot] / 2`, see [the cost law](#the-pennant-geometry-is-linear-in-the-commands-ap-cost).
-- ~~The per-arm assignment of the three UI cue ids~~ **resolved**: `0x21` = accept/confirm, `0x22` = highlight moved, `0x23` = refused-or-back, over **37** call sites (not 34) - see [Which blip is which](#which-blip-is-which-0x21--0x22--0x23) for the per-arm table and the two shared tails.
-- A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the arena-backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
-- ~~What arms the panel-still load~~ **resolved**: `ctx[+0xC] = 1` is written only by the per-frame battle anim-node tick `FUN_80047430` (`0x800474C4`) for an enemy seat under `gp[+0xA48] & 0x80`, and `ctx[+0x7] == 0x67` is the escape path's entry into the same shared teardown, not a condition of its own - see [What arms the load](#what-arms-the-load). Still open on the same page: no draw site for the VRAM rect the stills land in, and no image outside the loaders names `(384, 0)` at all.
-- ~~Which runtime path (if any) draws the backdrop stream's **object-1 dust
-  decal**~~ **resolved, and the "phase-gated effect draw" candidate is
-  falsified**: no effect path touches it. The SCUS battle scene loader binds the
-  whole backdrop TMD to two spawned actors and then removes object index 1 from
-  both part lists unless the byte `_DAT_8007B64B` is set - see
-  [Object 1 is trimmed by the loader](#object-1-is-trimmed-by-the-loader-_dat_8007b64b).
-  Its one writer is the field battle handoff `FUN_801D9E1C`, and a live capture of
-  a dome contest closes the last inferred half: the byte reads `0x00` at the
-  loader's test and takes zero writes all run, so the trim arm runs.
-- The per-step script table `&PTR_DAT_801f4d34` (battle-overlay rodata at file offset `0x2651c`) is fully decoded: the record shape is `[u8 count][u8 anim_sel][u8 panel_id/bind_count]` + `count`×`(elem_id, mode)` (see [Round resolution](#round-resolution)), and the individual sub-draw `elem_id`s are labelled by the `FUN_801d8de8` census in [HUD elements](#hud-elements-fun_801d8de8) (Spirit / move-name panels, the four hand-card portraits, the HP-bar values, and the victory reward banner).
-- ~~Which arm of `FUN_801D0CD4` / `FUN_801D0068` decides that a leg was *survived*~~ **resolved**: neither - it is the single byte test `DAT_8007BD60 & 0x80` at `0x801CEDD8`, cleared by the battle's own `0x5A` party-wipe scan and re-raised by the shared minigame-exit routine. `continuing` (`DAT_801D1ADC`) is therefore derived, not prompted: its one raising writer sits behind *course exhausted **and** survived*. See [Which arm decides a leg was survived](#which-arm-decides-a-leg-was-survived).
-- ~~The retail *dome* leg-end condition~~ **resolved**: a knockout, and nothing else. The arena hands the round to an ordinary battle (`FUN_801D1510` sets game mode `0x14`) and the only writers of the battle-end signal are the `0x5A` KO scans; the turn counter never reaches them. See [What ends a leg](#what-ends-a-leg-a-knockout-and-nothing-else).
-- ~~Whether card resolution applies any dome-specific damage scaling~~ **resolved**: it uses the shared `battle_formulas` unmodified - `FUN_801d0748` is byte-identical to the main battle round driver and a card resolves with no dome-local scaling (see [Round resolution](#round-resolution)). The `FUN_801e09f8` → `FUN_801dd0ac` half of that chain carries the arts / magic ids only; a bare direction swing's tier comes from the melee kernel instead ([why](#the-dd0ac-chain-is-not-a-direction-swings)).
-
-- ~~What makes a Ra-Seru chip render, and why the port crossed it out~~
-  **resolved**: three gates, none of them a course table - the member's own
-  Ra-Seru marker `ctx[+0x25F + member]`, the sealed-magic status bit
-  `actor+0x16E & 0x1000`, and bit `0x200` of the special-battle word
-  `0x8007BAC0`. Its two `SCUS_942.54` writers key on the first enemy's monster
-  id and never fire for a dome round, but the arena's own entry seed raises it
-  for the Master course (`0x321` at `0x801CEBC8`). The red X is that third
-  bit's alone, and it
-  has two siblings the captures had folded together. See
-  [What makes a Ra-Seru chip render](#what-makes-a-ra-seru-chip-render) and
-  [the three marks](#three-marks-for-you-cannot-pick-this-and-the-gates-that-raise-them).
+- The deal / interval arms of `FUN_801D0748` outside the capture-pinned input chain are not walked arm by arm.
+- A live `_DAT_8007B864` byte-match during a dome contest, to upgrade the backdrop residency (extraction 1225) from Inferred to capture-Confirmed.
+- A retail capture of the SFX bank residency inside a round.
+- The pennant's 2-px offset above the bar row and the off-class widths, by placement-table read.
+- The review screen's and the Ra-Seru list window's piece decomposition.
+- Whether live `koin1` geometry is ordered over the ringside still in a re-entered hub.
 
 ## See also
 
-**Reference** -
-[Tile-board grid](tile-board.md) ·
-[Battle action SM](battle-action.md) ·
-[Spell table](../formats/spell-table.md) ·
-[Overlay capture](../tooling/overlay-capture.md)
+[Battle hub](battle.md) · [Battle command flow](battle-command-flow.md) · [Battle HUD](battle-hud.md) · [Battle action SM](battle-action.md) · [Ringside stills](../formats/ringside-still.md) · [Arts command gauge](arts-command-gauge.md) · [Spell table](../formats/spell-table.md) · [Tile-board grid](tile-board.md) · [Overlay capture](../tooling/overlay-capture.md)

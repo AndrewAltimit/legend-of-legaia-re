@@ -16,7 +16,12 @@ the image-replacement modules `texture`, `texture_palettes`,
 [`legaia-texture-replace`](../texture-replace/README.md), re-exported at
 their old paths; the MIPS encoders, the injection arenas and the
 self-contained code-hook mods live in
-[`legaia-code-hooks`](../code-hooks/README.md), likewise re-exported):
+[`legaia-code-hooks`](../code-hooks/README.md), likewise re-exported; the
+Tactical Arts edits `arts`, `arts_power`, `arts_ap_grant`, `oscillating_ap`
+and `super_art_*` live in [`legaia-arts-patch`](../arts-patch/README.md),
+re-exported at their old paths; and the play-as-Delilas mod - `delilas_party`
+and its voice, effect, signature-attack and field-scene modules - lives in
+[`legaia-delilas-party`](../delilas-party/README.md), also re-exported):
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
@@ -51,21 +56,21 @@ self-contained code-hook mods live in
   `--fishing-price` / `--rename-location` retune fishing-exchange prices and
   world-map names; `--arts-power COMBO=VALUE` rebalances a Tactical Art's
   per-strike damage-power bytes (`record0 +0x24`, targeted by input combo -
-  [`arts_power`](src/arts_power.rs)); `--super-art-power NAME=VALUE` does the
+  [`arts_power`](../arts-patch/src/arts_power.rs)); `--super-art-power NAME=VALUE` does the
   same for a **Super Art**, which has no combo and no arts-table row and so is
-  keyed by name ([`super_art_power`](src/super_art_power.rs));
+  keyed by name ([`super_art_power`](../arts-patch/src/super_art_power.rs));
   `--show-super-arts` lists a character's Super Arts on the in-battle move list,
   which retail never draws - once performed, sorted in by AP, with name, chain AP
-  and the arrows you type ([`super_art_list`](src/super_art_list.rs), mutually
+  and the arrows you type ([`super_art_list`](../arts-patch/src/super_art_list.rs), mutually
   exclusive with `--shiny-seru`); `--arts-ap-grant` / `--arts-ap-cost`
   `[CHAR:]COMBO=AMOUNT` set what one character's art does to the AP gauge - grant
   AP instead of costing it, or charge a chosen flat cost (a battle-overlay code
-  hook - [`arts_ap_grant`](src/arts_ap_grant.rs), mutually exclusive with
+  hook - [`arts_ap_grant`](../arts-patch/src/arts_ap_grant.rs), mutually exclusive with
   `--shiny-seru`);
   `--oscillating-ap [DAMAGE_PCT]` deals every art, per battle, onto a cost side
   (retail) or a grant side (castable at any AP, gives its AP back, a fraction of
   its damage) - the same hook plus a per-battle roll and a strike-damage scale
-  ([`oscillating_ap`](src/oscillating_ap.rs), mutually exclusive with every
+  ([`oscillating_ap`](../arts-patch/src/oscillating_ap.rs), mutually exclusive with every
   other arena feature);
   `--spirit-ap AP` sets how much AP the Spirit command charges (retail 32; four
   battle-overlay immediates - [`spirit_ap`](src/spirit_ap.rs)); `--damage-ap AP`
@@ -154,6 +159,7 @@ pool, the monster-archive re-packer, and the disc write-back.
 
 ### `rng`
 
+Lives in [`legaia-disc-patch`](../disc-patch/README.md), re-exported here.
 Version-stable `SplitMix64` PRNG. A published seed always reproduces a run,
 independent of any external generator's algorithm (the first output for seed 0 is
 pinned by a test).
@@ -1018,7 +1024,7 @@ same performed Super Arts, in the same AP order, with name, chain AP, the
 coloured arrows for the selected row and a retail-style description
 (`Super Arts. Somersault,|Cyclone, Somersault.`) - four detours into the menu
 overlay's own row loop, count reads and cursor bound
-([`super_art_menu`](src/super_art_menu.rs)), with routines, names and
+([`super_art_menu`](../arts-patch/src/super_art_menu.rs)), with routines, names and
 descriptions in 0899's own reference-free dead space (the run `--seru-trade`
 shares, past its highest blob, plus a second one for the text, both in the
 save-menu atlas's blank band `0x801EA440..0x801EB94F`), so that half costs no
@@ -1401,7 +1407,9 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 
 The largest new-content family - play *as* Gi / Lu / Che while the ravine
 duels field Vahn / Noa / Gala. One orchestrator plus support modules, including the
-`party_swap` model-swap machinery; this table is the map, the full mechanism reference is
+`party_swap` model-swap machinery. Every module in this table except
+`delilas_cast`, `party_swap` and `mips_sim` lives in
+[`legaia-delilas-party`](../delilas-party/README.md); this table is the map, the full mechanism reference is
 [`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
 
 | Module | Carries |

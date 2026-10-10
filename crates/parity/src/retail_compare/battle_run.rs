@@ -274,6 +274,12 @@ pub(super) fn battle_image(
                 u8::from(battle.keep_backdrop_object_1)
             ),
         ),
+        // The slot-1 backdrop angle the displayed frame was drawn at: the
+        // RAM's, less the two frames of winding the display lags it by.
+        (
+            "LEGAIA_BATTLE_BACKDROP_YAW",
+            battle.displayed_backdrop_slot_1_yaw().to_string(),
+        ),
         ("LEGAIA_BATTLE_RNG_SEED", engine.rng_seed.to_string()),
         // The headless seed settles the landed field before it seeds the
         // stream and arms the fight (`run_engine_battle`); so does the child.

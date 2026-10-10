@@ -204,9 +204,8 @@ The `shot_00500_m19` frame of the `captures/w1e/dome_vram` run is arm `4` or
 
 ### Why a search for the rectangle did not find it
 
-Three consumers were excluded earlier on the finding that 33 sites disc-wide
-materialise `0x180` and none pairs it with `y = 0`. Both halves are true and
-the conclusion does not follow: **this emitter never materialises 384**. A
+33 sites disc-wide materialise `0x180` and none pairs it with `y = 0`. That
+does not exclude a consumer: **this emitter never materialises 384**. A
 textured primitive addresses VRAM through the packed `tpage` halfword, where
 the x coordinate is a *page index* - `384 / 64 = 6`, `576 / 64 = 9` - so the
 constants in the code are `0x106` and `0x109`, the `0x100` being `tp = 2`

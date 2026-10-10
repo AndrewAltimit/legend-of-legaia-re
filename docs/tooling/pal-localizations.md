@@ -1,11 +1,28 @@
 # Official PAL localizations (structure + alignment)
 
 Three official PAL localizations of *Legend of Legaia* exist alongside the
-NTSC/USA reference disc. This page documents their structure, how they align to
-the USA disc coordinate space, and the encoding of their accented text - the
-groundwork for lifting the official French / German / Italian translations into
-the [translation pipeline](translation/index.md). It contains **no game text** (byte
-values, offsets, counts and encodings only).
+NTSC/USA reference disc: French, German and Italian. Their `PROT.DAT` archives
+line up entry for entry with the USA disc, which is what lets
+`legaia-patcher translate lift-official` re-key an official translation onto USA
+coordinates and hand it to the [translation pipeline](translation/index.md) as an
+ordinary language pack. This page documents the structure of the PAL discs, how
+they align to the USA coordinate space, the encoding of their accented text, and
+how well a lifted translation fits. It contains **no game text** (byte values,
+offsets, counts and encodings only).
+
+```bash
+# Lift the official French script into a pack keyed for the USA disc.
+legaia-patcher translate lift-official --from <PAL-FR.bin> --target <USA.bin> -o fr.yaml
+```
+
+| Question | Section |
+|---|---|
+| Which disc is which? | [Region ids](#region-ids) |
+| Is the archive layout the same? | [Structural parity with USA](#structural-parity-with-usa) |
+| How do names and dialog map across? | [Name-table alignment](#name-table-alignment-sces-data-segment), [Dialog-corpus alignment](#dialog-corpus-alignment) |
+| How are accents stored and drawn? | [Accented-text encoding](#accented-text-encoding) |
+| How do I produce a pack? | [Lifting an official translation](#lifting-an-official-translation) |
+| Will it fit? | [Fit rate against the USA target](#fit-rate-against-the-usa-target) |
 
 The cross-region measurement tool is `legaia-patcher translate diff-disc`
 (`legaia_patcher::translation::diff`); it is region-agnostic and emits counts and
@@ -160,9 +177,9 @@ carries:
 
 The accented capitals CP437 lacks are written at their **IBM CP850**
 positions: the lifted French and Italian text carries `Â` as `0xB6`, `È` as
-`0xD4`, `Î` as `0xD7`, `Ì` as `0xDE` and `Ô` as `0xE2`. (An earlier reading
-called this a game-specific block around `0xD0..0xD6`; the bytes the text
-uses are CP850's, and the PAL font page draws some of them at other cells -
+`0xD4`, `Î` as `0xD7`, `Ì` as `0xDE` and `Ô` as `0xE2`. (These are CP850's bytes, not a
+game-specific block around `0xD0..0xD6`; the PAL font page draws some of them
+at other cells -
 [`dialog-font.md`](../formats/dialog-font.md#the-pal-page).) Two of those
 bytes draw a placeholder box on the PAL disc itself: the page has no `Î` at
 `0xD7` and no `°` at `0xF8`, and no PAL executable remaps either byte, so retail
@@ -189,10 +206,9 @@ does exactly that at patch time, from the user's own disc
 for it with `accents: font`
 ([`pack-format.md`](translation/pack-format.md#accents)).
 
-An earlier version of this section named the width table at `0x80074050`
-(that is the `0xCE` escape table) and the small-caps menu atlas at
-`PROT.DAT` `0x11218` as the font to patch; the dialog font is the `0x7F40`
-TIM and its widths sit at `0x80073F1C`.
+The font to patch is the dialog font: the `0x7F40` TIM, with its widths at
+`0x80073F1C`. It is not the table at `0x80074050` (the `0xCE` escape table) and
+not the small-caps menu atlas at `PROT.DAT` `0x11218`.
 
 ## Lifting an official translation
 

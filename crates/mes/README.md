@@ -1,6 +1,8 @@
 # legaia-mes
 
-Partial parser for Legaia MES (asset type `0x04`) blobs.
+Parser, bytecode interpreter and dialog pacer for Legaia MES (asset type
+`0x04`) dialog blobs. The `Compact` layout is decoded end to end; the `Records`
+layout is located to its record boundaries.
 
 MES is the SCUS asset-type byte `0x04` in dispatcher `FUN_8001f05c`. The
 dispatcher allocates a 4-byte-aligned buffer and decodes the payload (LZS or

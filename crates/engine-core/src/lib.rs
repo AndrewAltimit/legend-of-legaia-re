@@ -59,6 +59,7 @@ pub mod dance_venue;
 pub use legaia_engine_menus::debug_char_editor;
 pub mod dev_menu;
 pub mod dev_menu_host;
+pub use legaia_engine_menus::cursor_sprite;
 pub use legaia_engine_menus::dialog;
 pub use legaia_engine_menus::dialog_pacing;
 pub use legaia_engine_menus::dialog_picker_slide;

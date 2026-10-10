@@ -102,14 +102,6 @@ record      = (&amp;DAT_80074F68)[bonus_index * 8]   ; stride-8 record</code></p
     </div>
   </details>
   <p>The per-instruction walkthrough of the five adds is in the <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/equipment-table.md#the-five-adds-in-instruction-order" target="_blank" rel="noopener">source doc</a>.</p>
-  <details class="disclosure"><summary>History: the "agility / speed pair" reading</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>An "agility / speed pair" reading of <code>+0</code>/<code>+4</code> is falsified: <code>+0</code> is the INT bonus (head gear), <code>+4</code> is the SPD bonus (footwear), and no equipment byte touches AGL.</li>
-        <li>Boots/shoes spread bonuses across <code>+1</code> (small attack bump), <code>+3</code> (LDF), and <code>+4</code> (SPD) - a walkthrough listing only "two defense numbers" for a boot is reading <code>+1</code> and <code>+3</code>, not <code>+2</code>/<code>+3</code>.</li>
-      </ul>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

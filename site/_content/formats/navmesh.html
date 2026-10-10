@@ -99,12 +99,6 @@ python3 scripts/mednafen/pointer-hunt.py into-window /tmp/ram_mc3.bin \
       <p>Both invocations return zero hits. The narrow bounds match the original navmesh reading; widen to <code>0x80108000..0x8010A000</code> to surface the adjacent sprite-batcher pointers.</p>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: how the navmesh reading arose</summary>
-    <div class="disclosure-body">
-      <p>The cluster was spotted by diffing two area-load save states: 1700 bytes differed, which is how scene-resident data shows up - but also how any working buffer repopulated on scene entry shows up. A leading id / kind record interpretation fit one state's bytes and broke on the other two. Structural inference from a single diff pair is the trap; the pointer hunt is the test that settles it.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

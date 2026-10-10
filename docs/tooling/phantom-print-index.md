@@ -72,7 +72,7 @@ per-stratum re-key as the `0896` split below. The earlier reading of the
 an equivalent lens; the strata decode supersedes it because it also accounts
 for the `+0xD818` and `+0xA018` siblings from the same two programs. Full
 per-dump table:
-[`re-settled-threads.md`](../reference/re-settled-threads.md#prot-0977--0978-extraction--the-dump-re-key).
+[`re-settled-threads.md`](../reference/re-settled-threads/title-boot-overlays.md#prot-0977--0978-extraction--the-dump-re-key).
 
 The `0896` split is the re-key table from
 [`dump-corpus-integrity.md`](dump-corpus-integrity.md#the-shift-clusters)

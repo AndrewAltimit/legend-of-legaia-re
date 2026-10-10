@@ -40,6 +40,7 @@ window.LEGAIA_MASTER_TRIM = 0.25;
 const NAV = [
   {
     label: 'overview',
+    title: 'Start here',
     items: [
       { href: 'index.html',                     text: 'Home',                     key: 'home' },
       { href: 'architecture.html',              text: 'How it stacks',            key: 'architecture' },
@@ -48,6 +49,7 @@ const NAV = [
   },
   {
     label: 'guides',
+    title: 'Guides',
     items: [
       { href: 'guides/getting-started.html',         text: 'Getting started',          key: 'guides/getting-started' },
       { href: 'guides/extracting-assets.html',       text: 'Extracting assets',        key: 'guides/extracting-assets' },
@@ -59,6 +61,7 @@ const NAV = [
   },
   {
     label: 'explore',
+    title: 'Explore',
     items: [
       { href: 'play.html',                      text: 'Play the port',            key: 'play' },
       { href: 'viewer.html',                    text: 'Asset viewer',             key: 'viewer' },
@@ -78,6 +81,7 @@ const NAV = [
   },
   {
     label: 'write-ups',
+    title: 'Write-ups',
     items: [
       { href: 'writeups/index.html',                              text: 'Technical write-ups',     key: 'writeups/index' },
       { href: 'writeups/gaza-orbit-softlock.html',                text: 'The endless orbit',       key: 'writeups/gaza-orbit-softlock' },
@@ -94,12 +98,14 @@ const NAV = [
   },
   {
     label: 'subsystems',
+    title: 'How the game works',
     items: [
       { href: 'subsystems/index.html',          text: 'Subsystems index',         key: 'subsystems/index' },
+      { heading: 'Startup and loading' },
       { href: 'subsystems/boot.html',           text: 'Boot path',                key: 'subsystems/boot' },
       { href: 'subsystems/boot-internals.html', text: 'Boot path: internals',     key: 'subsystems/boot-internals', indent: true },
       { href: 'subsystems/asset-loader.html',   text: 'Asset loader',             key: 'subsystems/asset-loader' },
-      // Runtime VMs
+      { heading: 'Script engines' },
       { href: 'subsystems/script-vm.html',      text: 'Field / event VM',         key: 'subsystems/script-vm' },
       { href: 'subsystems/script-vm-internals.html', text: 'Script VM: internals', key: 'subsystems/script-vm-internals', indent: true },
       { href: 'subsystems/field-locomotion.html', text: 'Field locomotion',       key: 'subsystems/field-locomotion' },
@@ -107,14 +113,14 @@ const NAV = [
       { href: 'subsystems/move-vm.html',        text: 'Move-table VM',            key: 'subsystems/move-vm' },
       { href: 'subsystems/motion-vm.html',      text: 'Motion VM',                key: 'subsystems/motion-vm' },
       { href: 'subsystems/effect-vm.html',      text: 'Effect VM',                key: 'subsystems/effect-vm' },
-      // Battle
+      { heading: 'Battle' },
       { href: 'subsystems/battle.html',         text: 'Battle',                   key: 'subsystems/battle' },
       { href: 'subsystems/battle-internals.html', text: 'Battle: internals',    key: 'subsystems/battle-internals', indent: true },
       { href: 'subsystems/battle-action.html',  text: 'Battle action FSM',        key: 'subsystems/battle-action' },
       { href: 'subsystems/history-battle.html', text: 'Battle: capture notes',    key: 'subsystems/history-battle', indent: true },
       { href: 'subsystems/battle-formulas.html',text: 'Battle formulas',          key: 'subsystems/battle-formulas' },
       { href: 'subsystems/arts-command-gauge.html', text: 'Arts command gauge',   key: 'subsystems/arts-command-gauge' },
-      // Per-domain runtime
+      { heading: 'World, menus and services' },
       { href: 'subsystems/world-map.html',      text: 'World map',                key: 'subsystems/world-map' },
       { href: 'subsystems/world-map-internals.html', text: 'World map: internals', key: 'subsystems/world-map-internals', indent: true },
       { href: 'subsystems/history-world-map.html', text: 'Chapter-1 hub sweep (history)', key: 'subsystems/history-world-map', indent: true },
@@ -126,7 +132,7 @@ const NAV = [
       { href: 'subsystems/level-up.html',       text: 'Level-up',                 key: 'subsystems/level-up' },
       { href: 'subsystems/cutscene.html',       text: 'Cutscene (STR)',           key: 'subsystems/cutscene' },
       { href: 'subsystems/cutscene-internals.html', text: 'Cutscene: internals',  key: 'subsystems/cutscene-internals', indent: true },
-      // Output
+      { heading: 'Sound, picture and the port' },
       { href: 'subsystems/audio.html',          text: 'Audio',                    key: 'subsystems/audio' },
       { href: 'subsystems/audio-internals.html', text: 'Audio: internals',        key: 'subsystems/audio-internals', indent: true },
       { href: 'subsystems/renderer.html',       text: 'Renderer',                 key: 'subsystems/renderer' },
@@ -137,14 +143,15 @@ const NAV = [
   },
   {
     label: 'formats',
+    title: 'File formats',
     items: [
       { href: 'formats/index.html',                  text: 'Formats index',            key: 'formats/index' },
-      // Disc + container layer
+      { heading: 'Disc and archive' },
       { href: 'formats/disc.html',                   text: 'PSX disc geometry',        key: 'formats/disc' },
       { href: 'formats/prot.html',                   text: 'PROT.DAT TOC',             key: 'formats/prot' },
       { href: 'formats/cdname.html',                 text: 'CDNAME.TXT name map',      key: 'formats/cdname' },
       { href: 'formats/dmy.html',                    text: 'DMY.DAT (dev fixtures)',   key: 'formats/dmy' },
-      // Compression + dispatch
+      { heading: 'Containers and bundles' },
       { href: 'formats/lzs.html',                    text: 'Legaia LZS',               key: 'formats/lzs' },
       { href: 'formats/asset-type.html',             text: 'Asset type dispatcher',    key: 'formats/asset-type' },
       { href: 'formats/asset-descriptor.html',       text: 'Asset descriptor',         key: 'formats/asset-descriptor' },
@@ -161,7 +168,7 @@ const NAV = [
       { href: 'formats/slot-b-module-layout.html',    text: 'Slot-B module layout',     key: 'formats/slot-b-module-layout' },
       { href: 'formats/world-map-overlay.html',      text: 'World-map overlay',        key: 'formats/world-map-overlay' },
       { href: 'formats/place-names.html',            text: 'Place names',              key: 'formats/place-names' },
-      // Per-asset
+      { heading: 'Assets and data tables' },
       { href: 'formats/tim.html',                    text: 'PSX TIM',                  key: 'formats/tim' },
       { href: 'formats/tmd.html',                    text: 'Legaia TMD',               key: 'formats/tmd' },
       { href: 'formats/vab.html',                    text: 'VAB sound bank',           key: 'formats/vab' },
@@ -182,7 +189,7 @@ const NAV = [
       { href: 'formats/steal-table.html',            text: 'Steal table',              key: 'formats/steal-table' },
       { href: 'formats/new-game-table.html',         text: 'New-game party table',     key: 'formats/new-game-table' },
       { href: 'formats/dialog-font.html',            text: 'Dialog font',              key: 'formats/dialog-font' },
-      // Auxiliary
+      { heading: 'Auxiliary and negative results' },
       { href: 'formats/sfx-table.html',              text: 'SFX table',                key: 'formats/sfx-table' },
       { href: 'formats/sound-driver.html',           text: 'Sound-driver paths',       key: 'formats/sound-driver' },
       { href: 'formats/pochi.html',                  text: 'Pochi-filler',             key: 'formats/pochi' },
@@ -198,8 +205,10 @@ const NAV = [
   },
   {
     label: 'tooling',
+    title: 'Tools and methods',
     items: [
       { href: 'tooling/index.html',                  text: 'Tooling index',            key: 'tooling/index' },
+      { heading: 'Extract and analyse' },
       { href: 'tooling/extraction.html',             text: 'Extraction CLIs',          key: 'tooling/extraction' },
       { href: 'tooling/ghidra.html',                 text: 'Ghidra in Docker',         key: 'tooling/ghidra' },
       { href: 'tooling/overlay-capture.html',        text: 'Overlay capture',          key: 'tooling/overlay-capture' },
@@ -207,11 +216,13 @@ const NAV = [
       { href: 'tooling/mednafen-automation.html',    text: 'Mednafen automation',      key: 'tooling/mednafen-automation' },
       { href: 'tooling/pcsx-redux-automation.html',  text: 'PCSX-Redux automation',    key: 'tooling/pcsx-redux-automation' },
       { href: 'tooling/recomp-differential.html',    text: 'Recomp differential',      key: 'tooling/recomp-differential' },
+      { heading: 'Measure the port' },
       { href: 'tooling/port-catalog.html',           text: 'Port catalog',             key: 'tooling/port-catalog' },
       { href: 'tooling/disc-coverage.html',           text: 'Disc coverage',            key: 'tooling/disc-coverage' },
       { href: 'tooling/byte-accounting.html',         text: 'Byte accounting',          key: 'tooling/byte-accounting', indent: true },
       { href: 'tooling/address-reference-scan.html',  text: 'Address-reference scan',   key: 'tooling/address-reference-scan' },
       { href: 'tooling/determinism-replay.html',     text: 'Determinism replay',       key: 'tooling/determinism-replay' },
+      { heading: 'Patch and translate' },
       { href: 'tooling/randomizer.html',             text: 'Randomizer / disc patcher', key: 'tooling/randomizer' },
       { href: 'tooling/randomizer-internals.html',   text: 'Randomizer: internals',   key: 'tooling/randomizer-internals', indent: true },
       { href: 'tooling/translation.html',            text: 'Translation / language packs', key: 'tooling/translation' },
@@ -219,14 +230,17 @@ const NAV = [
   },
   {
     label: 'reference',
+    title: 'Reference',
     items: [
       { href: 'reference/index.html',           text: 'Reference index',          key: 'reference/index' },
+      { heading: 'Lookup tables' },
       { href: 'reference/functions.html',       text: 'Key functions',            key: 'reference/functions' },
       { href: 'reference/memory-map.html',      text: 'PSX RAM map',              key: 'reference/memory-map' },
       { href: 'reference/cheats.html',          text: 'Cheat databases',          key: 'reference/cheats' },
       { href: 'reference/gamedata.html',        text: 'Curated game-data tables', key: 'reference/gamedata' },
       { href: 'reference/music-tracks.html',    text: 'Music tracks',             key: 'reference/music-tracks' },
       { href: 'reference/scene-names.html',     text: 'Scene names',              key: 'reference/scene-names' },
+      { heading: 'Research threads' },
       { href: 'reference/open-rev-eng-threads.html', text: 'Open RE threads',     key: 'reference/open-rev-eng-threads' },
       { href: 'reference/re-settled-threads.html', text: 'Settled RE threads',   key: 'reference/re-settled-threads' },
       { href: 'reference/re-do-not-re-walk.html', text: 'Do not re-walk',        key: 'reference/re-do-not-re-walk' },
@@ -240,6 +254,10 @@ const EXPLORE_KEYS = new Set([
   'home', 'play', 'viewer', 'media', 'tooling/rom-patcher', 'tooling/translation-workbench', 'world', 'shops',
   'minigames', 'arts', 'magic', 'monsters', 'characters', 'npcs', 'world-overview',
 ]);
+/* Docs sections that open collapsed unless they hold the current page (or the
+   reader opened them before): each is a long reference list, and five of
+   them expanded at once bury the short sections a newcomer wants first. */
+const COLLAPSED_BY_DEFAULT = new Set(['write-ups', 'subsystems', 'formats', 'tooling', 'reference']);
 /* NAV sections rendered in the docs sidebar (order preserved). The 'explore'
    section is deliberately absent - those pages live in the rail + home grid. */
 const DOCS_SECTIONS = new Set(['overview', 'guides', 'write-ups', 'subsystems', 'formats', 'tooling', 'reference']);
@@ -251,16 +269,17 @@ function zoneForKey(key) {
 /* Explore sidebar: every interactive page, grouped like the home launcher,
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
-  { label: 'play',           keys: ['play', 'minigames'] },
-  { label: 'modding',        keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
-  { label: 'browse the disc', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'] },
+  { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
+  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
+  { label: 'browse the disc', title: 'Explore the game data', keys: ['viewer', 'media', 'world', 'world-overview', 'characters', 'npcs', 'monsters', 'shops', 'arts', 'magic'] },
 ];
 
 function exploreNavSections() {
   const byKey = new Map();
-  for (const section of NAV) for (const item of section.items) byKey.set(item.key, item);
+  for (const section of NAV) for (const item of section.items) if (item.key) byKey.set(item.key, item);
   return EXPLORE_GROUPS.map(g => ({
     label: g.label,
+    title: g.title,
     items: g.keys.map(k => byKey.get(k)).filter(Boolean),
   }));
 }
@@ -293,7 +312,7 @@ function depthFromKey(key) {
 
 function flattenNav() {
   const out = [];
-  for (const section of NAV) for (const item of section.items) out.push(item);
+  for (const section of NAV) for (const item of section.items) if (item.key) out.push(item);
   return out;
 }
 
@@ -303,7 +322,7 @@ function findSiblings(activeKey) {
   const flat = [];
   for (const section of NAV) {
     if (!DOCS_SECTIONS.has(section.label)) continue;
-    for (const item of section.items) if (item.key !== 'home') flat.push(item);
+    for (const item of section.items) if (item.key && item.key !== 'home') flat.push(item);
   }
   const idx = flat.findIndex(x => x.key === activeKey);
   if (idx < 0) return { prev: null, next: null };
@@ -349,9 +368,11 @@ function buildSidebar(active, depth, zone) {
     const tog = document.createElement('button');
     tog.type = 'button';
     tog.className = 'sidebar-section-toggle';
-    tog.innerHTML = '<span class="arrow">▾</span>' + section.label;
+    tog.innerHTML = '<span class="arrow">▾</span>' + (section.title || section.label);
+    tog.setAttribute('aria-expanded', 'true');
     tog.addEventListener('click', () => {
       sec.classList.toggle('collapsed');
+      tog.setAttribute('aria-expanded', String(!sec.classList.contains('collapsed')));
       try {
         const persisted = JSON.parse(localStorage.getItem('sidebar-collapsed') || '{}');
         persisted[section.label] = sec.classList.contains('collapsed');
@@ -363,24 +384,37 @@ function buildSidebar(active, depth, zone) {
     /* Item list */
     const nav = document.createElement('nav');
     nav.className = 'sidebar-nav';
-    nav.setAttribute('aria-label', section.label);
+    nav.setAttribute('aria-label', section.title || section.label);
     for (const item of section.items) {
+      if (item.heading) {
+        /* A group subhead inside a long section - not a link, not a page. */
+        const h = document.createElement('div');
+        h.className = 'sidebar-subhead';
+        h.textContent = item.heading;
+        nav.appendChild(h);
+        continue;
+      }
       if (item.key === 'home') continue; /* Home lives in the rail, not the docs tree */
       const a = document.createElement('a');
       a.href = resolveHref(item.href, depth);
       a.textContent = item.text;
       a.dataset.key = item.key;
-      if (item.key === active) a.classList.add('active');
+      if (item.key === active) { a.classList.add('active'); a.setAttribute('aria-current', 'page'); }
       if (item.indent) a.classList.add('nav-child');
       nav.appendChild(a);
     }
     sec.appendChild(nav);
 
     /* Restore collapsed state from localStorage (don't collapse the active section) */
+    let collapsed = COLLAPSED_BY_DEFAULT.has(section.label);
     try {
       const persisted = JSON.parse(localStorage.getItem('sidebar-collapsed') || '{}');
-      if (persisted[section.label] && !hasActive) sec.classList.add('collapsed');
+      if (section.label in persisted) collapsed = !!persisted[section.label];
     } catch (e) {}
+    if (collapsed && !hasActive) {
+      sec.classList.add('collapsed');
+      tog.setAttribute('aria-expanded', 'false');
+    }
 
     sidebar.appendChild(sec);
   }
@@ -414,6 +448,52 @@ function wrapWideTables() {
     parent.insertBefore(wrap, table);
     wrap.appendChild(table);
   });
+}
+
+/* ---------- Sticky table headers ----------
+ * A header can stick to the page only if no ancestor of the table is a scroll
+ * container - and `.table-wrap` is one, by design. So a wrapper is told when
+ * its table FITS (`.fits` drops the scroller and turns on the sticky header)
+ * and keeps the horizontal scroller only when the table is really too wide.
+ * Docs zone only: the interactive pages build and size their own tables.
+ * Measured against the wrapper's own box, so it stays right across the
+ * breakpoints; re-run on resize and once fonts have settled. */
+function fitTables() {
+  const wraps = document.querySelectorAll('.zone-docs .content .table-wrap');
+  wraps.forEach(wrap => {
+    const table = wrap.querySelector(':scope > table');
+    if (!table) return;
+    wrap.classList.toggle('fits', table.scrollWidth <= wrap.clientWidth + 1);
+  });
+}
+
+/* ---------- Theme toggle ----------
+ * The page template's head script has already applied a stored choice before
+ * first paint; this only wires the button. Dark is the default. */
+function buildThemeToggle() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tb-theme';
+  const sun = '<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>';
+  const moon = '<path d="M20 14.5A8 8 0 0 1 9.5 4a7 7 0 1 0 10.5 10.5z"/>';
+  function current() {
+    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  }
+  function render() {
+    const light = current() === 'light';
+    btn.innerHTML = railSvg(light ? moon : sun);
+    btn.setAttribute('aria-label', light ? 'Switch to dark theme' : 'Switch to light theme');
+    btn.title = light ? 'Dark theme' : 'Light theme';
+  }
+  btn.addEventListener('click', () => {
+    const next = current() === 'light' ? 'dark' : 'light';
+    if (next === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('site-theme', next); } catch (e) {}
+    render();
+  });
+  render();
+  return btn;
 }
 
 /* ---------- Heading ID assignment (before anchors / TOC) ---------- */
@@ -813,6 +893,7 @@ function injectLayout(opts) {
   if (app) app.insertBefore(sidebar, app.firstChild);
   else document.body.insertBefore(sidebar, document.body.firstChild);
   topbar.insertBefore(toggle, topbar.firstChild);
+  topbar.insertBefore(buildThemeToggle(), topbar.querySelector('.tb-gh'));
   document.body.appendChild(scrim);
   restoreSidebarScroll(sidebar);
 
@@ -838,6 +919,11 @@ function injectLayout(opts) {
   }
 
   wireDiscChip();
+
+  fitTables();
+  window.addEventListener('resize', fitTables);
+  window.addEventListener('load', fitTables);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTables);
 
   /* Wire search trigger */
   const openSearch = document.getElementById('open-search');

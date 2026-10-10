@@ -57,6 +57,15 @@ pub struct DialogState {
     /// by the frame step and presses for the player when it runs out
     /// ([`crate::dialog::OwnedDialogPanel::tick_at_auto`]). `<= 0` is idle.
     pub(crate) auto_press: i16,
+    /// The cursor sprite primitive's per-kind frame / timer state
+    /// (`0x801C6000..0x801C6020`, [`crate::cursor_sprite`]) the pager's page
+    /// mark and option hand animate on. Global in retail, so it outlives a
+    /// box: the next page at the same height carries the mark's phase on.
+    pub(crate) cursor_sprites: crate::cursor_sprite::CursorSprites,
+    /// A page-mark frame seated over the engine's own
+    /// ([`crate::world::World::seat_page_mark_frame`]); `None` outside the
+    /// retail comparison's capture frame.
+    pub(crate) page_mark_seat: Option<u8>,
 }
 
 impl DialogState {
@@ -72,6 +81,8 @@ impl DialogState {
             input_consumed: false,
             inline: None,
             auto_press: 0,
+            cursor_sprites: Default::default(),
+            page_mark_seat: None,
         }
     }
 }

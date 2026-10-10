@@ -583,9 +583,13 @@ pub fn parse_walk_terrain_tiles(field_map: &[u8]) -> Vec<Placement> {
 /// Shared object-grid sweep for [`parse_terrain_tiles`] (overview, `0x2000`)
 /// and [`parse_walk_terrain_tiles`] (walk, `0x1000`). `gate` selects the
 /// object-index-grid cell bit that marks a drawn tile; `walk_mesh` takes
-/// `record[+0x10]` for **every** id (`true`) versus routing through
-/// [`pack_mesh_index`], which returns `None` for the protagonist / NPC ids
-/// `1..=3` (`false`). Both resolve the same `+0x10` mesh otherwise.
+/// `record[+0x10]` for **every** id (`true`) versus routing a **placed**
+/// record through [`pack_mesh_index`], which returns `None` for the
+/// protagonist / NPC ids `1..=3` (`false`). An unplaced record - a
+/// decoration cell - takes `+0x10` either way: scenes do put scenery on
+/// records `1..=3` (`vozz`'s ground fern is record 3, pack mesh 10, on
+/// dozens of cells; `vell`, `rugi`, `retona`, `deene`, `opdeene` and
+/// `rikuroa` each dress fifteen or more cells through those records).
 pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -> Vec<Placement> {
     let mut out = Vec::new();
     let Some(grid) = field_map.get(OBJECT_GRID_OFFSET..) else {
@@ -637,7 +641,14 @@ pub fn parse_terrain_tiles_gated(field_map: &[u8], gate: u16, walk_mesh: bool) -
                 y_off: rec.y_off,
                 floor_nibble,
                 floor_corner_nibbles,
-                pack_index: if walk_mesh {
+                // A decoration cell - a record without the placed flag - is
+                // drawn by the per-cell pass itself, which indexes the pack
+                // with `record[+0x10]` whatever the record's index
+                // (`FUN_801F7088`: `lhu v0,0x10(s0)` ... `lw v0,-0x3fe8(at)`
+                // at `0x801F77E4..0x801F7804`, behind only the cell's
+                // `0x2000` and the record's placed-flag test). The id
+                // carve-out is the placed-object spawner's.
+                pack_index: if walk_mesh || rec.flags & FLAG_PLACED == 0 {
                     Some(rec.pack_index_field)
                 } else {
                     pack_mesh_index(obj_idx, &rec)
@@ -1241,6 +1252,31 @@ mod tests {
         assert_eq!(hf.uvs[3], [95, 160]); // (col+1, row+1)
         // Every vertex carries the cell's [clut, tpage] from +0x15 / +0x16..+0x18.
         assert!(hf.cba_tsb.iter().all(|&ct| ct == [0x7EC0, 0x000C]));
+    }
+
+    /// A decoration cell draws its record's `+0x10` mesh whatever the
+    /// record's index - the per-cell pass has no id test - while a placed
+    /// record on ids `1..=3` keeps the spawner's carve-out.
+    #[test]
+    fn a_decoration_cell_on_a_low_record_id_keeps_its_mesh() {
+        let mut map = vec![0u8; 0x12000];
+        // Record 3: unplaced scenery, pack mesh 10. Record 2: placed.
+        let r3 = 3 * OBJECT_RECORD_STRIDE;
+        map[r3 + 0x10] = 10;
+        map[r3 + 0x12] = 0x13;
+        let r2 = 2 * OBJECT_RECORD_STRIDE;
+        map[r2 + 0x10] = 31;
+        map[r2 + 0x12] = 0x12 | FLAG_PLACED as u8;
+        let set = |map: &mut Vec<u8>, col: usize, row: usize, word: u16| {
+            let c = OBJECT_GRID_OFFSET + (row * GRID_DIM + col) * 2;
+            map[c..c + 2].copy_from_slice(&word.to_le_bytes());
+        };
+        set(&mut map, 105, 64, CELL_VISIBLE | CELL_WALK_VISIBLE | 3);
+        set(&mut map, 20, 9, CELL_VISIBLE | 2);
+        let tiles = parse_terrain_tiles(&map);
+        let at = |col: u8, row: u8| tiles.iter().find(|p| (p.col, p.row) == (col, row)).unwrap();
+        assert_eq!(at(105, 64).pack_index, Some(10));
+        assert_eq!(at(20, 9).pack_index, None);
     }
 
     #[test]

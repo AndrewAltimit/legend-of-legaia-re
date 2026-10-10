@@ -1,12 +1,28 @@
 # Dialog font (proportional Latin)
 
-The proportional sans-serif font used by the dialog box, the field menu, and most in-game UI text. It lives in VRAM at runtime and is referenced by every text-rendering primitive the engine emits.
+The proportional sans-serif font used by the dialog box, the field menu and most in-game UI text. Its glyphs are one 4bpp texture page that sits in VRAM for the whole game; the per-character advance widths and the inline icon ("escape") table are static data in `SCUS_942.54`. This page covers the data, how the retail renderer measures and paces a line, the accented cells each regional build carries, and the accent font the translation tools write.
 
-The font has three pieces of static data, all in `SCUS_942.54`:
+## At a glance
 
-1. A **256-byte width table** at `0x80073F1C`, indexed by character byte.
-2. A **38-entry escape-sequence table** at `0x80074050`, indexed by the byte that follows a `0xCE` runtime escape: controller-button and icon sprites, plus four number slots (see [Escape table](#escape-table-0x80074050)).
-3. The **glyph bitmaps**, which sit in VRAM at `(896, 0)..(960, 256)` (a 4bpp tile-page covering 256×256 source pixels). They're loaded from disc into VRAM by an overlay-resident routine.
+| Piece | Location | Size | Confidence |
+|---|---|---|---|
+| Glyph page (TIM) | `PROT.DAT` file offset `0x7F40`; VRAM `(896, 0)..(960, 256)` | 256x256 px 4bpp, 16x16 cells | Confirmed |
+| Width table | SCUS `0x80073F1C` | `u8[256]`, indexed by character byte | Confirmed |
+| Escape table | SCUS `0x80074050` | 38 x 4-byte records, indexed by the byte after `0xCE` | Confirmed |
+| Text CLUTs | VRAM `(96 + 16*i, 510)` | sixteen 16-colour palettes | Confirmed |
+| Renderer | `FUN_80036888` (draw), `FUN_80036514` (expand), `FUN_80035F04` (pixel measure), `FUN_80036044` (glyph count) | - | Confirmed |
+| Parser / layout | `crates/font` (`legaia_font`) | - | - |
+
+```mermaid
+flowchart LR
+    src["Source string"] --> exp["FUN_80036514: expand ^X, 0xFF, name substitutions"]
+    exp --> buf["Line buffer 0x800740EC"]
+    buf --> draw["FUN_80036888: per-byte loop"]
+    draw -- "glyph byte" --> sprite["GP0 0x64 sprite, 14x15, from the font page"]
+    draw -- "0xCE n" --> esc["Escape table: icon sprite or number"]
+    draw -- "0xCF n" --> clut["CLUT index DAT_8007B454"]
+    sprite --> adv["pen += widths[c] + DAT_800740E8 + 1"]
+```
 
 ### On-disc carrier
 
@@ -195,7 +211,7 @@ shown by the per-frame actor-dialog SM `FUN_80039b7c` + the dialog pager
 `FUN_801D84D0`, triggered by the touch / button-press interaction (no opcode;
 op `0x3E` with `op0 < 100` is the scripted-battle install, not a talk) - see [`subsystems/script-vm.md` § Field dialogue](../subsystems/script-vm.md#field-dialogue-has-no-opcode).
 (`FUN_8001FD44` is **not** the opener - it is the scene-change packet, reached
-by the `0x3F` named scene-change; an earlier note mislabeled it. The
+by the `0x3F` named scene-change. The
 `_DAT_1F800394 |= 0x40` it sets is a scene-transition-pending flag, not a
 "dialog active" lock.)
 
@@ -226,7 +242,7 @@ The pager `FUN_801D84D0` runs once per game tick, every `DAT_1F800393` vsyncs (`
 
 A PCSX-Redux trace of `town01` placement `P1[16]`'s conversation (`scripts/pcsx-redux/autorun_dialog_typewriter_trace.lua`, one CSV row per vsync of those words) shows exactly this: the counter runs `1, 3, 5, ...` on a box's first row and `2, 4, 6, ...` after a finish, a count-25 row finishes on the call whose counter would be 27 and holds `36` for one call, and a count-11 row holds `92`, then `28`, then `0`.
 
-The engine types every pager page this way: `legaia_engine_core::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_core::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-core/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
+The engine types every pager page this way (`crates/engine-dialog`, re-exported at the `engine-core` paths): `legaia_engine_core::dialog::OwnedDialogPanel` counts each row with `legaia_font::typewriter_glyph_count` and `legaia_engine_core::dialog_pacing` runs the gate, one pager call every `frame_step` ticks, on the path both play hosts drive. `crates/engine-core/tests/dialog_typewriter_pacing_disc.rs` pins the traced row counts and the first box's per-vsync counter and hold against the engine.
 
 The rows the counter types into belong to a scrolling window, not a page buffer: a page turn keeps the previous page's rows and types beneath them, a line after a full window scrolls it a row with no button press, and a confirm press while a row types or holds sets the skip latch `_DAT_801F2750 = 0x25` and completes the page (state `0x0D`, `0x801D89B8..0x801D8A04`; `0x801D86BC` for the hold). The states and the trace that pins them are in [`mes.md` § Row window and scrolling](mes.md#row-window-and-scrolling); the engine's port is `legaia_engine_core::dialog_window`, and both hosts draw its rows through `legaia_engine_ui::dialog_reading_box_text_draws_for`, offset by the scroll and clipped to the box's rows band.
 

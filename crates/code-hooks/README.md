@@ -42,17 +42,18 @@ files were written against.
 
 What stays in `legaia-patcher`: the `apply` layer that sequences every edit
 onto a disc, the randomizer's data shuffles, and the hook mods that reach into
-those - the Tactical Arts family (`arts_ap_grant`, `oscillating_ap`,
-`super_art_*`), `enemy_ally` / `charm_fix`, `custom_items` and the Delilas
-dome. Their builders use `mips` and `mips_sim` from here through the patcher's
-crate-private re-exports. The disc-gated oracles (`crates/patcher/tests`) stay
+those - `enemy_ally` / `charm_fix`, `custom_items` and the Delilas dome.
+Their builders use `mips` and `mips_sim` from here through the patcher's
+crate-private re-exports. The Tactical Arts hooks (`arts_ap_grant`,
+`oscillating_ap`, `super_art_*`) sit in
+[`legaia-arts-patch`](../arts-patch/README.md), which builds on this crate. The disc-gated oracles (`crates/patcher/tests`) stay
 with the patcher too, since they drive hooks through `apply`.
 
 ## Visibility
 
-`mips` and `mips_sim` were crate-private in the patcher. They are `pub` here
-because their callers now sit on both sides of a crate boundary; the patcher
-re-exports them `pub(crate)`, so its own public surface is unchanged.
+`mips` and `mips_sim` are `pub` here because their callers sit on both sides
+of the crate boundary. The patcher re-exports them `pub(crate)`, so they are
+not part of its public surface.
 
 ## See also
 

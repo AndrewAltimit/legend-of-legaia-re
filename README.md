@@ -1,38 +1,166 @@
 # legend-of-legaia-re
 
-A playable port and modding hub for the PSX game **Legend of Legaia** (1998, Sony, NA SCUS-94254), standing on Ghidra-traced reverse engineering of the retail disc. The disc's formats are documented byte-by-byte with provenance back to traced retail functions, Rust parsers extract every asset, and a from-scratch engine runs the game's own scenes, scripts and menus - natively on wgpu, and in your browser via WebAssembly. On top of that sit a disc randomizer, a translation toolchain, and a project site full of interactive viewers that run entirely off your own disc image.
+**Legend of Legaia** (PlayStation, 1998, NA `SCUS-94254`), running as a from-scratch Rust port you can play today - in a native window or in your browser - from your own disc image. Around the port sit a full asset extractor, a disc patcher (randomizer, translation packs, content mods), interactive viewers, and byte-level documentation of every format on the disc.
 
-The repo name `-re` is in both senses: **r**everse-**e**ngineering and **r**e-implementation. This is **not a decompilation project**: nothing aims at a byte-matching recompile of the executable, and the engine is fresh Rust written from the project's own reverse-engineering record - Ghidra-traced function dumps and live emulator probes - never auto-translated MIPS. Same legal model as [ScummVM](https://www.scummvm.org/), [OpenRCT2](https://github.com/openrct2/OpenRCT2), [OpenMW](https://github.com/OpenMW/openmw), [OpenLara](https://github.com/XProger/OpenLara): this repo is code and documentation only - you bring your own disc image, and nothing Sony owns is ever committed or distributed.
-
-Retail behaviour is the measured ground truth: the traced dumps and parity oracles reproduce the original's arithmetic and quirks exactly, and a retail-faithful mode keeps that testable. The port itself is not bound by it - enhancements the original never had, like dynamic lighting, volumetric fog, see-through walls around the player, free-angle movement and [VR](docs/subsystems/vr-mode.md), plus features first proven out through the [disc patcher](docs/tooling/randomizer.md), land as engine toggles, enabled by default where they are clearly better, with retail always one flip away. See [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
-
-**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/)
-
-## Demo
+**Project site:** [andrewaltimit.github.io/legend-of-legaia-re](https://andrewaltimit.github.io/legend-of-legaia-re/) - play, browse and patch in the browser, nothing to install.
 
 https://github.com/user-attachments/assets/aff19b4f-312c-44e2-bd44-3e6d99de2b03
 
-The from-scratch engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4) · [on the project site](https://andrewaltimit.github.io/legend-of-legaia-re/))
+The engine booting a real scene, plus the asset viewers. ([direct link](site/assets/legend-of-legaia-re-demo.mp4))
 
-## What's here
+This repository is code and documentation only. **You bring the disc**: nothing Sony owns is committed or distributed, and everything browser-side reads your image locally in the tab - it is never uploaded. See [You bring the disc](#you-bring-the-disc).
 
-Four things, all usable today. Everything browser-side reads your disc image locally in the tab - nothing is uploaded, and the image never leaves your machine.
+## What you can do with it
 
-**Play and explore in your browser.**
+| You want to | What ships | Where |
+|---|---|---|
+| **Play the game** | The port: title screen, New Game, towns, dungeons, world map, battles, menus, saves | [Browser play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.html), or `legaia-engine` natively |
+| **Play the minigames on their own** | Slot machine, Noa's dance, Baka Fighter, fishing, Muscle Dome | [Minigames page](https://andrewaltimit.github.io/legend-of-legaia-re/minigames.html) |
+| **Get the assets out** | Textures, models, music, sound banks, dialog, FMVs, data tables | `legaia-extract` and a CLI per format; the [asset viewer](https://andrewaltimit.github.io/legend-of-legaia-re/viewer.html) and [media browser](https://andrewaltimit.github.io/legend-of-legaia-re/media.html) in the browser |
+| **Randomize or mod your disc** | Shuffles, tuning sliders, MIPS code hooks, custom models and textures | `legaia-patcher`, or the [ROM patcher page](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/rom-patcher.html) |
+| **Translate the game** | Export all text to YAML, edit, reimport in place | `legaia-patcher translate`, or the [translation workbench](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/translation-workbench.html) |
+| **Look things up** | Enemies, characters, NPCs, magic, arts, shops, every town and kingdom in 3D | The site's data pages, starting at [enemies](https://andrewaltimit.github.io/legend-of-legaia-re/monsters.html) and the [world](https://andrewaltimit.github.io/legend-of-legaia-re/world.html) |
+| **Export to Blender / Unity / VRChat** | Scenes, NPCs, props, equipment and the party as `.glb` | `legaia-engine export-glb` ([guide](docs/tooling/vrchat-world-export.md)) |
+| **Understand how the game works** | Format specs, subsystem docs, traced functions, RAM map | [`docs/`](docs/overview.md) |
 
-- [**Play the port**](https://andrewaltimit.github.io/legend-of-legaia-re/play.html) - walk real towns and fields with retail movement and collision, talk to NPCs (the field VM plays their actual dialogue, branches and all), pass through doors, open the retail pause menu and every screen behind it, and load/save against a real memory-card image your emulator still accepts. Random encounters run into live battles with the player-driven command menus, the opening chain plays its prologue legs, narration crawl and FMVs, and the whole page works flat or in VR over WebXR.
-- [**Minigames**](https://andrewaltimit.github.io/legend-of-legaia-re/minigames.html) - the casino slot machine, Noa's dance, Baka Fighter, fishing and the Muscle Dome, playable against the real step charts, rosters, catch tables and payout tables read from your disc. The odds you're beating are the odds the cabinet shipped with.
-- [**ROM patcher**](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/rom-patcher.html) - the disc randomizer and language packs running client-side, with a spoiler-safe change report. The [**translation workbench**](https://andrewaltimit.github.io/legend-of-legaia-re/tooling/translation-workbench.html) edits a language pack with live room and on-screen-width checks.
-- [**Asset viewer**](https://andrewaltimit.github.io/legend-of-legaia-re/viewer.html) and [**media browser**](https://andrewaltimit.github.io/legend-of-legaia-re/media.html) - textures, 3D models, dialog, music, sound banks, and the FMVs, decoded in the tab.
-- **Data tables with 3D model views** for [enemies](https://andrewaltimit.github.io/legend-of-legaia-re/monsters.html), [characters](https://andrewaltimit.github.io/legend-of-legaia-re/characters.html), [NPCs](https://andrewaltimit.github.io/legend-of-legaia-re/npcs.html) and [Seru magic](https://andrewaltimit.github.io/legend-of-legaia-re/magic.html), plus [shops](https://andrewaltimit.github.io/legend-of-legaia-re/shops.html), [Tactical Arts](https://andrewaltimit.github.io/legend-of-legaia-re/arts.html), every [town and dungeon](https://andrewaltimit.github.io/legend-of-legaia-re/world.html) assembled in 3D, and each [kingdom's overworld](https://andrewaltimit.github.io/legend-of-legaia-re/world-overview.html).
+```mermaid
+flowchart TD
+    disc["Your disc image (.bin or .cue)"]
+    iso["Disc files: PROT.DAT, SCUS_942.54, MOV, XA"]
+    prot["1233 PROT entries, named by CDNAME.TXT"]
+    assets["Decoded assets: textures, meshes, audio, dialog, scripts, tables"]
+    engine["The port: native window and browser"]
+    viewers["Viewers and data pages"]
+    files["PNG / WAV / OBJ / JSON / glb on disk"]
+    patcher["legaia-patcher: randomizer, translation, mods"]
+    out["Patched .bin or shareable PPF"]
 
-**Native tools and engine.** Prebuilt binaries for Linux, Windows and macOS on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases), or `cargo build --release`. To play, start `legaia-engine` with no arguments (or double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS): it asks for your disc image once, remembers it, and opens the title screen.
-`legaia-extract` turns a disc into PNG / WAV / OBJ / JSON; `legaia-engine play-window` is the windowed engine (field scenes with random encounters into player-driven battles, the full menu stack, shops, inns, level-ups, the minigames, and MDEC cutscene playback with synced XA audio); `legaia-engine export-glb` bakes scenes, NPCs and equipment to `.glb` for Blender, Unity or a [VRChat world](docs/tooling/vrchat-world-export.md); `asset-viewer` browses every format interactively; plus `save-tool`, `legaia-patcher`, and a CLI per format.
+    disc --> iso --> prot --> assets
+    assets --> engine
+    assets --> viewers
+    assets --> files
+    prot --> patcher --> out
+    out -. "plays in the port or an emulator" .-> engine
+```
 
-**Modding and translation.** [`legaia-patcher`](docs/tooling/randomizer.md) patches your own `.bin` in place or emits a PPF: it shuffles drops, encounters, chests, steals, arts, doors, shops, casino prizes, prices, equipment, starting items and level, and battle tuning - several features are hand-assembled MIPS hooks injected into dead space - plus content mods: the Delilas party swap, custom monster models and skins, texture and save-icon replacement, and the Super-Arts move list.
-Its [`translate`](docs/tooling/translation/index.md) subcommands export the game's dialog and UI text to editable YAML and reimport it in place, the basis for community language packs; [`translate lift-official`](docs/tooling/pal-localizations.md) re-keys another disc's text (official PAL, or fan-patched) onto the USA disc where it fits.
+## What it is, and is not
 
-**The research itself.** Byte-level [format specs](docs/formats/overview.md) with confidence levels and Ghidra provenance, [subsystem documentation](docs/subsystems/) of how the engine actually works (VMs, battle formulas, audio, renderer, minigames), and the [tooling](docs/tooling/) that produced it all - reproducible from a retail disc.
+A **port**, in the [ScummVM](https://www.scummvm.org/) / [OpenRCT2](https://github.com/openrct2/OpenRCT2) / [OpenMW](https://github.com/OpenMW/openmw) / [OpenLara](https://github.com/XProger/OpenLara) sense: fresh Rust written from the project's own reverse-engineering record (Ghidra-traced function dumps and live emulator probes), reading the original game data at runtime. It is not a decompilation, not a byte-matching rebuild, and not a static recompilation of the executable. The `-re` in the name is both *reverse-engineering* and *re-implementation*.
+
+**Retail is the ground truth, not a cage.** The traced disassembly and the parity oracles pin the original's arithmetic, RNG, script pacing and save layout, and a retail-faithful mode stays testable. On top of it the port adds things the original never had - enhanced lighting, volumetric ground fog, see-through walls around the player, free-angle movement, an orbit camera, [VR](docs/subsystems/vr-mode.md) - as toggles, on by default where they are clearly better, with retail one switch away. Per-knob defaults: [`docs/subsystems/engine.md`](docs/subsystems/engine.md#fidelity-and-enhancements).
+
+One engine runs behind every host. The simulation crates carry no GPU, windowing or audio-device dependency, so the same code ticks natively and as WebAssembly:
+
+```mermaid
+flowchart LR
+    subgraph sim["Shared simulation"]
+        vm["engine-vm: field, move, motion, effect, battle VMs"]
+        core["engine-core: World, scenes, battle, menus, saves"]
+        session["engine-session: per-frame order, BGM director"]
+        vm --> core --> session
+    end
+    session --> native["legaia-engine play-window<br/>winit + wgpu + cpal"]
+    session --> web["Browser play page<br/>WASM + WebGL + WebAudio"]
+    core --> mini["Browser minigames page"]
+```
+
+## What works, and what is rough
+
+Most of the game works:
+
+- **Boot and story.** Launcher, title screen, New Game through the opening (prologue, narration crawl, FMVs), Continue from a save. An automated [full-game ladder](docs/tooling/full-game-ladder.md) drives every story segment from New Game to the ending credits with pad input alone, each segment seeded from a retail save at its milestone.
+- **Field.** Every scene on the disc loads and runs its own scripts through the ported field VM: retail movement and collision, NPCs and branching dialogue, doors, chests, cutscene choreography, the world map.
+- **Battle.** Random and story encounters into player-driven battles: the command ring, Tactical Arts with Super and Miracle Arts, Seru magic and summons, items, Spirit, running away, then spoils, level-ups and Seru capture.
+- **Menus and towns.** The pause menu and the screens behind it (status, items, magic, equipment, options), shops, inns, the save screen.
+- **Minigames.** Fishing, the casino slot machine, Noa's dance, Baka Fighter and the Muscle Dome, driven by the tables on your disc.
+- **Audio and video.** Music through a from-scratch SPU and sequencer against each scene's own sound bank, sound effects, XA voice, and MDEC cutscenes with synced audio.
+- **Saves.** The engine's own save files, plus real PSX memory-card images an emulator still accepts.
+- **Tooling.** One-command extraction of the whole disc, the randomizer and content mods, language packs, and reproducible static analysis.
+
+What is still rough:
+
+- **Bugs happen.** Expect the occasional visual glitch, mistimed animation or stuck script. The ladder above is segmented and scripted; it is not a claim that one unattended run plays start to finish. [Issues](https://github.com/AndrewAltimit/legend-of-legaia-re/issues) naming the scene and what you did are welcome.
+- **Parity is measured, not finished.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
+- **Some sounds are the port's pick.** Where retail's sound-effect id for an event is untraced, the port plays the closest cue and labels it as its own choice ([details](docs/guides/playing-and-viewing.md#5-what-you-hear)).
+- **Native input is keyboard only.** The browser play page reads a gamepad; the native window does not.
+- **USA disc only for the port.** Other regions' discs extract, and an official PAL translation can be lifted into a USA language pack, but the engine and the patcher target `SCUS-94254`.
+- **Library APIs move.** The binaries and file formats are the surface to rely on; the Rust crate APIs change freely.
+- **Open questions remain** in the reverse engineering itself: [open threads](docs/reference/open-rev-eng-threads.md).
+
+## Quick start
+
+### Play in the browser
+
+Open the [play page](https://andrewaltimit.github.io/legend-of-legaia-re/play.html), pick your disc image, play - flat, or in VR over WebXR.
+
+### Play natively
+
+Download the archive for your platform from the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases) and start the engine with no arguments (double-click `Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once, remembers it, and opens the title screen.
+
+| Platform | Archive |
+|---|---|
+| Linux x86_64 (glibc 2.28+) | `legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz` |
+| Linux arm64 | `legaia-tools-<version>-aarch64-unknown-linux-gnu.tar.gz` |
+| Windows x86_64 | `legaia-tools-<version>-x86_64-pc-windows-gnu.zip` |
+| macOS 11+ (Apple silicon + Intel) | `legaia-tools-<version>-universal-apple-darwin.tar.gz` |
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing       # optional: verify the download
+tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
+cd legaia-tools-<version>-x86_64-unknown-linux-gnu
+./legaia-engine                                # launcher, then the title screen
+```
+
+Every archive carries every tool. `README-PLAY.txt` inside covers first launch, including the macOS Gatekeeper prompt; [`docs/tooling/releases.md`](docs/tooling/releases.md) covers what is in an archive and how it is built. The engine and `asset-viewer` want a GPU and, on Linux, ALSA.
+
+### Build from source
+
+Needs a Rust toolchain (edition 2024).
+
+```bash
+cargo build --release          # every binary lands in target/release/
+```
+
+### The commands worth knowing
+
+Paths below are for a source build; from a release archive drop the `target/release/` prefix.
+
+```bash
+DISC="/path/to/Legend of Legaia (USA).bin"     # a .cue works anywhere a .bin does
+
+# Check the dump against the known fingerprint.
+./target/release/disc-extract verify "$DISC"
+
+# Play: the launcher, straight into a scene, or from the title screen.
+./target/release/legaia-engine
+./target/release/legaia-engine play-window --disc "$DISC" --scene town01
+./target/release/legaia-engine play-window --disc "$DISC" --boot-ui
+./target/release/legaia-engine list-scenes --disc "$DISC"
+
+# Watch an FMV with its audio.
+./target/release/legaia-engine play-str MOV/MV1.STR --disc "$DISC"
+
+# Extract everything: disc files, PROT entries, sub-assets, PNGs, XA WAVs, font.
+./target/release/legaia-extract "$DISC" --out extracted
+
+# Browse what was extracted.
+./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
+
+# Bake a scene (world, NPCs, animated props) to .glb.
+./target/release/legaia-engine export-glb --scene town01 --out glb-export
+
+# Randomizer and translation: each lists its feature flags under --help.
+./target/release/legaia-patcher randomize --help
+./target/release/legaia-patcher translate --help
+```
+
+Every binary answers `--help`, and `legaia-engine --help` groups its subcommands into playing, exploring and development diagnostics. The guides take each task end to end:
+
+- [Getting started](docs/guides/getting-started.md) - from a release archive to an extracted disc, and every tool at a glance.
+- [Playing and viewing](docs/guides/playing-and-viewing.md) - controls, enhancement toggles, cheats, minigames, saves, the browser build.
+- [Extracting assets](docs/guides/extracting-assets.md) - textures, models, audio, movies, data tables.
+- [Modding and translation](docs/guides/modding-and-translation.md) - randomizer, manual edits, texture replacement, saves.
+- [Translating](docs/guides/translating.md) - a language pack, step by step.
 
 ## You bring the disc
 
@@ -47,87 +175,7 @@ Concretely, and non-negotiably:
 
 If you are adding code here, treat "no Sony bytes get committed" as the one hard constraint that outranks everything else - including decompiled C that carries literal asset data or text strings.
 
-## Getting started
-
-Step-by-step walkthroughs live in [`docs/guides/`](docs/guides/getting-started.md) - getting started, extracting assets, playing and viewing, modding and translation. The short version:
-
-### Install a prebuilt release
-
-Tagged releases publish prebuilt binaries on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases). This is the fastest path if you just want to extract assets or run the viewers - no Rust toolchain required. Every archive carries every tool, the engine and the asset viewer included.
-
-| Platform | Archive |
-|---|---|
-| Linux x86_64 | `legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz` |
-| Linux arm64 | `legaia-tools-<version>-aarch64-unknown-linux-gnu.tar.gz` |
-| Windows x86_64 | `legaia-tools-<version>-x86_64-pc-windows-gnu.zip` |
-| macOS 11+ (Apple silicon + Intel) | `legaia-tools-<version>-universal-apple-darwin.tar.gz` |
-
-Download the archive for your platform, unpack it, and run the binaries out of the unpacked directory:
-
-```bash
-tar -xzf legaia-tools-<version>-x86_64-unknown-linux-gnu.tar.gz
-cd legaia-tools-<version>-x86_64-unknown-linux-gnu
-./legaia-extract --help
-```
-
-Each release also publishes a `SHA256SUMS` manifest, so you can verify what you downloaded (on a Mac, `shasum -a 256 -c` does the same):
-
-```bash
-sha256sum -c SHA256SUMS --ignore-missing
-```
-
-`README-PLAY.txt` in each archive says how to start the game; `README.txt` lists every tool.
-
-The Linux builds need glibc 2.28 or newer (Debian 10 / RHEL 8 / Ubuntu 18.10 and up). `legaia-engine` and `asset-viewer` additionally want a GPU and, on Linux, ALSA - both standard on a desktop install.
-
-On Windows, double-click `Legend of Legaia.exe` to play (it starts `legaia-engine.exe` without a console window), or run the `.exe`s from a terminal in the unpacked directory. On macOS, `Legend of Legaia.app` is ad-hoc signed but not notarised, so Gatekeeper asks you to confirm the first launch; `README-PLAY.txt` gives the steps. Every binary supports `--help`, and every subcommand supports `<binary> help <subcommand>` for its flags.
-
-See [`docs/tooling/releases.md`](docs/tooling/releases.md) for what each archive contains and how releases are built.
-
-### Build from source
-
-Requires a Rust toolchain (`cargo`, edition 2024).
-
-```bash
-cargo build --release
-```
-
-Binaries land in `target/release/`. Note that `legaia-engine` is the *binary* name while the *package* is `legaia-engine-shell`, so `cargo build -p legaia-engine-shell` builds just that crate. Each crate's command-line binary sits behind its default-on `cli` feature, so a library-only build (`default-features = false`) leaves the CLI dependencies out.
-
-### Iterating on tests
-
-`release` carries `lto = "thin"` and `codegen-units = 1`, which is right for a
-shipped binary and wrong for a test binary built once and run once: the
-relink after a one-line source change is dominated by link-time optimisation.
-The `release-test` profile keeps `release`'s optimisation level but drops LTO
-and raises `codegen-units`:
-
-```bash
-cargo test --workspace --profile release-test
-cargo test -p legaia-engine-core --profile release-test --test integration foo::   # one tests/foo.rs
-```
-
-A crate's `tests/*.rs` files build as **one** `integration` binary (each file
-is a `mod` of `tests/integration.rs`), so a test file is selected by its
-module path rather than by `--test foo`. A new `tests/foo.rs` needs its
-`mod foo;` line or it is never compiled; `scripts/ci/check-integration-tests.py`
-catches the omission. The profile's tradeoff is a second set of artifacts in
-`target/`, and test binaries whose codegen no longer matches a release build.
-
-CI tests under `release-test` as well; its `ci` job still runs
-`cargo build --release` after the test step, so the shipped profile is built
-and linked on every run.
-
-Optional extras, only needed for the reverse-engineering workflows:
-
-- Docker + docker-compose, for headless Ghidra runs.
-- mednafen or PCSX-Redux plus a save state at the scene you care about, for runtime overlay capture.
-
-### Verify your disc image
-
-```bash
-./target/release/disc-extract verify "/path/to/Legend of Legaia (USA).bin"
-```
+The reference dump:
 
 | Disc | SHA-256 (Mode2/2352 .bin) |
 |---|---|
@@ -135,189 +183,51 @@ Optional extras, only needed for the reverse-engineering workflows:
 
 This hash is a sanity check against the project author's dump; different dumping tools can produce a different whole-image hash for the same disc. For canonical per-track verification, cross-check against [Redump](http://redump.org/disc/425/).
 
-### Extract everything
-
-```bash
-./target/release/legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
-```
-
-Runs verify → disc → PROT → categorize → streaming sub-asset extract → PNG → CD-XA demux → TIM catalogs → dialog font. A `.cue` sheet works too (its BINARY track is resolved automatically). Skip stages with `--skip-png` (streaming-container PNGs), `--skip-xa` (CD-XA demux), `--skip-catalog` (TIM-catalog TSVs), `--skip-font` (dialog-font artifacts), or `--skip-verify` (input SHA-256). Pass `-v` for per-file output.
-
-Per-stage invocations - `disc-extract`, `prot-extract`, `lzs-decode`, and friends - are in [`docs/tooling/extraction.md`](docs/tooling/extraction.md).
-
-## Using the tools
-
-Each crate's `README.md` documents its own CLI in full, and the
-[user guides](docs/guides/getting-started.md) walk the common workflows end to
-end. The examples below use the source-build paths (`./target/release/<bin>`);
-with a release archive the same binaries sit in the unpacked directory, so run
-`./<bin>` (or `<bin>.exe` on Windows) instead. The highlights:
-
-```bash
-# Play: with no subcommand the engine runs its launcher - it asks for the disc
-# image once (native file picker, drag-and-drop, or a typed path), remembers it
-# in the platform config dir, and boots the title screen.
-./target/release/legaia-engine
-
-# What did the scene host actually resolve for a scene? TIMs uploaded to VRAM,
-# TMDs parsed, MES presence, SEQ / VAB / event-script counts.
-# `--disc` reads PROT.DAT + CDNAME.TXT straight off the image, so this works
-# with no `extracted/` directory at all.
-./target/release/legaia-engine info --disc "/path/to/game.bin" --scene town01
-./target/release/legaia-engine list-scenes --disc "/path/to/game.bin"
-
-# Tick the engine headlessly against a scene: drives the World, the camera, and
-# the BGM director; logs scene transitions. Boot-loop smoke check.
-./target/release/legaia-engine play --scene town01 --frames 600 --no-audio
-
-# The windowed engine on one scene, straight off the disc: walking, NPC
-# dialogue, doors, encounters into battles, the pause menu. `--boot-ui` starts
-# at the title screen instead; `--help` lists the enhancement toggles.
-./target/release/legaia-engine play-window --disc "/path/to/game.bin" --scene town01
-
-# Play an FMV from the disc with its interleaved XA audio in sync.
-./target/release/legaia-engine play-str MOV/MV1.STR --disc "/path/to/game.bin"
-
-# Bake a scene (world, NPCs, animated props) to .glb + a placement manifest.
-./target/release/legaia-engine export-glb --scene town01 --out glb-export
-
-# Persist input bindings to TOML (engine-core::input::Mapping).
-# The form is KEY=BUTTON: a friendly key name, then a PSX pad button name.
-./target/release/legaia-engine config set --binding Z=Cross
-```
-
-Asset inspection, after `legaia-extract` has populated `extracted/`:
-
-```bash
-# PROT entry browser
-./target/release/asset-viewer prot extracted/PROT.DAT --cdname extracted/CDNAME.TXT
-
-# Field scene runner - drives the field VM against a real scene's event-script
-# records, with dialog rendering in the same window
-./target/release/asset-viewer field town01
-
-# Battle scene driver - boots the battle bundle, ticks the battle-action SM
-./target/release/asset-viewer battle-scene --queued-action 3
-
-# SEQ playback - the SsAPI-shape sequencer + a VAB through cpal, live audio
-./target/release/asset-viewer seq path/to.seq path/to.vab
-
-# Texture → PNG, mesh → OBJ (tim_scan / tmd_scan hits are named by offset:
-# raw_off<HEX>_<W>x<H>_<bpp>.tim / raw_off<HEX>.tmd)
-./target/release/tim convert extracted/tim_scan/<entry>/raw_off<HEX>_<W>x<H>_<bpp>.tim -o out.png
-./target/release/tmd dump-obj extracted/tmd_scan/<entry>/raw_off<HEX>.tmd --out mesh.obj
-
-# Disc-wide field-VM opcode census: which scenes issue which opcodes
-./target/release/asset field-op-census extracted/PROT --cdname extracted/CDNAME.TXT
-
-# PSX memory-card reader
-./target/release/save-tool dir ~/.mednafen/sav/Legend*.0.mcr
-```
-
 ## Documentation
 
-Start at **[`docs/overview.md`](docs/overview.md)** - the elevator pitch plus how the layers stack from disc down to sub-asset. From there the docs are organised topic-first:
+Start at [`docs/overview.md`](docs/overview.md): how the layers stack from disc to sub-asset, and where to read next for any task.
 
-- **[`docs/formats/`](docs/formats/overview.md)** - per-format byte-level specs (PROT, LZS, TIM, TMD, VAB, MES, ANM, MDT, scene bundles, effect bundles, overlays, …), each with a confidence level and Ghidra provenance. Read the relevant page before writing a parser.
-- **[`docs/subsystems/`](docs/subsystems/)** - how the runtime engine works:
-  - Boot + assets: [boot](docs/subsystems/boot.md), [asset loader](docs/subsystems/asset-loader.md).
-  - VMs: [script](docs/subsystems/script-vm.md), [actor](docs/subsystems/actor-vm.md), [effect](docs/subsystems/effect-vm.md), [move](docs/subsystems/move-vm.md), [motion](docs/subsystems/motion-vm.md).
-  - Render + audio: [renderer](docs/subsystems/renderer.md), [shading](docs/subsystems/shading.md), [audio](docs/subsystems/audio.md), [cutscene](docs/subsystems/cutscene.md), [VR mode](docs/subsystems/vr-mode.md).
-  - Battle: [battle](docs/subsystems/battle.md), [battle action SM](docs/subsystems/battle-action.md), [battle formulas](docs/subsystems/battle-formulas.md), [cast modules](docs/subsystems/cast-module.md).
-  - World + field: [world map](docs/subsystems/world-map.md), [field locomotion](docs/subsystems/field-locomotion.md), [field menu](docs/subsystems/field-menu.md), [shop](docs/subsystems/shop.md), [inn](docs/subsystems/inn.md), [level-up](docs/subsystems/level-up.md), [save screen](docs/subsystems/save-screen.md).
-  - Minigames: [fishing](docs/subsystems/minigame-fishing.md), [slot machine](docs/subsystems/minigame-slot-machine.md), [Baka Fighter](docs/subsystems/minigame-baka-fighter.md), [dance](docs/subsystems/minigame-dance.md), [Muscle Dome](docs/subsystems/minigame-muscle-dome.md).
-  - [Engine reimplementation](docs/subsystems/engine.md) - the port's boundaries.
-- **[`docs/tooling/`](docs/tooling/)** - how to drive the repo: [extraction CLIs](docs/tooling/extraction.md), [Ghidra setup](docs/tooling/ghidra.md), [overlay capture](docs/tooling/overlay-capture.md), [mednafen automation](docs/tooling/mednafen-automation.md), [PCSX-Redux automation](docs/tooling/pcsx-redux-automation.md), [randomizer](docs/tooling/randomizer.md), [translation](docs/tooling/translation/index.md), [VRChat / glTF export](docs/tooling/vrchat-world-export.md), [port catalog](docs/tooling/port-catalog.md), [retail comparison](docs/tooling/retail-compare.md), [host drift](docs/tooling/host-drift.md) (keeping the play hosts in step).
-- **[`docs/reference/`](docs/reference/)** - [key Ghidra-traced functions](docs/reference/functions.md), [RAM map + globals](docs/reference/memory-map.md), [region + build data](docs/reference/builds.md), [curated game-data tables](docs/reference/gamedata.md), [open RE threads](docs/reference/open-rev-eng-threads.md) (the live hunts), [settled threads](docs/reference/re-settled-threads.md) (the answers, each with an evidence grade), and [do not re-walk](docs/reference/re-do-not-re-walk.md) (falsified hypotheses worth not re-deriving).
-
-Contributing? Read [`CONTRIBUTING.md`](CONTRIBUTING.md), then [`CLAUDE.md`](CLAUDE.md) - the latter is the full repository map and the catalogue of format gotchas that bite repeatedly (especially the MIPS LUI+ADDIU pair problem).
-
-## Disc-gated tests
-
-```bash
-LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --profile release-test
-```
-
-Many integration tests touch a real disc or extracted directory - the full-pipeline validation suite, the per-scene asset-chain walk, the SEQ+VAB audio chain, the randomizer round-trip oracles, and the memory-card save round-trip. Find them with `grep -rl LEGAIA_DISC_BIN crates/*/tests`; each is named for what it covers.
-
-With `LEGAIA_DISC_BIN` unset, every one of them skips and passes. That's intentional - it's what lets CI run without redistributing Sony data.
+| Section | Holds |
+|---|---|
+| [`docs/guides/`](docs/guides/getting-started.md) | Task-oriented walkthroughs for the shipped tools. |
+| [`docs/formats/`](docs/formats/overview.md) | Byte-level specs for every format on the disc, each with a confidence level and Ghidra provenance. |
+| [`docs/subsystems/`](docs/subsystems/engine.md) | How the runtime works - the VMs, battle, renderer, audio, field, menus, minigames - and the port's own architecture. |
+| [`docs/tooling/`](docs/tooling/extraction.md) | Extraction CLIs, the [randomizer](docs/tooling/randomizer.md), [translation](docs/tooling/translation/index.md), Ghidra and emulator automation, and the parity instruments. |
+| [`docs/reference/`](docs/reference/functions.md) | Traced functions, the RAM map, builds, curated game data, and the [open](docs/reference/open-rev-eng-threads.md) / [settled](docs/reference/re-settled-threads.md) / [falsified](docs/reference/re-do-not-re-walk.md) research threads. |
 
 ## Repository layout
 
+A Cargo workspace; each crate has a one-page `README.md`. [`CLAUDE.md`](CLAUDE.md) is the full map - every doc page and every crate, one line each.
+
+| Path | Holds |
+|---|---|
+| `crates/iso`, `prot`, `lzs`, `asset` and the per-format crates | Disc reader, PROT archive, LZS, the format hub, and a parser per format (`tim`, `tmd`, `vab`, `seq`, `xa`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec`, `save`). |
+| `crates/extract` | `legaia-extract`, the one-shot pipeline. |
+| `crates/engine-*`, `render-kernels` | The port: simulation (`engine-core`, `engine-vm` and the kernels split out of them), rendering, audio, and the `legaia-engine` binary (`engine-shell`). |
+| `crates/asset-viewer`, `web-viewer` | The native viewer, and the WASM build behind the site. |
+| `crates/patcher` over `disc-patch`, `translate`, `code-hooks`, `arts-patch`, `texture-replace`, `party-swap`, `delilas-party` | `legaia-patcher` and the layers under it. |
+| `crates/mednafen`, `pcsxr`, `parity` | Emulator save-state readers and the retail parity oracles. |
+| `crates/gamedata`, `cheats`, and `data/` | Curated, non-Sony reference tables. |
+| `docs/`, `site/` | The technical reference, and the project site's sources. |
+| `ghidra/`, `scripts/` | Analysis scripts (dumps are gitignored), CI gates, capture automation ([map](scripts/README.md)). |
+| `extracted/` | Your disc's assets. Sony bytes, gitignored, never committed. |
+
+## Contributing
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the rules of engagement and the gates. The short form:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets --workspace -- -D warnings
+cargo test --workspace --profile release-test
+LEGAIA_DISC_BIN="/path/to/Legend of Legaia (USA).bin" cargo test --workspace --profile release-test
 ```
-legend-of-legaia-re/
-├── Cargo.toml                    # workspace root; every dependency declared once here
-├── docker-compose.yml            # ghidra service (UID/GID-matched user)
-├── docker/ghidra.Dockerfile      # wraps blacktop/ghidra:latest with host-UID mapping
-├── crates/
-│   │   # Track 1 - preservation (disc → PNG / WAV / OBJ / JSON)
-│   ├── bytes/                    # Checked little-endian readers (asset, the engine + patcher crates)
-│   ├── iso/                      # PSX disc reader + ISO9660 walker + sector write-back
-│   ├── prot/                     # PROT.DAT TOC + CDNAME + standalone TIM-pack
-│   ├── lzs/                      # Legaia LZS decoder (FUN_8001a55c) + re-packer
-│   ├── asset/                    # Asset dispatcher, streaming, bundle detectors, categorize
-│   ├── game-tables/              # Static SCUS / overlay data tables (items, equipment, spells, ...), re-exported by asset
-│   ├── battle-models/            # Monster archive, player battle files, equipment assembly, glTF export
-│   ├── overlay-images/           # Code-overlay images: detection, static extraction map, slot-B layout, resident tables
-│   ├── tim/                      # PSX TIM parser + PNG exporter + software VRAM model
-│   ├── tmd/                      # Legaia TMD parser + primitive walker + OBJ export
-│   ├── vab/                      # VAB sound bank extractor + SPU-ADPCM decoder
-│   ├── xa/                       # XA-ADPCM decoder + CD-XA demux + WAV exporter
-│   ├── seq/                      # PsyQ SEQ parser + CLI inspector
-│   ├── mdt/                      # Move table (Tactical Arts) parser
-│   ├── art/                      # Tactical Arts data + arts-name / arts-voice tables
-│   ├── mes/                      # MES dialog container parser
-│   ├── anm/                      # ANM animation container parser
-│   ├── save/                     # Character record + memory-card walker + engine saves
-│   ├── font/                     # Dialog font extraction + atlas / layout API
-│   ├── mdec/                     # PSX MDEC from-scratch decoder (Iki bitstream → RGBA8)
-│   ├── extract/                  # Top-level pipeline driver
-│   ├── mednafen/                 # Mednafen save-state parser + VRAM / SPU parity oracles
-│   ├── pcsxr/                    # PCSX-Redux save-state main-RAM reader
-│   ├── gamedata/                 # Curated walkthrough-mined tables (ground-truth labels)
-│   ├── cheats/                   # GameShark / Mednafen cheat-database parser + classifier
-│   ├── patcher/                  # Randomizer / translation / content mods (Delilas swap, custom models) for a user-supplied .bin
-│   ├── disc-patch/               # Patcher foundation: same-size PROT edits, EDC/ECC, PPF writer, free-space ledger
-│   ├── translate/                # Language-pack pipeline behind `legaia-patcher translate`
-│   ├── party-swap/               # Party / Delilas battle-model swap kernels (pure transforms)
-│   ├── texture-replace/          # Texture / battle-art / monster-skin / save-icon replacement
-│   ├── code-hooks/               # MIPS encoders + simulator, injection arenas, self-contained code-hook mods
-│   │   # Track 2 - engine reimplementation (from-scratch Rust)
-│   ├── engine-core/              # World, scene host, camera, menu runtime, save round-trip
-│   ├── engine-battle/            # World-free battle kernels: monster AI, spoils, AP gauge, catalogs, encounters
-│   ├── engine-minigames/         # Minigame rules engines: slot, Baka Fighter, dance, prize exchange, Muscle Dome ladder
-│   ├── engine-fishing/           # The fishing rules engine: pond session, rod / lure / line actors, hub, floor grid
-│   ├── engine-minigame-scenes/   # Minigame 3D scene surfaces loaded off a PROT reader: Baka Fighter duel, Muscle Dome arena
-│   ├── engine-effects/           # World-free effect kernels: effect scripts, emitters, summon scene graph, screen FX
-│   ├── engine-system/            # World-free runtime system: pad pump, stream installer, sound state, fades
-│   ├── engine-menus/             # World-free menu front end: catalogs, item / spell / equip sessions, menu screens
-│   ├── engine-dialog/            # World-free dialog pager, text balloon, inline-dialogue + cutscene-timeline state
-│   ├── engine-field/             # World-free field kernels: actor programs, follow camera, event queue, world-map controller
-│   ├── engine-ui/                # Renderer-agnostic UI draw-list builders
-│   ├── render-kernels/           # wgpu-free render kernels both hosts share (GTE, CPU raster, emitters, lighting)
-│   ├── engine-render/            # winit + wgpu, software PSX VRAM emulation, text overlay
-│   ├── engine-audio/             # cpal mixer + from-scratch SPU + SEQ sequencer
-│   ├── engine-vm/                # Actor / field / effect / move / motion VMs (re-exports the battle VM kernels)
-│   ├── engine-battle-vm/         # Battle action SM, battle formulas, battle camera script, cast-module ticks
-│   ├── engine-session/           # BootSession + BGM director both play hosts run (wasm32-clean)
-│   ├── engine-screens/           # Shop / prize-exchange / inn screens, composed once for both hosts
-│   ├── parity/                   # Retail parity oracles + retail comparison corpus (tool code)
-│   ├── engine-shell/             # `legaia-engine` binary: launcher, play-window, subcommands
-│   ├── asset-viewer/             # Combined viewer: TIM, TMD, stage, VAB, SEQ, field, battle
-│   └── web-viewer/               # WASM target - disc browser + viewers in the browser
-├── data/                         # Curated non-Sony reference data (gamedata, cheats)
-├── docs/                         # Topic-first technical reference (see "Documentation")
-├── ghidra/
-│   ├── projects/                 # Ghidra project DB (gitignored)
-│   └── scripts/                  # Jython analysis scripts + per-function dumps (gitignored)
-├── scripts/                      # Host-side helpers (CI gates, capture automation)
-├── site/                         # Project landing site
-└── extracted/                    # Your disc's assets - Sony bytes, never committed (gitignored)
-```
+
+The last line turns on the disc-gated tests; without the variable they skip and pass. Reverse-engineering work additionally wants Docker for headless Ghidra ([setup](docs/tooling/ghidra.md)) and, for runtime capture, mednafen or PCSX-Redux.
 
 ## Status and license
 
-**Status:** an active research project. Expect no API stability.
+**Status:** a working port under active development. Most of the game plays; [What works, and what is rough](#what-works-and-what-is-rough) says where it does not yet. Prebuilt releases are on the [Releases page](https://github.com/AndrewAltimit/legend-of-legaia-re/releases).
 
 **License:** dual-licensed at your option under either the [Unlicense](LICENSE) (public-domain dedication) or the [MIT License](LICENSE-MIT). Apache-2.0 is intentionally not offered - this project is meant to be as close to public domain as the law in your jurisdiction allows, with no patent-retaliation strings attached: copy it, fork it, sell it, patent improvements on it, just don't stop anyone else from doing the same.
 

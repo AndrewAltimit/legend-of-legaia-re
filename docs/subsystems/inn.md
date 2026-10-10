@@ -1,17 +1,37 @@
 # Inn Subsystem
 
-Covers the HP / MP restore flow used at in-game inns. Retail has **no inn
-overlay, no inn opcode and no inn cost table**: each inn is an ordinary
-field-VM interaction record in its scene's MAN, the price is a script literal
-(see *Retail cost source* below), and the whole stay - offer, choice, gate,
-debit, fade, restore - runs as one pass of that record through the field VM.
-The port executes it the same way, so the reachable in-game inn is the retail
-script, not an engine routine (see *The trigger* below).
+How resting at an inn restores HP / MP. Retail has **no inn overlay, no inn
+opcode and no inn cost table**. Each inn is an ordinary field-VM interaction
+record in its scene's MAN (the per-scene script container): the price is a
+literal in the script, and the whole stay - offer, choice, gold gate, debit,
+fade, restore - is one pass of that record through the
+[field VM](script-vm.md). The port runs the same record through its field VM,
+so the inn you reach in game is the retail script, not an engine routine.
 
-`engine-core::inn` additionally carries an engine-side `InnSession` prompt
-(`MenuRuntime::open_inn` / `open_scene_inn` over the scanned
-`SceneHost::scene_inn_cost`). That is a presentation the retail path does not
-use and no host reaches - see *Open items*.
+## At a glance
+
+| Question | Answer |
+|---|---|
+| Where is the price? | A `u16` literal in the scene MAN: gold gate `0x4E` sub-op 3 followed by a negative `0x3A` `ADD_MONEY`. |
+| What marks a dialogue as an inn? | Nothing. The option picker's Yes jump simply lands on the gate. |
+| What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
+| Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
+| Cost scanner | `legaia_asset::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/asset/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+
+```mermaid
+flowchart TD
+    T["talk to innkeeper"] --> O["greeting, price, offer"]
+    O --> P{"2A picker"}
+    P -->|No| D["decline line"]
+    P -->|Yes| C["player clip beat<br/>(spin on clip-end latch)"]
+    C --> G{"4E sub-3:<br/>gold below cost?"}
+    G -->|yes| R["can't-afford line"]
+    G -->|no| M["3A: gold -= cost"]
+    M --> F["thank-you, BGM release, fade"]
+    F --> H["4C 82 slot 0/1/2:<br/>restore HP / MP"]
+    H --> X["optional 3F warp to DREAM scene"]
+```
 
 ## Retail cost source (field-VM script literals)
 
@@ -39,8 +59,8 @@ is `0x801E0B34` = `lw s1,0x45a4(0x8008)` - `_DAT_800845A4`, the casino coin
 bank. Read the disassembly rather than
 `ghidra/scripts/funcs/overlay_0897_801de840.txt`'s C: its case labels collapse
 these arms, and arms `5`..`8` share one body (`0x801E0B0C`).
-Op `0x3A` (`ADD_MONEY`, `docs/subsystems/script-vm.md`) applies the signed
-24-bit delta.
+Op `0x3A` (`ADD_MONEY`, [script-vm](script-vm.md)) applies the signed 24-bit
+delta.
 
 After the debit the same script continues in-line: the innkeeper's
 thank-you text, per-party-slot `0x4C` records on slots 0/1/2 (the restore),
@@ -77,8 +97,7 @@ The **no**-jump target runs its own clip beat and lands on the decline line;
 the gate's skip target lands on the can't-afford line. Both are inside the
 same record, so a stay never leaves the field VM.
 
-Two details of that layout are easy to get wrong, and each one alone is enough
-to make the inn unreachable in a port:
+Two details of that layout decide whether the Yes branch reaches the gate:
 
 - **The open byte is `0x2A`, not `0x27`.** `FUN_80038050` - the inline-script
   control handler that applies the chosen option's jump - treats `0x27`,
@@ -106,32 +125,42 @@ The Yes branch's full gesture is the door-swing shape aimed at the player -
 `AC F8 01` un-hold, `A2 F8 04` poke the clip, clear + spin, `AC F8 03`
 un-clamp, `4A 03 00`, `AB F8 03` re-clamp, clear + spin again, then
 `A2 F8 02` to hand the player back to the locomotion move. Every operand
-there is an animation bit of `+0x62`, which is why a port that read them as
-the record's own local flags saw a bit nothing ever set.
+there is an animation bit of the player's `+0x62`, not one of the record's
+own local flags.
 
-Engine port of the whole path: `World::trigger_field_interact` →
-`World::drive_inline_dialogue` → `World::step_inline_dialogue`
-([`crate::inline_dialogue`](../../crates/engine-dialog/src/inline_dialogue.rs)) →
-`legaia_engine_vm::field::step`. The runner binds the poked actor's `+0x62`
-into the executing context around each cross-context `2B`/`2C`/`2D`, mirrors
-it back, and parks on the clip-end spin until the player's clip cursor
-(`field_env::PropAnimBank::actor_clips`, advanced by the `FUN_800204F8` port
-`PropAnim::tick`) latches the end itself - the runner writes no latch of its
-own. A field NPC a talk reaches before any `A2 <id> <clip>` poke gets a cursor
-on first use, as the player does: every spawned actor loops its clip from the
-template `+0x62`, so its latch lands once per wrap (`vozz` P1[7], the Genesis
-Tree, raises actor `0x06`'s clamp, clears the latch and spins on it before the
-scene goes on). A spin on such a resolved cursor parks even before the talk's
-first box opens. The gate reads the live purse through `FieldHost::party_bank_value`,
-the debit is the record's own `ADD_MONEY`, and the restore is its own
-`4C 82 <slot>` ops (`FieldHost::op4c_n8_sub2_restore_party_slot`). Retail's
-record is the only copy of a member's pools; the port also keeps them on the
-party actor, which a battle seats from and writes back
-over the record, so the restore projects the record onto that actor as every
-field heal does - a rest that skipped it was undone by the next fight. Disc-gated
-oracle: `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, which drives the
-real record from the interact call and asserts the gold delta and the pools on
-the Yes, No and can't-afford branches.
+## The port
+
+The engine path is `World::trigger_field_interact` ->
+`World::drive_inline_dialogue` -> `World::step_inline_dialogue`
+([`inline_dialogue`](../../crates/engine-dialog/src/inline_dialogue.rs)) ->
+`legaia_engine_vm::field::step`.
+
+- **Cross-context clip words.** The runner binds the poked actor's `+0x62`
+  into the executing context around each cross-context `2B` / `2C` / `2D`,
+  mirrors it back, and parks on the clip-end spin until the player's clip
+  cursor (`field_env::PropAnimBank::actor_clips`, advanced by the
+  `FUN_800204F8` port `PropAnim::tick`) latches the end itself. The runner
+  writes no latch of its own.
+- **NPC cursors.** A field NPC a talk reaches before any `A2 <id> <clip>` poke
+  gets a cursor on first use, as the player does: every spawned actor loops
+  its clip from the template `+0x62`, so its latch lands once per wrap. (`vozz`
+  P1[7], the Genesis Tree, raises actor `0x06`'s clamp, clears the latch and
+  spins on it before the scene goes on.) A spin on such a resolved cursor
+  parks even before the talk's first box opens.
+- **Gate, debit, restore.** The gate reads the live purse through
+  `FieldHost::party_bank_value`; the debit is the record's own `ADD_MONEY`;
+  the restore is its own `4C 82 <slot>` ops
+  (`FieldHost::op4c_n8_sub2_restore_party_slot`).
+- **Pool mirroring.** Retail's character record is the only copy of a member's
+  pools. The port also keeps them on the party actor, which a battle seats
+  from and writes back over the record, so the restore projects the record
+  onto that actor as every field heal does.
+
+The disc-gated oracle `inn_stay_field_vm_disc` drives the real `retock` record
+from the interact call and asserts the gold delta and the pools on the Yes, No
+and can't-afford branches.
+
+### The cost scanner
 
 The shared scanner is [`legaia_asset::inn_costs`]: a byte scan (robust to the
 dialogue-picker jump tables that desync a linear walk) for a gold compare
@@ -145,18 +174,36 @@ casino gold-to-coin counters (`koin*`; `koin4` carries the only sub-10 u32
 sites, 8,500..90,000 G). Free rests (Rim Elm's bed, Biron) simply have no
 gate + debit pair in their scripts.
 
-## Flow overview (the engine-side `InnSession` prompt)
+At scene load `SceneHost::load_scene` scans the cached MAN into
+`scene_gold_charges`; `scene_inn_cost()` is the first sub-3 charge. Oracle:
+`inn_cost_scene_disc` (`retock`'s 240 G stay resolves; free-rest `town01`
+resolves nothing).
 
-This section describes the port's **alternative** presentation - a menu
-session with its own cost window - which nothing on the reachable path opens
-(see *Open items*). The in-game stay is the field-VM record above.
+### The dream hand-off
+
+Some inns append a story-flag-gated tail that warps to a `DREAM` scene after
+the restore (the `0x3F` transition above). The restore runs first and
+unconditionally, so a stay is complete without it. The dream scenes themselves
+are not covered by an oracle.
+
+## The engine-side `InnSession` prompt
+
+`engine-menus::inn` (re-exported as `engine-core::inn`) also carries a
+menu-style prompt with its own cost window. **Retail has no such screen and no
+play host opens it**: the reachable stay is the field-VM record above, and
+routing a host into the prompt would replace the innkeeper's real dialogue
+with an invented panel. It stays as a direct entry for tests and tooling
+(`MenuRuntime::open_inn(cost)`, or `open_scene_inn(&SceneHost)` which uses the
+scanned cost and installs nothing in a free-rest scene). When that entry opens
+one, both hosts draw it through the shared fallback panel
+(`legaia_engine_screens::fallback_panel_draws`).
 
 | Phase | Sub-screen | Description |
 |---|---|---|
 | Cost prompt | `InnConfirm` | Shows the cost for one night and a Yes / No cursor. |
 | Rest fade | `InnSleep` | Transient screen that plays the rest fade after a Yes. |
-| Commit | - | Deducts gold, restores all active party members' HP/MP. |
-| Exit | - | Returns to field without resting if No or gold insufficient. |
+| Commit | - | Deducts gold, restores all active party members' HP / MP. |
+| Exit | - | Returns to field without resting on No or insufficient gold. |
 
 The menu state machine (`engine-vm::menu`) routes the prompt: `InnConfirm` Yes
 (slot 0) commits the rest and routes to the transient `InnSleep` fade, which
@@ -177,61 +224,8 @@ The record is written directly because outside a battle it is the pool:
 `World::save_party` folds actor mirrors back only in battle, since a field's
 actor slots past the walking player belong to the scene.
 
-## Key data structure
-
-### `InnSession` (`engine-core::inn`)
-
-| Field | Type | Meaning |
-|---|---|---|
-| `cost` | `u32` | Gold required for one stay |
-
-Key method:
-- `can_afford(world_money: i32) -> bool` - `world_money >= cost`
-
-Installed on `MenuRuntime` by `open_scene_inn(&SceneHost)` (resolves the
-loaded scene's scanned cost and enters `InnConfirm`; returns `None` and
-installs nothing for free-rest scenes) or directly by `open_inn(cost)`.
-
-## Open items
-
-- **Per-scene costs - RESOLVED, wired.** The old "menu overlay DATA segment"
-  reading is falsified: no cost table exists anywhere. Each cost is a field-VM
-  script literal in the scene MAN (gate `0x4E` sub-3 + debit `0x3A`), parsed
-  by `legaia_asset::inn_costs` and swept disc-wide by
-  `crates/asset/tests/inn_costs_disc.rs` (see *Retail cost source* above).
-  Production wiring: `SceneHost::load_scene` scans the cached MAN into
-  `scene_gold_charges` (`scene_inn_cost()` = the first sub-3 charge), and
-  `MenuRuntime::open_scene_inn(&SceneHost)` opens `InnConfirm` with that
-  scanned cost - `open_inn(cost)` stays as the direct test / tooling entry.
-  Disc-gated oracle: `crates/engine-core/tests/inn_cost_scene_disc.rs`
-  (`retock`'s 240 G stay resolves; free-rest `town01` opens nothing).
-- **Trigger - RESOLVED, wired.** The stay runs as the innkeeper's own field-VM
-  record, reached by walking up and talking (*The trigger* above), and the
-  charge and restore are the record's own ops. The port had the ops and the
-  cost scan but not the path: the `0x2A` menu open byte decoded as nothing, the
-  gold gate read an empty purse because `FieldHost::party_bank_value` had no
-  engine implementation, and the clip-end spin ended the conversation one
-  instruction into the Yes branch. All three are closed and pinned by
-  `inn_stay_field_vm_disc`.
-- **`InnSession` has no production caller - disclosed, not wired.**
-  `MenuRuntime::open_inn` / `open_scene_inn` and the `InnConfirm` / `InnSleep`
-  sub-screens are an engine-side prompt with its own cost window and its own
-  commit kernel. Retail has no such screen and the reachable path does not pass
-  through one, so wiring a host into it would *replace* faithful innkeeper
-  dialogue with an invented panel rather than fill a gap. It stays as the
-  direct entry for tests and tooling. Both hosts **draw** the `InnConfirm` /
-  `InnSleep` panels when that entry opens one, through the one shared
-  fallback panel (`legaia_engine_screens::fallback_panel_draws`, in the
-  retail menu ink). This page used to record that the browser "deliberately
-  mirrors" the native window by not drawing them, which was false in the
-  direction that matters: the native window does draw them, so the browser was
-  one host short of a screen rather than in agreement with it. Deleting the
-  prompt outright is a legitimate future call; inventing a caller for it is
-  not.
-- **The `DREAM` hand-off is not mirrored.** Some inns append a story-flag-gated
-  tail that warps to a `DREAM` scene after the restore. The restore runs first
-  and unconditionally, so a stay is complete without it, but the dream scenes
-  themselves are not yet reached.
+`InnSession` holds one field, `cost: u32`, and one method,
+`can_afford(world_money: i32) -> bool` (`world_money >= cost`).
 
 ## Relationship to `legaia_save`
 

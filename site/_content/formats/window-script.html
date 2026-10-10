@@ -101,16 +101,6 @@
   </details>
   <p>In the port, <code>legaia_engine_core::menu_widget</code> resolves the same programs from the user's disc at boot and runs them through the interpreter in <code>legaia_engine_vm</code>.</p>
   <p>Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/window-script.md"><code>docs/formats/window-script.md</code></a>.</p>
-  <details class="disclosure">
-    <summary>History: the "sprite-walk interpreter" reading</summary>
-    <div class="disclosure-body">
-      <p>The interpreter was once read as the title screen's sprite-walk interpreter with an ANM-trigger opcode,
-      which led to a hunt for a per-scene program carrier. Its base materialisation indexes the window descriptor table,
-      byte 1 is a window id, and no arm of the 13-way dispatch hands off an animation id - so it is the menu overlay's
-      window-widget interpreter and the programs are overlay-resident data. Recorded in <a
-      href="../reference/re-do-not-re-walk.html#m-actor-vm">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

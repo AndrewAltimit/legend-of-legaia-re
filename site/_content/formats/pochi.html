@@ -50,12 +50,6 @@
   <h2>The ground-atlas hazard belongs to the next entry</h2>
   <p>A rendering bug is worth keeping on this page precisely because its symptom points at the wrong entry. Two <code>64 x 256</code> texture pages land at framebuffer <code>(768, 0)</code> and <code>(832, 0)</code> - a scene block's battle-side character pages, CLUT rows 473 / 479 - and fb <code>(768, 0)</code> is tpage <code>0x0C</code>, where most field scenes put their <strong>ground-tile atlas</strong> (the per-cell page in the <code>.MAP</code> object record's <code>+0x15</code>; see <a href="../subsystems/world-map.html">world-map</a> "Ground texturing"). Uploaded last, they erase the atlas and the ground quads sample character / backdrop texels: Jeremi's floor becomes a grid of grey "tombstones", Mt. Dhini's a repeating vine/crack pattern.</p>
   <p>Those pages are the <strong><code>scene_tmd_stream</code> entry that follows the pochi slot</strong> - its <code>FUN_8001FE70</code> type-<code>0x01</code> chunks. A "scan every entry in the CDNAME block for TIMs" sweep reached them by standing on the pochi slot and reading past its end. Rim Elm escapes because its sibling slots are all <code>scene_tmd_stream</code> entries, which the field build already excludes - which is the same statement about the neighbour, read as a statement about the slot.</p>
-  <details class="disclosure">
-    <summary>History: the "stale scratch that parses as a TIM" reading</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading held that the bytes after the <code>0x1A</code> were mastering leftovers, and that in most scene blocks they parsed as a complete, valid 256x256 4bpp TIM - the pages described above. That reading is <strong>falsified</strong>: every one of the 266 slots is exactly one sector and zero of them carry a parseable TIM. The pages came from the neighbouring entry, reached through the superseded entry-size expression that spanned neighbouring entries (corrected in <a href="prot.html">prot</a>). The symptom was attributed to the slot a sweep was standing on rather than to the entry it over-read into. Catalogued on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="see-also">

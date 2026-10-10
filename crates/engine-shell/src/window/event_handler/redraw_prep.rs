@@ -92,6 +92,9 @@ impl PlayWindowApp {
                 self.session.host.world.presentation.clear_rgb = rgb;
                 self.session.host.world.presentation.clear_ramp = None;
             }
+            if due && let Some(f) = sc.seat_page_mark {
+                self.session.host.world.seat_page_mark_frame(f);
+            }
             if due && let Some(p) = sc.seat_panel {
                 let world = &mut self.session.host.world;
                 let mut fx = std::mem::take(&mut world.presentation.fx);
@@ -100,6 +103,15 @@ impl PlayWindowApp {
                 world.presentation.fx = fx;
             }
             if due {
+                for c in &sc.seat_object_clips {
+                    self.session.host.world.seed_object_prop_clip(
+                        usize::from(c.record),
+                        c.clip,
+                        c.cursor,
+                        c.flags,
+                        c.rate,
+                    );
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host
@@ -129,6 +141,16 @@ impl PlayWindowApp {
             && let Some(cam) = self.session.host.world.battle.camera.as_mut()
         {
             cam.align_orbit_yaw(yaw);
+        }
+        // The backdrop's slot-1 angle is a clock too
+        // (`LEGAIA_BATTLE_BACKDROP_YAW`): hold it on the capture's.
+        if let Some(yaw) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_backdrop_yaw)
+            && self.session.host.world.mode == SceneMode::Battle
+        {
+            self.session.host.world.seed_battle_backdrop_slot_1_yaw(yaw);
         }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).

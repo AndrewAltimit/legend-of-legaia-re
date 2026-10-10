@@ -56,12 +56,6 @@
     <li><strong>Type-1 depends on the consumer.</strong> On the graphics battle-init walk, the type-1 handler is the TIM/CLUT upload; in a sound pack it is the VAB's sample pool.</li>
     <li>The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper; only the container differs. The <code>.MAP</code> (sample-address map) and <code>.PCH</code> (patch data) are the PsyQ SoundArtist dev-side inputs that <em>produce</em> this VAB - the retail disc does not carry them, so no dedicated parser is warranted.</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: the bare-VAG-container reading</summary>
-    <div class="disclosure-body">
-      <p>An interim trace labelled the <code>.dpk</code> a <em>bare</em> VAG-record container. That is falsified: the VAG samples are the type-1 section <em>of a VAB</em>, indexed by the type-0 header, not a header-less stream. Falsified readings are catalogued in <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="cluster-layout">

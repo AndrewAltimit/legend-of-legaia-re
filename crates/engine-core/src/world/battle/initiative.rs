@@ -382,6 +382,8 @@ impl World {
                 frames_remaining: BANNER_FRAMES,
                 group,
                 any_press_dismisses: false,
+                placed: None,
+                stands: false,
             });
     }
 

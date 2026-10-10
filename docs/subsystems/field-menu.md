@@ -1,551 +1,444 @@
 # Field Menu - Windows + Status Panel Renderer
 
-Covers the field pause menu's **window system** (the window-descriptor table
-that places every menu screen's bordered windows) and `FUN_801D33D8`, the
-per-character **status / party panel** renderer. The field pause menu (game
-mode `0x17`, the CARD-mode pair) opens the panel for the Status, Magic,
-Moves, and Skills tabs; it draws one party member's page into a
-caller-supplied window rect. Both live in the **menu overlay** (the same
-binary as shop / inn / save; base `0x801CE818`). Source:
-`ghidra/scripts/funcs/overlay_menu_801d33d8.txt` plus the shared draw
-primitives `ghidra/scripts/funcs/80036888.txt` (string), `8002c488.txt`
-(UI-icon sprite), `80034b78.txt` (decimal number); window-table pins from
-the catalogued menu-open save states (RAM + VRAM, see below).
+The pause menu is the screen the Start button opens in the field: Items,
+Magic, Equip, Status, Options, Load and Save. Retail builds every one of its
+screens out of one pool of 52 bordered **windows**, each described by a
+16-byte record that gives the window's rectangle and names the routine that
+draws its contents. This page documents that window system, every pause
+screen's layout and input flow, and where each piece lives in the Rust port.
 
-The panel draws **content only**. The bordered 9-slice window frame is emitted
-by the caller, not here (this function never draws a box). Every position below
-is an offset from the window origin, which the caller passes in the rect struct
-`a0`: `WX = *(i16*)(a0+0xa)`, `WY = *(i16*)(a0+0xc)`. The rect also carries a
-width-ish field at `a0+0xe` (scroll-arrow X and scrollbar length) and a height
-field at `a0+0x10` (bottom-anchored scrollbar Y). The rect is caller data -
-resolved through the window-descriptor table below.
+All of it is code and data in the **menu overlay** (PROT 0899, link base
+`0x801CE818`, game mode `0x17`) - the same image that hosts the shop, the
+save screen and the casino prize counter - plus a handful of shared drawing
+routines resident in `SCUS_942.54`. The port runs the whole menu on both
+hosts (native window and browser play page) from one session and one set of
+draw builders; the remaining differences from retail are listed under
+[Engine port](#engine-port).
+
+## At a glance
+
+| Thing | Where |
+|---|---|
+| Window descriptor table | VA `0x801E4738`, 52 records x `0x10` bytes (PROT 0899 file `0x15F20`); parser `legaia_asset::menu_windows` |
+| Window creator / per-frame walker | SCUS `FUN_800326AC` / `FUN_80031D00` |
+| Window-script runner | `FUN_801D6628` (programs in [`window-script.md`](../formats/window-script.md), VM in [`actor-vm.md`](actor-vm.md)) |
+| Master menu tick + sub-screen table | `FUN_801DC6B4`, pointer table `0x801E4F40` (ids `0x00..=0x20`), selector `DAT_801E46A4` |
+| List paging kernel / row builder | SCUS `FUN_80032A44` / `FUN_80030628` |
+| Status / party panel renderer | `FUN_801D33D8` (window 28) |
+| Live party records | `0x80084708 + n*0x414` ([`save-record.md`](../formats/save-record.md)) |
+| Port: session | `engine-menus` (`field_menu`, `pause_screens`, `equip_session`, `spell_menu`, `menu_list_rows`), driven by `engine-session::BootSession` |
+| Port: drawing | `engine-ui` (`pause_menu`, `ui_menu::*`, `ui_menu_window_painters`, `ui_menu_window_dispatch`) |
+
+`engine-core` re-exports the `engine-menus` modules at their old paths, so
+`engine-core::pause_screens::X` and `engine-menus::pause_screens::X` name the
+same item. Dumps cited as `overlay_menu_<addr>.txt` live in
+`ghidra/scripts/funcs/`.
+
+Every content renderer draws **content only**: the window frame is drawn by
+the caller. A renderer receives the live window struct in `a0` and hangs every
+position off the content origin `WX = *(i16*)(a0+0xa)`, `WY = *(i16*)(a0+0xc)`;
+`a0+0xe` / `a0+0x10` are the content width / height. Offsets on this page are
+relative to `(WX, WY)` unless stated.
+
+### Screen navigation
+
+Each screen is one or more **sub-screens**: tick functions indexed out of the
+table at `0x801E4F40` by the selector `DAT_801E46A4`. The pause-menu part of
+that id space (the shop and save ids are on [`shop.md`](shop.md) and
+[`save-screen.md`](save-screen.md#sub-screen-function-pointer-table)):
+
+```mermaid
+stateDiagram-v2
+    state "0x01 root picker" as Root
+    state "0x05 Items command" as ItemsCmd
+    state "0x06 Use list" as UseList
+    state "0x07 Throw Out list" as Throw
+    state "0x09 all-party apply" as ApplyAll
+    state "0x0A single-target apply" as ApplyOne
+    state "0x0B / 0x0C / 0x0D Door of Light, Door of Wind, Incense" as Special
+    state "0x0E Magic caster" as Caster
+    state "0x0F spell list" as Spells
+    state "0x10 group cast" as CastAll
+    state "0x11 target cast" as CastOne
+    state "0x12 Equip character" as EqChar
+    state "0x13 slot browse" as EqSlots
+    state "0x14 candidate list" as EqCand
+    state "0x15 Status" as Status
+    state "0x17 Options" as Options
+    state "0x18 Load / 0x19 Save" as Card
+
+    [*] --> Root: Start
+    Root --> ItemsCmd: Items
+    Root --> Caster: Magic
+    Root --> EqChar: Equip
+    Root --> Status: Status
+    Root --> Options: Options
+    Root --> Card: Load, Save
+    Root --> [*]: cancel
+    ItemsCmd --> UseList: Use
+    ItemsCmd --> Throw: Throw Out
+    ItemsCmd --> ItemsCmd: Arrange
+    UseList --> ApplyAll: effect flag 0x20
+    UseList --> ApplyOne: default
+    UseList --> Special: effect class 0x80..0x82
+    ApplyAll --> UseList
+    ApplyOne --> UseList
+    Special --> UseList
+    Special --> [*]: warp or escape
+    Caster --> Spells
+    Spells --> CastAll: spell +2 bit 0x20
+    Spells --> CastOne: otherwise
+    CastAll --> Spells
+    CastOne --> Spells
+    EqChar --> EqSlots
+    EqSlots --> EqCand: slot row
+    EqCand --> EqSlots
+```
+
+Every sub-screen returns to its parent on cancel; the root picker's routes are
+`[5, 0x0E, 0x12, 0x15, 0x17, 0x18, 0x19]` in row order (see the
+[root command picker](save-screen.md#root-command-picker-fun_801d6b20)).
+
+### How a window gets on screen
+
+```mermaid
+flowchart LR
+    S["sub-screen tick"] -->|"script: 01 id"| R["FUN_801D6628<br/>script runner"]
+    R -->|"0x801E4738 + id*0x10"| C["FUN_800326AC<br/>create window"]
+    C --> L["live window<br/>0x5C struct"]
+    L -->|"renderer VA set"| P["content renderer<br/>menu overlay"]
+    L -->|"renderer VA 0"| K["FUN_80032A44 list kernel<br/>rows from FUN_80030628"]
+```
+
+The per-frame walker `FUN_80031D00` draws each live window's frame and then
+calls its renderer or runs the list kernel.
 
 ## Contents
 
-- [Window descriptor table](#window-descriptor-table) · [Live window structs](#live-window-structs)
-- [Tab banner](#tab-banner) · [Status satellite windows](#status-satellite-windows)
-- [Plumbing](#plumbing) · [Submenu dispatch](#submenu-dispatch)
-- [Header row](#header-row-always-drawn) · [Status page](#status-page-submenu-0-or-5)
-- [Magic list](#magic-list-submenu-2) · [Moves list](#moves-list-submenu-3) · [Skills page](#skills-page-submenu-1)
-- [Top-level pause menu](#top-level-pause-menu) · [Equip screen](#equip-screen) · [Options screen](#options-screen)
-- [Submenu state machines](#submenu-state-machines) · [Items screen](#items-screen) · [Magic screen](#magic-screen)
-- [Name columns and translated text](#name-columns-and-translated-text)
-- [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [Inn stay](#inn-stay-there-is-no-inn-screen)
-- [Which screen opens a window](#which-screen-opens-a-window)
-- [Draw primitives + CLUT staging](#draw-primitives--clut-staging)
-- [Record fields consumed](#record-fields-consumed) · [Overlay identity + VA-aliasing](#overlay-identity--va-aliasing)
+- Window system: [descriptor table](#window-descriptor-table) · [live structs](#live-window-structs) · [renderer dispatch](#which-painter-draws-a-descriptor-renderer_va-dispatch) · [which screen opens a window](#which-screen-opens-a-window) · [ported painters](#ported-painters)
+- Drawing: [primitives + CLUT staging](#draw-primitives--clut-staging) · [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8)
+- [Top-level pause menu](#top-level-pause-menu)
+- Status: [tab banner](#tab-banner) · [satellites](#status-satellite-windows) · [main panel](#status-main-panel-fun_801d33d8) · [status page](#status-page-submenu-0-or-5) · [magic](#magic-list-submenu-2) · [moves](#moves-list-submenu-3) · [skills](#skills-page-submenu-1)
+- Lists: [sub-screen state machines](#submenu-state-machines) · [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) · [Use-list build](#use-list-row-build-content-id-3-fun_80030628)
+- [Items screen](#items-screen) · [Magic screen](#magic-screen) · [Equip screen](#equip-screen) · [stat-compare panels](#equip-stat-compare-panels-windows-25-and-41) · [Options screen](#options-screen)
+- [Prize-exchange windows](#prize-exchange-ticket-counter-windows) · [windows 34 and 46](#two-more-descriptor-table-renderers-windows-34-and-46)
+- [Name columns](#name-columns-and-translated-text) · [dialog reading box](#dialog-reading-box-fun_801d84d0) · [inn stay](#inn-stay-there-is-no-inn-screen)
+- [Battle-panel siblings](#battle-readout-tint-law-the-panels-sibling) · [overlay identity](#overlay-identity--va-aliasing) · [engine port](#engine-port)
 
 ## Window descriptor table
 
-Every pause-menu window (rect + content renderer) comes from a 52-entry
-table in the menu overlay's data segment. The record base the **engine
-consumes** is VA `0x801E4738` (PROT 0899 file offset `0x15F20`): the
-window-script runner `FUN_801D6628` passes `0x801E4738 + id*0x10` to the
-SCUS window creator `FUN_800326AC`, whose field reads (`lbu 0x0(s4)` /
-`lbu 0x1(s4)` / `lhu 0x2(s4)` / `lh 0x4..0xa(s4)` at `0x800326dc..`,
-`0x80032874..0x8003288c`) fix the layout. Records are 0x10 bytes, indexed
-by window id:
+Every menu window - rect plus content renderer - is one record of a 52-entry
+table in the menu overlay's data segment, indexed by window id. The base is
+VA `0x801E4738`: the window-script runner `FUN_801D6628` passes
+`0x801E4738 + id*0x10` to the SCUS window creator `FUN_800326AC`, whose field
+reads (`lbu 0x0(s4)` / `lbu 0x1(s4)` / `lhu 0x2(s4)` / `lh 0x4..0xa(s4)` at
+`0x800326dc..`, `0x80032874..0x8003288c`) fix the layout:
+
+```text
+ +0x0      +0x1       +0x2        +0x4   +0x6   +0x8   +0xA   +0xC
++---------+----------+-----------+------+------+------+------+----------------+
+| content | slide    | class u16 | x    | y    | w    | h    | renderer VA    |
+| id  u8  | home u8  |           | i16  | i16  | i16  | i16  | u32 (0 = list) |
++---------+----------+-----------+------+------+------+------+----------------+
+```
 
 | off | type | field |
 |---|---|---|
-| `+0x0` | u8 | **content id** - copied into live window `+0x1C` at create (`sb` at `0x80032990`); selects the SCUS content-builder case and the kind-4 kernel behaviour (below) |
-| `+0x1` | u8 | slide-home variant (the `< 8` switch at `0x800326e8`: which screen edge the closed window parks against) |
-| `+0x2` | u16 | window class word: 2 = title tab, 3 = standard, 4 = list page (low byte lands in live `+0x1D`) |
-| `+0x4..+0xb` | 4 × i16 | `x, y, w, h` - the **content** rect (the `a0+0xa..+0x10` rect the content renderer receives) |
-| `+0xc` | u32 | content-renderer VA (menu-overlay function), 0 = content-builder-driven list window |
-| | | |
+| `+0x0` | u8 | **content id** - copied into live window `+0x1C` at create (`sb` at `0x80032990`); selects the SCUS content-builder case and gates the [kind-4 kernel](#the-kind-4-list-kernel-scus-fun_80032a44) |
+| `+0x1` | u8 | slide-home variant (the `< 8` switch at `0x800326e8`: which screen edge a closed window parks against) |
+| `+0x2` | u16 | window class: 2 = title tab, 3 = standard, 4 = list page (low byte lands in live `+0x1D`) |
+| `+0x4..+0xb` | 4 x i16 | `x, y, w, h` - the **content** rect the renderer receives |
+| `+0xc` | u32 | content-renderer VA (a menu-overlay function); `0` = a list window the content builder fills |
 
-Content ids observed non-zero exactly on the renderer-less list windows:
-window 15 (Items **Use** list) = `3`, 16 (Throw Out list) = `0x22`,
-18 (Magic spell list) = `5`, 11 (Door of Wind list) = `0x19`, 23 (Equip
-candidate list) = `0x15`, 38 = `2` (the price-gated bag list), 40 = `0xB`
-(shop list) - the same id space as the kernel allowlist at `0x80073E1C`.
+Facts about the table:
 
-NB the decompiled C of `FUN_801D6628` renders the base as
-`&DAT_801e473c + id*0x10` (folding the x-field load offset into the
-symbol) - reading that rendering instead of the disassembly yields a
-`+4`-skewed table whose head fields belong to the **next** record. The
-parser `legaia_asset::menu_windows` consumes the disassembly's base; the
-rect and renderer fields land on the same absolute bytes in either frame.
+- **Extent** is structural: record 52 fails the rect / renderer validity
+  envelope.
+- **Content ids** are non-zero exactly on the renderer-less list windows:
+  15 (Items Use list) = `3`, 16 (Throw Out) = `0x22`, 18 (spell list) = `5`,
+  11 (Door of Wind) = `0x19`, 23 (Equip candidates) = `0x15`, 38 (price-gated
+  bag list) = `2`, 40 (shop list) = `0xB` - the id space of the kernel
+  allowlist at `0x80073E1C`.
+- **Disc vs RAM**: the disc bytes match the resident overlay in the six
+  catalogued menu-open mednafen states
+  (`menu_{status,equipment,options}_{field,town}`) except id 23's content id
+  (rewritten per Equip slot row) and id 49's `y` (178 -> 180).
+- **Frame**: the drawn frame extends 8 px past the content rect on every side
+  (window 26's content `(14, 38)` frames from `(6, 30)`; GPU-prim scan of the
+  `menu_status_town` state, cross-checked against its framebuffer).
+- **Not `0x801E473C`**: the decompiled C of `FUN_801D6628` renders the base as
+  `&DAT_801e473c + id*0x10`, folding the `x` load offset into the symbol. Read
+  as a record base that address is skewed by `+4` - each record would open on
+  `x, y, w, h` and close on the next record's head fields. The corpus hex dump
+  `ghidra/scripts/funcs/data_801e473c_overlay_operand_table_801E473C.txt`
+  carries the skewed address; the record boundary is `0x801E4738`.
 
-`0x801E473C` is therefore an address worth naming rather than quietly
-correcting: it is **not** a function and not the table base, it is the skewed
-base that one decompiler rendering produces, and it is the address a corpus
-dump of the table carries (`see ghidra/scripts/funcs/data_801e473c_overlay_operand_table_801E473C.txt`
-- a 256-byte hex window, header `overlay_operand_table_801E473C`, not a
-disassembly). Records read from it open on the rect `x, y, w, h` and close on
-the *following* record's `content id / slide variant / class word`. Anything
-citing `0x801E473C` as a record boundary has inherited the skew; the boundary
-is `0x801E4738`.
-
-The table extent is structural: record 52 fails the rect/renderer validity
-envelope. Provenance: byte-matched between the disc entry and the resident
-overlay across the six catalogued menu-open mednafen states
-(`menu_{status,equipment,options}_{field,town}`); only id 23's content id
-(the equip candidate list's builder case swaps with the selected slot
-category) and id 49's `y` (178 -> 180) differ at runtime. The drawn window frame
-extends past the content rect by 8 px on every side (the RAM GPU-prim scan
-of the `menu_status_town` capture places each window's 4x4 corner tiles at
-`content - 8` - window 26's content `(14, 38)` frames from `(6, 30)` -
-cross-checked against the captures' VRAM framebuffer edge pixels).
-
-Screen window sets, read from the live window lists of the captures (each
-live window carries its descriptor id). The Status / Equip / Options sets
-come from the six catalogued mednafen states; the Items / Magic sets from
-PCSX-Redux captures pad-walked to each screen
-(`scripts/pcsx-redux/autorun_menu_screen_dump.lua` over the
-`sol_to_karisto_worldmap` scenario state - SELECT opens the menu, the
-walk confirms into each command, and the probe dumps framebuffer + RAM
-at parked checkpoints):
+Window sets per screen, in draw order, read from the live window lists (each
+live window carries its descriptor id). Status / Equip / Options come from the
+mednafen states above, Items / Magic from PCSX-Redux pad walks
+(`scripts/pcsx-redux/autorun_menu_screen_dump.lua`):
 
 | screen | windows (draw order) |
 |---|---|
-| top-level pause menu | 50 command list `(24,24,104,94)` -> `FUN_801CFD68`; 49 money/play-time box `(24,178,104,24)` -> `FUN_801D0148`; 51 right party panel `(144,24,152,180)` -> `FUN_801D030C` |
-| Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 "Condition" pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 **main panel** `(90,16,218,188)` -> `FUN_801D33D8` |
-| Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 item list `(174,22,132,182)` (renderer-less container; its lower span is occluded by 22); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
-| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0`; 47 value popup `(170, *, 128, *)` -> `FUN_801D2B44` (y/h stamped per open - see [Options screen](#options-screen)) |
-| Items | tab 0 -> `FUN_801DCA0C`; 13 command `(32,44,80,38)` -> `FUN_801D0D18`; 15 item list `(174,22,132,182)` (renderer-less); 17 info `(14,108,144,40)` -> `FUN_801DCB60` - see [Items screen](#items-screen) |
-| Magic | tab 1 -> `FUN_801DCA50`; 18 spell list `(174,22,132,182)` (renderer-less); 19 caster `(14,40,144,96)` -> `FUN_801D2C98`; 20 spell info `(14,152,144,52)` -> `FUN_801D2E74` - see [Magic screen](#magic-screen) |
-
-The id-28 rect origin `(90, 16)` is the `(WX, WY)` every offset in the
-status-page sections below hangs off - cross-checked against the captured
-framebuffer (HP row ink at `WY+0x13`, stat grid at `WY+0x42/+0x4f/+0x5c`,
-right stat column at `WX+0x74`).
+| top-level | 50 command list `(24,24,104,94)` -> `FUN_801CFD68`; 49 money / play-time `(24,178,104,24)` -> `FUN_801D0148`; 51 party panel `(144,24,152,180)` -> `FUN_801D030C` |
+| Status | tab 3 -> `FUN_801DCAD8`; 26 party list `(14,38,60,38)` -> `FUN_801D2094`; 27 pager `(14,92,60,10)` -> `FUN_801D30A4`; 30 summary `(14,134,60,70)` -> `FUN_801D31EC`; 28 main panel `(90,16,218,188)` -> `FUN_801D33D8` |
+| Equip | tab 2 -> `FUN_801DCA94`; 21 party `(14,42,80,38)` -> `FUN_801D2094`; 23 candidate list `(174,22,132,182)` (renderer-less); 22 main `(14,96,292,108)` -> `FUN_801D21C0` |
+| Options | tab 4 -> `FUN_801DCB1C`; 48 settings `(24,40,256,148)` -> `FUN_801DCEF0`; 47 value popup `(170, *, 128, *)` -> `FUN_801D2B44` (y / h stamped per open) |
+| Items | tab 0 -> `FUN_801DCA0C`; 13 command `(32,44,80,38)` -> `FUN_801D0D18`; 15 item list `(174,22,132,182)` (renderer-less); 17 info `(14,108,144,40)` -> `FUN_801DCB60` |
+| Magic | tab 1 -> `FUN_801DCA50`; 18 spell list `(174,22,132,182)` (renderer-less); 19 caster `(14,40,144,96)` -> `FUN_801D2C98`; 20 spell info `(14,152,144,52)` -> `FUN_801D2E74` |
 
 ## Live window structs
 
-The engine spawns windows as a doubly-linked list of 0x5C-stride structs
-(seen at `0x800AB7BC..` in the captures): `+0x0`/`+0x4` = next/prev,
-`+0x8` = descriptor id, `+0xa..+0x11` = the **live** rect. The live rect is
-the window's animated position: windows slide to the nearest screen edge on
-screen exit and park offscreen (x = 332 right, x = -124 left, y = 240
-bottom in the captures - the `menu_options_field` state caught three
-status-screen windows mid-slide). The top-level windows 49/50/51 stay
-parked in every sub-screen capture, which is how the top-level set was
-pinned without a top-level capture.
+Windows are a doubly-linked list of `0x5C`-stride structs (at `0x800AB7BC..`
+in the captures):
 
-## Tab banner
-
-The class-2 title-tab windows (descriptor ids 0..=4 - "Status" / "Equip" /
-"Options") draw **no gold 9-slice frame or filigree interior**. Their
-entire chrome is the carved brown **plaque**, composed of six textured
-sprites (RAM prim scan over the `menu_status_town` capture, all CLUT row
-12 of the system-UI sheet at `PROT.DAT[0x018E0]`):
-
-| piece | src rect | placement |
-|---|---|---|
-| left cap | `(208, 64, 8, 20)` | `(WX-8, WY-4)` |
-| body tile | `(192, 64, 16, 20)` | tiled from `WX` across the content width `w` (partial remainder) |
-| right cap | `(216, 64, 8, 20)` | `(WX+w, WY-4)` |
-
-All five tab content renderers - `FUN_801DCA0C` (Items), `FUN_801DCA50`
-(Magic), `FUN_801DCA94` (Equip), `FUN_801DCAD8` (Status), `FUN_801DCB1C`
-(Options) - are the same two-instruction shape: stage text CLUT 7, then
-draw the label string at the content origin `(WX, WY)` with no offset of
-its own. The tab's identity is entirely the string operand, which is why
-one engine function serves all five.
-
-Engine primitives: `engine-ui::tab_banner_draws` composes the plaque and
-`engine-ui::tab_label_draws` puts the word on it. Both take the same
-`pen`, so framing and labelling a tab need one pair of coordinates.
-
-## Status satellite windows
-
-The three left-column windows of the Status screen, each a content-only
-renderer inside the standard gold frame:
-
-**Party list (id 26, `FUN_801D2094`)**: one row per roster slot at pitch
-`0x0e`; name string at `(WX+6, Yrow)` from record `+0x2A7`, always CLUT 7
-(no selected-row ink change). The highlighted row draws the 16x16
-**pointing-hand cursor** at `(WX-0xc, Yrow)` via the animated-cursor
-primitive `FUN_8002b994` - sprite-table kind 0 of the 4-record
-0x18-stride table at `0x80073d18` (`[frames u8, clut u8, period i16,
-last_xy 2×i16, frame UVs 4 bytes each]`; hand = 1 frame, UV `(152,64)`,
-CLUT row 7, plus a 0..2-px idle bob from the offset table at
-`0x80073d78`).
-
-**"Condition" pager (id 27, `FUN_801D30A4`)**: the folded submenu id
-picks the label ("Condition" for the status page; Skills / Magic / Moves
-strings for ids 1..3) drawn at `(WX+6, WY)` CLUT 7, flanked by the solid
-**triangle sprites**: `FUN_8002b994` kind 2 (left, UV `(168,8)`) at
-`(WX-0x10, WY-2)` and kind 3 (right, UV `(168,40)`) at `(WX+0x3A,
-WY-2)`, both 16x16 CLUT row 7.
-
-**Summary (id 30, `FUN_801D31EC`)**: name at `(WX, WY)`; "LV" icon (ICO
-`0x0a`) at `(WX+0x1c, WY+0xf)` with the 2-digit level field (record
-`+0x130`) at `(WX+0x2c, WY+0xd)`; "ATR:" at `(WX, WY+0x1a)` followed by
-the **element icon** drawn through the per-character 2-byte string at
-menu-overlay VA `0x801E4720 + char*4` (`0xCE 0x1D/0x1F/0x1E`). The
-string primitive's `0xCE` token resolves the argument through the
-glyph-metadata aux table at `0x80074050` (4-byte records `[i16 ico_code,
-u8 x_advance, i8 dy]`): records `0x1D/0x1F/0x1E` → ICO codes
-`0x94/0x96/0x95` (Vahn/Noa/Gala), 28x12 sprites at sheet V 208 with the
-**alternate CLUT encoding** (record CLUT byte bit `0x40`: CLUT at VRAM
-`(896 + (b&3)*16, 500)`). The pixels live in the system-UI **extension
-strip** TIM at `PROT.DAT[0x10178]` (256x32 4bpp, VRAM `(896,448)` =
-sheet V 192..224); the row-500 palettes are the CLUT block of the
-sibling TIM at `PROT.DAT[0x10028]` (rows 498/499/501 come from
-`0x10178`/`0x100D0`/`0xFF80`). If the character carries a Seru, a
-second block draws the class icon (ICO `0x45`) + Seru name at `WY+0x2f`
-and its level at `WY+0x3c`.
-
-## Plumbing
-
-| Item | Value | Instr |
-|---|---|---|
-| Menu / party base `s2` | `0x80084140` | `801d33dc` |
-| Highlighted record index `uVar1` | `*(u8*)(0x80084598 + (DAT_801e46c4 & 0xfff))` | `801d33f0`, `801d3424` |
-| Submenu id | `DAT_801e46c0 & 0xfff`, folded `if id>=6 { id-=5 }` -> 0..5 | `801d33f4`, `801d3460` |
-| Record stride | `uVar1 * 0x414` | `801d3440` |
-| Live record base | `0x80084708 + uVar1*0x414` | `801d3454` |
-| Window X `s7` | `*(i16*)(a0+0xa)` | `801d3494` |
-| Window Y `s8` | `*(i16*)(a0+0xc)` | `801d3490` |
-
-`s8` is a **running Y cursor** advanced down the panel: `+0x13` after the
-header, `+0x2f` / `+0x2b` / `+0x38` between the status sub-blocks. `s7` is
-reloaded from `a0+0xa` at each block and set to `WX+0x10` for the list pages.
-
-The record layout (`0x80084708 + n*0x414`, stride `0x414`) is the live party
-record array seeded by the new-game template; see
-[`new-game-table.md`](../formats/new-game-table.md) and
-[`spell-table.md`](../formats/spell-table.md).
-
-## Submenu dispatch
-
-The folded submenu id (0..5) selects the page. Raw ids 6..10 alias onto 1..5
-(a second bank onto the same five layouts).
-
-| id | page |
+| off | field |
 |---|---|
-| 0 or 5 | full status page (name + LV + HP/MP + 6 stats + 7 equip slots + XP) |
-| 1 | skills / accessory-passive list |
-| 2 | magic list |
-| 3 | moves / arts list |
-| 4 | header only (equipment edited elsewhere) |
+| `+0x0` / `+0x4` | next / prev |
+| `+0x8` | descriptor id |
+| `+0xa..+0x11` | the **live** rect (`x, y, w, h`) - the animated position |
+| `+0x18` | list node pointer (list windows) |
+| `+0x1C` / `+0x1D` | content id / class byte |
+| `+0x20` | slide motion (zeroed by script op 6) |
+| `+0x28` | content-renderer VA |
 
-The id is a branch selector, not a table index. The per-page string labels and
-data all index by the **character** `uVar1`, e.g. the class/Seru name via
-`*(u32*)(0x801e46d4 + uVar1*4)`.
+Windows slide to the nearest screen edge on exit and park offscreen (x = 332
+right, x = -124 left, y = 240 bottom). The top-level windows 49 / 50 / 51 stay
+parked while a sub-screen is up.
 
-## Header row (always drawn)
+### Window-script runner (`FUN_801D6628`)
 
-`Yrun = WY`. Offsets are relative to `(WX, WY)`.
+A sub-screen opens and closes windows by handing `FUN_801D6628` a script of
+4-byte entries `[op u8][window id u8][arg u16]`, op `0` terminating; the op
+jump table is at `0x801CED70`. Ops the pause screens use:
 
-| element | prim | X | Y | source |
-|---|---|---|---|---|
-| character name | STR | +8 | +0 | record `+0x2A7` |
-| "LV" label | ICO | +0x50 | +2 | icon code `0x0a` |
-| LV value | NUM | +0x60 | +0 | record `+0x130`, 2 digits |
-| class/Seru label | ICO | +0x8a | +0 | icon code `0x45` (conditional) |
-| class/Seru name | STR | +0x96 | +0 | `*(u32*)(0x801e46d4 + uVar1*4)` |
-
-After the header, `s8 += 0x13`. Instr `801d3478`..`801d35c8`.
-
-## Status page (submenu 0 or 5)
-
-Header `Yrun = WY+0x13`. Two stat rows (HP then MP), then a gauge, then a 3x2
-derived-stat grid, then a 7-slot equipment grid, then Experience / Next Level.
-
-**HP row** (`Y = WY+0x13`) / **MP row** (`Y = WY+0x20`): current at `X+0x30`,
-max at `X+0x58`, base at `X+0x84` (all 4-digit NUM); separators (UI-glyph) at
-`X+0x50`, `X+0x7c`, `X+0xa4`. HP triplet = record `+0x106 / +0x104 / +0x11c`;
-MP triplet = record `+0x10a / +0x108 / +0x11e`. Number colour comes from
-`FUN_800349ec` (HP) / `FUN_80035ea8` (MP), not the string CLUT. Instr
-`801d35e8`..`801d374c`. Ink (golden-capture pixel-pinned): the `/` and the
-current/max values in the CLUT-7 text white `(206,206,206)`; the whole
-parenthesised base group - `(`, value, `)` - in the separator **teal**
-`(66,222,222)`. The 4-digit fields end flush against their separators
-(`180/ 180 ( 180)`).
-
-**AP gauge**: bar widget at `(X+0x40, WY+0x2d)`, value record `+0x10e`.
-`FUN_80034b6c(0x31)` stages the widget kind into `gp+0x14c`; the widget
-dispatcher `FUN_8002c69c(x, y, 1, value)` sees kind `0x31` and first calls
-the gauge-content renderer **`FUN_8002c0b0(x, y, value)`**, then falls
-through to the generic table-driven frame path. Then `s8 += 0x2f`.
-
-The frame is four 1:1 sprites from the system-UI sheet (CLUT row 4; every
-rect pixel-verified against the golden `menu_status_town` capture): the
-left arrow cap with the red "AP" chip `(128,64,24,16)` at the anchor, the
-trough body `(128,80,56,16)` at `+0x18`, the bordered value box
-`(176,64,16,16)` (= ICO record `0x69`, baked `dx = 0x50`) and the pointed
-right end `(184,80,8,16)` (= ICO record `0x6A`, `dx = 0x60`).
-
-`FUN_8002c0b0` draws the gauge content (see `ghidra/scripts/funcs/8002c0b0.txt`):
-
-- **Meter fill** (`value > 0`): two untextured gouraud quads spanning
-  `x+0x1B .. x+0x1B + value/2` (50 px at the 100-AP cap; `value > 100`
-  clamps the width to `0xFF` for the wider field-HUD variants), 6 rows at
-  `y+5..y+10`: dark-red `rgb(0x80,0x20,0x10)` fading to gold
-  `rgb(0xC0,0xA0,0x40)` at the shared middle edge and back - a vertical
-  diamond gradient. The fill prims are prepended into the same OT bucket
-  as the frame, so they render **on top of** the trough.
-- **Value**: `== 100` draws the dedicated "100" glyph, ICO code `0x6B`
-  (`(64,136,16,6)`, CLUT row 1) at `x+0x50`; `< 100` draws the tens digit
-  ICO `0x6C+tens` at `x+0x50` (only when non-zero) and the ones digit ICO
-  `0x6C+ones` at `x+0x56`. The digit records are ten 6x6 cells at
-  `(64 + 6*digit, 128)`, CLUT row 4; all at `y+5`.
-
-**Derived-stat grid** (`FUN_801cf650` computes the values first; its base
-stats come from the preload helper `FUN_801CF5D0`, which copies the
-character record words `+0x6CC..+0x6E2` into the aggregator staging block at
-`0x801F0080` before the equipment bonuses are summed on top -
-`ghidra/scripts/funcs/overlay_menu_801cf5d0.txt`). 3 rows at
-`WY+0x42 / +0x4f / +0x5c`, two columns. Left column: label `X+0`, live value
-`X+0x28`, `(` at `X+0x40`, growth value `X+0x48`, `)` at `X+0x60`. Right
-column: label `X+0x74`, live value `X+0x9c`, `(` at `X+0xb4`, growth value
-`X+0xbc`, `)` at `X+0xd4`. Live values (3-digit fields) clamp at 999 and
-come from `DAT_801ef088..09c` in text white; growth values from record
-`+0x122..+0x12c`, parens + growth in the separator teal. Then
-`s8 += 0x2b`. Instr `801d3780`..`801d3b48`.
-
-**Equipment grid** (7 slots): icon + item name. Icon codes from the fixed
-array `DAT_801e43f4..4400` = `[0x24, 0x22, 0x23, 0x25, 0x46, 0x46, 0x46]`
-(u16 entries); item name via the item-name table
-`*(u32*)(0x8007436c + id*0xc)` where `id = *(u8*)(record + 0x196 + slot_off)`.
-Slots 0..3 stack at `X+0/+0x10` on rows `WY+0x6d / +0x7a / +0x87 / +0x94`;
-slots 4..6 sit in a right column at `X+0x6a/+0x7a` on rows `WY+0x7a / +0x87 /
-+0x94`. Then `s8 += 0x38`. Instr `801d3b4c`..`801d3dd8`. Item ids resolve
-through [`item-table.md`](../formats/item-table.md). The codes resolve
-through the `0x800732a4` UV/CLUT table (below) to 12x12 pictograms in the
-system-UI sheet, all CLUT row 8 (gold ramp, pixel-verified vs the golden
-capture): weapon fist `(244,36)`, helmet `(244,24)`, body armor `(232,36)`,
-boot `(232,48)`, and the shared Goods ring `(0,128)` for slots 4..6. The
-icon per slot position is fixed - retail draws all seven pictograms whether
-or not the slot is equipped.
-
-**Experience / Next Level** (`Yrun = WY+0xa5`): "Experience" STR at `X+0x18`,
-value (8-digit NUM) at `X+0x78` from record `+0x0`; "Next Level" STR at
-`X+0x18, WY+0xb2`, threshold at `X+0x78` from record `+0x4`. Instr
-`801d3ddc`..`801d3e60`.
-
-## Magic list (submenu 2)
-
-`s7 = WX+0x10`. Header (CLUT 6): "Magic" at `(X, WY+0x13)`, "MP Used" at
-`(X+0x60, WY+0x13)`. Rows start `WY+0x28`, pitch `0x0d`, up to 7 visible with a
-scroll offset `_DAT_8007bb90`; count gate `*(u8*)(record+0x13c)`. Per spell
-(id `record+0x13d`, level `record+0x161`): name via the spell-name table
-`*(u8*)(record+0x13d)*0xc + 0x800754d0`; level digit at `X+0x78`; MP cost
-(3-digit) at `X+0xa8` via `FUN_80035394`. Selected row draws a cursor and a
-CLUT-6 preview line; non-selected rows use CLUT 0. Empty: "-No magic skills-"
-at `(X, WY+0x50)`. Instr `801d4098`..`801d43c4`. See
-[`spell-table.md`](../formats/spell-table.md).
-
-## Moves list (submenu 3)
-
-`s7 = WX+0x10`. Header (CLUT 9): "Moves" at `(X, WY+0x13)`, "AP Used" at
-`(X+0x60, WY+0x13)`. Arts match the arts table `DAT_80075ec4` (stride `0x14`);
-up to 7 rows, pitch `0x0d`, scroll `_DAT_8007bb90`. Per art: name (CLUT 7) at
-`X+0x10`, AP cost (3-digit) at `X+0x82` (halved when record `+0x800` bit `0x800`
-is set). The selected row also draws "Command:" (CLUT 1) plus the command
-**direction arrows** via `FUN_8003c310`, stepping X by `0xc` per input, and a
-description glyph. Empty: "You have not learned any moves." Instr
-`801d43c4`..`801d477c`. See [`art-data.md`](../formats/art-data.md).
-
-## Skills page (submenu 1)
-
-`s7 = WX+0x10`. Loops accessory equip slots 5..7; a slot draws only when its
-resolved passive index `< 0x40`. Per slot: label icon (CLUT 6) at `(X+0x10,
-Yrun)`, item name at `X+0x20`, and two passive-effect glyphs from the
-accessory-passive table `0x8007625c` at `(X+0x30, Yrun+0xe)` (CLUT 4) and
-`(X+0x38, Yrun+0x1c)` (CLUT 7). Per-row pitch `0x3b`. Empty: "You do not have
-any skills." Instr `801d3e64`..`801d4098`. See
-[`accessory-passive-table.md`](../formats/accessory-passive-table.md).
-
-## Top-level pause menu
-
-Three descriptor-table windows (see the window table above): 50 command
-list, 49 money/play-time box, 51 party info panel. Sources
-`ghidra/scripts/funcs/overlay_menu_801cfd68.txt` / `_801d0148.txt` /
-`_801d030c.txt`.
-
-**Command list (id 50, `FUN_801CFD68`)**: seven rows at `(WX+0x14,
-WY + n*0xe)`, in draw order **Items, Magic, Equip, Status, Options,
-Load, Save** - all staged CLUT 7. The selected row draws the
-pointing-hand cursor at `(WX, row_y)` via the animated-cursor primitive
-`FUN_8002b994` (skipped entirely when state word `DAT_801e46bc` bit
-`0x4000` is set; bit `0x2000` selects the dimmed cursor variant). Rows
-gray to CLUT 0 when blocked: Load when the dialog-context pointer
-`DAT_8007b450` targets an `0x0D` byte, Save when the save-enabled flag
-`DAT_8007b6a8` is clear.
-
-Those are the same two gates the confirm arm applies, in the same order,
-so no row can draw white and then buzz - see the [root command
-picker](save-screen.md#root-command-picker-fun_801d6b20), where Load
-routes to sub-screen `0x18` and Save to `0x19`. `DAT_8007b6a8` is
-per-scene: `legaia_asset::man_section::ManHeader::low_flag` is the MAN
-header bit (`[0x01] & 1`) that seeds it, which is what makes a no-save
-scene a property of the scene's own MAN rather than of the menu. Across
-the disc's MAN-bearing scenes the bit is set on the three kingdom world
-maps and clear on every field scene, so the Save row draws grey
-everywhere but the overworld.
-
-Engine port of the gate: scene load seeds
-`engine-core::world::World::party.scene_save_allowed`
-(`World::install_scene_save_permission`); the host samples it - together
-with the entry-context kind from `World::menu_entry_context_kind` - into a
-`field_menu::FieldMenuGate` when the pause menu opens
-(`BootSession::open_field_menu`). `FieldMenuSession` then calls
-`pause_screens::root_menu_confirm_route` per row for the ink and again on
-Cross for advance-vs-buzz, so one function decides both, and resolves the
-confirmed row back through the sub-screen id `ROOT_MENU_ROUTES` names. A
-gated row stays **navigable** and draws grey, matching the picker's
-unconditional 7-row cursor walk; the engine's separate row mask is the one
-that removes a row from the browse order.
-
-### The menu is two levels, and the second one lives on the session
-
-A confirm does not run a screen - it **suspends** the root list
-(`FieldMenuPhase::Suspended { row }`) and the routed sub-screen owns the pad
-until it reaches its own terminal state, at which point the host drains the
-outcome and calls `FieldMenuSession::resume`.
-
-Both levels are driven by `BootSession`: `field_menu` is the root list and
-`field_menu_sub` is the `FieldMenuSubsession` beneath it, built by
-`FieldMenuSubsession::build` from the world's disc-parsed tables and the
-installed `SaveRack` (`BootSession::set_save_rack`). Per frame the session
-routes the pad edge through `tick_pad_edge`, then on completion through the
-matching `field_menu_dispatch::apply_*_outcome` before resuming. Persistence
-is the exception and is deliberate: a finished Save / Load leaves a
-`save_screen::SaveCommit` on `BootSession::last_save_commit` rather than
-touching a backend, because the bytes behind a rack are the host's (a save
-directory, an imported card image).
-
-Keeping the stack on the session rather than in a host is what lets an oracle
-walk the same screens a player does - `crates/engine-shell/tests/menu_replay.rs`
-drives all seven rows and the save UI's two-stage rack from `World::set_pad`
-alone.
-
-### Where a pause screen is assembled
-
-The *simulation* half above is shared. So is the **composition** half - which
-windows a screen opens, which painter draws its title tab, what order the
-frames, the content and the modals land in, and the final 320x240 stage scale.
-It lives in `engine-ui::pause_menu` and both shipped hosts call it:
-
-| Layer | Owner |
+| op | effect |
 |---|---|
-| Session -> plain view structs | each host (it holds the live `World`) |
-| Descriptor rect / pen / frame box, with the pinned fallback | `pause_menu::MenuRects` |
-| Stage transform (320x240 -> surface) | `pause_menu::stage_transform` |
-| Per-screen window set, tab painter, sprite order, stage scale | `pause_menu::pause_screen_draws` |
-| Owned Equip projection (slots, candidates, stat compare) | `engine-core::pause_screens::equip_screen_model` |
+| 1 | create if absent + slide to the descriptor home rect |
+| 2 | open at a packed position |
+| 3 | poke live-window byte `+0x1D` |
+| 4 | close (slide out) |
+| 5 | close all |
+| 6 | zero live `+0x20` (snap the slide) |
+| 8 | destroy |
+| 9 | create + slide to `arg` |
+| 0x0A | destroy + re-create in place (content refresh at the animated position) |
 
-`engine-ui` deliberately does not depend on `engine-core` - `engine-render`
-re-exports it wholesale and is a leaf presentation crate
-([`engine.md`](engine.md)) - so the projection stays host-side and the
-composition takes the plain view structs. Two crossings remain per host and
-are named as such: the Equip phase tag, and the inventory target-select
-stand-in whose layout walks the session's bag directly.
+The format and the full program table are on
+[`window-script.md`](../formats/window-script.md). The field overlay's
+dispatcher at the same VA is a different image (see
+[Overlay identity](#overlay-identity--va-aliasing)).
 
-Two behaviours the hosts used to disagree about are settled by the move. The
-title tab now always resolves through the descriptor **painter** when the
-table names one (the browser page called the pinned-pen label builder
-unconditionally, so a modded disc moved the tab on one host only). And the
-Items screen's Use-route confirm frames **after** the screen's own window set
-rather than before it, so the item-list frame cannot paint over the modal.
+### Which painter draws a descriptor (`renderer_va` dispatch)
 
-`engine-ui/tests/pause_menu_compose.rs` drives every screen through that
-composition with no disc, no GPU and no host - which is only possible because
-the assembly is in a library. While it lived in a binary's private module no
-`tests/` target could import it at all.
+Retail resolves the renderer per window, not per screen: `FUN_800326AC` copies
+descriptor `+0xC` into live `+0x28`, and the per-frame walker `FUN_80031D00`
+calls it indirectly (`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
+`0x80031E30..0x80031E44`). A `0` is a renderer-less list window.
 
-The Load / Save sub-screen is **not** in this composition: it is the
-save-select surface, and the native window reaches the same one from the boot
-Continue -> Load path. Both entries, on both hosts, go through one overlay
-model (`SaveScreenFlow::overlay_model`) and one composition of its text and
-sprite halves (`engine-ui`'s `save_select_overlay_draws`), so the in-game and
-boot entries cannot drift from each other; hoisting only the pause half would
-have forked them. See [`save-screen.md`](save-screen.md).
+The port mirrors that step in
+[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/ui_menu_window_dispatch.rs):
+`painter_for_renderer_va` maps a renderer VA to its painter, `painter_at`
+resolves one id through a parsed table and refuses a descriptor whose renderer
+is not the painter the caller expected, and `menu_window_painters` reports
+every window the crate can paint. Keying on the renderer means:
 
-### The menu does not open at all while a dialogue is up
+- The six plain title tabs are one painter. `FUN_801DCA0C` / `CA50` / `CA94` /
+  `CAD8` / `CB1C` (tabs 0..=4) and `FUN_801DCFE4` (window 43) are the same 17
+  instructions with a different string pointer; all resolve to
+  `title_tab_draws_for`.
+- The two counter windows differ only in data. Window 32 reads party gold
+  `_DAT_8008459C` with pictogram `0x62`, window 45 the coin bank
+  `_DAT_800845A4` with `0x66`; `CounterSource` tells the host which total to
+  feed.
 
-Retail's Start handler is not a separate handler: the menu-open accept sits
-in the pre-movement header of the locomotion controller `FUN_801D01B0`, at
-`0x801D0250..0x801D02DC`. The very first test in that function
-(`0x801D01F0`) branches out when the player actor's engaged bit
-`+0x10 & 0x80000` is set - the bit the touch post `FUN_801D5B5C` raises on
-every talk and the dialog SM's teardown clears - so a talking player's Start
-never reaches the accept. Nothing opens, and nothing buzzes.
+Both hosts draw the pause tabs, the shop's vendor plate / purse / item-info /
+sell-quantity windows, the recipient picker (window 36,
+`recipient_picker_draws_for`) and the prize counter through this dispatch at
+the disc-parsed rects. Shop composition is on
+[shop.md](shop.md#screen-composition).
 
-Every host refuses through one engine call. A menu-button press is
-`BootSession::press_field_menu` on the native window, the browser page and a
-headless `BootSession::tick` alike: the Start edge must pass
-`World::field_menu_open_allowed`, which holds `World::dialogue_owns_input`
-(either dialogue channel) among its gates, and the builder
-`BootSession::open_field_menu` refuses again on the engaged bit for any caller
-that reaches it without a press. A refused press opens nothing and buzzes
-nothing (only the menu lock buzzes), and the page's root picker is the
-session's own `field_menu`, so there is no second copy of the rule to drift.
-The tier-3 host-drift row for the pause-menu press names the kernel at every
-host's press site (see [`host-drift.md`](../tooling/host-drift.md#tier-3---simulation-do-both-hosts-feed-the-same-kernel)).
+### Which screen opens a window
 
-The seven labels are **NUL-terminated C strings** in the menu overlay's
-leading rodata string pool (PROT 0899, base `0x801CE818`): `@Items` at
-`0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` / `@Options` / `@Load` /
-`@Save` in order. `FUN_801CFD68` loads each by a `lui`+`addiu` pair
-(`addiu a0, a0, -0x1630` at base+0x1560 = `0x801CE9D0`), so the pointer
-targets the leading `0x40` (`@`) marker byte the string primitive
-`FUN_80036888` consumes; the visible label is the tail. The same pool
-(`0x801CE81C..0x801CEC78`) holds the options-screen choices, the derived
-stat labels (`ATK`/`UDF`/`LDF`/`SPD`/`INT`/`AGL`, `Experience`,
-`Next Level`), and the shop / equip / status command strings
-(`@Best Equipment`, `@Condition`, `@Moves`, `@MP Used`, `@AP Used`,
-`@Command:`, `@Buy`/`@Sell`/`@Quit`, ...). The **battle** overlay
-(PROT 0898, same base) keeps its own command / result pool at
-`0x801F4B98..0x801F4D2A`: `Spirit` / `Defense` (the Defend command) /
-`Escape` / `Begin` plus the victory / defeat / escape / ambush messages -
-the `Attack` / `Arts` / `Magic` / `Item` command-ring labels are UI-icon
-sprites, not text. These pools are the coordinate windows the translation
-pipeline's `ui_menu` section patches same-size in place
-(`legaia_patcher::translation::ui`; see
-[`ui-strings.md`](../tooling/translation/ui-strings.md)).
+The descriptor says what a window looks like; the **open script** says which
+screen shows it. Every `jal 0x801D6628` in the overlay carries its script
+address in `a0`, so decoding those scripts and mapping each call site back
+through the sub-screen table gives a complete window -> screen map from the
+bytes alone. A window no `01 <id>` command names is never created. A second
+sweep - every `sw rt,0x46a4(rs)`, the writers of the selector `DAT_801E46A4` -
+pins which sub-screen each site requests (66 writers).
 
-**Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
-`0x62`) at `(WX, WY+2)` with the amount as an 8-digit field
-(`FUN_80034b78`) at `(WX+0x28, WY)`. When the casino-coin flag
-(`FUN_8003ce64(8)`) is set, a coin row follows: ICO `0x66` at
-`(WX, y+0x10)`, coin bank `0x800845A4` 8-wide at `(WX+0x28, y+0xe)`.
-The play-time row draws ICO `0x63` at `(WX, y+0x10)` and the clock from
-the 60 Hz tick counter `0x80084570`: hours 3-wide (clamped 99, then
-minutes/seconds pin 59) at `+0x20`, colon glyphs (`FUN_8003c1f8` code 9)
-at `+0x38`/`+0x50`, zero-padded 2-wide minutes/seconds (`FUN_80034e4c`)
-at `+0x40`/`+0x58`. When the coin row shows, the live window grows past
-its descriptor rect - the Items/Magic-era capture holds id 49 at
-`(24,166,104,38)` against the table's `(24,178,104,24)`.
+| Window | Script | Sub-screen | Screen |
+|---|---|---|---|
+| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | battle-start ready check; reached from the root picker's cancel when the entry-context kind is `0x0D` (`0x801d6cf8..0x801d6d18`) |
+| 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | briefing notice; the entry screen for kind `0x0D` (selector written only at `0x801dc8e4`) |
+| 7 | `0x801E4D50` / `0x801E4D78` | `0x10` / `0x11` | spell level-up notice after a menu cast |
+| 8 | `0x801E4C60` | `0xA` | art-learned notice after a Hyper-Art book |
+| 24 + 25 | `0x801E4DC8` (loaded at `0x801d9d00`) | `0x14` (`FUN_801D9C14`) | the Equip screen's candidate step |
+| 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
+| 41 | `0x801E4E64` | shop entry | the shop's party stat compare |
+| 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm (selector written only at `0x801dc8cc`, on kind `7`) |
 
-**Party info panel (id 51, `FUN_801D030C`)**: one block per roster
-member (ids `u8[3]` at `0x80084598`, count `0x80084594`; live record
-`0x80084708 + id*0x414`) at stride `0x3e`. Per block: name (`+0x2A7`)
-at `(WX+0x10, Y)`; LV icon (ICO `0x0a`) at `(WX+0x70, Y+2)` with the
-2-digit level (`+0x130`) at `WX+0x80`; HP label (ICO `0x3f` - the same
-`(208,86,16,10)` sheet rect as status code `0x07`) at `(WX+0x28,
-Y+0x11)` with current/max 4-digit fields at `WX+0x38`/`WX+0x60` and the
-slash at `WX+0x58` on row `Y+0xf`; MP likewise (ICO `0x40`) on rows
-`Y+0x1e`/`Y+0x1c`; and the kind-`0x31` AP gauge widget at `(WX+0x28,
-Y+0x29)` fed from the persistent AP `+0x10E`. HP / MP value ink comes
-from per-member health-tier colour fns (`FUN_800349EC` /
-`FUN_80035EA8`); the full-health tier is the plain CLUT-7 white. The
-tiers themselves are [below](#health-tier-ink-fun_800349ec--fun_80035ea8).
+Notes on those rows:
 
-Engine port: `engine-ui::field_menu_draws_for` +
-`field_menu_info_draws_for` (text) and `field_menu_icon_sprites_for`
-(hand cursor, money/time pictograms, LV/HP/MP labels, per-member AP
-gauges via the shared `ap_gauge_sprites` widget). The engine draws no coin
-row: the time tag sits at retail's no-coin-row position whatever the casino
-bank holds.
+- **Window 25 is an Equip window.** Its id appears in exactly one `01`
+  command in the overlay; the shop's own stat compare is window 41, and the
+  shop's recipient sub-screen adds only window 36.
+- **Windows 5 / 6 belong to entry-context kind `0x0D`**, a scripted pre-battle
+  party menu. Window 5's two headings are the ready check whose Yes exits
+  into the fight; window 6's six labels are the matching briefing - six
+  static VAs in the overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
+  `0x801d636c..0x801d6448`), not content the entry-context record owns.
+- **Window 31** is opened by both shop buy commits with a one-command script
+  (`01 1F` + terminator), from the quantity commit `FUN_801DB7F4` and the
+  recipient picker `FUN_801DB380`, which then park until a confirm / cancel
+  press. See [shop.md](shop.md#point-card).
+- **Window 46**: `FUN_801DC1CC` hands the runner `0x801E4F2C` (`01 2E 00 00`)
+  at `0x801DC3F4..0x801DC41C`, staging the state word `_DAT_801E46D0` at
+  `0x801DC414`. A `04 2E` close command at `0x801E4F38` has no reference in
+  any image.
 
-#### Health-tier ink (`FUN_800349EC` / `FUN_80035EA8`)
+#### Scripted menu opens (entry-context kinds)
 
-Both take a character index, resolve the record at
-`0x80084140 + id*0x414`, and return a staging ink id. Both compare against
-the **live** HP / MP pairs, not the record copies, and both thresholds are
-integer shifts of the max (`srl 2` and `srl 1`) tested with a strict
-`max_frac < current`, so an exact quarter or half falls into the lower tier.
+A field script can open the menu without a Start press. Op `0x49`'s Idle arm
+spawns the same subsystem actor the pad path spawns
+(`FUN_80020DE0(0x8007065C, *0x8007C34C)` at `0x801E0998..0x801E09A4`, against
+`0x801D0324` on the pad path) and parks the operand pointer in `_DAT_8007B450`
+(`0x801E09A8`). The actor's enter half `FUN_801F1278` stores handler `7` into
+`+0x50` (`0x801F140C`) and zeroes `+0x54` (`0x801F141C`) before it reads the
+signed 14-byte table at `0x801F33A4` (`0x801F1468`); a `-1` row only skips the
+overwrite (`0x801F1470`). Handler `7` is the state pick `FUN_801F1F4C`, which
+with a park live moves on to `0x30`, the pause-menu session `FUN_801ED308`.
+The menu's entry decode then picks the screen off the record's kind byte:
+`0x19` (save-card driver) for a save point's `49 01`, the notice panel for
+`49 0D`, sub-screen `0x20` for kind `7`.
 
-`FUN_800349EC` (HP, record `+0x104` max / `+0x106` current) runs five tests
-in this order, and the ailment arm sits **between** the two HP thresholds
-rather than ahead of them - so a character below a quarter HP stays orange
-even while poisoned:
+Release is the dispatcher's retire arm: the session's last phase clears the
+cursor context's `+0x3E` (`0x801ED52C`), `FUN_801F159C` retires the actor and,
+with the park still live, stores the Done sentinel `1`
+(`0x801F1678..0x801F16AC`); the op's Done arm zeroes it (`0x801E08D8`). The
+two SCUS leaves that zero `gp+0x138` are not on this path (`FUN_8003540C` has
+no reference on the disc; `FUN_800353E0` is reached only from the scene
+loaders at `0x8003B2C8`, `0x80055FC8`). Capture:
+[`autorun_save_point_press.lua`](../../scripts/pcsx-redux/autorun_save_point_press.lua)
+at the `town01` save point logs the park store, the enter half, the state pick
+and game mode `23` with no Start press.
+
+Port: `World::scripted_menu_open_pending` is the press; every host opens the
+menu on it (no Start edge, no engagement refusal, no confirm cue).
+`FieldMenuSession::open_entry_screen` opens a kind-`1` menu straight on the
+Save sub-session, and carries the `Notice` (entry) and `ReadyConfirm`
+(root-cancel) phases for kind `0x0D`; their labels are read from the PROT
+0899 image (`pause_screens::ContextLockedLabels`).
+`World::release_menu_entry_context_park` resumes the parked op on close. A
+save point carries no text, so its interaction record is installed by
+`man_field_scripts::placement_scripted_menu_record`.
+
+### Ported painters
+
+The table's content renderers for windows 5 (`FUN_801D61B0`), 6
+(`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
+bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
+[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs)
+(windows 25 and 41 in `ui_menu_window_painters_large`). Every window painter
+is reached by a screen on both hosts. The port keeps the pen arithmetic and the
+state-word rules and drops two globals every painter touches - the ink word
+`DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
+composites in call order and lays glyphs out proportionally needs neither.
+The **accent pen** (`DAT_8007B454 = 6`) is kept as a colour
+(`PAINTER_INK_ACCENT`, the same colour as a rising stat): window 34 stages it
+for the item name and owned count, window 24 for its count, window 31 for its
+number, each restoring `7` afterwards.
+
+`FUN_801E4140` is not a painter. Past its `y < 0xF1` guard it calls the
+fill-state setter `FUN_80034B6C` and the box writer
+`FUN_8002C69C(x, y, w, h)`. `a0` / `a1` are untouched from the prologue to the
+setter's `jal`, so the setter receives the caller's first two arguments - a
+mode selector and a packed RGB word (`0x44`, `0x02202020` at the menu call
+site), which the decompiled C drops. The pair is a **shaded colour fill**, not
+the gold 9-slice border, and `FUN_8002C69C` inflates its rect by 8 px per
+side, so the guard tests the content y. The port is `guarded_box_rect`, which
+no host calls (see [Engine port](#engine-port)).
+
+Three rules the shop-side painters encode:
+
+- **Window 36's character mask is a table, not a shift.** `FUN_801D56FC`
+  indexes four bytes at `0x801E43F0` (`01 02 04 00`). Classes `0..=2` agree
+  with `1 << class`; class `3` gets mask zero and matches no equipment, not
+  even the "any party member" mask `7` of
+  [equipment-table.md](../formats/equipment-table.md). A row that fails the
+  mask is drawn at ink `0`, not skipped.
+- **Window 37's sell total is halved**: `FUN_801D5944` multiplies quantity by
+  unit price and arithmetic-shifts right by one.
+- **Window 37's digit field is a ladder**: it starts at 4; `>= 100` and
+  `>= 1000` each add one, and `>= 10000` assigns 5 before those two still add -
+  widths 4 / 5 / 6 / 7, so a four-digit price reserves six cells.
+
+### Frame and interior
+
+The frame chrome and the navy filigree interior come from the system-UI TIM
+at `PROT.DAT[0x018E0]`, CLUT row 2: gold-bronze 9-slice tiles plus the 32 x 32
+marbled-blue patch at texels `(128, 0)`. Under every menu frame retail's
+window drawer `FUN_8002BDC4` runs the **class-0 fill**: 32-texel columns and
+bands of the patch, each band a neutral-grey gouraud ramp from `0x40` at the
+frame's top to `0x88` at its bottom in steps of `0x900 / h` (the 204-tall
+status window of `menu_status_town` draws seven bands
+`64, 75, 86, 97, 108, 119, 130 -> 136`).
+
+Port: `engine-ui::menu_window_chrome_draws_for` frames each window;
+`nine_slice_panel_into(.., tile_filigree = true)` runs the fill through the
+battle banners' kernel `battle_hud_chrome::class0_fill_draws_at` over
+`SaveMenuAtlasRects::panel_filigree`. The save / load screen keeps the
+gradient-baked `panel_interior` variant.
+
+## Draw primitives + CLUT staging
+
+| tag | function | signature | notes |
+|---|---|---|---|
+| STR | `FUN_80036888` | `(str, count, 0, x, y)` | proportional string; tokens: `0x7c` = line break (`y += 0xe`, x resets), `0xcf b` = set text CLUT inline, `0xce b` = inline icon / number via aux record `b` of `0x80074050` (`[i16 ico_code, u8 x_advance, i8 dy]`; a zero code draws a number variable) |
+| ICO | `FUN_8002c488` | `(x, y, code)` | one UI-icon sprite; 12-byte records at `0x800732a4`: `+3` CLUT byte, `+4..+7` U/V/W/H, `+8/+0xa` baked dx/dy (codes `0x86..0x8a`, texpage from `0x80073db8`) |
+| NUM | `FUN_80034b78` | `(value, digits, x, y)` | decimal digits against the powers-of-ten table `0x80073dcc`; fixed 8-px cells, right-aligned, leading cells blank |
+| CUR | `FUN_8002b994` | `(kind, mode, x, y)` | 16x16 cursor; 4 records x `0x18` at `0x80073d18` (`[frames u8, clut u8, period i16, last_xy 2 x i16, frame UVs 4 bytes each]`): kind 0 pointing hand `(152,64)`, 1 two-frame `(224/240,64)`, 2 left triangle `(168,8)`, 3 right triangle `(168,40)`, all CLUT row 7. Mode 1 animates (0..2-px bob from `0x80073d78`), 0 is static |
+
+The ICO CLUT byte: `& 0x7f` = a row at VRAM y 511; bit `0x40` = the alternate
+encoding `(896 + (b&3)*16, 0x1F2 + ((b&0x3f)>>2))`; bit `0x80` = blend.
+
+The text palette is staged in **`DAT_8007b454`**; the in-primitive CLUT
+halfword is `index + 0x7f86`. Only the string primitive reads it (at
+`80036b74`) - icons take their CLUT from the `0x800732a4` record and numbers
+from `gp+0x13c` - so a write just before an ICO / NUM draw is staging the
+*next* string.
+
+### Ink CLUT rows
+
+The staged index selects a 16-colour CLUT at VRAM `(16*(6+index), 510)`. The
+main ink is palette **entry 15**; entries 12..14 are the outline / shade ramp.
+Entry-15 values from the `menu_status_town` VRAM:
+
+| index | entry-15 RGB | role |
+|---|---|---|
+| 0 | `(132,132,132)` | grey (disabled / non-selected rows) |
+| 1 | `(107,107,231)` | lavender (command labels, falling stat) |
+| 2 | `(231,33,0)` | red (0 HP) |
+| 4 | `(107,222,107)` | green (skill passives, MP Used) |
+| 5 | `(66,222,222)` | teal (separators, parenthesised base values) |
+| 6 | `(231,173,0)` | gold (caution tier, headers, accent) |
+| 7 | `(206,206,206)` | white (default text) |
+| 9 | `(222,90,0)` | orange (danger tier, moves header) |
+
+<a id="hp--mp-health-tier-inks"></a>
+
+### Health-tier ink (`FUN_800349EC` / `FUN_80035EA8`)
+
+HP and MP number fields (current **and** max) take their ink from two SCUS
+functions. Both take a character index, resolve the record at
+`0x80084140 + id*0x414`, compare the **live** pairs, and use integer shifts of
+the max (`srl 2`, `srl 1`) with a strict `max_frac < current` test - an exact
+quarter or half falls in the lower tier.
+
+`FUN_800349EC` (HP, `+0x104` max / `+0x106` current) runs five tests in order.
+The ailment arm sits between the two HP thresholds, so a character under a
+quarter HP stays orange while poisoned:
 
 | Test | Ink |
 |---|---|
@@ -555,2098 +448,1115 @@ even while poisoned:
 | `hp <= max/2` | `6` (gold) |
 | otherwise | `7` (white) |
 
-`FUN_80035EA8` (MP, record `+0x108` max / `+0x10A` current) is the same
-shape with the zero case and the ailment arm removed: `mp <= max/4` -> `9`,
-`mp <= max/2` -> `6`, else `7`. So an empty MP bar inks orange, not red.
+`FUN_80035EA8` (MP, `+0x108` max / `+0x10A` current) has no zero case and no
+ailment arm: `mp <= max/4` -> `9`, `mp <= max/2` -> `6`, else `7`. An empty MP
+bar is orange, not red.
 
-Port: `engine-ui::{menu_hp_ink, menu_hp_ink_with_status, menu_mp_ink}`. The
-party view structs carry the `+0x12E` halfword as `status`, so the field
-panels call the ailment arm directly; `menu_hp_ink` is its `status == 0` case.
+Port: `engine-ui::{menu_hp_ink, menu_hp_ink_with_status, menu_mp_ink}`; the
+party view structs carry `+0x12E` as `status`. The battle HUD's resolution of
+the same tiers is [below](#battle-readout-tint-law-the-panels-sibling).
 
-### Which scenes the menu opens in
+## Top-level pause menu
 
-Where the accept sits also answers the wider question. Because it is a leg of
-`FUN_801D01B0`, the menu opens in every scene that controller walks - and that
-includes the three kingdom overworlds, which are ordinary `game_mode 0x03`
-field-run scenes on the same `FUN_801D1344` → `FUN_801D01B0` chain as a town
-rather than a mode of their own. That is the only reason the Save row is
-reachable at all, since `DAT_8007b6a8` enables it on exactly those three
-scenes. `FUN_801E76D4` is the top-view *debug* renderer, not a second
-controller needing its own arm; the full account, including the instruction
-evidence and the two independent globals involved, is on
+Three windows: 50 command list, 49 money / play-time box, 51 party panel.
+Dumps `overlay_menu_801cfd68.txt` / `_801d0148.txt` / `_801d030c.txt`.
+
+**Command list (id 50, `FUN_801CFD68`)**: seven rows at
+`(WX+0x14, WY + n*0xe)` - **Items, Magic, Equip, Status, Options, Load,
+Save** - CLUT 7. The selected row draws the hand at `(WX, row_y)` via
+`FUN_8002b994` (skipped when `DAT_801e46bc` bit `0x4000` is set; bit `0x2000`
+selects the dimmed variant). Two rows grey to CLUT 0 when blocked: **Load**
+when the entry-context pointer `DAT_8007b450` targets an `0x0D` byte,
+**Save** when the save-enabled flag `DAT_8007b6a8` is clear. The confirm arm
+applies the same two gates in the same order, so no row draws white and then
+buzzes.
+
+`DAT_8007b6a8` is per-scene: the MAN header bit `[0x01] & 1`
+(`legaia_asset::man_section::ManHeader::low_flag`) seeds it. The bit is set on
+the three kingdom world maps and clear on every field scene, so Save is grey
+everywhere but the overworld.
+
+The seven labels are NUL-terminated strings in the overlay's leading rodata
+pool: `@Items` at `0x801CE9D0`, then `@Magic` / `@Equip` / `@Status` /
+`@Options` / `@Load` / `@Save`. Each pointer targets the leading `0x40` (`@`)
+marker byte `FUN_80036888` consumes. The same pool (`0x801CE81C..0x801CEC78`)
+holds the options choices, the stat labels (`ATK` / `UDF` / `LDF` / `SPD` /
+`INT` / `AGL`, `Experience`, `Next Level`) and the shop / equip / status
+command strings. The battle overlay (PROT 0898) keeps its own pool at
+`0x801F4B98..0x801F4D2A` (`Spirit` / `Defense` / `Escape` / `Begin` and the
+result messages; the `Attack` / `Arts` / `Magic` / `Item` ring labels are
+sprites). These pools are what the translation pipeline's `ui_menu` section
+patches in place ([`ui-strings.md`](../tooling/translation/ui-strings.md)).
+
+**Money / play-time box (id 49, `FUN_801D0148`)**: money pictogram (ICO
+`0x62`) at `(WX, WY+2)`, amount as an 8-digit field at `(WX+0x28, WY)`. When
+the casino-coin flag `FUN_8003ce64(8)` is set a coin row follows: ICO `0x66`
+at `(WX, y+0x10)`, coin bank `0x800845A4` 8-wide at `(WX+0x28, y+0xe)`. The
+play-time row draws ICO `0x63` at `(WX, y+0x10)` and the clock from the 60 Hz
+counter `0x80084570`: hours 3-wide at `+0x20` (clamped 99, then minutes /
+seconds pin 59), colon glyphs (`FUN_8003c1f8` code 9) at `+0x38` / `+0x50`,
+zero-padded 2-wide minutes / seconds (`FUN_80034e4c`) at `+0x40` / `+0x58`.
+With the coin row the live window grows past its descriptor rect
+(`(24,166,104,38)` against `(24,178,104,24)`).
+
+**Party panel (id 51, `FUN_801D030C`)**: one block per roster member (ids
+`u8[3]` at `0x80084598`, count `0x80084594`) at stride `0x3e`:
+
+| element | position | source |
+|---|---|---|
+| name | `(WX+0x10, Y)` | record `+0x2A7` |
+| LV icon (ICO `0x0a`) + 2-digit level | `(WX+0x70, Y+2)`, `WX+0x80` | `+0x130` |
+| HP label (ICO `0x3f`), current / slash / max | `(WX+0x28, Y+0x11)`; `WX+0x38` / `+0x58` / `+0x60` on row `Y+0xf` | `+0x106` / `+0x104` |
+| MP label (ICO `0x40`), current / max | rows `Y+0x1e` / `Y+0x1c` | `+0x10A` / `+0x108` |
+| AP gauge (widget kind `0x31`) | `(WX+0x28, Y+0x29)` | persistent AP `+0x10E` |
+
+ICO `0x3f` is the same `(208,86,16,10)` sheet rect as status code `0x07`. HP /
+MP values take the [health-tier ink](#health-tier-ink-fun_800349ec--fun_80035ea8).
+
+### The menu does not open at all while a dialogue is up
+
+Retail has no separate Start handler: the menu-open accept sits in the
+pre-movement header of the locomotion controller `FUN_801D01B0`
+(`0x801D0250..0x801D02DC`). That function's first test (`0x801D01F0`) branches
+out when the player actor's engaged bit `+0x10 & 0x80000` is set - the bit the
+touch post `FUN_801D5B5C` raises on every talk and the dialog teardown
+clears. A talking player's Start opens nothing and buzzes nothing.
+
+<a id="which-scenes-the-menu-opens-in"></a>
+Because the accept is a leg of `FUN_801D01B0`, the menu opens in every scene
+that controller walks, including the three kingdom overworlds - ordinary
+`game_mode 0x03` scenes on the same `FUN_801D1344` -> `FUN_801D01B0` chain as
+a town. That is the only reason the Save row is reachable. `FUN_801E76D4` is
+the top-view debug renderer, not a second controller; see
 [`save-screen.md`](save-screen.md#where-the-save-rows-pad-route-is).
 
-The port splits that one retail mode into `SceneMode::Field` and
-`SceneMode::WorldMap`, so the open gate names both:
-`World::field_menu_open_allowed` is the whole precondition (the mode test plus
-the engaged-bit stand-in above), and it is what a host's Start edge must call
-instead of spelling a mode test out locally.
+### Port: session and composition
 
-## Equip screen
+The port runs the menu as a two-level session owned by
+`engine-session::BootSession`, the same on every host:
 
-The Equip screen composes four descriptor-table windows (draw order: tab 2,
-party 21, item-list 23, main 22 - the main window's opaque interior occludes
-the item-list window's lower span). Content renderers, all in the menu
-overlay:
-
-**Tab (id 2)** - `FUN_801DCA94` stages CLUT 7 and draws the "Equip" STR at
-the tab window's content origin; the carved banner behind it is caller art
-(see `ghidra/scripts/funcs/overlay_menu_801dca94.txt`).
-
-**Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094` (shared with
-the status screen's id-26 party list; see
-`ghidra/scripts/funcs/overlay_menu_801d2094.txt`). For each present party
-member (count `DAT_80084594`, roster order bytes at `0x80084598`; only
-roster slots `< 3` draw): the name STR (record `+0x2A7`) at `(X+6,
-Y + 0xE*i)`, CLUT 7. The pointing-hand cursor (`FUN_8002B994`) draws at
-`X-0xC` on the focused row, gated by the focus word `DAT_801E46C4`
-(bit `0x4000` hides, `0x2000` selects the blink variant, low 12 bits =
-row).
-
-**Main window (id 22, rect `(14,96,292,108)`)** - `FUN_801D21C0` (see
-`ghidra/scripts/funcs/overlay_menu_801d21c0.txt`). Early-outs unless the
-shown character's roster byte is `< 3`. First pass:
-
-- "Best Equipment" STR at `(X+0x10, Y)` - cursor row 0 of the window's
-  cursor space (`DAT_801E46C0`), hand at `(X, Y)`.
-- 7 slot rows at `Y + 0xE*(i+1)`: hand cursor at `X`, 12x12 slot pictogram
-  (ICO `FUN_8002C488`, code `DAT_801E43F4[i]` - the same fixed 7-code
-  array as the status equipment grid: weapon fist / helmet / armor / boot /
-  3x Goods ring) at `X+0x10`, the equipped item's name STR at `X+0x20`.
-  Item id: row 0 reads `record[0x196 + *(i16*)(DAT_8007B42C + char*2)]`
-  (per-character weapon-slot offset), rows 1..6 read
-  `record[0x196 + DAT_801E43E8[row]]`; names via the item-name table
-  `0x8007436C + id*0xC`.
-
-Second pass only when the submenu id is settled on the equip screen
-(`DAT_801E46A4 == DAT_801E46A8 == 0x13`) and no transition is pending
-(`_DAT_8007BB80 == 0`):
-
-- **Cursor row 0 ("Best Equipment")**: for each armament row 0..3 whose
-  best-candidate id (`DAT_801EF0C0[i]`) differs from the equipped id: a
-  change-arrow glyph `FUN_8003C310(2)` at `X+0x8E` (CLUT 0), then - for
-  class-1 (equipment) items - a weapon-class pictogram at `X+0xA8` (class
-  from the equip-stat record `+7` bits `0x60`, indexing `DAT_801E43F4` as
-  class 2 -> 0 weapon, 1 -> 1 helmet, 0 -> 2 armour, 3 -> 3 boot at
-  `0x801D24F8..0x801D251C`) with the candidate name at `X+0xB8`
-  (non-equipment names land at `X+0xA8`). Below, the **stat-compare
-  block**: 3 rows at `Y+0x48/+0x55/+0x62`; 3-char stat label STR
-  (`0x801CE9A0/A4/A8`) at `X+0xA0`, current value (3-digit NUM, 999-clamp,
-  `DAT_801EF08C/90/94`) at `X+0xC8`; when the preview value
-  (`DAT_801EF0AC/B0/B4`) differs, an up/down arrow `FUN_8003C1F8(4|5)` at
-  `X+0xE4` (CLUT 6 raised / CLUT 1 lowered) and the preview value at
-  `X+0xF0`. The preview value re-stages ink 7 first. Engine port:
-  `pause_screens::equip_screen_model` publishes `stat_compare` (the menu
-  block, five-slot walk, against the block with the Best Equipment picks
-  installed) and `best_changes` only on this row, and both hosts draw them
-  through `engine-ui::equip_screen_draws_for` +
-  `equip_best_change_sprites_for`.
-- **Cursor row 1..7**: the selected slot's equipped item id lands in
-  `DAT_801E46B0` and, when non-zero, an item info panel draws at
-  `(X+0x94, Y+0xC)`: `FUN_801D0F1C` (description text) over two
-  `0x90 x 0x28` shade boxes (`FUN_8002C69C`) at `Y+0xC` and `Y+0x44`.
-
-**Item-list window (id 23, rect `(174,22,132,182)`)** is renderer-less in
-the descriptor table (frame-only container); its picker content is drawn by
-the equip flow outside these window renderers.
-
-**Sub-screen chain**: the Equip screen runs as three sub-screens of the
-`0x801E4F40` table. `0x12` (`FUN_801D98F0`) picks the character; `0x13`
-(`FUN_801D99F0`) browses the 8 rows (Best Equipment + 7 slots). The row is
-`DAT_801E46C0 & 0xFFF` and the dispatch is a plain `beq row, zero` at
-`0x801D9B4C`, so row 0 is Best Equipment and a slot row is `row - 1`.
-Confirm on row 0 recomputes the best-candidate ids ([`FUN_801CF88C`
-below](#best-equipment-how-the-candidates-are-picked) →
-`DAT_801EF0C0`) and applies them through `FUN_801CF760` (per armament
-slot: skip when candidate == equipped or the bag lacks the candidate,
-else take one from the bag, return the old item, write the slot; SFX
-`0x24` on any change, buzz `0x23` on none), other rows hand off to
-`0x14`; cancel returns to `0x12`. `0x14` (`FUN_801D9C14`) drives the
-candidate list through the kind-4 kernel protocol: per frame it resolves
-the hovered row's candidate id (class `0x4000` payload 0 = the Remove
-row, `0x7000` = the equipped item itself, else the bag slot), derives
-the stat-compare preview by **trial-equipping** - the record's 8 equip
-bytes at `+0x196` save into `DAT_801EF0C8`, the candidate (or 0) is
-written, `FUN_801CF650` re-aggregates, the array restores - and on
-confirm commits: Remove returns the equipped item to the bag (buzz
-`0x37` on an empty slot), a bag row takes one copy (`FUN_80042EE0` find
-+ `FUN_80043048` remove), returns the old item (`FUN_800421D4`) and
-writes the slot, then the hand advances to the next slot row and the
-screen returns to `0x13`. Engine ports:
-`equip_session::{preview_candidate, unequip, slot_browse_confirm,
-apply_best_equipment}`, all four on the live `EquipSession::input` path.
-The character picker `0x12` is the `picking` phase of
-`FieldMenuSubsession::Equip`: Up / Down walk the present party and rebuild the
-session on the hovered member (the slot rows show that member's gear, with no
-slot hand), Cross hands the pad to the slot browse, and the browse's cancel
-returns to the picker. The engine's session works in its own slot order and
-reads the record through `equip_session::engine_equip_from_record` (the
-per-character weapon byte to the weapon slot, the other byte of the pair to
-the Hand Guard slot); its browse rows are retail's seven, in retail's order
-(`equip_session::BROWSE_SLOT_ORDER`: weapon, helmet, body, footwear, Goods x3).
-The Hand Guard slot - the per-character Ra-Seru byte - gets no row, because
-neither of retail's row resolvers (the weapon halfword and `DAT_801E43E8`)
-ever names that byte: the Equip screen neither shows nor changes a Ra-Seru.
-
-`FUN_801CF760` does **not** write equip byte `i` for armament `i`. It
-resolves the record offset first - armament `0` from the per-character
-weapon halfword `DAT_8007B42C + char*2`, armaments `1..3` from
-`DAT_801E43E8[i]` (the `bne s1,zero` / `lbu v1,0x0(v0)` pair at
-`0x801CF7B4..0x801CF7C8`) - and only then reads and writes
-`record + 0x196 + offset`. The port carries the same indirection as an
-explicit slot map (`equip_session::ARMAMENT_ENGINE_SLOTS`), because the
-engine's equip array inserts a Hand Guard slot retail has no row for:
-footwear is engine slot `4`, not `3`.
-
-Reading the two tables off the disc settles retail's own `+0x196` order.
-`DAT_801E43E8` is `00 01 00 04 05 06 07` - one byte per slot row, so
-helmet is byte `1`, body armour byte `0`, footwear byte `4` and the three
-Goods rows bytes `5..7` - and `DAT_8007B42C` is `2, 3, 2` (halfwords),
-putting Vahn's and Gala's weapon in byte `2` and Noa's in byte `3`. The
-hub's [equipment sub-panel](world-map.md#the-per-entry-equipment-sub-panel)
-resolves `(+7 & 0x60) >> 5` to the same four destinations, which pins the
-order a second way. So the retail array is
-`[body, head, weapon, weapon, footwear, goods x3]` - **not** weapon-first.
-The engine's `EquipSlot` enum is its own model, and a record has to be
-re-ordered before a routine that indexes in retail's space walks it
-(`field_submode_screen::hub_panel_slots`). The port's window-25 panel takes
-the **browse row**, not the slot index
-(`equip_session::retail_slot_row_for_engine_slot`); feeding the slot index
-straight through put footwear on row `4` and so resolved a compare category
-for it, which retail does not (see
-[the candidate step](#what-the-candidate-step-draws-measured)).
-
-#### The `0x801E43E8` run is three tables, not one
-
-`0x801E43E8` is seven bytes and stops there. What follows it in the data
-segment are two separate arrays, and the byte between them is padding:
-
-| VA | shape | read by |
-|---|---|---|
-| `0x801E43E8` | 7 bytes, the browse row -> equip-byte map (entry `0` unused - row 0 takes the per-character weapon halfword instead) | ten `lui`/`addiu` sites in PROT 0899 |
-| `0x801E43EF` | one alignment byte | nothing, in any image |
-| `0x801E43F0` | 4 bytes `01 02 04 00` - the per-character equip **mask bits**, `and`ed with the equipment record's `+6` character mask | `0x801CFA0C`, `0x801D5808`, `0x801DB580` |
-| `0x801E43F4` | 8 halfwords - the per-row slot **pictogram ids** (four gear codes, `0x46` three times for the Goods rows, `0` terminator) | `lh` at `0x801D22B4`, `0x801D252C`, `0x801D3F44` |
-
-So bytes `[7..10]` of the run are not "the four gear-slot indices": byte 7
-is padding and bytes 8..10 are the first three entries of the character-mask
-table, whose fourth entry is its `0` terminator. The address scan is the
-evidence - `0x801E43EF` has no word, no `lui`/`addiu` pair and no branch in
-any image, while `0x801E43F0` and `0x801E43F4` each have three
-materialisation sites of their own.
-
-Nine of the ten sites inline the same two-arm resolver: row `0` reads `lh`
-from `DAT_8007B42C + char*2`, rows `1`+ read `lbu` from `0x801E43E8 + row`,
-and the resulting byte indexes `0x80084140 + char*0x414 + 0x75E` - the
-record's `+0x196` equip array seen through the live game-state window. The
-tenth (`0x801D3C14`) skips the arms and reads the fixed entry `1`.
-
-### Which candidate list a slot row opens
-
-The candidate window (id 23) has no fixed content: the slot-browse step
-writes its descriptor's `+0` **content id** per row, out of an eight-byte
-table at `0x801E4DC0` (`00 17 15 16 18 1C 1D 1E`, stored with the `sb` at
-`0x801D9AC4`). Row 0 is Best Equipment and opens nothing; rows 1..4 take
-content ids `0x17` / `0x15` / `0x16` / `0x18`, and rows 5..7 - the three
-**Goods** rows - take `0x1C` / `0x1D` / `0x1E`.
-
-Those are two different builder families in the SCUS content builder
-`FUN_80030628`, and they do not share a filter.
-
-| Family | Content ids | Reads | Accepts |
-|---|---|---|---|
-| armament | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, the equipment `+7` category matching the row's, and the `+6` character mask against the builder's own `0x8007B48C[char]` byte (`lui 0x8008` / `addiu -0x4b74` at `0x80031538`) |
-| Goods | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2**, and the item-effect record's `+3` byte other than `0x41` |
-
-The Goods filter is `lbu` class, `bne` against `2` at `0x800317D8`, then the
-effect record's `+3` compared with `li v0,0x41` / `beq` at
-`0x800317F4..0x800317F8` - **no character-mask term at all**. Its rows are
-tagged `0x9000` (passive) where the armament rows are tagged `0x6000`, and
-both lists lead with the Remove verb (`0x4000`, payload 0) and, when the
-slot is occupied, the equipped id (`0x7000`).
-
-`0x41` is one past the 64-slot passive index space. On retail data the gate
-is exactly "this row carries an accessory passive": of the class-2 ids, the
-ones the filter admits are the ones whose effect row carries an index below
-`0x40`, and every id it rejects carries `0x41`.
-
-Engine side: the filter is
-`legaia_engine_core::menu_list_rows::goods_candidate_accepts` and the row
-build is `build_goods_candidate_rows` beside its three sibling builders;
-`equipment::DiscEquipInfo::install_goods` indexes the accepted ids off the
-item-effect table, because the equipment stat table - which is where every
-other restriction in that struct comes from - contains none of them.
-`EquipSession` asks the Goods question for engine slots `Ring1` / `Ring2` /
-`Accessory` and the armament question for the rest.
-
-The Goods slots also take their **row order** from the builder
-(`EquipSession::items_for_slot`): Remove first on every Goods slot, occupied
-or not; the equipped item second; then the accepted bag slots in slot order,
-with a bag copy of the equipped id skipped. Confirming the equipped row
-commits nothing - `FUN_801D9C14`'s confirm arm (`0x801DA0B4..0x801DA1D0`)
-tests only the `0x4000` Remove class and the `0x6000` / `0x9000` bag classes,
-and every other row falls through to the shared tail at `0x801DA1DC`, which
-steps the hand to the next slot row (wrapping at 8) and returns to sub-screen
-`0x13`. The four armament lists keep the engine's id-sorted rows, with Remove
-only on an occupied slot and no equipped row - a divergence from the builder
-table above, which gives both families the same two leading rows.
-
-### What the candidate step draws, measured
-
-Every library state parked on the Equip screen sits at slot-pick with the
-item panel blank, so window 24 and window 25 had no reference frame. A pad
-ladder driven off one of them - seek the browse cursor to each row, confirm
-into sub-screen `0x14`, wait for a staged id, capture - gives one frame per
-row (`scripts/pcsx-redux/autorun_equip_item_panel_capture.lua`). All seven
-rows open a populated list, the three Goods rows included.
-
-The candidate step opens both windows through one script,
-`0x801E4DC8` = `[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`. Its
-leading close-all takes the browse step's party (21) and main (22) windows
-down - only the tab (2), the item list (23, snapped in place, now drawn to
-its full height) and windows 24 / 25 come back - so the frame carries three
-stacked panels down the left column, on the rects 21 and 22 vacated (both
-hosts once drew 21 and 22 on under them, printing the party names through
-window 25's stat rows):
-
-- **window 25** (top) - the character's display name, then one stat row set.
-- **window 24** (middle) - the hovered item's name with its owned count, its
-  description line, and for an equipment item the bonus values that item
-  carries.
-- **window 24's reserved box** (bottom, `(WX, WY + 0x38)` sized
-  `0x90 x 0x28`) - the accessory-passive name and its description, drawn
-  only when the hovered item has a passive. The four gear rows leave it
-  empty; the Goods rows fill it.
-
-The row set in window 25 is what the `slti v0, s0, 4` guard at `0x801D137C`
-decides. On rows 1..4 - weapon, helmet, body, **footwear** - the captured
-frames all print the ATK / UDF / LDF triple whatever is hovered, because the
-guard skips the category lookup and `a1` keeps its pre-loaded `0x40`. Only
-the three Goods rows resolve a category, and they do not agree with each
-other: an HP-boost accessory draws the MAX HP / MAX MP pair, while an
-accessory whose effect row falls outside the two banded ranges draws the
-same ATK / UDF / LDF triple as the gear rows. So "the Goods rows show HP/MP"
-is a property of the hovered item, not of the row.
-
-### Best Equipment: how the candidates are picked
-
-`FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character
-already wears and then walks the bag (`0x80085958 + i*2` over
-`_DAT_8007B5EA.._DAT_8007B5EC`), keeping one winner per **armament
-slot**. An id competes only when its item record `+0` is `1`
-(equipment) and its equipment record `+6` mask shares a bit with the
-per-character mask byte `0x801E43F0[char]`. The slot it competes for is
-the equipment record's `+7` bits permuted - raw `(bits & 0x60) >> 5` is
-body / head / weapon / footwear, and the candidate array is indexed
-weapon-first, so the mapping is `[2, 1, 0, 3]`.
-
-Two ranking laws that the screen alone does not reveal:
-
-- **Armour ranks on `UDF + LDF` only** - equipment record `+2` plus
-  `+3`. The INT (`+0`) and SPD (`+4`) bonuses are never read, so a
-  pure-INT head accessory or pure-SPD boot never displaces an incumbent.
-- **A weapon's category check dominates its ATK.** The weapon score is
-  `equip[+1] + FUN_801DD0C0(char, id, 1)`, and that check returns a flat
-  `1000` or `0`. An ATK byte cannot reach `1000`, so a category-favoured
-  weapon outranks every unfavoured one regardless of raw attack.
-
-An empty slot is filled by the **first** eligible entry (the
-`incumbent == 0` test runs before the comparison) and ties keep the
-incumbent (both compares are strict `<`). The rest of the function is
-bookkeeping around a trial equip: back up the eight equip bytes, write
-the candidates in, re-run `FUN_801CF650`, swap the resulting stat block
-into the preview staging pair, then restore the backup and aggregate
-again - so the routine leaves the character wearing exactly what it
-found. Engine port: `equip_session::best_equipment_candidates` (+
-`armament_slot_of`).
-
-Engine port: `engine-ui::equip_screen_draws_for` (window contents at
-the offsets above; the candidate list fills the id-23 rect at the shared
-`0xD` list pitch) + `equip_screen_sprites_for` (pictogram column + hand
-cursors from the system-UI atlas), pens disc-parsed from the descriptor
-table. The engine's 8th slot row (its equip-array over-model) stays
-navigable but icon-less; the stat-compare block previews the hovered
-candidate rather than the best-equipment pick.
-
-The engine's browse cursor is the **retail row space**, not a slot index:
-row 0 is Best Equipment and runs the candidate scan plus the applier, and
-row `n` opens slot `n - 1`. The candidate list leads with the Remove row on
-an occupied slot, matching the class-`0x4000` payload-`0` entry above; both
-halves gate on the same "slot is occupied" test, so the session and the
-draw builder cannot disagree about whether row 0 is Remove.
-
-The weapon-category favour table (`DAT_801E4B88`, the data `FUN_801DD0C0`
-walks) is parsed out of the same PROT 0899 image the window-descriptor
-table comes from, by `World::install_menu_overlay_tables`, and
-`field_menu_dispatch::build_equip_session` hands it to the session along
-with the party slot being edited. The slot is not cosmetic: it is the
-check's `char_index`, so a session left on the default `0` would rank
-every character's weapons as Vahn's. Without the overlay the table stays
-empty and the check scores `0` for every weapon - which is the retail
-routine's own empty-table arm, and Best Equipment then ranks on raw ATK.
-
-### Manual equip applier (`FUN_801E5A08`)
-
-A whole per-slot equip commit - bag pull, class-routed destination, refund,
-confirm cue - resident in the field overlay (PROT 0897, base `0x801CE818`,
-file `+0x171F0`, 324 bytes / 81 instructions). Signature
-`FUN_801E5A08(item_id, char, slot_row)`; returns `1` on success, `0` if the
-bag pull fails.
-
-**Nothing on the disc calls it.** A five-form reference sweep plus a raw byte
-scan over every extracted image finds no `jal` (encoding `0x0C079682`), no
-data word `0x801E5A08`, and no `lui`/`addiu` materialisation pair - so the
-equip sub-screen's confirm cue does **not** come from here. The live commit is
-`FUN_801D9C14`'s candidate-list arm (the Remove / bag-row / write-slot block
-described above), with `FUN_801CF760` behind Best Equipment. What this routine
-is good for is the law it spells out in one place, which is why the port
-mirrors it.
-
-The body reads:
-
-1. `FUN_80042EE0(item_id & 0xFF)` locates the id in the bag; the `0x100`
-   sentinel is the miss, and the routine returns `0` having changed nothing.
-2. `FUN_80043048(bag_index, 1)` takes one.
-3. **Destination.** `slot_row >= 4` (a Goods row) writes equip byte
-   `slot_row + 1` verbatim. Otherwise the destination comes from the item's
-   equip class - equip-stat record `+7` bits `(0x60) >> 5`, reached through
-   the item record's `+1` index into `0x80074F68` - not from the row the
-   player confirmed from.
-4. The prior occupant of that byte, read at `record[0x196 + slot]`
-   (`0x80084140 + char*0x414 + 0x75E`), goes back to the bag through
-   `FUN_800421D4(old, 1)` when it is non-zero.
-5. The new id is stored and SFX `0x24` plays (`FUN_80035BD0`).
-
-The class → equip-byte map, with the branch addresses:
-
-| Equip class `(+7 & 0x60) >> 5` | Equip byte | Branch |
-|---|---|---|
-| `0` body | `0` | `bnez v0,0x801E5AE8` at `0x801E5A9C`, `a2 = v1 = 0` |
-| `1` head | `1` | `beq v1,1` at `0x801E5A94` → `0x801E5ADC`, `a2 = v1 = 1` |
-| `2` weapon | `*(i16*)(0x8007B42C + char*2)` = `2` / `3` / `2` | `0x801E5AC0..0x801E5AD8` |
-| `3` footwear | `4` | `beq v1,3` at `0x801E5AB0` → `0x801E5ADC` |
-
-Class `3` landing on byte `4` rather than byte `3` is a **delay-slot** effect
-and reads as an off-by-one until the slot is accounted for: the branch that
-takes class `3` to the shared `move a2,v1` carries `addiu v1,zero,4` in its
-delay slot, so `v1` is `4`, not `3`, by the time the move runs. Byte `4` is
-footwear in the `DAT_801E43E8` row map (`00 01 00 04 05 06 07`) above, so
-the delay slot is what makes the map consistent.
-
-Port: `legaia_engine_vm::dev_equip_commit::commit_equip` (body + host
-bindings) over `world_map_overlay::resolve_equip_slot` (the class routing).
-`legaia_engine_core::equip_session::EquipSession::commit` runs it for the
-field menu's per-slot confirm on both hosts, staging the record's `+0x196`
-window in retail order around the call, and
-`retail_destination_slot` exposes the class routing on its own. For the four
-armament rows the two answers coincide: that half of the candidate list is
-category-gated, so an item that can be picked for such a row is an item
-whose class routes to that row's byte. The three Goods rows are a different
-list family entirely - see below - and the class routing above says nothing
-about them.
-
-#### Why `0x801E5AE8` is not a second function
-
-`0x801E5AE8` is this routine's own inline placer at `+0xE0`, reached by the
-intra-function `j 0x801e5ae8` / `j 0x801e5aec` the class arms end on - not a
-"shared armament placer" the routine calls. Two artifacts made it read as one:
-
-- The dump `ghidra/scripts/funcs/overlay_0897_801d71f0.txt` is **mis-based by
-  `0xE818`** - it was produced against base `0x801C0000` instead of the field
-  overlay's `0x801CE818`, so every printed body address is `0xE818` low
-  (`0x801D71F0` = `0x801E5A08`, `0x801D72D0` = `0x801E5AE8`). Its `j` targets
-  are not: a jump target is decoded from the instruction bytes, so they print
-  correctly and land `0xE818` **above** the printed body, which is exactly the
-  shape of a call to somewhere else. See
-  [`call-target-integrity.md`](../tooling/call-target-integrity.md) and
-  [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
-- Searching that VA then found only a 4-instruction stub in the mis-based
-  `overlay_0896_bat_back_dat` image, which the classifier flags PHANTOM - a
-  second mis-based image answering for a VA neither of them owns.
-
-The bytes settle it: the 81-instruction prologue occurs at file `+0x171F0` of
-PROT 0897 and the placer at `+0x172D0`, `0xE0` apart, inside one function
-whose epilogue (`lw ra,0x1c(sp)` … `addiu sp,sp,0x20`) restores the frame the
-prologue set up. There is no separate armament placer.
-
-## Scroll widgets (submenu 2 or 3)
-
-Up arrow (icon `0x67`) when `_DAT_8007bb90 > 0` and down arrow (icon `0x68`)
-when more rows follow, both at `X = WX + (a0+0xe >> 1) - 4`. Scrollbar thumb
-(bar primitive) at `(WX, WY + (a0+0x10) - 0x28)`, length from `a0+0xe`,
-`FUN_80034b6c(3)`. Instr `801d477c`..`801d4838`.
-
-## Options screen
-
-Three functions in the menu overlay (PROT 0899, base `0x801CE818`):
-
-- **Row renderer** `FUN_801D2910`, called by the window-id-48 content
-  renderer `FUN_801DCEF0` (a thin `FUN_801d2910(win, 0, 9)` wrapper) - see
-  `ghidra/scripts/funcs/overlay_menu_801d2910.txt`. Per display row it
-  draws the cursor arrow at content `x-10`, the label string at `x+8` and
-  (on value rows) the value string at `x+140`, then advances y by the
-  row's layout pitch.
-- **Input SM** `FUN_801DA9F8` (browse cursor `DAT_801E46C0`, low 12 bits =
-  row, bit `0x1000` = editing, bit `0x4000` = cursor hidden). The options
-  submenu's tick entry is the thin wrapper `FUN_801DD330`, a single tail call
-  `FUN_801DA9F8(0, 9, 0x30, 1)` (`ghidra/scripts/funcs/overlay_menu_801dd330.txt`).
-  The four arguments are the display-row span, a **window id** and the exit
-  sub-screen: state 0 stores the third into bytes `+5` and `+9` of the window
-  script at `0x801E4E08` (`0x801DAA78` / `0x801DAA7C`, the window-id bytes of
-  its first two instructions), so `0x30` is window 48, the settings window -
-  not an init word - and the exit arm stores the fourth into `DAT_801E46A4`
-  (`0x801DAC24`), handing back to the root command picker (sub-screen 1).
-  The engine's display set is that span sliced out of the layout table
-  (`engine-core::options::options_display_rows`).
-- **Value-popup renderer** `FUN_801D2B44` (window id 47).
-
-Three data tables drive the rows:
-
-| VA | contents |
+| Piece | Owner |
 |---|---|
-| `0x801E4404` | display layout: 10 × `[u16 row_id, u16 advance]` - row ids `0,1,2,3,6,4,7,9,8,10`, advance 14 px (20 px on the two group-separator rows, Battle Command + Field HP Display) |
-| `0x801E44B8` | row descriptors: 8-byte nodes `[config_word_ptr: u32][value_count: u8][label_ink: u8][row_id: u8][string_index: u8]`, walked as a linked list keyed on `row_id` |
-| `0x801E442C` | shared string pointer table; a row's value string = `strings[string_index + value + 1]` |
+| Open gate (mode test + engaged bit; `SceneMode::Field` and `WorldMap`) | `World::field_menu_open_allowed`, called by `BootSession::press_field_menu`; `open_field_menu` re-checks the engaged bit |
+| Save / Load row gates | `World::install_scene_save_permission` seeds `party.scene_save_allowed`; sampled with `World::menu_entry_context_kind` into `field_menu::FieldMenuGate` |
+| Root list | `engine-menus::field_menu::FieldMenuSession`; `pause_screens::root_menu_confirm_route` decides both row ink and advance-vs-buzz, over `ROOT_MENU_ROUTES` |
+| Sub-screen | `engine-core::field_menu_dispatch::FieldMenuSubsession`; a confirm suspends the root (`FieldMenuPhase::Suspended { row }`) until the sub-screen ends and `apply_*_outcome` runs |
+| Persistence | a finished Save / Load leaves a `save_screen::SaveCommit` on `BootSession::last_save_commit`; the host owns the bytes behind the `SaveRack` |
+| Descriptor rects with pinned fallback | `engine-ui::pause_menu::MenuRects` (`MENU_WINDOW_FALLBACK`) |
+| Window set, tab painter, draw order, 320x240 stage scale | `engine-ui::pause_menu::pause_screen_draws` + `stage_transform` |
+| Top-level content | `engine-ui::field_menu_draws_for` + `field_menu_info_draws_for` (text), `field_menu_icon_sprites_for` (hand, pictograms, labels, `ap_gauge_sprites`) |
 
-The row set (label / choices / config word - the words live in the saved
-`0x800845xx/0x800846xx` config block):
+A gated row stays navigable and draws grey, matching retail's unconditional
+7-row cursor walk. `engine-ui` does not depend on `engine-core`, so each host
+projects the session into plain view structs and the shared composition takes
+those; the Load / Save sub-screen is the save-select surface
+(`SaveScreenFlow::overlay_model` + `save_select_overlay_draws`), shared with
+the boot Continue path - see [`save-screen.md`](save-screen.md). Tests:
+`crates/engine-shell/tests/menu_replay.rs` walks all seven rows from
+`World::set_pad` alone, and `engine-ui/tests/pause_menu_compose.rs` drives
+every screen's composition with no disc, GPU or host. The host-drift row for
+the press is in
+[`host-drift.md`](../tooling/host-drift.md#tier-3---simulation-do-both-hosts-feed-the-same-kernel).
 
-| row | choices | config word |
+One difference from retail: the port draws no coin row in window 49; the time
+tag sits at the no-coin-row position whatever the casino bank holds.
+
+## Tab banner
+
+The class-2 title-tab windows (ids 0..=4) draw no 9-slice frame. Their chrome
+is the carved brown **plaque**, textured sprites on CLUT row 12 of the
+system-UI sheet (`PROT.DAT[0x018E0]`):
+
+| piece | src rect | placement |
 |---|---|---|
-| Battle Camera | Close / Normal / Far | `0x800846C0` |
-| Battle Select Attack | Select / Automatic / Command | `0x800846C4` |
-| Battle Command | Directional Buttons / ✕-glyph " button" | `0x800846C8` |
-| Field Move | Walk / Run | `0x800846CC` |
-| Field HP Display | Immediate / Gradual / Display Off | `0x800845C4` |
-| Sound | Stereo / Monaural | `0x800846BC` |
-| Dual Shock (header, no value) | - | - |
-| "  Battles" | Vibration On / Off | `0x800845C8` |
-| "  Events" | Vibration On / Off | `0x800845A8` |
-| "  Encounters" | Vibration On / Off | `0x800845CC` |
-
-Inks (staged via `DAT_8007B454`): labels ink 7 (white), values ink 6
-(gold), the indented Dual Shock sub-row labels ink 5 (teal) - the per-row
-label ink is the descriptor node's `+5` byte. While the value popup is
-open every non-cursor row drops to ink 0, except a header row above the
-cursor which keeps its ink. A hidden row exists in the descriptor list
-but not in the layout table: "Battle Voices" (Voices On / Off,
-`0x800845AC`) - present strings, never displayed in the US build.
-
-Interaction (`FUN_801DA9F8`): Up/Down move the browse cursor, skipping
-valueless rows (the SM re-navigates off the header); Cross opens the
-value popup seeded with the current value; Cross inside commits the popup
-cursor **directly into the config word** (committing "Events" to
-Vibration Off also zeroes the live rumble state `0x8007B92C/0x8007B930`);
-Circle backs out of the popup, and out of the screen - there is no
-revert, edits are already live. The popup is window descriptor id 47: its
-x/w `(170, 128)` are static, y/h are stamped per open
-(`y = id-48 y + 0x16 + Σ advances above the cursor row`,
-`h = choices × 13 - 4`, flipped up by `choices × 13 + 0x1C` when the
-bottom would pass y = `0xB0`). `FUN_801D2B44` lists the choices at a
-13-px pitch, text inset `+0x14`, cursor at the content origin.
-
-Engine port: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
-`OptionsSession` Browsing→Editing SM, `options_popup_content_rect`) +
-`engine-ui::options_draws_for`; the Sound row drives the audio
-mixer's monaural downmix (`engine-audio AudioOut::set_mono`), Field HP
-Display sets the field party HUD's idle delay on both hosts
-(`WorldToggles::field_hp_display`, read through
-`world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
-no HUD - see [`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)),
-and the other settings persist in the engine's options config file.
-
-The settings window is retail's ten rows on every host. The port's one
-engine-only screen, **Key Config**, is not a row: on a host with a keyboard
-binding table, Select on the Options screen opens it (retail's picker reads
-no Select edge). It used to hang below the ten as an eleventh row, which grew
-window 48 past retail's frame and read as a different screen in the retail
-comparison corpus. The rebind sub-screen reuses the window and lays its
-sixteen buttons out in two columns of eight at the popup's 13-px pitch so the
-header, rows and hint fit the frame.
-
-### Dev-menu EVENT FLAG editor (debug build only)
-
-The retail *debug* build's developer menu lives in overlay 0897 (the
-warp-applier + flag-editor toolset), not in the retail pause menu. Its
-EVENT FLAG editor is a raw index/value poke tool - it is what produced the
-capture states once misread as a mystery `_DAT_8007BA78` writer
-(`docs/reference/re-settled-threads.md`). Two value-adjust kernels are
-ported for completeness, faithful to the disassembly (`FUN_801dbd04` /
-`FUN_801db8f4` in `ghidra/scripts/funcs/overlay_0897_*`):
-
-- **Value step** (`FUN_801dbd04`): the edited flag index/value
-  `DAT_801f2aa0` moves by Up/Down (fine `0x8`, coarse `0x80` while
-  Triangle is held) and Left/Right (`±1`), then clamps to `[0, 0xFFF]`.
-- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the flag-list row
-  cursor `DAT_801f2e90` decrements (prev) or increments (next), each
-  wrapping across the `'X'` (0x58) end sentinel in the stride-`0xA` table
-  at `DAT_801f2e94` - prev lands on the last real entry, next wraps to the
-  top.
-
-These read the **packed** pad words (`_DAT_8007bb84` edge, `_DAT_8007b850`
-held) from `FUN_8001822C` - `0x10` Triangle … `0x1000` Up / `0x2000`
-Right / `0x4000` Down / `0x8000` Left - not the raw-BIOS `PadButton`
-layout. The two sibling worklist rows are decompiler fragments of the same
-dispatcher, not standalone functions: `FUN_801d3444` is the PC-delta
-entry-pointer advance (`addiu s8,s8,0x10; j …`), and `FUN_801d9bbc` is a
-menu-row text emit (`func(0x801cf1ec, s3, s5+0x10)`, reusing caller
-registers) left as an `engine-ui` draw seam. Engine port:
-`engine-core::dev_menu` (`edit_flag_value`, `flag_list_prev`,
-`flag_list_next`, `EventFlagEditor`); no draw-list code, so the row render
-stays with the UI crates.
-
-## Submenu state machines
-
-Every pause-menu screen's input handling is one per-submenu tick
-function, dispatched from the master menu tick (inside `FUN_801DC6B4`,
-menu overlay) through the function-pointer table at VA `0x801E4F40`,
-indexed by the submenu word `DAT_801E46A4`. The master tick keeps a
-requested/settled pair: a handler *requests* a switch by writing
-`DAT_801E46A4`; the master tick compares it against the settled copy
-`DAT_801E46A8` and, on a change, zeroes the shared per-submenu phase
-word `DAT_801E46AC` before dispatching - every submenu entered starts at
-phase 0. Items-screen slots of the table: 5 = command window
-(`FUN_801D7C00`), 6 = the Use list (`FUN_801D7E50`), 7 = the Throw Out
-list (`FUN_801D8734`), 9 = the all-party apply (`FUN_801D7FF8` - its
-picker runs with count 0, confirm/cancel only), 0xA = the single-target
-apply (`FUN_801D8308`), 0xB/0xC/0xD = the Door of Light / Door of Wind /
-Incense special routes; 0xE = the Magic screen's caster/list handler
-(`FUN_801D9110`, the only writer that routes on to 0xF / 0x10 / 0x11),
-0xF/0x10 = the group-cast and single-target Magic apply flows
-(`FUN_801D9280` / `FUN_801D9594` - both call the effect-apply handler
-`FUN_800402F4`, and they differ in the one argument that decides scope:
-the shared cursor primitive gets row count `0` for the group cast and
-the live party count for the single-target one, the same split items use
-at 9 / 0xA); 0x12/0x13/0x14 = the Equip screen chain (character picker →
-slot browse → candidate list; the `DAT_801E46A4 == 0x13` gate of
-`FUN_801D21C0`). The table runs `0x00..=0x20` and ends on a `0` word;
-`0x20` is the casino prize counter (`FUN_801DC1CC`).
-
-The list windows themselves (descriptor kind 4) are paged by the
-SCUS-resident **kind-4 list kernel `FUN_80032A44`** (below), which the
-overlay talks to through a small global protocol: `_DAT_8007BB94` =
-list mode/result (0 idle, 1 browsing, 2 = row confirmed, 3 =
-cancelled, 4 = parked behind the command window), `_DAT_8007BB88` = the
-selected row's payload (low 12 bits of the row entry - the bag-slot
-index on the item lists), `_DAT_8007BB9C` = the selected row's class
-nibble (`entry & 0xF000`, the screen-id key `FUN_80034250` dispatches
-descriptions on), `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` =
-scroll top / selected row / row count. The overlay SMs set mode 1 and
-poll for 2/3, gating every phase step on the window-slide latch
-`_DAT_8007BB80 == 0`.
-
-### The kind-4 list kernel (SCUS `FUN_80032A44`)
-
-Runs per frame per live list window whose id byte (live window `+0x1C`)
-is in the allowlist at `0x80073E1C` (`02 03 22 07 08 09 0A 0E 0F 10 0B
-05 19`, `0x23`-terminated). The id byte is the descriptor's **content
-id** (record byte `+0x0` - see [the descriptor
-table](#window-descriptor-table)), copied at window create
-(`FUN_800326AC`, `sb` at `0x80032990`). The list node (live window
-`+0x18`, built by the allocator `FUN_80030104`: `count*2 + 0x2A` bytes)
-holds `+0x0` scroll top, `+0x2` visible rows (`(content_h - 4) / 0xE`),
-`+0x4` row count, `+0x6` selected row, and per-row u16 entries from
-`+0x28`. A row entry packs `[class: high nibble][0x800 = disabled]
-[0x400 = alt-ink][payload: low 12 bits]`; the **SCUS-resident** content
-builder `FUN_80030628` (a per-content-id switch, jump table
-`0x80010D38`, index = `id - 2`) builds the entries at create /
-content-refresh, the kernel only reads them. The dim/alt-ink bits are
-decided **per row at build time** - there is no state-dependent bit
-rewrite (capture-pinned: the row words are bit-identical between
-command focus and Use-list focus - `autorun_use_list_rows_dump.lua`).
-
-**Navigation** (held pad `_DAT_8007BB84`, mode 1 only): Up (`0x1000`,
-`80032ae8..80032c74`) steps the selection up, wrapping to the page's
-last row at the page top (`80032b28`); Down (`0x4000`,
-`80032b44..80032b84`) steps down, wrapping to the page top past the
-page bottom or the last row; Left (`0x8000`, `80032b90`) pages up while
-`top > 0`; Right (`0x2000`, `80032c1c`) pages down while `top + visible
-< count`, clamping the selection to `count - 1`. Up/Down never scroll -
-Left/Right are the only scroll, which is why the lists read as fixed
-12-row pages. Confirm (edge mask `0x800846D0 & _DAT_8007B874`,
-`80032ccc..`): a disabled row (`entry & 0x800`, `80032d04`) buzzes
-(cue `0x23`); otherwise mode = 2 + cue `0x20` (`80032d34`). Cancel
-(mask `0x800846D4`): cue `0x37`, mode = 3 (`80032dcc`). Move cues
-(`0x21`) enqueue into the 4-slot UI ring at `0x8007B6D8`.
-
-**PAGE header** (`80032e18..80032f20`, drawn while the count is
-non-zero): the current page number is recovered by walking `visible`
--sized steps until the accumulator hits the scroll top. All glyphs are
-`FUN_8002C488` UI-icon sprites from the `0x800732A4` table: the "PAGE"
-small-cap tag is **ICO `0x76`** (atlas UV `(80,136)`, 24x8, CLUT byte
-1 - the teal ink) at `(WX + W - 0x38, WY - 2)`; the gold page digits
-are **ICO `0x7A + digit`** (6x8, UV `(64 + 6*digit, 144)`) - current
-page at `WX + W - 0x20` (tens; ones at `+6`), the slash **ICO `0x79`**
-(UV `(120,136)`) at `+0xD`, the page total at `+0x14`/`+0x1A`. The
-digit-sprite path leading-zero-suppresses the tens cell.
-
-**Rows** (`80033050..`): the row block vertically centres -
-`row0_y = WY + (content_h - visible*0xE)/2 + 5`, pitch `0xE` (12 rows
-at `WY + 0xC` for the item-list rect). Per-row draw switches on the
-entry's class nibble: `0x1000` = bag row (name via the row-name
-resolver `FUN_8002FF8C` at `WX+0xC`; bag count from `0x80085959 +
-slot*2` as a three-cell, 8-px digit field from `WX+0x6C` with
-skip-advance leading-zero logic - the hundreds cell is always blank for
-a count capped at 99, a 2-digit count inks `WX+0x74`/`WX+0x7C` and a
-1-digit count inks `WX+0x7C`); `0x6000` = bag row with an equip-slot
-pictogram (icon id via equip record `+7` bits `0x60` through the
-halfword table `0x80073A90`, name at `WX+0x1C`) - the Equip screen's
-candidate list; `0x9000` = passive row (ICO `0x46` + name at
-`WX+0x1C`); `0x7000` = ICO `0x21` + name (payload used as the id
-directly); `0x3000`/`0xA000` = shop rows (name from item record `+4` at
-`WX+0x18`, 5-digit price from record `+2` at `WX+0x80`; `0xA000`
-stages ink 5); `0x8000` = fixed-advance name (monospace override byte
-`0x80073F20`); `0x2000`/`0x5000`/`0x4000` = plain name rows.
-
-**Row ink** (`8003312c..80033154` and per-class clones): each row
-stages ink 7 (white), dropping to 0 (grey) when the row's `0x800`
-disabled bit is set and to 1 when `0x400` is set - **unless the list is
-parked** (mode 4), which keeps every row white. The white-to-grey flip
-the pad-walked captures show when the hand enters the Use list is
-purely this park override lifting: the row bits themselves are built
-once by `FUN_80030628` and do not change with focus (capture-pinned -
-the content-id-3 row words are bit-identical across command focus, list
-focus, and 60 vsyncs of browsing). A "whole page grey" capture is a
-page whose rows are each individually disabled - see [the Use-list
-build](#use-list-row-build-content-id-3-fun_80030628) for the per-row
-law. The engine's all-grey-when-focused model in
-`engine-core::pause_screens` is an approximation of that capture, not
-the retail rule.
-
-**Hand + page arrows** (`80032f5c..8003304c`): hand
-`FUN_8002B994(0, browsing, WX - 6, row_y)` (suppressed when parked, and
-in mode 0 for window 11 - the Door of Wind list); blink-gated page
-triangles (frame word `0x80084570 & 0x18`) - ICO `0x27` at
-`(WX - 0xC, WY + h/2 - 3)` while scrolled, ICO `0x28` at
-`(WX + w + 4, WY + h/2 - 3)` while rows remain. Against the live list
-rect the capture-pinned right-arrow spot `(WX + 0x84, WY + 0x53)`
-resolves these formulas at `w = 128, h = 172` - the live rect trims the
-descriptor's `132x182`.
-
-Engine port: `engine-core::pause_screens::list_kernel_navigate` (the
-navigation phase, page-local wrap + page flip); the row/header draws
-stay in `engine-ui::pause_lists` at the capture-pinned pens. The rest
-of the kernel's data side lives in `engine-core::menu_list_rows`: the
-allocator (`list_alloc`), the row-entry bit constants, the row-name
-resolver (`row_name_source`, `FUN_8002FF8C`), the description
-dispatcher (`description_source`, `FUN_80034250`), the content-builder
-item-list cases (below), and the live-window upsert
-(`LiveWindowSet`, `FUN_80032434`).
-
-### Use-list row build (content id 3, `FUN_80030628`)
-
-The Items **Use** list (window 15, content id `3`) is built by the
-content builder's id-3 case (`0x80030828..0x80030A88`,
-`ghidra/scripts/funcs/80030628.txt`). Per bag slot (`0x80085958 +
-i*2` over the window `gp[+0x2D2]..gp[+0x2D4]`), the item record
-(`0x80074368 + id*0xC`) kind byte `+0x0` routes the row:
-
-- **kind 2 with item-effect flag `0x8`** (`0x800752C0[eff*4+2]`,
-  `0x800308B8..0x800308F8`): entry `slot | 0x1C00` (dim + alt-ink),
-  collected in a third buffer and appended **last**.
-- **kind 1** (equipment / key items, `beq` at `0x80030918`):
-  unconditionally `slot | 0x1800` (dim), collected in a second buffer
-  and appended **after** the in-place rows - equipment sorts to the
-  page tail rather than interleaving.
-- otherwise, in the field context (`gp[+0x85C] == 0`): Door of Light /
-  Door of Wind (ids `0x88`/`0x89`, `0x80030930..0x80030974`) gate on
-  scratchpad word `0x1F800394` bits `0x100000`/`0x200000` - a **set**
-  bit dims the door's row in place (the `bne` at
-  `0x8003094C`/`0x8003096C` emits `slot | 0x1800` when the bit is
-  set; the clear state falls through to the normal usability chain);
-  then the effect **field-usable** bit `0x2` (`0x80030990`, clear =
-  dim); then the applicability probe `FUN_8003043C` (`0x800309A4`) - a
-  party scan through the action validator `FUN_8003FB10` that returns
-  0 when the item would affect nobody (everyone at full HP for a
-  heal), which dims the row (`0x800309BC`). These rows stay **in
-  place** (dim rows interleave with white ones). In the battle context
-  (`gp[+0x85C] == 1`) the gate is the effect **battle-usable** bit
-  `0x4` (`0x800309E0`) instead - and, unlike the field context, a
-  battle-unusable row joins the kind-1 tail buffer (`0x800309FC`
-  stores through the second buffer) rather than dimming in place. A
-  context value other than 0/1 emits no row at all (`0x800309C0`).
-
-So a Healing Leaf row greys out at full party HP through the
-applicability probe - the capture-pinned dim row (`0x1800`, item
-`0x77`) of the single-item Use list. The **Throw Out** list (window 16,
-content id `0x22`, case `0x80030AF8`) reuses the shapes with a
-discardability gate: kind-1 rows go to the tail buffer white unless
-equip-record `+0x7` bit `0x1` (no-discard) dims them
-(`0x80030C08..0x80030C18`), and the in-place rows dim on item-effect
-flag `0x1` (key items, `0x80030C40`). The price-gated bag list is
-content id `2` (window 38: rows with item price `+0x2 == 0` dim and
-sort last, `0x8003071C`/`0x80030734`). All three cases are ported as
-`engine-core::menu_list_rows::{build_use_list_rows,
-build_throw_out_rows, build_price_gated_rows}` (row words + buffer
-order, unit-tested against these laws).
-
-Shared helpers, both menu-overlay resident:
-
-- **Cursor navigate `FUN_801D688C(cursor_ptr, rows, wrap)`** - held-pad
-  confirm/cancel masks (`DAT_801EF0F0`/`F4`) return 1 (SFX `0x36`) / 2
-  (SFX `0x37`); pad-edge Up/Down (`_DAT_8007BB84` bits `0x1000`/`0x4000`)
-  move the cursor word's low 12 bits (SFX `0x21`), wrapping when `wrap`
-  is set, and return 3. The high cursor-word bits pass through
-  untouched (`0x4000` hide, `0x2000` dim variant, `0x1000` editing).
-- **Window-script runner `FUN_801D6628(script)`** (this VA is the menu
-  overlay's runner - the actor VM of `actor-vm.md` is a different
-  overlay at the same base). A script is 4-byte entries
-  `[op: u8][window_id: u8][arg: u16]`, op 0 terminates; the op jump
-  table sits at `0x801CED70`. Ops used by the pause screens: 1 =
-  create-if-absent + slide to the descriptor home rect, 2 = open at a
-  packed position, 3 = poke live-window byte `+0x1D`, 4 = close
-  (slide out), 5 = close all, 6 = zero live-window `+0x20` (snap the
-  slide motion), 8 = destroy, 9 = create + slide to `arg`, 0x0A =
-  destroy + re-create in place (content refresh keeping the animated
-  position). The live windows are `0x5C`-stride structs (descriptor id
-  at `+0x8`, rect at `+0xA`) - see the window-table notes above.
-
-## Items screen
-
-Four descriptor-table windows (draw order: tab 0, command 13, list 15,
-info 17 - the live-list order of the pad-walked capture). The pause-menu
-submenu word `DAT_801E46A4` holds `5` while the command window has focus
-and `6` once the hand enters the list (`7` for the Throw Out list).
-
-**Command window (id 13, `FUN_801D0D18`)** - three rows at `(WX+0x14,
-WY + row*0xE)`: "Use" / "Throw Out" / "Arrange" (`@`-marker strings in
-the menu-overlay rodata pool at `0x801CEA10..`). Text stages CLUT 7,
-dropping to CLUT 0 when the bag scan (slots `0x80085958 + i*2` =
-`[id, count]` over `_DAT_8007B5EA.._DAT_8007B5EC`) finds no held item.
-The hand cursor (`FUN_8002B994`) draws at `(WX, row_y)` gated by the
-cursor word `DAT_801E46C0`. See
-`ghidra/scripts/funcs/overlay_menu_801d0d18.txt`.
-
-**Item list (id 15, content id 3)** - renderer-less in the descriptor
-table; the page is drawn by the SCUS **kind-4 list kernel
-`FUN_80032A44`** (see [the kernel
-section](#the-kind-4-list-kernel-scus-fun_80032a44)) over
-class-`0x1000` bag rows built by [the content-id-3
-case](#use-list-row-build-content-id-3-fun_80030628) of
-`FUN_80030628`. Rows start at `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows
-per page: item name, then the bag count in the kernel's three-cell
-field from `WX+0x6C`; with counts capped at 99 the ink starts at
-`WX+0x74` (tens) or `WX+0x7C` (ones), which is where
-`engine-ui::pause_lists` draws it. The page draws CLUT-7 white while the
-command window has focus (the kernel is *parked*, mode 4, which forces
-white); once the hand enters the list each row shows its own build-time
-ink - white usable, CLUT-0 grey for rows the builder dimmed (`0x800`:
-equipment, field-unusable consumables, and heals with nobody to heal).
-The row words do not change with focus; a page can read all-grey simply
-because every row on it dimmed. The hand at `WX-0xC` is the selection
-highlight - no row tint. The header row sits above row 0:
-the "PAGE" small-cap tag - ICO sprite `0x76`, atlas UV `(80,136)` 24x8,
-teal ink `(16,181,156)` - at `WX+W-0x38`, and the gold `cur / total`
-fraction (digit sprites ICO `0x7A..0x83`, slash `0x79`) from
-`WX+W-0x20`, ending flush at the content right edge. Blink-gated page
-triangles (ICO `0x27`/`0x28`) mark further pages - the right one at the
-capture-pinned `(WX+0x84, WY+0x53)` (`PAGE 1 / 6` in the capture).
-The total is `ceil(rows / 12)` over the **occupied** rows - the builder
-skips an empty slot (`beq s0,zero` at `0x8003089C`) and the kernel steps
-pages up to the row count - so the capture's six pages are that save's
-item count, not the bag's capacity: one held item reads `PAGE 1 / 1`
-with no right triangle, and an empty list draws no header.
-
-**Info window (id 17, `FUN_801DCB60`)** - draws only while an item id is
-staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at
-`(WX+0x7C, WY)` (count re-resolved through the bag-slot scan
-`FUN_80042EE0`), then the shared item-info panel `FUN_801D0F1C`: name
-(CLUT 6, the item-table `+4` pointer) at `(WX, WY)`, description (CLUT 7,
-the item-table `+8` pointer - see
-[`../formats/item-table.md`](../formats/item-table.md)) at
-`(WX, WY+0x10)`, and -
-for accessories - the passive-effect lines from the `0x8007625C` table
-at `(WX, WY+0x38)` (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a
-single/all-scope icon (`0x84`/`0x85`) at `WX+0x84`. A Point Card
-(`id 0xFE`) instead draws "Points Left" at `(WX+0x18, WY+0x41)` with the
-8-digit bank `_DAT_800845B4` at `(WX+0x38, WY+0x4E)`. The renderer
-always emits a second framed widget box `FUN_8002C69C(WX, WY+0x38,
-0x90, 0x28)` under its own window - the empty lower-left box of the
-capture; the passive / points lines land inside it. See
-`overlay_menu_801dcb60.txt` / `overlay_menu_801d0f1c.txt`.
-
-The Point Card arm is a **branch, not an addition**: the id test at
-`0x801d0fd0` jumps to the routine's tail once it has drawn those two
-lines, so the passive block and the scope icon never run on that row. On
-the retail disc the exclusion is belt-and-braces - the Point Card's effect
-descriptor carries the `0x41` no-passive sentinel, so the passive block
-would draw nothing anyway. That is why the port keeps it as a separate
-builder (`engine-ui::item_points_panel_draws`) layered over
-`items_screen_draws_for` rather than as a field inside the info view: the
-condition is on the staged **id**, and the number is world state
-(`World::minigames.point_card`) the screen model does not carry.
-
-### Command sub-flows (Use / Throw Out / Arrange)
-
-The command SM `FUN_801D7C00` (submenu 5) phases through the shared
-phase word `DAT_801E46AC`: phase 0 zeroes the staged item id/count
-(`DAT_801E46B0`/`B4`), parks the list (`_DAT_8007BB94 = 4`) and re-runs
-the screen's window script; phase 1 navigates the three rows with
-`FUN_801D688C(&DAT_801E46C0, 3, 1)`. Every confirm first re-runs the
-bag scan (slots `0x80085958 + i*2` over `_DAT_8007B5EA.._DAT_8007B5EC`,
-a slot counts only when **both** id and count bytes are non-zero) and
-buzzes (SFX `0x23`) on an empty bag. Then, by row: **Use** requests
-submenu 6 (SFX `0x20`), **Throw Out** requests submenu 7 (SFX `0x20`),
-**Arrange** stays in submenu 5 and jumps to phase 2, which calls the
-sort kernel `FUN_801D64A8`, zeroes the list scroll
-(`_DAT_8007BB90`/`BB98`), re-opens the list window and returns to
-phase 1 (SFX `0x36`). Cancel (result 2) requests submenu 1 - back to
-the top-level pause menu.
-
-**Arrange kernel `FUN_801D64A8`** - the bag sort behind the Arrange row:
-allocates a 256-byte scratch and inverts the menu overlay's
-display-order table at `0x801E4A88` (`table[rank] = item_id`, file
-offset `0x16270` in PROT 0899) into an id -> rank map (ascending fill -
-a duplicated id keeps its last rank), then selection-sorts the bag slot
-pairs by that rank, considering only occupied slots and breaking once
-none remain - emptied slots sink behind the occupied run. See
-`ghidra/scripts/funcs/overlay_menu_801d64a8.txt`; engine
-`engine-core::menu_arrange` (parser + kernel).
-
-**Use list `FUN_801D7E50`** (submenu 6): phase 0 hides the command hand
-(cursor `|= 0x1000`), runs the window script (re-creating list 15 in
-place, snapping windows 13/17), phase 1 arms the list kernel
-(`_DAT_8007BB94 = 1`), phase 2 stages the hovered slot's id/count into
-`DAT_801E46B0`/`B4` every frame and polls the kernel: cancel (3)
-returns to submenu 5; a pick (2) dispatches on the picked item's
-effect-class byte (item record `+1` indexes the `0x800752C0`
-item-effect table - see
-[`item-effect-table.md`](../formats/item-effect-table.md)) at
-`801d7f80..801d7fd8`: class `0x80` -> submenu 0xB, `0x81` -> 0xC,
-`0x82` -> 0xD, anything else -> submenu 9 (the all-party apply) when
-the effect's `+2` flag bit `0x20` is set, else 0xA (the single-target
-apply). All five routes are traced below; engine kernel
-`engine-core::pause_screens::use_route_for_effect`.
-
-**All-party apply `FUN_801D7FF8`** (submenu 9, the flag-`0x20`
-effect route): phase 0 stages the pick - `FUN_801D6A54(item_id)`
-derives the target-panel preview mode `DAT_801E46CC` from the picked
-item's record (below) - then sets the target cursor `DAT_801E46C4` to
-preview mode (`| 0x2000` - the all-row hand) and runs the window
-script at `0x801E4C30` - close-all, reopen the tab, snap windows
-13/17 and **open window 14, the party target panel**. Phase 1 polls
-confirm/cancel (`FUN_801D688C(&DAT_801E46C4, 0, 0)` - count 0, so no
-row navigation: the whole party is the target; cancel returns to
-submenu 6). Confirm applies the pick: SFX `0x25`, the SCUS
-item-effect applier `FUN_800402F4(effect_class, effect_arg,
-roster_id[cursor], 0)`, the ability-bit rebuild `FUN_80042558`, then
-consumes one copy from the bag slot (`FUN_80043048(slot, 1)`); when
-the stack runs out (or the item stops resolving, `FUN_8003043C`) a
-~20-frame timer phase (`DAT_801E46D0` reused as the accumulator
-against the scratchpad frame delta `DAT_1F800393`) runs before
-dropping back to the list - to submenu 5 when the bag emptied.
-
-**Single-target apply `FUN_801D8308`** (submenu 0xA, the default
-route): same shape with a navigable hand - phase 0 stages the preview
-mode, clears the cursor's high bits and runs the script at
-`0x801E4C48` (identical to submenu 9's - same window set). The party
-target panel (window 14) is drawn by `FUN_801D56FC`: a header row plus
-one row per active party member (count `DAT_80084594`, roster ids at
-`0x80084598`), each greyed when the picked item's equip mask
-(equipment table `0x80074F68 +6`) misses the per-character mask
-`DAT_801E43F0[member]` - the same equippability test the shop
-buy-recipient picker runs. Phase 1
-navigates the party rows (`FUN_801D688C(&DAT_801E46C4,
-party_count(0x80084594), 1)`, gated on `_DAT_8007BB80 == 0`); a
-confirm first re-checks usability through the SCUS validator
-`FUN_8003FB10(effect_class, effect_arg, roster_id[cursor])` - failure
-buzzes (`801d8480`, cue `0x23`) - then sets cursor bit `0x1000`
-(static hand) and applies via the same
-`FUN_800402F4`/`FUN_80042558`/`FUN_80043048` chain (`801d84b0..`).
-When the applier reports a result through `_DAT_8007BB78` (seeded
-`0xFF` before the call, `801d850c`), a notify window opens (script
-`0x801E4C60` = open window 8, renderer `FUN_801DCD58`) and waits for a
-confirm press before closing (`0x801E4C68`). Exhaustion runs the same
-20-frame timer + bag rescan.
-
-The notify window's renderer does **not** format its message. The
-template string is already staged at `DAT_801E4700`; each frame
-`FUN_801DCD58` finds the first `0xC1` and the first `0xC5` markup token
-in it (`FUN_8003CBF8`, the same `0xC0`-class lead-byte scan the dialog
-strcpy/strcat use) and overwrites the byte **immediately after** each
-token in place. The `0xC1` operand takes the low byte of `_DAT_8007BB70`;
-the `0xC5` operand takes `_DAT_8007BB78 + _DAT_8007BB70 * 0x40`, both
-truncated by the byte store. So the template's operand slots are live
-placeholders the renderer refills, not values baked at stage time. The
-message then draws in ink `7` at the window content origin, with the hand
-sprite (kind 1, mode 1) at `(WX+0xE6, WY+0xD)`. Engine port:
-`engine-core::pause_screens::notify_window_operands`.
-
-The template is not a runtime buffer: `0x801E4700` is in the menu overlay's
-own data segment, and its only reference on the disc is this renderer's
-`lui`/`addiu` pair (`0x801DCD68` / `0x801DCD6C`). What the two globals hold is
-fixed by their one writer on this path. The applier's Hyper-Art-book arm
-(`0x80042040..0x80042090`) inserts the art and calls `FUN_80035C00` - two
-stores, `sh a0,0x858(gp)` / `sh a1,0x860(gp)` - with `a0 = class - 0xB` (the
-roster slot) and `a1` the art id, skipped only when the mode word is `0x15`
-(battle). So `_DAT_8007BB70` is the learning character, `_DAT_8007BB78` the
-art, the `0xC1` operand names the character, and the `0xC5` operand
-`slot * 0x40 + art` is exactly the arts-name token's `[character, art]` key:
-window 8 is the **art-learned notice** a Hyper-Art book raises. The engine
-reads the template out of the overlay image
-(`pause_screens::notify_template_from_menu_overlay`), patches it with the same
-operand arithmetic, expands the two names against the party names and the
-`DAT_80075EC4` arts table, and both hosts paint window 8
-(`engine-ui::pause_menu::art_learned_notice_draws`) while
-`MenuRuntime::art_learned_notice` holds the beat, dismissed by a confirm or
-cancel press.
-
-**Preview-mode derivation `FUN_801D6A54`**: mode 0 unless the item's
-record kind byte is `2` **and** its effect class is `6` - the
-permanent-stat Waters. The effect arg maps `0 -> 1` (Life Water),
-`5 -> 1` (Magic Water - shares the HP/MP panel), `1 -> 2` (Power
-Water), `2 -> 3` (Guardian Water), `3 -> 4` (Swift Water), `4 -> 5`
-(Wisdom Water). Engine kernel
-`engine-core::pause_screens::target_panel_mode`.
-
-**Party target panel (window id 14, rect `(174,28,132,176)`, renderer
-`FUN_801D0520`)** - replaces the item list column during target pick.
-One block per roster member (ids `0x80084598`, count `0x80084594`,
-roster byte `< 3` only), pitch `0x3E`. Header: name (record `+0x2A7`)
-at `WX+0x14`, LV icon (ICO `0x0A`) at `(WX+0x58, Yb+2)`, 2-digit level
-(`+0x130`) at `WX+0x68`. Body switches on the preview word
-`DAT_801E46CC`:
-
-- **Plain rows** (mode 0, and modes 2/4/5): HP icon (ICO `0x3F`) at
-  `(WX+0x1C, Yb+0x11)`; 4-digit current HP (`+0x106`) at `(WX+0x2C,
-  Yb+0xF)` staged with the `FUN_800349EC` tier ink; slash
-  (`FUN_8003C1F8` cell 6, white) at `WX+0x4C`; 4-digit max (`+0x104`)
-  at `WX+0x54` (`801d0764..801d07d4`). MP row (ICO `0x40`, `+0x10A` /
-  `+0x108`, `FUN_80035EA8` tier) mirrors it at `Yb+0x1E`/`Yb+0x1C`
-  (`801d07ec..801d0850`) - skipped in mode 3 (`801d07e4`).
-- **Mode 1** (Life/Magic Water): both HP and MP rows draw
-  `eff_max ( base_max )` - tags ICO `0x64`/`0x3F` (HP) and
-  `0x65`/`0x40` (MP) at `WX+0x14`/`WX+0x28`; the effective maximum
-  (`+0x104`/`+0x108`) white at `WX+0x38`; the teal paren group
-  (`FUN_8003C1F8` cells 7/8, staged 5 - the status screen's
-  parenthesised-value ink) at `WX+0x58`/`WX+0x80` around the
-  record-side base maximum (`+0x11C`/`+0x11E`) at `WX+0x60`
-  (`801d0658..801d0850`).
-- **Stat rows** (modes 2..5, after running the equip-stat aggregator
-  `FUN_801CF650(roster_id)` at `801d0854`): `LBL eff ( base )` -
-  label ("ATK"/"UDF"/"LDF"/"SPD"/"INT", overlay rodata
-  `0x801CE9A0..B0`) at `WX+0x1C`; the aggregator word
-  (`DAT_801EF08C/90/94/98/9C`, clamped 999) 3-digit at `WX+0x44`;
-  paren cells at `WX+0x5C`/`WX+0x7C` around the record base stat
-  (`+0x124/+0x126/+0x128/+0x12A/+0x12C`) at `WX+0x64`. Modes 2/4/5
-  draw one row at `Yb+0x29` (ATK/SPD/INT); mode 3 draws UDF at
-  `Yb+0x1C` **and** LDF at `Yb+0x29` in the skipped MP row's place
-  (`801d08a4..801d0c38`).
-
-The earlier "HP-restore preview" reading of mode 1 is superseded: the
-modes are the permanent-stat **Water previews** (effective vs base
-maxima/stats); restore items use the plain mode-0 panel. Hand cursor
-(`801d0c40..801d0c94`) decodes `DAT_801E46C4`: bit `0x4000` hides it,
-bit `0x2000` draws it on every row (all-party), else the low 12 bits
-pick the row; bit `0x1000` drops it to the static sprite variant.
-Drawn `FUN_8002B994(0, variant, WX, Yb)`. Engine port:
-`engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed
-by `engine-core::pause_screens::target_panel_view_model` - which
-resolves the preview word off the staged bag id's item-record kind byte
-plus its effect descriptor, then fills each row's base maxima and base
-stats from the live character record. See `overlay_menu_801d0520.txt`.
-
-**Door of Light route `FUN_801D8A58`** (submenu 0xB, effect class
-`0x80`): phase 0 zeroes the confirm cursor `DAT_801E46D0` (**Yes** is
-the default - unlike the Throw Out confirm) and opens window 10
-(script `0x801E4CBC`; renderer `FUN_801D1DAC`, rect `(76,100,168,40)`).
-Yes consumes one **`0x88` Door of Light** (`FUN_80042310(0x88, 1)`,
-`801d8b20`) and exits the menu: `DAT_801E46A0 = 0xF2` (fade) +
-outer-SM exit code `_DAT_8007B43C = 4` (`801d8b5c..801d8b6c`) - the
-field-side dungeon-escape handoff. No or cancel returns to submenu 6.
-
-**Door of Wind route `FUN_801D8B90`** (submenu 0xC, class `0x81`):
-phase 0 parks the kernel and saves the Use-list scroll
-(`_DAT_8007BB98/90 -> DAT_801EF070/74`, `801d8bd8..801d8bf8`); phase 1
-zeroes the scroll and opens **window 11** - the destination list, same
-rect as list 15, renderer-less, kernel-driven (the kernel hides its
-hand for window `0xB` while idle); phase 2 re-arms the kernel; phase 3
-on a pick reads the 6-byte quick-travel placement record
-`0x80073A98 + slot*6` (the `FUN_80030628` case-`0x19` landmark table -
-`legaia_asset::worldmap_menu`) and stages `+2 -> 0x80084628`,
-`+4 -> 0x80084624`, `+5 -> 0x8008462C` (`801d8c88..801d8ccc`), consumes
-one **`0x89` Door of Wind** and exits with code `_DAT_8007B43C = 5` -
-the world-map warp. Cancel restores the saved scroll and returns to
-submenu 6.
-
-**Incense route `FUN_801D8D94`** (submenu 0xD, class `0x82`): window
-12 Yes/No confirm (script `0x801E4CE4`; renderer `FUN_801D1F10`, rect
-`(76,88,168,54)`), cursor seeded Yes. Yes consumes one **`0x8A`
-Incense** and applies the encounter suppression through the standard
-applier - `FUN_800402F4(class, arg, roster_id[target-cursor], 0)` with
-the class/arg read live from Incense's own item-effect record (the
-`lbu 0x49e1(0x8007xxxx)` at `801d8e78` is item record `0x8A`'s `+1`
-effect-index byte), then returns to the Use list (submenu 6). No
-menu exit - the flow stays on the Items screen.
-
-What the applier does with class `0x82` is one call: its arm at
-`0x800421A0` is `jal 0x80046870`, which adds `0x40` to `_DAT_8007B600`
-(`gp+0x2E8`) and caps it at `0x100`. That word is the **Incense window**,
-counted in walk-regen ticks: the field walk tick `FUN_801D0B90` decrements it
-once per running tick (`0x801D0CD4..0x801D0CE8`), and the region encounter
-roll `FUN_801D9E1C` skips the whole roll while it is non-zero (`0x801DA174`) -
-after the region's battle-setup half, before the rate scale, so the step
-counter does not drain either. One Incense therefore suppresses encounters
-outright for `0x40` walk ticks rather than lowering the rate, and uses stack
-to `0x100`. The Use list greys the row once the window holds `0xE0` or more:
-the content-id-3 build asks `FUN_8003043C`, which runs the validator
-`FUN_8003FB10` on the effect class, and arm `0x82` is `FUN_80046898` -
-`_DAT_8007B600 < 0xE0`. On the tick the window reaches zero the walk tick
-installs the field-overlay record `0x801F2278` (kind byte `0x0B`) as the
-entry context `_DAT_8007B450`, raises the movement lock `+0x10 |= 0x80000`,
-and spawns the submode driver - the field overlay's actor, not the menu
-overlay. Its enter half `FUN_801F1278` maps the kind byte through the table at
-`0x801F33A4` (`lb` at `0x801F1468`): kind `0x0B` is handler slot `0x32`,
-`FUN_801F1E48`, a three-state **wear-off notice**. State `0` shows window
-record `16` (descriptor `0x801F3294`), whose painter `FUN_801F1B64` draws one
-string of the field overlay's data segment, `0x801CF1A4`: the `0xC2 0x8A`
-item-name escape (the Incense) followed by the line saying its effect is gone.
-State `1` waits for a confirm or cancel edge, plays cue `0x20` and hides the
-window (`0x801F32A4`); state `2` zeroes `_DAT_8007B450` and hands the actor
-back, whose retire drops the movement lock. See
-[script-vm.md](script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4),
-where the same handler is sub-op `0xB`'s.
-
-The copy leaves the bag at the commit itself - `FUN_80042310(0x8A, 1)` at
-`0x801D8E68`, before the applier - so the Use list the route returns to shows
-one fewer and the last copy's row is gone; one Incense is one top-up.
-
-Engine: `PauseItemsSession` counts each committed Incense, takes the copy off
-its row on the spot (the window it greys the row by follows the screen's own
-confirms), and
-`field_menu_dispatch::apply_pause_items_outcome` tops
-`FieldLocomotion::walk_regen_window` up through
-`engine-vm::battle_helpers::top_up_cooldown` once per use; the screen greys
-the row off the same window through `item_count_gate`; `World::on_field_step`
-skips the region roll while it is open. The **overworld** runs the same
-walk tick: a kingdom map is a mode-3 field-run scene with the field overlay
-resident (the walk tick, the frame driver `FUN_801D1344`, the region roll and
-`FUN_801F1E48` are byte-identical to the PROT 0897 image in the
-`sebucus_overworld_resident` state), and `FUN_801D1344` calls
-`FUN_801D0B90` (`jal` at `0x801D16EC`) right before the locomotion
-controller. So the window drains while the party walks the continent, the
-overworld region roll skips while it is open, and the wear-off fires there
-too; `World::tick_world_map` runs the same fill, tick and gate. The zero edge
-raises `World::raise_incense_notice` (`engine-core::incense_notice`), which
-runs the ported `FUN_801F1E48` body; both play hosts draw the panel
-(`engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`)
-with the line read off the disc (`SceneHost::incense_notice_line`).
-
-Engine port of the three special routes:
-`engine-core::pause_screens::SpecialUseSession` (+ the fixed consume
-ids `0x88/0x89/0x8A` and exit codes 4/5 as named constants). All three
-are reachable from the Items screen: a Use-list confirm routes through
-`special_use_route_for_item` into `PauseItemsFocus::SpecialRoute`, and
-the [`SpecialUsePhase`] the route opens in decides the screen. The two
-Yes/No routes open in `Confirm`, whose window both hosts draw with
-`engine-ui::confirm_prompt_draws` at the id-10 / id-12 descriptor rect
-(`ITEMS_USE_CONFIRM_1LINE_RECT` / `ITEMS_USE_CONFIRM_2LINE_RECT`).
-Retail's own prompt strings live in the menu overlay's data segment and
-are not recovered, so the port stages the item name and its own question
-in the retail line slots; the window geometry is exact.
-
-Door of Wind opens in `PickDestination` instead. Its rows come from the
-same walk the world-map landmark menu runs (`FUN_80030628` case `0x19`)
-over the disc placement table, ported as
-`field_menu_dispatch::warp_destinations`: skip a record whose `name_idx`
-repeats the last **accepted** row's, gate the survivor on system flag
-`record[1] + 0x20`, keep the record ordinal as the row's identity (retail
-pushes it as the string id `0x8000 | index`, which `FUN_8002FF8C`
-resolves back through the name table). `items_screen_model` projects the
-rows through the shared list channel, which is how both hosts draw window
-11 with the list renderer they already call - at the cost of the row
-count column showing `0`, since retail's destination rows have no count.
-
-A committed pick writes the destination triple to
-`World::menu.pending_warp` and the escape flag to
-`World::menu.pending_escape`; `World::drain_staged_menu_warp` consumes both
-on the next tick, resolving the scene through the TOC names and leaving the
-pause session with the world-map-warp exit code (a miss logs retail's
-`UNFIND MAP NUMBER %d` and drops the use).
-
-**Throw Out list `FUN_801D8734`** (submenu 7): phase 0 re-points the
-live list window from descriptor 15 to descriptor 16 (live-window
-`+0x8` id write; descriptor 16 shares list 15's rect but carries
-content id `0x22` - the discardability row build, vs 15's Use build
-`3`) and runs the enter script; phase 1 arms the kernel; phase 2
-stages the hovered slot and polls - cancel restores descriptor 15 and
-returns to submenu 5; a pick opens the **confirm window** (script: close
-command window 13, open window 9) with the confirm cursor
-`DAT_801E46D0` seeded to **1 ("No")**, phase 3. Phase 3 navigates the
-two rows (`FUN_801D688C(&DAT_801E46D0, 2, 1)`); confirming row 0 (Yes,
-SFX `0x37`) **zeroes both bytes of the selected bag slot pair** - the
-whole stack is discarded, no compaction - then applies a scroll fix-up
-(deleting the last row steps the selection and scroll back one) and
-closes the confirm; if the bag rescan comes up empty the flow restores
-descriptor 15 and drops back to submenu 5, otherwise the list re-arms.
-"No" or cancel just closes the confirm back to the list.
-
-**Confirm window (id 9, rect `(14,38,144,54)`, renderer
-`FUN_801D1B20`)** - drawn from the staged slot (`_DAT_8007BB88`): the
-item name (CLUT 7; the item-table `+4` string, whose leading byte is
-its glyph count) at `(WX, WY)`; the bag count (min-1-digit
-`FUN_80034B78`) at `WX + 8 + glyphs*0xC`; "You are about to" 8 px past
-the count (16 px for a 2-digit count) on the same row; "Throw out?" at
-`(WX+6, WY+0xE)`; then CLUT 5: "Yes" at `(WX+0x3C, WY+0x1C)` and "No"
-at `(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28` on the focused row
-(cursor word `DAT_801E46D0`, the standard hide/dim bit layout). The
-name renderer also honors a `0xF1` second-byte escape substituting a
-character-record name (`record+0x2A7`). The four strings live in the
-menu overlay's leading rodata pool (`@You are about to` at
-`0x801CEA60`, `@Throw out?` / `@Yes` / `@No` following). See
-`overlay_menu_801d1b20.txt` / `overlay_menu_801d8734.txt` /
-`overlay_menu_801d7c00.txt` / `overlay_menu_801d7e50.txt`.
-
-Engine port: `engine-ui::items_screen_draws_for` /
-`items_screen_sprites_for` (window contents + hand / page arrows at the
-pinned pens) plus `items_throw_confirm_draws_for` /
-`items_throw_confirm_sprites_for` (the id-9 confirm window), fed by
-`engine-core::pause_screens` (`PauseItemsSession` - the
-command/list/throw-out focus model over the item-use flow, real bag
-counts, page flip, the Yes/No confirm defaulting to No, whole-stack
-discard) with names / descriptions / accessory passive lines resolved
-from the executable via `pause_screens::MenuTextTables`
-(`World::install_menu_text`) and the Arrange ranks via
-`World::install_menu_overlay_tables` (`engine-core::menu_arrange`,
-id-order fallback without the overlay). Discards reach the world bag
-through `field_menu_dispatch::apply_inventory_outcome`. The engine
-draws the Throw Out list with the same paged layout as the Use list -
-whether the retail descriptor-16 variant pages or row-scrolls hangs on
-its content-builder case (content id `0x22` vs the Use list's `3` in
-`FUN_80030628`'s dispatch; the deletion fix-up's pitch subtraction hints
-at row scrolling). Both hosts (play-window + the web play page) render
-this screen through the same builders.
-
-## Magic screen
-
-Four descriptor-table windows (draw order: tab 1, list 18, caster 19,
-info 20). Submenu word `0x0E` = caster focus, `0x0F` = list focus.
-
-**Caster window (id 19, `FUN_801D2C98`)** - one block per roster member
-(ids at `0x80084598`, count `0x80084594`, roster byte `< 3` only) at
-`Yb = WY + 1 + i*0x23`: name (CLUT 7, record `+0x2A7`) at `WX+0x14`; LV
-icon (ICO `0x0A`) at `(WX+0x60, Yb+2)` with the 2-digit level
-(`+0x130`) at `WX+0x70`; MP icon (ICO `0x40`) at `(WX+0x24, Yb+0x10)`
-with the 4-digit current (`+0x10A`) / slash (`FUN_8003C1F8` code 6,
-CLUT 7) / 4-digit max (`+0x108`) at `WX+0x34 / +0x54 / +0x5C` on row
-`Yb+0xE` - the numbers stage the `FUN_80035EA8` MP tier ink. Hand
-cursor at `(WX, Yb)`, gated by this screen's cursor word
-`DAT_801E46C8`. See `overlay_menu_801d2c98.txt`.
-
-**Spell list (id 18)** - renderer-less; same capture-pinned page layout
-as the item list (rows from `(WX+0xC, WY+0xC)`, pitch `0xE`, 12 rows,
-PAGE header, white -> grey focus drop, hand at `WX-0xC`). Each row is a
-single string whose leading `0xCE` escape draws the element icon plate,
-so the name ink starts 25 px right of the row pen (the wider winged
-Ra-Seru-magic icon advances 22 px - "Meta" indents differently in the
-capture).
-
-Which rows draw white is decided in the list build, not the renderer. The
-out-of-battle arm of `FUN_80030628` (`0x80031130..0x80031264`) writes each
-learned spell as `0x5800 | id` - class 5, disabled - and rewrites it as
-`0x5000 | id` only when three tests pass: the record's `+2` bit `0x02`
-(ally-side, the field-castable shape), current MP at least the cost after
-the per-caster discount (ability bit `0x20` halves, `0x10` takes a quarter
-off - the same `FUN_80035394` rule), and the spell-record broadcast
-`FUN_8003053C` answering non-zero (`0x80031210`). That broadcast runs the
-action validator `FUN_8003FB10` with the record's `+0` / `+1` as arm and
-sub-case - once on slot 0 when `+2` bit `0x20` is set, otherwise once per
-present member - so a heal greys while the whole party is at full HP. The
-two cast flows ask it again before they commit (`0x801D954C` in
-`FUN_801D9280`, `0x801D98B4` in `FUN_801D9594`), returning to the list on
-`0`. Engine: `engine-core::menu_validator::spell_affects_anyone` (the
-validator over the roster records) feeds `SpellMenuSession`'s greying and
-confirm refusal. The engine's MP test still compares the undiscounted cost,
-and `apply_spell_outcome` debits it, where both cast flows debit the
-discounted figure (`0x801D93C0..0x801D9418`).
-
-**Info window (id 20, `FUN_801D2E74`)** - draws only while a spell id is
-staged in `DAT_801E46B0`: the spell-name string (CLUT 6, leading element
-icon) at `(WX, WY)`; the learned level - looked up in the highlighted
-character's spell list (`+0x13C` count / `+0x13D` ids / `+0x161`
-levels) - as a "Lv`n`" string at `WX+0x78`; the description string
-(`stats[+4]` index into the pointer table at `0x80075DB0`, CLUT 7,
-multi-line at the `0xE` pitch) from `(WX, WY+0xE)`; then "MP Used"
-(CLUT 4) at `(WX+0x18, WY+0x2A)` with the 3-digit cost at `WX+0x74` -
-the base cost `stats[+3]` run through the MP-cost kernel
-`FUN_80035394`, digits drawn in the same green. See
-`overlay_menu_801d2e74.txt`.
-
-Engine port: `engine-ui::magic_screen_draws_for` /
-`magic_screen_sprites_for`, fed by `engine-core::pause_screens::magic_screen_model`
-over the field spell-menu session (caster focus = `CharSelect`, list
-focus = `SpellSelect`; per-caster MP cur/max + learned levels from the
-character records, descriptions via `MenuTextTables` /
-`legaia_asset::spell_names`). The per-caster MP-cost kernel discount
-(`FUN_80035394`: the `+0xF4` ability word's Half bit `0x20` shaves 50%,
-Quarter bit `0x10` shaves 25%, Half winning when both are set) is applied to
-the displayed cost, matching the retail info window and the battle cast path.
-
-### The two target flows
-
-A confirmed spell opens one of two sub-screens, and the spell's own stats `+2`
-byte picks which: bit `0x20` set routes to the no-pick **group** flow (`0x10`,
-`FUN_801D9280` - no target rows at all, `FUN_801D688C` called with `count = 0`,
-confirm or cancel only), clear routes to the per-member **target picker**
-(`0x11`, `FUN_801D9594`). The group screen keeps the spell list and its info
-window drawn; cancel returns to the list.
-
-Engine port: `engine-core::spell_menu::spell_targets_group` is the predicate,
-run over the flag bits `SpellTarget::retail_target_flag_bits` materialises from
-the catalog's decoded shape, and `SpellMenuPhase::GroupConfirm` is the flow it
-opens. A group commit resolves `spells::cast_spell` once per party row - which
-is what the `HealAll` arm asks its caller for, since it returns the grant for
-the one member it was handed - and carries the per-member grants out as
-`SpellOutcome::MultiHeal`. `field_menu_dispatch::apply_spell_outcome` bills the
-MP once to the caster, applies every grant, and credits the multi-target XP arm
-per member.
-
-### Menu-cast spell leveling + the window-7 notice
-
-Casting a heal from the Magic screen trains the spell, exactly like the
-battle summon path - and it is the same counter. The effect-apply
-handler `FUN_800402F4` (SCUS; `ghidra/scripts/funcs/800402f4.txt`) is
-what both cast flows (`0x0F` group / `0x10` single) run, and its HP-heal
-arms carry an inline copy of the accrue-then-threshold-test loop:
-
-- **Accumulator.** The grant lands in the u32 at `0x80084140 +
-  char*0x414 + slot*4 + 0x5D0`. `0x80084140 + 0x5C8` is the
-  `0x80084708` character-record base, so `+0x5D0` off the save-context
-  window is the record's per-spell XP array at `+0x8` - the same array
-  the battle finisher `FUN_801ddb30` trains. One accumulator, not two.
-- **Grant.** Flat per cast, not damage-proportional: the single-target
-  arm (case body `0x80040470`) adds `+0xC` when the target's HP deficit
-  covered the spell's full level-scaled heal cap (`(level-1)*{32,64,128}
-  + {0x100,0x200,0x400}` by tier) and `+0x4` when the heal was clipped;
-  the multi-target arm (case body `0x80040908`) adds `+0x3` / `+0x1` per
-  member, skipping members with no deficit.
-- **Level test.** Only outside battle (`_DAT_8007B83C != 0x15`): with
-  the level byte `+0x729` (= record `+0x161 + slot`) below 9, a raw u16
-  entry of the `0x8007656C` threshold table (`[level-1]`) strictly below
-  the accumulator bumps the byte and calls `FUN_80035C00(char, slot)` -
-  a two-store setter for the pair `(_DAT_8007BB70, _DAT_8007BB78)`. The
-  raw-entry compare equals the battle check's default multiplier
-  (`FUN_801e70bc` computes `(entry*2)>>1`); none of that check's six
-  x1.5-threshold spell ids is a menu-heal id, so the two compares agree
-  on every input the menu arm can produce.
-- **Window 7.** The cast sub-screens seed the pair to `0xFF` before the
-  apply and, if it changed, hand the widget VM a one-command script
-  (`0x801E4D50` group / `0x801E4D78` single - each decodes to `[open
-  window 7]` + terminator), then stall for a confirm / cancel press. The
-  window's renderer `FUN_801DCCB4` patches byte `+1` of a scratch
-  sentence at `0x801E46E4` with `record[0x13D + _DAT_8007BB78]` - the
-  leveled spell's id - and draws it with the corner cursor.
-
-Engine port: the accrual + threshold walk is the shared kernel
-`engine-core::magic_xp::accrue_and_level` (the battle path
-`World::accrue_summon_spell_xp` drives the same one);
-`field_menu_dispatch::apply_spell_outcome` runs the menu arm with the
-`magic_xp::menu_heal_xp_gain` grants and returns the `FUN_80035C00` pair
-as a `SpellLevelNotice`. Both writes land in the roster's
-`legaia_save::CharacterRecord` bytes, so accumulator and level
-round-trip through saves. `MenuRuntime::arm_spell_level_notice` holds
-the beat; both hosts (`engine-shell` `window/menu_draws.rs`,
-`web-viewer` `play_menu.rs`) paint window 7 through `engine-ui`'s
-`char_prompt_draws_for` off the disc-parsed id-7 rect and hold the pad
-for the press. Two engine-side deltas: the prompt line is composed from
-the pinned battle-banner sentence around the spell name (retail's own
-rodata sentence stays on the disc), and the notice overlays the resumed
-menu rather than the still-open cast sub-screen (the engine's spell
-session closes on cast).
-
-## Prize-exchange (ticket-counter) windows
-
-The casino / point ticket-counter (prize exchange) is hosted in this same
-menu overlay - its prize table sits in the overlay data segment at VA
-`0x801E4518` (PROT 0899 file `0x15D00`; see the overlay note in
-`crates/asset/data/static-overlays.toml`), and a save inside the shop holds
-game mode `0x17` with this overlay resident at slot A. The screen is composed
-from the same descriptor-table window system, with content-only renderers
-analogous to the Items / Magic ones. Each is a self-entry menu-overlay body
-that takes the window rect `a0` and hangs its content off
-`(WX, WY) = (a0+0xa, a0+0xc)`:
-
-| renderer | draws |
+| left cap | `(208, 64, 8, 20)` | `(WX-8, WY-4)` |
+| body tile | `(192, 64, 16, 20)` | tiled from `WX` across the content width (partial remainder) |
+| right cap | `(216, 64, 8, 20)` | `(WX+w, WY-4)` |
+
+All five tab renderers stage CLUT 7 and draw the label at `(WX, WY)`. Port:
+`engine-ui::tab_banner_draws` + `tab_label_draws`, both taking the same pen.
+
+## Status satellite windows
+
+The three left-column windows of the Status screen:
+
+**Party list (id 26, `FUN_801D2094`)** - shared with the Equip screen's
+window 21. One row per roster slot (roster byte `< 3` only) at pitch `0x0e`:
+name (`+0x2A7`) at `(WX+6, Yrow)`, always CLUT 7. The focused row draws the
+hand at `(WX-0xc, Yrow)`, gated by the focus word `DAT_801E46C4` (bit `0x4000`
+hides, `0x2000` selects the blink variant, low 12 bits = row).
+
+**Pager (id 27, `FUN_801D30A4`)** - the folded submenu id picks the label
+("Condition" for the status page; Skills / Magic / Moves for ids 1..3) at
+`(WX+6, WY)` CLUT 7, flanked by the triangle cursors: kind 2 at
+`(WX-0x10, WY-2)`, kind 3 at `(WX+0x3A, WY-2)`.
+
+**Summary (id 30, `FUN_801D31EC`)** - name at `(WX, WY)`; LV icon at
+`(WX+0x1c, WY+0xf)` with the level at `(WX+0x2c, WY+0xd)`; "ATR:" at
+`(WX, WY+0x1a)` followed by the **element icon**, drawn through the
+per-character 2-byte string at `0x801E4720 + char*4` (`0xCE 0x1D/0x1F/0x1E`).
+Aux records `0x1D/0x1F/0x1E` resolve to ICO codes `0x94/0x96/0x95`
+(Vahn / Noa / Gala): 28x12 sprites at sheet V 208 with the alternate CLUT
+encoding. Their pixels are in the system-UI extension strip TIM at
+`PROT.DAT[0x10178]` (256x32 4bpp, VRAM `(896,448)`); the row-500 palettes are
+the CLUT block of the TIM at `PROT.DAT[0x10028]` (rows 498 / 499 / 501 come
+from `0x10178` / `0x100D0` / `0xFF80`). A character carrying a Seru gets a
+second block: class icon (ICO `0x45`) + Seru name at `WY+0x2f`, its level at
+`WY+0x3c`.
+
+<a id="plumbing"></a>
+<a id="submenu-dispatch"></a>
+<a id="header-row-always-drawn"></a>
+
+## Status main panel (`FUN_801D33D8`)
+
+Window 28, content origin `(90, 16)`. Dump `overlay_menu_801d33d8.txt`.
+
+| Item | Value | Instr |
+|---|---|---|
+| Menu / party base `s2` | `0x80084140` | `801d33dc` |
+| Highlighted record index | `*(u8*)(0x80084598 + (DAT_801e46c4 & 0xfff))` | `801d33f0`, `801d3424` |
+| Submenu id | `DAT_801e46c0 & 0xfff`, folded `if id >= 6 { id -= 5 }` | `801d33f4`, `801d3460` |
+| Live record base | `0x80084708 + index*0x414` | `801d3440`, `801d3454` |
+| Window X `s7` / Y `s8` | `*(i16*)(a0+0xa)` / `*(i16*)(a0+0xc)` | `801d3494`, `801d3490` |
+
+`s8` is a running Y cursor (`+0x13` after the header, then `+0x2f` / `+0x2b` /
+`+0x38` between status blocks); `s7` is set to `WX+0x10` for the list pages.
+
+The folded id selects the page (raw ids 6..10 alias onto 1..5):
+
+| id | page |
 |---|---|
-| **Exchange tab `FUN_801DCFE4`** | the "Exchange" label STR (overlay rodata `0x801CEC6C`) at `(WX, WY)` CLUT 7 - title-tab content, no frame. `overlay_menu_801dcfe4.txt` |
-| **Gold box `FUN_801DCF84`** | money pictogram ICO `0x62` at `(WX, WY+2)` + the 8-digit party gold `_DAT_8008459C` at `(WX+0x28, WY)` CLUT 7 - the same money global the top-level id-49 box draws. `overlay_menu_801dcf84.txt` |
-| **Coin box `FUN_801DD028`** | casino-coin pictogram ICO `0x66` at `(WX, WY+2)` + the 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` CLUT 7. `overlay_menu_801dd028.txt` |
-| **Points box `FUN_801DCE20`** (window 31) | a points-label STR (`0x801CEA40`) at `(WX, WY)`; the 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; the "point(s)" STR (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; advance hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)`. `overlay_menu_801dce20.txt` |
-| **Item-info `FUN_801DCC20`** | when a prize id is staged (`DAT_801E46B0 > 0`): the shared item-info panel `FUN_801D0F1C` (name/desc), then CLUT 6 + the 2-digit bag count (`FUN_80042F4C(id)`) at `(WX+0x80, WY)`; always a `0x90 x 0x28` shade box `FUN_8002C69C(WX, WY+0x38)` under it - the Items id-17 `FUN_801DCB60` shape. `overlay_menu_801dcc20.txt` |
-| **Prompt line `FUN_801DCF14`** | the armed record's trailing string (`_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count the record owns - see [below](#these-window-ids-are-shared-not-exchange-only)) at `(WX, WY)` CLUT 7, forcing the monospace-advance override (`DAT_80073F20 = 0x10`) for the draw and restoring it after. `overlay_menu_801dcf14.txt` |
-| **Message box `FUN_801DCCB4`** | refills operand byte `0x801E46E5` in place from the staged character record byte (`record + 0x705`, record `_DAT_8007BB78 + _DAT_8007BB70*0x414`), draws the template STR `0x801E46E4` at `(WX, WY)` CLUT 7, then the advance hand at `(WX+0xE6, WY+0xD)` - the notify shape of the Items `FUN_801DCD58`. `overlay_menu_801dccb4.txt` |
+| 0 or 5 | full status page |
+| 1 | skills / accessory-passive list |
+| 2 | magic list |
+| 3 | moves / arts list |
+| 4 | header only |
 
-The Points box is the clearest case of the shared pool: it is listed here
-because it appears in this screen's window set, but the one caller on the
-disc that *opens* window 31 is the town shop's buy commit - a one-command
-widget script `[open 0x1F]` at `0x801E4EDC` / `0x801E4EA8` run right after
-the Point Card accrual. See [shop.md](shop.md#point-card).
+**Header row** (always drawn, instr `801d3478..801d35c8`):
 
-The exchange's own **session drivers** are not pinned. `FUN_801DB380` /
-`FUN_801DB7F4` were cited here as the drivers, and they are the town shop's
-sub-screens instead: `FUN_801DB380` debits the gold purse `0x8008459C` and
-writes equipment into the party records, `FUN_801DB7F4` debits the same purse
-and credits the Point Card - neither touches the coin bank a prize counter
-prices against. A third address cited beside them, `0x801DB510`, is not a
-function at all: it is interior to `FUN_801DB380`, whose entry is `0x801DB380`
-and whose body runs 1140 bytes to `0x801DB7F4`. What is shared with the
-exchange is the **window pool**, not the code - which is the point of the
-section below.
+| element | prim | X | Y | source |
+|---|---|---|---|---|
+| character name | STR | +8 | +0 | record `+0x2A7` |
+| "LV" label | ICO | +0x50 | +2 | icon `0x0a` |
+| LV value | NUM | +0x60 | +0 | record `+0x130`, 2 digits |
+| class / Seru label | ICO | +0x8a | +0 | icon `0x45` (conditional) |
+| class / Seru name | STR | +0x96 | +0 | `*(u32*)(0x801e46d4 + char*4)` |
 
-### These window ids are shared, not exchange-only
+### Status page (submenu 0 or 5)
 
-The descriptor table is one pool and each screen's open script picks ids out
-of it, exactly as the five title tabs are reused per pause screen. The town
-shop's open script `DAT_801E4E38` slides in `0x20` (32, the gold box above),
-`0x21` (33, the prompt line), `0x22` (34), `0x28` (40) and `0x2A` (42) - see
-[shop.md](shop.md#mode-select-panel-buy--sell--quit), where those descriptor
-words are byte-verified. So the gold box and the record-sourced tab are the
-same windows the exchange screen opens, with a different record armed.
+**HP row** (`WY+0x13`) / **MP row** (`WY+0x20`), instr `801d35e8..801d374c`:
+current at `X+0x30`, max at `X+0x58`, base at `X+0x84` (4-digit NUM);
+separators at `X+0x50`, `X+0x7c`, `X+0xa4`. HP = record
+`+0x106 / +0x104 / +0x11c`, MP = `+0x10a / +0x108 / +0x11e`. Current / max
+take the health-tier ink; the `/` is white and the whole parenthesised base
+group is teal. Fields end flush against their separators
+(`180/ 180 ( 180)`).
 
-That is what `FUN_801DCF14`'s `+2` byte really is: a **skip count owned by
-the armed record**, not a glyph-count header of its own. `_DAT_8007B450`
-points at the armed op-`0x49` opcode's *sub-op* byte (opcode `+1` - pinned in
-[boot.md](boot.md) and
-[tile-board.md](tile-board.md#where-the-board-comes-from)), so the
-string starts at `opcode + 4 + record[2]`. For a shop record, whose payload
-is `[count][count x item_id][ASCII name]`, `record[2]` is `count` and the
-string therefore lands one past the last item id - the vendor name
-[`legaia_asset::shop_stock`](../../crates/asset/src/shop_stock.rs) decodes.
-Window 33 is the vendor plate on that screen and a prompt line on this one
-because the renderer only ever prints "the armed record's trailing string".
+**AP gauge** at `(X+0x40, WY+0x2d)`, value record `+0x10e`.
+`FUN_80034b6c(0x31)` stages the widget kind into `gp+0x14c`; the widget
+dispatcher `FUN_8002c69c(x, y, 1, value)` sees kind `0x31`, calls the content
+renderer `FUN_8002c0b0(x, y, value)` (dump `8002c0b0.txt`) and falls through
+to the table-driven frame. Frame = four 1:1 sprites, CLUT row 4:
 
-Its sub-screen tick handlers follow the same phase protocol as the Items
-routes - phase word `DAT_801E46AC`, submenu word `DAT_801E46A4`, window
-script through `FUN_801D6628`, gated on the slide latch `_DAT_8007BB80 == 0`:
-
-- **`FUN_801DD12C`** runs window script `0x801E4A78`, then on the slide
-  latch clearing exits the menu with `DAT_801E46A0 = 0xF2` (fade) + outer-SM
-  handoff code `_DAT_8007B43C = 3` (a distinct field-side exit from the
-  Door routes' codes 4/5). `overlay_menu_801dd12c.txt`.
-- **`FUN_801DD1B8`** (script `0x801E4BE0`) and **`FUN_801DD26C`** (script
-  `0x801E4CA4`) are its confirm / return windows - on a confirm/cancel edge
-  (`_DAT_8007B874 & (_DAT_800846D0 | _DAT_800846D4)`) `FUN_801DD1B8` plays
-  SFX `0x20` and requests the prior submenu, `FUN_801DD26C` requests submenu
-  `5` (the Items command). `overlay_menu_801dd1b8.txt` / `_801dd26c.txt`.
-- **`FUN_801DD310`** is an idle sub-screen tick that only pumps the window
-  engine `FUN_80031D00`. `overlay_menu_801dd310.txt`.
-
-## Name columns and translated text
-
-None of these surfaces wraps or clips, so a name longer than its column
-draws over the column. Each budget below is the distance from the name
-pen to the first cell the next column can ink, measured at
-`DAT_800740E8 = 0` (every menu draw leaves it at zero). A number field
-drawn by the list kernel or by `FUN_80034B78` is a run of 8-px cells
-starting at its pen, with leading zeros left blank, so its first *used*
-cell depends on the value's range.
-
-- **Item list (bag rows, class `0x1000`)** - name at `WX+0xC`
-  (`addiu a3,s6,0xc` at `0x8003316C`); count field of three cells from
-  `WX+0x6C` (`0x8003317C`). Bag counts stop at 99, so the tens cell at
-  `WX+0x74` is the first that inks: **104 px**. The same class-`0x6000`
-  row for a non-equipment item draws its count from `WX+0x78`
-  (`0x80033374`), and for equipment draws a pictogram and the name at
-  `WX+0x1C` with no count.
-- **Shop buy list (class `0x3000` / `0xA000`)** - name at `WX+0x18`
-  (`0x800335A8`); price field of five cells from `WX+0x80`
-  (`0x800335B0`). A `u16` price can fill all five: **104 px**.
-- **Item info window (id 17)** - name at `WX` (`FUN_801D0F1C`,
-  `0x801D0F8C`); `FUN_801DCB60` draws the 2-digit count at `WX+0x7C`
-  (`0x801DCBD4`): **124 px**.
-- **Status magic page** - spell name at `WX+0x10` (`0x801D42EC`), level
-  string at `WX+0x78` (`0x801D430C`): **104 px**. The spell string's
-  leading element-icon escape counts against it.
-- **Status moves page** - art name at `WX+0x10` (`0x801D44F4`), 3-cell
-  AP field at `WX+0x82` (`0x801D4538`): **114 px**, or 8 px more while
-  every cost stays under 100.
-
-These budgets are the `legaia_font::limits::TEXT_LIMITS` entries
-`item_list_name`, `shop_buy_name`, `item_info_name`,
-`status_magic_name` and `status_moves_name`; `legaia_font::Font::measure`
-gives a string's advance. The dialog box and battle budgets are on
-[`dialog-font.md`](../formats/dialog-font.md#line-width-and-wrapping).
-
-## Dialog reading box (FUN_801D84D0)
-
-The field dialog pager `FUN_801D84D0` (dialog overlay) draws the NPC /
-event message box with the same window emitter `FUN_8002C69C` the menu
-uses. Geometry, pinned from the live pager context (`*DAT_801C6EA4`) in
-the `v0_1_tetsu_dialogue_accept` save state plus the on-screen
-framebuffer:
-
-- **Reading box centre rect** = `(ctx+0x12, ctx+0x14, 0xF4,
-  lines*0xF + 5 - 8)` with `ctx+0x12 = 0x26` (38), `ctx+0x14 = 0x10`
-  (16) and `_DAT_801F2740 = 3` lines - the box sits at the **top** of
-  the screen. The emitter's standard skin extends ~8 px beyond the
-  centre rect on every side: measured footprint `x 30..289, y 8..65`,
-  with the outermost 4 px as the tan border band and the translucent
-  gouraud gradient fill spanning the rest (centre inflated by 4).
-- **Interior fill** = two stacked semi-transparent gouraud `POLY_G4`
-  quads (top RGB `(0x18,0x18,0x28)`, bottom `(0x40,0x40,0xA0)`,
-  composing to `0.25*back + 0.75*gradient`).
-- **Text pen** = the box origin exactly: each line draws at
-  `FUN_80036888(line, 0, 0, ctx+0x12, ctx+0x14 + i*0xF)` with the ink
-  staged CLUT 7. Measured first-line ink starts at `x 38, y 18`.
-  Before each row the pager stores `DAT_800740E8 = 1`, so dialogue
-  glyphs advance one pixel wider than menu text - see
-  [`dialog-font.md`](../formats/dialog-font.md#the-field-dialog-box).
-- **Advance hand** (page-wait state `0x19`) = `FUN_8002B994(1, 1,
-  0x10A, ctx+0x14 + lines*0xF - 0x13)` - `0x10A = x + w - 0x10` for the
-  standard box.
-- **Option picker box** = `x 0x26, y 0x94 + ((4-n)*0xF)/2, w 0xF4,
-  h 0x38 - (4-n)*0xF` (2..4 options); option rows at `x+0x10`,
-  `y + i*0xF`; hand cursor `FUN_8002B994(0, 1, x-6, y + cursor*0xF)`.
-
-Engine port: `engine-ui::dialog_window_chrome_draws_for` (centre-rect
-semantics, border+fill inflation), `dialog_advance_hand_sprite`,
-`dialog_option_hand_sprite`; the play-window's `dialog_stage_layout`
-carries the rects.
-
-## Two more descriptor-table renderers (windows 34 and 46)
-
-Neither window appears in the [screen sets](#window-descriptor-table)
-above, because no catalogued capture opens the screen that spawns it. Both
-are nevertheless pinned structurally: their VAs sit in the `+0xC`
-content-renderer field of a descriptor record, so the table itself names
-them.
-
-| Window | Rect `(x, y, w, h)` | Class | Renderer |
-|---|---|---|---|
-| 34 | `(138, 166, 168, 38)` | 4 (list page) | `FUN_801D4A80` |
-| 46 | `(16, 84, 104, 42)` | 3 (standard) | `FUN_801D603C` |
-
-**`FUN_801D4A80` - item / accessory description box.** Reads the selected
-id from `_DAT_801E46B0` and returns immediately when it is `<= 0`, so an
-empty selection draws nothing. Otherwise:
-
-1. Stages ink `6` into `DAT_8007B454` and draws the item record's **name**
-   string (`0x80074368 + id*0x0C`, field `+0x04` - the `PTR_DAT_8007436C`
-   name pointer of [item-table.md](../formats/item-table.md)) through
-   `FUN_80036888` at the window's content `(x, y)`.
-2. Maps the id through `FUN_80042EE0`; a result of `0x100` means "no
-   holder", otherwise it indexes the save-block byte array at
-   `0x80085959 + result*2`. Either way the result plus the window origin
-   `+0x94` goes to the icon/count draw `FUN_80034B78`.
-3. Stages ink `7` and picks the description. When the item record's
-   **leading byte is `2`** and the item-effect record's `+0x03` index
-   (`0x800752C0 + effect*4`, see
-   [item-effect-table.md](../formats/item-effect-table.md)) is `< 0x40`,
-   it draws the **accessory-passive** description - `0x8007625C +
-   index*0x0C`, field `+0x08`, per
-   [accessory-passive-table.md](../formats/accessory-passive-table.md) -
-   through the word-wrapping renderer `FUN_8003CD00` at `y + 0x0E`.
-   Otherwise it draws the item record's own `+0x08` string through
-   `FUN_800337B0`.
-
-So the "class 2 + passive index in range" test is exactly what makes an
-accessory show its passive text where an ordinary item shows its own.
-
-**`FUN_801D603C` - two-row toggle panel.** Draws two label strings from the
-menu overlay's own rodata (`0x801CEA84` and `0x801CEA8C`) plus a heading at
-`0x801CEAC8`, at ink `7` / `5`, on a 16 px then 14 px vertical step from
-the window origin. Each row is followed by a marker sprite from the cursor
-family `FUN_8002B994`, whose *kind* is decoded from the state word
-`_DAT_801E46D0`:
-
-- bit `0x4000` set - draw no marker for that row at all;
-- else bit `0x2000` set - kind is `(!(w & 0x1000)) << 2`, i.e. `4` or `0`;
-- else - kind is `(w >> 12) ^ 1` masked to one bit, compared against `0`
-  on the first row and `1` on the second.
-
-The panel is content-only, like every renderer in this table - the frame
-is drawn by the caller. It is the **casino prize counter's Yes/No confirm**:
-the two rows are the Yes / No labels and the heading is the "Is this OK?"
-prompt, and the open script `0x801E4F2C` (`01 2E 00 00`, one command) is
-handed to the widget VM by `FUN_801DC1CC` - `lui a0, 0x801e` at `0x801DC3F4`
-+ `addiu a0, a0, 0x4f2c` at `0x801DC408`, `jal 0x801D6628` at `0x801DC41C`,
-with `sw s2, 0x46d0(v1)` at `0x801DC414` staging the very state word
-`_DAT_801E46D0` the marker decode above reads. `FUN_801DC1CC` is index `0x20`
-of the sub-screen pointer table at `0x801E4F40`, and sub-screen `0x20` is
-written at exactly one site (`0x801DC8C8`/`0x801DC8CC`, on entry-context kind
-`7`) - the same pairing the [screen map](#which-screen-opens-a-window) below
-records. The earlier "which screen owns it is Unknown; nothing in the corpus
-opens window 46" reading predates that sweep: the `01 2E` command is in the
-overlay's widget-script pool, with a `04 2E` close command three words later at
-`0x801E4F38` that no site in any image references.
-
-### Ported painters
-
-Fourteen of the table's content renderers are ported as draw-list
-builders in
-[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs):
-windows 5, 6, 7, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
-bottom-clipped box emit `FUN_801E4140`. The port keeps the pen
-arithmetic and the state-word rules and drops the two globals every one
-of them touches - the draw-order word `DAT_8007B454` and the
-glyph-advance byte `DAT_80073F20` - because a host that composites in
-call order and lays glyphs out proportionally has no use for either.
-
-`FUN_801E4140` is the one entry there that is not a painter, and it is worth
-being precise about what it draws. Past the `y < 0xF1` guard it calls the
-fill-state setter `FUN_80034B6C` and then the box writer
-`FUN_8002C69C(x, y, w, h)`; the decompiled C shows the setter taking no
-arguments, but `a0` / `a1` are untouched from the prologue to that `jal`, so
-it receives the caller's first two - a mode selector and a packed RGB word
-(`0x44`, `0x02202020` at the menu-overlay call site). The pair is therefore a
-**shaded colour fill**, not the gold 9-slice border, and `FUN_8002C69C`
-inflates its own rect by 8px on every side, so the guard tests the *content*
-y rather than the frame y. A host cannot reuse it to clip the atlas window
-chrome: that is a different primitive drawn at the already-inflated rect.
-
-One exception is worth keeping: the **accent pen** (`DAT_8007B454 = 6`) is
-kept as a colour, because three painters stage it for exactly one field and
-restore `7` afterwards - window 34's item name *and* owned count (staged once
-before the name, restored only after the count), window 24's count, and
-window 31's number. It resolves to the same colour as a rising stat in the
-compare panels (`PAINTER_INK_ACCENT`).
-
-### Which painter draws a descriptor (`renderer_va` dispatch)
-
-Retail resolves the renderer per window, not per screen: the create call
-`FUN_800326AC` copies the descriptor's `+0xC` into the live window's `+0x28`,
-and the per-frame walker calls it indirectly -
-`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
-`0x80031E30..0x80031E44` in `FUN_80031D00`, with `a0` the window struct the
-painter reads its rect out of. A `0` there is the renderer-less list window
-whose content the SCUS content-builder makes from `content_id`.
-
-The port mirrors that step in
-[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/ui_menu_window_dispatch.rs):
-`painter_for_renderer_va` maps a renderer VA to the painter that draws it,
-`painter_at` resolves one id through a parsed table and **refuses** a
-descriptor whose renderer is not the painter the caller expected, and
-`menu_window_painters` walks a whole table and reports every window the crate
-can paint. Two consequences fall out of keying on the renderer:
-
-- The six plain title tabs are one painter. `FUN_801DCA0C` / `CA50` / `CA94` /
-  `CAD8` / `CB1C` (pause tabs 0..=4) and `FUN_801DCFE4` (window 43) are the
-  same 17 instructions with a different string pointer, so all six resolve to
-  `title_tab_draws_for`.
-- The two counter windows differ only in dispatch data. Window 32 reads party
-  gold `_DAT_8008459C` with pictogram `0x62`, window 45 the casino coin bank
-  `_DAT_800845A4` with `0x66`; the painter is one routine and `CounterSource`
-  tells a host which live total to feed it.
-
-Both hosts draw their pause-screen tabs and the shop's vendor plate / purse /
-item-info / sell-quantity windows through this dispatch, at their disc-parsed
-rects - the pause tabs from `window/menu_draws.rs` and `web-viewer::play_menu`,
-the shop windows from the one composition both hosts call (`legaia_engine_screens`). Window **36** joins them
-whenever the equipment-buy recipient sub-screen is up, through one shared
-composition (`engine-ui::recipient_picker_draws_for`), so its row order and
-cursor rows are the same on both. The frames, the picker, the paged lists and
-window 41 come from `engine-ui::shop_screen` - see
-[shop.md](shop.md#screen-composition).
-
-### Which screen opens a window
-
-The descriptor table says what a window *looks like*; it never says which
-screen puts it on the glass. That is the **open script** - the 4-byte
-`[opcode, window_id, p0, p1]` command list a sub-screen hands the widget VM
-`FUN_801D6628`, terminated by opcode `0`, with opcode `1` = open/slide-in,
-`4` = close/slide-away, `6` / `0xA` = hide / re-show an already-created
-window (see [shop.md](shop.md#mode-select-panel-buy--sell--quit)).
-
-That makes "which screen opens window N" a decidable question over the
-overlay's own bytes rather than a guess, and it is worth walking whenever a
-painter looks orphaned. Every `jal 0x801D6628` in the image carries its
-script address in `a0`; decoding those, walking each script, and mapping the
-call site back through the sub-screen table at `0x801E4F40` gives a complete
-window → screen map. Two properties make the result trustworthy: a window
-that no `01` command names is never created at all, and the recovered map
-agrees with every sub-screen id this page pinned independently (5, 7, 0xB,
-0xD, the shop's 0x1B..0x1F, the exchange's 0x20).
-
-What it settles for the windows whose painters had no screen:
-
-| Window | Script | Sub-screen | Screen |
-|---|---|---|---|
-| 5 | `0x801E4BD4` | `3` (`FUN_801D6D38`) | battle-start ready check, reached only from the pause root's cancel with entry-context byte `0x0D` |
-| 6 | `0x801E4BE0` | `4` (`FUN_801DD1B8`) | notice panel; the menu's entry screen for the same `0x0D` context |
-| 7 | `0x801E4D50` / `0x801E4D78` | `0xF` / `0x10` | spell level-up notice, opened by a magic cast only when the apply raised the sentinel |
-| 24 + 25 | `0x801E4DC8` | `0x14` (`FUN_801D9C14`) | the Equip screen's **candidate-list** step (the one after slot-browse `0x13`), with window 2's Equip tab |
-| 31 | `0x801E4EDC` / `0x801E4EA8` | `0x1D` / `0x1C` | the shop's Point Card toast |
-| 46 | `0x801E4F2C` | `0x20` (`FUN_801DC1CC`) | the casino prize counter's Yes/No confirm |
-
-Two of those rows correct a reading this page used to carry. Window 25 is an
-**Equip** window - its id appears in exactly one `01` command in the whole
-overlay, the Equip screen's - so a shop screen does not open it; the shop's
-own stat compare is window 41. Both hosts had been drawing window 25 over the
-shop's equipment-buy recipient picker, one panel more than retail shows;
-`RecipientWindowRects` no longer carries a rect for it, which is what made
-removing the draw a single change both hosts had to follow rather than one
-either could keep. And windows 5 / 6 are not options-screen or
-pause-list windows: they are the pair belonging to entry-context kind `0x0D`,
-`FUN_801D6B20` routing to sub-screen 3 on cancel (`0x801d6cf8..0x801d6d18`)
-and `FUN_801DC6B4` selecting sub-screen 4 on entry (`0x801dc8d0..0x801dc8e4`).
-
-Window 5's own content settles what that pair *is*. Its renderer loads two
-heading strings, and they are a **battle-start ready check**, not the
-"really leave?" prompt the routing alone suggests - so the `0x0D` context is
-a scripted pre-battle party menu whose Yes exits into the fight. Window 6's
-six labels are the matching briefing, and they are six static VAs in the
-overlay's own pool (`lui a0,0x801d` + `addiu` pairs at
-`0x801d636c..0x801d6448`), not content the entry-context record owns. Both
-readings were the other way round on this page until the string pointers
-were followed.
-
-**Window 31** joins the dispatch-drawn set on the shop's Point Card beat. Which flow opens it
-is settled by the disc rather than inferred: both retail buy commits hand
-the widget VM a script whose entire body is `01 1F` plus the terminator -
-one command, "open window `0x1F`" (`0x801E4EDC` from the quantity commit
-`FUN_801DB7F4`, `0x801E4EA8` from the recipient picker `FUN_801DB380`) -
-and then park in a phase that only a confirm / cancel press releases. The
-engine keeps the bank on `World::minigames.point_card` and the beat on
-`MenuRuntime::point_card_toast`; see [shop.md](shop.md#point-card).
-
-Windows 5 and 6 are drawn on both hosts. Their trigger is the entry-context
-kind byte, which the op-`0x49` arm now records (see
-[save-screen.md](save-screen.md#root-command-picker-fun_801d6b20)): `FieldMenuSession`
-carries the two phases retail's dispatcher selects for kind `0x0D` - `Notice`
-as the *entry* screen and `ReadyConfirm` as the root picker's cancel
-destination - and each host resolves the window id off the disc table through
-`painter_at`. Their labels are read out of the caller's own PROT 0899 image at
-the VAs the two renderers load (`pause_screens::ContextLockedLabels`),
-installed by the `install_menu_overlay_tables` call both hosts already make.
-
-What makes the trigger reachable is that a `-1` row of the submode table is
-a **scripted menu-button press**. Op `0x49`'s Idle arm spawns the same
-subsystem actor the locomotion controller's menu accept spawns
-(`FUN_80020DE0(0x8007065C, *0x8007C34C)` at `0x801E0998..0x801E09A4`, against
-`0x801D0324` on the pad path) and parks the operand pointer in
-`_DAT_8007B450` (`0x801E09A8`). The actor's enter half `FUN_801F1278` stores
-handler `7` into `+0x50` (`0x801F140C`) and zeroes `+0x54` (`0x801F141C`)
-**before** it reads the signed 14-byte table at `0x801F33A4` (`0x801F1468`);
-a `-1` row only skips the overwrite (`0x801F1470`). Handler `7` is the state
-pick `FUN_801F1F4C`, which with a park live always moves on to `0x30`, the
-pause-menu session `FUN_801ED308` - so the menu opens by itself, on the
-screen the entry decode picks off the kind byte: `0x19`, the save-card
-driver, for a save point's `49 01`, and the notice panel for `49 0D`.
-
-A PCSX-Redux capture at the `town01` save point
-([`autorun_save_point_press.lua`](../../scripts/pcsx-redux/autorun_save_point_press.lua),
-`town01_field_card_boot`) logs that chain once per press: the park store, the
-enter half, the state pick with `+0x50 = 7`, the session with `+0x50 = 0x30`,
-and game mode `23` with no Start press.
-
-The release is the dispatcher's retire arm, not a menu teardown. The
-session's last phase clears the cursor context's `+0x3E` (`0x801ED52C`), and
-`FUN_801F159C` then retires the actor and, because the park is still live,
-stores the Done sentinel `1` (`0x801F1678..0x801F16AC`); the op's own Done arm
-zeroes it (`0x801E08D8`) and the interaction stops on its `0x21`. The same
-capture shows one Done store after the menu closed, and the park clear from
-then on. The two SCUS leaves that zero `gp+0x138` are not on this path:
-`FUN_8003540C` has no reference of any form on the disc
-(`find-address-word-refs.py 8003540c --prot`), and `FUN_800353E0` is reached
-only from the scene loaders (`0x8003B2C8`, `0x80055FC8`).
-
-The port: `World::scripted_menu_open_pending` is the press, every host opens
-the menu on it (no Start edge, no engagement refusal, no confirm cue - cue
-`0x20` belongs to the pad controller), `FieldMenuSession::open_entry_screen`
-opens a kind-`1` menu straight on the Save sub-session and ends the menu when
-it finishes, and `World::release_menu_entry_context_park` on the close
-resumes the parked op once. A save point carries no text, so its interaction
-record is installed by `man_field_scripts::placement_scripted_menu_record`;
-without it the action button found the save point and ran nothing.
-
-The painters for windows 24 and 46 stay unreached by a **screen** rather than
-by a mechanism; each one's remaining blocker is recorded per builder in
-`scripts/ci/ui-host-drift-waivers.toml`.
-
-### Which screen a window belongs to is settled by the open scripts
-
-Two sweeps over PROT 0899 do the settling, and both are byte measurements
-rather than readings of a decompile:
-
-- every `01 <id>` command in the widget-script pool names the one screen
-  that opens that window;
-- every `sw rt,0x46a4(rs)` in the image names a writer of the sub-screen
-  selector `DAT_801E46A4`, and the immediate loaded into `rt` a few
-  instructions earlier names the value.
-
-The second is what pins the two screens above to the entry-context kind and
-to nothing else: of 66 selector writers, sub-screen `4` is written at exactly
-one (`0x801dc8e4`, on kind `0x0D`) and sub-screen `0x20` at exactly one
-(`0x801dc8cc`, on kind `7`), both inside `FUN_801DC6B4`'s entry decode. It
-also corrects the Equip set's own id - the script `0x801E4DC8` is loaded at
-`0x801d9d00`, inside the routine the pointer table lists at index `0x14`, not
-`0x13`.
-
-Three rules the block encodes are worth naming on their own:
-
-- **Window 36's character mask is a table, not a shift.** `FUN_801D56FC`
-  indexes four bytes at `0x801E43F0`, which read `01 02 04 00` on disc.
-  Classes `0..=2` therefore agree with `1 << class`, but class `3` gets a
-  mask of zero and matches no equipment - not even against the
-  "any party member" mask `7` of
-  [equipment-table.md](../formats/equipment-table.md). A row that fails
-  the mask is not skipped: its draw order drops to `0`.
-- **Window 37's sell total is halved.** `FUN_801D5944` multiplies the
-  quantity by the unit price and arithmetic-shifts right by one.
-- **Window 37's digit field is a ladder, not a digit count.** It starts
-  at 4; `>= 100` and `>= 1000` each add one, and `>= 10000` *assigns* 5
-  before those two still add to it - so the widths are 4 / 5 / 6 / 7 and
-  a four-digit price reserves six cells.
-
-## Draw primitives + CLUT staging
-
-Three shared primitives render everything:
-
-| tag | function | signature | notes |
-|---|---|---|---|
-| STR | `FUN_80036888` | `(str, count, 0, x, y)` | proportional string; MES control tokens: `0x7c` = line break (`y += 0xe`, x resets), `0xcf b` = set text CLUT inline, `0xce b` = inline icon/number via the `0x80074050` aux record `b` (`[i16 ico_code, u8 x_advance, i8 dy]`; a zero code draws a number variable instead) |
-| ICO | `FUN_8002c488` | `(x, y, code)` | one UI-icon sprite; 12-byte-stride table at `0x800732a4`: `+3` CLUT byte (`&0x7f` → row at VRAM y 511; bit `0x40` = alternate encoding `(896+(b&3)*16, 0x1F2+((b&0x3f)>>2))`; bit `0x80` = blend), `+4..+7` = U/V/W/H, `+8/+0xa` = baked dx/dy (codes `0x86..0x8a`, texpage from `0x80073db8`) |
-| NUM | `FUN_80034b78` | `(value, digits, x, y)` | decimal digits vs the powers-of-ten table at `0x80073dcc`; one glyph cell per digit at a fixed 8-px pitch, right-aligned in the `digits`-wide field (leading cells blank) |
-| CUR | `FUN_8002b994` | `(kind, mode, x, y)` | 16x16 animated cursor sprite; 4-record 0x18-stride table at `0x80073d18` (kind 0 = pointing hand `(152,64)`, 1 = 2-frame `(224/240,64)`, 2 = left triangle `(168,8)`, 3 = right triangle `(168,40)`; all CLUT row 7). Mode 1 animates (idle bob from the `0x80073d78` offset table), 0 draws static |
-
-The palette-staging global is **`DAT_8007b454`** (`0x80080000 - 0x4bac`);
-the in-primitive CLUT halfword is `index + 0x7f86`. It is **read only by the
-string primitive** `FUN_80036888` (at `80036b74`). Icon and number primitives
-carry their own CLUT (icon from the `0x800732a4` table, number from
-`gp+0x13c`), so a `DAT_8007b454` write immediately before an ICO/NUM draw is
-inert for that draw and is really staging the palette for the next string.
-Distinct values seen: 7 (default text - reads back as RGB `(206,206,206)`
-in the framebuffer), 5 (status separators - the teal `(66,222,222)`
-parenthesised-value ink), 6 (magic header + skill labels), 9 (moves
-header), 4 (skill passives), 1 (command label + arrows), 0 (non-selected
-magic rows).
-
-### Ink CLUT rows
-
-The staged index selects a 16-colour CLUT at VRAM `(16*(6+index), 510)`
-(the in-prim halfword `index + 0x7f86` decoded as `x = (c & 0x3f) * 16`,
-`y = c >> 6`). The **main ink is palette entry 15**; entries 12..14 hold
-the outline/shade ramp. Entry-15 values read off the golden
-`menu_status_town` VRAM:
-
-| index | entry-15 RGB | role |
+| piece | src rect | at |
 |---|---|---|
-| 0 | `(132,132,132)` | grey (non-selected rows) |
-| 1 | `(107,107,231)` | lavender (command labels) |
-| 2 | `(231,33,0)` | red (downed - 0 HP) |
-| 4 | `(107,222,107)` | green (skill passives) |
-| 5 | `(66,222,222)` | teal (separators / base values) |
-| 6 | `(231,173,0)` | gold (warning tier, headers) |
-| 7 | `(206,206,206)` | white (default text) |
-| 9 | `(222,90,0)` | orange (critical tier, moves header) |
+| left arrow cap with the red "AP" chip | `(128,64,24,16)` | anchor |
+| trough body | `(128,80,56,16)` | `+0x18` |
+| bordered value box (ICO `0x69`) | `(176,64,16,16)` | baked `dx = 0x50` |
+| pointed right end (ICO `0x6A`) | `(184,80,8,16)` | baked `dx = 0x60` |
 
-### HP / MP health-tier inks
+Content:
 
-The status page and the top-level party panel stage the HP / MP number
-fields (current **and** max) through two per-character tier functions:
+- **Fill** (`value > 0`): two untextured gouraud quads spanning
+  `x+0x1B .. x+0x1B + value/2` (50 px at 100 AP; `value > 100` clamps the width
+  to `0xFF` for the wider field-HUD variants), rows `y+5..y+10`, dark red
+  `rgb(0x80,0x20,0x10)` to gold `rgb(0xC0,0xA0,0x40)` at the shared middle
+  edge and back. Prepended into the frame's OT bucket, so drawn on top of the
+  trough.
+- **Value**, all at `y+5`: `== 100` draws ICO `0x6B` (`(64,136,16,6)`, CLUT
+  row 1) at `x+0x50`; otherwise the tens digit ICO `0x6C+tens` at `x+0x50`
+  (when non-zero) and the ones digit at `x+0x56`. Digit records are ten 6x6
+  cells at `(64 + 6*digit, 128)`, CLUT row 4.
 
-- **`FUN_800349EC`** (HP): `hp == 0` → 2 (red); `hp <= max/4` → 9
-  (orange); `hp <= max/2` → 6 (gold); else 7 (white). A non-zero
-  status halfword at record `+0x12E` forces the gold tier at any HP.
-- **`FUN_80035EA8`** (MP): same quarter/half thresholds without the
-  zero case (`mp <= max/4` → 9, `<= max/2` → 6, else 7).
+**Derived-stat grid** (instr `801d3780..801d3b48`): rows at
+`WY+0x42 / +0x4f / +0x5c`, two columns. Left: label `X+0`, live value
+`X+0x28`, `(` `X+0x40`, growth value `X+0x48`, `)` `X+0x60`. Right: label
+`X+0x74`, value `X+0x9c`, `(` `X+0xb4`, growth `X+0xbc`, `)` `X+0xd4`. Live
+values (3 digits, clamp 999, white) are the aggregator words
+`DAT_801ef088..09c` computed by `FUN_801cf650` (see
+[the stat block](#the-eight-word-stat-block)); growth values are record
+`+0x122..+0x12c` in teal.
 
-Engine port: `engine-ui::menu_hp_ink` / `menu_mp_ink`.
+**Equipment grid** (instr `801d3b4c..801d3dd8`): seven slots, icon + item
+name. Icon codes are the fixed array `DAT_801e43f4` =
+`[0x24, 0x22, 0x23, 0x25, 0x46, 0x46, 0x46]` (u16); names via
+`*(u32*)(0x8007436c + id*0xc)` with `id = record[0x196 + slot_off]`
+([`item-table.md`](../formats/item-table.md)). Slots 0..3 stack at
+`X+0 / +0x10` on rows `WY+0x6d / +0x7a / +0x87 / +0x94`; slots 4..6 sit at
+`X+0x6a / +0x7a` on rows `WY+0x7a / +0x87 / +0x94`. The codes are 12x12
+pictograms on CLUT row 8: weapon fist `(244,36)`, helmet `(244,24)`, body
+armour `(232,36)`, boot `(232,48)`, Goods ring `(0,128)`. All seven draw
+whether or not the slot is equipped.
 
-## Record fields consumed
+**Experience / Next Level** (instr `801d3ddc..801d3e60`): "Experience" at
+`(X+0x18, WY+0xa5)` with the 8-digit value (record `+0x0`) at `X+0x78`;
+"Next Level" at `(X+0x18, WY+0xb2)` with the threshold (record `+0x4`).
 
-Field offsets into the `0x414`-stride live record emitted by this panel:
+### Magic list (submenu 2)
+
+Instr `801d4098..801d43c4`. `X = WX+0x10`. Header (CLUT 6): "Magic" at
+`(X, WY+0x13)`, "MP Used" at `(X+0x60, WY+0x13)`. Rows from `WY+0x28`, pitch
+`0x0d`, up to 7 visible, scroll `_DAT_8007bb90`, count `record[+0x13c]`. Per
+spell (id `+0x13d`, level `+0x161`): name via `0x800754d0 + id*0xc`
+([`spell-table.md`](../formats/spell-table.md)); level digit at `X+0x78`;
+3-digit MP cost at `X+0xa8` via `FUN_80035394`. The selected row draws a
+cursor and a CLUT-6 preview line; other rows use CLUT 0. Empty: "-No magic
+skills-" at `(X, WY+0x50)`.
+
+### Moves list (submenu 3)
+
+Instr `801d43c4..801d477c`. `X = WX+0x10`. Header (CLUT 9): "Moves" at
+`(X, WY+0x13)`, "AP Used" at `(X+0x60, WY+0x13)`. Rows match the arts table
+`DAT_80075ec4` (stride `0x14`, [`art-data.md`](../formats/art-data.md)); up
+to 7 rows, pitch `0x0d`. Per art: name (CLUT 7) at `X+0x10`, 3-digit AP cost
+at `X+0x82` (halved when record `+0x800` bit `0x800` is set). The selected row
+also draws "Command:" (CLUT 1) plus the direction arrows via `FUN_8003c310`
+(X step `0xc` per input) and a description glyph. Empty: "You have not learned
+any moves."
+
+### Skills page (submenu 1)
+
+Instr `801d3e64..801d4098`. `X = WX+0x10`. Loops accessory equip slots 5..7; a
+slot draws only when its passive index is `< 0x40`. Per slot (pitch `0x3b`):
+label icon (CLUT 6) at `(X+0x10, Y)`, item name at `X+0x20`, and two
+passive-effect lines from `0x8007625c`
+([`accessory-passive-table.md`](../formats/accessory-passive-table.md)) at
+`(X+0x30, Y+0xe)` (CLUT 4) and `(X+0x38, Y+0x1c)` (CLUT 7). Empty: "You do not
+have any skills."
+
+<a id="scroll-widgets-submenu-2-or-3"></a>
+**Scroll widgets** (submenus 2 and 3, instr `801d477c..801d4838`): up arrow
+(ICO `0x67`) when `_DAT_8007bb90 > 0` and down arrow (ICO `0x68`) when rows
+follow, both at `X = WX + (w >> 1) - 4`; scrollbar thumb at
+`(WX, WY + h - 0x28)`, length from `w`, `FUN_80034b6c(3)`.
+
+<a id="record-fields-consumed"></a>
+### Record fields the panel reads
 
 | offset | field |
 |---|---|
-| `+0x0` | cumulative experience (8-digit) |
-| `+0x4` | next-level threshold |
+| `+0x0` / `+0x4` | cumulative experience / next-level threshold |
 | `+0x104 / +0x106 / +0x11c` | HP max / current / base |
 | `+0x108 / +0x10a / +0x11e` | MP max / current / base |
-| `+0x10e` | AP-gauge value (the persistent out-of-battle AP; 0 on a fresh party - the new-game template zeroes it) |
-| `+0x122..+0x12c` | six growth-stat values |
-| `+0x130` | displayed level (matches the starting-level randomizer target) |
-| `+0x13c / +0x13d / +0x161` | spell count / spell ids / spell levels |
-| `+0x196..` | equipped item ids |
+| `+0x10e` | persistent out-of-battle AP (0 on a fresh party) |
+| `+0x122..+0x12c` | growth-stat values |
+| `+0x12E` | battle-status halfword |
+| `+0x130` | displayed level |
+| `+0x13c / +0x13d / +0x161` | spell count / ids / levels |
+| `+0x196..` | eight equip bytes |
 | `+0x2A7` | name string |
 
-External tables read: item names `0x8007436c`, spell names `0x800754d0`,
-equipment stats `0x80074f68`, item effects `0x800752c0`, accessory passives
-`0x8007625c`, arts `0x80075ec4`. These are the same records documented under
-the per-format pages.
+Port of the Status screen: `engine-ui::status_screen_draws_for` (main panel,
+off the id-28 origin), `status_satellite_draws_for`, and the sprite passes
+`status_icon_sprites_for` / `status_satellite_icon_sprites_for` (labels at
+codes `0x0A/0x07/0x08`, pictograms, gauge pieces, hand, triangles, element
+icons). Values come from the typed record in `legaia_save`; number fields use
+the retail 8-px cells (`num_field_draws`). The gauge fill is a baked column of
+the gouraud endpoint colours stretched to `value/2` px with per-row linear
+interpolation; retail's GPU sub-pixel truncation is not pinned (both reference
+captures hold AP 0).
 
-## Inn stay (there is no inn screen)
+## Submenu state machines
 
-An inn stay is not a menu, a session, or a native routine. Retail composes
-it **inline in the scene's MAN script** out of ops this page's sibling
-[`script-vm.md`](script-vm.md) already documents, and the only
-inn-specific thing in the whole engine is one opcode that heals.
+Every screen's input handling is a per-sub-screen tick function, dispatched
+from the master menu tick (inside `FUN_801DC6B4`) through the pointer table at
+`0x801E4F40`, indexed by `DAT_801E46A4`. The table runs `0x00..=0x20` and ends
+on a `0` word. A handler *requests* a switch by writing `DAT_801E46A4`; the
+master tick compares it with the settled copy `DAT_801E46A8` and, on a change,
+zeroes the shared phase word `DAT_801E46AC` - every sub-screen starts at
+phase 0.
 
-The restore is `0x4C` outer-nibble-8 sub-2:
-
-```text
-4C 82 <slot>        ; 3 bytes, PC += 3
-```
-
-Against the 0x414-stride character record based at `0x80084708`, the
-dispatcher arm writes each max into its current:
-
-```text
-*(u16 *)(record + 0x106) = *(u16 *)(record + 0x104);   ; hp_cur = hp_max
-*(u16 *)(record + 0x10A) = *(u16 *)(record + 0x108);   ; mp_cur = mp_max
-```
-
-The max/current roles are corroborated by the level-up routine, which
-grows `+0x104`/`+0x108`, clamps them to 9999/999, then clamps
-`+0x106`/`+0x10A` against them (see `ghidra/scripts/funcs/80042558.txt`).
-The slot is a **literal operand**: a script that heals slots 0/1/2 heals
-exactly those records rather than walking the active party.
-
-A paid stay wraps that restore in generic ops:
-
-| Step | Op |
-|---|---|
-| Innkeeper's greeting + the price line | `0x1F` dialogue segments |
-| Yes / No | MES-embedded option picker |
-| Can the player afford it? | `0x4E` gold gate, jumping to the refusal line |
-| Take the money | `0x3A` `ADD_MONEY` with the negative charge |
-| Fade out, wait, fade in | `0x34` / `0x35` / `0x36` + `0x4A` |
-| Heal | one `4C 82 <slot>` per party member |
-
-Two consequences fall out of that shape. The charge and the restore are
-**fully decoupled**, so a free rest (a bed, an infirmary) is the same tail
-with the gate and the debit dropped - which is why restore triples appear
-in many more scenes than gold gates do. And the price lives in the script,
-which is why `legaia_asset::inn_costs` locates the charges per scene and
-why there is no inn cost table to find.
-
-Scenes carrying a gate + debit pair include `retock` (240 G), `ropeway`
-and `rayman2` (200 G), `koin1` (280 G) and `koin2` (200 G); `koin4` and
-`koin1b` carry several sites each. Some inns append a story-flag-gated
-tail that sets a system flag and `0x3F`-warps to a `DREAM` scene - the
-restore still runs first, unconditionally.
-
-The engine hosts the opcode at
-`engine-core::world::vm_hosts::op4c_n8_sub2_restore_party_slot`, so retail
-inn scripts heal the live party on both hosts. `MenuRuntime::open_inn`
-remains an engine-side convenience (a yes/no session with an explicit
-cost) for tests and tooling - it is **not** a port of a retail screen,
-because retail has none.
-
-## Overlay identity + VA-aliasing
-
-Every function on this page is a body in the **menu overlay** (PROT 0899,
-base `0x801CE818`), whose code spans `0x801CF5D0..0x801E435C` - the data
-segment above that carries the window-descriptor table (`0x801E4738`), the
-options tables (`0x801E4404+`) and the prize table (`0x801E4518`). Its dumps
-carry the `overlay_menu_` prefix. Confirm any citation with the classifier
-(`scripts/ghidra-analysis/classify-worklist.py --explain <VA>`): its
-`image=menu` line is the arbiter, and it also catches the interior-address
-trap (e.g. `0x801CF754` decodes inside `FUN_801CF650`, not as its own
-function).
-
-A VA in the `0x801Cxxxx..0x801Fxxxx` band does **not** identify a menu
-function on its own - this slot-A window is shared, at different times, by the
-field overlay (0897), the battle overlay (0898) and the cutscene / minigame
-overlays, all based at `0x801CE818`, so one VA aliases several unrelated
-bodies (`0x801CF650` is the equip aggregator here but a "Give" string in the
-field overlay; `0x801D84C0` is a menu body here but a battle-action body in
-0898). Dumps prefixed `overlay_0896_*` are a separate trap: PROT 0896
-(`bat_back_dat`) has an **unrecovered** link base and its file over-reads the
-field overlay's bytes from `+0x9000`, so an `overlay_0896_*` dump above
-`0x801CE818` is field-overlay code (not menu code) and below `0x801CE818` its
-call targets are untrustworthy (see
-[`call-target-integrity.md`](../tooling/call-target-integrity.md) and
-[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Read the
-classifier's `image=`, not the filename prefix.
-
-### The 0896 dump band yields no menu function
-
-The `overlay_0896_*` dumps whose VAs fall in this doc's `0x801Cxxxx..0x8020xxxx`
-band are a standing decoy: PROT 0896 is `bat_back_dat`, not the menu overlay
-(0899), so a body dumped there is never a pause-menu / options / status
-function. Run through the classifier
-(`scripts/ghidra-analysis/classify-worklist.py --explain <VA>`) and the
-disassembly, every such worklist row lands in one of the buckets below - each
-disqualifying it as a menu entry for a distinct, disc-stable reason. The
-buckets follow the [worklist classification](../tooling/worklist-classification.md)
-vocabulary and the `0x801CE818` seam of
-[`call-target-integrity.md`](../tooling/call-target-integrity.md).
-
-- **Cross-program print collision / tail fragment** - the VA is not an
-  entry. The apparent nestings (`0x801CA998` "inside" `0x801CA850`,
-  `0x801CCDD4` "inside" `0x801CCBB0`, `0x801C802C` "inside" `0x801C7F38`)
-  compare two different import programs' bytes at overlapping printed
-  ranges: `0x801CA998` / `0x801CCDD4` are untagged phantom prints of the
-  *field* entries `FUN_801D01B0` / `FUN_801D25EC` (`+0x5818`), while
-  `0x801CA850` / `0x801CCBB0` / `0x801C7F38` are `base=0x801C5818`-tagged
-  prints of 0896's own content (see
-  [`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each));
-  prologue-less tail fragments (`0x801D34A4`, `0x801D95A8`, `0x801DCF24`,
-  `0x801DD690`, `0x801DE268`) read caller-saved registers and fall into a
-  parent's epilogue.
-- **Interior of a resident SCUS function** (below `0x801C0000`, not
-  overlay-resident) - `0x80016E4C` / `0x80016EB8` sit inside entry
-  `0x80016B6C`, `0x800379A8` inside `0x8003774C` (the NPC motion VM of
-  [`motion-vm.md`](motion-vm.md)), `0x8003CD68` inside `0x8003CD00`.
-- **Duplicate reprint of an already-ported menu body** - the mis-based
-  image re-prints a correctly-based `0x801Dxxxx` menu-overlay body at a
-  shifted VA: `0x801CC6AC` = `0x801D1EC4`, `0x801CD520` = `0x801D2D38`,
-  `0x801CD6A4` = `0x801D2EBC`, `0x801CD998` = `0x801D31B0`, `0x801EC204`
-  = `0x801F1A1C`, `0x8020E504` = `0x801EED1C` (the Super-Art queue
-  builder). The right-hand VA is the one to cite.
-- **Shared tail** - no `jr ra`; a mid-routine entry into a multi-entry
-  body (`0x801D31D8`, `0x801DABB4`, `0x801DAC78`, `0x801DB6CC`,
-  `0x801DBA78`, `0x801E6548`, `0x801F03C0`, `0x801F20DC`).
-- **Phantom stub / undecodable** - a 2..4-instruction stub
-  (`0x801D0338`, `0x801DB2FC`, `0x801DB4E8`, `0x801DD094`), a window that
-  decodes data as `$zero`-absolute loads (`0x801EE5B0`), or a dump with no
-  disassembly at all (`0x801D56D4`, `0x801DA1F8`).
-- **Self-entry body below `0x801CE818`** - a genuine `jr ra` body, but in
-  the unrecovered-base window where the bytes are not what the dump prints
-  (`0x801C5C90`, `0x801C5F40`, `0x801C6A34`, `0x801C7760`, `0x801C8400`,
-  `0x801CA850`, `0x801CB244`, `0x801CB4A8`, `0x801CCBB0`, and the
-  `bat_back_dat`-image `0x801C0D1C` / `0x801C2720` - `0x801C0D1C` calls
-  the non-enterable interior `0x8002CDD0`, the canonical tell). Nothing
-  attests the printed VA, so no behaviour can be claimed.
-- **Self-entry body at/above `0x801CE818`** - correctly based, but the
-  over-read neighbour's field (0897) / battle (0898) code, not menu:
-  `0x801D4A3C` indexes off the dialog pager context `0x801C6EA4`,
-  `0x801E7448` / `0x801E8B10` are field-overlay state machines,
-  `0x801F69A0` walks the battle actor `+0x1DD`, `0x802097BC` is a
-  battle-scene body. These belong to
-  [`field-locomotion.md`](field-locomotion.md) /
-  [`battle-action.md`](battle-action.md), not here.
-
-## Engine port
-
-Every draw builder named on this page lives in **`legaia-engine-ui`**, not in
-`legaia-engine-render`. `engine-render` re-exports the whole crate
-(`pub use legaia_engine_ui::*`), so an `engine-render::` path still compiles -
-but the code is in `engine-ui`, and the distinction is the point of the split:
-`engine-ui` is the renderer-agnostic, wgpu-free leaf, which is what lets the
-browser play page build these same menus without linking wgpu.
-
-The from-scratch engine parses the window-descriptor table from the user's
-disc at boot (`legaia_asset::menu_windows`; the play-window falls back to a
-pinned mirror of the same rects) and frames each screen's window set with
-the reusable 9-slice primitive `engine-ui::menu_window_chrome_draws_for`
-(the caller-drawn window frame), placed on the shared 320x240 boot-UI stage
-via `engine-ui::scale_stage_text_draws`. The frame chrome and the navy
-**filigree interior** both come from the system-UI TIM at `PROT.DAT[0x018E0]`
-CLUT row 2 (the same sheet as the save-screen chrome and the UI-icon atlas):
-the gold-bronze 9-slice tiles plus the marbled-blue interior patch, texels
-`(128, 0)` 32 x 32. The pause menu fills each window with the **class-0
-fill** retail's window drawer runs under every menu frame (`FUN_8002BDC4`):
-32-texel columns and bands of the patch (`SaveMenuAtlasRects::panel_filigree`,
-an un-baked 32 x 32 copy), each band a neutral-grey gouraud ramp from `0x40`
-at the frame's top to `0x88` at its bottom in steps of `0x900 / h`. The
-`menu_status_town` display list holds exactly that - its 204-tall status
-window draws seven bands `64, 75, 86, 97, 108, 119, 130 -> 136` - and the
-port draws it through the same kernel as the battle banners' frame,
-`battle_hud_chrome::class0_fill_draws_at`. (The save/load screen keeps the
-gradient-baked `panel_interior` variant stretched to its panel height; only
-the pause-menu windows pass `tile_filigree = true` to
-`nine_slice_panel_into`.) The status
-main panel renders
-through `engine-ui::status_screen_draws_for` at the byte-pinned offsets
-above, hung off the id-28 content origin; the satellite windows through
-`status_satellite_draws_for`; the top-level list / money box / party panel
-through `field_menu_draws_for` + `field_menu_info_draws_for`. The
-HP/MP/level/equipment values come from the typed character record in
-`legaia_save` (derived-stat grid = live `+0x110` window + growth
-`+0x122..+0x12D` window pairs). The **LV / HP / MP labels, the AP gauge and
-the equipment pictograms are ported UI-icon sprites** - their source rects
-are the `0x800732a4` icon-table records verbatim (labels = codes
-`0x0A/0x07/0x08` at `(192/208/224, 86, 16, 10)` CLUT row 1; pictograms =
-the `DAT_801e43f4` slot codes, CLUT row 8; gauge pieces + red digit strip,
-CLUT row 4 - every rect and placement pixel-verified against the golden
-`menu_status_town` capture), staged into the atlas and emitted by
-`engine-ui::status_icon_sprites_for` at the pinned status offsets while
-`status_screen_draws_for(.., label_icons = true)` suppresses the ASCII
-stand-ins (the AP text readout and empty-slot equipment text included; an
-occupied slot's item name lands at the retail `+0x10` name offset).
-The AP gauge's **meter fill** and value digits follow the traced
-`FUN_8002c0b0` layout (gradient fill = a procedurally-baked column of the
-gouraud endpoint colours stretched to `value/2` px; per-row linear
-interpolation approximates the GPU DDA until an AP>0 retail capture pins
-the sub-pixel truncation - both golden captures hold AP 0); the gauge
-value feeds from the persistent record `+0x10E` AP, not the battle
-gauge. The satellite windows are sprite-ported at the traced offsets:
-the party-list pointing hand + Condition-pager triangles
-(`status_satellite_icon_sprites_for`, frame-0 statics of the
-`0x80073d18` cursor table), the summary LV label and the per-character
-ATR element icons (extension-strip TIM `PROT.DAT[0x10178]` decoded with
-the `PROT.DAT[0x10028]` row-500 palettes). The title tabs wear the
-carved plaque via the shared `engine-ui::tab_banner_draws` (cap /
-tiled body / cap, CLUT row 12) with the label in CLUT-7 white; tab
-windows draw no 9-slice frame. Number fields lay out on the retail
-fixed 8-px digit cells (`num_field_draws`), and the parenthesised
-base/growth groups use the retail teal ink. The Equip screen renders its
-retail four-window set (tab 2 + party 21 + item-list 23 + main 22)
-through `equip_screen_draws_for` + `equip_screen_sprites_for` at the
-traced `FUN_801D21C0` / `FUN_801D2094` offsets (see
-[Equip screen](#equip-screen)). The top-level menu renders the traced
-row / money-box / party-panel content (see
-[Top-level pause menu](#top-level-pause-menu)). The Items and Magic
-screens' retail window sets and content layouts live in
-`engine-ui::pause_lists` (`items_screen_draws_for` /
-`magic_screen_draws_for` + `_sprites_for` siblings, window ids + pinned
-rect fallbacks in the same module): the command / caster / info windows
-at the decompile-pinned pens above, the list pages at the
-capture-pinned rows with the white-to-grey focus drop, hand cursors and
-page arrows from the system-UI atlas.
-
-Two pieces of that art are still text stand-ins, and they are blocked on
-different things - worth keeping apart, because one of them is not a
-`pause_lists` change at all:
-
-| Piece | Retail source | What is missing |
+| id | handler | screen |
 |---|---|---|
-| Spell element-icon plates (the `0xCE` escape leading every spell-name row) | widget records `0x8B..=0x92`, already baked into the menu atlas as `save_menu_atlas::band_element_badges` and consumed by the battle HUD | the **element id per row**: `PauseMagicRow` carries only `name` + `ra_seru`, and `engine-core::pause_screens` does not resolve a spell's element into the view. The sprite side is a few lines once the row carries the index. |
-| The "PAGE" small-cap tag and its fraction | UI-icon records `0x76` (tag), `0x79` (slash), `0x7A..=0x83` (digits) | those records are **not in the baked atlas**. `save_menu_atlas` blits a fixed record set out of the system-UI TIM and none of these three is in it, so the sprite cannot be addressed until the atlas grows them - an `engine-core` / `legaia_asset::title_pak` change, not a draw-builder one. |
+| `0x01` | `FUN_801D6B20` | root command picker |
+| `0x03` / `0x04` | `FUN_801D6D38` / `FUN_801DD1B8` | ready check / briefing notice (entry kind `0x0D`) |
+| `0x05` | `FUN_801D7C00` | Items command window |
+| `0x06` | `FUN_801D7E50` | Use list |
+| `0x07` | `FUN_801D8734` | Throw Out list + confirm |
+| `0x09` | `FUN_801D7FF8` | all-party apply (cursor count 0: confirm / cancel only) |
+| `0x0A` | `FUN_801D8308` | single-target apply |
+| `0x0B` / `0x0C` / `0x0D` | `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` | Door of Light / Door of Wind / Incense |
+| `0x0E` | `FUN_801D8F10` | Magic caster picker |
+| `0x0F` | `FUN_801D9110` | spell list (cancel -> `0x0E`; confirm -> `0x10` / `0x11`, `li` at `0x801d920c` / `0x801d924c` / `0x801d9258`) |
+| `0x10` | `FUN_801D9280` | group cast (cursor count 0) |
+| `0x11` | `FUN_801D9594` | single-target cast |
+| `0x12` / `0x13` / `0x14` | `FUN_801D98F0` / `FUN_801D99F0` / `FUN_801D9C14` | Equip character picker / slot browse / candidate list |
+| `0x15` | `FUN_801DA2A0` | Status (the [per-character list screen](save-screen.md#sub-screen-0x15---the-per-character-list-screen-fun_801da2a0)) |
+| `0x17` | `FUN_801DD330` | Options |
+| `0x20` | `FUN_801DC1CC` | casino prize counter |
 
-Meanwhile `list_page_header_draws` holds the measured columns with
-dialog-font glyphs (label at `x + 0x4D`, fraction cells at
-`x + 0x68 / 0x74 / 0x78`), so the header lands where retail's does even
-though the glyphs are the wrong ones. Both hosts compose these screens
-through `engine-ui::pause_menu::pause_screen_draws`, and the status page
-already inks HP / MP by health tier (`menu_hp_ink_with_status`), so the
-header glyphs are the open fidelity item here.
+The remaining ids (save, shop, debug editor) are tabulated on
+[`save-screen.md`](save-screen.md#sub-screen-function-pointer-table). Both
+apply pairs (`0x09` / `0x0A`, `0x10` / `0x11`) call the effect applier
+`FUN_800402F4` and differ only in the row count they hand the cursor
+primitive: `0` for the whole-party form, the live party count otherwise.
 
+**Cursor navigate `FUN_801D688C(cursor_ptr, rows, wrap)`** - the shared
+picker. Held-pad confirm / cancel masks (`DAT_801EF0F0` / `F4`) return 1 (SFX
+`0x36`) / 2 (SFX `0x37`); pad-edge Up / Down (`_DAT_8007BB84` bits `0x1000` /
+`0x4000`) move the cursor word's low 12 bits (SFX `0x21`), wrapping when
+`wrap` is set, and return 3. The high cursor bits pass through: `0x4000` hide,
+`0x2000` dim / all-row variant, `0x1000` editing / static.
 
-### Tactical Arts chain editor (engine extension)
+**List protocol.** List windows (class 4) are paged by the SCUS kind-4 kernel
+below; the overlay talks to it through globals:
 
-The chain editor (`engine-ui::tactical_arts_editor_draws_for`, backed by
-`engine-core::tactical_arts_editor::ChainEditor`) has **no retail
-pause-menu row**: retail's top-level list is the seven rows above, and
-composing a named command chain outside battle is not a retail feature.
-It is an opt-in engine extension, and it needs an entry point that does
-not invent an eighth row.
+| global | meaning |
+|---|---|
+| `_DAT_8007BB94` | list mode: 0 idle, 1 browsing, 2 row confirmed, 3 cancelled, 4 parked behind another window |
+| `_DAT_8007BB88` | selected row's payload (entry low 12 bits; the bag slot on item lists) |
+| `_DAT_8007BB9C` | selected row's class nibble (`entry & 0xF000`; the key `FUN_80034250` dispatches descriptions on) |
+| `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` | scroll top / selected row / row count |
+| `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` |
 
-That entry is Triangle on the **Status** screen, which swaps the status
-sub-session for a chain editor on the character the panel is currently
-showing (`engine-core::field_menu_dispatch::try_open_arts_editor`).
-Status is the retail surface that lists a character's arts, and retail's
-status panel reads Left / Right / L1 / R1 / Circle / Start only - so
-Triangle is unclaimed there and the extension costs no retail input.
-Closing the editor parks the resume cursor back on Status.
+### The kind-4 list kernel (SCUS `FUN_80032A44`)
 
-Both hosts reach it through the same seam, and both project the live
-editor through the shared `field_menu_dispatch::arts_editor_view` - the
-character-name lookup, the pretty-printed sequences, the phase mapping
-and the "+ New" room check are one implementation, so the two hosts
-cannot drift apart on them. Saving folds the edit back into the world's
-saved chains via `World::chain_library` / `store_chain_library`, so the
-next battle's Arts rows reflect it.
+Runs per frame for each live list window whose content id (live `+0x1C`) is in
+the allowlist at `0x80073E1C` (`02 03 22 07 08 09 0A 0E 0F 10 0B 05 19`,
+`0x23`-terminated).
+
+**List node** (live `+0x18`; allocator `FUN_80030104`, `count*2 + 0x2A`
+bytes): `+0x0` scroll top, `+0x2` visible rows (`(content_h - 4) / 0xE`),
+`+0x4` row count, `+0x6` selected row, u16 row entries from `+0x28`. A row
+entry is `[class: high nibble][0x800 = disabled][0x400 = alt-ink][payload:
+low 12 bits]`. The SCUS content builder `FUN_80030628` (per-content-id switch,
+jump table `0x80010D38`, index `id - 2`) writes the entries at create /
+refresh; the kernel only reads them. The dim bits are decided per row at build
+time and never rewritten with focus (the row words are bit-identical between
+command focus, list focus and 60 vsyncs of browsing -
+`autorun_use_list_rows_dump.lua`).
+
+**Navigation** (held pad `_DAT_8007BB84`, mode 1 only):
+
+| input | behaviour | instr |
+|---|---|---|
+| Up `0x1000` | step up; at the page top wrap to the page's last row | `80032ae8..80032c74`, `80032b28` |
+| Down `0x4000` | step down; past the page bottom or last row wrap to the page top | `80032b44..80032b84` |
+| Left `0x8000` | page up while `top > 0` | `80032b90` |
+| Right `0x2000` | page down while `top + visible < count`, clamping the selection to `count - 1` | `80032c1c` |
+| Confirm (`0x800846D0 & _DAT_8007B874`) | disabled row (`entry & 0x800`, `80032d04`) buzzes (cue `0x23`); else mode = 2 + cue `0x20` (`80032d34`) | `80032ccc..` |
+| Cancel (`0x800846D4`) | cue `0x37`, mode = 3 | `80032dcc` |
+
+Up / Down never scroll, which is why the lists read as fixed 12-row pages.
+Move cues (`0x21`) enqueue into the 4-slot UI ring at `0x8007B6D8`.
+
+**PAGE header** (`80032e18..80032f20`, drawn while the count is non-zero).
+The current page is recovered by walking `visible`-sized steps up to the
+scroll top. All glyphs are UI-icon sprites:
+
+| glyph | ICO | UV / size | at |
+|---|---|---|---|
+| "PAGE" tag (teal `(16,181,156)`, CLUT byte 1) | `0x76` | `(80,136)` 24x8 | `(WX + W - 0x38, WY - 2)` |
+| current page digits (gold) | `0x7A + digit` | `(64 + 6*digit, 144)` 6x8 | `WX + W - 0x20` (tens), `+6` (ones) |
+| slash | `0x79` | `(120,136)` | `+0xD` |
+| page total | `0x7A + digit` | | `+0x14` / `+0x1A` |
+
+The tens cell is leading-zero-suppressed. The total is `ceil(rows / visible)`
+over **occupied** rows (the builder skips an empty slot, `beq s0,zero` at
+`0x8003089C`): one held item reads `PAGE 1 / 1`, an empty list draws no
+header.
+
+**Rows** (`80033050..`): the block is vertically centred -
+`row0_y = WY + (content_h - visible*0xE)/2 + 5`, pitch `0xE` (12 rows from
+`WY + 0xC` for the item-list rect). The draw switches on the class nibble:
+
+| class | row |
+|---|---|
+| `0x1000` | bag row: name via the resolver `FUN_8002FF8C` at `WX+0xC`; count from `0x80085959 + slot*2` as three 8-px cells from `WX+0x6C` (a count capped at 99 inks `WX+0x74` / `WX+0x7C`) |
+| `0x6000` | bag row with an equip-slot pictogram (icon via equip record `+7` bits `0x60` through the halfword table `0x80073A90`, name at `WX+0x1C`); a non-equipment item draws its count from `WX+0x78` instead |
+| `0x9000` | passive row: ICO `0x46` + name at `WX+0x1C` |
+| `0x7000` | ICO `0x21` + name, payload is the id itself |
+| `0x3000` / `0xA000` | shop rows: name (item record `+4`) at `WX+0x18`, 5-digit price (record `+2`) at `WX+0x80`; `0xA000` stages ink 5 |
+| `0x8000` | fixed-advance name (monospace override byte `0x80073F20`) |
+| `0x2000` / `0x5000` / `0x4000` | plain name rows |
+
+**Row ink** (`8003312c..80033154` and per-class clones): ink 7, dropping to 0
+when the row's `0x800` bit is set and to 1 when `0x400` is set - **unless the
+list is parked** (mode 4), which keeps every row white. So a list goes from
+all-white to its per-row inks the moment the hand enters it; a page that reads
+all-grey is a page whose rows are each individually disabled.
+
+**Hand + page arrows** (`80032f5c..8003304c`): hand
+`FUN_8002B994(0, browsing, WX - 6, row_y)`, suppressed when parked and, in
+mode 0, for window 11. Blink-gated page triangles (`0x80084570 & 0x18`): ICO
+`0x27` at `(WX - 0xC, WY + h/2 - 3)` while scrolled, ICO `0x28` at
+`(WX + w + 4, WY + h/2 - 3)` while rows remain. The live list rect is
+`128 x 172` (trimmed from the descriptor's `132 x 182`), which puts the right
+arrow at `(WX + 0x84, WY + 0x53)`.
+
+Port: `engine-menus::pause_screens::list_kernel_navigate` (navigation, page
+wrap, page flip) and `engine-menus::menu_list_rows` - the allocator
+(`list_alloc`), row-entry bit constants, row-name resolver (`row_name_source`,
+`FUN_8002FF8C`), content-builder cases (below) and the live-window upsert
+(`LiveWindowSet`, `FUN_80032434`). The description dispatcher is
+`engine-ui::ui_menu_window_painters::description_source`. Row and header draws
+are in `engine-ui::ui_menu::pause_lists`.
+
+### Use-list row build (content id 3, `FUN_80030628`)
+
+The Items Use list (window 15) is the builder's id-3 case
+(`0x80030828..0x80030A88`, dump `80030628.txt`). Per bag slot
+(`0x80085958 + i*2` over the window `gp[+0x2D2]..gp[+0x2D4]`) the item record
+(`0x80074368 + id*0xC`) kind byte `+0x0` routes the row:
+
+| item | entry | placement |
+|---|---|---|
+| kind 2 with item-effect flag `0x8` (`0x800752C0[eff*4+2]`, `0x800308B8..0x800308F8`) | `slot \| 0x1C00` (dim + alt-ink) | third buffer, appended **last** |
+| kind 1 (equipment / key items, `beq` at `0x80030918`) | `slot \| 0x1800` (dim) | second buffer, appended after the in-place rows |
+| anything else | by the context chain below | in place |
+
+In the **field** context (`gp[+0x85C] == 0`) an in-place row dims when any of
+these holds:
+
+1. it is Door of Light / Door of Wind (ids `0x88` / `0x89`,
+   `0x80030930..0x80030974`) and scratchpad word `0x1F800394` bit
+   `0x100000` / `0x200000` is **set** (`bne` at `0x8003094C` / `0x8003096C`);
+2. the effect's field-usable bit `0x2` is clear (`0x80030990`);
+3. the applicability probe `FUN_8003043C` (`0x800309A4`) returns 0 - a party
+   scan through the action validator `FUN_8003FB10`, which fails when the item
+   would affect nobody (`0x800309BC`). A Healing Leaf greys at full party HP
+   this way (captured entry `0x1800`, item `0x77`).
+
+In the **battle** context (`gp[+0x85C] == 1`) the gate is the effect's
+battle-usable bit `0x4` (`0x800309E0`), and an unusable row joins the kind-1
+tail buffer (`0x800309FC`) instead of dimming in place. Any other context
+value emits no row (`0x800309C0`).
+
+Sibling cases:
+
+- **Throw Out** (window 16, content id `0x22`, case `0x80030AF8`): kind-1 rows
+  go to the tail buffer white unless equip-record `+0x7` bit `0x1`
+  (no-discard) dims them (`0x80030C08..0x80030C18`); in-place rows dim on
+  item-effect flag `0x1` (key items, `0x80030C40`).
+- **Price-gated bag list** (window 38, content id `2`): rows whose item price
+  `+0x2` is zero dim and sort last (`0x8003071C` / `0x80030734`).
+
+Port: `engine-menus::menu_list_rows::{build_use_list_rows,
+build_throw_out_rows, build_price_gated_rows}` (row words + buffer order).
+
+## Items screen
+
+Windows: tab 0, command 13, list 15, info 17. Sub-screen `5` while the command
+window has focus, `6` in the Use list, `7` in the Throw Out list. Dumps
+`overlay_menu_801d0d18.txt`, `_801dcb60.txt`, `_801d0f1c.txt`, `_801d7c00.txt`,
+`_801d7e50.txt`, `_801d8734.txt`, `_801d1b20.txt`, `_801d0520.txt`.
+
+**Command window (id 13, `FUN_801D0D18`)** - "Use" / "Throw Out" / "Arrange"
+(`@` strings at `0x801CEA10..`) at `(WX+0x14, WY + row*0xE)`, CLUT 7, dropping
+to CLUT 0 when the bag scan (slot pairs `[id, count]` at `0x80085958 + i*2`
+over `_DAT_8007B5EA.._DAT_8007B5EC`) finds no held item. Hand at
+`(WX, row_y)`, cursor word `DAT_801E46C0`.
+
+**Item list (id 15, content id 3)** - renderer-less; the
+[kernel](#the-kind-4-list-kernel-scus-fun_80032a44) draws class-`0x1000` rows
+built by the [id-3 case](#use-list-row-build-content-id-3-fun_80030628). All
+white while the command window has focus (parked), per-row ink once the hand
+enters. The hand is the only selection highlight.
+
+**Info window (id 17, `FUN_801DCB60`)** - draws only while an item id is
+staged in `DAT_801E46B0`: the 2-digit bag count (CLUT 6) at `(WX+0x7C, WY)`
+(re-resolved through the bag scan `FUN_80042EE0`), then the shared item-info
+panel `FUN_801D0F1C`:
+
+- name (CLUT 6, item-table `+4`) at `(WX, WY)`; description (CLUT 7,
+  item-table `+8`) at `(WX, WY+0x10)`;
+- for accessories, the passive lines from `0x8007625C` at `(WX, WY+0x38)`
+  (CLUT 4) and `(WX, WY+0x48)` (CLUT 7), plus a single / all-scope icon
+  (`0x84` / `0x85`) at `WX+0x84`;
+- for a Point Card (id `0xFE`), instead: "Points Left" at
+  `(WX+0x18, WY+0x41)` and the 8-digit bank `_DAT_800845B4` at
+  `(WX+0x38, WY+0x4E)`. This is a branch (id test at `0x801d0fd0` jumps to the
+  tail), so the passive block never runs on that row.
+
+The renderer always emits a second framed box
+`FUN_8002C69C(WX, WY+0x38, 0x90, 0x28)` under its window; the passive / points
+lines land inside it. Port: the Point Card arm is a separate builder
+(`engine-ui::item_points_panel_draws`) over `items_screen_draws_for`, fed from
+`World::minigames.point_card`.
+
+### Command sub-flows (Use / Throw Out / Arrange)
+
+**Command SM `FUN_801D7C00`** (sub-screen 5). Phase 0 zeroes the staged item
+id / count (`DAT_801E46B0` / `B4`), parks the list (`_DAT_8007BB94 = 4`) and
+re-runs the window script; phase 1 navigates with
+`FUN_801D688C(&DAT_801E46C0, 3, 1)`. Every confirm re-runs the bag scan (a
+slot counts only when both id and count bytes are non-zero) and buzzes (SFX
+`0x23`) on an empty bag. Then: **Use** -> sub-screen 6 (SFX `0x20`); **Throw
+Out** -> 7 (SFX `0x20`); **Arrange** -> phase 2, which calls the sort kernel,
+zeroes the list scroll, re-opens the list and returns to phase 1 (SFX `0x36`).
+Cancel -> sub-screen 1.
+
+**Arrange kernel `FUN_801D64A8`** (`overlay_menu_801d64a8.txt`) - inverts the
+display-order table at `0x801E4A88` (`table[rank] = item_id`, PROT 0899 file
+`0x16270`) into an id -> rank map in a 256-byte scratch (a duplicated id keeps
+its last rank), then selection-sorts the occupied bag pairs by rank; emptied
+slots sink behind the occupied run. Port: `engine-menus::menu_arrange`.
+
+**Use list `FUN_801D7E50`** (sub-screen 6). Phase 0 hides the command hand
+(`|= 0x1000`) and runs the script (re-creating list 15 in place, snapping 13 /
+17); phase 1 arms the kernel (`_DAT_8007BB94 = 1`); phase 2 stages the hovered
+slot's id / count every frame and polls. Cancel -> 5. A pick dispatches on the
+item's effect class (item record `+1` indexes `0x800752C0`,
+[`item-effect-table.md`](../formats/item-effect-table.md)) at
+`801d7f80..801d7fd8`:
+
+| effect class | route |
+|---|---|
+| `0x80` | `0x0B` Door of Light |
+| `0x81` | `0x0C` Door of Wind |
+| `0x82` | `0x0D` Incense |
+| other, effect `+2` flag `0x20` set | `0x09` all-party apply |
+| other | `0x0A` single-target apply |
+
+Port: `pause_screens::use_route_for_effect`.
+
+**All-party apply `FUN_801D7FF8`** (sub-screen 9). Phase 0 derives the preview
+mode (`FUN_801D6A54`, below), sets the target cursor `DAT_801E46C4 |= 0x2000`
+(the all-row hand) and runs script `0x801E4C30`: close-all, reopen the tab,
+snap 13 / 17, open **window 14**. Phase 1 polls
+`FUN_801D688C(&DAT_801E46C4, 0, 0)`; cancel -> 6. Confirm: SFX `0x25`, the
+applier `FUN_800402F4(effect_class, effect_arg, roster_id[cursor], 0)`, the
+ability-bit rebuild `FUN_80042558`, then `FUN_80043048(slot, 1)` consumes one
+copy. When the stack runs out (or the item stops resolving, `FUN_8003043C`) a
+~20-frame timer phase runs (`DAT_801E46D0` as the accumulator against the
+frame delta `DAT_1F800393`) before returning to the list - or to sub-screen 5
+when the bag emptied.
+
+**Single-target apply `FUN_801D8308`** (sub-screen 0xA). Same shape with a
+navigable hand: script `0x801E4C48` (identical to `0x801E4C30`), phase 1
+`FUN_801D688C(&DAT_801E46C4, party_count, 1)`. A confirm re-checks usability
+through `FUN_8003FB10(effect_class, effect_arg, roster_id[cursor])` (failure
+buzzes, `801d8480`, cue `0x23`), sets cursor bit `0x1000` and applies through
+the same chain (`801d84b0..`). When the applier reports through
+`_DAT_8007BB78` (seeded `0xFF` at `801d850c`), script `0x801E4C60` opens
+**window 8** and waits for a confirm before closing it (`0x801E4C68`).
+
+**Art-learned notice (window 8, `FUN_801DCD58`)**. The template string is in
+the overlay's data segment at `0x801E4700` (its only reference is this
+renderer's `lui` / `addiu` at `0x801DCD68` / `0x801DCD6C`). Each frame the
+renderer finds the first `0xC1` and first `0xC5` markup token (`FUN_8003CBF8`)
+and overwrites the byte after each: the `0xC1` operand takes the low byte of
+`_DAT_8007BB70`, the `0xC5` operand `_DAT_8007BB78 + _DAT_8007BB70 * 0x40`. It
+then draws the message in ink 7 at the content origin with the hand (kind 1,
+mode 1) at `(WX+0xE6, WY+0xD)`. The two globals have one writer on this path:
+the applier's Hyper-Art-book arm (`0x80042040..0x80042090`) inserts the art
+and calls `FUN_80035C00` (`sh a0,0x858(gp)` / `sh a1,0x860(gp)`) with
+`a0 = class - 0xB` (roster slot) and `a1` the art id, skipped when the mode
+word is `0x15` (battle). So `0xC1` names the learner and `0xC5` is the
+arts-name token's `[character, art]` key. Port:
+`pause_screens::{notify_window_operands, notify_template_from_menu_overlay}`,
+drawn by `engine-ui::pause_menu::art_learned_notice_draws` while
+`MenuRuntime::art_learned_notice` holds the beat.
+
+**Preview mode `FUN_801D6A54`** - mode 0 unless the item's kind byte is `2`
+and its effect class is `6` (the permanent-stat Waters); then the effect arg
+maps `0 -> 1` (Life Water), `5 -> 1` (Magic Water), `1 -> 2` (Power), `2 -> 3`
+(Guardian), `3 -> 4` (Swift), `4 -> 5` (Wisdom). Port:
+`pause_screens::target_panel_mode`.
+
+**Party target panel (window 14, rect `(174,28,132,176)`, `FUN_801D0520`)** -
+replaces the list column during target pick. One block per roster member
+(roster byte `< 3`), pitch `0x3E`. Header: name at `WX+0x14`, LV icon at
+`(WX+0x58, Yb+2)`, level at `WX+0x68`. The body switches on the preview word
+`DAT_801E46CC`:
+
+| mode | body |
+|---|---|
+| 0, 2, 4, 5 | HP row: ICO `0x3F` at `(WX+0x1C, Yb+0x11)`, current (`+0x106`, tier ink) at `(WX+0x2C, Yb+0xF)`, slash (`FUN_8003C1F8` cell 6) at `WX+0x4C`, max at `WX+0x54` (`801d0764..801d07d4`). MP row (ICO `0x40`, `+0x10A` / `+0x108`) at `Yb+0x1E` / `Yb+0x1C` (`801d07ec..801d0850`) |
+| 1 (Life / Magic Water) | both rows as `eff_max ( base_max )`: tags ICO `0x64` / `0x3F` (HP), `0x65` / `0x40` (MP) at `WX+0x14` / `WX+0x28`; effective max (`+0x104` / `+0x108`) white at `WX+0x38`; teal parens (cells 7 / 8, ink 5) at `WX+0x58` / `WX+0x80` around the base max (`+0x11C` / `+0x11E`) at `WX+0x60` (`801d0658..801d0850`) |
+| 2..5 (stat Waters) | after `FUN_801CF650(roster_id)` at `801d0854`: `LBL eff ( base )` - label (`0x801CE9A0..B0`) at `WX+0x1C`, aggregator word (`DAT_801EF08C/90/94/98/9C`, clamp 999) at `WX+0x44`, parens at `WX+0x5C` / `WX+0x7C` around the record base stat (`+0x124..+0x12C`) at `WX+0x64`. Modes 2 / 4 / 5 draw one row at `Yb+0x29` (ATK / SPD / INT); mode 3 skips the MP row (`801d07e4`) and draws UDF at `Yb+0x1C` and LDF at `Yb+0x29` (`801d08a4..801d0c38`) |
+
+The modes are the Water previews only; restore items use the plain mode-0
+panel. Hand (`801d0c40..801d0c94`): `DAT_801E46C4` bit `0x4000` hides it,
+`0x2000` draws it on every row, else the low 12 bits pick the row; bit
+`0x1000` selects the static variant; drawn `FUN_8002B994(0, variant, WX, Yb)`.
+
+A second renderer, `FUN_801D56FC`, draws the equip-recipient form of this
+panel (window 36): a header plus one row per member, greyed when the item's
+equip mask (`0x80074F68 +6`) misses `DAT_801E43F0[member]` - the shop's
+buy-recipient test.
+
+Port: `engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed by
+`pause_screens::target_panel_view_model`.
+
+**Door of Light `FUN_801D8A58`** (sub-screen 0xB, class `0x80`). Phase 0
+zeroes the confirm cursor `DAT_801E46D0` (**Yes** default) and opens window 10
+(script `0x801E4CBC`; renderer `FUN_801D1DAC`, rect `(76,100,168,40)`). Yes
+consumes one `0x88` (`FUN_80042310(0x88, 1)`, `801d8b20`) and exits the menu:
+`DAT_801E46A0 = 0xF2` (fade) + outer exit code `_DAT_8007B43C = 4`
+(`801d8b5c..801d8b6c`), the dungeon-escape handoff. No / cancel -> 6.
+
+**Door of Wind `FUN_801D8B90`** (sub-screen 0xC, class `0x81`). Phase 0 parks
+the kernel and saves the Use-list scroll (`_DAT_8007BB98/90 ->
+DAT_801EF070/74`, `801d8bd8..801d8bf8`); phase 1 zeroes the scroll and opens
+**window 11**, the destination list (same rect as list 15, content id
+`0x19`); phase 2 re-arms the kernel; phase 3 on a pick reads the 6-byte
+quick-travel record `0x80073A98 + slot*6` (`legaia_asset::worldmap_menu`) and
+stages `+2 -> 0x80084628`, `+4 -> 0x80084624`, `+5 -> 0x8008462C`
+(`801d8c88..801d8ccc`), consumes one `0x89` and exits with code
+`_DAT_8007B43C = 5`, the world-map warp. Cancel restores the scroll -> 6.
+
+**Incense `FUN_801D8D94`** (sub-screen 0xD, class `0x82`). Window 12 Yes / No
+(script `0x801E4CE4`; renderer `FUN_801D1F10`, rect `(76,88,168,54)`), cursor
+seeded Yes. Yes consumes one `0x8A` (`FUN_80042310(0x8A, 1)` at `0x801D8E68`,
+before the applier) and calls `FUN_800402F4(class, arg, roster_id[cursor], 0)`
+with class / arg read from Incense's own effect record (`lbu` at `801d8e78`),
+then returns to the Use list - no menu exit.
+
+The applier's class-`0x82` arm (`0x800421A0`) is `jal 0x80046870`: add `0x40`
+to `_DAT_8007B600` (`gp+0x2E8`), cap at `0x100`. That word is the **Incense
+window**, counted in walk ticks:
+
+- the field walk tick `FUN_801D0B90` decrements it once per running tick
+  (`0x801D0CD4..0x801D0CE8`);
+- the region encounter roll `FUN_801D9E1C` skips the whole roll while it is
+  non-zero (`0x801DA174`) - after the region's battle-setup half, before the
+  rate scale, so the step counter does not drain;
+- the Use list greys the row at `>= 0xE0`: validator arm `0x82` is
+  `FUN_80046898`, `_DAT_8007B600 < 0xE0`.
+
+So one Incense suppresses encounters outright for `0x40` walk ticks and uses
+stack to `0x100`. On the tick the window reaches zero the walk tick installs
+the field-overlay record `0x801F2278` (kind `0x0B`) as the entry context,
+raises the movement lock and spawns the submode actor, whose table
+`0x801F33A4` maps kind `0x0B` to handler `0x32`, `FUN_801F1E48` - a
+three-state **wear-off notice**: state 0 shows window record 16 (descriptor
+`0x801F3294`, painter `FUN_801F1B64`, string `0x801CF1A4` = the `0xC2 0x8A`
+item-name escape plus the "effect is gone" line); state 1 waits for confirm /
+cancel, plays cue `0x20` and hides the window (`0x801F32A4`); state 2 zeroes
+`_DAT_8007B450` and retires. See
+[script-vm.md](script-vm.md#which-screen-a-sub-op-opens-the-table-at-0x801f33a4).
+The overworld runs the same walk tick (`FUN_801D1344` calls `FUN_801D0B90` at
+`0x801D16EC`), so the window drains and the notice fires there too.
+
+**Throw Out list `FUN_801D8734`** (sub-screen 7). Phase 0 re-points the live
+list window from descriptor 15 to 16 (live `+0x8` write; same rect, content id
+`0x22`) and runs the enter script; phase 1 arms the kernel; phase 2 stages the
+hovered slot and polls. Cancel restores descriptor 15 -> 5. A pick closes
+command window 13 and opens **window 9** with the confirm cursor
+`DAT_801E46D0` seeded to **1 ("No")**. Phase 3 navigates
+`FUN_801D688C(&DAT_801E46D0, 2, 1)`; Yes (SFX `0x37`) zeroes both bytes of the
+selected bag pair - the whole stack, no compaction - then fixes up the scroll
+(deleting the last row steps selection and scroll back one) and closes the
+confirm. An empty rescan restores descriptor 15 and drops to sub-screen 5.
+
+**Throw Out confirm (window 9, rect `(14,38,144,54)`, `FUN_801D1B20`)** -
+drawn from the staged slot (`_DAT_8007BB88`): the item name (CLUT 7; the
+item-table `+4` string, whose leading byte is its glyph count) at `(WX, WY)`;
+the count (min-1-digit `FUN_80034B78`) at `WX + 8 + glyphs*0xC`; "You are
+about to" 8 px past the count (16 px for a 2-digit count); "Throw out?" at
+`(WX+6, WY+0xE)`; then CLUT 5 "Yes" at `(WX+0x3C, WY+0x1C)` and "No" at
+`(WX+0x3C, WY+0x2A)` with the hand at `WX+0x28`. The name renderer honours a
+`0xF1` second-byte escape that substitutes a character name (`+0x2A7`). The
+strings are in the rodata pool (`@You are about to` at `0x801CEA60`, then
+`@Throw out?` / `@Yes` / `@No`).
+
+**Port of the Items screen.** Session: `pause_screens::PauseItemsSession`
+(command / list / throw-out focus, page flip, No-default confirm, whole-stack
+discard) and `SpecialUseSession` for the three special routes, entered through
+`special_use_route_for_item`. Text comes from the executable via
+`pause_screens::MenuTextTables` (`World::install_menu_text`); Arrange ranks
+via `World::install_menu_overlay_tables`. Draws:
+`engine-ui::items_screen_draws_for` / `items_screen_sprites_for`,
+`items_throw_confirm_draws_for`, and `confirm_prompt_draws` for windows 10 /
+12 at their descriptor rects. Outcomes land through
+`field_menu_dispatch::{apply_inventory_outcome, apply_pause_items_outcome}`.
+Specifics:
+
+- **Door of Wind** rows come from `field_menu_dispatch::warp_destinations`,
+  the same walk as `FUN_80030628` case `0x19`: skip a record whose `name_idx`
+  repeats the last accepted row's, gate on system flag `record[1] + 0x20`,
+  keep the record ordinal as the row identity (retail pushes string id
+  `0x8000 | index`). A pick writes `World::menu.pending_warp`;
+  `World::drain_staged_menu_warp` resolves the scene on the next tick (a miss
+  logs retail's `UNFIND MAP NUMBER %d` and drops the use).
+- **Incense**: each commit tops `FieldLocomotion::walk_regen_window` up through
+  `engine-vm::battle_helpers::top_up_cooldown`; `World::on_field_step` and
+  `World::tick_world_map` skip the region roll while it is open; the zero edge
+  raises `World::raise_incense_notice` (the ported `FUN_801F1E48`), drawn by
+  `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`
+  with the line read off the disc.
+
+Known differences from retail on this screen:
+
+- The list drops **every** row to grey once the hand enters it
+  (`ItemsScreenModel::focus_list`) rather than showing each row's build-time
+  ink; the row words themselves are built correctly by `menu_list_rows`.
+- The Door of Light / Incense prompt strings are not recovered from the
+  overlay, so the port stages the item name and its own question in the retail
+  line slots (geometry is exact).
+- The Door of Wind list reuses the item-list renderer, so its count column
+  shows `0` where retail draws no count.
+
+## Magic screen
+
+Windows: tab 1, list 18, caster 19, info 20. Sub-screen `0x0E` = caster focus,
+`0x0F` = list focus. Dumps `overlay_menu_801d2c98.txt`, `_801d2e74.txt`.
+
+**Caster window (id 19, `FUN_801D2C98`)** - one block per roster member
+(roster byte `< 3`) at `Yb = WY + 1 + i*0x23`: name at `WX+0x14`; LV icon at
+`(WX+0x60, Yb+2)` with the level at `WX+0x70`; MP icon (ICO `0x40`) at
+`(WX+0x24, Yb+0x10)` with current (`+0x10A`) / slash / max (`+0x108`) at
+`WX+0x34 / +0x54 / +0x5C` on row `Yb+0xE`, in the MP tier ink. Hand at
+`(WX, Yb)`, cursor word `DAT_801E46C8`.
+
+**Spell list (id 18, content id 5)** - renderer-less, the same page layout as
+the item list. Each row is one string whose leading `0xCE` escape draws the
+element icon plate, so the name starts 25 px right of the row pen (22 px for
+the wider winged Ra-Seru icon).
+
+Row ink is decided in the list build. The out-of-battle arm of `FUN_80030628`
+(`0x80031130..0x80031264`) writes each learned spell as `0x5800 | id`
+(disabled) and rewrites it as `0x5000 | id` only when all three hold:
+
+1. the spell record's `+2` bit `0x02` (ally-side, field-castable);
+2. current MP covers the cost after the per-caster discount (`FUN_80035394`);
+3. the broadcast `FUN_8003053C` answers non-zero (`0x80031210`) - it runs the
+   validator `FUN_8003FB10` with the record's `+0` / `+1` as arm and sub-case,
+   once on slot 0 when `+2` bit `0x20` is set, otherwise once per present
+   member. A heal greys while the whole party is at full HP.
+
+Both cast flows ask the broadcast again before committing (`0x801D954C`,
+`0x801D98B4`) and debit the discounted cost (`0x801D93C0..0x801D9418`).
+
+**MP-cost kernel `FUN_80035394`**: the caster's `+0xF4` ability word bit
+`0x20` halves the cost, bit `0x10` takes a quarter off, Half winning when both
+are set.
+
+**Info window (id 20, `FUN_801D2E74`)** - draws only while a spell id is
+staged in `DAT_801E46B0`: spell name (CLUT 6, leading element icon) at
+`(WX, WY)`; the learned level (from the character's `+0x13C` / `+0x13D` /
+`+0x161` list) as "Lv`n`" at `WX+0x78`; the description (`stats[+4]` indexes
+the pointer table `0x80075DB0`, CLUT 7, multi-line at pitch `0xE`) from
+`(WX, WY+0xE)`; "MP Used" (CLUT 4) at `(WX+0x18, WY+0x2A)` with the 3-digit
+discounted cost at `WX+0x74` in the same green.
+
+### The two target flows
+
+A confirmed spell's stats `+2` byte picks the flow: bit `0x20` set -> the
+no-pick **group** flow (`0x10`, `FUN_801D9280`; no target rows, confirm or
+cancel only, the list and info windows stay drawn); clear -> the per-member
+**target picker** (`0x11`, `FUN_801D9594`). Cancel returns to the list.
+
+### Menu-cast spell leveling + the window-7 notice
+
+Casting a heal from the menu trains the spell with the same counter the battle
+path uses. Both cast flows run the SCUS effect applier `FUN_800402F4` (dump
+`800402f4.txt`), whose HP-heal arms carry an inline accrue-and-test loop:
+
+- **Accumulator**: the u32 at `0x80084140 + char*0x414 + slot*4 + 0x5D0`,
+  which is the character record's per-spell XP array at `+0x8` - the array the
+  battle finisher `FUN_801ddb30` trains.
+- **Grant**, flat per cast. Single-target arm (`0x80040470`): `+0xC` when the
+  target's deficit covered the spell's full level-scaled heal cap
+  (`(level-1)*{32,64,128} + {0x100,0x200,0x400}` by tier), `+0x4` when
+  clipped. Multi-target arm (`0x80040908`): `+0x3` / `+0x1` per member,
+  skipping members with no deficit.
+- **Level test**, only outside battle (`_DAT_8007B83C != 0x15`): with the
+  level byte `+0x729` (= record `+0x161 + slot`) below 9, a u16 entry of the
+  threshold table `0x8007656C[level-1]` strictly below the accumulator bumps
+  the byte and calls `FUN_80035C00(char, slot)`, the two-store setter for
+  `(_DAT_8007BB70, _DAT_8007BB78)`. The raw compare equals the battle check's
+  default multiplier (`FUN_801e70bc`, `(entry*2)>>1`); none of that check's
+  six x1.5 spell ids is a menu heal.
+- **Window 7**: the cast sub-screens seed the pair to `0xFF` before the apply
+  and, if it changed, run a one-command script (`0x801E4D50` group /
+  `0x801E4D78` single: open window 7) and wait for confirm / cancel. The
+  renderer `FUN_801DCCB4` patches byte `+1` of the scratch sentence at
+  `0x801E46E4` with `record[0x13D + _DAT_8007BB78]` (the leveled spell's id)
+  and draws it with the corner hand at `(WX+0xE6, WY+0xD)`.
+
+**Port of the Magic screen.** `engine-menus::spell_menu::SpellMenuSession`
+(`CharSelect` = caster focus, `SpellSelect` = list focus, `GroupConfirm` for
+the group flow via `spell_targets_group` over
+`SpellTarget::retail_target_flag_bits`), projected by
+`pause_screens::magic_screen_model` and drawn by
+`engine-ui::magic_screen_draws_for` / `magic_screen_sprites_for`. Greying and
+confirm refusal use `engine-core::menu_validator::spell_affects_anyone` and
+the discounted cost; `field_menu_dispatch::apply_spell_outcome` debits the
+discounted cost once, applies every grant of a group cast
+(`SpellOutcome::MultiHeal`), and runs the leveling arm through the shared
+kernel `magic_xp::accrue_and_level` with `magic_xp::menu_heal_xp_gain`. Both
+writes land in the `legaia_save::CharacterRecord`, so they round-trip through
+saves. `MenuRuntime::arm_spell_level_notice` holds the window-7 beat, drawn by
+`char_prompt_draws_for` at the disc-parsed rect.
+
+Known differences: the window-7 line is composed from the battle-banner
+sentence around the spell name rather than retail's own rodata sentence, and
+the notice overlays the resumed menu because the engine's spell session closes
+on cast. The element-icon plates are covered under
+[Engine port](#engine-port).
+
+## Equip screen
+
+Browse-step windows in draw order: tab 2, party 21, candidate list 23, main 22
+(the main window's opaque interior covers the list window's lower span). The
+candidate step swaps in a different set, [below](#what-the-candidate-step-draws-measured).
+Dumps `overlay_menu_801d2094.txt`, `_801d21c0.txt`, `_801dca94.txt`.
+
+**Party window (id 21, rect `(14,42,80,38)`)** - `FUN_801D2094`, the same
+renderer as the Status [party list](#status-satellite-windows).
+
+**Main window (id 22, rect `(14,96,292,108)`, `FUN_801D21C0`)** - early-outs
+unless the shown character's roster byte is `< 3`. First pass:
+
+- "Best Equipment" at `(X+0x10, Y)` - cursor row 0 of `DAT_801E46C0`, hand at
+  `(X, Y)`.
+- Seven slot rows at `Y + 0xE*(i+1)`: hand at `X`, the slot pictogram (ICO
+  code `DAT_801E43F4[i]`) at `X+0x10`, the equipped item's name at `X+0x20`.
+  The item id is resolved through the [row map](#the-0x801e43e8-run-is-three-tables-not-one).
+
+Second pass, only when the screen is settled on slot browse
+(`DAT_801E46A4 == DAT_801E46A8 == 0x13`) and no slide is pending
+(`_DAT_8007BB80 == 0`):
+
+- **Cursor row 0**: for each armament row 0..3 whose best candidate
+  (`DAT_801EF0C0[i]`) differs from the equipped id: a change arrow
+  `FUN_8003C310(2)` at `X+0x8E` (CLUT 0), then for class-1 (equipment) items a
+  class pictogram at `X+0xA8` (equip record `+7` bits `0x60` indexing
+  `DAT_801E43F4`: class 2 -> 0 weapon, 1 -> 1 helmet, 0 -> 2 armour, 3 -> 3
+  boot, `0x801D24F8..0x801D251C`) with the candidate name at `X+0xB8`
+  (non-equipment names at `X+0xA8`). Below, the stat-compare block: rows at
+  `Y+0x48 / +0x55 / +0x62`; label (`0x801CE9A0/A4/A8`) at `X+0xA0`, current
+  value (3 digits, clamp 999, `DAT_801EF08C/90/94`) at `X+0xC8`; when the
+  preview value (`DAT_801EF0AC/B0/B4`) differs, an arrow `FUN_8003C1F8(4|5)`
+  at `X+0xE4` (CLUT 6 raised / CLUT 1 lowered) and the preview value (ink 7)
+  at `X+0xF0`.
+- **Cursor rows 1..7**: the slot's equipped id lands in `DAT_801E46B0` and,
+  when non-zero, an item info panel draws at `(X+0x94, Y+0xC)`:
+  `FUN_801D0F1C` over two `0x90 x 0x28` shade boxes (`FUN_8002C69C`) at
+  `Y+0xC` and `Y+0x44`.
+
+### Sub-screen chain
+
+| id | handler | behaviour |
+|---|---|---|
+| `0x12` | `FUN_801D98F0` | pick the character; confirm -> `0x13`, cancel -> root |
+| `0x13` | `FUN_801D99F0` | browse 8 rows; row = `DAT_801E46C0 & 0xFFF`, dispatched by `beq row, zero` at `0x801D9B4C`. Row 0 = Best Equipment, row `n` = slot `n - 1` -> `0x14`; cancel -> `0x12` |
+| `0x14` | `FUN_801D9C14` | candidate list through the kind-4 kernel |
+
+**Best Equipment confirm** recomputes the candidates
+([`FUN_801CF88C`](#best-equipment-how-the-candidates-are-picked)) and applies
+them through `FUN_801CF760`: per armament slot, skip when candidate ==
+equipped or the bag lacks it, else take one from the bag, return the old item,
+write the slot; SFX `0x24` on any change, buzz `0x23` on none.
+
+**Candidate list `0x14`**: per frame it resolves the hovered row (class
+`0x4000` payload 0 = Remove, `0x7000` = the equipped item itself, else a bag
+slot) and derives the stat preview by **trial-equipping** - the record's 8
+equip bytes save into `DAT_801EF0C8`, the candidate (or 0) is written,
+`FUN_801CF650` re-aggregates, the bytes restore. The confirm arm
+(`0x801DA0B4..0x801DA1D0`) tests only class `0x4000` (Remove: return the
+equipped item to the bag, buzz `0x37` on an empty slot) and the bag classes
+`0x6000` / `0x9000` (take one copy via `FUN_80042EE0` + `FUN_80043048`, return
+the old item via `FUN_800421D4`, write the slot). Every other row - including
+the equipped row - falls through to the shared tail at `0x801DA1DC`, which
+steps the hand to the next slot row (wrapping at 8) and returns to `0x13`.
+
+#### The `0x801E43E8` run is three tables, not one
+
+The slot rows do not index the record's equip bytes in order. Three small
+tables in the overlay's data segment and one in SCUS do the mapping:
+
+| VA | shape | read by |
+|---|---|---|
+| `0x801E43E8` | 7 bytes `00 01 00 04 05 06 07` - browse row -> equip byte (entry `0` unused) | ten `lui` / `addiu` sites in PROT 0899 |
+| `0x801E43EF` | one alignment byte | nothing, in any image |
+| `0x801E43F0` | 4 bytes `01 02 04 00` - per-character equip **mask bits**, `and`ed with the equipment record's `+6` mask | `0x801CFA0C`, `0x801D5808`, `0x801DB580` |
+| `0x801E43F4` | 8 halfwords - per-row slot **pictogram ids** (`0x24, 0x22, 0x23, 0x25`, `0x46` x 3, `0` terminator) | `lh` at `0x801D22B4`, `0x801D252C`, `0x801D3F44` |
+| `0x8007B42C` (SCUS) | 3 halfwords `2, 3, 2` - per-character weapon byte | row 0 of every resolver |
+
+Row 0 reads `lh` from `DAT_8007B42C + char*2`; rows 1+ read `lbu` from
+`0x801E43E8 + row`; the resulting index addresses
+`0x80084140 + char*0x414 + 0x75E`, which is record `+0x196`. Nine of the ten
+sites inline that two-arm resolver; the tenth (`0x801D3C14`) reads the fixed
+entry `1`. In `FUN_801D1290` the two arms are the `lh` at `0x801D1308` and the
+`lbu` at `0x801D131C`.
+
+So the retail `+0x196` array is
+`[body, head, weapon (Vahn / Gala), weapon (Noa), footwear, goods x 3]` -
+**not** weapon-first - and the browse order is weapon, helmet, body, footwear,
+Goods x 3. The byte of the weapon pair a character does not use is the
+Ra-Seru byte; no row resolver names it, so the Equip screen neither shows nor
+changes a Ra-Seru. The hub's
+[equipment sub-panel](world-map.md#the-per-entry-equipment-sub-panel)
+resolves `(+7 & 0x60) >> 5` to the same four destinations.
+
+`FUN_801CF760` uses the same indirection for its armament writes (`bne
+s1,zero` / `lbu v1,0x0(v0)` at `0x801CF7B4..0x801CF7C8`): armament 0 through
+the weapon halfword, armaments 1..3 through `DAT_801E43E8[i]`.
+
+### Which candidate list a slot row opens
+
+The slot-browse step writes window 23's content id per row from the 8-byte
+table at `0x801E4DC0` (`00 17 15 16 18 1C 1D 1E`, stored by the `sb` at
+`0x801D9AC4`). Those are two builder families in `FUN_80030628` with
+different filters:
+
+| Family | Content ids | Reads | Accepts |
+|---|---|---|---|
+| armament (rows 1..4) | `0x15`..`0x18` (also `7`..`10`) | the row's equip byte | item record `+0` class `1`, equipment `+7` category matching the row, and the `+6` character mask against `0x8007B48C[char]` (`lui 0x8008` / `addiu -0x4b74` at `0x80031538`) |
+| Goods (rows 5..7) | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2** (`bne` at `0x800317D8`) and item-effect `+3` other than `0x41` (`0x800317F4..0x800317F8`); no character-mask term |
+
+Armament rows are tagged `0x6000`, Goods rows `0x9000`. Both lists lead with
+the Remove verb (`0x4000`, payload 0) and, when the slot is occupied, the
+equipped id (`0x7000`). `0x41` is one past the 64-slot passive index space: on
+retail data the Goods gate is exactly "this item carries an accessory
+passive".
+
+### What the candidate step draws, measured
+
+The candidate step opens its windows through one script, `0x801E4DC8` =
+`[05 00] [01 02] [06 17] [0A 17] [01 18] [01 19]`: close-all, reopen the tab
+(2), snap and refresh the list (23, now drawn to its full height), open 24 and
+25. The party (21) and main (22) windows are gone, and three panels stack in
+the left column on the rects they vacated. One frame per row is captured by
+`scripts/pcsx-redux/autorun_equip_item_panel_capture.lua`; all seven rows open
+a populated list.
+
+- **Window 25** (top) - the character's name, then one stat row set
+  ([below](#window-25---the-active-character)).
+- **Window 24** (middle) - the hovered item's name with its owned count, its
+  description, and for equipment its bonus values.
+- **Window 24's reserved box** (`(WX, WY + 0x38)`, `0x90 x 0x28`) - the
+  accessory-passive name and description, only when the hovered item has a
+  passive. Gear rows leave it empty.
+
+Rows 1..4 (weapon, helmet, body, footwear) always print ATK / UDF / LDF in
+window 25. The Goods rows depend on the hovered item: an HP-boost accessory
+draws the MAX HP / MAX MP pair, one outside the banded ranges draws the same
+ATK / UDF / LDF triple.
+
+### Best Equipment: how the candidates are picked
+
+`FUN_801CF88C` seeds `DAT_801EF0C0` with the four items the character wears,
+then walks the bag (`0x80085958 + i*2` over
+`_DAT_8007B5EA.._DAT_8007B5EC`), keeping one winner per armament slot. An id
+competes only when its item record `+0` is `1` and its equipment `+6` mask
+shares a bit with `0x801E43F0[char]`. Its slot is `(equip[+7] & 0x60) >> 5`
+(body / head / weapon / footwear) permuted through `[2, 1, 0, 3]` into the
+weapon-first candidate array.
+
+- **Armour ranks on `UDF + LDF` only** (equipment `+2` plus `+3`). INT (`+0`)
+  and SPD (`+4`) are never read.
+- **A weapon's category check dominates its ATK.** The score is
+  `equip[+1] + FUN_801DD0C0(char, id, 1)`, and that check returns a flat
+  `1000` or `0` from the favour table `DAT_801E4B88`.
+- An empty slot is filled by the **first** eligible entry (the
+  `incumbent == 0` test runs first); ties keep the incumbent (strict `<`).
+
+The routine then trial-equips the winners (backup, write, `FUN_801CF650`,
+swap the stat block into the preview pair, restore, re-aggregate), leaving the
+character wearing exactly what it found.
+
+### Manual equip applier (`FUN_801E5A08`)
+
+A whole per-slot equip commit resident in the **field** overlay (PROT 0897,
+file `+0x171F0`, 81 instructions). Signature
+`FUN_801E5A08(item_id, char, slot_row)`; returns `1`, or `0` if the bag pull
+fails.
+
+**Nothing on the disc calls it**: no `jal` (encoding `0x0C079682`), no data
+word and no `lui` / `addiu` pair in any image. The live commit is
+`FUN_801D9C14`'s confirm arm, with `FUN_801CF760` behind Best Equipment. The
+routine is documented because it states the equip law in one place, and the
+port mirrors it.
+
+1. `FUN_80042EE0(item_id & 0xFF)` locates the id in the bag; `0x100` = miss,
+   return `0`.
+2. `FUN_80043048(bag_index, 1)` takes one.
+3. **Destination.** `slot_row >= 4` (a Goods row) writes equip byte
+   `slot_row + 1`. Otherwise the destination comes from the item's equip class
+   (equip record `+7` bits `0x60 >> 5`, via item record `+1` into
+   `0x80074F68`), not from the row confirmed.
+4. The prior occupant (`record[0x196 + slot]`) returns to the bag through
+   `FUN_800421D4(old, 1)` when non-zero.
+5. The new id is stored and SFX `0x24` plays (`FUN_80035BD0`).
+
+| Equip class | Equip byte | Branch |
+|---|---|---|
+| `0` body | `0` | `bnez v0,0x801E5AE8` at `0x801E5A9C`, `a2 = v1 = 0` |
+| `1` head | `1` | `beq v1,1` at `0x801E5A94` -> `0x801E5ADC` |
+| `2` weapon | `*(i16*)(0x8007B42C + char*2)` = `2` / `3` / `2` | `0x801E5AC0..0x801E5AD8` |
+| `3` footwear | `4` | `beq v1,3` at `0x801E5AB0` -> `0x801E5ADC` |
+
+Class `3` lands on byte `4` through a **delay slot**: the branch that takes it
+to the shared `move a2,v1` carries `addiu v1,zero,4`.
+
+<a id="why-0x801e5ae8-is-not-a-second-function"></a>
+`0x801E5AE8` is this routine's own inline placer at `+0xE0` (file `+0x172D0`),
+reached by its intra-function `j`; it is not a separate function. The dump
+`ghidra/scripts/funcs/overlay_0897_801d71f0.txt` is mis-based by `0xE818`
+(printed `0x801D71F0` = `0x801E5A08`), so its body addresses print low while
+its `j` targets print correctly - see
+[`call-target-integrity.md`](../tooling/call-target-integrity.md) and
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md).
+
+### Port of the Equip screen
+
+- **Session**: `engine-menus::equip_session::EquipSession`
+  (`preview_candidate`, `unequip`, `slot_browse_confirm`,
+  `apply_best_equipment`, `best_equipment_candidates`, `armament_slot_of`).
+  The `0x12` character picker is the `picking` phase of
+  `FieldMenuSubsession::Equip`. The browse cursor is the retail row space: row
+  0 runs Best Equipment, row `n` opens slot `n - 1`.
+- **Slot order**: the engine's `EquipSlot` array inserts a Hand Guard (Ra-Seru)
+  slot retail has no row for, so footwear is engine slot `4`.
+  `engine_equip_from_record` reads the record,
+  `BROWSE_SLOT_ORDER` gives retail's seven rows, `ARMAMENT_ENGINE_SLOTS`
+  carries `FUN_801CF760`'s indirection, and
+  `retail_slot_row_for_engine_slot` converts for window 25. A record is
+  re-ordered before a routine that indexes in retail's space walks it
+  (`field_submode_screen::hub_panel_slots`).
+- **Commit**: `EquipSession::commit` runs
+  `engine-vm::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
+  `world_map_overlay::resolve_equip_slot`, staging the record's `+0x196`
+  window in retail order; `retail_destination_slot` exposes the routing.
+- **Candidate lists**: Goods slots use
+  `menu_list_rows::{goods_candidate_accepts, build_goods_candidate_rows}` with
+  ids indexed by `equipment::DiscEquipInfo::install_goods`, and take the
+  builder's row order (`EquipSession::items_for_slot`: Remove, the equipped
+  item, then accepted bag slots).
+- **Favour table**: `DAT_801E4B88` is parsed from PROT 0899 by
+  `World::install_menu_overlay_tables` and handed to the session with the
+  party slot by `field_menu_dispatch::build_equip_session`. Without the
+  overlay the table is empty and Best Equipment ranks on raw ATK.
+- **Drawing**: `pause_screens::equip_screen_model` -> `engine-ui`
+  `equip_screen_draws_for`, `equip_screen_sprites_for`,
+  `equip_best_change_sprites_for`; the candidate step adds windows 24
+  (`item_info_panel_draws_for` + `count_panel_draws_for`) and 25.
+
+Known difference: the four **armament** candidate lists are sorted by item id,
+with Remove only on an occupied slot and no equipped row, where retail's
+builder gives both families the same two leading rows in bag order.
 
 ## Equip stat-compare panels (windows 25 and 41)
 
-Two more descriptor-table renderers, both belonging to the equip flow and
-both content-only (the frame is caller-drawn):
+| Window | Rect `(x, y, w, h)` | Class | Renderer | Opened by |
+|---|---|---|---|---|
+| 25 | `(14, 40, 144, 52)` | 4 | `FUN_801D1290` | Equip candidate step (`0x14`, script `0x801E4DC8`) |
+| 41 | `(14, 46, 108, 158)` | 3 | `FUN_801D4C28` | shop entry script `0x801E4E64` |
 
-| Window | Rect `(x, y, w, h)` | Class | Renderer |
-|---|---|---|---|
-| 25 | `(14, 40, 144, 52)` | 4 (list page) | `FUN_801D1290` |
-| 41 | `(14, 46, 108, 158)` | 3 (standard) | `FUN_801D4C28` |
+No script opens both.
 
 ### The eight-word stat block
 
-Both read a block of eight words at `0x801EF080` and its trial-equip
-mirror at `0x801EF0A0`. `FUN_801CF5D0(char_idx)` seeds the first from the
-character record and `FUN_801CF650` sums the equipment bonuses into it:
+Both read eight words at `0x801EF080` and the trial-equip mirror at
+`0x801EF0A0`. `FUN_801CF5D0(char)` seeds the first from the character record
+(`overlay_menu_801cf5d0.txt`) and `FUN_801CF650` sums equipment bonuses in:
 
-| Word | Record | Char | Stat |
+| Word | Game-state offset | Record | Stat |
 |---|---|---|---|
 | `+0x00` | `+0x6CC` | `+0x104` | HP max |
 | `+0x04` | `+0x6D0` | `+0x108` | MP max |
@@ -2657,176 +1567,341 @@ character record and `FUN_801CF650` sums the equipment bonuses into it:
 | `+0x18` | `+0x6E0` | `+0x118` | SPD |
 | `+0x1C` | `+0x6E2` | `+0x11A` | INT |
 
-A row prints the `0x801EF080` value and then, **only when the two words
-differ**, a rise/fall arrow (`FUN_8003C1F8` glyph `4` at ink `6`, or glyph
-`5` at ink `1`) followed by the `0x801EF0A0` value at ink `7`.
+A row prints the `0x801EF080` value and, **only when the two words differ**, a
+rise / fall arrow (`FUN_8003C1F8` glyph `4` at ink `6`, or `5` at ink `1`)
+followed by the `0x801EF0A0` value at ink `7`.
+
+<a id="the-five-slot-menu-walk"></a>
+`FUN_801CF650` sums only the first **five** equip bytes (`slti a2, 5` at
+`0x801CF744`); the battle aggregator `FUN_80042558` walks all eight. Port:
+`pause_screens::menu_stat_block` zeroes the tail before calling the shared
+`compute_battle_stats`.
 
 ### Window 25 - the active character
 
-Draws the character's display name at the content origin, then either two
-HP/MP rows or one stat triple, three rows at `+0x10` / `+0x1D` / `+0x2A`
-with columns at `+0x10` label, `+0x38` value, `+0x54` arrow, `+0x60` delta
-(stat values clamp to `999`, three digits). The HP/MP variant instead
-draws icon pairs `0x64`/`0x3F` and `0x65`/`0x40` at `+0x10` / `+0x24`,
-prints the record halfword (not the block word) at `+0x34` in four digits,
-and puts its arrow/delta at `+0x58` / `+0x64` clamped to `9999`.
+Draws the name at the content origin, then one of three row sets at
+`+0x10 / +0x1D / +0x2A`:
 
-Which of the three it draws comes from a single **category byte**:
+| Category byte | Rows | Layout |
+|---|---|---|
+| `< 6` | HP / MP pair | icon pairs `0x64` / `0x3F` and `0x65` / `0x40` at `+0x10` / `+0x24`; the record halfword (4 digits) at `+0x34`; arrow / delta at `+0x58` / `+0x64`, clamp 9999 |
+| `10..=12` | SPD, INT, AGL (words 6, 7, 2) | label `+0x10`, value `+0x38`, arrow `+0x54`, delta `+0x60`; clamp 999 |
+| anything else | ATK, UDF, LDF (words 3, 4, 5) | same columns |
 
-- `< 6` - the HP / MP pair;
-- `10..=12` - SPD, INT, AGL (block words 6, 7, 2);
-- anything else - ATK, UDF, LDF (words 3, 4, 5).
+Both compares are unsigned (`sltiu cat, 6`, then `sltiu (cat - 10), 3`); there
+is no jump table. The byte defaults to `0x40` and a lookup may replace it:
 
-Both compares are unsigned (`sltiu cat, 6`, then `sltiu (cat - 10), 3`).
-The byte is `0x40` unless a lookup replaces it, and the lookup has two
-guards that decide the panel's whole behaviour:
+- The **staged** id `DAT_801E46B0` is consulted only on slot rows `>= 4`
+  (`(DAT_801E46C0 & 0xFFF) - 1`; the `slti v0, s0, 4` guard at `0x801D137C`).
+  Gear rows keep `0x40`.
+- When **nothing** is staged (`DAT_801E46B0 == -1`) the category comes from
+  the item already in the slot, with no row gate.
 
-- The **staged** id `DAT_801E46B0` is only consulted on slot rows `>= 4`
-  (`(DAT_801E46C0 & 0xFFF) - 1`, so the row past "Best Equipment"). Weapon
-  and armour rows therefore always keep `0x40` and always show ATK / UDF /
-  LDF. The lookup itself is class-dependent: item record `+0` equal to `1`
-  takes the equip record's `+5` byte, otherwise the item-effect record's
-  `+3`.
-- When **nothing** is staged (`DAT_801E46B0 == -1`) the category instead
-  comes from whatever is already in that slot - and that fallback is not
-  row-gated.
+#### Both category arms are live on retail data
 
-Every retail equipment row carries `0x40` in its `+5` byte (the
-no-passive sentinel of
-[accessory-passive-table.md](../formats/accessory-passive-table.md)), so
-the alternative row sets are reached through accessory rows via the
-item-effect table, not through weapons.
-
-There is **no jump table** in `FUN_801D1290`; the branch structure above is
-the whole of its control flow.
-
-### Window 41 - the whole party
-
-Iterates the roster (`0x80084598`, count `0x80084594`) at a `0x37`
-per-member pitch, drawing the member's name at the content origin and then
-one of three outcomes:
-
-1. the staged id is already in one of the member's eight equip bytes
-   (record `+0x196..+0x19D`) - one note at `(+0x0C, +0x14)`, ink `4`;
-2. the equip record's `+6` character mask rejects the member - the same
-   position at ink `9`;
-3. otherwise the ATK / UDF / LDF triple at `+0x0D` / `+0x1A` / `+0x27`,
-   columns `+0x04` label, `+0x2C` value, `+0x48` arrow, `+0x54` delta.
-
-The candidate column is produced by a **trial equip performed inline**:
-back the eight equip bytes up to `0x801EF0C8`, write the staged id into
-the resolved slot, swap the `0x801EF080` and `0x801EF0A0` blocks, re-run
-`FUN_80042558` and `FUN_801CF650`, swap back, restore the bytes and
-re-aggregate. A staged id that is not equipment skips all of that and
-draws the current values with no arrows.
-
-### Which screen opens which of the two
-
-The two windows belong to **different screens**, and no script opens both:
-
-- Window 25 is named by exactly one open command in the menu overlay - the
-  Equip screen's candidate step, sub-screen `0x14`, script `0x801E4DC8`,
-  which raises windows 24 and 25 on top of the browse step's four.
-- Window 41 is named by the shop-entry script `0x801E4E64`; the
-  equipment-buy recipient sub-screen (`FUN_801DB380`) adds only window 36
-  over the set already up.
-
-Ports: `engine-ui::equip_compare_panel_fields` (window 25) and
-`party_compare_panel_fields` (window 41). Both hosts draw window 41 for the
-whole buy flow - the list, the quantity stepper and the recipient picker -
-through `engine-ui::shop_screen` off `engine-core::shop::party_compare_members`,
-and both draw window 25 on the Equip screen's candidate step beside window 24, from
-`engine-core::pause_screens::EquipCompareModel`. Neither derives its
-candidate column from the inline trial-equip swap: the port installs the
-staged id in a copy of the record's equip bytes and re-runs the aggregator.
-
-### The five-slot menu walk
-
-`FUN_801CF650`'s loop counter is bounded by `slti a2, 5` at `0x801CF744`, so
-the block behind windows 22 / 25 / 41 sums the first **five** equip bytes
-only. The battle-side aggregator `FUN_80042558` walks all eight. The port
-keeps the two apart: `engine-core::pause_screens::menu_stat_block` zeroes
-the tail before calling the shared `compute_battle_stats`, so the menu block
-matches the menu aggregator rather than the battle one.
-
-### Both category arms are live on retail data
-
-The category lookup reads the item property record's class byte first
-(`0x80074368 + id*0xC + 0`) and then one of two tables, both indexed by that
-record's `+1` byte:
+The lookup reads the item record's class byte (`0x80074368 + id*0xC + 0`),
+then one of two tables indexed by the record's `+1` byte:
 
 | Item class | Table | Byte |
 |---|---|---|
 | `1` (equipment) | equipment bonus row `0x80074F68 + row*8` | `+5` |
 | anything else | item-effect descriptor `0x800752C0 + row*4` | `+3` |
 
-The two arms split the item space cleanly, and that is what the `slot_row
->= 4` guard is for. Of the 255 non-zero item ids, 104 are class `1` and
-every equipment bonus row they resolve to carries the `0x40` no-passive
-sentinel at `+5` - so the class-`1` arm can only ever yield the ATK / UDF /
-LDF triple, which is why retail does not even run the lookup on the gear
-rows. The guard is a **row** test rather than a class test, and the
-[row map](#two-early-outs-of-fun_801d1290) is what makes the two coincide:
-rows `0..3` are weapon, helmet, body armour and footwear, rows `4..6` the
-three Goods rows. The remaining 151
-ids take the item-effect arm, and 80 of
-them carry a real passive index (`< 0x40`) at `+3`: 9 under `6` (the HP /
-MP pair), 4 in `10..=12` (SPD / INT / AGL) and the rest in the ATK / UDF /
-LDF band.
+Of the 255 non-zero item ids, 104 are class `1` and every equipment row they
+resolve to carries the `0x40` no-passive sentinel at `+5`, so that arm only
+ever yields ATK / UDF / LDF - which is why retail skips the lookup on gear
+rows. Of the remaining 151 ids, 80 carry a passive index `< 0x40` at `+3`: 9
+under `6` (HP / MP), 4 in `10..=12` (SPD / INT / AGL), the rest in the ATK /
+UDF / LDF band. The category byte is the **accessory passive index**
+([accessory-passive-table.md](../formats/accessory-passive-table.md)), and the
+panel shows the stats that passive moves. Port:
+`pause_screens::compare_category_for_item`.
 
-So the category byte is the **accessory passive index**, and the panel
-shows the three stats that passive moves - the boost families of
-[accessory-passive-table.md](../formats/accessory-passive-table.md) read
-back through the row split. A host that feeds the sentinel unconditionally
-does not get the identical screen: it loses two of the three row sets. The
-port resolves the byte through
-`engine-core::pause_screens::compare_category_for_item` on both hosts.
+#### Two early-outs of `FUN_801D1290`
 
-### Two early-outs of `FUN_801D1290`
+The renderer returns before the name draw when:
 
-The renderer returns without drawing anything in two cases, both before the
-name draw:
+- the staged id `DAT_801E46B0` is `0` (`0x801D12BC`) - the panel appears and
+  disappears with the candidate list;
+- the record slot the party cursor resolves to
+  (`roster[DAT_801E46C4 & 0xFFF]`) is not `< 3` (`slti v0, s5, 3` at
+  `0x801D1340`).
 
-- the staged id `DAT_801E46B0` is `0` (`0x801D12BC`) - so the panel appears
-  and disappears with the candidate list rather than persisting across the
-  browse step;
-- the record slot the party cursor resolves to (`roster[DAT_801E46C4 &
-  0xFFF]`, the byte at `0x80084598 + cursor`) is not less than `3`
-  (`slti v0, s5, 3` at `0x801D1340`).
+### Window 41 - the whole party
 
-The browsed slot's equip byte, which the "nothing staged" fallback keys on,
-is reached through the **same two-table slot map** the armament writer
-`FUN_801CF760` uses ([Equip screen](#equip-screen)), and `FUN_801D1290` is
-where its two halves sit side by side:
+Iterates the roster at a `0x37` pitch, drawing each name at the content origin
+and then one of:
 
-| browse row | how the byte index is formed | index |
+1. the staged id is already in one of the member's eight equip bytes - one
+   note at `(+0x0C, +0x14)`, ink `4`;
+2. the equip record's `+6` mask rejects the member - the same position, ink
+   `9`;
+3. otherwise ATK / UDF / LDF at `+0x0D / +0x1A / +0x27`, columns `+0x04`
+   label, `+0x2C` value, `+0x48` arrow, `+0x54` delta.
+
+The candidate column is an inline trial equip: back the eight bytes up to
+`0x801EF0C8`, write the staged id into the resolved slot, swap the two stat
+blocks, re-run `FUN_80042558` and `FUN_801CF650`, swap back, restore,
+re-aggregate. A non-equipment id draws current values with no arrows.
+
+Port: `engine-ui::equip_compare_panel_fields` (window 25, from
+`pause_screens::EquipCompareModel`) and `party_compare_panel_fields` (window
+41, from `engine-menus::shop::party_compare_members`, drawn for the whole buy
+flow through `engine-ui::shop_screen`). The port installs the staged id in a
+copy of the equip bytes and re-runs the aggregator rather than swapping
+blocks.
+
+## Options screen
+
+Three functions in the menu overlay:
+
+- **Row renderer** `FUN_801D2910` (`overlay_menu_801d2910.txt`), called by
+  window 48's renderer `FUN_801DCEF0` as `FUN_801d2910(win, 0, 9)`. Per row:
+  cursor arrow at `x-10`, label at `x+8`, value string at `x+140`, then y
+  advances by the row's pitch.
+- **Input SM** `FUN_801DA9F8` (cursor `DAT_801E46C0`: low 12 bits = row, bit
+  `0x1000` = editing, `0x4000` = hidden), entered through
+  `FUN_801DD330` = `FUN_801DA9F8(0, 9, 0x30, 1)` (`overlay_menu_801dd330.txt`).
+  Arguments: display-row span, a **window id** and the exit sub-screen. State
+  0 stores the third into bytes `+5` and `+9` of the window script at
+  `0x801E4E08` (`0x801DAA78` / `0x801DAA7C`) - `0x30` is window 48 - and the
+  exit arm stores the fourth into `DAT_801E46A4` (`0x801DAC24`).
+- **Value-popup renderer** `FUN_801D2B44` (window 47).
+
+| VA | contents |
+|---|---|
+| `0x801E4404` | display layout: 10 x `[u16 row_id, u16 advance]` - row ids `0,1,2,3,6,4,7,9,8,10`, advance 14 px (20 px on Battle Command and Field HP Display) |
+| `0x801E44B8` | row descriptors: 8-byte nodes `[config_word_ptr u32][value_count u8][label_ink u8][row_id u8][string_index u8]`, a linked list keyed on `row_id` |
+| `0x801E442C` | string pointer table; value string = `strings[string_index + value + 1]` |
+
+| row | choices | config word |
 |---|---|---|
-| `0` | `lh` at `0x801D1308` off `0x8007B42C`, stride `2`, indexed by the **roster** slot - the per-character weapon halfword `2, 3, 2` | `2` (Vahn / Gala) or `3` (Noa) |
-| `1` and up | `lbu` at `0x801D131C` off `0x801E43E8`, indexed by the row | `1`, `0`, `4`, `5`, `6`, `7` |
+| Battle Camera | Close / Normal / Far | `0x800846C0` |
+| Battle Select Attack | Select / Automatic / Command | `0x800846C4` |
+| Battle Command | Directional Buttons / cross-glyph " button" | `0x800846C8` |
+| Field Move | Walk / Run | `0x800846CC` |
+| Field HP Display | Immediate / Gradual / Display Off | `0x800845C4` |
+| Sound | Stereo / Monaural | `0x800846BC` |
+| Dual Shock (header, no value) | - | - |
+| "  Battles" | Vibration On / Off | `0x800845C8` |
+| "  Events" | Vibration On / Off | `0x800845A8` |
+| "  Encounters" | Vibration On / Off | `0x800845CC` |
 
-So the browse order is weapon, helmet, body armour, footwear, Goods x3 - the
-same seven rows the record's eight `+0x196` bytes hold minus the unused one -
-and **not** the byte array in index order. The byte itself is
-`record[+0x196 + idx]`; retail forms it as
-`0x80084140 + 0x414*slot + 0x75E + idx`, which is the per-character record base
-`0x80084708 + slot*0x414` plus `0x196`.
+A descriptor node with no layout row exists: "Battle Voices" (Voices On / Off,
+`0x800845AC`) - strings present, never displayed in the US build.
 
-That is also what makes the `slti v0, s0, 4` guard above land where it does:
-rows `0..3` are exactly the four gear rows and rows `4..6` exactly the three
-Goods rows, so retail resolves a compare category only for the rows whose
-items can carry a passive. A port whose slot list is its own `EquipSlot`
-order - weapon, helmet, body, **hand guard**, footwear, Goods x3 - passes an
-index one step out from row `3` on, so it asks the category question of
-footwear, which retail silences.
+**Inks**: labels 7, values 6, the indented Dual Shock sub-rows 5 (the node's
+`+5` byte). While the popup is open every non-cursor row drops to ink 0,
+except a header row above the cursor.
+
+**Interaction**: Up / Down move the cursor, skipping valueless rows; Cross
+opens the popup seeded with the current value; Cross inside writes the popup
+cursor **directly into the config word** (committing "Events" to Off also
+zeroes the live rumble state `0x8007B92C / 0x8007B930`); Circle backs out.
+There is no revert. The popup's x / w `(170, 128)` are static; y / h are
+stamped per open: `y = window-48 y + 0x16 + sum of advances above the cursor
+row`, `h = choices * 13 - 4`, flipped up by `choices * 13 + 0x1C` when the
+bottom would pass y = `0xB0`. `FUN_801D2B44` lists the choices at a 13-px
+pitch, text inset `+0x14`, cursor at the content origin.
+
+**Port**: `engine-core::options` (`OPTIONS_DISPLAY_ROWS`,
+`options_display_rows`, the `OptionsSession` Browsing -> Editing SM,
+`options_popup_content_rect`) + `engine-ui::options_draws_for`. Sound drives
+the mixer's monaural downmix (`AudioOut::set_mono`); Field HP Display sets the
+field party HUD's idle delay (`WorldToggles::field_hp_display`, read through
+`world_map_panel_host::field_hud_view_mode`: `0x28` frames, `0xA0` frames, or
+no HUD - see
+[`world-map.md`](world-map.md#fun_801d0d38---the-field-party-hud)); the rest
+persist in the engine's options config file.
+
+The settings window is retail's ten rows on every host. The port's one
+engine-only screen, **Key Config**, is not a row: on a host with a keyboard
+binding table, Select on the Options screen opens it (retail's picker reads no
+Select edge). It reuses window 48 with its sixteen buttons in two columns of
+eight at the popup's 13-px pitch.
+
+### Dev-menu EVENT FLAG editor (debug build only)
+
+The debug build's developer menu lives in the field overlay (0897), not in the
+pause menu. Its EVENT FLAG editor is a raw index / value poke tool; two
+kernels are ported from the disassembly
+(`ghidra/scripts/funcs/overlay_0897_*`):
+
+- **Value step** (`FUN_801dbd04`): `DAT_801f2aa0` moves by Up / Down (`0x8`,
+  or `0x80` with Triangle held) and Left / Right (`1`), clamped to
+  `[0, 0xFFF]`.
+- **List cursor** (`FUN_801db8f4` / `FUN_801db8b4`): the row cursor
+  `DAT_801f2e90` steps and wraps across the `'X'` (0x58) end sentinel of the
+  stride-`0xA` table at `DAT_801f2e94`.
+
+They read the **packed** pad words from `FUN_8001822C` (`_DAT_8007bb84` edge,
+`_DAT_8007b850` held: `0x10` Triangle, `0x1000` Up, `0x2000` Right, `0x4000`
+Down, `0x8000` Left). `FUN_801d3444` and `FUN_801d9bbc` are decompiler
+fragments of the same dispatcher (a PC-delta exit and a row-text emit), not
+functions. Port: `engine-core::dev_menu` (`edit_flag_value`, `flag_list_prev`,
+`flag_list_next`, `EventFlagEditor`); it has no draw code.
+
+## Prize-exchange (ticket-counter) windows
+
+The casino prize counter is hosted in this overlay: its prize table is at VA
+`0x801E4518` (PROT 0899 file `0x15D00`), its session is sub-screen `0x20`
+(`FUN_801DC1CC`, entered on entry-context kind `7`), and it draws from the
+same window pool. Its content renderers:
+
+| renderer | draws |
+|---|---|
+| Exchange tab `FUN_801DCFE4` (window 43) | "Exchange" (`0x801CEC6C`) at `(WX, WY)` CLUT 7 |
+| Gold box `FUN_801DCF84` (window 32) | ICO `0x62` at `(WX, WY+2)` + 8-digit party gold `_DAT_8008459C` at `(WX+0x28, WY)` |
+| Coin box `FUN_801DD028` (window 45) | ICO `0x66` at `(WX, WY+2)` + 8-digit coin bank `_DAT_800845A4` at `(WX+0x28, WY)` |
+| Points box `FUN_801DCE20` (window 31) | label (`0x801CEA40`) at `(WX, WY)`; 8-digit point-card bank `_DAT_800845B4` at `(WX, WY+0xE)` CLUT 6; "point(s)" (`0x801CEA50`) at `(WX+0x40, WY+0xE)`; hand `FUN_8002B994(1,1, WX+0xE6, WY+0xD)` |
+| Item-info `FUN_801DCC20` (window 24) | when an id is staged: `FUN_801D0F1C` (name / description), then the 2-digit bag count (`FUN_80042F4C(id)`, CLUT 6) at `(WX+0x80, WY)`; always a `0x90 x 0x28` box at `(WX, WY+0x38)` |
+| Prompt line `FUN_801DCF14` (window 33) | the armed record's trailing string at `(WX, WY)` CLUT 7, with the monospace override (`DAT_80073F20 = 0x10`) set for the draw |
+| Message box `FUN_801DCCB4` (window 7) | the [spell level-up notice](#menu-cast-spell-leveling--the-window-7-notice) |
+
+Dumps: `overlay_menu_801dcfe4.txt`, `_801dcf84.txt`, `_801dd028.txt`,
+`_801dce20.txt`, `_801dcc20.txt`, `_801dcf14.txt`, `_801dccb4.txt`.
+
+<a id="these-window-ids-are-shared-not-exchange-only"></a>
+**The window ids are a shared pool.** The town shop's open script
+`DAT_801E4E38` slides in `0x20` (32), `0x21` (33), `0x22` (34), `0x28` (40)
+and `0x2A` (42) - see [shop.md](shop.md#mode-select-panel-buy--sell--quit) -
+and the only caller that opens window 31 is the shop's buy commit
+([shop.md](shop.md#point-card)). `FUN_801DB380` / `FUN_801DB7F4` are the
+shop's sub-screens (they debit the gold purse `0x8008459C`), not exchange
+drivers, and `0x801DB510` is interior to `FUN_801DB380`.
+
+`FUN_801DCF14` prints "the armed record's trailing string":
+`_DAT_8007B450` points at the armed op-`0x49` opcode's sub-op byte (see
+[boot.md](boot.md) and
+[tile-board.md](tile-board.md#where-the-board-comes-from)), and the string
+starts at `_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count
+the record owns. For a shop record `[count][count x item_id][ASCII name]` that
+lands on the vendor name
+([`legaia_asset::shop_stock`](../../crates/asset/src/shop_stock.rs)), which is
+why window 33 is the vendor plate in a shop and a prompt line here.
+
+Small sub-screen ticks on the same phase protocol:
+
+- **`FUN_801DD12C`** runs script `0x801E4A78`, then exits the menu with
+  `DAT_801E46A0 = 0xF2` + outer exit code `_DAT_8007B43C = 3`.
+- **`FUN_801DD1B8`** (script `0x801E4BE0`) and **`FUN_801DD26C`** (script
+  `0x801E4CA4`) wait for a confirm / cancel edge
+  (`_DAT_8007B874 & (_DAT_800846D0 | _DAT_800846D4)`): the first plays SFX
+  `0x20` and requests the prior sub-screen, the second requests sub-screen 5.
+- **`FUN_801DD310`** only pumps the window engine `FUN_80031D00`.
+
+Port: `engine-minigames::prize_exchange` (the `FUN_801DC1CC` session) drawn by
+`engine-ui::ui_prize_exchange::prize_exchange_draws_for` on both hosts.
+
+## Two more descriptor-table renderers (windows 34 and 46)
+
+| Window | Rect `(x, y, w, h)` | Class | Renderer |
+|---|---|---|---|
+| 34 | `(138, 166, 168, 38)` | 4 | `FUN_801D4A80` |
+| 46 | `(16, 84, 104, 42)` | 3 | `FUN_801D603C` |
+
+**`FUN_801D4A80` - item / accessory description box** (shop). Returns when the
+selected id `_DAT_801E46B0` is `<= 0`. Otherwise:
+
+1. Ink `6`, the item **name** (`0x80074368 + id*0x0C`, field `+0x04`) at the
+   content origin.
+2. `FUN_80042EE0(id)`; `0x100` means "not held", otherwise it indexes the bag
+   count byte at `0x80085959 + result*2`. The count draws at origin `+0x94`
+   through `FUN_80034B78`.
+3. Ink `7`, the description. When the item record's leading byte is `2` and
+   the item-effect `+0x03` index is `< 0x40`, the **accessory-passive**
+   description (`0x8007625C + index*0x0C`, field `+0x08`) through the
+   word-wrapping renderer `FUN_8003CD00` at `y + 0x0E`; otherwise the item's
+   own `+0x08` string through `FUN_800337B0`.
+
+**`FUN_801D603C` - the prize counter's Yes / No confirm.** Two labels from
+rodata (`0x801CEA84`, `0x801CEA8C`) under a heading (`0x801CEAC8`, "Is this
+OK?"), inks `7` / `5`, on a 16 px then 14 px step. Each row is followed by a
+cursor sprite whose kind is decoded from `_DAT_801E46D0`:
+
+- bit `0x4000` set - no marker for that row;
+- else bit `0x2000` set - kind `(!(w & 0x1000)) << 2`, i.e. `4` or `0`;
+- else - kind `(w >> 12) ^ 1` masked to one bit, compared against `0` on the
+  first row and `1` on the second.
+
+## Name columns and translated text
+
+None of these surfaces wraps or clips; a name longer than its column draws
+over the next one. Each budget is the distance from the name pen to the first
+cell the next column can ink, at `DAT_800740E8 = 0`. A number field is a run
+of 8-px cells with leading zeros blank, so its first used cell depends on the
+value range.
+
+| Surface | Name pen | Next column | Budget |
+|---|---|---|---|
+| Item list (class `0x1000`) | `WX+0xC` (`0x8003316C`) | 3-cell count from `WX+0x6C` (`0x8003317C`); counts cap at 99 | **104 px** |
+| Shop buy list (`0x3000` / `0xA000`) | `WX+0x18` (`0x800335A8`) | 5-cell price from `WX+0x80` (`0x800335B0`) | **104 px** |
+| Item info window (17) | `WX` (`0x801D0F8C`) | 2-digit count at `WX+0x7C` (`0x801DCBD4`) | **124 px** |
+| Status magic page | `WX+0x10` (`0x801D42EC`) | level string at `WX+0x78` (`0x801D430C`); the element-icon escape counts against it | **104 px** |
+| Status moves page | `WX+0x10` (`0x801D44F4`) | 3-cell AP field at `WX+0x82` (`0x801D4538`) | **114 px** (+8 while every cost is under 100) |
+
+A class-`0x6000` row draws a non-equipment item's count from `WX+0x78`
+(`0x80033374`), and equipment as a pictogram plus the name at `WX+0x1C` with
+no count.
+
+These are the `legaia_font::limits::TEXT_LIMITS` entries `item_list_name`,
+`shop_buy_name`, `item_info_name`, `status_magic_name` and
+`status_moves_name`; `legaia_font::Font::measure` gives a string's advance.
+Dialog and battle budgets are on
+[`dialog-font.md`](../formats/dialog-font.md#line-width-and-wrapping).
+
+## Dialog reading box (FUN_801D84D0)
+
+The field dialog pager `FUN_801D84D0` (dialog overlay) draws the message box
+with the same emitter `FUN_8002C69C` the menu uses. Geometry from the live
+pager context (`*DAT_801C6EA4`) in the `v0_1_tetsu_dialogue_accept` state:
+
+- **Centre rect** = `(ctx+0x12, ctx+0x14, 0xF4, lines*0xF + 5 - 8)` with
+  `ctx+0x12 = 0x26`, `ctx+0x14 = 0x10` and `_DAT_801F2740 = 3` lines - the box
+  sits at the top of the screen. The skin extends 8 px past the centre rect
+  (measured footprint `x 30..289, y 8..65`): the outer 4 px are the tan
+  border, the gradient fill covers the centre inflated by 4.
+- **Interior** = two stacked semi-transparent gouraud `POLY_G4` quads (top
+  `(0x18,0x18,0x28)`, bottom `(0x40,0x40,0xA0)`), composing to
+  `0.25*back + 0.75*gradient`.
+- **Text** = `FUN_80036888(line, 0, 0, ctx+0x12, ctx+0x14 + i*0xF)`, CLUT 7
+  (first-line ink at `x 38, y 18`). The pager stores `DAT_800740E8 = 1` before
+  each row, so dialogue glyphs advance one pixel wider than menu text - see
+  [`dialog-font.md`](../formats/dialog-font.md#the-field-dialog-box).
+- **Advance hand** (page-wait state `0x19`) =
+  `FUN_8002B994(1, 1, 0x10A, ctx+0x14 + lines*0xF - 0x13)`.
+- **Option picker** = `x 0x26, y 0x94 + ((4-n)*0xF)/2, w 0xF4,
+  h 0x38 - (4-n)*0xF` (2..4 options); rows at `x+0x10`, `y + i*0xF`; hand
+  `FUN_8002B994(0, 1, x-6, y + cursor*0xF)`.
+
+Port: `engine-ui::dialog_window_chrome_draws_for`,
+`dialog_advance_hand_sprite`, `dialog_option_hand_sprite`; each host's
+`dialog_stage_layout` carries the rects.
+
+## Inn stay (there is no inn screen)
+
+An inn stay is not a menu. Retail composes it inline in the scene's MAN script
+from generic field-VM ops (dialogue, an option picker, the `0x4E` gold gate,
+`0x3A` `ADD_MONEY`, fades), and the only inn-specific opcode is the restore:
+
+```text
+4C 82 <slot>        ; hp_cur (+0x106) = hp_max (+0x104); mp_cur (+0x10A) = mp_max (+0x108)
+```
+
+The slot is a literal operand against the `0x80084708` records, one op per
+party member. Charge and restore are decoupled, so a free rest is the same
+tail without the gate, and the price is a script literal - there is no inn
+cost table. The full flow, the cost scanner (`legaia_asset::inn_costs`) and
+the port (`op4c_n8_sub2_restore_party_slot`; `MenuRuntime::open_inn` is an
+engine-side convenience session, not a port of a retail screen) are on
+[`inn.md`](inn.md).
 
 ## Battle readout tint law (the panel's sibling)
 
-The battle roster panel is the field status panel's sibling surface, and it
-takes a colour law of its own. `FUN_800349EC` (HP) and `FUN_80035EA8` (MP)
-return a *tier* - `2` empty / K.O., `3` status lock, `6` caution, `7` normal,
-`9` danger - and retail resolves it by selecting a whole 16-entry **font
-CLUT**: the drawn numerals' palette byte is `tier + 6`, its CLUT sits at VRAM
-`(16 * (tier + 6), 510)`, and the glyph body is that CLUT's **entry 15**.
+The battle roster panel uses the same tier functions as the field panels.
+`FUN_800349EC` / `FUN_80035EA8` return a tier, and retail resolves it by
+selecting a 16-entry font CLUT: palette byte `tier + 6`, CLUT at VRAM
+`(16 * (tier + 6), 510)`, glyph body = **entry 15**.
 
 | tier | palette byte | VRAM CLUT x | entry 15 | reads as |
 |---|---|---|---|---|
@@ -2836,58 +1911,122 @@ CLUT**: the drawn numerals' palette byte is `tier + 6`, its CLUT sits at VRAM
 | 7 normal | 13 | 208 | `(205, 205, 205)` | light grey |
 | 9 danger | 15 | 240 | `(222, 90, 0)` | orange |
 
-Two consequences the port had backwards, both read off one retail battle
-frame whose third party member is at 0 HP (its `SPRT` run has the downed
-panel's HP *and* MP numerals on CLUT `(128, 510)` and all three panels' name
-glyphs on `(208, 510)`):
+From a retail battle frame with a downed third member (its HP **and** MP
+numerals on CLUT `(128, 510)`, all three names on `(208, 510)`):
 
-- **A downed member's readout is red, not greyed.** Tier 2 is the brightest
-  colour on the strip. Greying it reads as "this panel is disabled" instead of
-  "this member is down".
-- **A downed member's name is not tinted at all**, and its **MP** field takes
-  the death tier even when its own ratio would say "normal" - so the death
-  override sits above `mp_bar_color_index`, not beside it.
+- a downed member's readout is **red**, not greyed;
+- a downed member's **name is not tinted**, and its MP field takes the death
+  tier even when its own ratio says "normal" - the death override sits above
+  the MP tier.
 
-Mirror: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
+Port: `engine-ui::gauge_fill_color` + `READOUT_NORMAL`.
 
-## Status-element badge on the roster panel
+### Status-element badge on the roster panel
 
-`FUN_8002C2E4`'s ladder draws exactly one element per panel and its two arms
-share one seat. The no-ailment arm is `FUN_8002C488(pen.x + 0x3B, pen.y + 2,
-10)` (the `LV` marker) followed by the level number at `pen.x + 0x4B`; the
-matched-ailment arm first does `addiu s1, s1, 0x27` / `addiu s2, s2, -0x4` and
-then calls `FUN_8002C488(s1 + 0xC, s2, sprite)` - so the badge lands at
-`pen + (0x33, -4)`. With the panel's pen at its name seat `+(5, 4)` that is
-panel-relative **`(56, 0)`**, and the badge is a 48x16 cell, so it runs to
-`104` on a 102-wide plate.
+`FUN_8002C2E4` draws one element per panel, and its two arms share a seat. The
+no-ailment arm is `FUN_8002C488(pen.x + 0x3B, pen.y + 2, 10)` (the `LV`
+marker) plus the level at `pen.x + 0x4B`. The matched-ailment arm does
+`addiu s1, s1, 0x27` / `addiu s2, s2, -0x4` and calls
+`FUN_8002C488(s1 + 0xC, s2, sprite)`, so the badge lands at `pen + (0x33, -4)`.
+With the pen at the name seat `+(5, 4)` that is panel-relative **`(56, 0)`**;
+the badge is a 48x16 cell, running to `104` on a 102-wide plate.
 
-Capture-confirmed rather than inferred: a retail frame with a downed third
-member queues widget record `0x20` as a 48x16 `SPRT` at `(267, 164)` with its
-CLUT at `(288, 511)` (sub-palette 18), and the panel backgrounds are at
-`(7, 164)` / `(109, 164)` / `(211, 164)` - `267 - 211 = 56`. The badge's word
-is **`Faint`**, legible in the frame's own framebuffer.
+Capture: a frame with a downed third member queues widget record `0x20` as a
+48x16 `SPRT` at `(267, 164)` with CLUT `(288, 511)` (sub-palette 18), with
+panel backgrounds at `(7, 164)` / `(109, 164)` / `(211, 164)`; the badge reads
+`Faint`. A host that cannot bake the cell (the atlas slice must be rooted at
+the row-511 CLUT extension) falls back to a text tag centred in the same cell.
 
-A host that cannot bake that cell (its atlas slice must be rooted at the
-row-511 CLUT extension, or three of the nine badges have no sub-palette)
-falls back to a text tag. The tag stands in for the *cell*, so it is centred
-in the cell at `(56, 0)` - not on the `LV` label seat `(64, 6)`, which is
-where it used to land and is what a downed member's tag sitting off its own
-plate was.
-
-## The party surface is an exclusive seat, like the plaque
+### The party surface is an exclusive seat, like the plaque
 
 The sparring-tutorial prompt (`battle_tutorial::BoxStyle`) bottom-anchors at
-`0xCC` / `0xB0` / `0x9A`, and its drawn window skin extends 8 px past the
-emitter's centre rect on every side. A one-line style-2/3 box is therefore
-`186..212` - straight through the active-actor bar at `188..208`, and inside
-the roster panels' `164..212`. Drawing both puts two text runs on the same
-pixels, exactly the artifact the top-left plaque already has an exclusive
-branch for.
-
+`0xCC` / `0xB0` / `0x9A`, and its skin extends 8 px past the centre rect. A
+one-line style-2/3 box spans `186..212` - through the active-actor bar at
+`188..208` and inside the roster panels' `164..212`.
 `engine-ui::BattleHudFrame::host_box` carries the live box's centre rect and
 the builder omits whichever party surface its inflated footprint covers. The
-target cursor's name draws as retail's target-select plaque (placement record
-`0x29`, row `162`, see
-[`battle-action.md`](battle-action.md#the-target-select-plaque-record-0x29)); the
-engine-seat enemy strip that used to step clear of the hint
-(`enemy_target_menu_rows_y`) is no longer drawn by either host.
+target cursor's name draws as the target-select plaque (placement record
+`0x29`, row `162`; see
+[`battle-action.md`](battle-action.md#the-target-select-plaque-record-0x29)).
+
+## Overlay identity + VA-aliasing
+
+Every menu function here is a body in PROT 0899 (base `0x801CE818`), code
+`0x801CF5D0..0x801E435C`; the data segment above carries the equip tables
+(`0x801E43E8+`), the options tables (`0x801E4404+`), the prize table
+(`0x801E4518`) and the window descriptor table (`0x801E4738`). Its dumps carry
+the `overlay_menu_` prefix. Confirm a citation with the classifier
+(`scripts/ghidra-analysis/classify-worklist.py --explain <VA>`): the
+`image=menu` line is the arbiter, and it also catches interior addresses
+(`0x801CF754` decodes inside `FUN_801CF650`).
+
+A VA in `0x801Cxxxx..0x801Fxxxx` does **not** identify a menu function by
+itself. The slot is shared at different times by the field (0897), battle
+(0898), cutscene and minigame overlays, all based at `0x801CE818`:
+`0x801CF650` is the equip aggregator here and a "Give" string in the field
+overlay; `0x801D84C0` is a menu body here and a battle-action body in 0898.
+
+<a id="the-0896-dump-band-yields-no-menu-function"></a>
+**`overlay_0896_*` dumps are never menu code.** PROT 0896 is `bat_back_dat`;
+its file over-reads the field overlay's bytes from `+0x9000`, so a dump above
+`0x801CE818` is field-overlay code, and below it the call targets are
+untrustworthy ([`call-target-integrity.md`](../tooling/call-target-integrity.md),
+[`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Every
+worklist row from that band falls in one of these buckets (vocabulary of
+[worklist classification](../tooling/worklist-classification.md)):
+
+| Bucket | Addresses |
+|---|---|
+| Cross-program print collision - phantom prints of field entries `FUN_801D01B0` / `FUN_801D25EC` (`+0x5818`) against `base=0x801C5818` prints of 0896's own content ([`overlay-va-aliases.md`](../reference/overlay-va-aliases.md#prot-0896-two-programs-one-law-each)) | `0x801CA998`, `0x801CCDD4`; `0x801CA850`, `0x801CCBB0`, `0x801C7F38`, `0x801C802C` |
+| Prologue-less tail fragment | `0x801D34A4`, `0x801D95A8`, `0x801DCF24`, `0x801DD690`, `0x801DE268` |
+| Interior of a resident SCUS function | `0x80016E4C` / `0x80016EB8` (in `0x80016B6C`), `0x800379A8` (in `0x8003774C`, [`motion-vm.md`](motion-vm.md)), `0x8003CD68` (in `0x8003CD00`) |
+| Duplicate reprint of a menu body at a shifted VA (cite the right-hand one) | `0x801CC6AC` = `0x801D1EC4`, `0x801CD520` = `0x801D2D38`, `0x801CD6A4` = `0x801D2EBC`, `0x801CD998` = `0x801D31B0`, `0x801EC204` = `0x801F1A1C`, `0x8020E504` = `0x801EED1C` (the Super-Art queue builder) |
+| Shared tail (no `jr ra`; mid-routine entry) | `0x801D31D8`, `0x801DABB4`, `0x801DAC78`, `0x801DB6CC`, `0x801DBA78`, `0x801E6548`, `0x801F03C0`, `0x801F20DC` |
+| Phantom stub / undecodable | stubs `0x801D0338`, `0x801DB2FC`, `0x801DB4E8`, `0x801DD094`; data decoded as loads `0x801EE5B0`; no disassembly `0x801D56D4`, `0x801DA1F8` |
+| Self-entry body below `0x801CE818` (printed VA unattested) | `0x801C5C90`, `0x801C5F40`, `0x801C6A34`, `0x801C7760`, `0x801C8400`, `0x801CA850`, `0x801CB244`, `0x801CB4A8`, `0x801CCBB0`, `0x801C0D1C`, `0x801C2720` (`0x801C0D1C` calls the non-enterable interior `0x8002CDD0`) |
+| Self-entry body at / above `0x801CE818` - field or battle code ([`field-locomotion.md`](field-locomotion.md), [`battle-action.md`](battle-action.md)) | `0x801D4A3C` (dialog pager context `0x801C6EA4`), `0x801E7448` / `0x801E8B10` (field SMs), `0x801F69A0` (battle actor `+0x1DD`), `0x802097BC` |
+
+## Engine port
+
+The pause menu is fully playable on both hosts: all seven root rows, every
+sub-flow above, the scripted save-point and pre-battle entries, and the shop
+and prize counter that share the window pool. The table is parsed from the
+user's disc at boot (`legaia_asset::menu_windows`, with `MENU_WINDOW_FALLBACK`
+as a pinned mirror when no disc table is available) and each section above
+names its session and draw builders.
+
+All draw builders live in **`legaia-engine-ui`**, the wgpu-free leaf.
+`engine-render` re-exports the crate (`pub use legaia_engine_ui::*`), which is
+what lets the browser play page build the same menus without linking wgpu.
+Screens are placed on the shared 320x240 stage via
+`engine-ui::scale_stage_text_draws`. Labels, gauges, pictograms, cursors and
+element icons are UI-icon sprites whose source rects are the `0x800732a4`
+records, staged into the menu atlas (`engine-menus::save_menu_atlas`).
+
+Where the port differs from retail today:
+
+| Area | Difference |
+|---|---|
+| List PAGE header | UI-icon records `0x76`, `0x79`, `0x7A..=0x83` are not in the baked atlas, so `list_page_header_draws` draws dialog-font glyphs at the measured columns (label `x + 0x4D`, fraction cells `x + 0x68 / 0x74 / 0x78`) |
+| Spell element plates | the plates (widget records `0x8B..=0x92`) are in the atlas as `save_menu_atlas::band_element_badges` and used by the battle HUD, but `PauseMagicRow` carries only `name` + `ra_seru`, so the spell list leaves the gap without the plate |
+| Items list ink | every row greys on list focus instead of per-row build-time ink ([Items screen](#items-screen)) |
+| Special-route prompts | Door of Light / Incense prompt text is the port's own; Door of Wind rows show a `0` count |
+| Armament candidate lists | id-sorted, without retail's leading rows on an empty slot ([Equip screen](#port-of-the-equip-screen)) |
+| Money box | no casino coin row |
+| Spell level-up notice | port-composed sentence, shown over the resumed menu |
+| AP gauge fill | linear per-row interpolation; retail's sub-pixel truncation unpinned |
+| `FUN_801E4140` | `guarded_box_rect` has no caller on either host (nothing produces an out-of-range `y`); waived in `scripts/ci/ui-host-drift-waivers.toml` |
+
+### Tactical Arts chain editor (engine extension)
+
+The chain editor (`engine-ui::tactical_arts_editor_draws_for`, backed by
+`engine-battle::tactical_arts_editor::ChainEditor`) has no retail counterpart:
+composing a named command chain outside battle is an opt-in engine extension.
+Its entry is Triangle on the **Status** screen
+(`field_menu_dispatch::try_open_arts_editor`), which swaps the status
+sub-session for an editor on the shown character. Retail's status panel reads
+Left / Right / L1 / R1 / Circle / Start only, so the extension takes no retail
+input and adds no eighth root row. Both hosts project the editor through
+`field_menu_dispatch::arts_editor_view`; saving folds the edit into
+`World::chain_library` / `store_chain_library`, so the next battle's Arts rows
+reflect it.

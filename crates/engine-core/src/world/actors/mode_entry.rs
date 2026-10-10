@@ -229,6 +229,7 @@ impl World {
         // again on the next battle.
         self.battle.tutorial = None;
         self.battle.tutorial_boxes.clear();
+        self.battle.tutorial_standing = None;
         self.battle.flow = crate::battle_flow::BattleFlowState::Idle;
         self.battle.round_flow = crate::battle_round::RoundFlow::default();
         self.battle.commit_log_launch = None;
@@ -241,6 +242,7 @@ impl World {
         // `ctx[+0x289]` and the rest of the side-band state start at zero with
         // the rest of the battle context, as do the stage modules' own words.
         self.battle.sideband = Default::default();
+        self.battle.sparring_round_pending = false;
         self.battle.arrival = Default::default();
         self.battle.form_transition = Default::default();
         // Battle init registers a fresh backdrop pair; any rebind is gone.

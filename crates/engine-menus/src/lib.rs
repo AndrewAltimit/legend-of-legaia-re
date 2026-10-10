@@ -34,8 +34,8 @@ use legaia_engine_battle::arts_command_input;
 // The dialog pager and the spawned-context state, in `legaia-engine-dialog`;
 // re-exported here at the paths they had as modules of this crate.
 pub use legaia_engine_dialog::{
-    cutscene_timeline, dialog, dialog_pacing, dialog_picker_slide, dialog_window, inline_dialogue,
-    text_balloon,
+    cursor_sprite, cutscene_timeline, dialog, dialog_pacing, dialog_picker_slide, dialog_window,
+    inline_dialogue, text_balloon,
 };
 
 pub mod battle_input;

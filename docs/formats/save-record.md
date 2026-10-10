@@ -213,9 +213,9 @@ The mapping from cheat description to record offset is:
 The Noa (`+0x414`) and Gala (`+0x828`) bases shift every address by
 one record stride; same offsets, same fields.
 
-## Notes on contradictions reconciled by this document
+## Fields that are easy to misread
 
-Two prior interpretations had to be reconciled:
+<a id="notes-on-contradictions-reconciled-by-this-document"></a>Each of these fields has a plausible wrong reading. The sections state what the field is and what rules the other reading out.
 
 ### `+0x12E` is the battle status word.
 
@@ -245,9 +245,8 @@ The retail level-up applier maintains `+0x130` by incrementing it `+1` per level
 event (the captured `engine_core::levelup::observations::{noa,gala}_4_level_jump`
 bumped it by one across a four-level grant, so it can momentarily lag the XP-derived
 level after a rare multi-level jump), but for single-level play and the new-game seed
-it equals the level. This supersedes the earlier "`+0x130` = Magic Rank" reading for
-the level question, and the adjacent `+0x131` is **not** the missing magic-rank
-byte. `+0x131` is written once on the whole disc - the new-game seed's
+it equals the level. `+0x130` is not a "Magic Rank", and the adjacent `+0x131`
+is **not** a magic-rank byte either. `+0x131` is written once on the whole disc - the new-game seed's
 `sb $v0, 0x6f9($s0)` at `0x800561C8`, sharing its `li $v0, 0x1` with the `+0x130`
 store two instructions later - and read nowhere. A displacement sweep over
 `SCUS_942.54` and all 80 based overlay images for any `lb`/`lbu`/`sb` at `0x131`
@@ -273,8 +272,8 @@ is the **next-level XP threshold** - the "next" readout on the status screen. (T
 displayed level itself is read from `+0x130`, above, not derived from `+0x0`.)
 Confirmed live: a randomized ROM that wrote a level-10 XP value into `+0x4` showed
 it as "next level: 11195" while *experience* stayed `0`, leaving the derived level
-at 1 (the earlier note that "the level-up logic reads +0x4 as XP" conflated the
-threshold the applier reads with the cumulative XP it reads it against). The
+at 1 (`+0x4` is the threshold the applier reads, `+0x0` the cumulative XP it
+compares against it). The
 starting-level randomizer therefore seeds `+0x0`, not `+0x4`.
 
 The runtime accessor in [`legaia_save::CharacterRecord`] is

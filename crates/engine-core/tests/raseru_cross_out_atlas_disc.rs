@@ -123,3 +123,59 @@ fn the_ring_marks_bake_into_free_atlas_cells() {
         eprintln!("[ok] {name} baked at {cell:?}: {ink} texels, {hue} in hue");
     }
 }
+
+/// The dialogue page mark - kind 1 of the cursor sprite primitive
+/// `FUN_8002B994`, two `16 x 16` frames at sheet `(224, 64)` / `(240, 64)`,
+/// CLUT row 7 - bakes into its own atlas cells as two different frames in
+/// the pointing hand's silver ramp, not a tinted copy of the hand.
+#[test]
+fn the_page_mark_frames_bake_beside_the_hand() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing");
+        return;
+    };
+    let host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let idx = &host.index;
+    let base = sma::SYSTEM_UI_CLUT_EXT_TIM_OFFSET as u64;
+    let end = (legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_OFFSET
+        + legaia_asset::title_pak::OVERLAY_LOAD_EMPTY_FRAME_TIM_SIZE) as u64;
+    let panel = idx
+        .prot_dat_raw_bytes(base, (end - base) as usize)
+        .expect("system-UI slice");
+    let pill = idx
+        .entry_bytes_extended(legaia_asset::title_pak::PROT_INDEX_OVERLAY as u32)
+        .expect("PROT 0899");
+    let atlas = sma::build_atlas(&panel, &pill, None).expect("atlas");
+    let cell = |c: (u32, u32, u32, u32)| -> Vec<u8> {
+        let mut out = Vec::new();
+        for y in c.1..c.1 + c.3 {
+            let o = ((y * atlas.width + c.0) * 4) as usize;
+            out.extend_from_slice(&atlas.rgba[o..o + (c.2 * 4) as usize]);
+        }
+        out
+    };
+    let [f0, f1] = sma::ATLAS_RECT_ADVANCE_ICON;
+    for (i, f) in [f0, f1].into_iter().enumerate() {
+        let (ink, grey) = ink_in(&atlas, f, |p| p[0].abs_diff(p[2]) < 48);
+        assert!(ink > 40, "frame {i} carries ink ({ink} texels)");
+        assert_eq!(grey, ink, "frame {i} is the silver ramp, untinted");
+    }
+    assert_ne!(cell(f0), cell(f1), "the strip's two frames differ");
+    assert_ne!(
+        cell(f0),
+        cell(atlas.band_cursor()),
+        "the mark is not the hand"
+    );
+    // The frame the cells sit beside stays clear of them.
+    let (fx, fy, fw, fh) = sma::ATLAS_RECT_EMPTY_FRAME;
+    for f in [f0, f1] {
+        assert!(
+            f.0 >= fx + fw || f.0 + f.2 <= fx || f.1 >= fy + fh || f.1 + f.3 <= fy,
+            "{f:?} overlaps the empty-slot frame"
+        );
+    }
+}

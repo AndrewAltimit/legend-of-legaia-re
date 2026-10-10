@@ -1,58 +1,65 @@
 # Monster (enemy) battle animation
 
-Per-object rigid-transform keyframe animation for battle monsters. Distinct
-from the [ANM container](anm.md) (which drives player / field actors): monster
-animation lives **inside the monster's archive block** (extraction PROT entry
-867 - retail-space CDNAME block `monster_data` under the
-[−2 numbering correction](cdname.md#numbering-space); see
-[monster stat archive](../subsystems/battle.md) and `legaia_asset::monster_archive`).
-The archive is **not** the [player battle files](battle-data-pack.md)
-(extraction 863..866, retail `battle_data`) whose extended extraction windows
-historically over-read into it.
+A battle monster animates as a set of rigid body parts: one translation + rotation keyframe per TMD object per frame, with no skinning. The clips live **inside the monster's own archive block** (extraction PROT entry 867, CDNAME block `monster_data` under the [-2 numbering correction](cdname.md#numbering-space)), one clip per *action entry*. Each action entry also carries everything timed to that clip: hit beats, effect spawns, sound cues, root motion and loop window.
 
-Implementation: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`,
-`animations`, `idle_animation`).
+This is a different format from the [ANM container](anm.md) that drives field actors, and the archive is not the [player battle files](battle-data-pack.md) (extraction 863..866), although those files carry the same per-action entry family for the party.
+
+Parser: `legaia_asset::monster_archive` (`MonsterAnimation`, `PartPose`, `animations`, `animations_by_entry`, `idle_animation`), implemented in `crates/battle-models`.
+
+## At a glance
+
+```mermaid
+flowchart TD
+    A["PROT 867 monster archive"] --> S["slot (id-1) * 0x14000<br/>LZS stream at slot+4"]
+    S --> B["decoded block"]
+    B --> R["stat record<br/>+0x4A count, +0x4C u32 offsets[]"]
+    B --> M["TMD mesh (+0x04)"]
+    B --> X["texture pool (+0x08)"]
+    R --> E["action entry i"]
+    E --> H["head +0x00..+0x8B<br/>tag, beats, effects, cues, motion"]
+    E --> K["+0x8C packed stream<br/>parts x frames x 9 bytes"]
+```
+
+Action entry head (offsets from the entry start). The byte at `+0x00` is read two ways: as the action tag by the installers and searches, and as the first power byte by the damage kernel.
+
+| Offset | Size | Field | Meaning | Confidence |
+|---|---|---|---|---|
+| `+0x00` | 1 | action tag | Semantic tag, [tabulated below](#action-tags-and-the-0x1ef-reaction-map) | Confirmed |
+| `+0x00..+0x03` | 4 | power bytes | One per hit, indexed by the actor's per-clip hit index `+0x1F4` | Confirmed |
+| `+0x04`, `+0x08` | 4 + 4 | runtime keyframe pointers | Zero on disc; the loader fills them | Confirmed |
+| `+0x0C` | i16 | root speed | Per-tick approach speed along the facing | Confirmed |
+| `+0x0E` | i16 | end step | Distance the clip leaves the body from its start ([details](#the-end-of-clip-step-0x0e)) | Confirmed |
+| `+0x10..+0x13` | 4 | event-frame list | Zero-terminated ascending frame indices ([details](#event-frame-list-entry-0x100x13)) | Confirmed; "contact" Inferred |
+| `+0x14..+0x53` | 8 x 8 | effect-script records | `[gate][effect][i16 x, y, z]` ([details](#effect-script-records-entry-0x140x53)) | Confirmed |
+| `+0x54..+0x73` | 8 x 4 | sound-cue track | `[u16 frame][u16 cue]` ([details](#sound-cue-track-entry-0x540x73)) | Confirmed |
+| `+0x74` | 1 | AGL cost | Action cost spent from the AGL gauge | Confirmed |
+| `+0x76` | 1 | event gate | `0` enables the mid-clip event commit and the hit-event side | Confirmed |
+| `+0x77` | 1 | sub-id / attach key | Read by the equipment attach scan and the weapon-trail trigger; the after-image ring id is this byte plus `0x10` | Confirmed |
+| `+0x78` | 1 | playback rate | `1` or `2` in retail | Confirmed |
+| `+0x7A` | 1 | status / impact selector | Same enum as a move-power record's `+0x0A` | Confirmed |
+| `+0x84` | 1 | loop-hold seed | Seeds the actor's loop-hold counter | Confirmed |
+| `+0x85`, `+0x86` | 1 + 1 | loop window | Start and end frame | Confirmed |
+| `+0x87` | 1 | solo / freeze | Non-zero freezes the other actors; not a sound cue | Confirmed |
+| `+0x88` | 4 | stream self-pointer | Zero on disc; loader points it at `+0x8C` | Confirmed |
+| `+0x8C` | var | packed stream | `[u8 parts][u8 frames][parts x frames x 9 bytes]` ([details](#packed-stream-entry-0x8c)) | Confirmed |
 
 ## Where it lives
 
-Each monster's decoded archive block is `[stat record + +0x4C action-offset
-array][name][TMD mesh @ +0x04][per-action entries][texture pool @ +0x08]`. The
-`magic_count` (`+0x4A`) **action entries** the `+0x4C` u32 array points at are
-not just "spells" - each is an action descriptor whose head holds the action id
-(`+0x00`), AGL (action) cost (`+0x74`), and a sub-id (`+0x77`), and whose **`+0x8c`**
-field begins a packed transform-keyframe stream. (The runtime keyframe pointers
-at entry `+0x04`/`+0x08` and the self-pointer at `+0x88` are zero on disc; the
-loader reconstructs them, with `+0x88` pointing at the `+0x8c` stream.)
+Each monster's decoded archive block is `[stat record + +0x4C action-offset array][name][TMD mesh @ +0x04][per-action entries][texture pool @ +0x08]`. The stat record's `magic_count` byte (`+0x4A`) counts the action entries the `+0x4C` `u32` array points at. They are not just "spells": every animation the monster has is one of them.
 
-Action **index 0** (id `0x00`) is the neutral **idle** animation the engine
-loops when the monster isn't acting; index 1 (id `0x01`) is the **move**
-cycle played while the monster advances on a target (a walk for grounded
-enemies, a flight cycle for fliers), and the rest correspond to the
-monster's spell / special actions.
+Action **index 0** is the neutral **idle** the engine loops. Index 1 is the **move** cycle played while the monster advances on a target (a walk, or a flight cycle for fliers). The rest are reactions, attacks and special actions.
 
 ### The slot is transferred whole; the block only fills part of it
 
-The archive is a flat array of fixed `0x14000`-byte slots, `slot = (id-1) *
-0x14000`, and a slot's **whole** footprint moves at load whatever the block
-costs. The loader `FUN_800542C8` computes the slot offset as `(id-1) * 5 << 14`
-(`sll v0,v1,0x2; addu v0,v0,v1; sll v0,v0,0xe` at `0x80054524`), turns it into a
-sector seek, and then reads a literal `0x28` sectors - `li a1,0x28` at
-`0x80054608`, immediately before `jal 0x8003E800`; the host-file branch at
-`0x800545F0` passes the same span as a byte count (`lui a2,0x1; ori a2,a2,0x4000`).
-Only then does it hand `slot + 4` to the LZS decoder (`jal 0x8001A55C` at
-`0x8005465C`), which stops at the stream's own terminator.
+The archive is a flat array of fixed `0x14000`-byte slots, `slot = (id-1) * 0x14000`. The loader `FUN_800542C8` (`ghidra/scripts/funcs/800542c8.txt`):
 
-So the bytes between a block's compressed stream and the end of its slot are
-transferred and never interpreted. On retail every one of the archive's slots
-ends in such a run and the entry's extent is an exact multiple of the stride,
-so the slot boundary is a **declared** bound, not an inferred one - which is why
-[byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`
-rather than leaving them as residue. They are the single largest run of declared
-slack on the disc, and no format is hiding in them.
+1. Computes the slot offset as `(id-1) * 5 << 14` (`sll v0,v1,0x2; addu v0,v0,v1; sll v0,v0,0xe` at `0x80054524`) and turns it into a sector seek.
+2. Reads a literal `0x28` sectors (`li a1,0x28` at `0x80054608`, before `jal 0x8003E800`). The host-file branch at `0x800545F0` passes the same span as a byte count (`lui a2,0x1; ori a2,a2,0x4000`).
+3. Hands `slot + 4` to the LZS decoder (`jal 0x8001A55C` at `0x8005465C`), which stops at the stream's own terminator.
 
-Slots whose head word is `0x10` are not blocks at all: they carry a raw PSX TIM
-at the slot head, zero-filled to the same stride. See
-`ghidra/scripts/funcs/800542c8.txt`.
+So the bytes between a block's compressed stream and the end of its slot are transferred and never interpreted. Every slot ends in such a run and the entry's extent is an exact multiple of the stride, so the slot boundary is a **declared** bound. [Byte accounting](../tooling/byte-accounting.md) claims those runs as `pad`; they are the largest run of declared slack on the disc and hide no format.
+
+Slots whose head word is `0x10` are not blocks: they carry a raw PSX TIM at the slot head, zero-filled to the same stride.
 
 ## Action tags and the `+0x1EF` reaction map
 
@@ -71,26 +78,12 @@ The entry's first byte (`+0x00`) is a semantic **tag**, not just an index:
 | `0x20`, `0x21`, `0x22` | attack pre-approach / close-in / knockout taunt - `0x22` plays when the monster's attack downs its target while a party member still stands, see [battle-action.md](../subsystems/battle-action.md) (monster files) |
 | `0x23` | cast clip - the entry a magic pick plays, addressed by the monster's magic **slot**, not by the spell id ([below](#a-magic-picks-cast-clip)) |
 
-At battle init the monster installer `FUN_80054CB0` scans the entry table and
-caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor
-bytes `+0x1EF..+0x1F3`; the party installer `FUN_80053CB8` hardcodes
-`[2,3,4,5,0xB]` because the player files store the family identity-ordered.
+At battle init the monster installer `FUN_80054CB0` scans the entry table and caches the **entry index** of each tag in `{2,3,4,5,0x0B}` into battle-actor bytes `+0x1EF..+0x1F3`. The party installer `FUN_80053CB8` hardcodes `[2,3,4,5,0xB]` because the player files store the family identity-ordered.
 
-The scan is a **single forward pass with no `break`**: one loop over the entry
-array (`0x80055338`..`0x80055408`), five independent tag compares per entry, and
-every match stores unconditionally. A monster carrying the same reaction tag
-twice therefore resolves to the **last** matching entry, not the first. Do not
-build this out of `FUN_80050E2C` (the entry search below), which returns on its
-first match - the two routines are different mechanisms, and the shared `0xFF`
-sentinel belongs only to the search.
+Two properties of the scan matter to a port:
 
-The "no entry claimed this slot" value here is **zero**, not `0xFF`: nothing
-pre-initialises `+0x1EF..+0x1F3` (the actor block arrives zeroed) and the
-knockdown fallback at `0x80055428` tests `+0x1F1` against zero before copying
-`+0x1EF` over it. So a monster with no knockdown entry reuses its light flinch -
-and a monster whose knockdown entry sits at index `0` is indistinguishable from
-"absent" and takes the fallback anyway. Entry `0` is the idle loop for every
-monster in the archive, so that second case never fires on retail data.
+- **Last match wins.** It is a single forward pass with no `break`: one loop over the entry array (`0x80055338`..`0x80055408`), five independent tag compares per entry, every match stored unconditionally. Do not build it out of the first-match search `FUN_80050E2C`; the `0xFF` sentinel belongs only to that search.
+- **"Absent" is zero, not `0xFF`.** Nothing pre-initialises `+0x1EF..+0x1F3` (the actor block arrives zeroed), and the knockdown fallback at `0x80055428` tests `+0x1F1` against zero before copying `+0x1EF` over it. A monster with no knockdown entry reuses its light flinch. A knockdown entry at index `0` would be indistinguishable from absent, but entry `0` is the idle loop for every monster in the archive.
 
 Consumers:
 
@@ -147,52 +140,28 @@ clip from a different place:
 | `0x3C` Spirit band | class `< 0x14` and id `< 0x65` - the heals and buffs (`0x801E2EEC..0x801E2EFC`) | `+0x1E7` (`lbu v0,0x1e7(s3); sb v0,0x1da(s3)` at `0x801E3B4C..0x801E3B54`), held until it commits and runs back to idle |
 | `0x28` -> `0x6E` capture band | class `0x63` | neither: the slot-B cast module stages literals of its own |
 
-The capture route is where most monster specials go, and its clips are code,
-not data. Each module body loads the caster from `actor_table[ctx[+0x13]]`
-and writes `sb <clip>,0x1DA(<caster>)` with a literal - usually one wind-up
-or cast entry at arm `0`, sometimes two in sequence (PROT 0937 Hyper Lightning
-stages `0x0D` then `0x0C`), occasionally chosen on a monster id (PROT 0940's
-`0x3C` stages `9` for monster `0xA9` and `8` for anyone else) - and closes
-with `sb zero,0x1DA`. The literal is an entry index into the caster's own
-record, so a module only lines up with the monsters that were built for it.
-Several bodies stage nothing on the caster at all - their only `+0x1DA` writes
-are the victim's reaction - so the caster holds its idle through those
-casts in retail too. The per-body table, with the stage sites, is
-`legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and
-`CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; the engine replays the listed stages,
-each to its clip's natural end, at the head of battle phase `0x70`
-(`World::capture_stager_tick`). Melee bodies walk the caster into reach first:
-arm `0` turns the caster onto its victim, stages the walk entry `1` (its root
-motion carries the body) and holds on the range poll `FUN_8004E2F0` until it
-reads zero (`CAPTURE_APPROACH_BODIES` lists the ported bodies that do this
-besides the table's `approach` rows); nothing walks it home afterwards. The
-disc-gated sweep
-`crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every
-monster's every magic-slot spell and asserts the caster plays a moving
-special clip unless its body is one of those, and fires the scripted
-per-monster AI's casts as well as the magic slots.
+The capture route is where most monster specials go, and its clips are code, not data:
+
+- Each module body loads the caster from `actor_table[ctx[+0x13]]` and writes `sb <clip>,0x1DA(<caster>)` with a literal, then closes with `sb zero,0x1DA`.
+- Usually that is one wind-up or cast entry at arm `0`. Sometimes it is two in sequence (PROT 0937 Hyper Lightning stages `0x0D` then `0x0C`), occasionally chosen on a monster id (PROT 0940's `0x3C` stages `9` for monster `0xA9` and `8` for anyone else).
+- The literal is an entry index into the caster's own record, so a module only lines up with the monsters built for it.
+- Several bodies stage nothing on the caster; their only `+0x1DA` writes are the victim's reaction, so the caster holds its idle through those casts in retail too.
+- Melee bodies walk the caster into reach first: arm `0` turns the caster onto its victim, stages the walk entry `1` (its root motion carries the body) and holds on the range poll `FUN_8004E2F0` until it reads zero. Nothing walks it home afterwards.
+
+Engine side: the per-body table with the stage sites is `legaia_engine_vm::cast_module_ticks::CAPTURE_CASTER_STAGES` and `CAPTURE_BODIES_WITHOUT_CASTER_STAGE`; `CAPTURE_APPROACH_BODIES` lists the ported walking bodies beyond the table's `approach` rows. The engine replays the listed stages, each to its clip's natural end, at the head of battle phase `0x70` (`World::capture_stager_tick`). The disc-gated sweep `crates/engine-core/tests/monster_special_anim_sweep_disc.rs` casts every monster's every magic-slot spell plus the scripted per-monster AI's casts, and asserts the caster plays a moving special clip unless its body is one of the non-staging ones.
 
 ## Anim selection (`actor +0x1D9/+0x1DA` → entry)
 
-The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id,
-`+0x1D9` = current. The id **is the entry index** - the commit function
-`FUN_8004AD80` installs `node+0x4C = *(record_ptr + 0x4C + id*4)` for
-monsters (record pointers at `0x801C9348 + (slot-3)*4`) and
-`node+0x4C = *(table + id*4)` for party (per-character record[0] tables at
-`0x801C9360 + slot*4`), then snaps `+0x1D9 = +0x1DA`. There is no remap
-table and no special case for id 6: retail's idle id is **0**, and the
-battle SM's `FUN_801D5854(actor, 6..9)` "pose" calls are a separate
-camera/presentation program space that never touches the anim fields.
-Party ids `≥ 0x10` (basic swings staged as direction bytes `0x0C..0x0F` are
-still table-direct; art starters `0x19`/`0x1A` and art constants `0x1B+` are
-not) trigger the dynamic-slot path instead - see
-[`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
+The per-actor anim state is a pair of bytes: `+0x1DA` = queued anim id, `+0x1D9` = current. The id **is the entry index**. The commit function `FUN_8004AD80` installs the entry and then snaps `+0x1D9 = +0x1DA`:
 
-The **player battle files** carry the same per-action entry family for the
-party's assembled meshes - action-offset table at the head of `record[0]`,
-packed stream at entry `+0xAC` instead of `+0x8C`, `parts` = the
-character's skeleton bone count. See
-[`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
+| Actor | Install | Table |
+|---|---|---|
+| Monster | `node+0x4C = *(record_ptr + 0x4C + id*4)` | record pointers at `0x801C9348 + (slot-3)*4` |
+| Party | `node+0x4C = *(table + id*4)` | per-character record[0] tables at `0x801C9360 + slot*4` |
+
+There is no remap table and no special case for id 6: retail's idle id is **0**. The battle SM's `FUN_801D5854(actor, 6..9)` "pose" calls are a separate camera / presentation program space that never touches the anim fields.
+
+Party ids `>= 0x10` trigger the dynamic-slot path instead. Basic swings staged as direction bytes `0x0C..0x0F` are still table-direct; art starters `0x19`/`0x1A` and art constants `0x1B+` are not. The party's entries use the same head layout with the packed stream at entry `+0xAC` instead of `+0x8C`, and `parts` = the character's skeleton bone count. See [`battle-data-pack.md` § Battle animations](battle-data-pack.md#battle-animations-record0).
 
 ### A special attack can be a chain of entries
 
@@ -299,11 +268,10 @@ itself, whose low byte then indexes the list. The tick reads
   `8` at rate `2` = 16 ticks at the normal speed scale `8`).
 
 So for every list short of four entries - every reaction entry on the disc -
-the consumed beat is the **first** byte, `entry[+0x10]`; the "index of the
-terminator" reading (which would make every short list a no-gate) was the
-decompiler's `void` rendering of a routine whose result lives in `v0`. A
-four-slot list hands the tick a load-address-dependent index instead; only
-attack-band entries carry one. Those are the only two consumers reachable: a
+the consumed beat is the **first** byte, `entry[+0x10]`. It is not "the index
+of the terminator": the routine's result lives in `v0`, which the decompiled C
+renders as `void`. A four-slot list hands the tick a load-address-dependent
+index instead; only attack-band entries carry one. No third consumer exists: a
 word-wise `jal` scan over `SCUS_942.54` and every image in
 `extracted/overlays/` finds no third call site for `FUN_80050E00`. Reader
 `legaia_asset::monster_archive::juggle_windows` (`gate_frame()` is the
@@ -518,53 +486,39 @@ retry changes every one of them; the 653436 whole-frame part samples are the
 plain decode. Disc-gated test
 `engine-core/tests/battle_anim_real.rs::monster_archive_pose_blend_retry_census`.
 
+#### Cursor advance and commit
+
 The per-frame cursor advance lives in the anim-node tick `FUN_80047430`:
-`phase += (frame_dt * actor[+0x21D] * record[+0x78]) >> 1`, where `+0x21D`
-is the actor's speed scale (`8` in normal play - a live watch reads `8` on
-every actor of a plain Gobu Gobu fight - dropped to `4` / `2` on everyone
-by an Art's slow-motion arms) and the entry's `+0x78` byte is its
-**playback rate** (`1` or `2` across the retail corpus - `rate/4`
-keyframes per 60 Hz tick at scale `8`). When the cursor passes the
-stream's frame count (or the `+0x1DC` event flags fire mid-clip) the tick
-calls the commit `FUN_8004AD80`, which swaps the entry, zeroes the cursor,
-and converges `+0x1D9 = +0x1DA`. On the last frame of a clip the decoder
-cross-blends toward **frame 0 of the queued entry's stream** (looked up by
-`+0x1DA`), so anim transitions tween rather than snap. Entry `+0x84` seeds a
-loop-hold counter (`actor +0x176`) and `+0x85`/`+0x86` bound a loop window
-(e.g. the player defeat entries hold a 2-frame loop; the window test runs
-BEFORE the natural-end test, so a windowed clip parks or replays inside its
-window instead of reaching the re-commit - the Delilas cast clips lean on
-this through their long module stage dwells, reader
-`legaia_asset::monster_archive::animation_loop_windows`). The seed is a
-**finite hold budget**, and a module can end a park early by clearing the
-actor's `+0x176`/`+0x21B` pair: module 0960 releases Lu's strike from its
-authored `[15, 15]` park this way (file `+0x1638`), letting the cursor run
-frames 15..22 so the damage tick's `>= 0x160` test fires a fixed 28 ticks
-after the release - the park is timing choreography, not a terminal hold. Entry `+0x87` is
-**not a sound cue**: a non-zero value is passed to `FUN_8004E13C`, the
-solo/freeze dispatcher - it writes battle ctx `+0x243` and raises the
-other actors' pause flag `+0x21C` (the "everyone freezes during a
-special" spotlight; value 2 additionally re-rolls a coin into ctx
-`+0x6DA` when a party member is acting). The anim tick reads the same
-byte again when it stamps the after-image history ring: a monster record
-with `+0x87 == 1` gets ring id `0x11` (otherwise `+0x77 + 0x10`), which is
-what lets the ghost walk `FUN_80049348` trail that clip - see
-[battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348).
-Parser field `MonsterAnimation::solo_flag`. Entry `+0x7A` is the action's
-**status / impact selector** - the same enum space as a move-power record's
-`+0x0A`. When the action lands, the melee / arts routine `FUN_801EC3E4`
-stamps `0x801F53D4[sel - 1]` into the struck actor's `+0x04` tint word with
-`+0x21F = sel` and `+0x0C = 0x1000` for `0 < sel < 6` (`sltiu v0,v0,0x6`
-at `0x801EE3E0`), then routes the selector to its status arm: `3` / `4`
-roll `+0x16E |= 1` / `|= 2` one in eight, `5` rolls a rot-limb bit on a
-party target, and `6` (`0x801EE690`) rolls `+0x16E |= 0x1000` one in four
-with **no** tint - the Curse class, carried on the disc by six archive
-entries (two three-member families, all on attack tag `0x10`), which is
-what the `sltiu` guard exists for. See
-[battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel).
-Parser field `MonsterAnimation::impact_class`; the player-file art records
-carry the same byte (`ArtAnimRecord::impact_class`). Census:
-`crates/engine-core/tests/battle_afterimage_gate_real.rs`.
+
+```text
+phase += (frame_dt * actor[+0x21D] * entry[+0x78]) >> 1
+```
+
+- `actor[+0x21D]` is the actor's speed scale: `8` in normal play (a live watch reads `8` on every actor of a plain Gobu Gobu fight), dropped to `4` / `2` on everyone by an Art's slow-motion arms.
+- `entry[+0x78]` is the **playback rate**, `1` or `2` across the retail corpus: `rate/4` keyframes per 60 Hz tick at scale `8`.
+- When the cursor passes the stream's frame count, or the `+0x1DC` event flags fire mid-clip, the tick calls the commit `FUN_8004AD80`. The commit swaps the entry, zeroes the cursor, and converges `+0x1D9 = +0x1DA`.
+- On the last frame the decoder cross-blends toward frame 0 of the queued entry's stream (looked up by `+0x1DA`), so transitions tween rather than snap.
+
+#### Head bytes the tick and the commit read
+
+**Loop window (`+0x84..+0x86`).** `+0x84` seeds a loop-hold counter (`actor +0x176`) and `+0x85` / `+0x86` bound the window; the player defeat entries hold a 2-frame loop. The window test runs **before** the natural-end test, so a windowed clip parks or replays inside its window instead of reaching the re-commit. The Delilas cast clips lean on this through their long module stage dwells. Reader: `legaia_asset::monster_archive::animation_loop_windows`.
+
+The seed is a **finite hold budget**, and a module can end a park early by clearing the actor's `+0x176` / `+0x21B` pair. Module 0960 releases Lu's strike from its authored `[15, 15]` park this way (file `+0x1638`), letting the cursor run frames 15..22 so the damage tick's `>= 0x160` test fires a fixed 28 ticks after the release. The park is timing choreography, not a terminal hold.
+
+**Solo / freeze (`+0x87`).** Not a sound cue. A non-zero value is passed to `FUN_8004E13C`, the solo / freeze dispatcher: it writes battle ctx `+0x243` and raises the other actors' pause flag `+0x21C` (the "everyone freezes during a special" spotlight). Value 2 additionally re-rolls a coin into ctx `+0x6DA` when a party member is acting. The anim tick reads the byte again when it stamps the after-image history ring: a monster record with `+0x87 == 1` gets ring id `0x11` (otherwise `+0x77 + 0x10`), which lets the ghost walk `FUN_80049348` trail that clip - see [battle-action.md](../subsystems/battle-action.md#the-after-image-ghost-walk-fun_80049348). Parser field `MonsterAnimation::solo_flag`.
+
+**Status / impact selector (`+0x7A`).** The same enum space as a move-power record's `+0x0A`. When the action lands, the melee / arts routine `FUN_801EC3E4` acts on it:
+
+| `sel` | Effect on the struck actor |
+|---|---|
+| `1..=5` | Stamps `0x801F53D4[sel - 1]` into the `+0x04` tint word, with `+0x21F = sel` and `+0x0C = 0x1000` (`sltiu v0,v0,0x6` at `0x801EE3E0`) |
+| `3` / `4` | Also rolls bit `1` / bit `2` into `+0x16E`, one in eight |
+| `5` | Also rolls a rot-limb bit on a party target |
+| `6` | Rolls bit `0x1000` into `+0x16E` one in four with **no** tint (`0x801EE690`): the Curse class |
+
+Six archive entries carry `6` (two three-member families, all on attack tag `0x10`), which is what the `sltiu` guard exists for. See [battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel). Parser field `MonsterAnimation::impact_class`; the player-file art records carry the same byte (`ArtAnimRecord::impact_class`). Census: `crates/engine-core/tests/battle_afterimage_gate_real.rs`.
+
+#### The commit shape
 
 Three consequences of that commit shape:
 
@@ -583,8 +537,8 @@ Three consequences of that commit shape:
   (`0x8004BF28..0x8004BF4C`) - the end of a downed party member's
   knockdown -> `7` -> `8` chain - and the monster-death arm
   (`0x8004B664..0x8004B674`); the knockdown's own commit clears the whole
-  byte, so a knockdown is never latched. An earlier reading here credited
-  the bit to the tag-4 chain itself (see
+  byte, so a knockdown is never latched and the bit does not belong to the
+  tag-4 chain (see
   [battle.md](../subsystems/battle.md#the-commits-clip-tag-ladder)). The two commit sites clear
   the byte **asymmetrically**: the mid-clip event path clears bits 0-1
   only (`andi 0xFC`) while the natural-end path clears bits 0-2
@@ -616,9 +570,9 @@ each primitive's 8-byte packed vertices out of the pose scratch:
   factor)` to lerp each vertex toward its next-frame target - sub-keyframe
   vertex morphing on top of the rigid TRS decode.
 
-Both thread GTE-buffer pointers and gp globals, so neither is a pure function;
-the port keeps to the rigid-TRS decode already in `engine-vm/anim_vm.rs` and
-defers vertex morphing to the renderer.
+Both thread GTE-buffer pointers and gp globals, so neither is a pure function.
+The port keeps to the rigid-TRS decode; whether any host reproduces the vertex
+morph is not verified here.
 
 ## Provenance
 
@@ -633,52 +587,25 @@ defers vertex morphing to the renderer.
 - `FUN_800402F4` - damage primitive; stages the target's hit reaction from the `+0x1EF` map (`ghidra/scripts/funcs/800402f4.txt`).
 - `FUN_80050E2C` - **first-match** tag search over the entry-pointer array. Signature `(table, tag, count) -> idx_or_0xFF`; both `count` and the result are byte-truncated, so a table longer than 255 entries is unrepresentable and index `0xFF` is indistinguishable from the "not found" sentinel. Ported as `legaia_asset::monster_archive::find_action_by_tag` (sentinel surfaced as `None`).
 
-Provenance for `FUN_80050E2C`: the first-match shape and the `0xFF` sentinel were read off `SCUS_942.54` directly at file offset `0x800 + (0x80050e2c - 0x80010000)`, because the dump then carried decompiled C over an empty disassembly section. That is **no longer the state of the dump** - `ghidra/scripts/funcs/80050e2c.txt` now disassembles the whole 72-byte body, including the returning `addiu v0,zero,0xff` at `0x80050e68`. The hand-read stands and the dump now corroborates it; this is no longer a routine whose behaviour cannot be checked from the corpus.
+`ghidra/scripts/funcs/80050e2c.txt` disassembles the whole 72-byte body of `FUN_80050E2C`, including the returning `addiu v0,zero,0xff` at `0x80050e68`.
 
-Both take their tags from `action_tags`, which walks **every** entry in the `+0x4C` array. That matters: `animations` skips entries whose keyframe stream is empty or malformed, and since the engine addresses animations by raw entry index (`+0x1DA`), pairing an index against the filtered list mis-maps it.
+Both the search port and the reaction-map port take their tags from `action_tags`, which walks **every** entry in the `+0x4C` array. That matters: `animations` skips entries whose keyframe stream is empty or malformed, and since the engine addresses animations by raw entry index (`+0x1DA`), pairing an index against the filtered list mis-maps it.
 
 Two properties of the map are **not observable on the retail disc**, so no disc-gated test can pin them and the CI-side synthetic tests in `legaia_asset::monster_archive::animation` are what hold them: no shipped monster duplicates a reaction tag (so last-wins and first-wins agree everywhere on disc), and every monster carrying a light-flinch entry also carries a real tag-4 knockdown (so the fallback never fires). The disc-gated `monster_reaction_maps_match_an_independent_last_wins_transcription` checks the port against a separate transcription of the loop over all 120 archives and reports the duplicate-tag census rather than asserting a behaviour it cannot reach.
 
 ## Engine playback
 
-The from-scratch engine plays this stream for battle actors. At battle entry the
-shell decodes each monster's idle clip (`idle_animation`, action 0) into a
-`legaia_engine_core::battle_anim::MonsterAnimPlayer` - an 8.8 fixed-point loop
-cursor whose `tick()` blends the keyframes on the cursor's 1/16 nibble through
-`legaia_engine_vm::battle_pose_blend::blend_part_pose` (the blend arm above,
-retry included, with the loop-window arm of the next-entry rule) into a
-`legaia_anm::PoseFrame` (one `(translation, rotation)` per object, the same
-shape the field ANM player produces). `World::tick_battle_animations` advances
-every battle actor's player each frame, and the renderer deforms the mesh with
-the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` builder (`R·v + T`,
-`Rz·Ry·Rx` about each object's local origin - the same composition as the
-glTF export below and the site animator). The disc-gated `battle_anim_real`
-test drives the whole decode → player → deform path on a real monster and
-asserts the posed mesh moves frame-to-frame. The per-tick phase advance is
-retail-pinned through the entry's rate byte
-(`battle_anim::step_for_rate`, the `FUN_80047430` formula reduced to the
-normal `frame_dt = 1`, `+0x21D = 8` case); the engine also plays the
-hit-reaction family - `World::queue_battle_reaction` mirrors the
-`FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up
-chain. The decoder's cross-blend into the queued clip is ported with its
-`+0xE` Z term: `World::battle_tween_target` resolves the entry the engine will
-install at the natural end (the reaction channel's staged entry, a byte staged
-behind a swing, the swing itself on a re-commit, else the idle), applies
-retail's HP / `< 0x10` gate, and hands its frame 0 to the player, whose one-shot
-runs to the frame count - retail's natural end - rather than stopping on its
-last keyframe. The crossing tick draws the queued frame 0 and moves the actor
-by the entry's `+0xE` ([below](#the-end-of-clip-step-0x0e)). The player
-also carries the entry head the tick and the damage kernel read off the
-committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run
-before the natural-end test as the tick does), the signed `+0x0C` root speed
-(`root_speed`, driven by `World::tick_battle_locomotion`) and the
-`+0x00..+0x03` / `+0x10..+0x13` / `+0x76` hit-event side (`hit_source`, read
-by `World::tick_battle_hit_events`). The hosts install a monster's clips
-**positionally** (`monster_archive::animations_by_entry`, one slot per `+0x4C`
-index with holes kept): a monster's staged anim id is that index - the AI
-picker queues its swing entries by it and `FUN_8004AD80` reads
-`action_table[slot][id]` - so the compacted `animations` list would
-mis-address every entry after the first undecodable one.
+The engine plays this stream for battle actors.
+
+- **Decode and blend.** At battle entry the shell decodes each monster's clips into a `legaia_engine_core::battle_anim::MonsterAnimPlayer`, an 8.8 fixed-point loop cursor. Its `tick()` blends the keyframes on the cursor's 1/16 nibble through `legaia_engine_vm::battle_pose_blend::blend_part_pose` (the blend arm above, retry included, with the loop-window arm of the next-entry rule) into a `legaia_anm::PoseFrame`: one `(translation, rotation)` per object, the same shape the field ANM player produces.
+- **Deform.** `World::tick_battle_animations` advances every battle actor's player each frame. The renderer deforms the mesh with the rigid `legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot` builder (`R·v + T`, `Rz·Ry·Rx` about each object's local origin), the same composition as the glTF export below and the site animator.
+- **Rate.** The per-tick phase advance is retail-pinned through the entry's rate byte (`battle_anim::step_for_rate`, the `FUN_80047430` formula reduced to the normal `frame_dt = 1`, `+0x21D = 8` case).
+- **Reactions.** `World::queue_battle_reaction` mirrors the `FUN_800402F4` staging and `tick_battle_animations` the knockdown → get-up chain.
+- **Cross-blend.** The decoder's blend into the queued clip is ported with its `+0xE` Z term. `World::battle_tween_target` resolves the entry the engine will install at the natural end (the reaction channel's staged entry, a byte staged behind a swing, the swing itself on a re-commit, else the idle), applies retail's HP / `< 0x10` gate, and hands its frame 0 to the player. The one-shot runs to the frame count (retail's natural end) rather than stopping on its last keyframe. The crossing tick draws the queued frame 0 and moves the actor by the entry's `+0xE` ([below](#the-end-of-clip-step-0x0e)).
+- **Entry head.** The player carries what the tick and the damage kernel read off the committed entry: the `+0x84..+0x86` loop window (`apply_loop_window`, run before the natural-end test), the signed `+0x0C` root speed (`root_speed`, driven by `World::tick_battle_locomotion`) and the `+0x00..+0x03` / `+0x10..+0x13` / `+0x76` hit-event side (`hit_source`, read by `World::tick_battle_hit_events`).
+- **Positional install.** The hosts install a monster's clips by `+0x4C` index with holes kept (`monster_archive::animations_by_entry`). A monster's staged anim id is that index, so the compacted `animations` list would mis-address every entry after the first undecodable one.
+
+The disc-gated `battle_anim_real` test drives the whole decode → player → deform path on a real monster and asserts the posed mesh moves frame to frame.
 
 ### The end-of-clip step (`+0x0E`)
 
@@ -707,25 +634,16 @@ and the action entries carry steps up to several hundred units
 
 ## Export
 
-`legaia_asset::monster_gltf::export_glb(entry, id)` packs a monster's mesh, its
-baked texture, and **every** action animation into one binary glTF (`.glb`) - the
-universal interchange format. The rigid-per-object model maps directly onto glTF
-node animation: each TMD object becomes a node, the keyframe stream's
-translation + Euler rotation drive that node's `translation` / `rotation`
-channels (the `Rz·Ry·Rx` order recomposed as a quaternion), and a root node
-rotates the rig 180° about X to convert the PSX `+Y`-down space to glTF's
-`+Y`-up. The per-prim CLUTs (`cba & 0x3F`) that a single glTF material can't
-index are baked into a vertical palette atlas, with each vertex's `V` remapped
-into its palette band. Shading rides a `COLOR_0` attribute (the prim's packet
-word as the `texel * colour / 128` blend factor) over a material marked
-`KHR_materials_unlit` - retail applies no light source, so a lit material
-would invent one; see [the renderer page](../subsystems/renderer.md#the-same-shading-in-an-exported-glb).
-CLI: `asset monster-archive --id N --glb <out>`; the
-enemy-table web page exposes the same export as a download button.
+`legaia_asset::monster_gltf::export_glb(entry, id)` packs a monster's mesh, its baked texture, and **every** action animation into one binary glTF (`.glb`). CLI: `asset monster-archive --id N --glb <out>`; the site's enemy table exposes the same export as a download button.
+
+- **Nodes.** The rigid-per-object model maps directly onto glTF node animation: each TMD object becomes a node, and the keyframe stream drives its `translation` / `rotation` channels (the `Rz·Ry·Rx` order recomposed as a quaternion).
+- **Axes.** A root node rotates the rig 180° about X to convert the PSX `+Y`-down space to glTF's `+Y`-up.
+- **Palettes.** The per-prim CLUTs (`cba & 0x3F`) that one glTF material cannot index are baked into a vertical palette atlas, with each vertex's `V` remapped into its palette band.
+- **Shading.** A `COLOR_0` attribute carries the prim's packet word as the `texel * colour / 128` blend factor, over a material marked `KHR_materials_unlit`. Retail applies no light source, so a lit material would invent one; see [the renderer page](../subsystems/renderer.md#the-same-shading-in-an-exported-glb).
 
 ## See also
 
-- [Legaia TMD](tmd.md) - the mesh whose vertices these keyframes morph.
+- [Legaia TMD](tmd.md) - the mesh whose objects these keyframes place.
 - [ANM animation](anm.md) - the player/field-actor animation container.
 - [Player battle files](battle-data-pack.md) - the sibling `battle_data` block (party-character containers, a distinct format from this archive).
 - [`subsystems/battle.md`](../subsystems/battle.md) - the battle scene that drives the playback.

@@ -1,6 +1,6 @@
 # legaia-engine-render
 
-Minimal `wgpu` renderer for the engine reimplementation track.
+The native `wgpu` renderer behind `legaia-engine play-window` and the asset viewer: a software PSX VRAM sampled per primitive in the fragment shader, the retail shading path, and the opt-in enhancement passes.
 
 This crate is where the hard `wgpu` link lives, which is why the
 renderer-agnostic UI draw-list builders (`status_screen_draws_for`,

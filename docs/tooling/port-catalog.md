@@ -1,52 +1,65 @@
 # Port catalog
 
-Answers "what is left to do?" for one function, or for the whole project, from
-evidence rather than from a hand-maintained checklist.
+`scripts/ci/port-catalog.py` answers "what is left to do?" for one function or for the whole project. It **derives** each function's status from the tree on every run - is there a disassembly dump, does a doc cite it, does Rust code claim to port it, can a host reach that Rust code - so it cannot go stale the way a hand-kept status table does. Port a function, tag it, and the next run knows.
 
-**Reach for it when** you are picking up work and want a real worklist: which
-functions are understood but not ported, which are ported but undocumented,
-which nobody has looked at. Run `--dashboard` and it prints the open work as a
-single page.
-
-The trick is that it **derives** status instead of tracking it. Each column below
-is measured live from the tree, so the catalog cannot rot the way a status table
-in a doc does - if you port a function and tag it, the catalog knows on the next
-run.
+Reach for it when you want a real worklist: which functions are understood but not ported, which are ported but undocumented, which ports nothing calls.
 
 ```bash
-python3 scripts/ci/port-catalog.py --dashboard
+python3 scripts/ci/port-catalog.py --dashboard     # the open work, on one page
 ```
+
+```mermaid
+flowchart LR
+    dumps["ghidra/scripts/funcs/ dumps"] --> cat["port-catalog.py"]
+    docs["docs/ citations"] --> cat
+    tags["PORT / REF tags in crates/"] --> cat
+    ign["port-catalog-ignore.toml"] --> cat
+    cat --> csv["catalog.csv / catalog.md"]
+    cat --> dash["open-work.md"]
+    cat -->|"--live"| graph2["Rust call graph from host roots"]
+    graph2 --> audit["live-audit.md"]
+    cat -->|"--check"| ratchet["baseline ratchet (pre-commit)"]
+```
+
+| Section | What it tells you |
+|---|---|
+| [The columns](#the-columns) | What each status means and where it is measured. |
+| [The tags](#the--port-tag) | `PORT:`, `REF:`, `NOT WIRED:`, `WIRED:`, `REPLACED-BY:` - what to write in Rust source. |
+| [Reachability](#reachability-the-live-axis) | The `live` axis: roots, anchors, precision, the audit. |
+| [Usage](#usage) | Every invocation and output file. |
+| [The ratchet](#the-ratchet) | Which figures the pre-commit gate holds. |
+| [Features](#features-bfs-from-roots), [Ignore list](#ignore-list), [Dashboard](#open-work-dashboard) | Scoping the worklist. |
+| [The runtime denominator](#the-runtime-denominator-replay-port-coveragepy) | Was a port actually *executed* by a replay. |
 
 ## The columns
 
-Signals across the reverse-engineering and engine-port tracks, plus an axis for
-scope-excluded addresses (statically-linked PsyQ library code the engine maps to
-native equivalents rather than porting line-by-line):
+One row per function address in the code ranges (SCUS `0x80010000-0x8006FFFF`, overlays `0x801C0000-0x8020FFFF` - the same filter [`scripts/ci/function-coverage.py`](../../scripts/ci/function-coverage.py) uses, whose helpers the catalog shares).
 
 | Column | Source of truth |
 |---|---|
-| **dumped** | A Ghidra decompiler dump exists under `ghidra/scripts/funcs/` (gitignored - regenerable from the Ghidra project). |
+| **dumped** | A Ghidra dump exists under `ghidra/scripts/funcs/` (gitignored - regenerable from the Ghidra project). |
 | **documented** | The address is cited from at least one file under `docs/` (`FUN_<addr>` or `0x<addr>`, case-insensitive). |
 | **ported** | A Rust source under `crates/` carries a `// PORT: FUN_<addr>` tag for that address. |
 | **live** | The Rust symbol carrying that tag is reachable, through non-test code, from a host entry point. Opt-in (`--live`); see [Reachability](#reachability-the-live-axis). |
-| **replaced** | Not live, and no host is owed: the port carries a `REPLACED-BY:` marker naming the Rust mechanism that does the routine's job. Emitted in `catalog.csv` and in `--live-audit`, and excluded from the wiring worklist and its denominator; see [`REPLACED-BY`](#replaced-by). |
+| **replaced** | Not live, and no host is owed: the port carries a `REPLACED-BY:` marker naming the Rust mechanism that does the routine's job. In `catalog.csv` and `--live-audit`; excluded from the wiring worklist and its denominator. See [`REPLACED-BY`](#replaced-by). |
 | **ignored** | The address is listed in `scripts/ci/port-catalog-ignore.toml` as a non-port-site (BIOS thunk / libc shim / libgte / libgs / libgpu / libcd / libsnd / libspu / libapi / libetc). Excluded from `--missing-ports` by default. |
 
-**`ported` and `live` are different axes.** A `// PORT:` tag is a provenance
-marker: it records that a Rust function implements a Ghidra function. It says
-nothing about whether anything ever calls that Rust function. A port can be
-faithful, tested, documented - and never execute. Without the second axis,
-"how much of the game is covered" cannot be answered from the tree at all,
-only estimated.
+**`ported` and `live` are different axes.** A `// PORT:` tag is a provenance marker: it records that a Rust function implements a retail function. It says nothing about whether anything calls that Rust function. A port can be faithful, tested and documented - and never execute. The `live` axis is what lets "how much of the game is covered" be answered from the tree.
 
-Tool: [`scripts/ci/port-catalog.py`](../../scripts/ci/port-catalog.py). Reuses helpers
-from [`scripts/ci/function-coverage.py`](../../scripts/ci/function-coverage.py) and
-shares the same code-range filter (SCUS `0x80010000-0x8006FFFF`, overlays
-`0x801C0000-0x8020FFFF`).
+### What the columns surface
+
+| Combination | Meaning | What to do |
+|---|---|---|
+| dumped + documented, not ported, not ignored | **Port worklist.** Understood, not implemented, not PsyQ infrastructure. | Port it; sort by citation count for high-leverage helpers. |
+| cited but not dumped, not ignored | **Dump worklist.** A dump references the address; no dump of it exists. | Add it to a dumper's `TARGETS` ([`ghidra.md`](ghidra.md#adding-a-new-function-dump)) - unless no routine begins there (below). |
+| ported but not documented | Provenance gap. | Backfill the doc, or remove the tag if the attribution is wrong. |
+| ported but not dumped | Provenance gap, opposite axis. | Dump it. |
+
+An ignore row retires a dump-worklist row exactly as it retires a port one. A `worklist_*` ignore section holds the claim "no routine begins at this VA", and such an address cannot be dumped without fabricating an entry point ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)). The standing case is PROT 0896: its `jal`s name addresses in a *different* build's executable ([`static-overlay-pipeline.md`](static-overlay-pipeline.md)), every one of them mid-body in this disc's `SCUS_942.54`, so each is an address claim to file rather than a dump to take.
 
 ## The `// PORT:` tag
 
-The catalog's "ported" column keys off a structured comment in Rust source:
+The "ported" column keys off a structured comment in Rust source:
 
 ```rust
 // PORT: FUN_801dd35c                       // single address
@@ -56,47 +69,18 @@ The catalog's "ported" column keys off a structured comment in Rust source:
 /// PORT: FUN_801dd35c                      // inside `///` outer doc
 ```
 
-The tag may appear as plain `//`, doc `//!`, or outer-doc `///` - putting it in
-the doc block keeps the provenance co-located with the rustdoc description and
-makes it visible in generated docs.
-
 Rules:
 
-- The tag is the only signal trusted for "ported". Plain mentions of
-  `FUN_<addr>` in module docs or comments are ignored - they show up in many
-  contexts that don't imply a port (cross-refs, "inspired by", "not yet
-  ported", etc.) and noisily inflate the column.
-- Address must be lowercase hex in the SCUS / overlay code range.
-- Match starts on the marker's own line - put the tag on its own line or as a
-  trailing comment - and continues onto the next comment line only when the
-  **address list** itself wraps. See
-  [A wrapped address list](#a-wrapped-address-list).
-- A single Rust file can carry many tags. The catalog records the crate name
-  each tag appears in.
-- One Ghidra function can be ported into more than one crate (e.g. a
-  formula shared between `engine-vm::battle_formulas` and a helper in
-  `engine-core`). The catalog lists every crate that tags the address.
-
-When porting a Ghidra function, add the tag once in the Rust function that
-*implements* its behaviour. Don't tag every caller of the ported function.
-
-Prefer a `///` tag on that function to a `//!` tag on the module. A module tag
-anchors the address to the whole *file*, which is coarse enough to report the
-address wired on the strength of any other function in the same file - so it is
-only safe while the whole file shares one wiring status. Same for a `PORT:` tag
-on a plain data struct: tag the function that computes the value, and let the
-struct carry a `REF:` instead. See
-[Anchors](#anchors) for how each form resolves and
-[`stale-not-wired-triage.md`](stale-not-wired-triage.md#anchor-granularity) for
-the edit that splits a module tag safely.
+- The tag is the only signal trusted for "ported". Plain mentions of `FUN_<addr>` in comments are ignored - they appear in many contexts that don't imply a port.
+- The address is lowercase hex in the SCUS / overlay code range.
+- The match starts on the marker's own line: put the tag on its own line or as a trailing comment. **A tag that starts mid-sentence gets no anchor** and reads as a phantom inert port.
+- A file can carry many tags. One retail function can be ported into more than one crate; the catalog lists every crate that tags it.
+- Tag the Rust function that *implements* the behaviour, once. Don't tag its callers.
+- Prefer a `///` tag on the function to a `//!` tag on the module. A module tag anchors the address to the whole *file*, so one wired function elsewhere in the file reports the address wired. It is only safe while the whole file shares one wiring status. Likewise, tag the function that computes a value and give a plain data struct a `REF:`. [Anchors](#anchors) shows how each form resolves; [`stale-not-wired-triage.md`](stale-not-wired-triage.md#anchor-granularity) has the edit that splits a module tag safely.
 
 ### A wrapped address list
 
-A tag naming several routines can outgrow its line. The reader
-(`scripts/ci/port_tag_reader.py`, shared by this tool,
-[`check-port-tags.py`](#tag-drift-checker) and
-[`check-port-provenance.py`](port-provenance.md)) takes the continuation, so
-both of these claim three addresses:
+A tag naming several routines can outgrow its line. The reader (`scripts/ci/port_tag_reader.py`, shared by this tool, [`check-port-tags.py`](#tag-drift-checker) and [`check-port-provenance.py`](port-provenance.md)) takes the continuation, so both of these claim three addresses:
 
 ```rust
 /// PORT: FUN_801d6704, FUN_801cf00c,
@@ -104,41 +88,26 @@ both of these claim three addresses:
 /// PORT: FUN_801d6704, FUN_801cf00c, FUN_801cef54
 ```
 
-A following comment line continues the list only when the text so far ends with
-a separator **and** the line starts with an address token. That is deliberately
-narrow, and the reason is measurable: reading every comment line up to the first
-blank one instead pulls 47 further addresses into the ported set over this
-tree's `crates/`, and they are `REF:` lines and prose - "the Baka overlay links
-the same body at `FUN_801D6710`" - not wrapped lists. A port claim the author
-did not make is worse than a dropped one, because the dropped one shows up as a
-worklist row and the invented one shows up as nothing.
+A following comment line continues the list only when the text so far ends with a separator **and** the line starts with an address token. The rule is deliberately that narrow. Reading every comment line up to the first blank one would pull in `REF:` lines and prose such as "the Baka overlay links the same body at `FUN_801D6710`" as port claims. A port claim the author did not make is worse than a dropped one: the dropped one shows up as a worklist row, the invented one shows up as nothing.
 
-The narrow rule adds no address to this tree today. It is the shape a wrapped
-tag *would* lose, and the workaround it retires is the one already in the tree:
-repeating the marker on the next line (`//! REF:` twice in
-`crates/engine-core/src/battle_tutorial.rs`) so the second half is read at all.
+### The `// REF:` tag
 
-## The `// REF:` tag
-
-Sibling of `// PORT:`. Marks an address as a **cross-reference citation** -
-the file mentions `FUN_<addr>` in a docstring or comment but isn't claiming
-to port it. Same comment shapes as `// PORT:` (plain `//`, doc `//!`,
-outer-doc `///`) and same multi-address syntax.
+Sibling of `// PORT:`. It marks an address as a **cross-reference citation**: the file mentions `FUN_<addr>` but does not claim to port it. Same comment shapes and multi-address syntax.
 
 ```rust
 //! PORT: FUN_801E30E4
-//! REF: FUN_801E7320, FUN_801CF098  -- callees, not yet ported
+//! REF: FUN_801E7320, FUN_801CF098  -- callees, not ported here
 ```
 
-`port-catalog.py` ignores REF tags - they don't set the "ported" column -
-but the drift checker (`scripts/ci/check-port-tags.py`, see below) treats them
-as equivalent to PORT for warning suppression.
+The catalog ignores `REF:` tags - they don't set "ported" - but the [drift checker](#tag-drift-checker) treats them as equivalent to `PORT:` for warning suppression.
+
+### A module-scope tag inherits its neighbour's verdict
+
+The scraper binds a tag's addresses to whatever item follows it. A tag written at **module** scope - above the `use` block, or between two items rather than on one - attaches to the next item the file happens to define, and the address then carries that item's reachability verdict instead of its own. Nothing flags this: the tag is well-formed, the address is real, and the row reports a live port. Keep the tag in the doc block of the item it describes. The general check is [`port-provenance.md`](port-provenance.md), which asks whether a tagged address names the routine the Rust item implements; a `grep` for the address will not find this shape.
 
 ## Reachability: the `live` axis
 
-`--live` adds a reachability column by building a call graph over
-`crates/**/src/**.rs` and asking, for each `// PORT:` tag, whether the symbol
-it attaches to can be reached from a declared host entry point.
+`--live` builds a call graph over `crates/**/src/**.rs` and asks, for each `// PORT:` tag, whether the symbol it attaches to can be reached from a declared host entry point.
 
 ```bash
 python3 scripts/ci/port-catalog.py --live            # add the `live` column
@@ -147,38 +116,25 @@ python3 scripts/ci/port-catalog.py --live-only       # ported and reachable
 python3 scripts/ci/port-catalog.py --live-audit      # the audit page (below)
 ```
 
-The pass parses every Rust file in the workspace, so it is markedly slower than
-the other modes and stays opt-in.
+The pass parses every Rust file in the workspace, so it is markedly slower than the other modes and stays opt-in.
+
+**How to read it:** `live` is an *upper bound* on what runs; `--not-live` is a *hard floor* on what does not. Every ambiguity in the graph resolves toward reachability, so an address `--not-live` reports is one no plausible edge - not even a wrong one - could reach.
 
 ### Roots
 
-The BFS starts from these, and nothing else. A `pub fn` that no host reaches is
-exactly the inert-port case the axis exists to find, so being public is not a
-root:
+The search starts from these and nothing else. A `pub fn` that no host reaches is exactly the inert-port case the axis exists to find, so being public is not a root.
 
 | Root family | What it covers |
 |---|---|
-| `fn main` in a `[[bin]]` target (`src/bin/**`, `src/main.rs`) | Every CLI subcommand across the 20-odd tool binaries, plus each GUI binary's command dispatch and window-loop *setup*. |
-| `#[wasm_bindgen]` exports in the WASM crates | The browser's entry points into the static site's viewer, play and patcher pages. |
-| Methods of an `impl ApplicationHandler for T` block | The whole per-frame native GUI surface - redraw, input, HUD build - and everything in `engine-core` / `engine-vm` those reach. |
+| `fn main` in a `[[bin]]` target (`src/bin/**`, `src/main.rs`) | Every CLI subcommand of the tool binaries, plus each GUI binary's command dispatch and window-loop *setup*. |
+| `#[wasm_bindgen]` exports in the WASM crates | The browser's entry points into the site's viewer, play and patcher pages. |
+| Methods of an `impl ApplicationHandler for T` block | The whole per-frame native GUI surface - redraw, input, HUD build - and everything in the engine crates those reach. |
 
-The third family exists because the second call in the chain leaves the tree.
-`fn main` reaches `cmd_play_window`, which builds the app and hands it to
-`event_loop.run_app(&mut app)`; winit then calls `window_event` /
-`about_to_wait` / `resumed` back into the tree from outside it. Without those
-methods in the root set the BFS stops at `run_app`, and every per-frame,
-redraw and input path below it reads as inert. The trait set is a literal in
-`EXTERNAL_DISPATCH_TRAITS`; add to it when another externally-dispatched
-callback trait appears.
+The third family exists because the call chain leaves the tree: `fn main` hands the app to winit's `event_loop.run_app`, and winit calls `window_event` / `about_to_wait` / `resumed` back in from outside. Without those methods as roots the search stops at `run_app` and every per-frame path reads as inert. The trait set is the literal `EXTERNAL_DISPATCH_TRAITS`; **add to it when another externally-dispatched callback trait appears**, or the audit cannot be believed about the code under it.
 
-Treating these as roots is deliberately over-permissive: an
-`impl ApplicationHandler` block counts even if nothing constructs the app. That
-is the same direction every other ambiguity resolves in, and it is what keeps
-`--not-live` a floor.
+An `impl ApplicationHandler` block counts even if nothing constructs the app - deliberately over-permissive, the same direction every other ambiguity resolves in.
 
-Test code is excluded on purpose: `crates/*/tests/`, `benches/`, `examples/`,
-`#[cfg(test)]` modules, `#[test]` functions, and files named `tests.rs`. "Called
-only by a unit test" is precisely the condition a `NOT WIRED:` tag reports.
+Test code is excluded: `crates/*/tests/`, `benches/`, `examples/`, `#[cfg(test)]` modules, `#[test]` functions, and files named `tests.rs`. "Called only by a unit test" is precisely what a `NOT WIRED:` tag reports.
 
 ### Anchors
 
@@ -188,102 +144,46 @@ A tag is resolved to the symbol it sits on, most precise form first:
 |---|---|---|
 | `///` / `//` above a `fn` | that function | the function is reachable |
 | `///` / `//` above a `struct` / `enum` / `impl` | that type | any method in the type's `impl` blocks is reachable, or - when the file gives that type no `impl` block at all - any non-test `fn` in the file is |
-| `///` / `//` above a `const` / `static` / `type` alias / `macro_rules!` | that item | a reachable non-test `fn` body references the item's name (see below for the strict variant) |
+| `///` / `//` above a `const` / `static` / `type` alias / `macro_rules!` | that item | a reachable non-test `fn` body references the item's name |
 | `//` inside a function body | the enclosing function | that function is reachable |
 | `//! PORT:` (module doc) | the file, widened to its submodule subtree when the file declares no functions of its own | any non-test function in scope is reachable |
 
-The structural rule behind the table: a `///` doc block resolves to the item
-it documents - the first item after the block, however long the block is.
-Module scope belongs to `//!` blocks (and to the loose `//` tag that sits on
-no item at all); it is not a fall-through for doc blocks. Both halves of that
-rule were once violated, and each produced its own false audit rows: a bounded
-forward walk demoted long `NOT WIRED:` disclosure blocks to module scope
-(reporting careful disclosures as executed via their module's live siblings),
-and a tag above a `const` had no item arm to land on, so item-level data ports
-inherited a file-level verdict in both directions.
+A `///` doc block resolves to the item it documents: the first item after the block, however long the block is. Module scope belongs to `//!` blocks (and to a loose `//` tag that sits on no item); it is not a fall-through for doc blocks.
 
-Module-level tags are the coarse case and the main source of over-reporting: a
-`//!` block on a crate root claims the whole crate, so one wired function in it
-reports every address on that block as live.
+- **Module anchors are the coarse case** and the main source of over-reporting: a `//!` block on a crate root claims the whole crate, so one wired function reports every address on that block as live.
+- **The type anchor's file fallback** covers a tag on a plain data struct whose behaviour lives in free functions or in another type's `impl` in the same file.
+- **The item anchor's verdict is *use***, since a `const` has no body to reach. The permissive graph matches the bare name tree-wide (two same-named consts share a verdict), which keeps the not-live list a floor. The strict graph, read only by the stale-`NOT WIRED:` test, demands an attributable reference: the referencing `fn` sits in the item's own file, or spells the item qualified by its defining module's stem or `impl` type (`module::NAME`, `Type::NAME`). An unqualified use behind a `use` import is under-counted there, which errs toward "not live" - a missed stale tag, never a false accusation.
 
-The type anchor's fallback covers the tag that sits on a plain data struct
-whose behaviour lives in free functions, or in an `impl` of a *different* type
-in the same file. Without it such a tag could never be live however wired the
-port is, because the rule has no method to look at.
+The attributable-reference rule (`item_reference_patterns` / `item_reference_hit`, defined once in the script) is shared with the [reach report](#the-runtime-denominator-replay-port-coveragepy), so "is it live" and "did a ladder run it" cannot disagree about what counts as a reference to a const.
 
-The item anchor's verdict is *use*, since a `const` has no body to reach, and
-it is read differently by the two graphs. The permissive verdict matches the
-bare name tree-wide - two same-named consts share it - which over-approximates
-toward "used" and keeps the not-live list a hard floor. The strict verdict,
-read only by the stale-`NOT WIRED:` test, demands an attributable reference:
-the referencing `fn` sits in the item's own file, or spells the item qualified
-by its defining module's stem or `impl` type (`battle_helpers::GAUGE_STEP`,
-`CameraState::FIELD_RESET`). An unqualified use behind a `use` import is
-under-counted there, which errs toward "not live" - a missed stale tag, never
-a false accusation. The worked collision: `engine-core::dance` and
-`engine-vm::battle_helpers` both define a `GAUGE_STEP`, and only the dance one
-is referenced by live code.
-
-The attributable-reference rule has a second consumer: the reach report
-resolves an item anchor's **executed** verdict through the same patterns
-(`item_reference_patterns` / `item_reference_hit`, defined once in this
-script), so the liveness question and the "did a ladder run it" question can
-never disagree about what counts as a reference to a const. See
-[the runtime denominator](#the-runtime-denominator-replay-port-coveragepy)
-for the bucket that verdict feeds.
+`port-catalog.py --selftest` runs the anchor-kind and disclosure-precedence cases on a synthetic in-memory corpus and exits non-zero if the resolver stops distinguishing them.
 
 #### Per-item `WIRED:` against a module blanket
 
-Disclosure is also resolved per anchor. The tag's own comment block saying
-`NOT WIRED` discloses it; failing that, a `//! NOT WIRED` opening the module
-doc discloses every anchor in the file (the `mdec::st_ring` shape: one blanket,
-seven tagged addresses). A mostly-inert module with one wired item needs the
-third rule: an anchor whose own doc block opens a line with `WIRED:` (caps,
-colon, same leading-`#`/`*` allowance as the blanket marker) opts that one item
-out of the module blanket. An own-block `NOT WIRED` still wins over an
-own-block `WIRED:` - same-granularity disclosure beats same-granularity claim.
-The worked example is `engine-core::cutscene_script_elements::save_screen_spawn`
-(`FUN_801D841C`), live under a module blanket that the file's other three
-element handlers still need.
+Disclosure is resolved per anchor, in this order:
 
-Both resolutions carry a control suite: `port-catalog.py --selftest` runs the
-anchor-kind and disclosure-precedence cases on a synthetic in-memory corpus and
-exits non-zero if the resolver stops distinguishing them.
+1. The tag's own comment block says `NOT WIRED` - that item is disclosed.
+2. Otherwise a `//! NOT WIRED` opening the module doc discloses every anchor in the file (one blanket, many tagged addresses).
+3. An anchor whose own doc block opens a line with `WIRED:` (caps, colon, same leading-`#`/`*` allowance as the blanket marker) opts that one item out of the module blanket - the shape for a mostly-inert module with one wired item.
+
+An own-block `NOT WIRED` wins over an own-block `WIRED:`: same-granularity disclosure beats same-granularity claim.
+
+**Read a `NOT WIRED:` note to its end before acting on it.** The lead sentence often states the symptom; the rest says what wiring would take.
 
 #### `REPLACED-BY`
 
-The third class. `live` and inert-with-`NOT WIRED:` are not the whole space. A third kind of
-port exists: one whose *job* the engine performs by construction through a
-different mechanism, so no host will ever call it and none is owed. Counting
-those as "implemented but not yet hosted" states a gap that will never close,
-which is a lie pointing the other way from the disclosure gap.
+`live` and inert-with-`NOT WIRED:` are not the whole space. A third kind of port exists: one whose *job* the engine performs by construction through a different mechanism, so no host will ever call it and none is owed. Counting those as "implemented but not yet hosted" states a gap that will never close.
 
-`REPLACED-BY: <mechanism>` opening a comment line in a tag's own block moves
-that anchor into a third column, `replaced`: neither live nor a wiring gap,
-reported by `--live-audit` in its own section and excluded from the wiring
-denominator. A `//! REPLACED-BY:` opening the module doc is the blanket form,
-resolved like the `NOT WIRED` blanket. Precedence at one granularity is
-`REPLACED-BY:` > `NOT WIRED` > `WIRED:`, because the replaced claim is the
-strongest thing an anchor can say about itself - not "no host calls me" but
-"no host is owed".
+`REPLACED-BY: <mechanism>` opening a comment line in a tag's own block moves that anchor into the `replaced` column: neither live nor a wiring gap, listed by `--live-audit` in its own section, and excluded from the wiring denominator. A `//! REPLACED-BY:` opening the module doc is the blanket form, resolved like the `NOT WIRED` blanket. Precedence at one granularity is `REPLACED-BY:` > `NOT WIRED` > `WIRED:`.
 
 Two strictnesses keep the class from becoming an escape hatch:
 
-- the marker must **open** the comment line, so prose that mentions one thing
-  being replaced by another is not a class change;
-- the mechanism text must be **non-empty**, and it is printed beside the row in
-  `--live-audit`'s table. A bare `REPLACED-BY:` claims an exemption while
-  naming nothing, so it does not count and the anchor stays in whatever class
-  it was already in.
+- the marker must **open** the comment line, so prose that mentions one thing being replaced by another is not a class change;
+- the mechanism text must be **non-empty**, and `--live-audit` prints it beside the row. A bare `REPLACED-BY:` does not count, and the anchor stays in whatever class it was in.
 
 ##### What may carry it
 
-The usual test is not "no caller exists" - that is what `NOT WIRED:` says. It
-is that the *behaviour* is either produced already by a named live Rust
-mechanism, or unobservable in the port's output because the port has no such
-layer at all. Wiring such a port would re-host retail plumbing rather than add
-anything a player or a test could see. Four shapes qualify; the boot / CD /
-card / menu-infra drain carries the first three:
+The test is not "no caller exists" - that is what `NOT WIRED:` says. It is that the *behaviour* is either already produced by a named live Rust mechanism, or unobservable in the port's output because the port has no such layer. Wiring such a port would re-host retail plumbing without adding anything a player or a test could see. Four shapes qualify:
 
 | Shape | Retail | The port instead |
 |---|---|---|
@@ -292,200 +192,92 @@ card / menu-infra drain carries the first three:
 | Retail residency / representation the port replaced | mode-table overlay cache pairs, GPU packet queues, the `gp+0x148` drawable node list | on-demand PROT resolution, typed draw lists, per-screen window models |
 | Routine retail itself never reaches | a real prologue entry point with **zero** references in all five forms across SCUS, every based overlay image and every raw PROT entry | nothing - retail runs no pass that asks the question either |
 
-The fourth shape is the one exception to "not `no caller exists`", and it is
-narrower than it looks. `NOT WIRED:` states a gap a future host closes; a
-routine no retail path reaches has no such future, so leaving it in the wiring
-worklist states a gap that can never close - the same lie the class exists to
-stop, pointing the other way. It may only be claimed on the evidence of a
-[five-form reference scan](address-reference-scan.md) reported in the tag, and
-the mechanism text must say so; "I grepped for `jal`" is not that scan, because
-it is blind to a table-driven caller. `fishing::DEV_ENTRY_POINT_BONUS` is the
-same shape reached from the other side - a branch retail ships behind a clear
-debug flag.
+The fourth shape is the one exception to "not `no caller exists`", and it is narrow. It may only be claimed on the evidence of a [five-form reference scan](address-reference-scan.md) reported in the tag, and the mechanism text must say so. "I grepped for `jal`" is not that scan - it is blind to a table-driven caller. A branch retail ships behind a debug flag that is never set (`fishing::DEV_ENTRY_POINT_BONUS`) is the same shape reached from the other side.
 
 ##### What may *not*
 
-Anything whose retail behaviour is still missing from the port stays
-`NOT WIRED:`, even when a different engine mechanism covers most of it. Two
-worked examples from the same files, both a hair from the line:
+Anything whose retail behaviour is still missing from the port stays `NOT WIRED:`, even when another engine mechanism covers most of it:
 
-- `engine-core::camera_ease` (`FUN_801DA390`). `crate::camera` does ease the
-  camera, in floats, against a typed zone record - but the per-frame value is
-  *observable output* and the two disagree frame by frame, so a retail-faithful
-  camera mode genuinely wants this kernel. It stayed `NOT WIRED` while `World`
-  left the field VM's op `0x4C` n4 sub-9 host hooks unimplemented; those exist
-  now, so the row is live. It is kept here because the shape is the lesson: a
-  second implementation of an *observable* behaviour is a gap even while the
-  engine's own version runs. (The channel is a vertical offset, not a yaw -
-  [`live-audit-triage.md`](live-audit-triage.md) carries the correction.)
-- `engine-core::menu_list_rows`'s three `FUN_80030628` builders. The pause
-  menu does list items - but not in retail's three-buffer order and with none
-  of its dim gates, because `World::party.inventory` is keyed by item id with no slot
-  space. The order a player sees is wrong today, so this is a gap, not a
-  substitution. Its file-mates *are* replaced, and each says which of the
-  three families it belongs to - a per-file verdict would have been wrong in
-  both directions.
+- **A second implementation of an observable behaviour is a gap.** A retail integer camera-ease kernel (`FUN_801DA390`) is not "replaced" by the engine's float ease against a typed zone record: the per-frame value is observable output and the two disagree frame by frame, so a retail-faithful mode wants the kernel.
+- **A different order or gate is a gap.** The item-list builders of `FUN_80030628` are not "replaced" by a list that shows the same items in another order without retail's dim gates - what a player sees differs.
+- **Verdicts are per item, not per file.** A file can hold replaced routines beside gap routines, and each says which it is.
 
-The rule of thumb the sweep settled on: read what the existing disclosure says
-wiring would *take*. "Adopting X as the representation, not adding a call" is a
-replacement. "Implementing hook H" or "porting routine R first" is a gap.
+Rule of thumb: read what the disclosure says wiring would *take*. "Adopting X as the representation, not adding a call" is a replacement. "Implementing hook H" or "porting routine R first" is a gap.
 
 ### Precision
 
-The graph resolves calls by **name**, not by type. Qualified calls (`Type::f`,
-`module::f`) resolve against in-tree types and module stems; method calls
-(`.f(...)`) resolve against every in-tree method of that name; bare `f(...)`
-resolves against every function of that name. There is no type inference, no
-trait-impl selection and no monomorphisation.
+The graph resolves calls by **name**, not by type. Qualified calls (`Type::f`, `module::f`) resolve against in-tree types and module stems; method calls (`.f(...)`) resolve against every in-tree method of that name; bare `f(...)` resolves against every function of that name. There is no type inference, no trait-impl selection and no monomorphisation. A **trait default method** counts as a method of its trait (and stays among the free functions too), since a host that does not override the default runs exactly that body.
 
-A **trait default method** counts as a method of its trait, so `.f(...)` finds
-it. It stays listed among the free functions too, which is purely additive: a
-host that does not override the default runs exactly that body, and the port
-tag on it is a claim about code that really executes.
+- **False positives on `live` are expected.** Method-name collisions (`.tick()`, `.step()`, `.push()`) link callers to every same-named method in the workspace. Trait-object and closure dispatch resolve the same loose way.
+- **False negatives on `live` are rare**, because every ambiguity resolves toward reachability. The one deliberate exception is an unresolved qualifier: `Vec::new` falls back to free functions only, never to methods, because letting external types reach every in-tree `Type::new` would wire up whole modules that nothing constructs.
+- **A dispatch edge that leaves the tree and comes back is invisible until something names it.** Trait default methods and winit callbacks are both modelled; [`live-audit-triage.md`](live-audit-triage.md#analysis-defects-this-triage-found) keeps their positive controls.
 
-The consequences are asymmetric, and the asymmetry is what makes the axis
-usable:
+Two things the axis structurally cannot see, both of which make a *live* verdict weaker than it looks:
 
-- **False positives on `live` are expected.** Method-name collisions (`.tick()`,
-  `.step()`, `.push()`) link callers to every same-named method in the
-  workspace. Trait-object and closure dispatch resolve the same loose way.
-- **False negatives on `live` are rare**, because every ambiguity resolves
-  *toward* reachability. An unresolved qualifier is the one deliberate
-  exception: `Vec::new` falls back to free functions only, never to methods,
-  because letting external types reach every in-tree `Type::new` wired up whole
-  modules that nothing constructs.
-
-Dispatch shapes the graph cannot model used to be a third bullet, and a
-systematic one: trait default methods and winit `ApplicationHandler` callbacks
-each hid a whole tree of live code. Both are modelled now - the first as a
-method of its trait, the second as a root family - and
-[`live-audit-triage.md`](live-audit-triage.md#analysis-defects-this-triage-found)
-keeps the positive controls that pinned them. The lesson generalises: a
-dispatch edge that leaves the tree and comes back is invisible until something
-names it, so a new external-callback trait needs adding to
-`EXTERNAL_DISPATCH_TRAITS` before the audit can be believed about the code
-under it.
-
-So `--not-live` is the trustworthy direction. An address it reports is one that
-no plausible in-graph edge - not even a wrong one - could reach. Read `live` as
-an upper bound on what runs, and `not-live` as a hard floor on what does not.
-
-Two things the axis structurally cannot see, both of which make a *live* verdict
-weaker than it looks:
-
-- **Runtime gates.** A function called every frame behind a flag that is never
-  set is statically reachable and behaviourally dead. Static reachability cannot
-  distinguish it from a live one.
-- **Partial ports.** Reachability is a property of the entry symbol, not of its
-  body. A reachable function that implements two of its source's five branches
-  still reports live.
+- **Runtime gates.** A function called every frame behind a flag that is never set is statically reachable and behaviourally dead.
+- **Partial ports.** Reachability is a property of the entry symbol, not of its body. A reachable function that implements two of its source's five branches still reports live.
 
 ### The audit
 
-`--live-audit` writes `target/port-catalog/live-audit.md`, comparing the
-reachability verdict against the class markers written in the source. Four
-sections, in the order they want acting on:
+`--live-audit` writes `target/port-catalog/live-audit.md`, comparing the reachability verdict against the class markers written in the source. Four sections, in the order they want acting on:
 
 | Section | Meaning |
 |---|---|
-| Tagged `NOT WIRED` / `REPLACED-BY` but analysed live | The tag and the analysis disagree. Needs a human - see the four causes below. |
-| Undisclosed inert ports | Unreachable, no tag. Either a wiring gap or a missing disclosure - the disclosure gap, and the reason this mode exists. |
+| Tagged `NOT WIRED` / `REPLACED-BY` but analysed live | The tag and the analysis disagree. Needs a human - see the five causes below. |
+| Undisclosed inert ports | Unreachable, no tag. Either a wiring gap or a missing disclosure - the reason this mode exists. |
 | Disclosed inert ports | Unreachable, `NOT WIRED:` present. The declared wiring worklist, working as intended. |
 | Infra-replaced ports | Unreachable, `REPLACED-BY:` present. Not a worklist - each row prints the mechanism it names, so the exemption can be argued with. |
 
-The summary block splits the same way: `ported, NOT live (inert)` keeps its
-meaning and gains two lines under it, `of which infra-replaced` and
-`wiring worklist (inert, a host is owed)`. The second is the number to steer
-by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count,
-into the site's wiring track.
+The summary block splits the same way: under `ported, NOT live (inert)` sit `of which infra-replaced` and `wiring worklist (inert, a host is owed)`. The second is the number to steer by; `scripts/ci/update-progress-metrics.py` feeds it, not the raw inert count, into the site's wiring track.
 
-A row in the first section has one of five causes, and only the first is a
-stale tag:
+A row in the first section has one of five causes, and only the first is a stale tag:
 
-1. **The port got wired** and nobody removed the tag.
-2. **A method-name collision**, usually intra-crate: a `.tick()` call somewhere
-   in the crate resolves to the inert type's `tick` because receiver types are
-   not inferred.
-3. **A runtime gate.** The tag claims more than the axis measures - the
-   function *is* called every frame, behind a flag production never sets.
-4. **Anchor granularity.** A `//! PORT:` block claims the file while the
-   `NOT WIRED:` note next to it disclaims one specific function; one wired
-   function elsewhere in the file reports the whole block live.
-5. **The block quotes the marker instead of carrying one.** The per-item search
-   is unanchored, so a wiring note that recounts the disclosure it replaced -
-   *the audit's "tagged NOT WIRED but analysed live" row was this collision* -
-   discloses the item all over again. The row then says a port is inert while
-   the paragraph raising it explains that it is wired.
+| # | Cause | Fix |
+|---|---|---|
+| 1 | The port got wired and nobody removed the tag. | Remove the tag. |
+| 2 | A method-name collision: a `.tick()` call somewhere resolves to the inert type's `tick`, because receiver types are not inferred. | Rename the colliding symbol. |
+| 3 | A runtime gate: the function *is* called every frame, behind a flag production never sets. | None - the tag claims more than the axis measures. |
+| 4 | Anchor granularity: a `//! PORT:` block claims the file while the `NOT WIRED:` note disclaims one function. | Move the tag onto the item it claims. |
+| 5 | The block *quotes* the marker instead of carrying one - a wiring note that recounts the disclosure it replaced discloses the item again. | Rewrite the prose; **never quote the marker text**. |
 
-Causes 2-5 are properties of the analysis or the tag's granularity, not defects
-in the tree. Read the section as a queue of questions, not a defect list.
+Read the section as a queue of questions, not a defect list. [`stale-not-wired-triage.md`](stale-not-wired-triage.md#the-fix-each-mechanism-takes) tabulates the fix each mechanism takes.
 
-Cause 5 is the one the report now names for you. When **every** `NOT WIRED` in
-an anchor's block sits inside backticks or quotes, the section's note says how
-many of its rows are that shape, because the fix is in the prose rather than in
-the wiring: **rewrite, never quote the marker text**.
+Cause 5 is a diagnostic, not a classification. When **every** `NOT WIRED` in an anchor's block sits inside backticks or quotes, the section's note says how many rows are that shape. The per-item search itself stays unanchored, because real per-item disclosures are spelled loosely (`//! ## NOT WIRED`, `// NOT WIRED, AND UNWIREABLE`, `/// NOT WIRED. "No caller" would be the wrong reason`), and anchoring it the way the module-blanket regex is anchored would silently un-disclose real inert ports. Backtick spans stop at the newline in that diagnostic; only quoted spans wrap.
 
-That stays a diagnostic and not a classification. The spellings a real per-item
-disclosure is written in are far looser than the module-blanket ones - `//! ##
-NOT WIRED`, `// NOT WIRED, AND UNWIREABLE`, `/// NOT WIRED. "No caller" would
-be the wrong reason` - so anchoring the search the way `MODULE_NOT_WIRED_RE` is
-anchored would silently un-disclose real inert ports. Of the 240 comment lines
-in `crates/` that match the marker, 75 are mentions of one kind or another; of
-the anchors those disclose, exactly one is disclosed *only* by a quotation. The
-diagnostic's own precision matters here too, and its first version failed it: a
-backtick span allowed to cross newlines mis-paired across a whole module doc and
-reported `gameover_banner.rs`'s genuine `# NOT WIRED` heading as a quotation, so
-backtick spans stop at the newline and only quoted ones wrap.
+Comparison is per **anchor**, not per address. A formula ported into two crates has two anchors and can legitimately be wired in one and not the other.
 
-Causes 2 and 4 are still usually closable, and in source rather than in the tool:
-a colliding symbol can be renamed and a coarse anchor can be moved onto the item
-it claims. `--live-audit` reads a receiver-gated second graph precisely so
-cause 2 does not fire on unambiguous names, but the gate cannot see a name `std`
-also defines, nor a free function, nor a crate-root re-export.
-[`stale-not-wired-triage.md`](stale-not-wired-triage.md#the-fix-each-mechanism-takes)
-tabulates which fix each mechanism takes.
+### Where the reachability pass over-reports
 
-Comparison is per **anchor**, not per address. A formula ported into both
-`engine-vm` and `engine-core` has two anchors and can legitimately be wired in
-one and not the other; rolling up to the address first hides that.
+Resolving by name costs precision in the audit's first section, in three shapes:
+
+- an ambiguous `.name(` or `name(` linking to every in-tree definition of that name, so any port whose entry point is called `new`, `tick`, `add`, `len` or `default` reads live regardless of wiring;
+- the bare-identifier edge, which links a function *value* to a free function of that name and cannot tell it from a struct **field** of the same name;
+- a `//! PORT:` module anchor, whose scope is the whole file.
+
+**The first two are corrected in a second graph.** The live pass builds `build_rust_graph(strict=True)` alongside the permissive one and reads *only* the stale-`NOT WIRED` test off it; `live`, `--not-live` and `--live-only` come from the permissive graph. Sharpening the shared graph instead would trade the hard floor away for a fix to the opposite error - which is why there are two graphs, and why the shared one should be left alone. The receiver gate fires only on *ambiguous* names; it cannot see a name `std` also defines, a free function, or a crate-root re-export.
+
+The second graph is built whenever the pass runs, not only under `--live-audit`, because the summary line `tagged NOT WIRED / REPLACED-BY but live` is the receiver-gated answer in every mode. The principle: **a number that moves with an output flag is not a measurement.** A report switch may choose what is shown, never what is computed.
+
+The third shape - anchor granularity - is inherent: a module anchor cannot distinguish the tagged routine from a live `Default` impl in the same file. It is closed in source, by moving the tag onto the item.
+
+**A `#[cfg(test)]` helper is still a caller node.** Test functions are excluded from a module anchor's *scope* but not from the graph's *callers*, so a test helper with a common name (`step`, `tables`, `new`) collects every same-named edge and marks its own module live. Give test helpers distinctive names; a stale-tag row whose only path runs through a test helper is this, not a wiring gap.
 
 ## Tag drift checker
 
-`scripts/ci/check-port-tags.py` walks `crates/engine-*/src/**.rs` and warns
-when a `FUN_<addr>` citation lacks a matching `// PORT:` or `// REF:` tag
-*in the same file*. The goal is to catch the "I ported X but forgot the
-tag" pattern so the catalog stays in sync with what the engine actually
-implements.
-
-Default mode is `--staged` - only lines being added in the staging area
-are checked, which is what the pre-commit hook runs. `--scan-all` audits
-every line of every engine-crate file (full historical sweep). `--strict`
-turns warnings into a nonzero exit for CI.
+`scripts/ci/check-port-tags.py` walks `crates/engine-*/src/**.rs` and warns when a `FUN_<addr>` citation lacks a matching `// PORT:` or `// REF:` tag *in the same file*. It catches "I ported X but forgot the tag".
 
 ```bash
 python3 scripts/ci/check-port-tags.py                  # default = --staged
 python3 scripts/ci/check-port-tags.py --scan-all       # full audit
 python3 scripts/ci/check-port-tags.py --strict         # exit 1 on warning
 python3 scripts/ci/check-port-tags.py --addr 80019b28  # drill-down
-python3 scripts/ci/check-port-tags.py --backfill-refs  # one-shot grandfather pass
+python3 scripts/ci/check-port-tags.py --backfill-refs  # insert missing REF blocks
 ```
 
-**Scope rule:** only files that already carry a `// PORT:` tag are checked.
-Pure-docs files (no port tag anywhere) are treated as reference-only and
-skipped - they exist to describe retail behaviour without claiming ports,
-and requiring REF tags inside them would be churn for no signal.
-
-**Backfill workflow:** `--backfill-refs` rewrites in place. For each
-port-bearing file with untagged citations, it inserts a `//! REF: ...`
-block after the last `//!` line of the leading module-doc comment (or at
-the top of the file if there's no leading block). Re-run whenever new
-ports or citations land to keep the REF set fresh.
-
-**Pre-commit integration:** `scripts/git-hooks/pre-commit` runs
-`check-port-tags.py --staged --quiet` after `cargo clippy`. The hook is
-**warn-only** - drift output prints but never blocks the commit, so the
-checker doesn't gate unrelated PRs. CI can tighten by switching to
-`--strict`.
+- **Modes.** `--staged` checks only lines being added in the staging area; `--scan-all` audits every line of every engine-crate file; `--strict` turns warnings into a nonzero exit.
+- **Scope rule.** Only files that already carry a `// PORT:` tag are checked. Files with no port tag are reference-only and skipped.
+- **Backfill.** `--backfill-refs` rewrites in place: for each port-bearing file with untagged citations it inserts a `//! REF: ...` block after the last `//!` line of the leading module doc (or at the top of the file).
+- **Pre-commit.** `scripts/git-hooks/pre-commit` runs `check-port-tags.py --staged --quiet` after `cargo clippy`. It is **warn-only** there - drift prints but never blocks the commit.
 
 ## Usage
 
@@ -510,36 +302,22 @@ python3 scripts/ci/port-catalog.py --live --update-baseline
 python3 scripts/ci/port-catalog.py --funcs /path/to/checkout/ghidra/scripts/funcs
 ```
 
-`--check` alone is **not** an invocation: it leaves `live/disclosure_gap`
-uncompared and exits 1 saying so. The two supported forms are the two above -
-`--check --live` when the commit could move the gap (the hook spends it when
-`crates/` is staged, and CI always does), `--check --allow-uncompared`
-otherwise. There is no third.
+**`--check` alone is not an invocation.** It leaves `live/disclosure_gap` uncompared and exits 1 saying so. The two supported forms are `--check --live` (when the commit could move the gap) and `--check --allow-uncompared` (otherwise).
 
-`--funcs` points the `dumped` column at another checkout's dump corpus. The
-corpus is gitignored, so anywhere but the checkout that dumped it the catalog
-reports every row undumped - which turns `ported but NOT dumped` from 0 into
-the whole port set and makes a `--check` there meaningless. Reading it by path
-is the supported fix; copying it in would stage Sony bytes.
+**`--funcs` points the `dumped` column at another checkout's dump corpus.** The corpus is gitignored, so in any checkout but the one that dumped it - a git worktree, for instance - the catalog reports every row undumped and a `--check` there is meaningless. Reading the corpus by path is the supported fix; copying it in would stage Sony bytes.
 
-Output is written to `target/port-catalog/` (gitignored):
+Output goes to `target/port-catalog/` (gitignored):
 
-- `catalog.csv` / `catalog.md` - every tracked address, machine-readable + markdown.
-- `<feature>.csv` / `<feature>.md` - per-feature subset when `--feature` is used.
-- `open-work.md` - single-page dashboard combining per-feature port % + top-N missing-ports per feature + ignore-list summary (see "Open-work dashboard" below).
-- `live-audit.md` - reachability verdicts checked against the source's own `NOT WIRED:` / `REPLACED-BY:` markers, when `--live-audit` is used. The infra-replaced section prints each row's mechanism.
+| File | Contents |
+|---|---|
+| `catalog.csv` / `catalog.md` | Every tracked address. |
+| `<feature>.csv` / `<feature>.md` | Per-feature subset, with `--feature`. |
+| `open-work.md` | The [dashboard](#open-work-dashboard). |
+| `live-audit.md` | The [audit](#the-audit), with `--live-audit`. |
 
 ## The ratchet
 
-The catalog's figures reach the site's landing page through
-`scripts/ci/progress-metrics.json`, so for as long as the tool had no failure
-mode - no `--check`, no baseline, and a place in neither the hook nor a
-workflow - a wave could widen a worklist or drop a `// PORT:` tag, move a
-published number, and report nothing. `--check` compares against
-`scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate; the same
-step runs in CI, where it reports `SKIPPED` because the `dumped` column reads
-the gitignored Ghidra corpus. The hook is therefore the only place any of these
-figures is ever compared.
+The catalog's figures reach the site's landing page through `scripts/ci/progress-metrics.json`, so they are gated. `--check` compares against `scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate. The same step runs in CI but reports `SKIPPED` there, because the `dumped` column reads the gitignored Ghidra corpus. **The pre-commit hook is therefore the only place these figures are compared.**
 
 | Figure | Direction |
 |---|---|
@@ -550,56 +328,21 @@ figures is ever compared.
 | `live/disclosure_gap` - inert anchors carrying no `NOT WIRED:` tag | may not grow |
 | `totals/ported` | may not shrink |
 
-**What is deliberately not in it.** This tool builds two call graphs, and the
-receiver-gated one exists solely for the stale-`NOT WIRED:` test (see
-["Where the reachability pass over-reports"](#where-the-reachability-pass-over-reports)).
-Nothing read off that graph is baselined, because its numbers move with graph
-resolution rather than with the work - and sharpening the shared permissive
-graph has been tried and reverted more than once. Everything ratcheted above is
-a property of the tags, the docs and the dump corpus.
-
-`live/disclosure_gap` is the one entry taken from the permissive graph, and it
-is sound in that direction precisely because that graph *over*-reports
-reachability: a port it still calls inert really is inert, so an inert anchor
-with no disclosure is a lower bound.
+Nothing read off the receiver-gated graph is baselined: its numbers move with graph resolution rather than with the work. Everything ratcheted is a property of the tags, the docs and the dump corpus. `live/disclosure_gap` is the one entry taken from the permissive graph, and it is sound in that direction because that graph *over*-reports reachability - a port it still calls inert really is inert.
 
 ### A figure the default path never computes is not ratcheted
 
-`live/disclosure_gap` needs `--live`. It was baselined at 0, the hook ran
-`--check` without `--live`, the run printed `NOT COMPARED THIS RUN` and exited
-0 - so the figure drifted to 1 and stayed there with every gate green. Printing
-a line is not a comparison. Three things follow, and the third is the one that
-would have caught it:
+`live/disclosure_gap` needs `--live`. A gate that prints "not compared this run" and exits 0 is not comparing it, so three rules hold:
 
-- **`--check` fails on an uncompared figure.** A caller that cannot afford the
-  slow pass says `--allow-uncompared` at the call site, which makes "the slow
-  pass did not run" a visible decision rather than a default.
-- **The hook spends the pass when it can matter.** `--live` costs about 20s
-  against 3s for the default run. The disclosure gap is a property of the Rust
-  call graph and the `NOT WIRED:` tags, both under `crates/`, so the hook runs
-  the full compare when the commit stages `crates/` and passes
-  `--allow-uncompared` otherwise. The CI step never passes it - it is inert
-  today for want of the dump corpus, and must be the complete invocation if
-  that ever changes.
-- **`--update-baseline` no longer drops what it did not compute.** A snapshot
-  carries only the figures its run produced, so writing it verbatim deleted the
-  whole `live` block on any run without `--live` - one command, ratchet gone,
-  nothing said. Uncomputed figures are now carried forward from the existing
-  baseline and named in the output.
+- **`--check` fails on an uncompared figure.** A caller that cannot afford the slow pass says `--allow-uncompared` at the call site, which makes "the slow pass did not run" a visible decision rather than a default.
+- **The hook spends the pass when it can matter.** `--live` costs about 20s against 3s for the default run. The disclosure gap is a property of the Rust call graph and the `NOT WIRED:` tags, both under `crates/`, so the hook runs the full compare when the commit stages `crates/` and passes `--allow-uncompared` otherwise. The CI step never passes it.
+- **`--update-baseline` carries forward what it did not compute.** A run without `--live` keeps the existing `live` block and names the carried figures in its output, rather than writing a snapshot without them.
 
-A regression report is a prompt to open the per-row pages - `--missing-ports`,
-`--live-audit`, and the triage pages under
-[`live-audit-triage.md`](live-audit-triage.md) and
-[`stale-not-wired-triage.md`](stale-not-wired-triage.md). **Validate a surprise
-against rows, never against the count**: three separate waves have found the
-count moving for a reason inside the measurement rather than inside the tree.
+A regression report is a prompt to open the per-row pages - `--missing-ports`, `--live-audit`, and the triage pages [`live-audit-triage.md`](live-audit-triage.md) and [`stale-not-wired-triage.md`](stale-not-wired-triage.md). **Validate a surprise against rows, never against the count**: a count can move for a reason inside the measurement rather than inside the tree.
 
 ## Features (BFS from roots)
 
-A *feature* in this tool is a named set of seed Ghidra function addresses
-(`roots`) plus an optional list of `stop_at` boundaries. Running
-`--feature <name>` filters the catalog to the addresses reachable from those
-roots via the citation graph (one edge per "this dump cites that address").
+A *feature* is a named set of seed function addresses (`roots`) plus an optional list of `stop_at` boundaries. `--feature <name>` filters the catalog to the addresses reachable from those roots via the citation graph (one edge per "this dump cites that address").
 
 Features live in `scripts/ci/features.toml`:
 
@@ -613,25 +356,11 @@ stop_at = ["801de840", "801e295c"]
 max_depth = 2
 ```
 
-The citation graph only has edges between *dumped* functions - undumped
-helpers have no outgoing edges, so the BFS frontier widens as more dumps
-land. This is intentional: it lets you start tight (small feature with few
-dumps) and progressively widen as you dig in.
-
-Use feature views to:
-
-- Find unported helpers in scope of a specific feature (filter by
-  `--feature X --missing-ports`).
-- Confirm a port is reachable from the feature root.
-- Spot shared-infrastructure spillover that wants a `stop_at` entry.
+The citation graph only has edges between *dumped* functions - an undumped helper has no outgoing edges - so a feature's frontier widens as dumps land. Use feature views to find unported helpers in one feature's scope (`--feature X --missing-ports`), confirm a port is reachable from the feature root, and spot shared-infrastructure spillover that wants a `stop_at` entry.
 
 ## Ignore list
 
-`scripts/ci/port-catalog-ignore.toml` lists addresses that the catalog should
-treat as out-of-scope for engine porting - statically-linked PsyQ kernel /
-runtime / SDK code. The from-scratch port maps these clusters to native
-equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the
-PSX wrappers, so they shouldn't pollute the port worklist.
+`scripts/ci/port-catalog-ignore.toml` lists addresses the catalog treats as out of scope for engine porting - statically-linked PsyQ kernel / runtime / SDK code. The port maps these clusters to native equivalents (Rust stdlib, wgpu, cpal) rather than reimplementing the PSX wrappers.
 
 ```toml
 [bios]
@@ -645,322 +374,85 @@ PSX wrappers, so they shouldn't pollute the port worklist.
 "80062340" = "SsSeqOpen (slot-bitmap walk + load)"
 ```
 
-Categories are organisational (one TOML table per cluster - `bios` / `libc` /
-`libgte` / `libgs` / `libcd` / `libapi` / `libsnd` / `libspu` / `libetc`); the
-tool treats every entry the same way. Provenance for each entry lives in
-[`docs/reference/functions.md`](../reference/functions.md) and the audio /
-save-screen subsystem docs.
+Categories are organisational - one TOML table per cluster (`bios` / `libc` / `libgte` / `libgs` / `libcd` / `libapi` / `libsnd` / `libspu` / `libetc`) - and the tool treats every entry the same way.
 
-One section is not PsyQ infrastructure and asserts something else entirely.
-`unreferenced` holds **retail-unreachable entry points**: real routines that
-nothing on the disc reaches, in any reference form, so a port of one could only
-be inert. What was scanned and why the row is preferred over code is on
-[`address-reference-scan.md`](address-reference-scan.md); how it differs from
-the other two claim kinds a row can make is in
-[`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim).
+- `--missing-ports` excludes ignored entries; its summary line breaks the count down (`of which ignored / remaining port worklist`).
+- `--include-ignored` opts back in; `--ignored-only` lists the ignore list itself.
+- **Adding an entry:** put the address in the matching table with a one-line factual reason naming the PsyQ function and, where known, the BIOS vector. The reason shows in drill-down output. Provenance citations belong in [`docs/reference/functions.md`](../reference/functions.md), not in the TOML.
+- **The list is curated, not exhaustive.** Newly dumped PsyQ helpers surface in `--missing-ports` until added. Treat unfamiliar 16-byte thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather than ports.
+- **Only the ignore TOML closes a worklist row.** Reclassifying a row in a generated CSV changes nothing the catalog reads.
 
-**Unreferenced is not by itself a reason to exclude.** Being unreachable says
-the port cannot be *wired*; it says nothing about whether the routine is worth
-reproducing. `unreferenced_transport_and_runtime` excludes four such routines
-on what they *are* - drive transport and PsyQ runtime-lib tiers the port
-replaces wholesale - while game-mode handlers and a camera preset from the same
-sweep stay on the worklist, unreferenced and all. A row moves to the ignore
-list on its subject matter, never on its reference count.
+### The `unreferenced` sections
 
-### Why this worklist is not zero, and should not be
+One family of sections is not PsyQ infrastructure and asserts something else. `unreferenced` holds **retail-unreachable entry points**: real routines nothing on the disc reaches, in any reference form, so a port of one could only be inert. What was scanned is on [`address-reference-scan.md`](address-reference-scan.md); how this differs from the other claim kinds a row can make is in [`worklist-classification.md`](worklist-classification.md#the-three-kinds-of-ignore-claim).
 
-The port worklist is denominated in addresses this project cites, so it can only
-see code something already pointed at. [`disc-coverage.md`](disc-coverage.md)'s
-denominator is the game's own bytes, and it surfaces routines **no reference of
-any form reaches on the disc** - which means Ghidra built no function record,
-nothing cited them, and no citation-denominated worklist could ever list them.
+**Unreferenced is not by itself a reason to exclude.** Being unreachable says the port cannot be *wired*; it says nothing about whether the routine is worth reproducing. `unreferenced_transport_and_runtime` excludes routines on what they *are* - drive transport and PsyQ runtime-lib tiers the port replaces wholesale - while game-mode handlers and a camera preset that are equally unreferenced stay on the worklist. A row moves to the ignore list on its subject matter, never on its reference count.
 
-Documenting one moves it into `dumped + documented, not ported` and the worklist
-rises. That is the two measurements composing correctly: the byte denominator
-finds the work, the citation denominator tracks it. A worklist that stays at
-zero while the byte sweep is still finding code is reporting on its own
-denominator, not on the disc. Never hold the number down by declining to
-document a function, and never park one in the ignore list to hide it.
+### Why the port worklist is not held at zero
 
-Default behaviour:
+The port worklist is denominated in addresses this project cites, so it can only see code something already pointed at. [`disc-coverage.md`](disc-coverage.md)'s denominator is the game's own bytes, and it surfaces routines **no reference of any form reaches on the disc** - Ghidra built no function record for them and nothing cites them, so no citation-denominated worklist can list them.
 
-- `--missing-ports` excludes ignored entries. The summary line breaks the
-  count down (`of which ignored / remaining port worklist`).
-- `--include-ignored` opts back in for completeness checks.
-- `--ignored-only` lists the ignore-list itself (useful for auditing).
-
-Adding an entry: copy the address into the appropriate category table with a
-one-line reason that names the PsyQ function and (where known) the BIOS
-vector. Keep the reason factual - it shows up in catalog drill-down output.
-Provenance citations belong in `docs/reference/functions.md`, not in the TOML
-reason field.
+Documenting one moves it into `dumped + documented, not ported` and the worklist rises. That is the two measurements composing correctly: the byte denominator finds the work, the citation denominator tracks it. Never hold the number down by declining to document a function, and never park one in the ignore list to hide it.
 
 ### Settling a row whose blocker is "no caller"
 
-A worklist row often stalls on "what consumes this?", and the answer decides
-whether the row is work at all. Two of the ways this engine reaches code are
-invisible to a call-graph sweep - a function-pointer table or actor-template
-word, and a `lui`+`addiu` pair Ghidra's reference manager does not resolve - so
-"no `jal` targets it" is not yet a finding. Run the row's address through
-[`address-reference-scan.md`](address-reference-scan.md) before either porting
-or shelving it. It has three useful outcomes:
+A worklist row often stalls on "what consumes this?". Two of the ways this game reaches code are invisible to a call-graph sweep - a function-pointer table or actor-template word, and a `lui`+`addiu` pair Ghidra's reference manager does not resolve - so "no `jal` targets it" is not yet a finding. Run the address through [`address-reference-scan.md`](address-reference-scan.md) before porting or shelving it:
 
-- **A table or template word.** The consumer is whatever spawns or dispatches
-  through that record; the row is real work, and the doc gains a provenance
-  citation.
-- **Nothing, anywhere.** The address is linked but unreached, and porting it
-  can only add an inert row. Document the negative
-  ([`battle.md` § Unreferenced SCUS entry points](../reference/functions/battle.md#unreferenced-scus-entry-points)
-  is the worked example) and file the address under the ignore list's
-  `unreferenced` section, rather than closing the row with code.
-- **Branch sites but no call sites.** The address is an intra-function label,
-  not an entry - a `classify-worklist.py` `INTERIOR` row that the scan
-  confirms from the bytes.
-
-### A module-scope tag inherits its neighbour's verdict
-
-The scraper reads a `// PORT:` tag's addresses off the marker's opening line and
-binds them to whatever item follows. A tag written at **module** scope - above
-the `use` block, or between two items rather than on one - therefore attaches to
-the next item the file happens to define, and the address then carries that
-item's reachability verdict instead of its own. Nothing flags this: the tag is
-well-formed, the address is real, and the row reports a live port.
-
-Two tags in this tree sit that way. `FUN_8004FE5C`'s belongs on
-`sfx_cue::route_sfx_cue` and `FUN_801D5854`'s on
-`battle_cam_script::apply_death_reframe`; each currently sits at module scope
-and reads whichever neighbour the file lists first. Moving a tag changes what
-the catalog reports for the address, so it is a change to make with the catalog
-gate in hand rather than in passing - the point of recording it here is that a
-reader auditing either address should not take the neighbour's verdict as the
-address's own.
-
-The general check is [`port-provenance.md`](port-provenance.md): it asks whether
-a tagged address names the routine the Rust item implements. A module-scope tag
-is the shape that check was built to find, and it is the shape a `grep` for the
-address will not.
-
+| Scan result | Meaning | Action |
+|---|---|---|
+| A table or template word | The consumer is whatever spawns or dispatches through that record. | Real work; the doc gains a provenance citation. |
+| Nothing, anywhere | The address is linked but unreached; a port can only be inert. | Document the negative ([worked example](../reference/functions/battle.md#unreferenced-scus-entry-points)) and file the address under the ignore list's `unreferenced` section. |
+| Branch sites but no call sites | An intra-function label, not an entry. | A `classify-worklist.py` `INTERIOR` row ([`worklist-classification.md`](worklist-classification.md)). |
 
 ## Open-work dashboard
 
-`--dashboard` emits `target/port-catalog/open-work.md`, a single regenerable
-page that answers "what's left to port, in what scope" at a glance. The
-dashboard combines four signals:
+`--dashboard` emits `target/port-catalog/open-work.md`, one regenerable page answering "what's left to port, in what scope":
 
-1. **Global counts** - dumped / documented / ported / ignored / remaining port
-   worklist.
-2. **Per-feature status table** - for each feature in
-   [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, in
-   scope, ported, port %, missing (port worklist within the feature, ignore-list
-   excluded), ignored. See
-   [below](#port--is-over-what-will-be-ported-not-over-what-was-reached) for
-   what the percentage divides by.
-3. **Per-feature top-N missing-ports** - the highest-citation-count helpers
-   reachable from each feature's roots that don't yet carry a `// PORT:` tag.
-   Sorted high-leverage first, so a feature's blockers surface immediately.
-   Cap is `--dashboard-top N` (default 10).
-4. **Ignore-list summary** - count per category (bios / libc / libgte / libgs /
-   libcd / libapi / libsnd / libspu / libetc).
-5. **Provenance gaps** - addresses with a `// PORT:` tag but missing a dump or
-   doc citation (shown only when nonzero).
+1. **Global counts** - dumped / documented / ported / ignored / remaining port worklist.
+2. **Per-feature status table** - for each feature in [`scripts/ci/features.toml`](../../scripts/ci/features.toml): reachable, in scope, ported, port %, missing (the port worklist within the feature), ignored.
+3. **Per-feature top-N missing ports** - the highest-citation-count helpers reachable from each feature's roots that carry no `// PORT:` tag. Cap is `--dashboard-top N` (default 10).
+4. **Ignore-list summary** - count per category.
+5. **Provenance gaps** - addresses with a `// PORT:` tag but no dump or doc citation (shown only when nonzero).
 
-The page is gitignored output (lives under `target/`). Re-run after landing a
-batch of ports to see which helpers are now top-of-list. The question-level
-companion - open *hunts* rather than per-function status - is
-[`docs/reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
+The question-level companion - open *hunts* rather than per-function status - is [`docs/reference/open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md).
 
 ### Port % is over what will be ported, not over what was reached
 
-The denominator is **in scope** = reachable minus ignored, and the numerator
-counts in-scope ported rows only. An ignore-list row is an address this project
-is never going to port - statically-linked PsyQ / BIOS / libgte mapped to a
-native equivalent - so dividing by a set that includes them caps a finished
-feature far below 100% and makes the headline *fall* whenever the ignore list
-grows, which is the reverse of what the list is for. `cd-io` is the extreme
-case: 39 reachable addresses, 38 of them ignored libcd/libapi, so the one real
-routine read as 2.6%.
+The denominator is **in scope** = reachable minus ignored, and the numerator counts in-scope ported rows only. An ignore-list row is an address the project will never port, so dividing by a set that includes them would cap a finished feature far below 100% and make the headline *fall* when the ignore list grows. The `cd-io` feature is the extreme case: nearly all of its reachable addresses are ignored libcd / libapi. The numerator takes the same cut because a few ignore-list rows do carry a `// PORT:` tag, which would otherwise let the ratio pass 100%.
 
-The numerator needed the same cut. A handful of ignore-list rows do carry a
-`// PORT:` tag, so counting every ported row against an ignore-free denominator
-would have let the ratio pass 100%.
+Two consequences that look like defects and are not:
 
-Two consequences worth stating, because both look like defects:
-
-- **A feature can read under 100% with `Missing` at 0.** `Missing` counts the
-  port worklist - dumped *and* documented, not ported, not ignored - and that
-  is zero across the whole catalog. The remaining in-scope rows are addresses
-  that are documented but not dumped, or dumped but not documented; they are
-  the *dump* worklist, not port work. `battle-action`, `cast-module` and
-  `world-overview` are the three features where that residue is visible.
-- **The figure still moves with the corpus.** Reachability is a BFS over the
-  citation graph, which is dump-local (see
-  [Caveats](#caveats)), so a new dump can widen `Reachable` and lower the
-  percentage with nothing in `crates/` changing. It is not ratcheted, for that
-  reason.
-
-## What the columns surface
-
-The point of the table is to make the cross-cuts cheap to read:
-
-- **`dumped + documented + not ported, not ignored`** → port worklist. The
-  function is understood (we have a Ghidra dump and at least one doc
-  citation), not yet implemented in the engine, and not statically-linked
-  PsyQ infra. Sort by citation count to find high-leverage helpers first.
-- **`cited but not dumped, not ignored`** → dump worklist. Some other dump
-  references this address but no dump exists for it yet. Add to
-  `ghidra/scripts/dump_funcs.py` `TARGETS`. An ignore row retires a row here
-  exactly as it retires a port one, and for a sharper reason: a `worklist_*`
-  section holds the claim "no routine begins at this VA", and an address that
-  begins no routine cannot be dumped at all without fabricating an entry point
-  ([`dump-corpus-integrity.md`](dump-corpus-integrity.md)). The first corpus to
-  need that was PROT 0896's, whose `jal`s name addresses in a *different*
-  build's executable ([`static-overlay-pipeline.md`](static-overlay-pipeline.md)):
-  every one of them is mid-body in this disc's `SCUS_942.54`, so each is an
-  address claim to file rather than a dump to take.
-- **`ported but not documented`** → provenance gap. A `// PORT:` tag was added
-  without any doc mentioning the source function. Either backfill the doc or
-  remove the tag if the attribution was wrong.
-- **`ported but not dumped`** → provenance gap. Same shape, opposite axis.
+- **A feature can read under 100% with `Missing` at 0.** `Missing` counts the port worklist (dumped *and* documented, not ported, not ignored). The remaining in-scope rows are documented-but-not-dumped or dumped-but-not-documented - the *dump* worklist, not port work.
+- **The figure moves with the dump corpus.** Reachability is a BFS over the dump-local citation graph, so a new dump can widen `Reachable` and lower the percentage with nothing in `crates/` changing. It is not ratcheted, for that reason.
 
 ## Caveats
 
-- **Citation graph is dump-local.** The "cited" signal comes from grepping
-  dump files - so an undumped helper has no outgoing edges. The frontier of
-  reachable functions widens only as dumps land.
-- **`functions.md` is curated, but `documented` is broader.** Any doc page
-  that mentions `FUN_<addr>` or `0x<addr>` counts. The catalog won't tell you
-  which docs are authoritative - that's still a judgement call per topic.
-- **One `// PORT:` tag does not guarantee semantic equivalence.** The tag is a
-  provenance link, not a correctness proof. Tests + retail-comparison still
-  do that job - and `--live` answers only whether the code is *reached*, not
-  whether it is right.
-- **A `#[cfg(test)]` helper is still a caller node.** Test functions are
-  excluded from a module anchor's *scope* but not from the call graph's
-  *callers*, so a helper with a common name (`step`, `tables`, `new`) collects
-  every same-named edge in the tree and marks its own module live - which
-  reads as a stale `NOT WIRED:` tag on a module nothing calls. Give test
-  helpers distinctive names; a row in the stale-tag section whose only path
-  runs through a test helper is this, not a wiring gap.
-- **The ignore-list is curated, not exhaustive.** Newly-dumped PsyQ helpers
-  don't auto-classify - `--missing-ports` will surface them until they're
-  explicitly added to `port-catalog-ignore.toml`. Treat unfamiliar 16-byte
-  thunks in `0x8005xxxx` / `0x8006xxxx` as likely ignore candidates rather
-  than ports.
-
-## See also
-
-- [`disc-coverage.md`](disc-coverage.md#per-image-port-status) - the per-image
-  port table on the site homepage: this catalog's `// PORT:` tags and ignore
-  list, counted per runtime code image over the functions the disc places in
-  each.
-
-- [`live-audit-triage.md`](live-audit-triage.md) - per-anchor verdicts for the
-  `engine-core` and `engine-vm` rows of the audit's undisclosed-inert section,
-  plus the analysis defects that triage turned up.
-
-- [`docs/tooling/ghidra.md`](ghidra.md) - produces the `ghidra/scripts/funcs/` dumps that drive the "dumped" column.
-- [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory the "documented" signal draws from.
-
-- [`stale-not-wired-triage.md`](stale-not-wired-triage.md) - per-row verdicts
-  for the audit's *tagged `NOT WIRED` but analysed live* section, and the three
-  call-graph mechanisms that put rows there.
-
-## Where the reachability pass over-reports
-
-The graph resolves calls by name, never by receiver type, and every ambiguity
-resolves toward reachability - that is what makes `--not-live` a floor rather
-than a guess. The cost lands on the audit's first section, in three shapes:
-
-- an ambiguous `.name(` or `name(` linking to every in-tree definition of that
-  name, which makes any port whose entry point is called `new`, `tick`, `add`,
-  `len` or `default` read live regardless of wiring;
-- the bare-identifier edge, which links a function *value* to a free function of
-  that name and cannot tell it from a struct **field** of the same name;
-- a `//! PORT:` module anchor, whose scope is the whole file - so one reachable
-  routine reports every tagged address in that file live, including the ones the
-  module doc marks `NOT WIRED` by name.
-
-**The first two are corrected, in a second graph.** The live pass builds
-`build_rust_graph(strict=True)` alongside the permissive one and reads *only*
-the stale-`NOT WIRED` test off it; `live`, `--not-live` and `--live-only` are
-unchanged and still come from the permissive graph. Sharpening the shared graph
-instead would trade the hard floor away for a fix to the opposite error, which
-is why it is two graphs and not one.
-
-### The second graph has to be built whenever its answer is printed
-
-It used to be built only under `--live-audit`, and `compute_live` falls back to
-`live_strict = live` without it. The summary's last line -
-`tagged NOT WIRED / REPLACED-BY but live` - is labelled as the receiver-gated
-answer, so in every run that did not pass the audit flag it printed the
-permissive one under the strict one's name. Measured on one tree: **42** under
-`--live`, **0** under `--live-audit --live`. Same tree, same question, two
-answers, and the larger one accuses that many correct disclosures of being
-stale - the precise failure this whole two-graph split exists to avoid,
-reintroduced by where the graph was built rather than by how.
-
-The generalisation is worth more than the fix: **a number that moves with an
-output flag is not a measurement.** An `--audit` / `--report` / `--verbose`
-switch may choose what is shown and may not choose what is computed, and the
-cheapest way to hold that line is to compute the smaller input unconditionally
-when the pass runs at all. Here the second graph costs nothing worth saving -
-both invocations above are dominated by parsing every crate source, and the
-difference between them sits inside the run-to-run spread on a loaded machine.
-
-The third shape - anchor granularity - is open, and is now most of what the
-audit's first section reports. A module anchor cannot distinguish the tagged
-routine from a live `Default` impl in the same file without the `PORT:` tag
-carrying item-level information.
-
-[`stale-not-wired-triage.md`](stale-not-wired-triage.md) carries the worked
-examples, the per-row verdicts, and why the receiver gate must fire only on
-*ambiguous* names.
+- **The citation graph is dump-local.** "Cited" comes from grepping dump files, so an undumped helper has no outgoing edges.
+- **`documented` is broader than the curated directory.** Any doc page that mentions `FUN_<addr>` or `0x<addr>` counts. The catalog does not say which docs are authoritative.
+- **A `// PORT:` tag does not guarantee semantic equivalence.** It is a provenance link, not a correctness proof. Tests and retail comparison do that job, and `--live` answers only whether code is *reached*.
+- **No gate checks that a tag names the right routine.** [`port-provenance.md`](port-provenance.md) is the warn-only worklist for that.
 
 ## The runtime denominator (`replay-port-coverage.py`)
 
-Everything above is computed by the engine about the engine: a static graph
-walked from the host roots, answering *could this be reached*. It cannot
-answer *was it reached*, and because the shared graph is deliberately
-permissive, `live` is an upper bound - the count includes ports reachable only
-through a path no player takes.
+Everything above is a static graph answering *could this be reached*. It cannot answer *was it reached*, and because the graph is permissive, `live` includes ports reachable only through a path no player takes.
 
-`scripts/ci/replay-port-coverage.py` supplies the missing denominator. It joins
-`cargo llvm-cov` output for a replay test against the catalog's
-address → `(file, line)` anchors, resolving each anchor the same way
-[`collect_port_anchors`](#anchors) does: a tag inside a body belongs to the
-enclosing function, a `//! PORT:` module tag to the whole file, a type anchor
-to the executed methods of the type's own `impl` blocks, and an **item**
-anchor (const / static / type alias - no lines to execute) to its
-attributable references, through the same `item_reference_patterns` /
-`item_reference_hit` the strict liveness verdict uses. It reports four sets:
+`scripts/ci/replay-port-coverage.py` supplies the runtime side. It joins `cargo llvm-cov` output for replay tests against the catalog's address -> `(file, line)` anchors, resolving each anchor the way [Anchors](#anchors) describes: a tag inside a body belongs to the enclosing function, a module tag to the whole file, a type anchor to the executed methods of the type's own `impl` blocks, and an item anchor (no lines to execute) to its attributable references. The join needs no source edits. It reports these sets:
 
-| set | meaning |
+| Set | Meaning |
 |---|---|
-| **inert-entered** | the static graph says no host root reaches it; the run executed it anyway. The graph is wrong or the tag is on the wrong symbol - each row is a finding. |
-| **disclosed-entered** | an anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
-| **live-unentered** | statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough actually needs. |
-| **not observable (const)** | item anchors with no executed attributable reference. Deliberately neither entered nor never-entered: no line of coverage can convert the row, only executing a function that references the item. |
-| **not observable in any of these binaries** | no binary in the union carries the anchor's file, so there is no record to read. Also neither entered nor never-entered - and the one bucket a reader can mistake for progress, because an address joined against the never-entered set alone is *absent* from it. Named per address rather than counted, for that reason. |
+| **inert-entered** | The static graph says no host root reaches it; the run executed it anyway. The graph is wrong or the tag is on the wrong symbol - each row is a finding. |
+| **disclosed-entered** | An anchor carrying a `NOT WIRED:` disclosure that a **passing** oracle executed. Highest priority: an oracle traversing stub code can certify behaviour nothing implements. |
+| **live-unentered** | Statically reachable, never reached. Not a defect - the wiring worklist ordered by what a playthrough needs. Triage: [`reach-triage.md`](reach-triage.md). |
+| **not observable (const)** | Item anchors with no executed attributable reference. Neither entered nor never-entered: only executing a function that references the item can convert the row. |
+| **not observable in any of these binaries** | No binary in the union carries the anchor's file. Neither entered nor never-entered - and easy to mistake for progress, because such an address is simply *absent* from the never-entered set. Named per address for that reason. |
 
 ### The denominator is a union of ladders, not one binary
 
-`--json` is repeatable, and joining only one test binary is the trap here. The
-repo drives a set of pad-only ladders, each its own test target in its own
-crate - the world spine, the pause menu + save UI, the minigame doors, the
-cold-boot field anchor, the browser draw-composition ladder (next section), and
-the per-lane ladders written to reach content none of those touch. The canonical
-membership lives in `CANONICAL_LADDERS` in the script and is printed by
-`--list-ladders`; read it there rather than from a list on this page, because a
-ladder absent from that constant is a ladder nobody exports.
+`--json` is repeatable, and joining only one test binary is the trap. The repo drives a set of pad-only ladders, each its own test target: the world spine, the pause menu and save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder, and per-area ladders. The canonical membership is `CANONICAL_LADDERS` in the script, printed by `--list-ladders` as `<test> <package>` pairs; read it there, because a ladder absent from that constant is a ladder nobody exports.
 
-Menus and minigames are two of the largest clusters in `live-unentered`, so a
-join over the spine alone reports precisely the subsystems the other ladders
-walk as never-entered - and a worklist ordered off it is ordered against a
-measurement that excluded its own top rows by construction.
+Menus and minigames are among the largest clusters in `live-unentered`, so a join over the spine alone reports exactly the subsystems the other ladders walk as never-entered.
 
-Produce one export per ladder, then join them. **The union is the default** -
-a bare invocation globs `target/cov-*.json`, so the short command is the honest
-one and the single-binary join is now the thing you have to ask for:
+Produce one export per ladder, then join. **The union is the default** - a bare invocation globs `target/cov-*.json`:
 
 ```bash
 cargo llvm-cov clean --workspace
@@ -972,93 +464,44 @@ done
 scripts/ci/replay-port-coverage.py
 ```
 
-The opening `clean --workspace` is not tidiness. The reader collapses duplicate
-spans keyed on the exact `(line_start, line_end)`, so a stale sibling binary
-left in `target/` can shadow a fresh executed record with its own zero. The
-in-loop `clean --profraw-only` is the weaker sibling: it drops profile data
-between ladders so each export is that ladder alone, while leaving build
-artifacts in place so this is not one rebuild per ladder.
+Each step of that recipe is load-bearing:
 
-No `--release` - an optimised build inlines small functions and leaves their
-out-of-line coverage record at zero, indistinguishable from never-called
-(measured; see the script header and
-[`reach-triage.md`](reach-triage.md#a---release-export-cannot-tell-never-called-from-inlined)).
-Two steps per ladder because `-p <pkg> --json` scopes the *report* to that
-package's own sources, silently dropping every crate the ladder actually
-drives.
+| Step | Why |
+|---|---|
+| Opening `clean --workspace` | The reader collapses duplicate spans keyed on the exact `(line_start, line_end)`, so a stale sibling binary left in `target/` can shadow a fresh executed record with its own zero. |
+| In-loop `clean --profraw-only` | Drops profile data between ladders so each export is that ladder alone, while keeping build artifacts so there is not one rebuild per ladder. |
+| No `--release` | An optimised build inlines small functions and leaves their out-of-line coverage record at zero, indistinguishable from never-called ([`reach-triage.md`](reach-triage.md#a---release-export-cannot-tell-never-called-from-inlined)). |
+| Build and report as two steps | `-p <pkg> --json` scopes the *report* to that package's own sources, silently dropping every other crate the ladder drives. |
+| One export per ladder | The report's per-ladder table then says what each contributed and how much of it no other ladder reached. |
 
-Separate exports rather than one multi-`--test` run, because the report's
-per-ladder table then says what each contributed and how much of it no other
-ladder reached - which is what makes "drop a ladder from the join" a visible
-cost rather than a quieter number.
+The script **names any canonical ladder whose export is absent**, on stdout and in a `Partial union` note in the report. A partial union is not a conservative version of the number; it is a number about fewer ladders.
 
-The script also carries the canonical ladder list - as `(test, package)`
-pairs, since the composition ladder lives in a different crate - and **names
-any member whose export is absent**, on stdout and in a `Partial union` note in
-the report. A partial union is not a conservative version of the number, it is
-a number about fewer ladders, and without the note it reads identically to the
-full one.
+### Two ladders are rendering hosts
 
-### One ladder is a rendering host
+The `engine-shell` ladders drive the headless `BootSession`, which constructs no renderer and no draw list, so they cannot execute the draw-list builders in `engine-ui` however far they walk. Two ladders cover that, from opposite sides:
 
-The `engine-shell` ladders drive the headless `BootSession`, which constructs
-no renderer and no draw list, so their union structurally cannot execute the
-draw-list builders - `engine-ui` reported zero executed regions however far
-those ladders walked, and the report was blind to the browser hosts entirely
-([`reach-triage.md`](reach-triage.md) carries the full account).
-
-Two ladders close it, from opposite sides, and the second settles a structural
-claim this report used to carry. `cargo llvm-cov --test` links the crate's
-*library* and never enters a `bin/` target - which bounds what a test can
-**call**, and says nothing about what it can **measure**. `LLVM_PROFILE_FILE` is
-inherited, so a test that *spawns* a `CARGO_BIN_EXE_*` gets the child's own
-profile merged into the export.
-
-`crates/web-viewer/tests/play_compose_ladder.rs` is the ladder that can,
-because the browser play page's composition is library code. It drives
-`LegaiaRuntime` - the object `site/js/play-app.js` constructs - with pad words
-per tick and calls the page's per-frame read surface (`play_overlay_draws_json`
-and the menu / battle / fishing / dev-menu / name-entry overlays, the
-screen-prim route, the battle 3D + FX exports) across a ten-rung ratchet
-(`scripts/replays/play_compose_baseline.toml`). Still pad-only - nothing is
-seated or poked - but every frame is composed, which is the half of a rendering
-host the headless ladders cannot supply. What it cannot carry is a wgpu link,
-so `engine-render` stays outside it.
-
-`crates/engine-shell/tests/w5_native_minigame_ladder.rs` is the other side: it
-spawns `legaia-engine play-window` per rung and lets the inherited profile merge
-back, so the native window's own composition layer - the `engine-shell` `bin/`
-tree and the `engine-render` link under it - executes here and nowhere else in
-the union. It needs a display as well as a disc, and it asserts on the captured
-frame rather than on the child's exit status, because an empty draw list would
-pass "did it run". It is also the ladder that punishes a one-shot `-p … --json`
-export hardest, since almost all of its yield lands in crates other than the one
-`-p` names - which is what the recipe's build/report split above is for.
+- **`crates/web-viewer/tests/play_compose_ladder.rs`** drives `LegaiaRuntime` - the object `site/js/play-app.js` constructs - with pad words per tick and calls the browser play page's per-frame read surface (`play_overlay_draws_json`, the menu / battle / fishing / dev-menu / name-entry overlays, the screen-prim route, the battle 3D + FX exports) across a ratchet in `scripts/replays/play_compose_baseline.toml`. Still pad-only, but every frame is composed. It cannot carry a wgpu link, so `engine-render` stays outside it.
+- **`crates/engine-shell/tests/w5_native_minigame_ladder.rs`** spawns `legaia-engine play-window` per rung. `cargo llvm-cov --test` links only the crate's *library*, which bounds what a test can **call** but not what it can **measure**: `LLVM_PROFILE_FILE` is inherited, so the spawned binary's profile merges into the export. The native window's composition layer - the `engine-shell` `bin/` tree and the `engine-render` link under it - executes here and nowhere else in the union. It needs a display as well as a disc, and it asserts on the captured frame rather than the child's exit status, because an empty draw list would pass "did it run". Almost all of its yield lands in crates other than the one `-p` names, which is what the build/report split above is for.
 
 ### Why this stays a manual step
 
-Each export is an instrumented build plus a full disc-gated ladder run (an
-*instrumented* build, not an optimised one - the recipe above passes no
-`--release`, and the script's own prose slips into calling it a release build),
-so a complete union is minutes of work and needs the disc - it cannot be a
-pre-commit gate, and a gate that silently degrades to a partial union would
-reintroduce exactly the understated denominator this section exists to name.
-`--fail-on-disclosed` is the gateable part: it asks whether a passing oracle
-executed disclosed-stub code, which is a defect at any coverage level and needs
-no complete union to mean something.
+Each export is an instrumented (not optimised) build plus a full disc-gated ladder run. Most ladders finish in minutes; the long story ladders take an hour or more each on an unoptimised build, so the complete union is hours of wall clock and needs the disc. It cannot be a pre-commit gate, and a gate that silently degraded to a partial union would understate the denominator.
 
-The join needs no source edits - the `// PORT:` tags already carry the
-address→symbol mapping, and coverage supplies execution counts against the same
-`(file, line)` coordinates.
+`--fail-on-disclosed` is the gateable part: it asks whether a passing oracle executed disclosed-stub code, which is a defect at any coverage level and needs no complete union to mean something.
 
-Three properties to keep in mind when reading the output. The union is over
-**separate sessions**, so it measures "some pad-driven ladder entered this"
-against "none did", not one continuous playthrough. **`live-unentered` is
-scoped to how far those ladders get**, so it is a worklist and never a defect
-count; a rung the ladder cannot clear silently widens it. And
-**`--fail-on-disclosed` is the only gateable set** - the other two move with
-replay coverage, so ratcheting them would punish extending the run.
+Three properties to keep in mind when reading the output:
 
-Requires `cargo-llvm-cov` and the `llvm-tools-preview` component; the script
-skips (exit 0) when the JSON is absent, so a CI run without the coverage
-toolchain is a pass.
+- The union is over **separate sessions**: it measures "some pad-driven ladder entered this" against "none did", not one continuous playthrough.
+- **`live-unentered` is scoped to how far the ladders get**, so it is a worklist and never a defect count. A rung a ladder cannot clear silently widens it.
+- **Only `--fail-on-disclosed` is gateable.** The other sets move with replay coverage, so ratcheting them would punish extending the run.
+
+Requires `cargo-llvm-cov` and the `llvm-tools-preview` component. The script skips (exit 0) when the JSON is absent, so a CI run without the coverage toolchain is a pass.
+
+## See also
+
+- [`disc-coverage.md`](disc-coverage.md#per-image-port-status) - the per-image port table on the site homepage: this catalog's tags and ignore list, counted per runtime code image.
+- [`live-audit-triage.md`](live-audit-triage.md) - per-anchor verdicts for the audit's undisclosed-inert section, plus the analysis defects that triage found.
+- [`stale-not-wired-triage.md`](stale-not-wired-triage.md) - per-row verdicts for the audit's *tagged `NOT WIRED` but analysed live* section.
+- [`reach-triage.md`](reach-triage.md) - per-address verdicts for the live-but-never-entered set.
+- [`ghidra.md`](ghidra.md) - produces the dumps behind the `dumped` column.
+- [`docs/reference/functions.md`](../reference/functions.md) - the curated entry-point directory.

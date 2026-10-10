@@ -5,11 +5,17 @@ GitHub Releases page: a directory of prebuilt command-line binaries, the two
 license files, `README-PLAY.txt` and a short `README.txt`. No Rust toolchain,
 no source checkout.
 
-**Just want to play?** Start `legaia-engine` with no arguments - double-click
-it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). A window
-asks for your disc image once, remembers it, and opens the title screen; see
-[the launcher](playing-and-viewing.md#0-the-launcher). The rest of this guide
-is about the extraction tools.
+Pick your path:
+
+| You want to | Do this |
+|---|---|
+| **Play the game** | Start `legaia-engine` with no arguments - double-click it (`Legend of Legaia.exe` on Windows, `Legend of Legaia.app` on macOS). It asks for your disc image once, remembers it, and opens the title screen. [Playing and viewing](playing-and-viewing.md#0-the-launcher) has the controls. |
+| **Play without installing anything** | Open the project site's play page and pick your disc image there; it runs the same engine in the browser. |
+| **Get the assets out** | Follow sections 1-3 below, then [extracting-assets.md](extracting-assets.md). |
+| **Randomize, mod or translate** | Sections 1-2 below, then [modding-and-translation.md](modding-and-translation.md) or [translating.md](translating.md). |
+
+The rest of this guide covers the archive, the disc check and the one-shot
+extraction, and ends with a table of every tool.
 
 One rule shapes everything here: **the project ships no Sony-owned bytes.**
 The archive contains only the project's own compiled tools. Every tool operates

@@ -139,7 +139,7 @@ pub fn apply_delilas_party_with(
         // New-game template name (fixed 10-byte NUL-padded field; only
         // affects new games - existing saves keep their stored names).
         let scus = patcher
-            .read_named_file(crate::steal::SCUS_NAME)
+            .read_named_file(crate::arts::SCUS_NAME)
             .ok_or_else(|| anyhow::anyhow!("SCUS_942.54 not found"))?;
         let tmpl_off = new_game::party_template_file_offset(&scus)
             .ok_or_else(|| anyhow::anyhow!("starting-party template not found in SCUS"))?
@@ -148,7 +148,7 @@ pub fn apply_delilas_party_with(
         let mut field = vec![0u8; new_game::NAME_LEN];
         field[..sibling.display_name().len()].copy_from_slice(sibling.display_name().as_bytes());
         patcher
-            .patch_named_file(crate::steal::SCUS_NAME, name_off, &field)
+            .patch_named_file(crate::arts::SCUS_NAME, name_off, &field)
             .with_context(|| format!("write template name for slot {template_slot}"))?;
 
         report.changed = true;

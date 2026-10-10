@@ -104,12 +104,6 @@
     <li>The field VM installs one by id through the effect-tree stager (<a href="../subsystems/move-vm.html">move VM</a>). The real per-scene field scripts live in the MAN.</li>
     <li>All 97 scene blocks have one; <code>count</code> ranges 2..71. Town scenes' record 0 is the fixed 768-byte master ambient stager (<a href="scene-bundles.html">scene bundles</a>).</li>
   </ul>
-  <details class="disclosure">
-    <summary>History: "prescript at +0x800 of the same entry, dead in retail"</summary>
-    <div class="disclosure-body">
-      <p>An earlier reading placed a second copy of the prescript at <code>+0x800</code> inside the <code>.PCH</code> and called it dead because <code>efect.dat</code> overwrote it. It came from an over-reading PROT entry size that appended the neighbour to every buffer. The entry ends at <code>0x800</code>; the prescript is the next PROT entry, staged by its own load. See <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="who-writes-it">

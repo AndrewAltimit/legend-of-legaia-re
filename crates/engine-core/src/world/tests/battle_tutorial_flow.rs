@@ -694,3 +694,146 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
         "the replay raises the one-shot arm the entry consumes"
     );
 }
+
+/// Retail's flow reaches the round start `0x14` - which is what the
+/// side-band arms the sparring caption on - only past the enemy-name hold
+/// of flow `0x0A` / `0x0B` (`FUN_801D0748`, `0x801D0DE0..0x801D0E58`). The
+/// open holds the round, the caption and the action SM until the names have
+/// gone, then starts the round on its own.
+#[test]
+fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
+    let mut world = tutorial_battle_world();
+    world.battle.intro_names_frames = crate::battle_open::PLAIN_OPEN_FRAMES;
+    assert!(world.sparring_open_held());
+    world.begin_battle_round();
+    assert!(world.battle.sparring_round_pending, "round start held");
+    assert_eq!(world.battle.sideband.phase, 0, "caption not armed");
+    assert!(!world.battle_tutorial_box_up());
+    let state = world.battle_ctx.action_state;
+    // The names drain one a tick; nothing else moves under them.
+    for _ in 0..crate::battle_open::PLAIN_OPEN_FRAMES {
+        assert!(world.battle.sparring_round_pending);
+        world.live_battle_tick();
+        assert_eq!(world.battle_ctx.action_state, state);
+        assert_eq!(world.battle.flow, BattleFlowState::Idle, "no prompt yet");
+    }
+    assert_eq!(world.battle.intro_names_frames, 0);
+    assert!(!world.sparring_open_held());
+    // The next side-band pass sees the open done and starts the round: the
+    // caption arm runs (with no caption text installed it passes straight
+    // on to phase 2 and the first lesson's prompt).
+    world.live_battle_tick();
+    assert!(!world.battle.sparring_round_pending);
+    assert_ne!(world.battle.sideband.phase, 0, "side-band past its arm");
+}
+
+/// Every fight but the spar opens its round at the flip, names or no names.
+#[test]
+fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
+    let mut world = World::new();
+    world.toggles.live_gameplay_loop = true;
+    world.battle.player_driven = true;
+    world.enter_battle(3, 2);
+    world.battle.intro_names_frames = crate::battle_open::PLAIN_OPEN_FRAMES;
+    assert!(!world.sparring_open_held());
+    world.begin_battle_round();
+    assert!(!world.battle.sparring_round_pending);
+}
+
+/// A self-dismissing prompt is the key-`1` text actor, which retail never
+/// times out (`FUN_8003541C` reuses the node on the next key-`1`
+/// registration, `0x80035520`): it leaves the queue - and stops holding the
+/// loop - but stays on screen until the next one replaces it.
+#[test]
+fn a_self_dismissing_prompt_stands_until_the_next_one_replaces_it() {
+    use crate::input::PadButton;
+    let mut world = tutorial_battle_world();
+    world.open_battle_command(0);
+    let intro = world.battle.tutorial_boxes[0].text.clone();
+    assert!(world.battle.tutorial_boxes[0].stands);
+    assert!(
+        !world.battle.tutorial_boxes[1].stands,
+        "a waiting box is key 2"
+    );
+    // While the intro is queued it is the registration itself.
+    assert!(world.battle.tutorial_standing.is_none());
+    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 2);
+
+    let frames = world.battle.tutorial_boxes[0].frames_remaining;
+    for _ in 0..frames {
+        world.tick_battle_tutorial_boxes();
+    }
+    // Out of the queue, still drawn - beside the explainer that waits.
+    assert_eq!(world.battle.tutorial_boxes.len(), 1);
+    assert_eq!(
+        world.battle.tutorial_standing.as_ref().map(|b| &b.text),
+        Some(&intro)
+    );
+    let on: Vec<_> = world
+        .battle_tutorial_boxes_on_screen()
+        .map(|b| b.text.clone())
+        .collect();
+    assert_eq!(on.len(), 2);
+    assert_eq!(on[0], intro);
+
+    // Acknowledge the explainer: nothing holds the loop, the prompt stands.
+    world.input.set_pad(PadButton::Cross.mask());
+    world.tick_battle_tutorial_boxes();
+    assert!(!world.battle_tutorial_box_up(), "the loop is free");
+    assert_eq!(
+        world.battle_tutorial_box().map(|b| &b.text),
+        Some(&intro),
+        "hosts still park the plaque seat under it"
+    );
+    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 1);
+
+    // `[Begin]` registers the category prompt: one key-1 actor, so the
+    // intro is gone the moment the new one is up.
+    take_begin(&mut world);
+    assert_eq!(queued(&world), vec![marker(msg::PICK_ATTACK)]);
+    let on: Vec<_> = world
+        .battle_tutorial_boxes_on_screen()
+        .map(|b| b.text.clone())
+        .collect();
+    assert_eq!(on, vec![marker(msg::PICK_ATTACK)]);
+    // ...and that one stands over the ring it named once it leaves the
+    // queue, as `v0_1_battle_command_submenu` shows.
+    world.input.set_pad(0);
+    world.input.set_pad(PadButton::Cross.mask());
+    world.tick_battle_tutorial_boxes();
+    assert!(world.battle.tutorial_boxes.is_empty());
+    assert_eq!(
+        world
+            .battle
+            .tutorial_standing
+            .as_ref()
+            .map(|b| b.text.clone()),
+        Some(marker(msg::PICK_ATTACK))
+    );
+}
+
+/// The battle-open banner and the sparring caption are other actors: they
+/// leave the screen when they leave the queue.
+#[test]
+fn only_a_967_prompt_stands() {
+    let mut world = tutorial_battle_world();
+    world.battle.tutorial_boxes.clear();
+    world
+        .battle
+        .tutorial_boxes
+        .push_back(crate::battle_flow::ActiveTutorialBox {
+            text: "caption".to_string(),
+            style: crate::battle_tutorial::SPARRING_CAPTION_STYLE,
+            waits_for_input: false,
+            frames_remaining: 2,
+            group: 0,
+            any_press_dismisses: true,
+            placed: Some(crate::battle_tutorial::SPARRING_CAPTION_RECT),
+            stands: false,
+        });
+    world.tick_battle_tutorial_boxes();
+    world.tick_battle_tutorial_boxes();
+    assert!(world.battle.tutorial_boxes.is_empty());
+    assert!(world.battle.tutorial_standing.is_none());
+    assert_eq!(world.battle_tutorial_boxes_on_screen().count(), 0);
+}

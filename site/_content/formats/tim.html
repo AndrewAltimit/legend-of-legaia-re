@@ -38,6 +38,42 @@
     <div class="bm-cell bm-dim" style="--w:8"><span class="bm-off">+0x0C</span><span class="bm-name">data</span><span class="bm-size">w&middot;h halfwords</span></div>
   </div>
   <p><code>(dx, dy)</code> is the VRAM position the rectangle uploads to; <code>size = 12 + w*h*2</code>. <code>w</code> counts 16-bit VRAM halfwords, not texels - a 4bpp image 256 texels wide has <code>w = 64</code>. A CLUT block with <code>h &gt; 1</code> holds several palette rows.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tim-fig-title">
+      <title id="tim-fig-title">A TIM's two blocks upload to two rectangles of the 1024 by 512 VRAM grid: the image block to a tall rectangle at (960, 256), the CLUT block to a strip of 256 colours on row 510. A primitive then names a 16-colour slice of that strip.</title>
+      <defs><marker id="tim-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="110" y="30" text-anchor="middle">one TIM file</text>
+      <rect class="dg-node" x="20" y="44" width="180" height="40" rx="5"/>
+      <text class="dg-label" x="110" y="61">header</text>
+      <text class="dg-sub" x="110" y="76">id 0x10, flags</text>
+      <rect class="dg-node-accent" x="20" y="96" width="180" height="54" rx="5"/>
+      <text class="dg-label" x="110" y="119">CLUT block</text>
+      <text class="dg-sub" x="110" y="137">dx, dy, w, h + colours</text>
+      <rect class="dg-node" x="20" y="162" width="180" height="54" rx="5"/>
+      <text class="dg-label" x="110" y="185">image block</text>
+      <text class="dg-sub" x="110" y="203">dx, dy, w, h + indices</text>
+
+      <text class="dg-edge-label" x="470" y="30" text-anchor="middle">VRAM: 1024 x 512 cells, 16 bits each</text>
+      <rect class="dg-group" x="250" y="44" width="440" height="220"/>
+      <text class="dg-edge-label" x="256" y="58">(0, 0)</text>
+      <rect class="dg-node" x="662.5" y="154" width="27.5" height="110"/>
+      <text class="dg-edge-label" x="652" y="176" text-anchor="end">image at (960, 256)</text>
+      <text class="dg-edge-label" x="652" y="208" text-anchor="end">64 x 256 cells = 256 x 256 texels</text>
+      <path class="dg-edge" d="M200 189 H660" marker-end="url(#tim-arrow)"/>
+      <rect class="dg-node-accent" x="250" y="261" width="110" height="4"/>
+      <path class="dg-edge" d="M200 123 H226 V246 H262 V259" marker-end="url(#tim-arrow)"/>
+      <text class="dg-edge-label" x="272" y="250">CLUT on row 510: 256 colours</text>
+
+      <path class="dg-edge-dim" d="M277.5 266 L360 292 M284.4 266 L387.5 292"/>
+      <rect class="dg-node" x="250" y="292" width="110" height="22"/>
+      <text class="dg-sub" x="305" y="307">0..63</text>
+      <rect class="dg-node-accent" x="360" y="292" width="27.5" height="22"/>
+      <rect class="dg-node" x="387.5" y="292" width="302.5" height="22"/>
+      <text class="dg-sub" x="539" y="307">80..255</text>
+      <text class="dg-edge-label" x="250" y="332">row 510 zoomed: palette selector (64, 510) reads colours 64..79</text>
+    </svg>
+    <figcaption>The shared interior page as an example (image block at <code>(960, 256)</code>, palette strip on row 510). The image holds only 4-bit indices; a texel gets its colour at draw time, from whichever 16-cell slice of VRAM the primitive names. The file's own CLUT is just the pixels that happened to be uploaded there - see <a href="#exported-palette">why an exported palette can look wrong</a>.</figcaption>
+  </figure>
   <p>Every TIM in the streaming files is 4bpp with a CLUT. Most sit inside <code>PROT.DAT</code> entries behind <a href="lzs.html">LZS compression</a>; two UI sheets sit in the unindexed gap before the first entry, where no per-entry walker reaches them.</p>
 </section>
 
@@ -84,12 +120,6 @@
     <summary>Details: how labels are assigned</summary>
     <div class="disclosure-body">
       <p>A label is either a coarse visual category from reviewing decoded thumbnails (<code>environment</code>, <code>terrain</code>, <code>foliage</code>, <code>character</code>, <code>ui-text</code>, <code>effect</code>, <code>other</code>) or a precise role for a texture whose loader site is pinned (menu-glyph atlas, main-title sprite sheet, the four <code>init.pak</code> publisher / warning logos, the load-screen UI sheet, party portraits, empty-slot frame). <code>asset tim-render-distinct</code> decodes each distinct fingerprint to a local PNG and <code>scripts/asset-investigation/montage_tims.py</code> lays them into contact sheets; the PNGs stay local, only the fingerprint-to-label table is committed. The flat tier has an external reference decoder as its oracle; the deep tier has none.</p>
-    </div>
-  </details>
-  <details class="disclosure">
-    <summary>History: retired readings</summary>
-    <div class="disclosure-body">
-      <p>An &ldquo;NPC palette&rdquo; label once derived structurally from a CLUT load position of <code>(0, 479)</code>; nearly every scene texture page parks its CLUT in that band, so the rule conflated floors with NPC colour tables. Labels are content-keyed. The pin &ldquo;menu-glyph atlas CLUT row 13 carries the load screen's Load text&rdquo; is falsified by a live glyph-rect probe. Both live on <a href="../reference/re-do-not-re-walk.html">do not re-walk</a>.</p>
     </div>
   </details>
 </section>

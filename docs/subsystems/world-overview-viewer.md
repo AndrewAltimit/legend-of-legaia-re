@@ -1,55 +1,48 @@
 # World-overview viewer
 
-The `/world-overview/` page in the static site renders each kingdom's
-landmark layer in real-time WebGL 3D from a disc image. It exists to
-make the world-map data layer reviewable end-to-end without a save
-state or an emulator.
+The `/world-overview/` page of the static site draws each of the three
+kingdom continents in real-time WebGL 3D, straight from a disc image the
+reader supplies: the terrain heightfield, the landmark and decoration meshes
+standing on it, the animated ocean and rivers, and a distance haze. It makes
+the world-map data reviewable end to end without a save state or an emulator,
+and it can export the assembled continent as a `.glb`.
 
 The retail world-map subsystem itself (overlay structure, key functions,
 render pipeline, globals) is documented in [`world-map.md`](world-map.md);
-this page covers only the viewer + the capture-side tooling that feeds it.
+this page covers only the viewer and the capture-side tooling that feeds it.
+VR presentation of the same scene is in [`vr-mode.md`](vr-mode.md).
 
-## Contents
+## At a glance
 
-- [Layout engine for unplaced slot-1 TMDs](#layout-engine-for-unplaced-slot-1-tmds)
-- [Continent ground heightfield](#continent-ground-heightfield) · [walk-frame placed landmarks + decorations](#walk-frame-placed-landmarks--decorations)
-- [Distance-cue fog pass](#distance-cue-fog-pass) · [per-kingdom fog colour](#per-kingdom-fog-colour)
-- [Bulk-terrain placement resolver (MAN `0x7F` sentinels)](#bulk-terrain-placement-resolver-man-0x7f-sentinels) · [global-pool placement placeholders](#global-pool-placement-placeholders)
-- [Ocean tile - disc-side asset + 13-frame CLUT animation](#ocean-tile---disc-side-asset--13-frame-clut-animation) · [web-overview shader plumbing](#web-overview-shader-plumbing)
-- [Camera anchors](#camera-anchors) · [continent `.glb` export](#continent-glb-export)
+| Layer | Built from | Section |
+|---|---|---|
+| Continent ground | walk `.MAP` floor grid + MAN floor-height LUT, textured from the kingdom's terrain atlas | [heightfield](#continent-ground-heightfield) |
+| Landmarks + decorations | walk `.MAP` placement records stamping slot-1 pack meshes | [placements](#walk-frame-placed-landmarks--decorations) |
+| Water animation | the kingdom bundle's slot-5 CLUT-walk table, stepped on retail's cadence | [ocean](#ocean-tile---disc-side-asset--13-frame-clut-animation), [plumbing](#web-overview-shader-plumbing) |
+| Ocean backdrop | a flat quad past the continent, sampling the walked ocean CLUT | [plumbing](#web-overview-shader-plumbing) |
+| Distance haze | the depth LUT in `SCUS_942.54` + a per-kingdom tint | [fog](#distance-cue-fog-pass) |
+| Legacy overview-frame layers (hidden) | capture JSON: MAN-table landmarks, live-RAM actors, unplaced-mesh grid | [layout engine](#layout-engine-for-unplaced-slot-1-tmds), [bulk terrain](#bulk-terrain-placement-resolver-man-0x7f-sentinels) |
 
-## Layout engine for unplaced slot-1 TMDs
-
-The MAN placement table pins a small subset of each kingdom's slot-1
-TMD pack at world coordinates (5 / 6 / 17 slots for Drake / Sebucus /
-Karisto). The remaining slots are positioned at runtime by the
-field-VM via actor-mesh chains and don't carry a static world coord.
-The viewer's "show unplaced slot-1 TMDs" toggle drops those onto a
-canonical layout grid, classified by `slot1_classification.toml`:
-
-- **landmark** - row south of the kingdom bounds, sorted by slot.
-- **decoration** - row north of the kingdom bounds.
-- **ground_tile** - grid west of the kingdom (the runtime tiles
-  them via the overlay-routed dispatch table).
-- **npc_token** - hidden (reused generic actor bases; reporting
-  the count avoids cluttering the view).
-- **unknown** - grid east of the kingdom.
-
-Two per-mesh transforms keep the layout legible:
-
-1. **AABB-centroid anchor** - each unplaced TMD is drawn so its
-   AABB centroid sits at the assigned grid slot, instead of its
-   TMD-local origin (which can be far from the visual centre and
-   shift the mesh out of frame).
-2. **Class-conditional footprint normalisation** - per-class
-   target footprints in world units (landmark ~600, decoration ~200,
-   ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps
-   to the target via a per-placement scale so the row reads at a
-   consistent size regardless of the TMD's native scale.
-
-The "normalize unplaced" toggle disables both transforms (falls back
-to the legacy constant scale + TMD-local-origin pivot) so the user
-can ground-truth against retail.
+```mermaid
+flowchart TD
+    D["disc image (PROT.DAT + SCUS)"] --> K["set_scene_kingdom"]
+    K --> V["upload slot-0 TIM_LIST to VRAM"]
+    K --> W["install slot-5 CLUT walkers"]
+    K --> G["build_walk_ground<br/>(heightfield)"]
+    K --> P["build_walk_placements<br/>(landmarks + decorations)"]
+    D --> L["fog_lut::find (SCUS)"]
+    subgraph frame ["each frame (renderAssembled)"]
+        T["kingdom_clut_tick, re-upload VRAM on a copy"] --> O["ocean backdrop, no depth write"]
+        O --> GR["ground heightfield"]
+        GR --> ST["pack-mesh stamps"]
+        ST --> F["haze mix in the fragment shader"]
+    end
+    V --> frame
+    W --> frame
+    G --> frame
+    P --> frame
+    L --> frame
+```
 
 ## Continent ground heightfield
 
@@ -154,9 +147,9 @@ over its heightfield:
   cells), mountain groups, small props, and the **big enterable mountains**
   (Drake's terraced peak is record 412 / pack 23 at cell `(39, 80)`; Karisto
   has six such records). Those mountain cells carry `0x2000` and **no**
-  `0x1000` walk bit - the mesh is the ground there - so a sweep gated on the
-  walk bit draws every tree and drops every big mountain, which is how the
-  page shipped for a while. The riverbank/system record 408 family (nonzero
+  `0x1000` walk bit - the mesh is the ground there - so the sweep must gate
+  on `0x2000` alone: gating on the walk bit draws every tree and drops every
+  big mountain. The riverbank/system record 408 family (nonzero
   `+0x10`, walk bit only) never carries `0x2000` and stays out by the gate
   alone; drawing it tiles a wall mesh down every river.
 
@@ -196,13 +189,11 @@ resolution with `build_walk_ground` (`resolve_walk_map_and_lut`):
   the field-scene page and the `.glb` baker already read. The landmark
   meshes need it: Rim Elm's hut walls are textured quads and its four roofs
   are 24 gouraud triangles, Karisto slot 8 (the Uru Mais temple at cell
-  `(36, 75)`) is colour prims only - the page had no mesh to upload for that
-  stamp, so the landmark was absent - and 34 slots across the three packs
+  `(36, 75)`) is colour prims only, and 34 slots across the three packs
   carry some. Retail draws both families
   through one per-prim dispatch (the untextured slots of the world-map
   overlay's `0x801F8968` row are populated - [world-map.md](world-map.md)),
-  so the textured-only upload the page shipped with drew the huts as open
-  rings. `renderAssembled` turns the shader's fill branch on per mesh that
+  so a textured-only upload draws the huts as open rings. `renderAssembled` turns the shader's fill branch on per mesh that
   carries the stream, and that branch runs the same distance-haze mix as
   the textured path (retail's untextured leaves cue too). Disc-gated:
   `crates/web-viewer/tests/world_map_pack_hybrid_real.rs`.
@@ -220,13 +211,13 @@ the native render use. The anchor Y **must be negated on the JS side**:
 `placementModelScaledY` flips only the mesh-local geometry, not the
 translation, while the ground bakes `-lut` into its vertices and lands at
 `+lut` (up) under the shared flip. An un-negated anchor mirrors the stamp
-below the surface by `2*(lut - y_off)` - on Drake's mountain cells (LUT up
-to 288) that buried whole cave entrances; the same negation the site
-viewer's full-map path applies. The "landmarks" checkbox toggles the layer. The
+below the surface by `2*(lut - y_off)` (Drake's mountain cells have a LUT up
+to 288, enough to bury a cave entrance). The site viewer's full-map path
+applies the same negation. The "landmarks" checkbox toggles the layer. The
 fragment shader's PSX cutout rule (BGR555 `0` with STP `0` discards) is what
-makes the tree quads read as foliage; the old `u_no_discard` silhouette
-fallback is off in the assembled path now that the kingdom's real VRAM image
-is uploaded and CLUTs resolve like retail.
+makes the tree quads read as foliage; the `u_no_discard` silhouette fallback
+is off in the assembled path, since the kingdom's real VRAM image is uploaded
+and CLUTs resolve like retail.
 
 One authored exception (`WALK_STAMP_SUPPRESS` in `world-overview-app.js`):
 placed objects are script-managed - `FUN_8003A55C` runs each spawn's MAN
@@ -243,166 +234,12 @@ queued per render (the headless-verification hook, like `__woCam`).
 **The legacy overview-frame placement layers stay hidden.** The
 `world-overview.json` MAN-table landmarks, live-RAM actor placements, and the
 unplaced-slot-1 layout grid (described under "Layout engine for unplaced
-slot-1 TMDs" above) are in the top-down *overview* coordinate frame
+slot-1 TMDs" below) are in the top-down *overview* coordinate frame
 (mednafen captures / MAN overview coords), which is misaligned with the
 walk-view heightfield. The walk-frame placements above supersede them for the
 landmark layer; the `SHOW_LEGACY_PLACEMENTS` flag in `world-overview-app.js`
 still re-enables the old overview-frame code (preserved for the snapshot
 panel + the unplaced-layout toggles).
-
-## Distance-cue fog pass
-
-The viewer's fog toggle approximates the retail world-map fog: the
-diffuse term fades toward a per-kingdom haze colour with distance.
-The math splits into two pieces the runtime keeps separate, and the
-WebGL port mirrors that split:
-
-- The **LUT** at `gp-0x2BC` (2048 u16 entries that climb from `0x0000`
-  at near-Z to `~0x01FF` at far-Z) is a **per-Z scalar**, not a colour
-  ramp. The retail overlay leaves at `0x801F7644..0x801F8690` `lh` the
-  LUT entry, shift it left by 16, and add it to the high half of
-  vertex SXY+offset words via `sw s1, 0x8(t1)` / `0xC(t1)` /
-  `0x10(t1)`. The visible effect on flat triangles is a per-vertex
-  screen-Y nudge proportional to `Z >> 5`.
-- The **haze colour** reaches the GTE `FAR_COLOR` control registers
-  through `ctc2`, not through the `lwc2 t0, -0x2dc(t2)` load - that field
-  is the `IR0` depth-cue factor, despite earlier doc tables labelling it
-  "fog color". The viewer's per-kingdom tint is its own choice (see
-  [below](#per-kingdom-fog-colour)).
-
-The WebGL port runs this in a vertex + fragment shader:
-
-- Per-vertex: `Z_far = exp2(-zShift) * dist(world, camera_origin)`,
-  clamped to `[0, far_ref]` and normalised to `v_fog_t in [0..1]`.
-  Approximates the runtime's `Z_far = Z >> shift` against the
-  top-down camera origin.
-- Per-fragment: sample `lut[clamp(v_fog_t * 2047, 0, 2047)]` as a
-  scalar u16; normalise to `factor = lut_word / 511`; then
-  `mix(lit, u_fog_color, factor)` with `u_fog_color` = the
-  per-kingdom haze tint from `KINGDOM_FOG_TINT`. This produces the
-  fade-toward-haze visual instead of treating the LUT entries as
-  RGB tints (an earlier port did the latter and produced "richer
-  textures" rather than fog).
-
-The shader supports two LUT sources, in priority order:
-
-1. **Disc-extracted LUT (default)** - the WASM viewer locates
-   the 4 KiB (2048 u16) LUT inside `SCUS_942.54` via the
-   `fog_lut::find` content-scan (monotone non-decreasing ramp with
-   leading zero entries + saturating tail) and auto-uploads it on
-   disc load. No file picker; one disc upload = full functionality.
-   On the retail USA build the LUT sits at SCUS offset `0x05FCC0`
-   (vaddr `0x8006FCC0`); the content scan handles regional variants
-   without hardcoding.
-2. **Kingdom-tinted fallback** - when SCUS extraction doesn't
-   surface a LUT (raw PROT.DAT load, regional variant with shifted
-   SCUS, modded disc), the shader falls back to using `v_fog_t`
-   directly as the mix factor, still toward the kingdom haze tint.
-
-The per-vertex math diverges from retail in one place: retail samples
-Z from the GTE's screen-space pipeline after `rtpt`, while the
-WebGL2 path uses XZ-plane distance to the fog origin (`fog_origin =
-worldCam centre` by default). For a top-down ortho camera the two
-quantities are equivalent up to a constant; for the orbit-camera mesh
-inspector the fog toggle is hidden because it doesn't carry over.
-
-## Bulk-terrain placement resolver (MAN `0x7F` sentinels)
-
-MAN-record placements where ``(x_enc, z_enc) == (0x7F, 0x7F)`` static-
-decode to the literal world coordinate ``(16320, 16320)`` (the
-world's NE corner, just outside any visible kingdom). Those actors
-are positioned at runtime by the FieldVM prescript embedded in the
-record's trailing bytes, dispatched from ``FUN_8003A1E4`` (the MAN
-placement walker in SCUS):
-
-```c
-// FUN_8003A1E4 lines 326-336 (excerpted):
-uVar14 = (uint)*(byte *)(iVar11 + iVar10);    // script[PC]
-if ((uVar14 - 0x24 < 2) && (... > 0x1F)) {    // op in {0x24, 0x25}
-    while (true) {
-        iVar10 = func_0x801de840(...);         // -> FieldVM dispatcher
-        *(short *)(iVar9 + 0x9e) = (short)iVar10;
-        if (uVar14 == 0x21) break;
-        // walk next opcode
-    }
-}
-```
-
-Each actor is allocated by ``FUN_80024C88`` then its prescript runs
-once through the FieldVM (``FUN_801DE840``). The prescript can write
-``actor[+0x14] / actor[+0x18]`` (X / Z position), so the *resolved*
-position differs from the literal MAN-record decode.
-
-**Statically resolving these without running the FieldVM is not
-covered by the asset extractor.** The MAN prescript is a per-record
-bytecode that picks a position based on actor type, story-flag state,
-overlay-resident lookup tables. A full from-scratch port would need
-the engine-vm field VM driving real actor records.
-
-The practical alternative is a **runtime snapshot capture**:
-
-- ``scripts/mednafen/resolve_bulk_terrain.py`` extracts the
-  post-resolve placements out of mednafen save states. It walks every
-  actor list head listed in `Globals used` (see [`world-map.md`](world-map.md#globals-used)),
-  captures the actor's live ``+0x14 / +0x18`` coords plus its mesh
-  chain at ``+0x44`` (resolved back to the kingdom TMD pack via
-  reverse-magic-search), and tags each placement ``kind: 'bulk_terrain'``
-  when ``actor[+0x90]`` is outside the MAN buffer or ``'man_actor'``
-  otherwise.
-- `scripts/asset-investigation/extract-world-placements.py` merges the resulting JSON into
-  ``site/world-overview.json`` under ``bulk_terrain_placements`` per
-  kingdom (alongside the existing ``placements`` and
-  ``live_placements`` fields). The world-overview viewer renders both
-  layers in the same scene.
-- ``crates/web-viewer::sentinel_placements`` is the Rust port of the
-  RAM-side resolver (record parser + actor-list walker + TMD-pack
-  reverse lookup) for downstream callers; the Python script is the
-  end-to-end driver.
-
-The Drake-only count produced by the existing PCSX-Redux capture
-(``site/world-overview-live.json`` legacy single-bundle dict) lands
-as ``man_actor`` under the new tagging since that capture script
-predates the ``kind`` field.
-
-## Global-pool placement placeholders
-
-MAN-record placements with ``tmd_slot >= 0xF0`` reference the global TMD
-pool (``DAT_8007C018``) rather than the kingdom-local pack at slot 1.
-The disc-side global mesh pool is not yet bundled into
-``site/world-overview.json``; until that pipeline lands, the viewer
-stamps the kingdom pack's slot 0 mesh (typically a ground tile) at the
-decoded world coordinates and tags the draw record ``kind: 'global_pool'``.
-The snapshot panel surfaces both the underlying ``global TMD refs``
-count and the ``+ N global-pool placeholders`` rendered count so the
-gap stays visible without dropping the placements silently.
-
-## Per-kingdom fog colour
-
-The viewer's haze tint is the hand-set `KINGDOM_FOG_TINT` table, and it has no
-retail counterpart to replace it with: the walk-view overworld's far colour is
-not per-kingdom. The continent ground is depth-cued toward the literal
-`SetFarColor(0x100, 0x100, 0x100)` its emitter's caller issues, and the
-decoration cells toward `0xD0D0D0` - both fixed in PROT 0901's code
-([world-map.md](world-map.md#ground-texturing)). Both retail cues key on the
-walk camera's depth (`SZ` / `TRZ`), and this viewer's orbit camera is not
-retail's, so it stages neither: its curvature factor is `0`, which is the
-off switch of the ground cue and of `overworldDecorationCue` alike.
-
-This section used to describe an "atmospheric-tick actor" (`actor[+0x0C] ==
-0x801E3E00`) interpolating a per-kingdom haze RGB into its `+0x74` for the GTE
-far-colour registers, and a capture path
-(`scripts/mednafen/resolve_bulk_terrain.py`) that surfaced that word as
-`fog_color` in `site/world-overview.json` ahead of the fallback. Both halves are
-wrong. `FUN_801E3E00` is the keyframe script of the field-VM's attached light,
-called from that light's tick `FUN_801E4470` and never installed as a tick
-itself, and its `+0x74` is the light pool's centre colour
-([world-map.md](world-map.md#the-fog-rgb-script-is-the-attached-lights)). No
-catalogued save state holds `0x801E3E00` as a word anywhere in RAM, so the
-capture path never matched and the fallback is what every kingdom draws. What
-`FUN_8001ADA4`'s case 5 does pass is a *model actor's* own `+0x74` as `a1` and
-its `+0x78` as `a2` (`0x8001B46C..0x8001B474`); `FUN_80043390` loads `a1`'s
-bytes `<< 4` into `RFC` / `GFC` / `BFC` only when `a2` is non-zero
-(`0x80043494..0x800434D0`) - a per-mesh value, not a kingdom haze.
 
 ## Ocean tile - disc-side asset + 13-frame CLUT animation
 
@@ -490,8 +327,7 @@ no sea plane at all - inside the kingdom the sea is the heightfield's own water
 cells, and the river / lake / coastal cells sit at the lowest floor tier, only
 `0.6` units above `y = 0` once `GROUND_SINK` is applied. A depth-writing plane
 z-fights them as soon as the camera tilts (at range the depth step exceeds that
-gap), and the sea showed through the rivers and coastline depending on the
-view angle. The "ocean" checkbox toggles only this backdrop pass.
+gap). The "ocean" checkbox toggles only this backdrop pass.
 
 Capture pipeline for the procedural-tint fallback used before the
 disc is loaded:
@@ -510,6 +346,82 @@ blue-dominant clusters by ``hits × blue_dominance``. The winner's
 average RGB lands as ``site/world-overview.json[kingdom].ocean_color``
 and drives the viewer's fallback colour before the textured pipeline
 loads.
+
+## Distance-cue fog pass
+
+The viewer's fog toggle approximates the retail world-map fog: the
+diffuse term fades toward a per-kingdom haze colour with distance.
+The math splits into two pieces the runtime keeps separate, and the
+WebGL port mirrors that split:
+
+- The **LUT** at `gp-0x2BC` (2048 u16 entries that climb from `0x0000`
+  at near-Z to `~0x01FF` at far-Z) is a **per-Z scalar**, not a colour
+  ramp. The retail overlay leaves at `0x801F7644..0x801F8690` `lh` the
+  LUT entry, shift it left by 16, and add it to the high half of
+  vertex SXY+offset words via `sw s1, 0x8(t1)` / `0xC(t1)` /
+  `0x10(t1)`. The visible effect on flat triangles is a per-vertex
+  screen-Y nudge proportional to `Z >> 5`.
+- The **haze colour** reaches the GTE `FAR_COLOR` control registers
+  through `ctc2`, not through the `lwc2 t0, -0x2dc(t2)` load - that field
+  is the `IR0` depth-cue factor, not a fog colour. The viewer's per-kingdom tint is its own choice (see
+  [below](#per-kingdom-fog-colour)).
+
+The WebGL port runs this in a vertex + fragment shader:
+
+- Per-vertex: `Z_far = exp2(-zShift) * dist(world, camera_origin)`,
+  clamped to `[0, far_ref]` and normalised to `v_fog_t in [0..1]`.
+  Approximates the runtime's `Z_far = Z >> shift` against the
+  top-down camera origin.
+- Per-fragment: sample `lut[clamp(v_fog_t * 2047, 0, 2047)]` as a
+  scalar u16; normalise to `factor = lut_word / 511`; then
+  `mix(lit, u_fog_color, factor)` with `u_fog_color` = the
+  per-kingdom haze tint from `KINGDOM_FOG_TINT`. This produces the
+  fade-toward-haze visual. The LUT entries are scalars, not RGB tints.
+
+The shader supports two LUT sources, in priority order:
+
+1. **Disc-extracted LUT (default)** - the WASM viewer locates
+   the 4 KiB (2048 u16) LUT inside `SCUS_942.54` via the
+   `fog_lut::find` content-scan (monotone non-decreasing ramp with
+   leading zero entries + saturating tail) and auto-uploads it on
+   disc load. No file picker; one disc upload = full functionality.
+   On the retail USA build the LUT sits at SCUS offset `0x05FCC0`
+   (vaddr `0x8006FCC0`); the content scan handles regional variants
+   without hardcoding.
+2. **Kingdom-tinted fallback** - when SCUS extraction doesn't
+   surface a LUT (raw PROT.DAT load, regional variant with shifted
+   SCUS, modded disc), the shader falls back to using `v_fog_t`
+   directly as the mix factor, still toward the kingdom haze tint.
+
+The per-vertex math diverges from retail in one place: retail samples
+Z from the GTE's screen-space pipeline after `rtpt`, while the
+WebGL2 path uses XZ-plane distance to the fog origin (`fog_origin =
+worldCam centre` by default). For a top-down ortho camera the two
+quantities are equivalent up to a constant; for the orbit-camera mesh
+inspector the fog toggle is hidden because it doesn't carry over.
+
+## Per-kingdom fog colour
+
+The viewer's haze tint is the hand-set `KINGDOM_FOG_TINT` table, and it has no
+retail counterpart to replace it with: the walk-view overworld's far colour is
+not per-kingdom. The continent ground is depth-cued toward the literal
+`SetFarColor(0x100, 0x100, 0x100)` its emitter's caller issues, and the
+decoration cells toward `0xD0D0D0` - both fixed in PROT 0901's code
+([world-map.md](world-map.md#ground-texturing)). Both retail cues key on the
+walk camera's depth (`SZ` / `TRZ`), and this viewer's orbit camera is not
+retail's, so it stages neither: its curvature factor is `0`, which is the
+off switch of the ground cue and of `overworldDecorationCue` alike.
+
+Not a per-kingdom haze source, in case the reading recurs: `FUN_801E3E00` is
+the keyframe script of the field-VM's attached light, called from that light's
+tick `FUN_801E4470` and never installed as a tick itself, and its `+0x74` is
+the light pool's centre colour
+([world-map.md](world-map.md#the-fog-rgb-script-is-the-attached-lights)). No
+catalogued save state holds `0x801E3E00` as a word anywhere in RAM. What
+`FUN_8001ADA4`'s case 5 does pass is a *model actor's* own `+0x74` as `a1` and
+its `+0x78` as `a2` (`0x8001B46C..0x8001B474`); `FUN_80043390` loads `a1`'s
+bytes `<< 4` into `RFC` / `GFC` / `BFC` only when `a2` is non-zero
+(`0x80043494..0x800434D0`) - a per-mesh value, not a kingdom haze.
 
 ## Camera anchors
 
@@ -560,6 +472,112 @@ ocean backdrop is a screen effect, not geometry, and is excluded. The asset-view
 full-map (town) and single-TMD exports ride the same session; the enemy
 table's monster export is the sibling `monster_gltf::export_glb` (it
 additionally carries action animations).
+
+## Layout engine for unplaced slot-1 TMDs
+
+This layer belongs to the legacy overview frame, hidden by default (see
+[above](#walk-frame-placed-landmarks--decorations)).
+
+The MAN placement table pins a small subset of each kingdom's slot-1
+TMD pack at world coordinates (5 / 6 / 17 slots for Drake / Sebucus /
+Karisto). The remaining slots are positioned at runtime by the
+field-VM via actor-mesh chains and don't carry a static world coord.
+The viewer's "show unplaced slot-1 TMDs" toggle drops those onto a
+canonical layout grid, classified by `slot1_classification.toml`:
+
+- **landmark** - row south of the kingdom bounds, sorted by slot.
+- **decoration** - row north of the kingdom bounds.
+- **ground_tile** - grid west of the kingdom (the runtime tiles
+  them via the overlay-routed dispatch table).
+- **npc_token** - hidden (reused generic actor bases; reporting
+  the count avoids cluttering the view).
+- **unknown** - grid east of the kingdom.
+
+Two per-mesh transforms keep the layout legible:
+
+1. **AABB-centroid anchor** - each unplaced TMD is drawn so its
+   AABB centroid sits at the assigned grid slot, instead of its
+   TMD-local origin (which can be far from the visual centre and
+   shift the mesh out of frame).
+2. **Class-conditional footprint normalisation** - per-class
+   target footprints in world units (landmark ~600, decoration ~200,
+   ground_tile ~1200, unknown ~600). Each mesh's larger XZ extent maps
+   to the target via a per-placement scale so the row reads at a
+   consistent size regardless of the TMD's native scale.
+
+The "normalize unplaced" toggle disables both transforms (falls back
+to the legacy constant scale + TMD-local-origin pivot) so the user
+can ground-truth against retail.
+
+## Bulk-terrain placement resolver (MAN `0x7F` sentinels)
+
+MAN-record placements where ``(x_enc, z_enc) == (0x7F, 0x7F)`` static-
+decode to the literal world coordinate ``(16320, 16320)`` (the
+world's NE corner, just outside any visible kingdom). Those actors
+are positioned at runtime by the FieldVM prescript embedded in the
+record's trailing bytes, dispatched from ``FUN_8003A1E4`` (the MAN
+placement walker in SCUS):
+
+```c
+// FUN_8003A1E4 lines 326-336 (excerpted):
+uVar14 = (uint)*(byte *)(iVar11 + iVar10);    // script[PC]
+if ((uVar14 - 0x24 < 2) && (... > 0x1F)) {    // op in {0x24, 0x25}
+    while (true) {
+        iVar10 = func_0x801de840(...);         // -> FieldVM dispatcher
+        *(short *)(iVar9 + 0x9e) = (short)iVar10;
+        if (uVar14 == 0x21) break;
+        // walk next opcode
+    }
+}
+```
+
+Each actor is allocated by ``FUN_80024C88`` then its prescript runs
+once through the FieldVM (``FUN_801DE840``). The prescript can write
+``actor[+0x14] / actor[+0x18]`` (X / Z position), so the *resolved*
+position differs from the literal MAN-record decode.
+
+**Statically resolving these without running the FieldVM is not
+covered by the asset extractor.** The MAN prescript is a per-record
+bytecode that picks a position based on actor type, story-flag state,
+overlay-resident lookup tables. A full from-scratch port would need
+the engine-vm field VM driving real actor records.
+
+The practical alternative is a **runtime snapshot capture**:
+
+- ``scripts/mednafen/resolve_bulk_terrain.py`` extracts the
+  post-resolve placements out of mednafen save states. It walks every
+  actor list head listed in `Globals used` (see [`world-map.md`](world-map.md#globals-used)),
+  captures the actor's live ``+0x14 / +0x18`` coords plus its mesh
+  chain at ``+0x44`` (resolved back to the kingdom TMD pack via
+  reverse-magic-search), and tags each placement ``kind: 'bulk_terrain'``
+  when ``actor[+0x90]`` is outside the MAN buffer or ``'man_actor'``
+  otherwise.
+- `scripts/asset-investigation/extract-world-placements.py` merges the resulting JSON into
+  ``site/world-overview.json`` under ``bulk_terrain_placements`` per
+  kingdom (alongside the existing ``placements`` and
+  ``live_placements`` fields). The world-overview viewer renders both
+  layers in the same scene.
+- ``crates/web-viewer::sentinel_placements`` is the Rust port of the
+  RAM-side resolver (record parser + actor-list walker + TMD-pack
+  reverse lookup) for downstream callers; the Python script is the
+  end-to-end driver.
+
+The Drake-only count produced by the existing PCSX-Redux capture
+(``site/world-overview-live.json`` legacy single-bundle dict) lands
+as ``man_actor`` under the new tagging since that capture script
+predates the ``kind`` field.
+
+## Global-pool placement placeholders
+
+MAN-record placements with ``tmd_slot >= 0xF0`` reference the global TMD
+pool (``DAT_8007C018``) rather than the kingdom-local pack at slot 1.
+The disc-side global mesh pool is not bundled into
+``site/world-overview.json``, so the legacy overview-frame layer
+stamps the kingdom pack's slot 0 mesh (typically a ground tile) at the
+decoded world coordinates and tags the draw record ``kind: 'global_pool'``.
+The snapshot panel surfaces both the underlying ``global TMD refs``
+count and the ``+ N global-pool placeholders`` rendered count so the
+gap stays visible without dropping the placements silently.
 
 ## See also
 

@@ -1,179 +1,120 @@
 # Randomizer / disc patcher
 
-Turns a **user-supplied** retail disc image into a re-rolled one: give it a
-`.bin` and a seed, and it rewrites the gameplay data - what monsters drop, what
-lives in the chests, which door goes where, how hard the enemies hit - then hands
-back a patch you can share.
+`legaia-patcher` turns a **user-supplied** retail disc image into a modified
+one. Give it a `.bin` and a seed and it rewrites gameplay data - what monsters
+drop, what the chests hold, which door goes where, how hard enemies hit - and
+hands back a small **PPF patch** that is safe to share. The retail game runs the
+result on an emulator or a console; so does the project's own engine, which reads
+the same disc.
 
-This is a designed, shipped deliverable of the project, not a by-product of the
-reverse engineering. It is also the practical proof that the format work is
-right: you cannot re-pack a monster's LZS record and have the retail game boot it
-unless the format doc is correct down to the byte.
+It is a shipped part of the project, used by real players, and it is also the
+strictest test of the format documentation: the retail game only boots a
+re-packed record when the format is understood down to the byte.
 
-**Reach for it when** you want a fresh playthrough of a game you have finished,
-or when you want to check that a format the docs claim to understand really is
-understood.
+```bash
+# Shuffle drops, chests and encounters; write run.ppf plus a playable image.
+legaia-patcher randomize --input "Legend of Legaia (USA).bin" --seed myrun \
+    --drops shuffle --chests shuffle --encounters shuffle \
+    --patch run.ppf --output patched.bin
 
-**It does not touch the from-scratch engine** - it edits the disc, and the retail
-game (or the port) plays the result. The one exception is
-[Seru trading](#seru-trading), which embeds a config the engine reads because
-retail has no trade UI to hook.
+# The recipient checks the patch against their own disc.
+legaia-patcher verify --input "Legend of Legaia (USA).bin" --patch run.ppf
+```
 
-Crate: [`crates/patcher`](../../crates/patcher/README.md) (`legaia-patcher`) -
-the project's general disc-patching toolkit. The randomizer documented on this
-page is its largest feature family; the same machinery carries the
-[translation packs](translation/index.md) and the manual per-record edits
-(`monster-block`, in the [modding guide](../guides/modding-and-translation.md)).
-It ships only code - no game bytes - and every test that needs real data is
-disc-gated, so CI runs without a disc. There is also a
-[browser build](#in-the-browser) that never uploads your disc.
+There is also a [browser build](#in-the-browser) that never uploads the disc.
 
-## What it can re-roll
+## At a glance
+
+| | |
+|---|---|
+| Binary | `legaia-patcher` ([`crates/patcher`](../../crates/patcher/README.md)) |
+| Input | a raw Mode 2/2352 `.bin` (or the `.cue` that names it) of the USA disc, `SCUS-94254` |
+| Output | a PPF 3.0 patch (default `<input>.ppf`), optionally a patched `.bin` + `.cue` and a TOML manifest |
+| Reproducible | the same seed and options give a byte-identical patch |
+| Game bytes shipped | none - the crate is code only, and a PPF holds only deltas against the user's own disc |
+| Other discs | `randomize` and `verify` refuse a non-USA disc unless `--allow-region-mismatch` is passed |
+
+Every edit follows one write path. Most values live inside a compressed
+(Legaia LZS) stream inside a `PROT.DAT` entry, so an edit is
+decompress, change, recompress, write back in place, then repair the CD sector's
+error-correction bytes:
+
+```mermaid
+flowchart LR
+    disc["user's disc .bin"] --> plan["seeded plan"]
+    plan --> edit["edit decoded record"]
+    edit --> lzs["LZS re-pack"]
+    lzs --> prot["write PROT entry in place"]
+    prot --> ecc["re-encode sector EDC/ECC"]
+    ecc --> diff["diff against original"]
+    diff --> ppf["PPF 3.0 patch"]
+    ecc --> bin["patched .bin + .cue"]
+```
+
+Almost every edit is **same-size in place**: it never changes a byte count, so
+no sector address, PROT table-of-contents row or ISO 9660 directory record
+shifts. Scene-transition doors are the one resize inside an entry, handled by
+the [MAN relocation engine](../formats/man-relocation.md) within the entry's
+existing footprint. The few features that need more room than their slot has
+park data in the unused `DMY.DAT` annex. The image's total size never changes.
+
+This page is the **feature and flag reference**. Two companion pages hold the
+implementation detail:
+
+- [`randomizer-internals.md`](randomizer-internals.md) - the write path
+  (LZS encoder, sector write-back, PROT addressing), the code-injection arenas,
+  the design of every machine-code hook, and the test catalogue.
+- [`randomizer-delilas.md`](randomizer-delilas.md) - the Delilas Challenge
+  dome course, the custom items, and the Delilas party swap.
+
+The same crate also carries the [translation packs](translation/index.md) and
+the manual per-record edits of the
+[modding guide](../guides/modding-and-translation.md).
+
+**Sections:** [CLI](#cli-legaia-patcher) -
+[options table](#randomize-options) -
+[loot and economy](#loot-and-economy) - [battles](#battles) -
+[equipment](#equipment) - [arts and AP](#arts-and-ap) -
+[added mechanics](#added-mechanics) - [navigation](#navigation) -
+[the new game](#the-new-game) - [content and art](#content-and-art) -
+[how a patch is written](#how-a-patch-is-written)
+
+## What it can change
 
 - **Loot** - monster item drops, treasure-chest contents, per-monster steal
   items, and an optional low-chance bonus equipment drop.
 - **Fights** - random-encounter formations, monster combat stats, a global enemy
-  difficulty multiplier, an experience multiplier, the Seru catch rate,
-  special-attack power, the element-affinity matrix, and spell MP costs.
-- **Economy** - what town stores sell, and the casino prize exchange.
-- **Navigation** - scene-transition doors/exits, intra-town (house / interior)
-  doors, and `.MAP` intra-scene teleports.
-- **The party** - Tactical-Arts button combos, equipment stat bonuses, each
-  character's favored weapon class, and the new game's starting items and level.
-- **Additions retail has no table for**, added as machine-code hooks: experience
-  for running away, charming an enemy onto your side, shiny Seru, and Seru
-  trading.
-- **A new dome course retail never ships** - the [Delilas Challenge](#delilas-challenge),
-  a fourth Muscle Dome enrollment option that runs a brand-new 2-round arena
-  course - Gi, Che and Lu, one duel per round - paying 5000 coins for a
-  clear (a koin1 script edit plus a small arena code injection).
-- **Textures** - replace any TIM on the disc with a user-authored PNG
-  ([texture replacement](#texture-replacement)).
-
-## Contents
-
-- [Why this needs three new capabilities](#why-this-needs-three-new-capabilities)
-- [Editing model: same-size in place, except doors](#editing-model-same-size-in-place-except-doors)
-- [In the browser](#in-the-browser)
-- [CLI: `legaia-patcher`](#cli-legaia-patcher)
-- Per-randomizer mechanics:
-  - [Keep-static items](#keep-static-items)
-  - [Equipment drops](#equipment-drops)
-  - [Random encounters](#random-encounters)
-  - [Run-away EXP](#run-away-exp)
-  - [Enemy ally (charm)](#enemy-ally-charm)
-  - [Shiny Seru](#shiny-seru)
-  - [Seru trading](#seru-trading)
-  - [Jewel fix](#jewel-fix)
-  - [Approach-softlock fix](#approach-softlock-fix)
-  - [Delilas Challenge](#delilas-challenge)
-  - [Delilas party swap](#delilas-party-swap)
-    - [Each slot fights in its sibling's element](#each-slot-fights-in-its-siblings-element)
-    - [The bank the runtime walks](#the-bank-the-runtime-walks)
-    - [Casting a sibling signature attack from a party slot](#casting-a-sibling-signature-attack-from-a-party-slot)
-    - [The Delilas move set](#the-delilas-move-set)
-    - [The retail cast route](#the-retail-cast-route)
-  - [Fishing prize prices](#fishing-prize-prices)
-  - [Location names](#location-names)
-  - [Earth Egg coin threshold](#earth-egg-coin-threshold)
-  - [Treasure chests](#treasure-chests)
-  - [Town shops (what stores sell)](#town-shops-what-stores-sell)
-  - [Casino prize exchange](#casino-prize-exchange)
-  - [Steal items (Evil God Icon)](#steal-items-evil-god-icon)
-  - [Monster combat stats](#monster-combat-stats)
-  - [Enemy difficulty scale](#enemy-difficulty-scale)
-    - [Which enemies count as bosses](#which-enemies-count-as-bosses)
-  - [Experience multiplier](#experience-multiplier)
-  - [Seru catch rate](#seru-catch-rate)
-  - [Enemy attack count](#enemy-attack-count)
-  - [Special-attack power](#special-attack-power)
-  - [Element-affinity matrix](#element-affinity-matrix)
-  - [Spell MP costs](#spell-mp-costs)
-  - [Equipment stat bonuses](#equipment-stat-bonuses)
-  - [Equip mask (who can equip what)](#equip-mask-who-can-equip-what)
-  - [Weapon specialty](#weapon-specialty)
-  - [Equipment editor (command costs and equip owners)](#equipment-editor-command-costs-and-equip-owners)
-  - [Arts button combos](#arts-button-combos)
-  - [Arts damage power](#arts-damage-power)
-  - [Super Art damage power](#super-art-damage-power)
-  - [Show Super Arts on the in-battle move list](#show-super-arts-on-the-in-battle-move-list)
-  - [Super Arts Pack (by ZetaPhoenix)](#super-arts-pack-by-zetaphoenix)
-  - [Arts AP override](#arts-ap-override)
-  - [Spirit AP](#spirit-ap)
-  - [Enemy-damage AP](#enemy-damage-ap)
-  - [The signed accrual tail](#the-signed-accrual-tail)
-  - [Oscillating AP costs](#oscillating-ap-costs)
-  - [Doors (scene transitions)](#doors-scene-transitions)
-  - [House doors (intra-town)](#house-doors-intra-town)
-  - [Map doors (`.MAP` kind-0 intra-scene teleports)](#map-doors-map-kind-0-intra-scene-teleports)
-  - [Starting items](#starting-items)
-  - [Starting-bag convenience toggles](#starting-bag-convenience-toggles)
-  - [Starting level](#starting-level)
-  - [Unused content](#unused-content)
-  - [Texture replacement](#texture-replacement)
-  - [Custom monster models](#custom-monster-models)
-  - [Re-pack slack](#re-pack-slack)
-- [The patch chain](#the-patch-chain)
-- [EDC/ECC: not game-specific](#edcecc-not-game-specific)
-- [Tests](#tests)
-- [No-Sony-bytes hygiene](#no-sony-bytes-hygiene)
-- [See also](#see-also)
-
-## Why this needs three new capabilities
-
-Most editable values live *inside* a Legaia LZS stream that the asset
-dispatcher decompresses at load. Changing one is therefore
-decompress → mutate → recompress → write-back, which needed three pieces the
-preservation track never had (it only ever *read* the disc):
-
-1. **An LZS encoder** - `legaia_lzs::compress`. The retail game ships only a
-   decoder (`FUN_8001A55C`); there was no way to produce a stream it accepts.
-   See [LZS compression](../formats/lzs.md).
-2. **Mode 2/2352 sector write-back** - `legaia_iso::write`. Overwriting the
-   2048-byte user payload of a CD sector also requires recomputing its 4-byte
-   EDC and 276-byte P/Q ECC, or the sector reads as corrupt. See
-   [PSX disc geometry](../formats/disc.md).
-3. **A disc bridge** - `legaia_patcher::disc::DiscPatcher`, which ties the editing
-   primitives to the sector write-back through the PROT.DAT TOC.
-
-## Editing model: same-size in place, except doors
-
-Drops / encounters / chests / steals / **house doors** (the player door-warp
-tile shuffle) / **map doors** (the `.MAP` kind-0 teleport-destination shuffle -
-raw sector bytes, not even LZS-wrapped) overwrite bytes **in place** and never
-change a byte count, so no LBA,
-PROT TOC, or ISO 9660 directory record ever moves. **Scene-transition doors are
-the one exception**: a scene-transition destination carries its
-target scene's name inline, so re-pointing a door at a differently-named scene
-changes the record's byte length. That is made safe by the
-[MAN relocation engine](../formats/man-relocation.md), which rebuilds the
-decompressed MAN, fixes every internal offset the resize disturbs, and keeps the
-*recompressed* stream within the asset's on-disc footprint (or skips the scene).
-The disc image's total size never changes either way. For the same-size edits:
-
-Every same-size edit overwrites bytes **in place** and never changes a byte
-count, so no LBA, PROT TOC, or ISO 9660 directory record ever moves. That keeps the patch a
-pure byte-overwrite (plus EDC/ECC recompute) with no risk of cascading offset
-shifts. It works because the edit targets fit a fixed slot with slack:
-
-- The monster `battle_data` archive (PROT entry 867) gives each monster a fixed
-  `0x14000`-byte slot laid out `[u32 decompressed_size][LZS stream]`. The
-  decoded record length is unchanged by a drop edit, and the original stream was
-  produced by Sony's packer; our greedy packer is weaker but still fits the slot
-  comfortably (`repack_slot` rejects the rare case where it would not). The slot
-  is re-emitted zero-padded back to `0x14000`.
+  difficulty multiplier, an experience multiplier, the Seru catch rate, enemy
+  attack count, special-attack power, the element-affinity matrix and spell MP
+  costs.
+- **Economy** - what town stores sell, the casino prize exchange, fishing prize
+  prices and the Earth Egg coin threshold.
+- **Navigation** - scene-transition doors, intra-town (house / interior) doors,
+  `.MAP` intra-scene teleports, and the world-map location names.
+- **The party** - Tactical-Arts button combos and damage, AP costs and gains,
+  equipment stat bonuses and equip masks, each character's favored weapon class,
+  and the new game's starting items and level.
+- **Mechanics retail has no table for**, added as machine-code hooks: experience
+  for running away, enemy HP bars, charming an enemy onto your side, shiny Seru,
+  Seru trading, Super Arts on the move list, and two retail-defect fixes.
+- **New content** - the [Delilas Challenge](#delilas-challenge) dome course,
+  three custom items, the [Delilas party swap](#delilas-party-swap), ZetaPhoenix's
+  [Super Arts Pack](#super-arts-pack-by-zetaphoenix), and the unused enemies and
+  items the disc ships but never surfaces.
+- **Art** - replace any TIM texture with a user-authored PNG
+  ([texture replacement](#texture-replacement)) or a monster's model
+  ([custom monster models](#custom-monster-models)).
 
 ## In the browser
 
-The same randomizer is also exposed client-side: `legaia_web_viewer::rom_patcher`
-(`patch_rom`) compiles the crate to WASM, and the static site's
-`tooling/rom-patcher.html` page lets a user supply their own disc, toggle every
-setting (drops / equipment-drops / encounters / chests / town shops / casino /
-steals / doors / house doors / starting items / unused content), and download a
-patched image - the disc bytes never leave the browser. The page's change
-report is spoiler-safe: when a random starting-item fill is requested it
-prints only the item *count* (the CLI listing below stays verbose - it's the
-offline spoiler log). The CLI below is the scriptable / shareable-PPF path.
+The same patcher runs client-side. `legaia_web_viewer::rom_patcher` (`patch_rom`)
+compiles the crate to WebAssembly, and the site's `tooling/rom-patcher.html`
+page takes a disc image, offers the randomizer passes, the tuning sliders, the
+code-hook features, the Delilas features, texture replacement and translation
+packs, and downloads a patched image or a PPF. The disc bytes never leave the
+browser. The page's change report is spoiler-safe: a random starting-item fill
+prints only the item *count*, where the CLI listing stays verbose as the offline
+spoiler log. The CLI below is the scriptable path.
 
 ## CLI: `legaia-patcher`
 
@@ -216,10 +157,10 @@ legaia-patcher randomize --input DISC.bin --seed gear --drops shuffle --equipmen
 legaia-patcher randomize --input DISC.bin --seed flee --encounters shuffle --flee-exp     # +5% experience on a successful escape
 legaia-patcher randomize --input DISC.bin --seed pal --enemy-ally                         # 20% chance an enemy fights on your side
 legaia-patcher randomize --input DISC.bin --seed pal --shiny-seru                         # 2% chance a capturable enemy is shiny (+35% stats / captured-Seru damage)
-legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # vendors trade seru-for-seru (from-scratch engine UI)
+legaia-patcher randomize --input DISC.bin --seed swap --seru-trade                        # every merchant grows a Trade row: swap one Seru for another
 legaia-patcher randomize --input DISC.bin --seed fair --jewel-fix                         # boss cinematic casts respect elemental guards
 legaia-patcher randomize --input DISC.bin --seed fair --approach-softlock-fix              # dead approach animations re-stage instead of wedging
-legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: fight all three Delilas at once
+legaia-patcher randomize --input DISC.bin --seed fair --delilas-challenge                  # Muscle Dome option: a new 2-round Delilas course
 legaia-patcher fishing   --input DISC.bin                                                 # read-only: list fishing-exchange prizes + prices
 legaia-patcher randomize --input DISC.bin --seed fish --fishing-price 0x6F=500            # Buma Water Egg costs 500 fishing points
 legaia-patcher locations --input DISC.bin                                                 # read-only: list the 16 world-map location names
@@ -270,7 +211,7 @@ know the patch was built for that exact disc.
 
 ### `randomize` options
 
-Thirteen passes take a **mode**: `shuffle` (permute the existing population -
+These passes take a **mode**: `shuffle` (permute the existing population -
 the multiset is preserved), `random` (draw each slot from the valid pool), or
 `none`.
 
@@ -302,6 +243,7 @@ unless asked for:
 | Option | Effect | Chance option | Detail |
 |---|---|---|---|
 | `--equipment-drops` | one extra random equipment piece per battle, on top of `--drops` and never disturbing it | `--equipment-drop-chance N` (default 5) | [Equipment drops](#equipment-drops) |
+| `--enemy-hp-bar` | a red HP gauge and numeral over every living monster in battle | - | [Enemy HP bars](#enemy-hp-bars) |
 | `--flee-exp` | a successful escape banks a slice of the fled fight's experience | `--flee-exp-pct N` (default 5) | [Run-away EXP](#run-away-exp) |
 | `--enemy-ally` | a random enemy is charmed onto the party's side as an uncontrolled ally (multi-enemy fights only) | `--enemy-ally-pct N` (default 20) | [Enemy ally (charm)](#enemy-ally-charm) |
 | `--shiny-seru` | a capturable enemy spawns shiny: +35% stats, and its captured Seru deals +35% damage forever | `--shiny-pct N` (default 2) | [Shiny Seru](#shiny-seru) |
@@ -311,14 +253,14 @@ unless asked for:
 | `--delilas-challenge` | a fourth Muscle Dome enrollment option: a new 2-round arena course (Che & Lu double-team, then Gi; a clear pays 5000 coins + a Honey); unlocks after the Koru event | - | [Delilas Challenge](#delilas-challenge) |
 | `--delilas-party V,N,G` | play as the Delilas siblings: the party wears Gi / Lu / Che battle models (any permutation over Vahn, Noa, Gala) while the ravine duels + dome Master legs field Vahn / Noa / Gala models | - | [Delilas party swap](#delilas-party-swap) |
 | `--delilas-arts-voice MODE` | with the swap: what the arts shout AND Super/Hyper fanfare banks carry - `original` (default; the retail hero shouts stay), `adjusted` (re-voiced toward the siblings), `removed` | `original` | [Delilas party swap](#delilas-party-swap) |
-| `--delilas-moves MODE` | with the swap: whose animations the hero's Tactical Arts play - `hybrid` (default; only the signature Hyper is the sibling's), `delilas` (whole art archive rebuilt from the sibling's clips, arts renamed, non-essential arts hidden) | `hybrid` | [The Delilas move set](#the-delilas-move-set) |
-| `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](#completion-reward---a-honey-or-three-custom-items) |
+| `--delilas-moves MODE` | with the swap: whose animations the hero's Tactical Arts play - `hybrid` (default; only the signature Hyper is the sibling's), `delilas` (whole art archive rebuilt from the sibling's clips, arts renamed, non-essential arts hidden) | `hybrid` | [The Delilas move set](randomizer-delilas.md#the-delilas-move-set) |
+| `--custom-items` | inject three brand-new items (Nature's Elixir / Ra-Seru Tear / Fury Bloom) into cut item slots; `random` drop/chest/steal modes add them to the fill pool, and with `--delilas-challenge` they replace the Honey clear reward | - | [Custom items](randomizer-delilas.md#completion-reward---a-honey-or-three-custom-items) |
 | `--fishing-price ITEM=POINTS` | set the fishing-exchange point cost of a prize (e.g. the Buma Water Egg); the price also gates when the prize appears | repeatable / comma-separated | [Fishing prize prices](#fishing-prize-prices) |
 | `--rename-location INDEX=NAME` | rename a world-map location (save / load / pause + quick-travel menu), e.g. an element cave to match a re-elemented party | repeatable | [Location names](#location-names) |
 | `--earth-egg-price VALUE` | set the casino-coin threshold to obtain the Earth Egg (Sol Tower Prize Counter; retail 100000), gate + debit together | single value | [Earth Egg coin threshold](#earth-egg-coin-threshold) |
 | `--arts-power COMBO=VALUE` | rebalance a Tactical Art's per-strike damage-power bytes, targeted by input combo (`RDLDL=0x16`); `VALUE` is a power tier `0x0C..=0x1F` or `0` to disable | repeatable / comma-separated | [Arts damage power](#arts-damage-power) |
 | `--super-art-power NAME=VALUE` | the same rebalance for a **Super Art**, targeted by name (`"Tri-Somersault"=0x1A`); Super Arts carry no combo, no arts-table row and no AP cost of their own, so name is their only key | repeatable / comma-separated | [Super Art damage power](#super-art-damage-power) |
-| `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` |
+| `--show-super-arts` | list a character's Super Arts on the in-battle Tactical-Arts list, which retail never draws: once performed, sorted in by AP, with name, chain AP and the arrows you type; mutually exclusive with `--shiny-seru`, the arts AP overrides and `--delilas-challenge` | flag | [Show Super Arts](#show-super-arts-on-the-in-battle-move-list) |
 | `--super-arts-pack` | install the **Super Arts Pack by ZetaPhoenix**: fifteen extra Super Arts, five per character, each with its own name, hit count and animation; his block and hook words are installed byte-for-byte, parked in the `DMY.DAT` annex and streamed to `0x801FD000` at battle load. Ships with the author's name-banner fix. Mutually exclusive with `--shiny-seru`, `--show-super-arts`, the arts AP overrides and `--delilas-challenge` | flag | [Super Arts Pack](#super-arts-pack-by-zetaphoenix) |
 | `--arts-ap-grant [CHAR:]COMBO=AMOUNT` | make a Tactical Art **grant** `AMOUNT` AP (Spirit, clamped at 100) instead of costing it, admitting it at any AP level; a code hook into the party arts queue-builder. Keyed per (character, arts row). Mutually exclusive with `--shiny-seru` | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
 | `--arts-ap-cost [CHAR:]COMBO=AMOUNT` | set what a Tactical Art **costs** in AP (`1..=100`), replacing retail's computed cost. Same hook, same keying, same exclusivity; the art's menu AP number is rewritten to match | repeatable / comma-separated | [Arts AP override](#arts-ap-override) |
@@ -393,6 +335,8 @@ scene-transition exit (home scene → destination + entry tile) with its shuffle
 class: walk-door (the pool) versus excluded script/cutscene-invoked or world-map
 transition (see [Doors](#doors-scene-transitions)).
 
+## Loot and economy
+
 ### Keep-static items
 
 Progression / quest / key items are things the player needs in a predictable
@@ -427,64 +371,205 @@ external table.
 
 ### Equipment drops
 
-`--equipment-drops` is genuinely **additive**: it grants one *extra* piece of
-equipment on a low per-battle chance, **on top of** the normal drop, which it
-never touches. A monster record has a single drop slot (`+0x48` item id /
-`+0x49` chance), so no data edit can make a monster drop two things - turning the
-slot into equipment would destroy the normal drop. So instead of editing data,
-this feature **patches the executable's reward routine** the same way the
-starting-bag feature splices a grant into the opening scene: a small routine is
-injected that rolls the game's own RNG and, on success, calls the inventory-add
-helper for a random equipment id. This is why every gameplay preset of the
+`--equipment-drops` is **additive**: it grants one *extra* random piece of
+equipment on a low per-battle chance (`--equipment-drop-chance N`, default 5%),
+on top of the normal drop, which it never touches. A monster record has a single
+drop slot, so no data edit can make a monster drop two things; the feature
+patches the executable's reward routine instead. Every gameplay preset of the
 in-browser patcher enables it; only "Vanilla" leaves it off.
 
-**The hook (`bonus_drop` module).** The battle-end reward routine `FUN_8004E568`
-tallies a battle's spoils exactly once (gated on the per-battle state byte
-`actor+0x6ce == 0`, which it then sets to `1`). Right after it grants the
-formation's normal drop via `FUN_800421d4(item, 1)` at `0x8004f608`, control
-joins at `0x8004f610` (`lui v0,0x8008` / `lw v0,-0x4540(v0)`). The randomizer
-overwrites those two instructions with `j <routine>` + `nop` (a detour), and the
-injected routine:
+Hook design: [internals](randomizer-internals.md#equipment-drops).
 
-1. rolls `rand() % 100 < chance` (the low-chance gate, default 5 %, reusing the
-   battle RNG `FUN_80056798`);
-2. rolls `rand() % table_len` to index an embedded equipment-id table;
-3. calls `FUN_800421d4(id, 1)` to add the gear - the same helper the normal
-   drop, shops, and minigame rewards use (an unguarded add, like the minigame
-   completion reward `FUN_801D0F60`);
-4. replays the two displaced instructions and `j`s back to `0x8004f618`.
+### Treasure chests
 
-The join is reached once per battle, so the roll fires once per battle. The
-routine + id table are written into the 1028-byte preserved rodata gap at
-`0x8007AB38` (the same loaded-and-preserved padding the [name injection](#unused-content)
-uses, at a non-overlapping offset clear of the Seru-Bell string) - on PSX all
-resident RAM is executable, so a routine placed there runs when jumped to.
-Everything is a same-size, in-place `SCUS_942.54` edit; the planner guards on the
-two detour-site words matching the known US build and on the routine region being
-all-zero dead space, refusing a differently-laid-out image rather than corrupting
-it.
+A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
+`[0x39, item_id]` - the item id is a **single inline operand byte** in the
+per-scene field-VM script bytecode, not a per-scene table. (Pinned in the
+dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
+`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The routine
+printed `FUN_801D71F0` is not an add-item copy - it is the field overlay's
+unreferenced per-slot equip applier `FUN_801E5A08` under a mis-based VA, and
+its `FUN_800421D4` call is a refund. See
+[script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
+partition-1 per-actor interaction scripts (a chest is an interactable actor).
 
-The grant is silent (no victory-screen "received" line); the gear simply appears
-in the bag after the battle. The chance is `--equipment-drop-chance N` (percent,
-default 5).
+`chest::give_item_sites` finds them with a **dialogue-skipping opcode-aware
+walk** - it walks each partition-1 record's interaction script from its true
+entry PC with the field-VM disassembler ([`legaia_asset::field_disasm`], moved
+into Track 1 for exactly this reuse). A chest's give op almost always sits
+**after** the inline dialogue that announces it ("There is a {item} in the
+treasure chest!" → give → "{name} now has the {item}!"). That dialogue is a
+stream of `0x1F`-lead glyph segments, not bytecode, so a decode error **at a
+`0x1F` byte** is treated as a segment to skip (advance past `0x1F`, consume
+glyphs to the terminating `0x00`, with `0xC?` top-nibble bytes as 2-byte
+escapes per the dialog box-pack format), and decoding resumes - the
+inter-segment control bytes (`0x24`/`0x25`/`0x48` Nop, `0x26` `JMP_REL`, `0x36`
+`SCENE_FADE`, …) are genuine ops that stay in sync, so the walk reaches the
+post-dialogue `0x39`. Any **other** decode error stops the walk, and each
+record's walk is bounded to the next record's start offset, so it can never run
+off into unrelated data and mis-read a `0x39` data byte as an op - never a naive
+`0x39` byte scan. (An earlier walk stopped at the *first* `0x1F` instead of
+skipping it, which silently missed the post-announcement give in roughly 85% of
+sites - including every chest in a scene whose first interactable record opens
+with dialogue, such as `keikoku`.) Multi-`0x39` runs are genuine multi-item
+gifts (a 10× consumable chest, the fishing starter kit of a rod + several lures,
+the Genesis-Tree Ra-Seru equipment sets), each `0x39 <id>` its own op.
 
-**The id table** is the equipment pool: the retail item id space is one flat
-table shared by consumables, key items, and equipment, with nothing that flags
-"this id is a weapon" in a single byte, so the equipment ids are recovered by
-**name** - every weapon / armor / accessory in the curated public
-[gamedata tables](../reference/gamedata.md) is matched case-insensitively against
-the disc's own item-name table to find its id (`legaia_patcher::equipment::equipment_pool`).
-The names ship in the repo; the ids come from the user's disc - no Sony bytes are
-embedded (the injected routine is the randomizer's own code), and the join
-doubles as a cross-check of the curated tables against the real executable. About
-150 of the ~155 curated equipment names resolve; the stray in-range consumable
-*Honey* is correctly excluded.
+**Display vs grant - the announcement names the item from a different byte.** A
+chest's flavor text ("There is a {item} in the treasure chest!" / "{name} now has
+the {item}!") renders the item *name* from a dialogue **item-name token** `0xC2
+<id>`, which is a **separate byte** from the `0x39` give operand that actually
+adds the item to the bag. Patching only the give operand grants the new item but
+leaves the message reading the old one - verified in-game: the inventory receives
+the new item while the chest still *says* the original (an `0xC2 <old_id>` token
+sits resident in the loaded MAN right beside the patched `0x39 <new_id>`). Pinned
+across the corpus: of every `0xC?` 2-byte dialogue escape in chest records, only
+`0xC2`'s argument matches the give operand (the other escapes are character-name /
+glyph controls), and 241 of 275 sites carry one (announcement + "now has"). So
+`give_sites_and_display_tokens` recovers, per give site, the `0xC2` token offsets
+in the same record whose id equals that site's give operand (routed to the
+*nearest* give so multi-item-gift records map each token correctly), and
+`SceneChests::set_site` rewrites the operand **and** those tokens together - flavor
+text stays in sync with the grant. Sites whose dialogue doesn't name the item
+(~34) simply have no token to sync.
 
-> The from-scratch engine can't execute injected MIPS, so - unlike the data-edit
-> randomizers - this feature has no engine runtime oracle. It is verified by the
-> byte/disassembly checks in `equipment_drops_real` (the detour + routine + table
-> decode as the hand-assembled code, the edit is surgical, the build guard
-> refuses an unknown layout) plus an emulator playtest.
+Chest item ids are global inventory ids, so `apply::randomize_chests` reassigns
+them **globally** across every site (`Shuffle` redistributes the existing
+multiset, `Random` draws from the valid item pool), then recompresses each
+touched MAN like the encounter path. A scene whose recompressed MAN overflows is
+excluded from the shuffle pool entirely (determined iteratively), so its items
+neither leave nor enter circulation and `Shuffle` preserves the global multiset
+exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
+too tight to re-pack, is skipped).
+
+### Town shops (what stores sell)
+
+A gold merchant's stock is **inline in the scene's field-VM script** (the MAN),
+the same place chests and doors live - *not* a global table. Opening a shop is
+field-VM **op `0x49` (`STATE_RESUME`)**, the multi-frame state machine that
+drives the menu-request register `_DAT_8007B450`. Its sub-op-`0` inline payload,
+for a shop, is `[u8 count][count× u8 item_id][ASCII name\0]` followed by the
+shop's `0x1F` dialogue ("Welcome!", "Thank you!"). This was pinned from a live
+PCSX-Redux capture standing in the Rim Elm Variety Store - its 10 item ids match
+the curated [shop table](../reference/gamedata.md).
+
+`shop::SceneShops` finds sites by **scanning** the decompressed MAN for the
+op-`0x49` sub-op-`0` shop signature - *not* by an opcode walk. A shop's `0x49` is
+often gated behind a dialogue confirm-picker ("Buy them?") whose option-jump
+table desyncs a linear disassembler before it reaches the op (Biron Monastery's
+Corey vendor is the case that exposed this), so a walk silently misses those
+shops. The scan doesn't care how the script reaches the op; false positives are
+ruled out by strict record validation: the byte after the opcode must be `0x00`
+(sub-op 0 - this alone rejects almost every stray `0x49`), the count is small and
+non-zero, every id is non-zero, and the trailing shop name is a printable,
+letter-initial, `0x00`-terminated string. The apply layer additionally passes a
+SCUS "id names a real item" mask (`locate_with_items`), so an id that names
+nothing can't anchor a false shop. `apply::randomize_shops` then reassigns the
+item-id bytes **globally** across every town shop (`Shuffle` redistributes the
+existing shop-item multiset, `Random` draws from the **sellable pool**),
+same-size, and recompresses each touched MAN like the chest path.
+
+**No quest items; chest gear gets a price.** The sellable pool is "items the game
+prices `> 0`" (`item_price::sellable_pool`, read from the item table's per-record
+price - `u16` at record `+2`, base `0x80074368`; see
+[item-table.md](../formats/item-table.md)). Quest / key / story items all ship at
+price `0`, so this automatically keeps them out of shops - no hand-maintained
+exclusion list. The flip side is that a handful of genuinely-equippable items are
+normally *only found in chests* and so also ship at price `0` (the Ra-Seru
+weapon/armor/shoe set + Astral Sword); `randomize_shops` first prices those
+(`item_price::CHEST_EQUIPMENT_PRICES`, ~28800–55000 gold, approximated from the
+nearest priced gear of the same type) with a same-size SCUS edit, so they're
+non-free and part of the sellable pool. On the retail disc this is
+34 shops (picker-gated vendors, duplicate scene clusters and per-story-phase
+shop records included). `--shops shuffle|random`; read-only
+`legaia-patcher shops` lists every shop's stock.
+
+### Casino prize exchange
+
+The **casino** prize list (redeem coins for prizes) is a different mechanism from
+the gold town shops: it is a **static table** in the menu overlay's data segment
+(`DAT_801e4518`), and it debits the casino **coin** bank (`_DAT_800845A4`), not
+gold - which is how it's told apart from a gold merchant. It lives in **PROT
+entry 899** (`0899_xxx_dat`, stored raw), file offset `0x15D00` (VA `0x801E4518`
+under the overlay data-segment load base `0x801CE818`), as four `0x60`-byte
+blocks of 8-byte `[u16 item_id][u16 story-gate][u32 coin-price]` records (the
+high-value prizes carry a non-zero gate that locks them behind casino
+progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
+prize keeps its coin price and progression gate wherever it lands), a same-size
+raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-patcher casino`.
+At runtime the prize-exchange UI is a menu-overlay session: it runs at
+`game_mode 0x17` (the CARD/menu pair) with PROT 0899 resident in slot A, the
+same hosting as the pause menu and the gold shop (see
+[`subsystems/shop.md`](../subsystems/shop.md)).
+
+### Steal items (Evil God Icon)
+
+What the player steals from a monster (Evil God Icon equipped) is a per-monster
+entry in a **static `SCUS_942.54` table** at `DAT_80077828` - `[steal_chance_pct,
+steal_item_id]` per 1-based monster id, item at `+id*2+1` (see
+[steal-table.md](../formats/steal-table.md)). It is **not** in the PROT 867
+record. Because it's a plain executable table, an edit is the simplest of the
+four: a single same-size byte overwrite of the item, applied straight to the
+SCUS file via `DiscPatcher::patch_named_file` (the non-PROT sibling of
+`patch_prot_entry`, built on `legaia_iso::write::patch_file_logical`). No LZS
+re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
+reassigns the item for every stealable monster (`Shuffle` redistributes the
+existing steal-item multiset, `Random` draws from the valid item pool) and
+**preserves each monster's steal chance** - the item changes, the rate doesn't.
+On the retail disc 189 monsters are stealable. `legaia-patcher steals` lists the
+current table (the audit surface).
+
+### Fishing prize prices
+
+The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell
+accessories and consumables for **fishing points** rather than gold. Each prize
+is a 12-byte row `[u32 limit][u32 price][u32 item_id]` in the raw fishing
+overlay (PROT entry **972**, `legaia_asset::fishing_exchange`). `--fishing-price
+ITEM=POINTS` sets the `price` of every row granting `ITEM` (id in decimal or
+`0xHH`) - e.g. `--fishing-price 0x6F=500` drops the Buma Water Egg from 20,000
+to 500 points. The price is **both** the point cost and the "only appears once
+you can afford it" gate (the top prize row is hidden until `price < points`), so
+lowering it also makes the prize show up sooner. PROT 972 is a raw overlay, so
+each edit is a same-size in-place `u32` write - no recompression. Multiple
+prizes can be set at once (comma-separated or by repeating the flag), and
+`legaia-patcher fishing` lists the current prizes and prices (with names). In
+the browser patcher, the same edits live in the **Manual value edits** group as
+`item=points` pairs.
+
+> Verified by the `fishing_price_real` disc oracle: the Buma Water Egg row is at
+> the parser's coordinate (PROT 972, offset `0x9874`, 20,000 points), a price
+> edit lands as a same-size `u32` at exactly the targeted `price` fields, the
+> patched overlay re-parses with the new price, re-applying the same value is a
+> no-op, and an item no prize grants is refused.
+
+### Earth Egg coin threshold
+
+The **Earth Ra-Seru Egg** is *not* a row in the four-block casino prize table
+([casino prize exchange](#casino-prize-exchange)); it is a **bespoke scripted exchange** in the
+`koin1` scene's field-VM script (the MAN, retail PROT entry **543**). The Sol
+Tower "Prize Counter" offers it only once the casino-coin bank clears a
+threshold, then gives item `0x6E` and debits the coins. Two verified literals
+drive it: the **gate** is a field-VM op-`0x4E` INVENTORY_CMP sub-op 11 (coin u32
+compare) whose value is retail **99999** (`coins > 99999`, i.e. `>= 100000`),
+and the **debit** is an op-`0x4C` nibble-E sub-5 add-coins of `-100000`. Retail
+keeps `gate = price - 1`, `debit = price`.
+
+`--earth-egg-price VALUE` sets both together so the repriced egg stays coherent
+(require `VALUE` coins, remove exactly `VALUE`); `VALUE` is the coins required,
+range `1..=8388608` (the debit is a signed 24-bit field). The threshold and
+debit are same-size value swaps in the decompressed MAN, which is LZS-recompressed
+and written back in place (the `koin1` MAN is zero-slack, but the re-packer fits
+it). `legaia-patcher earth-egg` prints the current value. In the browser patcher
+the field lives in the **Manual value edits** group.
+
+> Verified by the `earth_egg_real` disc oracle: the gate is located in PROT 543
+> at the retail shape (coins 100000 / gate 99999 / debit 100000, item `0x6E`,
+> `GIVE_ITEM 0x39 0x6E` present); a price edit re-decodes to `gate = value - 1`
+> and `debit = value`, changes only the threshold-half and debit bytes in the
+> decompressed MAN, keeps every neighbouring descriptor + the touched sector
+> EDC/ECC-valid, refuses `0` / over-range, and is a no-op on re-apply.
+
+## Battles
 
 ### Random encounters
 
@@ -654,2348 +739,6 @@ validated on a real disc by `tests/encounter_battle_load_cap_real.rs`
 (authored tables satisfy both limits; a guard-free kingdom shuffle violates
 them; the full pipeline leaves zero violations, EDC/ECC-valid and
 seed-deterministic).
-
-### Run-away EXP
-
-`--flee-exp` banks a slice of a fight's experience into the party whenever they
-**successfully run away** - vanilla awards nothing for fleeing. Like the
-[equipment drop](#equipment-drops), this is a runtime behaviour with no value to
-edit (the flee path never reaches an EXP grant), so it **patches the executable**
-rather than a table.
-
-**The hook (`flee_exp` module).** The per-actor battle state machine
-`FUN_801E295C` (battle-action overlay, base VA `0x801CE818` = **PROT entry 898**)
-handles "Run" across states `0x64..0x66`. State `0x66` is the
-**successful-escape teardown**, reached only when the run roll succeeds (a failed
-run goes `0x65 -> 0x50` and the battle continues; see
-[`battle-action.md`](../subsystems/battle-action.md)). Its handler begins at VA
-`0x801E5A10` (`lui v1,0x801d` / `addiu a0,v1,-0x6f90`, the fade-template setup).
-The randomizer overwrites those two instructions with `j <routine>` + `nop` (a
-detour) - a same-size **raw** edit of the overlay PROT entry, which maps linearly
-from its base (`file_off = va - 0x801CE818`). State `0x66` advances itself to the
-terminal `0x67`, so it runs once per escape; the party HP was already floored to
-`>= 1` in state `0x64` (the "escape restores a downed member" mechanism), so every
-member is alive at the grant. The injected routine:
-
-1. sums the formation's experience: it walks the live enemy record-pointer table
-   at `0x801C9348` for `actor[+1]` (`*0x8007BD24`) entries and accumulates each
-   record's EXP halfword (`+0x46` - the same field the victory-spoils routine
-   `FUN_8004E568` reads);
-2. scales the total to `--flee-exp-pct`% (default **5**);
-3. adds the scaled amount to **every** party member's cumulative-XP cell - the
-   slot→record-id map is at `0x8007BD10`, the record array is based at
-   `0x80084140` (stride `0x414`), and cumulative XP lives at `+0x5C8` (where
-   `FUN_8004E568` accumulates a win's EXP and `FUN_801E9504` reads it to apply
-   levels), each clamped to the `9,999,999` cap;
-4. replays the two displaced instructions and `j`s back to `0x801E5A18`.
-
-The grant is **banked**, not applied as an immediate level-up: it only writes the
-cumulative-XP cell (it never calls the level processor), so the experience shows
-in the status screen at once and the character levels up the next time a won
-battle tallies the accumulated total - small and side-effect-free during the
-escape fade (no stray level-up screen). The routine lives in the same preserved
-rodata gap as the [equipment-drop](#equipment-drops) and [name](#unused-content)
-injections (`0x8007AB38`), at `0x8007AD00` - clear of the equipment routine + its
-id table, so both battle hooks coexist. The planner guards on the detour-site
-words matching the known US build and on the routine region being all-zero dead
-space, refusing a differently-laid-out image rather than corrupting it. On by
-default in the web Balanced / Full Chaos presets.
-
-> The from-scratch engine can't execute injected MIPS, so - like the equipment drop
-> - this has no engine runtime oracle. It is verified by the byte/disassembly
-> checks in `flee_exp_real` (the real disc's hook site **is** the expected
-> displaced pair; the detour + routine decode as the hand-assembled code; each
-> edit is surgical and EDC/ECC-valid; the build guard refuses an unknown layout)
-> plus an emulator playtest.
-
-### Enemy HP bars
-
-`--enemy-hp-bar` draws a red HP gauge over every living monster in battle
-(`enemy_hp_bar` module). Retail never shows a monster's HP - the party HUD
-counts its own HP down after a hit, a monster's `+0x172` display cursor is
-maintained but never drawn ([`battle-action.md`](../subsystems/battle-action.md)),
-and the one readout on the disc is the Koru fight's `HP Left` percentage
-strip. This adds a per-monster plate without adding art.
-
-**What is drawn.** The AP plate's content without its blue chrome. The
-`HP` label chip (system-UI icon table `0x800732A4` record `0x07`, the roster
-panel's own - [`field-menu.md`](../subsystems/field-menu.md#status-page-submenu-0-or-5))
-through the icon sprite emitter `FUN_8002C488`; then the meter and the
-numeral from retail's gauge-content primitive `FUN_8002C0B0(x, y, value)`,
-called with the monster's HP percentage (`shown * 100 / max`, capped at 100,
-floored at 1 so a living monster always shows a sliver): it emits two 3-px
-gouraud strips of `value/2` px and the value digits. The trough, value box
-and end cap tiles the AP plate frames these with are left out.
-
-**What the value is.** The displayed-HP mirror `actor[+0x172]`, not live HP
-`+0x14C`. A player art commits live HP once at the end of the action out of
-its per-action total `actor[+0x00]` (`FUN_801EC3E4`), but every hit credits
-the pending delta `+0x10`, and on a monster slot the drain `FUN_80047430`
-applies that delta to the mirror in the same frame - retail never drew it,
-so it never ramped ([`battle-action.md`](../subsystems/battle-action.md)).
-Reading the mirror is what makes the bar step down hit by hit inside a
-combo; live HP stays the liveness test (a dead monster draws nothing). Its strips run dark-red `(0x80,0x20,0x10)` to gold
-`(0xC0,0xA0,0x40)` and back; the routine reads the primitive cursor
-`0x1F8003A0` before the call and afterwards rewrites the four gold colour
-words of the two packets it emitted to red, keeping the GP0 code byte the
-first colour word of the second packet carries. The fill is linked first, so
-it draws over the trough (earlier-linked = on top in an ordering-table
-bucket).
-
-**Where.** One 16-px row per monster slot along the top of the screen
-(slot 3 on the first row, at `y = 28`), under the acting-actor plaque and
-above the Begin / Reselect prompt, each plate centred on its monster's
-projected screen X. The X comes from the billboard projector `FUN_800195A8`
-over the actor's stage anchor `+0x3C/+0x3E/+0x40` - the same call, with the
-same GTE state, the damage-number popup makes - so a plate follows its
-monster under any attack camera; a monster behind the camera (the projector's
-depth saturates to zero) or off-screen simply lands off-screen. A
-head-anchored plate was tried first and collides with a retail widget for
-some monster size in every phase, and a single shared row piles up when a
-zoomed attack camera brings the monsters' X together; the row-per-slot band
-is clear of both. Slots are read from the actor pointer table
-`DAT_801C9370[3..=6]` (slot 7 is the "none" sentinel); a seat is skipped when
-its pointer is null, its live HP `+0x14C` is zero, or its `+0x21C` byte is
-`0xFF` (hidden by a summon fade).
-
-**Hook.** A two-word detour at the head of the damage-popup renderer
-`FUN_801DF6B8` (PROT 0898, `0x801DF6B8`), which the actor-render callback
-`FUN_800480D8` calls once per frame (`0x80048138`) while the battle phase
-byte `DAT_8007BD71` is `0xFF` - not during the intro ramp, not in the results
-sequence - after the frame's camera matrix is in the GTE. The routine also
-early-outs on the HUD-parked halfword `ctx[+0x6CE]` every retail HUD emitter
-tests, replays the two displaced words and resumes at `0x801DF6C0`. The
-detour is a PROT 0898 edit only, so the sibling slot-A images (dome, capture,
-magic level-up) never carry it.
-
-**Where the code lives.** The SCUS injected-code arena is full (34 bytes in
-fragments - [the arena budget](#the-injected-code-arena-budget)) and the
-battle overlay's image is packed, so the routine is laid over **four
-routines nothing on the disc references** - the five-form scan (word, `jal`,
-`j`, PC-relative branch, `lui`+`addiu` pair) over `SCUS_942.54`, every based
-overlay image and every PROT entry finds no reference of any kind
-([`address-reference-scan.md`](address-reference-scan.md); the verdicts are
-recorded per body in `scripts/ci/port-catalog-ignore.toml` `[unreferenced]`):
-
-| Fragment | Host body | Capacity |
-|---|---|---|
-| A - gates, monster loop, percentage | `FUN_801F2D54`, cast colour-wash pulse (PROT 0898) | 47 words |
-| B - clamp, project the anchor, seat the plate | `FUN_801F463C`, learned-art predicate (PROT 0898) | 35 words |
-| C - loop tail, epilogue, return | `FUN_801DBB2C`, card-slot highlight reset (PROT 0898) | 24 words |
-| S - draw one plate (leaf, `jal` from C) | `FUN_8005126C`, battle sprite on-screen test (SCUS) | 52 words |
-
-The three overlay bodies are within PC-relative branch range of one another,
-so A, B and C are one program spliced with branches; the far transfers (the
-loop back-edge, the `jal` into SCUS, the return to the popup) are `j` /
-`jal`. Every body is fingerprinted at plan time - its prologue words and its
-own `jr ra` - and a fragment that would overrun its body refuses, so a build
-that differs, a body some later mod has claimed, or a second application all
-fail closed with nothing written. The hosts are code, not zero padding: the
-["zero is not dead"](../../crates/patcher/README.md#region-placement---zero-is-not-dead-three-times)
-trap does not apply, and the evidence is the reference scan, not the bytes.
-No arena byte is claimed, so `--enemy-hp-bar` composes with every other code
-hook, including the ones that exclude each other.
-
-**Traps honoured.** The R3000 load-delay slot (a static scan over each
-fragment and across the splices is in the module's tests); `mflo` followed
-within two instructions by a multiply or divide leaves `lo` undefined, so the
-percentage math keeps four instructions between them; branch reach is
-checked against the 16-bit word offset at assembly; and the routine opens its
-own `0x50`-byte frame under the popup's caller - this render pass runs with
-the stack **in the scratchpad**, which is also why the plate geometry probe
-reads the routine's frame through the scratchpad reader.
-
-Off by default, seedless, no Sony bytes (the plate is the disc's own icon
-records, drawn by the disc's own emitters). Module
-[`legaia_patcher::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs);
-the module's tests execute the assembled words in the crate's R3000
-interpreter against stubbed retail helpers; disc oracle
-`crates/patcher/tests/enemy_hp_bar_real.rs`; runtime probe
-[`autorun_enemy_hp_bar_inject.lua`](../../scripts/pcsx-redux/autorun_enemy_hp_bar_inject.lua)
-(RAM-injects the planned edits into a mid-battle save state and captures the
-frame plus every gauge / icon emission).
-
-### Enemy ally (charm)
-
-`--enemy-ally` gives a per-battle chance (`--enemy-ally-pct`%, default **20**)
-that a random enemy fights on the **player's** side as an uncontrolled ally - a
-guest-character-style helper that appears in **multi-enemy** fights
-(`enemy_ally` module). The routine reads `DAT_8007BD0C[1]` (the 2nd formation
-slot) and skips charm when it is zero, so single-enemy fights are left alone:
-charming the lone enemy of an *input-gated* tutorial (the Tetsu sparring match,
-monster id `0x4F`) softlocks the scripted fight - it waits for the enemy that is
-now an ally - and solo story bosses are likewise scripted set-pieces. (Pinned
-from a live softlock: PCSX-Redux slot on the Tetsu tutorial showed the lone enemy
-actor with `+0x16E = 0x380` and the battle SM stalled.) Multi-enemy fights are
-the random encounters where an uncontrolled ally is the intended, safe effect.
-
-A genuine 4th player-side combatant is infeasible: retail battles are hard-wired
-to 3 party slots + up to 4 monster slots (`FUN_800513F0`; party meshes/CLUTs/HUD
-exist only for slots 0..2). So instead this rides a mechanic the game already
-implements - the **"AI-delegated" flag**. Setting an actor's `+0x16E |= 0x380`
-makes the action SM `FUN_801E295C` call the retarget helper `FUN_801E7320` at
-ActionSeed, which **flips that actor's target to the opposite side**; for a
-*monster*, the flip means it attacks the *other monsters*. The monster AI picker
-`FUN_801E9FD4` already honours `0x380` (plain attacks, no scripted specials), so
-"an enemy assists you" is just "set `0x380` on one monster at battle setup".
-
-Two same-size SCUS edits plus a one-word overlay edit (`apply::inject_enemy_ally`):
-
-1. a **setup detour** at `FUN_800513F0` `0x80051990` (right after the monster
-   loop, so the actor table + enemy count are populated) into a routine in the
-   preserved rodata gap at `0x8007ACA0` - the free window between the
-   equipment-drop routine+table (`0x8007AB80`..`0x8007ACA0`) and the flee-EXP
-   routine (`0x8007AD00`), so every gap feature coexists. The routine rolls the
-   chance and OR's `0x380` into the frontmost enemy (actor slot 3, `0x801C937C`,
-   always present), then replays the displaced pair and returns;
-2. a **victory-mask widen** in battle-action overlay 0898 at `0x801E6638`
-   (`andi v0,v0,0x4` -> `andi v0,v0,0x384`), so a `0x380`-charmed monster counts
-   as "down" in the monster-wipe gate (state `0x5A`) and the player doesn't have
-   to defeat their own ally to win.
-
-The planner guards on the SCUS hook words, the routine landing zone being all-zero
-dead space, and the overlay victory word matching the known `andi v0,v0,0x4` -
-refusing a differently-laid-out image rather than corrupting it. On a solo-enemy
-boss the lone enemy turns on itself. (Side effect: while on, a vanilla
-*confuse*-on-an-enemy - which also sets `0x380` - likewise stops counting toward
-"enemies remaining".) On by default in the web Balanced / Full Chaos presets.
-
-> Like the other code hooks, the from-scratch engine can't execute injected MIPS, so
-> this has no engine runtime oracle. It is verified by the byte/disassembly checks
-> in `enemy_ally_real` (the real disc's hook site **is** `lui v1,0x8008` /
-> `lbu v1,-0x42f4(v1)` and the victory site **is** `andi v0,v0,0x4`; the detour +
-> routine decode as the hand-assembled code; it composes with flee-EXP in the same
-> gap; each edit is surgical and EDC/ECC-valid) plus an emulator playtest.
-
-### Shiny Seru
-
-`--shiny-seru` gives a per-battle chance (`--shiny-pct`%, default **2**) that the
-frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% combat
-stats at battle load (and a translucent render), and the Seru you capture from it
-deals **+35% damage** on every future cast (on top of its normal abilities),
-permanently (`shiny_seru` module). Two cosmetics ride along: on a shiny cast the
-summoned creature renders semi-transparent and a "+35% DMG!" caption is shown one
-glyph line **below** the native "Magic effect:" announcement box (so they stack
-instead of overlapping). This mirrors the from-scratch engine implementation
-(`legaia_engine_core::seru_learning`'s shiny set + `SHINY_DAMAGE_BONUS_PCT`).
-
-"Capturable" is decided by indexing the **first-monster id global**
-(`DAT_8007BD0C`, reliably set before the setup hook - the game's own `0xB5` check
-reads it) into a 256-bit **allowlist bitmap** built *at patch time* from the
-disc's monster names that match a player Seru-magic name (`capturable_monster_ids`
-/ `SERU_NAMES`: Gimard / Theeder / Vera / Gizam / Nighto / Zenoir / Viguro /
-Swordie / Orb / Freed / Nova + variants = 33 ids). The earlier `actor+0x3e` idea
-was wrong - that byte is volatile (reads 0x55 for gobu) and isn't a Seru flag.
-The persistent +35% is stored in a **parallel per-spell-slot shiny-byte array** at
-`record+0x1C0` (`0x788` from the runtime `+0x729` base; a 32-byte run verified
-all-zero/unused across 228 record samples and inside the saved record footprint).
-The flag lives there, **not** in the spell-level byte's free `0x80` bit. That
-earlier design (OR `0x80` into the level byte) worked for the gameplay readers but
-leaked into the shared spell-level-up + display function `FUN_800402f4`, which
-reads the level *unmasked* and does a `level < 9` cap + `(level-1)` table index:
-with the bit set the level reads 129/130, so the "grew to level" message rendered
-blank and the out-of-bounds index corrupted a victory-pose texture. Masking that
-function too didn't fit the gaps, so the flag was moved out entirely - now the
-level byte is always clean and no display masking is needed. Because the array is
-slot-indexed, a **grant-shift hook** mirrors the spell-list insert-at-front shift
-onto it so each Seru keeps its flag; the byte is inside the saved record so it
-survives a memory-card save. (Every injected routine honours the R3000 load-delay
-slot - a just-loaded register is never used by the next instruction, else the
-value isn't ready yet; the boost loop in particular cascades into garbage without
-this.)
-
-**Where the routines live - and the "zero is not dead" trap (three times).** Every
-routine is reached by a two-word `j routine` + `nop` detour and lives in
-`SCUS_942.54`-resident dead space. "Dead" is a runtime property, not a file-byte
-one: a zero run is usable **only if no code reads it**. This bit the feature three
-times, each time `assert_zero` passing because the bytes *are* zero:
-
-1. The victory mouth-override table (`ART_MOUTH_VA = 0x80077E80`, `FUN_8004C7B4`;
-   rows `0x800781B0..`) - the victory face animator read routine bytes as facial
-   keyframes (**corrupted mouth**).
-2. The move-power table (`0x801F4F5C`, records 4..8 zero) - six move ids
-   (`0x07/0x12..0x15/0x19`) read them as move-power records (**garbage damage**).
-3. The **`0x80079xxx` SsAPI sound/effect tables** - the item-use sound engine
-   indexes a table at `0x800794F0` (read by `FUN_8005d0b8`) straight into the old
-   arena5 bitmap, so using a Healing Leaf read our bytes as garbage and the
-   sound-synced item banner never dismissed (**the Tetsu-tutorial Healing-Leaf
-   freeze**). The old arena3 `0x8007075C` and arena4 `0x80079340` were in the same
-   live cluster.
-
-The fix relocates everything to regions verified (a) all-zero in the clean image,
-(b) constant-zero across battle states, (c) **outside every known table** (the
-structural `assert_not_in_tables` guard over `SCUS_TABLE_RANGES` /
-`OVERLAY_TABLE_RANGES`, now extended with the SsAPI sound-table ranges), and -
-the part a static check can't prove - (d) **read-watch-verified unreferenced on a
-live PCSX-Redux battle** (item use, victory pose, AND a summon cast). Same
-"looks-dead-but-isn't" lesson as the level byte and `+0x1C0`; see also
-[Dead-code claims overstated]. The final regions: gap 1 `0x80077728` (scratch +
-setup B + capture C1 + the capturable bitmap + `SHINY_CAST_FLAG` byte + "+35%
-DMG!" string), arena 1 `0x8007AE00` (damage D / grant C2 / grant-shift K2 /
-battle-menu stamper H / field-menu colour F; the SsAPI I/O table begins exactly at
-`0x8007AF00`, read-watch-confirmed, so all 256 bytes below are usable), arena 2
-`0x8007AFF8` (+35% caption routine J, a dead pocket between two SsAPI tables), and
-slot 6 `0x80078A88` (summon-fade K, a read-watch-verified padding gap between the
-`0x80078xxx` tables).
-
-**Routine VAs must be 4-byte aligned.** A routine is reached by a `j routine`
-detour, and the `j` encoding drops the target's low 2 bits - so an unaligned entry
-jumps 2-3 bytes into garbage and crashes. The zero-run scan returns run *starts*
-that are frequently unaligned (a run begins right after the prior non-zero byte),
-so each routine VA is rounded up to a word boundary; only byte-addressed data
-(arena 5) may sit unaligned. (Pinned from a Tetsu-tutorial freeze: an earlier
-relocation left J/F/H at unaligned arena starts and the banner detour `j 0x8007AFF6`
-jumped to `0x8007AFF4`. `place` now refuses an unaligned routine VA.)
-
-`apply::inject_shiny_seru` performs **nine** same-size detours:
-
-1. **setup** (`FUN_800513F0` `0x80051A20`) - roll the chance; if the frontmost
-   enemy's monster id is set in the capturable bitmap, boost its stat block
-   `×135/100` and stamp the free per-actor byte `+0x226` as a shiny marker
-   (it renders the enemy translucent);
-2. **capture-success** (`0x801EE2E8`) - stash the captured enemy's `+0x226`
-   marker into a scratch word (the captured-enemy actor isn't reachable at the
-   grant site, so the link is carried here);
-3. **grant** (`FUN_801E92DC` `0x801E93B4`) - write a **clean** level byte plus
-   the slot-0 **shiny byte** (`+0x788`, `0x80` when the scratch says shiny);
-4. **grant-shift** (`FUN_801E92DC` `0x801E9320`) - mirror the insert-at-front
-   spell-list shift onto the shiny-byte array so it stays slot-aligned;
-5. **damage** (`FUN_801dd864` `0x801DDB08`) - read the matched slot's shiny byte
-   (`+0x788`); when set, multiply the summon-damage roll `×135/100` (the clean
-   level still feeds the normal `(level-1)/8` math);
-6. **menu** (`FUN_801d2e74` `0x801D2FA0`, overlay 0899) - read the shiny byte to
-   tint the spell-list level digit (no masking - the digit is already correct);
-7. **battle-menu** (`FUN_801d0748` `0x801D1B00`) - read the shiny byte to stamp a
-   `SHINY_CAST_FLAG` the cosmetics consume;
-8. **summon-fade** (`FUN_8004a908` `0x8004AD0C`) - override the summon actor's
-   draw-time fade so the creature renders semi-transparent on a shiny cast;
-9. **+35% text** (`FUN_80031d00` `0x800321D4`) - on a shiny cast, point the cast
-   caption at a "+35% DMG!" string and drop its Y to `0x1E` so it lands one line
-   below the native effect box instead of overlapping it.
-
-The planner guards every hook's fingerprint word, requires all routine regions to
-be all-zero dead space, **and** refuses any region that overlaps a known live
-table - so a differently-laid-out image (or a region that looks dead but is an
-indexed table) is rejected rather than corrupting the disc. On by default in the web Full Chaos / Balanced presets. **Applies to Seru
-captured *after* patching** - the shiny byte is set at the (post-patch) capture,
-so a Seru already captured on an unpatched save isn't retroactively shiny.
-
-> Like the other code hooks, the from-scratch engine can't execute injected MIPS,
-> so the disc path has no engine runtime oracle - it's verified by the
-> byte/disassembly checks in `shiny_seru_real` (all nine hooks match the known
-> US build, every detour becomes `j routine` + nop, the injection is surgical and
-> EDC/ECC-valid, it composes with enemy-ally, byte-deterministic, and the build
-> guards refuse a corrupted hook / non-dead region) plus an emulator playtest
-> (fresh capture: translucent summon, +35% text, correct level, working level-up
-> message). The *behaviour* is covered on the engine side by
-> `legaia-engine-core`'s `shiny_*` tests (roll/boost, capture marking, +35%
-> damage, LGSF v4 persistence).
-
-### Seru trading
-
-`--seru-trade` adds an **in-shop Seru-trading vendor** that runs **on real
-hardware**: every merchant grows a fourth **Buy / Sell / Trade / Quit** row, and
-picking Trade opens a screen where the player swaps a party member's learned
-Seru-magic for a different one. The offer is **time-bucketed** - it rotates as
-play continues - and fully **deterministic from the run's seed**, so a preview
-and the game always agree.
-
-**What an offer is (`legaia_asset::seru_trade`, the shared kernel).** Each time
-bucket has one `(want, give, give_level)` preference: the vendor wants a seru
-*type* and hands back a different one at a fixed level, part of the trade's
-value and shown before you trade. The level roll is **curved toward low levels**
-(`roll_give_level`): a weighted ticket picks a 3-level band - `1..=3` common
-(70%), `4..=6` rare (25%), `7..=9` very rare (5%) - so a high-level seru is a
-jackpot, not a coin flip. The randomizer precomputes the whole 64-bucket
-schedule from the seed (`bucket_offers` → `bucket_table_to_bytes`, 3
-bytes/entry) and embeds it. At runtime the handler indexes it by
-`(play_time / period + vendor_offset) & 63`, where `vendor_offset`
-(`vendor_bucket_offset`) is a per-vendor phase: the sum of the armed shop
-record's stock count + item ids + name bytes (the op-0x49 operand at
-`_DAT_8007B450`, the same record retail's own vendor-name reader walks), folded
-mod 64. Every trader therefore shows **its own** offer at any given play time
-while sharing the one on-disc schedule; the engine mirrors the identical sum
-from its decoded shop record. Against the live party the bucket expands
-(`expand_offers`) to **one selectable line per member who owns the wanted seru** -
-so the same type held by two members lists once each - **excluding** any member
-who already owns the give-back (a pointless trade). The seru id space is the
-player Seru-magic block `0x81..=0x95`. The trade screen always names **both
-sides** of the offer - a `Wants <seru>` / `Offers <seru> <lvl>` header - and
-when no party member qualifies it says `No <want> available / to trade for
-<give>` instead of showing an empty list.
-
-**The retail build (`seru_overlay` + `apply::inject_trade_full`).** This is a
-hand-assembled MIPS feature, not a value edit. Two byte-verified edits to the
-menu overlay (PROT **0899**) turn the picker into Buy / Sell / Trade / Quit and
-route a confirmed Trade into an unused picker sub-mode; the trade screen itself -
-the per-owner render, the native window-slide in/out, the cursor, the explicit
-"Trade?" confirm, and the swap - is a routine hosted **entirely in 0899's own
-reference-free dead region** (a ~3.8 KB all-zero run inside the resident overlay
-image, `0x801EA440..0x801EB340` - the blank lower band of the save-menu atlas,
-clear of the save screen's card buffers; see
-[where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live)), reached
-by `j` from the in-overlay detours. Because nothing lands in the
-SCUS rodata gap, seru trading **composes with every gap-based feature**
-([equipment drops](#equipment-drops), [flee-EXP](#run-away-exp), the Seru-Bell
-[name](#unused-content)). The injector writes the handler + stubs + strings + the
-seed-derived bucket table via `patch_prot_entry(899, …)`, each guarded as
-all-zero dead space. The swap rewrites the chosen owner's spell list in place
-(id at `+0x13D`, level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.
-
-> Cadence note: the play counter at `0x80084570` advances ~per-frame (≈60/s), not
-> per-second, so the retail handler divides by `RESEED_PERIOD_FRAMES` (≈9 minutes)
-> and the full schedule cycles in ~9.6 h. The kernel's seconds-based
-> `SECONDS_PER_RESEED` is the engine-facing constant.
-
-**Engine mirror (from-scratch track).** The same kernel feeds the engine's own
-trade UI: `World::install_seru_trade_config` reads a 24-byte
-[`SeruTradeConfig`] blob (enabled + seed) that `apply::enable_seru_trades` can
-write, and `World::open_seru_trade` / `apply_seru_trade` render + apply the swap
-through `MenuState::ShopMenu`/`ShopTrade`/`ShopTradeConfirm`. Both hosts run the
-same bucket model as retail (`bucket_offer` + `expand_offers`, received seru at
-the bucket's `give_level`), name both sides of the standing offer in the screen
-title, and render the same no-trade message when nobody qualifies.
-
-> Verified by the patcher `seru_trade_real` disc oracle (every piece lands in 0899,
-> the schedule round-trips to the kernel offers, the SCUS gap is left untouched,
-> byte-deterministic) plus the kernel unit tests; the retail screen is
-> hardware-confirmed (render → slide → cursor → confirm → swap).
-
-### Jewel fix
-
-`--jewel-fix` makes the boss cinematic casts respect elemental guards
-(`jewel_fix` module). Those are capture-class spells - per-spell streamed code
-modules (see
-[spell-table.md § cast classes](../formats/spell-table.md#cast-classes-record-byte-0)) -
-and exactly six modules route their damage through the wrapper `FUN_801DD6B4`,
-which passes the finisher `param_5 = 1` and thereby **skips the entire
-party-defender resist block**: Jewels, elemental guards, and All Guard never
-apply, even though the caster's element is read by the affinity scale (the
-full census: [battle-formulas.md](../subsystems/battle-formulas.md)). The
-bypassing set is the boss signature-move roster: Xain's **Bloody Horns** /
-**Terio Punch** (+ module-sharing **Bull Charge**), Cort's **Guilty Cross**,
-and the Delilas trio's
-**Blazing Slash** / **Megaton Press** / **Plasma Strike**. The fix retargets
-all thirteen `jal` words across PROT 944 / 952 / 953 / 958 / 959 / 960 to the
-guard-respecting wrapper `FUN_801DD4B0`, so those hits run the same resist
-ladder as every ordinary monster special. Spells that already respect guards -
-including **Neo Star Slash**, which shares Plasma Strike's module but
-dispatches to its own tick - are untouched. Seedless; each stock word is
-verified before writing and an unrecognized (or already-patched) image is
-refused.
-
-> Verified by the `jewel_fix_real` disc oracle: every baseline site holds the
-> stock `jal FUN_801DD6B4` word, exactly the planned words change (the 09xx
-> extents tile exactly, so each window is asserted to contain no other
-> module's bytes and every site to lie inside its own extent), the patched
-> image still parses, the edit is byte-deterministic, and re-application is
-> refused.
-> The engine-side equivalent is `damage_finish::bypass_party_resist = false`.
-
-### Approach-softlock fix
-
-`--approach-softlock-fix` closes the retail "endless camera orbit" softlock
-(`approach_fix` module). A monster approaching an out-of-reach target waits
-in battle-action state `0x19` - a range poll with **no movement code and no
-timeout** - while its staged tag-`1` "Move" animation drives the actual
-movement (180 of the 186 monsters lack the tag-`0x20` walk chain and use
-this path for every melee). When that animation dies mid-approach - the
-reproduced trigger is a summon's staging round-trip immediately before the
-melee - nothing re-stages it, and the fight waits forever while the idle
-camera orbits. Caught live twice and reproduced on demand; full anatomy in
-[battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14).
-
-The fix rewrites the poll's **redundant facing recompute** (nine words at
-`0x801E3568` - the target never moves during an approach, and both the
-staging state and the strike arm re-derive facing themselves) into a guard:
-when the staged clip reads dead while the poll is still failing, bounce the
-state byte back to `0x14`, whose retail arm re-runs the whole approach
-staging - facing, range check, animation re-stage - so the monster simply
-**resumes walking**. No behaviour is invented: healthy approaches and
-in-range attacks are byte-identical, and a party attacker whose run clip
-dies is rescued by the same bounce. Seedless; the stock window and its
-context words are verified before writing, an unrecognized build is refused,
-and an already-fixed image is a no-op.
-
-> Verified by the `approach_fix_real` disc oracle (stock window baseline,
-> nine-word surgical diff, byte-determinism, idempotence) and **runtime**
-> by `autorun_gaza2_approach_fix_verify.lua` on both live-caught park
-> savestates: the guard bounces once, retail re-stages, the boss walks in
-> (~19 units/vsync), the strike lands and the round completes. The
-> no-Move-clip edge case is vacuous - a roster sweep
-> (`monster_move_tags` example) finds all 186 monsters carry tag `1`.
-
-### Delilas Challenge
-
-`--delilas-challenge` adds a fourth option to the Muscle Dome enrollment
-clerk's "who will be entering" menu (`delilas_challenge` module): the
-**Delilas Challenge** - a brand-new 2-round Muscle Dome *course* - **Che &
-Lu Delilas together (1v2), then Gi (1v1)** - with **5000 coins** paid into
-the dome winnings counter for a full clear. The gauntlet exists nowhere in
-retail (the Nivora Ravine confrontations are one-off solo duels spread
-across the story, and no retail formation anywhere fields two distinct
-Delilas). It is delivered as a dome course because a normal battle staged
-from the town scene `koin1` freezes on any spell (the scene never installs
-battle-effect / summon / player-magic asset residency - which is exactly why
-the Muscle Dome disables magic).
-
-The double-team round is the interesting engineering: two full Delilas
-blocks (163-166 KB of pre-texture bytes) overshoot the battle heap's ~145 KB
-distinct-monster budget, and the failing malloc returns NULL that the loader
-uses unchecked - a naive 1v2 froze at the round-1 load (the byte-level
-mechanism is the battle-heap-budget section of
-[`battle.md`](../subsystems/battle.md#the-battle-heap-budget---why-a-formation-of-large-distinct-bosses-cannot-load)).
-The shipped fix streams **slim clones** without touching the originals:
-
-- `legaia_asset::monster_archive::slim_castables` rebuilds Che's and Lu's
-  blocks minus most castable spell entries, under two probe-traced safety
-  constraints. First, exactly **one** rollable castable survives (Che's
-  entry 6, Lu's entry 7): the AI's cast pick is `rand % castable_count` and
-  an empty menu executes the div-guard `break 0x1C00` the BIOS parks on
-  (the [AI-picker
-  section](../subsystems/battle.md#monster-ai-fun_801e9fd4-action-picker--fun_801e7320-target-resolver)
-  has the mechanism). Second, each sibling's **streamed signature special
-  stages block entries by raw index** (Lu's Plasma Strike, action `0x7B`,
-  stages `14 -> 12 -> 13`; Che's, action `0x7A`, stages `10 -> 11`), and an
-  aliased stand-in never satisfies the module's completion wait - the
-  caster loops its approach run forever - so those entries survive
-  verbatim (`delilas_dome::slim_policy`); Lu instead force-drops her
-  unstaged `0x23` special at entry 11 to pay for them. Choreography entries
-  are not standalone casts: promoting Lu's never-rolled entry 12 to the
-  rollable menu was tried and wedges her first generic cast. Mesh, stats,
-  name, reactions survive byte-identical; the entry count and index space
-  are preserved - kept entries keep their retail indices and a dropped slot
-  aliases the basic-attack entry (safe for every consumer except the
-  index-staging modules above, hence the protection). The slim pair costs
-  ~137 KB - under budget with ~8 KB of combat headroom.
-- The clones are written to archive slots 190/191, two ids no formation,
-  encounter, or dome roster on the disc ever references (full-disc sweep;
-  also outside the `--unused-enemies` pool). The real 163/164 slots are
-  never modified, so the ravine duels and the Master course keep every move.
-- The formation seats the **real ids** 163/164 - the bespoke
-  attack-attack-special AI, the names, and every id-keyed table stay
-  genuine. Two 10-word cave routines hooked at the loader's two
-  id-to-slot-offset sites (`0x8005451C` in the streamer, and one
-  instruction *before* the first-enemy pre-streamer's conversion at
-  `0x80054B70` - the conversion's own delay slot clobbers the id register,
-  so the hook cannot sit on it) add 27 to the id **for the archive fetch
-  only**, and only while the course word reads `0x131` (the Delilas course,
-  round 0) - every other battle streams the untouched originals.
-- Seru magic is locked out through **retail's own reject path**: the
-  battle round driver's two Magic-command input arms reject the selection
-  when `_DAT_8007BAC0 & 0x200` - the Master course's lockout bit
-  (`overlay_0898_801d0748`; Beginner/Expert seeds lack it and genuinely
-  allow magic). The patch widens each test's mask to `0x300` (two
-  same-size words in the battle-action overlay, PROT 0898), so the reject
-  fires on the dome-contest marker `0x100` every contest seed carries -
-  including the course's own `0x131`. The lockout matters because the
-  arena never installs the summon / player-magic sound+art residency: a
-  live test cast Meta in the course and got audio-state corruption (the
-  koin1 magic-freeze class). Retail Beginner/Expert legs lose their latent
-  magic access too - the same corruption waits there.
-- **The special cadence is retimed, per round.** The bespoke Delilas AI
-  arm (`case 0xa2..0xa4` in the monster picker `FUN_801E9FD4`, battle
-  overlay) queues the signature special whenever the shared battle turn
-  counter `ctx[0x28A]` hits `% 3 == 2` - attack, attack, special, with
-  both siblings synchronized in a 1v2. The course reroutes the arm: its
-  ctx reload (`0x801EB7C4`) jumps to a course-gated block that resumes the
-  stock arm register-exactly for every non-course context (ravine duels,
-  Master rounds), and in the Che & Lu round (course word `0x131` exactly)
-  fires a sibling's special on `(counter + offset) % 4 == 3`, Lu offset 2
-  / Che offset 0 - one special every four turns, staggered two turns
-  apart. The block overwrites the SCUS passive-name draw `FUN_80035274`,
-  a 48-instruction function with zero references of any form in any image
-  (the five-form address-word scan; `port-catalog-ignore.toml`
-  `[unreferenced]`) - the only always-resident home left once the shared
-  rodata gap filled and the battle overlay's image proved packed
-  (`static-overlays.toml`: all `.text+.rodata` RAM-matched live).
-- **Gi borrows two one-shot casts in his round, and Divide retires
-  Blazing Slash.** In the course's Gi round (word `0x132` exactly, seat 0
-  only - a Divide clone never re-casts) a second cave arm (over the
-  unreferenced SCUS angle tween `FUN_80050d40`, reached by `j` from the
-  main block) queues **Divide** (`0x50`, Green Slime's split) on Gi's
-  first pick with HP strictly below half of max (`+0x14C < +0x14E >> 1`)
-  and **Spore Gas** (`0x4F`, Berserker's status cloud) on his first pick
-  with the shared counter at or past 3, by writing the actor's cast queue
-  (`+0x1DE = 2`, `+0x1DF` = the spell id) - the exact mechanism the
-  signature specials ride: both are capture-class spells whose modules
-  stream from PROT 0940 / 0939 at cast time
-  ([`spell-table.md`](../formats/spell-table.md)). Each is one-shot via a
-  two-bit flags word in the display cave's data tail, zeroed by the
-  Che & Lu arm on every round-0 pick (a course always re-enters through
-  round 0, so re-enrollment re-arms both). Before Divide, non-cast picks
-  resume the stock arm and Blazing Slash keeps its retail `% 3 == 2`
-  cadence; after Divide, they jump straight to the arm join so the
-  generic attack-picker runs and Blazing Slash can never be queued again
-  (the clone always takes that path - it melees only). Gi's monster block
-  is byte-untouched.
-- **The dev reporter's `PRG ERR%d` paint is gated off.** The 1v2's tight
-  heap fails transient effect-instance allocs in bursts (retail tolerates
-  the skipped spawns), but every failure bumps the malloc accumulator
-  `gp+0x510` that the on-screen dev error reporter (`0x80016444`) prints
-  from. The `beqz` guarding that one print arm becomes an unconditional
-  branch; the WORK/READ/CD error arms and the accumulator itself are
-  untouched. (The spawner's own `ori 0x4000` failure flag at `0x800211A0`
-  is *not* the mechanism - nothing on the disc references the word it
-  writes.)
-
-The option is gated on story flag `0x378` - the flag the Koru death event
-latches and the world map reads to flip the ravine entrance from `nilboa`
-to `nilboa2` - so until that event the clerk brushes the player off. On by
-default in the web patcher's Balanced and Full Chaos presets.
-
-#### Completion reward - a Honey, or three custom items
-
-A winning course settle grants a reward alongside the 5000 coins, via a
-two-word detour at the settle's post-payout `s0` staging (`0x801D114C`)
-into a grant routine in the AI-block cave's tail (`0x800352EC`), gated on
-the settling course being 3. Which reward depends on `--custom-items`
-(the web patcher's "Custom items" toggle, on in the Balanced and Full
-Chaos presets):
-
-- **Off** (the default): the grant gives one retail **Honey** (`0x65`,
-  the permanent all-stats-+4 consumable) per clear
-  (`custom_items::plan_grant` over `[HONEY_ITEM_ID]`). Only the grant
-  cave and the arena settle hook are written - item records, effect
-  descriptors, jump tables, and the battle-overlay hooks all stay retail.
-- **On**: the grant gives **three brand-new items**, described below.
-
-The venue's award ceremony announces what was actually won. Retail's
-post-contest narration in `koin1` reads "That was a good fight. / Well
-done. / We hope you enter again." and then "Contestant {name} is awarded /
-{n} tokens!" - but the Delilas course sits outside the token payout table
-that counter substitutes from, so a course win read "0 tokens" and never
-mentioned the items. The koin1 script edit splices four SYSTEM-flag tests
-at the narration record's own branch point - right after its `76 CB` /
-`75 38` tests, *before* the message run, because the actor-dialog SM
-consumes a `[text][24][text][48]` flow as one contiguous run and control
-ops spliced inside it cut the ceremony short (live-tested). Any
-course-unlock flag set (`0x536`/`0x537`/`0x538` - a retail arm always sets
-its own, the Delilas arm clears all three) keeps the retail flow, and
-otherwise the settlement's contest-won flag (`0x50A`, set only on the
-cleared-course path and untouched anywhere in `koin1`) routes to a
-complete parallel flow appended past the record: the shared "good fight"
-box copied verbatim (LZS folds the repeat), then "You won 1 Ra-Seru Tear,
-/ 1 Nature's Elixir and / 1 Fury Bloom!" (or "You won 1 Honey!" on the
-fallback), then the verbatim close-and-settle ops and a jump to the same
-park loop both retail arms converge on. A Delilas loss falls through into
-the retail box (`delilas_challenge::reward_box_lines`,
-`CONTEST_WON_FLAG`).
-
-`--custom-items` is a standalone feature, not a Delilas sub-option: the
-item set (`CustomItemsInjection::plan_item_set` - records, descriptors,
-jump-table arms, item-machinery caves, battle-overlay hooks, and **no**
-arena writes; applier `apply::inject_custom_item_set`) installs without
-the challenge, and a `random` drop / chest / steal mode then adds the
-three ids to the fill pool (`custom_items::CUSTOM_ITEM_IDS`, the
-`--unused-items` `extend_pool` shape) so they turn up as loot. With
-neither a `random` mode nor the challenge, the items exist but nothing
-hands them out - both CLIs print a note. The Delilas grant is the
-second, independent half; `inject_custom_items` composes the two and
-each half is idempotent on its own key (applier jump-table word / arena
-hook word), so the item set landing first and the challenge arriving on
-a re-run still completes the grant.
-
-The items are claimed from the item table's only
-free slots - the executable's three empty-name records (`0xB9` the cut
-Ra-Seru-egg item, `0x12` / `0x1A` the cut top-tier Ra-Seru weapon slots;
-a dual census - the curated gamedata cross-reference and the patcher's
-own drops / chests / steals / shops / casino / fishing / starting-item
-sweeps - shows every other named id is reachable in retail):
-
-- **Nature's Elixir** - restores an ally's HP *and* MP to full, in the
-  field menu or in battle. Its effect class is a new applier jump-table
-  arm (`0x48`) that fills MP (with the retail `-amount` mirror write) and
-  tail-jumps into the retail tier-2 HP-restore arm, so the popup and
-  displayed-HP accounting are retail's own.
-- **Ra-Seru Tear** - battle-only; using it turns the committed item
-  action into a **real Ra-Seru summon cast of the user's own Ra-Seru**
-  (Vahn Meta, Noa Terra, Gala Ozma) with the 240-MP cost skipped - a
-  free summon any character can shed. The conversion hooks the
-  action-seed category dispatch (`0x801E2D60`): the item is already
-  deducted at menu commit, the spell id is `0x9D +` the roster char id,
-  and a one-shot flag makes the summon leg's unconditional MP deduct
-  (`0x801E4584` - it underflows a u16 when unchecked) write a zero-cost
-  mirror instead.
-  Caster-matched is a mechanism constraint, not flavour: the big summons
-  stream the caster's own choreography, and a forced mismatched pair
-  (Gala casting Meta) parks the battle forever in the summon driver's
-  completion poll while the matched pair completes and lands damage.
-- **Fury Bloom** - battle-only; one use sets the Fury Boost
-  action-gauge extension (`actor+0x1F9`, exactly the retail class-5
-  arm's write) on **every living party member**, with the retail Fury
-  cue on the user. Party-wide application needs a custom arm because
-  group targeting lives inside each retail class arm, not the
-  dispatcher. (An earlier "Delilas Tear" that would cast a sibling
-  signature attack parks the battle at the capture band's completion
-  wait. The reason is **not** "a party actor has no monster block" - see
-  [Casting a sibling signature attack from a party
-  slot](#casting-a-sibling-signature-attack-from-a-party-slot) for what
-  actually blocks it, and for the seat-0 hazard that makes it unsafe to
-  ship even where it runs.)
-
-All three items play the heal-item chime (`FUN_8004FCC8` cue `0x20C`)
-from their own arms: the cast-audio dispatcher `FUN_801F3990` maps item
-classes to cues through a 9-entry table, so custom classes are silent
-unless the arm plays the cue itself.
-
-Either grant rides the settle's own latch-gated winning arm (the code
-path that pays the coins and, on the Master course, the retail War God
-Icon): the detour runs one `FUN_800421D4(id, 1)` give per reward item
-when the settling course is 3, then replays the displaced pair
-(`custom_items::assemble_grant_routine_for`). New code follows the same
-unreferenced-function cave discipline as the course itself - the
-class-14 Point Card arm (reachable code with no reachable data), three
-more zero-reference SCUS functions, and the tails of the course's own
-two caves - plus one rule the course never needed: **a claimed cave
-must also survive a cold boot**. The zero-reference libapi VBlank-tier
-slot `FUN_800605C8` passes every static scan and every save-state
-probe, yet the kernel invokes it during boot init and a disc that
-overwrites it parks at the PS1 logo
-([`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md)); the
-cold-boot watcher `autorun_boot_watch.lua` is now part of the cave
-verification standard. The menu validator's class table points both
-new classes at its existing always-usable arm.
-
-The feature is two coordinated halves that ship together
-(`apply_delilas_challenge` installs both):
-
-- **The koin1 menu + warp** (`delilas_challenge` module, script + data). The
-  3-option `0x28` who-enrolls picker grows to the 4-option `0x29` form (the
-  picker arity ceiling), with the new arm appended at the record's end, and
-  the quick-path skip before it is retargeted at never-set flags - retail
-  permanently hides the who-menu once Noa or Gala has refused enrollment
-  (flags `0x559`/`0x558`) and auto-registers Vahn, which would strand the
-  new option on most saves. The new arm shows a confirm picker, then mirrors
-  one of retail's own difficulty arms exactly: gate on `0x378`, set the
-  dome-active flag `0x509`, clear the three course-unlock flags
-  `0x536`/`0x537`/`0x538`, set the course-3 request flag `0x539`, then the
-  verbatim BGM + wait ops and the verbatim `3E 69` arena warp. Losing a
-  round returns to the Sol venue by the dome's own design (no game over).
-- **The arena course** (`delilas_dome` module, a code injection). The arena
-  overlay (PROT 0977) has no course beyond Master, so course 3 is added with
-  six same-size edits: a seed detour at the course-select init
-  (`FUN_801CEA6C` @ `0x801CEBCC`) that decodes flag `0x539` into the packed
-  course/round word as course 3 - guarded on the retail flag seed having
-  left the word at its no-course default `1`, which only the Delilas arm
-  (it clears all three course-unlock flags) produces, and clearing `0x539`
-  whether or not it seeded, so a stale request flag (a save state frozen
-  during the warp flourish) is scrubbed instead of hijacking a
-  Beginner/Expert/Master enrollment into the Delilas course; a `{round_count=3, roster_ptr}` descriptor
-  at the course-3 slot `0x801D1A08 + 3*8`; the hub actor template that
-  occupied that slot relocated into a `SCUS_942.54` routine cave (its one
-  `lui`/`addiu` reference repointed); the Delilas roster (Gi/Che/Lu, the
-  dome's own name strings) in the cave; the seed routine; and a **reward
-  detour** at the settlement's payout-table load (`FUN_801D0F60` @
-  `0x801D1118`) that returns 5000 for course 3 instead of the out-of-table
-  read (courses 0-2 pay from `0x801D1860 + course*0x40 + (round-1)*4`;
-  course 3 indexed past it into bytes that read 0 - the "0 tokens" an
-  unhooked clear paid). The payout load sits behind the settlement's cleared
-  latch (`DAT_801D1ADC`, raised only on *course exhausted and survived*), so
-  a loss pays nothing - and retail's halve-the-winnings-on-a-loss behavior
-  is untouched. All four descriptor readers compute `base + course*8`, so
-  one descriptor write makes course 3 work everywhere. One more cell
-  matters: the arena hub's round-end routing (`0x801CEE44`) reads the koin1
-  menu-selection residue at `0x80084448` and treats the value **4** as "the
-  player chose the quit option" - clearing the win latch and zeroing the
-  winnings. The Delilas enrollment rides the who-menu's 4th slot, so its
-  residue is exactly 4; the seat routine clears the cell at round-0 install
-  (the intermission menu overwrites it with its own small pick afterward,
-  so one clear suffices). Leaving the course mid-way settles as a loss
-  (halve), not a quit (zero). The results screen reads the same payout
-  table again on its own (`FUN_801D1184` into the winnings-display
-  variable `DAT_801D1AAC`), so a second, display-only detour at its final
-  address add (`0x801D125C`) shows the same 5000 - the override lives over
-  `FUN_800260DC`, the SCUS per-mode camera preset, the second
-  zero-reference function claimed after the Gi arm filled `FUN_80035274`.
-
-The `koin1` MAN is sector-aligned with zero compressed slack, so the grown
-script only fits back into its footprint through the optimal LZS packer -
-which is why every MAN re-pack site in the patcher now falls back to
-`compress_optimal` when greedy misses (`compress_within`). If another edit
-(e.g. a grown language pack) has already consumed the headroom, the koin1
-half skips with a note instead of failing the run. Seedless; re-application
-is a no-op (the arena injection is idempotent on the seed-hook detour). The
-dome fields whichever fighter the arena normally seats; routing a chosen
-party member into the arena's fighter slot is an open RE thread.
-
-**Shares SCUS arena bytes with shiny-Seru and the arts AP override.** The dome
-course's seed routine + template cave lives in the same verified-dead SCUS
-region (`0x8007AE00`) that [shiny Seru](#shiny-seru) and the arts AP override
-use, and that region is full - the surrounding zero-runs are live-table
-padding, not dead space. So the three cannot coexist. The Delilas Challenge
-takes precedence over shiny-Seru (it is the headline feature the presets
-carry): when both are requested, shiny-Seru yields with a note and the
-challenge is installed. The arts AP override, which is manual-only, is a hard
-conflict with either - enabling it alongside the challenge (or shiny-Seru) is
-refused up front. This is why the Balanced/Full Chaos presets, which enable
-both the challenge and shiny-Seru, install the challenge and skip shiny-Seru.
-
-Two byte-level details are load-bearing and both were caught by live play,
-not by the static suite:
-
-- **The seed word must carry bit `0x100`** (`0x131`, not a bare course/round
-  encoding): the battle-exit selector `FUN_80046A20` tests
-  `_DAT_8007BAC0 & 0x100` to route a leg's end back to arena mode `0x18`.
-  Without the bit a lost leg fell into the ordinary game-over gate and a won
-  leg would have exited to the field instead of the between-leg hub. Every
-  retail seed (`0x101`/`0x111`/`0x321`) carries it.
-- **The who-menu skip tests are retargeted, never NOPed**: `0x21` is the
-  field VM's frame-yield/stop opcode
-  ([script-vm.md](../subsystems/script-vm.md#per-frame-scheduling)), not a
-  no-op - an earlier build's eight-byte `0x21` fill broke the clerk dialog
-  mid-interaction (the "re-talk the NPC several times" bug). The tests keep
-  their exact retail op shape with the flag id swapped to never-set flags.
-
-> Verified by the `delilas_challenge_real` and `delilas_dome_real` disc
-> oracles: the retail image locates as unpatched and every hooked address
-> matches the known US build; the patched koin1 MAN re-parses with the
-> 4-option picker targeting the new branch (gate, confirm picker,
-> dome-active/course-unlock flags, course-3 request, arena warp all asserted
-> at decode level, and no scripted-battle op); the seed hook becomes a `j`
-> into the cave, the course-3 descriptor and roster land, the edit is
-> byte-deterministic and idempotent, composes with the Earth Egg price edit
-> in either order, and every touched sector stays EDC/ECC-valid.
->
-> **Live-verified** (the 3x 1v1 course shape): the clerk dialog flows
-> cleanly to the option, the confirm shows, the warp lands in the arena, the
-> course runs its roster one round at a time, a lost leg routes through the
-> dome's own loss scenes back to the venue (no game over), and settlement is
-> benign. The double-team revision was live-falsified (freeze at the round-1
-> load - two distinct Delilas blocks miss the battle heap budget; the byte
-> arithmetic is in `battle.md`'s heap-budget section) and reverted. The
-> 5000-coin payout hook passes the static + disc oracles; its live
-> confirmation and the custom-item prize are the follow-ups.
-
-
-### Delilas party swap
-
-`--delilas-party gi,lu,che` (any permutation of the three siblings, in
-Vahn, Noa, Gala order) swaps the playable party's battle identity with the
-Delilas siblings: each character keeps their own animations, arts, magic,
-stats and story, but wears the mapped sibling's battle model and fights
-under their name, while each sibling's monster block is rebuilt around the
-mapped character's battle model - so the three Nivora Ravine duels and the
-Muscle Dome Master legs field Vahn, Noa and Gala, performing the retail
-Delilas movesets (the streams pose parts by index, so a same-part-count
-model inherits every move - the same law `monster-model` replacement rides).
-
-Mechanics of the swap (`legaia_patcher::party_swap`): both pose systems use
-flat per-part rigid transforms addressed by part index, and both texture
-systems are 4bpp indices + 16-colour CLUTs, so the swap is an anatomy
-permutation (players order bones `torso, pelvis, head, arms, legs`; every
-Delilas mesh orders parts `head, torso, pelvis, arms, legs`; Noa's extra
-hair bone merges into the head part), a **pivot-anchored rest-pose
-bake** per part (`v' = R_t^T S(R_align (R_s v))` - each part anchors at
-its rest **pivot**, the joint the engine rotates it about; `R_align`
-turns the whole rig onto the host's facing and then swings each part
-minimally onto its own host bone, pinning the twist; the part scales
-axially onto the target's joint-to-joint span and radially by the
-uniform height ratio, so the chains stay closed under every clip while
-the sibling's shapes survive), and a bit-exact texel re-layout (islands
-shelf-pack between the monster page and the party band's five section
-tiles, palettes carried over - union-merged on the player side into the
-CLUT columns `record[0]` does not claim). On the player side **every
-equipment-section record** of the `PLAYERn` file is rewritten (the swap
-must survive any equipment) with the swing action records and the
-character's own `record[0]` animation source preserved; the descriptor
-chain repacks with sector-aligned slots inside the retail entry footprint.
-New-game template names follow the mapping ("Gi" / "Lu" / "Che"; existing
-saves keep their stored names).
-
-Two of the sibling "fists" are really **welded weapons** - Che's armB
-hammer-fist and Gi's armA blade-fist, each authored several times the
-radius of a real hand - and a welded weapon posed by a host clip whose
-hand rotations assume a hand-sized part sweeps across the body (Gi's
-blade under Noa's Spirit charge was the catalogued streak). The swap
-replaces each with the sibling's other fist, mirrored across the source
-body's sagittal plane (`playerize::WELDED_WEAPON_FISTS`), and puts the
-**host's own equipped weapon** in the hand instead: per held-item section
-record, the same curated item-alone cut the equipment viewer uses
-(`equip_isolate`) recovers that record's welded weapon geometry as the
-retail prims verbatim - shape, UVs, colour words and ABR bits untouched
-- and the result merges into the baked hand at record-rewrite time,
-after the hand's centroid seat + FK inset, so the blade never drags the
-fist's placement (`party_swap::weapon_fuse`). The weapon keeps its
-**real texture**, riding three measured invariants: every fusable
-weapon's UVs stay inside its own section's band tile, every weapon uses
-at most two CLUT columns, and a held-section record's pool upload is a
-fixed-size tile whatever it contains. So the band relayout keeps the
-sibling's islands out of the weapon section's tile, each weapon-section
-record keeps its **own retail tile pixels** (equipping the weapon
-repaints the tile with exactly the texels its prims sample - per-record
-texture at zero extra pixel cost), and the weapon's palettes ride the
-record's own CLUT run at two reserved band columns (the highest ones
-record[0] does not claim); only the prims' CBA column is remapped.
-Ra-Seru records (item ids `0x01..=0x1A`) keep their bare arm - dressing
-the Ra-Seru arm is a separate cut.
-
-One reservation is about a *writer*, not a reader: the per-frame facial
-animator (`FUN_8004C7B4`) MoveImages the character's eye and mouth
-frames onto fixed rows of **section 1's** band tile every battle frame -
-the neutral face is re-stamped even when no track record is active, and
-the frame strips ride `RECORD0_TEXTURE_RECTS[0]`'s tile, which the swap
-keeps retail. Any sibling texels the relayout parks in that destination
-window are overwritten with the host's face the moment a battle starts -
-on-disc renders look clean while the live game shows the host's face
-palette-mismatched through the sibling's CLUT (a saturated confetti
-patch on whatever body part UV'd there; Gi's chest was the reported
-case). The relayout therefore splits section 1's region around the
-per-character eye+mouth destination union
-(`playerize::FACE_STAMP_WINDOWS`, mirrored from the static SCUS
-face-geometry tables and disc-asserted by
-`party_swap_face_window_real`), leaving the window zero and
-unreferenced; the emitted pool still covers the section's full rect.
-
-A second reader nobody sees offline is the Spirit charge's streamer
-effect: it samples authored **vertex indices** of specific assembled
-objects (the host's hair part and the `0xFE` weapon extra carry 49 / 56
-vertices on Noa's retail assembly), and a swap slot whose geometry is
-deliberately dropped - the hair channel a sibling has no part for, or
-the discarded weapon extra - answers those reads with whatever bytes sit
-past its empty pool. The effect's trail fan then stretches
-mesh-textured quads from the actor to the same garbage point every run:
-the "Spirit streak", visible for the first ~20 ticks after the trail
-spawns and invariant to every anim-data edit (measured by pinning the
-fan packets in the live display list - position, colour and UV garbage
-together, i.e. a struct read past a pool, not a pose defect). The
-rewrite therefore never emits a truly empty object where retail carried
-geometry: such slots get a **prim-less stub** - the retail slot's
-vertex count of origin-pinned vertices, so a sampled streamer anchors on
-the part's own socket and nothing is ever drawn - and the first
-variant-carrying section re-emits one stub `0xFE` extra (tag `100`,
-ordinal 1, inside the two-pair variant snapshot) so tag-100 lookups
-resolve too. Two sibling hardenings ride along, both measured live: the
-charge-loop record `0x11`'s window (`+0x85/+0x86`) is clamped to the
-frame count of the **main-archive** stream its `stream_source` aliases
-at commit (the side-band buffer routinely holds the main archive when
-the base-archive clip materializes - on retail too - and the scratch
-past the decoded stream is unwritten zeros), and `delilas-verify`'s
-`0xFE` check now passes exactly one prim-less tag-100 anchor and fails
-anything that draws.
-One
-more per-sibling shape aid: Che's round torso over a narrow loincloth
-opens sky wedges at the waist under a low battle camera, so his pelvis
-top ring cones up into the torso interior as a sight-line curtain
-(`playerize::WAIST_CURTAIN_IDS`). each
-character's PROT 0874 field mesh + atlas window rebuilds from the
-sibling's **own field NPC mesh** (the nilboa duel-scene pack, PROT 0639,
-with rest poses + head TIMs from PROT 0638) - retail-authored chibi
-geometry that fits the pack budget at full detail. Each NPC part bakes
-into the party field bone's local frame through the same pivot-anchored
-bake as the battle side (the locomotion clips rotate each bone about its
-pivot, so pivot anchoring + axial length matching is what keeps the
-walking chains and the neck closed). NPC meshes are authored for
-fixed-camera scenes and are not watertight from free angles - the
-renderer's winding cull opens them up - so the rebuilt head and torso
-carry a winding-reversed twin per prim (a size ladder narrows the scope
-until the container fits), and the head's genuine openings (the hair
-shell's underside, which the fixed scene camera never exposed) seal
-with flat fan fills in the part's fill colour before the relayout. The
-head re-lays into the character's atlas window,
-bodies stay flat vertex colours - the retail field style. The
-battle-model conversion survives as a fallback when the NPC source is
-unavailable. The rebuilt container keeps the entry's first four header
-words byte-exact (see [`character-mesh.md` § Not a dual
-consumer](../formats/character-mesh.md#not-a-dual-consumer---the-battle-vdf-pack-is-a-different-entry)
-for what that rule rests on, and what it does not).
-`R_align` reads the rig as a whole rather than joint by joint, and that
-is a correction, not a stylistic choice. Building each part's frame from
-a per-joint bend-plane reference makes the alignment depend on **which
-kind** of reference each side happened to find - child bone, parent bone,
-or a world axis - and the two sides do not always find the same kind. Che
-is the only rig with a measurable pelvis-to-torso bone, so his torso took
-its bend plane from real anatomy while every player torso (whose pelvis
-pivot sits on its torso pivot) fell through to world Z; the two are
-incomparable, and the alignment came out as a **167.9-degree roll about
-his own spine** - he wore his torso backwards, and the shoulder tuck then
-seated his arms through it, flattening each upper arm to a quarter of its
-width. Gi's case is milder and has the same shape: both sides picked real
-anatomy, but the rigs flex their elbows in unrelated directions (122
-degrees apart), so his upper arm rolled 166 degrees about its own axis.
-Refacing the whole rig first (up = pelvis-to-head, lateral = the two
-shoulders - landmarks all six rigs carry) and then swinging each part
-onto its own host bone leaves no excess roll on any non-terminal part of
-any pairing. Terminals - head, hands, feet - deliberately keep their
-inherited frame, because the feet normalisation pre-cancels that one.
-
-Note this is **not** a joint-gap defect: no chain edge was ever flagged,
-before or after, which is why the gap-based probes were structurally
-blind to it. It shows up only in a per-part affine fit against the
-sibling's own mesh.
-
-The **victory poses** follow too (`party_swap::winpose`): each
-character's eight win-pose streams (the base "ME" archive, `readef.DAT`
-slot `3*char+2` - [`battle-data-pack.md` § "ME" stream
-archives](../formats/battle-data-pack.md#me-stream-archives-readefdat))
-rebuild from the mapped sibling's own victory clip (monster action tag
-`0x22`; Che ships none, so his last `0x23` flourish stands in),
-retargeted onto the player rig with the bake's per-part conjugation
-(which must be built from the **bake's own** frames via
-`playerize::bake_frames` - the played pose cancels the bake's `R_align`, so any
-change to how the mesh is oriented is a change the win pose has to
-mirror or every converted pose inherits the difference),
-re-encoded with the retail channel-delta codec (encoder
-`winpose::encode_channel_delta`, round-trip self-checked through the
-retail decoder on every apply).
-
-A win pose is **not** a one-shot stream, and this is what a uniform
-resample gets wrong. Every one of the 24 retail base records carries a
-loop window: entry `+0x84` seeds the hold counter `actor+0x176` and
-`+0x85`/`+0x86` bound the frames the tick replays (`FUN_80047430` -
-once the 12.4 cursor reaches `+0x86 << 4` it subtracts
-`(+0x86 - +0x85) << 4` and decrements the counter, so the stream cycles
-that span up to 255 times before the results sequencer moves on). Retail
-authors those frames as a seamless celebration cycle: measured across all
-24 records, the pose gap over the wrap is 0.1-1.0 model units and
-0.35-2.01 degrees per part, at or below the window's own mean frame step.
-Resampling a one-shot flourish uniformly into that shape points the
-window at the flourish's own tail, so the last second replays for as
-long as the results panel is up - measured on the rebuilt streams, a
-4.0-164.1 unit / 5.4-122.9 degree snap at every wrap.
-
-So the rebuilt stream is **composed**, not uniformly resampled - and
-the lead-in `[0, +0x85)` stays **retail, verbatim**. The base streams
-are not victory-only: anim `0x11` (entry 0) is the Spirit / Super
-power-up flourish the battle plays right after every `0x10` charge
-(probe: actor `+0x1D9` steps `0x10 -> 0x11`, retail and swapped alike),
-and an early build that wrote the sibling's victory flourish over the
-lead-in swept the sibling's limbs across the battle closeup as dark
-mesh streaks. Only the loop window `[+0x85, +0x86]` - the frames the
-results screen parks on - carries the sibling's own post-win cycle,
-retargeted alone and phase-picked in host space against the retail
-lead-in's last frame. Lu contributes her `[16, 24]` sway, Gi his
-`[30, 30]` hold; Che declares no window of his own, so his entries hold
-on the flourish's last frame. The window bytes themselves are never written - `+0x84` is
-the byte `ArtAnimRecord::uses_base_archive` keys on. Entries 4/5 - the
-weak-victory actions (`0x15`/`0x16`), which the sequencer also loops -
-take the idle as a whole cycle (see
-[`audio.md` § Hero victory voices](../subsystems/audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)
-for the action/tier mechanism). Battle **voices** follow as well
-(`delilas_voice`): the party's reaction grunts are SPU one-shots out of
-the always-resident battle bank's programs 7/8/9, so the mapped siblings'
-samples (single-program VABs inside `monster.snd`) splice over them in
-place - cue tracks, routing and residency all stay retail. The replaced
-characters' **XA voice lines** are silenced rather than left wrong-voiced:
-the per-character arts-shout banks (`XA2`/`XA4`/`XA6`) whole; the
-party's channel groups (0-3 / 4-5 / 6-9, anchored on the traced swing
-channels 0/4/6) of the shared short-vocalization bank `XA30.XA` (see `docs/subsystems/battle-action.md` § Battle voice cues);
-the battle-event bark bank `XA21.XA` whole (the sound-command dispatch
-in `FUN_8004E568` resolves the char-keyed victory ids there. **All eight
-channels are victory-bark arms**, not the subset an earlier reading
-named: `FUN_8004FCC8` decodes a bark id as `a1 = id - 0x100`, channel
-`a1 & 7`, file `a1 >> 3` (slots `1`/`3`/`5` remapping to
-`0x1A`/`0x1B`/`0x1C`), so `0x1A0..=0x1A7` are `XA21` channels 0-7 one
-for one, with `0x19F` = `XA20` channel 7 and `0x1AF` = `XA22` channel 7;
-the `gp+0x9F4` switch at `0x8004FA24` reaches all ten; the
-whole file is short bark reels), plus channel 7 of `XA20.XA` and of
-`XA22.XA` - the jukebox's outlying arms (ids `0x19F`/`0x1AF`; the whole
-`gp+0x9F4`-keyed jukebox is a special-sequence path that ordinary
-victories never enter), short reels interleaved beside those files'
-music channels, which stay byte-identical. `XA12.XA` stays retail - its
-only captured battle fire is the non-voice jingle path (results music). And
-the six staged-event voice banks whole - the voice-id space (`id >= 0x100`
-through `FUN_8004FCC8`, ids picked by the anim materialiser
-`FUN_8004AD80`'s inline char table: Vahn `0x101`, Noa `0x111`, Gala
-`0x121`) resolves 16 ids per hero across `XA1`+`XA27` (Vahn),
-`XA3`+`XA28` (Noa), `XA5`+`XA29` (Gala) - item use, Spirit, cut-ins, KO
-and victory lines. Subheaders and routing survive everywhere, other speakers' channels
-stay byte-identical - and the silenced hero slots are then **re-voiced
-with the siblings' real grunts** (`delilas_xa_voice`): each sibling's
-`monster.snd` SPU samples decode to PCM, peak-normalize, resample to
-the channel's CD-XA rate and re-encode through the crate's XA-ADPCM
-encoder (`legaia_xa::encode`, mono and dual-mono-stereo 4-bit; the
-staged-event banks and victory barks ship stereo), written at each
-channel head. Arts shouts, swing grunts, staged-event lines and
-victory barks all speak with the Delilas voice. The **ordinary
-victory-pose voice is none of those XA tiers**: it is an SPU sample
-streamed from `monster.snd`'s own sector TOC (`FUN_8003E104`; pose
-action → clip byte via SCUS `0x800788A0` / `0x80078867` - see
-[`audio.md` § Hero victory voices](../subsystems/audio.md#hero-victory-voices---the-tail-clips-of-monstersnd)),
-so the heroes' clip bands (Vahn `0xB8..=0xBC`, Gala `0xBD..=0xC3`, Noa
-`0xC4..=0xCB`) are overwritten with the mapped siblings' grunt bodies -
-verbatim SPU-ADPCM copies out of the same file, END-flagged when
-truncated to the clip span.
-NB the old reading of XA3/XA5 as "stereo Miracle fanfares" is falsified
-- those captured fires were the heroes' voice lines through the same
-dispatcher.
-
-What the **Tactical Arts voice banks** carry is a separate three-way
-pick, `--delilas-arts-voice MODE` (browser: the "Arts voices"
-sub-option under the swap). It governs two bank families: the per-art
-**shout** banks (`XA2`/`XA4`/`XA6`) and the Hyper / Super / Miracle
-**fanfare** banks (`XA1`/`XA3`/`XA5` plus the Seru-magic fanfare
-streams `XA27`/`XA28`/`XA29`).
-
-The fanfare banks are the reason a Super or Hyper Art can go silent.
-They are not one-shot voice lines but 3-7 second stereo cue beds
-carrying the hero's voice over a jingle, and a Hyper Art fires **no**
-shout from the `XA2`/`XA4`/`XA6` pool at all - the fanfare is its only
-audio. Filling one with a quarter-second grunt therefore leaves the
-cue silent for over 90% of its window. They follow the same three-way
-contract as the shouts:
-
-- `adjusted` - the retail hero shouts are captured before the
-  mute and **re-voiced toward each mapped sibling** through the tuned
-  pitch/formant map in `delilas_voice_fx` (`DEFAULT_VOICE_MAP`, tuned
-  by ear per hero-sibling cell). The DSP chain is deterministic pure
-  data: WSOLA time-stretch (duration preserved), resample, one
-  cepstral spectral pass doing the formant warp and the timbre
-  transfer toward the sibling's longest grunt, pitch-contour bend,
-  and an RBJ biquad tone chain; each voiced clip is processed alone
-  and laid back at its original start so arts cue timing holds. A
-  fanfare channel takes a reduced cell (`fanfare_fx`: pitch and
-  formant only) - the timbre, carrier and attack-graft stages assume a
-  lone voice and smear a music bed - and keeps its full retail length,
-  so the cue plays end to end.
-
-  The two axes are **not** independent, and mis-reading that is what
-  made the gender-crossing cells resist tuning. `pitch` is a resample,
-  so it drags the whole spectral envelope with F0: the audible formant
-  shift is `pitch + formant_st`, and `formant_st: 0` therefore means
-  "formants dragged the full pitch" - a slowed-tape voice, deep without
-  being male. A female-to-male recast wants F0 far down and the vocal
-  tract only 10-15% longer, i.e. a **sum** near -2..-3, not 0.
-  Measured on a synthetic vowel: `pitch` alone moves the envelope by its
-  full amount (-12 -> -11.78 st), `formant_st` alone is accurate
-  (+9 -> +9.00).
-
-  Worse, past about 6 semitones of downshift the correction went inert.
-  The cepstral lifter was hardwired at `SPEC_L = 48` bins of a 1024-point
-  FFT, an envelope resolution of about 790 Hz at 37.8 kHz; an octave
-  down the formants are 450-570 Hz apart, below that resolution, so the
-  warp reads one broad blob with no peaks to move. Sweeping
-  `formant_st` 0 to +12 at `pitch: -12` moved the envelope 0.16 st in
-  total. `formant_pre` (warp before the resample, in the clip's native
-  scale) and `env_track` (scale the lifter order by `2^(-pitch/12)`)
-  each restore it independently - measured -2.93 and -2.92 against a
-  -3.00 target.
-
-  **This was a host drift, not just a bug.** The browser tuning
-  dashboard applies its spectral pass *before* the `playbackRate`
-  resample, so it has always behaved as `formant_pre = 1`, while the
-  Rust bake applied it after. `formant_st` worked in the tab the map was
-  tuned in and was inert on the patched disc, which is exactly the shape
-  [`host-drift.md`](host-drift.md) warns about: a value that reads as
-  tuned because the surface you tuned it on honoured it.
-- `original` (default) - both bank families are left retail (never
-  muted): Vahn /
-  Noa / Gala call their own arts out of the siblings' bodies.
-- `removed` - the banks stay silent; the spliced SPU grunts remain the
-  audible attack voice.
-
-Each hero slot also gives up one Hyper art to carry the mapped sibling's
-**signature special** - Gi's *Blazing Slash*, Che's *Megaton Press*, Lu's
-*Plasma Strike*, all three names read off the disc's own spell table
-(actions `0x79`/`0x7A`/`0x7B`). The host is that character's 50-AP Hyper:
-Vahn's Burning Flare, Noa's Vulture Blade, Gala's Explosive Fist. They are
-the only three that clear every gate at once - the replacement combo must
-be the same **length** as the one it replaces, which rules out every 3- and
-4-input Hyper; Noa's Hurricane Kick carries its combo on three bank records
-and shares its stream with a Super Art; and the remaining candidates share
-a combo **string** across characters (`0x80014198` is both Vahn's Tornado
-Flame and Gala's Thunder Punch, so rewriting one rewrites the other's menu
-glyphs). The new combo `L R L R D` is free on all three.
-
-Four coordinated edits per slot (`delilas_party::reskin_signature_art`):
-
-- **Name** - written through the arts-table record's own `+0xC` pointer
-  into its NUL-padded field (`arts_table::name_field`), never by searching
-  the image for the old text. The names nest: searching for `Hurricane`
-  finds the `Hurricane Kick` containing it, so a text-driven rename is one
-  table row from corrupting a neighbour.
-- **Combo** - written to both copies retail keeps in sync, the SCUS display
-  glyphs and the player-file `record0` matcher, after a collision check
-  against every one of that character's arts.
-- **Animation** - the sibling's own choreography retargeted onto the player
-  rig into the host art's "ME" stream, addressed by monster-archive **entry
-  index**, not action tag: Gi's and Che's signature clips are both tagged
-  `0x23`, so no tag band reaches them.
-
-  A signature move is a **chain of stages**, not one clip. The enemy-side
-  modules stage several entries in sequence (`delilas_dome` records Lu's
-  action `0x7B` as `14 -> 12 -> 13` and Che's `0x7A` as `10 -> 11`), so
-  shipping only the final stage shows the payoff swing with no wind-up -
-  Megaton Press without its lift, Blazing Slash missing two of its three
-  beats. The stages are retargeted individually and concatenated: Lu 90
-  frames, Gi 75, Che 100, against host streams of 21/58/20. Gi's chain
-  `10 -> 11 -> 12` is the one no static evidence pinned; it was inferred
-  from clip shape and later corroborated by a player independently
-  reporting three distinct beats in the move.
-
-  Stages do not share a rate (Gi's first is authored at 1, the rest at 2),
-  and a concatenated stream has only one. Each stage is therefore
-  resampled to hold its authored duration at the chain's fastest rate -
-  `frames_i * R / rate_i`, since a clip runs `frames * 8 / rate` ticks -
-  so a slower stage stretches rather than any stage being decimated.
-
-  When the slot cannot hold the whole chain, the next rung is a **coarser
-  keyframe density, not a lost stage**: halving the rate and every stage's
-  frame count together leaves `frames * 8 / rate` unchanged, so the move
-  plays for exactly as long on half the poses - and several of these
-  stages are authored at rate 1 to begin with, so the coarser stream is a
-  density retail itself ships. Only exact divisors are tried, so no stage
-  is silently re-timed relative to its neighbours. Lu's chain needs this
-  rung whenever she lands in Noa's slot, whose rig has 16 parts to
-  everyone else's 15: at full density her three stages do not fit and the
-  wind-up would be dropped, while at half they fit at the same duration.
-  Dropping stages from the **front** (a move that loses its wind-up still
-  reads; one that loses its strike does not) is the rung below that, and
-  the retail frame count with `winpose::retimed_rate` the last.
-- **Hit timing** - the art's hit events (entry `+0x10..0x13`) are frame
-  indices into the stream that just changed under them, and a proportional
-  rescale across the whole chain is the wrong correction. The host's hits
-  were spaced against a single swing, so spreading them over wind-up plus
-  payoff drops most of them into the wind-up: Burning Flare's four hits at
-  frames 11-14 of its own 21-frame clip land at 42-53 of a 75-frame chain
-  whose strike does not begin until frame 52, and the damage fires while
-  the character is still winding up.
-
-  Anchoring them on the payoff stage's **start** is the wrong correction
-  too, and it is the one that shipped first: the payoff stage opens with
-  its own approach, so the first application landed 1.1-3.0 seconds after
-  the body connected in all nine sibling/host pairings. The anchor has to
-  be the connect itself.
-
-  `delilas_party::chain_contacts` derives that connect set, per stage, in
-  the rebuilt stream's coordinates. A stage in the damaging tag band
-  (`0x0C..=0x1F`) carries its own contact beats on disc and those are
-  authority - Lu's three strike stages are authored, and they need not be
-  deceleration frames because a lunge connects at speed. A stage retail
-  gave no beats to has only its motion to go on: Gi's and Che's signature
-  stages are tag `0x23`, damaged by their PROT 958 / 959 cast modules
-  rather than by beats, so their connect is **measured** as the frame the
-  whole body arrests hardest (the largest single-frame fall in the mean
-  per-part translation delta). A measured stage under 40% of the chain's
-  hardest stop is a wind-up settling, not a connect, and is dropped.
-  Measured connects are good to about a frame; authored ones are exact.
-
-  The hits then sample that set: with more connects than hits, evenly with
-  both endpoints included, so the first application lands on the first
-  connect and the last (biggest) power byte on the finisher; with fewer,
-  the extras ride the same impact on consecutive frames - retail's own
-  multi-hit idiom (Burning Flare is `11 12 13 14` on one swing). The
-  **effect-script gates take the same set**, so the burst, the damage and
-  the body all run off one clock; rescaling the donor cast's own beats
-  (which is what shipped) puts the burst on a third timeline entirely.
-
-  The number of non-zero slots is always the host's. `entry[+0x00 + i]`
-  (power) and `entry[+0x10 + i]` (frame) are parallel arrays walked by one
-  cursor (`actor[+0x1F4]`), so moving the count would re-pair the power
-  bytes, and a zero slot ends the walk outright (`0x801EC47C`) - nothing
-  here may write `0`. Two things make editing these bytes safe: the damage
-  gate tests `0x0C <= entry[+0x00] <= 0x1F` on the **host art's** power
-  byte 0 (`0x1D` / `0x17` / `0x18`, untouched by the swap), and the
-  mid-clip early-commit at `0x80047918` needs `entry[+0x76] == 0` while all
-  three host arts read `1`, so moving a hit earlier cannot truncate the
-  clip.
-
-  The firing rule itself (`FUN_801EC3E4`, `0x801ec440`-`0x801ec480`): a hit
-  fires on the first tick where `frame >= hit_frame - 1`, `frame` being
-  `node[+0x68] >> 4`, the integer keyframe index of the stream playing. So
-  landing damage on visual contact `C` means writing `C + 1`, and `rate`
-  only sets wall-clock - one keyframe is `8 / rate` ticks - so no units
-  mismatch exists between the two.
-- **Effects** - the host's script is eight `[frame_gate, effect_id, x, y,
-  z]` records, and for Burning Flare all eight spawn flame `0x96` across
-  the swing. That flame is why a reskinned art keeps reading as the host's
-  move however faithful the body gets, so it is replaced. The staged
-  special clips carry no script of their own - as an **enemy**, a sibling's
-  signature move draws its visuals from a per-spell code module (PROT 960
-  for Lu's), which spawns from module-resident parameter blocks that a
-  one-byte art id cannot name. What the siblings do have is their ordinary
-  casts, whose entries carry real scripts in exactly this format, so the
-  spawn comes from there (direct-form `0x84`, unless the slot claimed the
-  transplant cave). With nothing to borrow the host's script is suppressed
-  instead, by deferring every gate to `0xFF` - the walker never advances
-  past a gate it has not reached, so nothing spawns and no terminator arm
-  runs.
-
-  The **gates** come from the same connect set the hit list is scheduled
-  on, not from the donor's own beats, so one clock drives the burst, the
-  damage and the body. The walker's gate rule is the hit rule
-  (`frame + 1 >= gate`, `0x801decb4`), so a gate equal to a hit value fires
-  on the same frame.
-
-  Rewriting the script is **not sufficient on its own**, which is the trap
-  here: entry `+0x7A` carries an impact-effect class that two further
-  renderers read straight off the actor, neither of them through the cue
-  records. `FUN_8004998c` streams an element spark along the swing path
-  and `FUN_80049348` draws afterimage copies tinted from a per-*character*
-  table - so a slot whose host art sets that byte keeps showing the host's
-  element however completely the script is replaced. Of the three hosts
-  only Vahn's Burning Flare sets it, which is why a sibling in Vahn's slot
-  wore his fire through every other edit the swap makes. It is zeroed per
-  slot. Re-pointing it at the sibling's own element instead is tempting -
-  class `2` is the lightning-class spark, which is Lu's - but the same
-  byte switches the afterimages on and those take their colour from the
-  character, not the art, so it would trade the host's sparks for the
-  host's ghosts. Removing what is wrong is measured; adding what is right
-  needs the colour word's channel order settled first (see
-  [art-data.md](../formats/art-data.md#impact-effect-class-entry-0x7a)).
-
-The rename has an **enemy half**, and it is what makes the Nivora duel
-read correctly. The mod already reskins each sibling's monster block with
-the mapped hero's model and name, so that fight already puts Vahn, Noa and
-Gala on the enemy side - but the cast it announces came from the spell
-table, which is the same table the party path uses. `FUN_801E9FD4`'s
-`0xA2`/`0xA3`/`0xA4` arms fire on the round counter (`% 3 == 2`) and write
-`actor[+0x1DF] = monster_id - 0x29` (the subtraction is a literal at file
-`0x1CFFC` of the raw battle overlay, `0x2442FFD7`), so Gi's `162` resolves
-to spell `0x79`, Che's to `0x7A` and Lu's to `0x7B`. Left alone, the enemy
-wearing Vahn's model announces *Blazing Slash*. Pointing the sibling's row
-at the host art's retail name completes an exchange rather than a
-one-way rename: the party art gives up `Burning Flare` to become
-`Blazing Slash`, and the enemy row gives up `Blazing Slash` to become
-`Burning Flare`. Written through the record's own `+8` pointer into
-padding measured by `spell_names::name_field`, never grown - the retail
-slots hold 16 bytes against 13-14 byte names.
-
-The mirror's two remaining halves are closed by their own passes.
-
-The Delilas **field forms** in `nilboa` are scene-resident: MAN placements
-carry `model = 106/107/108`, pack-member indices into PROT entry `0639`.
-The scene mirror (`legaia_patcher::party_swap::nivora_field::heroize_nilboa`
-via `legaia_patcher::nivora_field`) rebuilds those three members as the
-mapped heroes' field rigs, pivot-baked onto the siblings' scene-idle rest
-frames so the scene's own ANM records pose them, and repaints the three
-sibling head TIMs in PROT `0638` with the heroes' faces. It fits at full
-geometric detail - dropping the two unposed equipment-template groups per
-rig and flattening non-head textured prims to the retail field flat-shade
-style brings the three rigs to 29200 bytes against the members' 30276 -
-with non-face head-texture islands packed at half resolution (face fronts
-stay full). The retail hero source is the **pre-fieldize** PROT 0874
-capture: by the time this pass runs, 0874 itself carries the siblings.
-Verified by `nivora_field_real`.
-
-The other three story appearances mirror through the same bake driven by
-a per-scene coordinate table (`party_swap::event_field::EVENT_SCENES` via
-`legaia_patcher::nivora_field::apply_event_field`): the map-stone
-confrontation in `stone` (bundle `0175`, members 33/34/35 anchored on ANM
-records 37/52/62), Zora's floating castle in `taiku2` (bundle `0426` -
-four per-beat shading copies per sibling, members 116..127, all four
-carrying one bake anchored on the placement records 14/20/26), and past
-Conkram in `conc2` (bundle `0624`, court-outfit meshes 165/166/167 on
-records 64/66/68, head TIMs in the sibling `tim_pack` entry `0625`).
-Every coordinate is the scene's own MAN actor placement (`model_index` =
-TMD-section member, `anim_id - 1` = anchor record). These scenes keep
-their NPC meshes inside the bundle's LZS TMD section, so the rebuild
-reflows the member pack in the decoded section and recompresses -
-in-place when the stream fits its retail span, else a whole-bundle
-section re-lay inside the entry footprint. One trap is pinned in the
-spec: `taiku2`'s kneeling anchor stances fool the geometric limb
-splitter into a clean-looking but wrong role pairing (the torso lands on
-a leg bone), so its slots carry the assignment measured off the
-byte-identical rigs' neutral stance in `stone`. Verified per scene by
-`delilas_event_field_real`.
-
-The enemy special's **body motion** no longer reads as the sibling's
-move: the enemy-side anim mirror (`party_swap::enemy_anim` via
-`legaia_patcher::enemy_anim_mirror`) rewrites each swapped block's
-archive entries with the hero's own clips - idle, walk, reactions and
-swings, plus the hero's 50-AP Hyper split wind-up-to-strike across the
-entries the cast module stages by raw index (and the hero's victory
-flourish in the tag-`0x22` close). Streams are the raw 9-byte packed
-family and re-encode byte-exactly; frame-indexed head fields rescale,
-sound cues / AGL / tags / root motion stay retail. Per-entry frame
-floors respect the one measured module gate (PROT 0960's damage tick
-waits for the caster's clip cursor to reach keyframe 22, so Lu's payoff
-entry holds >= 23 frames; everything else floors at retail's own
-smallest staged entry, 11). A budget ladder (exact keyframe-density
-halving, a compact close, then family drops) covers tight blocks; all
-six mapping permutations fit with no ladder action, and a block that
-missed every rung would keep the sibling's clips with a note rather
-than fail the apply. The fire, lift and camera stay the module's own
-hardcoded `jal` sites (15 in PROT `0958`, 41 in `0959`, 24 in `0960`) -
-on the enemy side that is retail behaviour and stays. Verified by
-`enemy_anim_mirror_real` (bake-parity affine-fit bounds included: the
-enemy-side model bake now runs the same whole-rig alignment as the
-player side, closing the per-part roll defects the old per-joint re-aim
-left in every hero-under-sibling-clip pose).
-
-The **battle idle** is rebuilt too, and it is a stance change more than a
-motion one. Retail authors each character's combat stance in idle frame 0,
-and the siblings' stances suit their own proportions - Che stands wider
-than Gala's staggered guard - so a swapped character holding the host's
-stance reads as the wrong body wearing the right model.
-
-The player idle is raw packed (`2 + frames * parts * 9`) **inline in
-`record0`**, not channel-delta like the readef "ME" bodies, so it is
-rewritten at its exact retail length: keeping the frame and part counts
-keeps every later offset in the block valid and needs no relocation. Two
-consequences follow from that budget. The sibling's cycle is resampled to
-the host's 8-9 frames from its own 13-35, and the rate byte floors at `1`
-where all three hosts already sit, so the rebuilt idle cycles 1.3x to 1.9x
-its authored speed and cannot be slowed back down. And the stream is
-**re-anchored to the host's rest**: the retarget rebuilds translations by
-forward kinematics, so its frame 0 does not land where the host's does,
-while every clip the swap does not rebuild - walk, flinch, block, get-up -
-still starts from the host's rest, and an un-anchored idle pops the whole
-body on each transition into and out of it.
-
-The re-anchor is **one rigid whole-body translation**
-(`winpose::idle_anchor`), added to every part of every frame. Battle poses
-are flat - each part carries an absolute `R * v + T` about the object
-origin and nothing in the stream hangs one part off another - so a
-translation written to the torso channel alone does not re-seat the
-character at all: it shears the torso off the body. That is a defect this
-feature shipped with, and it read in game as the torso floating clear of
-the model; measured, it opened a 21.6 to 89.8 unit gap at every torso and
-pelvis joint of all nine sibling/host pairs, against the 1.8 to 2.4 units
-retail's own idles carry. Oracle:
-`crates/patcher/tests/party_swap_idle_continuity_real.rs`.
-
-The translation's two axes come from different references, because they
-answer different questions. **x / z from the torso** - the FK root the
-retarget hangs the skeleton off, and the part the actor's world position
-and the attack camera frame. Anchoring the support point (the ankles'
-midpoint) instead is the physically tidier reading but costs more: the
-siblings plant their feet 16-101 units from where the host plants theirs,
-so foot-anchoring slides the visible body that far off its mark. **y from
-the floor** - the character has to stand on the ground, and the torso's
-height above it is exactly the part of the stance worth keeping, so
-taking y from the torso as well pins the wrong end of the leg (measured,
-it floated Lu 46-50 units clear of the floor on both her hosts and sank
-Che 48 into it on Noa's). The floor is the deepest ankle pivot over the
-whole cycle on both sides, so a lifted foot in either frame 0 cannot bias
-it and no frame plants deeper than the host's own idle does.
-
-Hand orientation in every retargeted sibling clip follows a
-**wrist-attitude law** rather than the conjugation. The retarget maps
-each part's absolute orientation independently, so a played pose
-preserves neither rig's hand-to-forearm relation - measured 85 degrees
-off retail on the weapon hand in Gi's idle, which pointed the welded
-equipped-weapon blade (correct under every host art clip, since those
-keep retail's own wrist relation) straight across the torso, reading in
-game as stray green texture on the chest and back. Hands carry no
-authored detail worth keeping - unlike the head, whose bob is
-deliberately carried across - so `retarget_clip` slaves each hand's
-rotation to its forearm at the host's rest wrist attitude, the same
-terminal law the feet get from `normalize_battle_rest_feet`. Hand
-rotations feed no FK translation term, so the override changes
-orientation only, about the wrist pivot the fist is anchored at.
-
-The idle rides the **same** `record0` write as the signature-art edits,
-because it is the only one of them that adds bytes and batching means one
-LZS re-fit rather than two that must each clear the footprint alone. That
-write is also where `patch_player_record0_full`'s `None` return stops
-being safe to ignore: it means "nothing changed" and "did not fit"
-equally, so an overflow silently drops every edit in the batch - leaving
-the art displaying its new combo in the menu while still answering to the
-old one in battle. It now falls back to `legaia_lzs::compress_optimal`
-before giving up, and the caller treats a `None` it cannot explain as a
-hard error.
-
-The **run-in** stays the host's: it is a separate queue action (constant
-`0x19`, `Starter`) shared by every one of that character's arts, so
-retargeting it would change all of them.
-
-The **swing camera** needs re-timing, not replacing, and that is the
-correction to make here: the earlier reading treated the camera as a
-choice among arms, and the arm was never the problem.
-
-`FUN_801D71B8` dispatches per (character, art constant) through three
-per-character jump tables (`0x801CEA88` / `0x801CEAD0` / `0x801CEB20`,
-file `0x0270` / `0x02B8` / `0x0308` of the raw battle overlay), slot =
-`(constant - 0x1A) * 4`. Thirteen distinct arms exist and **no live arm is
-shared across characters**; 37 dead slots point at a bare return. The
-dispatcher's prologue admits only party seats `0..2` and only action
-category 3 (Attack), so no enemy cast and no Super-Art expansion can reach
-a slot at all (every Super finisher constant falls outside its table's
-bound; Super Arts get no attack camera in retail).
-
-Each arm is a cascade of `slti` tests on the animation cursor
-`actor[+0x22C][+0x68]` - sixteenths of a keyframe - and that cascade is
-how a swing gets several framings instead of one. Gala's Explosive Fist
-arm changes shot at keyframes 4, 7 and 10; Noa's Vulture Blade arm and
-Vahn's Tornado Flame arm at 14. **Those thresholds are literals sized for
-the retail clip** - the highest threshold anywhere in the dispatcher is
-keyframe 17 - and a signature chain runs 46 to 100 frames,
-so the camera finishes its entire choreography inside the wind-up and then
-holds one shot for the rest of the move. That is the whole defect, and it
-is invisible to any check that only asks which arm ran.
-
-`delilas_party::retime_camera_arm` scales each threshold so the **last**
-shot change lands on the frame the payoff stage begins, with the earlier
-ones scaled by the same factor to keep their spacing. Anchoring on the
-payoff beats scaling by the raw length ratio: the final framing is the one
-that films the strike, so it should start when the strike does, and a
-chain can come out the same length as its host while still opening with a
-wind-up the retail thresholds know nothing about - Lu's stream is 58
-frames either way, so a length ratio of 1 would leave her final shot
-sitting in the wind-up.
-
-The immediates are found by shape rather than by address: a `slti` (the
-dispatcher's own bounds checks are `sltiu`, a different opcode) against a
-register some `lh`/`lhu` loaded from `+0x68`, with a threshold in the
-keyframe range. Linear liveness analysis would be **wrong** here - the
-arms are branch cascades, and the path that reaches a later test jumps
-over the block that reuses the register, so a straight-line read says the
-register is dead where it is live.
-
-Editing an arm is only safe while exactly one art dispatches to it, and
-that is checked rather than assumed. Burning Flare's own arm `0x801D7650`
-reads **no cursor** at all - one static framing for the entire swing, and
-so nothing to re-time. Four of the thirteen arms are flat like that, but
-it is the only flat one a host art dispatches to. Its slot instead
-**swaps** with Tornado Flame's `0x801D74A8` (two cursor bands, three ramp
-folds, no side effects). A swap, not a
-retarget: every arm is already live somewhere, so a plain retarget would
-alias an arm a second art still uses and the re-time would follow the
-alias into that art. Exchanging leaves the set of live arms unchanged -
-only which art dispatches to which - and leaves the borrowed arm reachable
-from one slot, which is what makes it re-timable. Noa's and Gala's arms
-are each already theirs alone and are re-timed in place.
-
-Borrowing an arm *across* characters is possible but strictly dominated,
-and the reason is worth recording: both per-character adjustments are
-applied in the dispatch **preamble**, before the arm runs, so a borrowed
-arm cannot compensate for them. Character 3 seeds camera `TR.y = 0x600`
-against `0x400` for characters 1-2, and `ctx+0x26D` (the table column) is
-forced to 0 for character 3 while everyone else gets `rand() % 2`. Gala's
-Lightning Storm arm on Vahn therefore flips columns per turn - measured
-row deltas include sign flips, so alternating turns frame from opposite
-sides - and Gala's Explosive Fist arm on Vahn sits 512 units low in the
-two bands that do not write `TR.y` themselves.
-
-**Slow motion is already there** and needs no change: retail halves
-`actor+0x21D` on every party Tactical Art strike, and a SpecialStarter
-adds a freeze-frame plus quarter speed, both from `FUN_8004AD80` and both
-gated party-only.
-
-#### Each slot fights in its sibling's element
-
-The swap also moves the slot's **element**
-(`delilas_party::retarget_character_elements`). The battle overlay's
-per-character element table (`0x801F5480`, PROT 0898 file `0x26C68`, one
-byte per 1-based character id) is the only per-character element the disc
-carries, and retail seeds it Vahn = fire, Noa = wind, Gala = thunder. Both
-affinity readers index it with `DAT_8007BD10[actor] - 1` and use the result
-as a row/column of the matrix at `0x801F53E8` - `FUN_801DD864`
-(`0x801dd8ac`, `0x801dd900`) and the hit kernel `FUN_801EC3E4`
-(`0x801ecf38` attacker, `0x801ecf94` defender) - so the byte decides what
-element every one of that slot's attacks deals and what it takes.
-
-Each sibling's own element is already on the disc at monster record `+0x1D`
-(the byte `FUN_801EC3E4` reads at `0x801ecf68` for an enemy attacker):
-**Gi = fire, Che = earth, Lu = thunder**. The pass copies it into the
-slot's table row, taken from the archive image captured before the model
-loop so a re-skinned block cannot feed itself back. Nothing else moves -
-the affinity matrix and the five characters outside the party keep retail
-values.
-
-Until this ran, a swapped party fought in the host's element however
-faithful the rest of the identity swap got: Lu's Plasma Strike landed as
-**fire** out of Vahn's slot and Che's Megaton Press as **thunder** out of
-Gala's. That is per character, not per art - retail has no per-art element,
-so a Ra-Seru cast and a basic swing scale through the same byte.
-
-Two earlier readings of that report were wrong and are worth keeping: the
-art record's 8-record effect script (`+0x14`) and the impact-effect class
-(`+0x7A`) both looked like the culprit and neither is. The effect script is
-genuinely live - a mid-battle RAM capture shows the art bank the runtime
-walks is a verbatim image of the player file's decoded `record[0]` (see
-[the bank the runtime walks](#the-bank-the-runtime-walks)) - and `+0x7A`
-writes the **target's** hit-flash (`FUN_801EC3E4` `0x801ee3d4` stores it at
-`actor[+0x21F]` of `attacker[+0x1DD]`), not the attacker's move colour.
-
-#### The bank the runtime walks
-
-The art-record edits the reskin makes reach the runtime through one chain,
-worth stating because it has been doubted twice:
-
-```text
-DAT_801C9360[char]  ->  the decoded record[0] image
-record0[+0x58]      ->  art bank (u32 count, then 0xD0-stride records)
-bank + 4 + row*0xD0 ->  the bank record
-record + 0x24       ->  the action entry
-```
-
-`FUN_8004AD80` materialises a staged anim id `q >= 0x10` by writing
-`bank + 4 + (q-0x10)*0xD0 + 0x24` into `record0[q*4]` (`0x8004b708`
-loads `record0[+0x58]`, `0x8004bc84` stores the entry pointer), and
-`FUN_80047430` hands that pointer to `FUN_801DEA50` as `node[+0x4C]`
-(`0x800478b8`). Measured against the mednafen `party_battle_gobu_gobu`
-capture: Vahn's 33-row and Gala's 32-row live banks are **byte-identical**
-to this crate's decode of the disc `record[0]`, and Noa's differs in 4
-bytes of 7284 - all four inside row 0's entry `+0x04..+0x07`, a field the
-tick writes and the patcher never touches. So a same-size edit inside a
-bank record is an edit the runtime sees.
-
-#### Casting a sibling signature attack from a party slot
-
-The genuine enemy-side move - Lu's Plasma Strike as PROT 960 drives it -
-is **reachable but deliberately not shipped**. The reasoning matters
-because a previously committed claim here was wrong.
-
-What is *not* the blocker: "a party actor has no monster block". A party
-actor has a first-class equivalent anim table (`DAT_801C9360[slot]` against
-a monster seat's `DAT_801C9348[slot-3]+0x4C`, the two arms of
-`FUN_8004AD80`), the raw indices the module stages resolve on it, and the
-module's single monster-block access is a hardcoded **seat-0** write to
-one field of one clip, unrelated to who is casting.
-
-What actually blocks it, in order of severity:
-
-- **Kernel-RAM corruption, on every cast.** That seat-0 access reads word
-  32 of monster seat 0's block. The loader fixes up only `magic_count`
-  words at `+0x4C`; past that the words are unfixed block-relative
-  offsets, so a seat-0 monster with `magic_count <= 13` - Che Delilas
-  himself has 12 - turns the pointer into a bare offset and the following
-  store lands a halfword in PSX kernel RAM. Retail never trips it because
-  the module is only ever reached with Lu (16 entries) in seat 0.
-- **A softlock with no escape.** Battle state `0x70` re-enters the module
-  every frame and advances only when it returns 0; there is no timer and
-  no bail-out. Four phase gates can stall it, and the last needs a clip of
-  at least 23 keyframes - which Gala's party index `0x0D` fails today at
-  17 of 19 equippable section-2 ids.
-- **Friendly fire.** The damage call and both HP writes are hardcoded to
-  actor slot 0, not the chosen target.
-- **The choreography is not free either.** The staged raw indices mean
-  "the four basic swings" on a party actor, so getting the sibling's clip
-  there needs a detour in the hottest per-actor path in the battle loop.
-
-The cheap part of what the module provides is separable and is what the
-swap ships instead: the camera above, and the effect script.
-
-The effects go further than borrowing, via a **transplant**
-(`delilas_effects`). A cast module's part prototypes are ordinary
-move-VM records in the same format the `0x801F6324` prototype table
-holds, they contain **no absolute pointers** (measured over each
-module's whole data region), and retail ids 50-60 - the Super Arts'
-own bursts - are the identical shape (`model_sel = -1`, submode 2, the
-same opcode set) and are already reached from a player art's effect
-script. So this is the Super Arts' mechanism pointed at different data,
-not a new one: copy the record into a spare prototype slot and the
-art's one-byte effect id names it.
-
-Six ids are unreferenced, and the argument is structural rather than a
-byte scan. `0x801F6324` is materialised at six `lui` sites, all in PROT
-0898, and every index is a byte lifted straight out of data with **no
-computed index anywhere** - so censusing the carriers closes the set:
-1811 monster action entries over 186 blocks, 286 player action entries,
-all 44 move-power records, all 13 cue groups. Of the six, only `37`,
-`38` and `47` own their record outright; the rest have a free table slot
-aliasing a live record.
-
-**The cave is 88 bytes and that is the entire budget** - the battle
-overlay is packed to the byte. Records 37+38 are contiguous and bounded
-by live id 39; every other inter-record slack in the prototype region is
-2 bytes, and the 530 bytes that look free after id 44 are two burst-arm
-triggers, their 130-byte stager records and three further live records.
-So exactly one sibling gets the transplant - the first hero slot claims
-it - and the other two keep the borrowed cast projectile. Records using
-op `0x20` (an unidentified `gp[0x714]` hook) or naming a `DAT_8007C018`
-mesh are rejected outright, so the worst case for a picked record is a
-differently-coloured burst, never a missing resource.
-
-Safety: the id can only draw a different retail effect (nothing else
-reads 37/38, and 38 is parked on id 0's record so the cave's middle is
-never decoded as a header); a clobbered cave ends at the move VM's own
-`>= 0x47` bound check; and the stager takes no pointer out of record
-data. One knob left for a listener: `0x801F6418[37]` is sound cue 208,
-so the transplant fires that cue - a one-byte edit if it is wrong for
-the move.
-
-#### The Delilas move set
-
-`--delilas-moves` (browser: the "Move set" dropdown under the party
-picker) picks how much of the hero's Tactical Arts kit becomes the
-sibling's. `hybrid` is the default and is exactly the behaviour above:
-every art keeps the animation retail authored for it, and only the one
-reskinned Hyper plays a Delilas motion. `delilas` re-authors the rest of
-the kit (`delilas_party::apply_delilas_moveset` +
-`legaia_patcher::party_swap::moveset`).
-
-**The archive is rebuilt, not extended.** A character's art streams live
-in one `0x10800`-byte `readef.DAT` slot, and retail fills most of it: the
-three main slots have 20374 / 2446 / 17361 bytes free. Noa's cannot take
-even one more full-length clip. It does not have to: retail already
-points several art records at one stream (Vahn's 25 records resolve to at
-most 17), so the record's `+0x0A` stream index is a free-standing pointer
-and the whole archive can be re-emitted as long as every record that
-reads it is repointed in the same pass. What ships is the signature
-stream carried over byte-identical, the sibling's locomotion clip, and
-one entry per distinct sibling swing, against 17 / 18 / 19 retail
-streams. On the default `gi,lu,che` mapping that is 5 / 6 / 6 streams in
-16511 / 16133 / 26565 bytes; the counts follow the sibling, not the
-slot, so a rearranged party moves them.
-
-A swing is an archive entry whose action tag falls in the `0x0C..=0x1F`
-band and that no stage of the signature chain claims; that yields 3 (Gi)
-/ 4 (Che) / 4 (Lu) without a per-sibling table. The tag alone is not
-enough - Lu carries an unstaged `0x23` - which is why the chain is
-subtracted rather than the specials being inferred from tags.
-
-Every record that reads the archive is then repointed round-robin over
-the swings and re-timed to the clip's own rate; the two combo-starter
-records take the locomotion clip. Each record's frame-indexed fields -
-the hit list at entry `+0x10..0x13` and the eight effect-script gates -
-are rescaled from the stream it used to read onto the one it reads now,
-and the host's impact-effect class (`+0x7A`) and mid-clip loop hold
-(`+0x84..0x86`) are cleared, both being keyed to choreography that no
-longer exists.
-
-**The renames are load-bearing, not decoration.** Every record's inline
-name becomes the label of the clip it now plays, and a handful of
-repeated strings compresses far better than 22 distinct ones - which is
-what keeps the rewritten `record[0]` inside its LZS footprint. Spare
-bytes with the whole pass applied, on the default mapping: Vahn 143, Noa
-272, Gala 56.
-
-The menu side follows through each arts-table record's own `+0xC`
-pointer, over the retail string plus its measured NUL padding. Labels are
-capped at seven bytes for **every** sibling, not sized against the slot
-each usually lands in: the tightest field any retained art carries is
-Vahn's `Cyclone`, the mapping is a free permutation, and a label that
-does not fit is skipped - so a per-sibling cap would silently keep the
-retail name under a rearranged party. The apply says so when it happens
-rather than passing in silence.
-
-##### What survives, and why hiding the rest is free
-
-An art is only listed once `FUN_801EFBFC` has inserted it at char record
-`+0x185` on a successful performance, so an art that can never be
-performed never appears. What makes a blanked combo unperformable is the
-`combo_len == 1` guard at `0x801EF424`: a blanked combo is
-zero-terminated at byte 0, so a match can only ever complete at length 1,
-and that length is abandoned outright. This is retail's own mechanism for
-the same job - the Super and Miracle **finisher** rows all carry a
-single-`D` combo and are unreachable for exactly this reason. The
-`token - 0x0B` compare at `0x801EF3EC` is a second line of defence
-(`0x0B` is `BlockAnim`, not an input), but it was not proved exhaustively
-over every queue writer and the conclusion does not rest on it.
-
-Four groups keep a working combo:
-
-- **the signature host**, which now carries the sibling's special;
-- **bank row 11**, the Miracle Art. Its combo is the only route to the
-  wholesale queue overwrite: `FUN_801EED1C` branches to the replacement
-  table at `0x801F64F4` only while its rows-visited counter is still zero
-  (`0x801EF4D8`-`0x801EF4E0`), i.e. only on that first row, and the disc
-  confirms it - row 11 carries `RDLULURDL` / `LURDULUDR` / `RRDUDUDLL`,
-  the three combos the SCUS arts table flags as Miracle;
-- **every art a Super Art trigger names.** A Super is not entered as a
-  combo. `FUN_801EF9E4` walks the *finished* action queue at
-  `actor[+0x1DF]` and tail-matches it against the resident trigger table
-  (`find` `0x801F6524 + char*0x41 + row*13`, `replace` `0x801F65E8 +
-  char*0x50 + row*0x10`), and the only writer that puts an art constant
-  into that queue is the combo matcher. So a blanked component silently
-  costs the Super. Bank row and queue constant differ by `0x10`
-  (`0x801EF63C` writes `row + 0x10`), which turns each trigger's art
-  sequence into a row set: 8 rows for Vahn, 10 for Noa, 8 for Gala;
-- **every art at or below the innate cap** at `0x801F686C` (`[3, 5, 3]`
-  on the USA disc - each character's Hyper block). `FUN_801EFBFC` only
-  self-teaches ids *above* that cap, so those arts arrive through the
-  script grant instead (the `+0x74E` insert at `0x80041FB4` in SCUS
-  `FUN_800402F4`). Blanking one would leave an art listed that can never
-  fire, so they are kept and re-animated like the rest.
-
-That leaves 12 / 16 / 12 performable arts per character and 3 / 1 / 3
-hidden. The residual: the script grant is data-driven and its operand set
-has not been enumerated, so a scene that grants an id *above* the cap
-would list a blanked art. No retail grant of that shape is known.
-
-The Miracle Art itself needs no component art kept. Its replacement
-string is written into the queue verbatim, so the arts it names only have
-to exist as records - which they do, untouched.
-
-**Save metadata follows the mapping.** The save-select face and the PSX
-memory-card block icon for the three hero slots come off the save-slot
-portrait sheet ([`save-icon.md`](../formats/save-icon.md) - tiles 0..2 by
-party id / card slot), and the boot load screen keeps its own standalone
-copies of those three tiles; the swap exchanges each hero tile with the
-mapped sibling's own portrait tile (Che 11, Gi 12, Lu 13 in the same
-sheet, its character order), byte-exact, on all surfaces - the party's
-saves show the siblings, and the card slots whose icons were the
-siblings' faces now show the heroes. Existing card saves keep the icon they were
-written with; `save-tool rename` covers the names on an existing card.
-
-**Dialog follows the swap.** Every line that names a sibling (the
-speaker prefixes and self-introductions in the ravine, map-stone,
-Floating Castle and past-Conkram events) is rewritten through the
-translation machinery to name the hero who took that sibling's place -
-"Delilas" itself stays, so "Gi Delilas:" reads e.g. "Noa Delilas:" and
-the world reads as Vahn, Noa and Gala *being* the Delilas family.
-Word-boundary matches only. Hero names run longer than sibling names, so
-a line that overflows its fixed segment budget goes through a
-least-destructive fit ladder: drop the " Delilas" surname one occurrence
-at a time (speaker prefix first), then contract "I am " to "I'm ",
-taking the first candidate that fits; nothing needed the whole-sector
-MAN relayout in either direction of the default mapping.
-
-Still retail: menu
-portraits, battle HUD faces. Composes with
-`--delilas-challenge` - the challenge applies first, so its memory-tight
-dome 1v2 streams slim clones cut from the retail sibling blocks while the
-1v1 ravine duels (ample heap headroom) carry the swapped models. Not part
-of any preset; unaffected by the seed.
-
-> Verified by the `delilas_party_real` disc oracles (apply / re-decode /
-> idempotence / determinism / mapping rearrangement, plus a hybrid-mode
-> contrast against retail that pins every coordinate the Delilas pass
-> owns) and the `party_swap_real` conversion oracles over all nine
-> pairings.
-
-Any produced rom can be classified after the fact with `legaia-patcher
-delilas-audit --input patched.bin --baseline retail.bin` - a static
-battery (no emulator) over the three rebuilt player files, four checks
-per slot. Stream census: every base-archive lead-in frame the battle can
-reach mid-fight must be byte-retail (the loop window and ME streams may
-differ). Pose battery: FK arm-closure and extent metrics over every
-battle and art clip, banded against the baseline's own numbers. Hand
-radius: a textured hand whose radius blows past twice the baseline is
-the welded-weapon class. Equip invariance: every record of an equipment
-section must carry the identical texture pool as the section default, so
-equipping any item stays a VRAM no-op - a record still holding its
-retail pool would stomp the sibling's body texels at equip time, the
-class a bare-handed test run never sees (this check also flags a
-half-applied or version-mixed swap). The e2e harness runs the audit as
-its static stage; a rom from an older build fails loudly instead of
-shipping its era's defects silently.
-
-#### The retail cast route
-
-A Delilas signature is, in retail, a capture-class spell whose cast pages a
-per-spell module (PROT 958/959/960) into the battle's side overlay window and
-runs the whole boss choreography - camera track, summoning pillar, blackout
-lift, multi-hit damage build-up - from data, keyed only off the spell id. The
-swap uses that: for a slot whose module has passed the player-caster audit,
-performing the signature art routes the finished arts queue into the real
-cast (`delilas_cast` module) instead of playing the art-side reskin. Four
-defect classes separate an enemy cast from a player cast. Three are small
-expect-verified word edits inside the module: the hardcoded party-seat-0
-damage/HP sites (retargeted to the derived victim), the dead-victim
-party-wipe arm (a boss cast's victim is a hero, so a dead victim meant game
-over), and a finale teardown that leaves a model-less effect entity in a
-carrier's draw table (its stream words are neutralised at the settle tail -
-the kill-marked corpse otherwise routes the TMD walk's colour read to
-unmapped memory and hard-freezes the exact frame the choreography ends).
-958 alone needs a fifth: its finale arm opens with a reaction-row wait
-(`beq playing(+0x1D9), reaction(+0x1F1)` - before the HP fork, where 959
-forks on HP immediately and 960 waits on a countdown). A hero victim
-leaves the reaction row when the battle SM stages its KO, so retail never
-blocks; a monster corpse is re-staged by nothing until the action ends -
-which that very wait gates - so a kill at Blazing Slash's finale
-deadlocked (savestate-pinned: `mph 0x18`, victim parked in row `== +0x1F1`
-with the clip long finished, caster holding a full `0xFF` park). The fix
-gates the wait on the victim being alive: the arm's free `nop` loads HP
-into a dead register, the wait branch retargets a 4-word cave in the wipe
-body (alive -> the retail wait, dead -> the phase-advance convergence),
-and the end-of-action liveness sweep (state `0x5A`) runs the real death.
-960 needs a sixth, on the audio side, in two parts. First the fire
-itself: the phase-0 opener fires the 16.9 s cast bed through the jingle
-wrapper `FUN_8004FCC8`, which DROPS a cue outright whenever the XA
-system is busy (`jal FUN_8003DE7C(1)`; no deferral queue exists) - the
-opener's `jal` is rerouted through a 5-word preempt cave split across
-the SCUS pools that calls the guard-free player `FUN_8003D53C` (slot
-`0x13`, channel `2`, dur `0x3F6`) directly, whose own head stops any
-active stream, so the bed fires at module open unconditionally. Second,
-the schedule the bed is authored against: the bed's blast bump sits at
-stream `+14.8 s`, which lands on the retail walk's damage stage
-(`mph0+909` ticks, walk end `+1264`) once the real CD's stream-start
-latency is added - but the stage-row fold breaks the mp5 hold that
-provides most of that runway. Retail's mp5 arm waits for the previous
-stage's clip to end (`lbu +0x1D9 == 0xD`, a ~320-tick clip boundary)
-plus a playhead-cursor threshold; with every stage folded onto row
-`0x0A` the played-id half is true the tick mp5 opens and the cursor
-half is nearly met, so the walk reached damage at `mph0+829` and the
-blast arrived seconds after the whiteout (worse under accurate CD
-timing, where the stream starts later still). The fix replaces the
-cursor half with a deterministic tick counter kept in a dead
-wipe-body word of the module image itself (`0x801F85B0` - re-streamed
-from disc each cast, so it self-resets; the caster's `+0x176` hold cell
-is the clip player's live budget and deadlocks the clip if borrowed),
-with the count-store riding the wait branch's delay slot. The threshold
-is probe-calibrated to the retail schedule: damage stage `mph0+938`,
-walk end `+1324` (retail `+909`/`+1264`).
-
-One residual is content, not timing. With the blast pinned to the
-damage whiteout, the bed's audible onset is a pure function of the
-stream's internal music-to-blast spacing - no fire-timing, trim or
-threshold lever can move one without the other - and the retail bed
-opens with ~0.82 s of digital silence and a faint (-30 dB) pre-swell
-before the first real musical event, a full-level hit at stream
-+1.31 s, which on a real-latency drive reads as "the music starts
-late". The fix is a front shift in place
-(`delilas_xa_voice::boost_cast_bed_intro`): the first 70 sectors of
-`XA20.XA` channel 2 are decoded, the stream is advanced 1.24 s so the
-opening hit lands at +0.07 s (50 ms fade-in for the seek landing), and
-the advance is paid back with a 1 s linear dissolve into the unshifted
-stream ending at +3.05 s. The advance and the bridge point are the
-argmax of LOCAL WAVEFORM correlation between the shifted and unshifted
-branches over the blend window (0.883 - the bed is a ~0.565 s ostinato,
-so an in-phase lag exists), which makes the paid-back material read as
-one extra ostinato cycle. A spectral-similarity pick is NOT sufficient
-for this: the first ship of the pass bridged at a spectrally-matched
-point whose waveform correlation was -0.15, and the out-of-phase blend
-was audible as the music restarting mid-cast. The blend is linear
-because equal-power on correlated material bumps the middle +3 dB.
-Every frame past the bridge is bit-identical
-input, so the true-stereo re-encode
-(`legaia_xa::encode::encode_stereo_4bit`) converges back onto the
-retail bytes within the written span (the disc oracle asserts the
-span's tail equals retail) and the blast keeps its authored +14.8 s
-offset - the walk sync is untouched by construction. An RMS guard skips an
-already-shifted stream (retail is silent at +0.15..0.6 s; re-shifting
-would stack).
-
-The bed is also why the signature special's FANFARE channels - the
-host art's channel pair plus the generic Super-chain channel 1 (a
-chained special fires the generic id `0x101`/`0x111`/`0x121`, not the
-pair) - are written to digital silence in every arts-voice mode, with
-their duration-table rows shrunk to a token 0.1 s. An earlier revision
-spliced the bed's own head into them; the commit-time fanfare fire then
-pre-played the opening and the module-open preempt replayed it from
-zero - audible as "her intro repeats" the moment the remaster made the
-head loud. Enemy-side retail has no pre-cast fanfare either: the reel
-starts when the module opens.
-
-The fourth is data, not module code: the module stages the CASTER's two
-clips by raw index (`actor+0x1DA` = `0x0A`, then `0x0B` at the lift
-boundary), which on a monster caster are its archive's wind-up/smash
-entries but on a party caster resolve through the record[0] action table -
-where retail row `0x0A` is an empty placeholder and row `0x0B` is the
-character's Block clip (whose record the stage boundary is probe-measured
-to choke on). The swap authors real rows instead
-(`party_swap::cast_stage`): the sibling's wind-up and smash, retargeted
-onto the host rig with the same conjugation as the art-side reskin and
-re-encoded raw-packed, are **inserted below `clut_a_off`**, each
-carrying its source clip's `+0x54` sound-cue track (frames rescaled
-with the loop-window map, ids translated for the PLAYER arm of the cue
-player `FUN_800508DC` - see below) - the decoded
-record[0] grows by the rows' length, the two image payloads and the
-`clut_a_off`/`clut_b_off`/`budget` header words (plus the paired `+0x5C`
-sibling word) shift up with it, and the table words `0x0A`/`0x0B` point
-at the inserted entries. The placement is load-bearing, not cosmetic:
-everything in the decoded record[0] from `clut_a_off` on is battle-load
-scratch (the member init uploads the CLUT-A/B blocks, then LZS-decodes
-the five equip-section sub-records sequentially into the same region -
-see [`battle-data-pack.md`](../formats/battle-data-pack.md)), so rows
-parked any higher survive every post-load RAM probe yet are destroyed
-before the first turn - the shipped symptom is a cast that freezes the
-screen while its effect/SFX ticks keep looping. The Block clip survives: its entry is
-re-homed byte-unmoved onto placeholder row `0x06` in all four player
-files, and the one party-init literal that seeds every actor's Block
-reaction id (`li 0xB` before the `+0x1F3` store in `FUN_80053cb8`, SCUS
-`0x80054008`) becomes `li 6` - every consumer reads the seeded value back,
-none hardcodes `0x0B`. When the rewrite cannot land, the module falls back
-to pinning both stages onto the empty row (`addiu v0,v0,1 -> nop` at the
-staged-index step): the caster holds a pose, and the enemy-side cast also
-loses its smash stage, since the module writes the same index for both
-caster kinds.
-
-The cue tracks are the punch sounds. Every clip-synchronised battle
-sound that is not an effect-script cue rides the action entry's
-`+0x54` table (8 x `[u16 frame][u16 cue]`, truncated at the first zero
-cue): the per-frame player `FUN_800508DC` walks it against the clip
-cursor per actor and hands each fired cue to the ring producer
-`FUN_8004FE5C`, which maps ids differently per arm - a party actor's
-small cue (`< 0x48`) lands in the SFX ring as `id - 1` (static bank),
-its `0xA7..0xC7` band as `id + 0x19C` (runtime bank), while a monster's
-big cue also takes `+0x19C` and a party big cue (`>= 0xC8`, after the
-track player's own `+0x38` skew) misroutes into the XA-direct path.
-Probe-pinned on the retail duel (`nivora_duel_pre_plasma_strike`,
-FE5C-arg capture): each enemy Plasma Strike punch volley is three
-fires - the VICTIM's reaction track fires `0xAD` (ring `0x249`,
-runtime bank) and `0xD` (ring `0xC`, the static thud), and the CASTER
-fires `0x172` (a runtime-bank voice line only the Delilas battle VAB
-carries). The authored player rows translate accordingly
-(`cast_stage::author_player_cue_track`): the flurry's punch cue `0x4A`
-becomes the `(0xAD, 0xD)` pair - byte-identical ring traffic to a
-retail volley, resolvable in any battle - small ids (footsteps `0x11`,
-impacts `0x16`) pass verbatim (identical on both arms), and
-runtime-bank voice ids drop. Zeroed tracks were the shipped symptom:
-the authored entries carried no `+0x54` table at all, so a
-player-caster flurry punched in silence.
-
-All three modules are audited and probe-verified: every mapped slot routes
-to its sibling's retail module - Blazing Slash (958), Megaton Press (959),
-Plasma Strike (960) - with per-module edit sets covering the same defect
-classes. The player-side stage walks are **un-folded to the full retail
-chains** when the host file's LZS budget takes them (the shipped
-`lu,gi,che` mapping does; the folded two-row shape stays as the
-per-module budget fallback): the player file hosts every chain clip
-below `clut_a_off` (Gi's crouch/leap/slash/finale, Lu's
-raise/charge/channel/strike/flourish), the staged IDS keep the folded
-`0x0A`/`0x0B` values - so 960's **paired stage/confirm gate** (its
-phase-5 arm re-reads the playing id `lbu +0x1D9` against the same
-literal it stages) stays valid and the enemy-side caster still resolves
-its own archive entries - and each staging store (`sb id,0x1DA`)
-becomes a `jal` into a small SCUS-resident **stage cave** that repoints
-the head-table word (`0x28`/`0x2C`) at the stage's clip, writes the
-entry's `+0x88` stream pointer (`entry+0xAC` - the loader writes it
-only for table-bound entries, and a mid-chain entry commits a NULL
-stream without it, a probe-pinned dynarec crash), redoes the staging
-store and returns (`$ra` is dead between calls at every hooked site;
-no hooked word is a branch target). Each hosted clip is authored
-**duration-true** at every LZS-pressure rung: the pose ladder never
-sheds frames (an earlier ladder halved them, which - with the rate
-byte already at its floor of 1 - halved wall time, so the clip hit the
-shared tick's natural-end re-commit and visibly replayed from frame 0
-mid-stage); instead a deeper rung holds each pose 2 or 4 output frames
-(duplicated 9-byte rows LZS-compress to repeat tokens). And each entry
-carries its SOURCE clip's **loop window** (`+0x84..+0x86`, rescaled to
-the hosted frame count - reader
-`legaia_asset::monster_archive::animation_loop_windows`): the retail
-cast clips are authored to park or cycle inside their windows through
-each stage's dwell (Gi's crouch holds `[9,10]`, his finale parks on
-its last frame; Lu's charge parks, her flourish loops its tail sway),
-and a zeroed window is what made the hosted stages replay whole clips.
-Lu's strike goes one step further and is hosted **identity** - the
-source's own 39 frames at rate 2 with its authored `[15, 15]` park
-intact - because module 0960 tests the strike clip's cursor against
-two ABSOLUTE thresholds: the phase-5 confirm waits for cursor `0x90`
-(strike frame 9), and the damage tick waits for cursor `0x160`
-(frame 22) a fixed 28 ticks after the module itself RELEASES the park
-(file `+0x1638` clears the caster's `+0x176`/`+0x21B` hold budget -
-the park is choreography, not a stall hazard). The anim cursor climbs
-`2 * rate` sixteenths a tick, so the duration-true rate-1 re-timing
-halves the climb: the confirm lands 36 ticks late, the un-parked clip
-replays, and the burst decouples from the release - audible as the
-strike's sound beats drifting off the motion. The caves live in three pools that
-are free exactly when the route runs: the SCUS injection-gap tail
-behind the queue hook, shiny-seru's read-watch-verified `ARENA2` +
-`SLOT6` pockets (option-exclusive features), and PROT 958's own dead
-party-wipe body (three 2-word stubs - the `ori` rides each `j`'s delay
-slot - then the 4-word dead-victim HP gate; the body's last word stays
-the finale victim cell). Two facts shape the per-module damage retargets:
-958 keeps the victim in `$s1` only per-arm (its finale arms burn
-`$s1`-`$s4` as GPU-packet constants, so the first damage arm banks the
-victim pointer in that same wipe-body cell and the finale pairs reload
-it), while 960's `$s3` holds tick-wide and takes plain `move`s. 960
-additionally carries 959's cached-finale-entity teardown hazard (same
-`ctx+0x102C` halt-quad pattern; same settle-tail neutralise, hosted in
-its dead wipe body) and two seat-3 monster-record toggle stores that
-are nop'd (an arbitrary victim's record `+0x80` word is not a vetted
-pointer). One data constraint crosses the module edits: 960's damage
-tick holds until the playing clip's cursor reaches keyframe 22, and
-that tick rides the strike stage (the wind-up row under the folded
-fallback) - under the full chain the strike hosts identity (39f rate
-2, park window kept - the module releases it); under the fold, where
-the gate rides a different clip's restages, the bound clip is
-stretch-floored at 23 keyframes and ships windowless, player and
-mirrored-block alike. Module anatomy (image shapes, phase
-machine, staging ABI, the seat-0 damage hardcode):
-[cast-module.md](../subsystems/cast-module.md). The hook stub lives in
-the SCUS injection gap, so the route composes with neither
-`--shiny-seru` nor `--show-super-arts`; on a conflict the patch keeps
-the art-side signature and says so in the summary.
-
-The queue hook does not convert whole-queue any more - that discarded
-any arts entered BEFORE the signature combo (somersault then Plasma
-Strike played only Plasma Strike). The rework splits the conversion in
-two, both routines in shiny-seru's `ARENA1` (`0x8007AE00`, free under
-the cast route by the same option-exclusivity, claimed
-free-or-identical like the gap). At assemble time the hook's HIT block
-hands the matched `[0x19|0x1A starter][marker]` pair to the ARENA1
-queue-edit: a starter **at the queue base** converts to the cast
-exactly as before - immediate cast, the approach run never fires; a
-starter **anywhere else** defers with the queue untouched. The
-base-or-defer split follows the retail matcher's own emission shapes
-(`FUN_801EED1C`): the Hyper arm (`0x801EF4E8`) consumes the matched
-arrow span, so a bare signature input tokenizes to `[1A marker]` at
-the base and a chained one to `[.. 19 art 1A marker]` - no windup
-directions ever precede the signature's starter in a real queue. The
-only queues with raw directions there are chains whose leading art the
-matcher's AP admission gate dropped (`0x801EF424`: tiers are charged
-per completed match, later-starting matches first, and an unaffordable
-match emits nothing), and those directions are basic strikes the
-player entered - deferring plays them out instead of eating them. The
-route also halves the Hyper admission tier
-(`install_chain_admission_tier`, `li t4,0xA -> 0x5` at `0x801EF32C`)
-so an art-then-special chain clears admission at realistic mid-battle
-AP (the five-arrow signature admits at 25 instead of 50; the walk's
-deductions are refunded at the applier's end, `+0x170 += +0x224`, so
-this is the per-command charge, not a second pool). The deferred half
-is a two-word detour at the attack band's
-strike-loop fetch (`FUN_801E295C` state `0x1E`, `lbu v1,0x1df(v0)` at
-`0x801E374C` -> `jal` with the fetch riding the delay slot; no branch
-targets either word, and the displaced `+0x1DC` busy-latch load returns
-in the morph's exit delay slot): when the fetched byte is a starter
-whose next byte is the ACTIVE slot's route marker, the action morphs
-mid-chain - category 2, spell over the consumed queue head,
-`ctx[7] = 0x28` - and the capture-class spell routes `0x28 -> 0x6E`
-into the module without re-reading the mid-queue cursor. A missed
-morph fails soft: the marker plays as an ordinary art row and the
-chain ends normally (probe-measured on a routes-zeroed image). The
-per-slot markers double as the replaced host art's own constant
-(Vahn/Che `0x1C`, Noa `0x1F` = Vulture Blade), so performing that host
-art alone still casts - the intended replacement semantics.
-
-The banner follows the same conversion. Retail's state-`0x28` body
-raises the `0x4C` spell-name banner for **monster** casters only
-(`lbu v0,0x2(s5); sltiu v0,v0,3` at `0x801E43D0` - the party side has
-no banner writer anywhere), so a converted signature kept whatever the
-arts chain last wrote: somersault into Plasma Strike read "Somersault"
-through the whole cast. The un-gate
-(`delilas_cast::install_cast_label_gate`) is two in-place words -
-`lbu v0,0x1DE(s3); sltiu v0,v0,2` - retesting on the action category:
-the Item band (the summon items, retail's own skip) still skips, and
-every Magic cast runs the retail label block, monster casts
-bit-identically. Player Seru casts gain the same banner enemy casts
-always had - a deliberate presentation upgrade; no free injection
-arena exists on a delilas image (gap 1, ARENA1/2 and slot 6 are all
-carved), so an id-scoped gate had nowhere to live. The name the banner
-reads is the sibling special's own: the spell rows `0x79..=0x7B` keep
-their retail names ("Blazing Slash" / "Megaton Press" /
-"Plasma Strike"), because the enemy-side rename that once pointed them
-at the host art names is retired - the mirrored hero's signature is a
-physical attack now, so the un-gated player banner is those rows' only
-reader.
-
-`--delilas-che-hammer` is a visual comparison option on top of the
-swap: Che's welded giant hammer stays on his mesh (instead of the
-mirrored-fist replacement) and the host's weapon fusion is skipped for
-his file, so he fights with the hammer regardless of the equipped
-weapon. The kept hand also switches wrist law: every retargeted clip
-normally slaves each hand to the HOST's retail rest wrist attitude
-(the fix for the fused host weapon pointing across the torso), but
-with the sibling's own weapon in the hand that slaving is exactly
-wrong - a hand-sized fist hides what a 300-unit hammer amplifies, and
-the kept hammer measured 73 degrees of long-axis error against Che's
-own rest. The kept welded hand plays the sibling's natural conjugated
-wrist instead (`winpose::retarget_clip_wrist`,
-`party_swap::playerize::kept_welded_hand`), which pairs with the
-unmodified mesh bake to reproduce Che's model-space attitude exactly
-(re-measured 0.0 degrees). `delilas-verify` detects the state from the
-disc (a hand channel's textured radius far past any real fist) and
-waives only the fusion-presence check; `delilas-audit` reports the
-welded radius as a FAIL unless `--allow-kept-hammer` is passed.
-
-### Fishing prize prices
-
-The fishing minigame's prize counters (the **Buma** and **Vidna** ponds) sell
-accessories and consumables for **fishing points** rather than gold. Each prize
-is a 12-byte row `[u32 limit][u32 price][u32 item_id]` in the raw fishing
-overlay (PROT entry **972**, `legaia_asset::fishing_exchange`). `--fishing-price
-ITEM=POINTS` sets the `price` of every row granting `ITEM` (id in decimal or
-`0xHH`) - e.g. `--fishing-price 0x6F=500` drops the Buma Water Egg from 20,000
-to 500 points. The price is **both** the point cost and the "only appears once
-you can afford it" gate (the top prize row is hidden until `price < points`), so
-lowering it also makes the prize show up sooner. PROT 972 is a raw overlay, so
-each edit is a same-size in-place `u32` write - no recompression. Multiple
-prizes can be set at once (comma-separated or by repeating the flag), and
-`legaia-patcher fishing` lists the current prizes and prices (with names). In
-the browser patcher, the same edits live in the **Manual value edits** group as
-`item=points` pairs.
-
-> Verified by the `fishing_price_real` disc oracle: the Buma Water Egg row is at
-> the parser's coordinate (PROT 972, offset `0x9874`, 20,000 points), a price
-> edit lands as a same-size `u32` at exactly the targeted `price` fields, the
-> patched overlay re-parses with the new price, re-applying the same value is a
-> no-op, and an item no prize grants is refused.
-
-### Location names
-
-A place name is shown in **three** places and each reads its own copy off the
-disc, so renaming a town means editing three carriers - the well-known
-`SCUS_942.54` table alone leaves the world map and the entry banner saying the
-old name. The three, their byte layouts and their consumers are on
-[`place-names.md`](../formats/place-names.md):
-
-| Site | Display | Carrier |
-|---|---|---|
-| 1 | quick-travel / Door-of-Wind destination list | `SCUS_942.54` `0x80073B18`, 16 fixed `0x20`-byte cells |
-| 2 | the label drawn over the world map at the place's map position | the 29-record location table trailing every kingdom MAN |
-| 3 | the banner on entering the scene (and the save-screen location row) | that scene MAN's section-2 display name |
-
-`--rename-location TARGET=NAME` rewrites all three. `TARGET` is either a
-landmark cell index or the place's **current name** - the latter is how the 13
-places with a world-map label but no quick-travel cell (Hunter's Spring,
-Snowdrift Cave, Sol Tower, Mt. Letona, ...) are addressable. Matching is exact,
-so renaming `Conkram` leaves `Conkram (Past)` alone and renaming the `Sol` cell
-does not touch the `Sol Tower` scenes. `legaia-patcher locations` lists all
-three sites. In the browser patcher the same editor lists every target with its
-current name, and the raw list under **Manual value edits** takes one
-`target=name` per line.
-
-Names are ASCII, up to **23** characters - the tightest of the three carriers
-(site 2's 24-byte name field minus its NUL). Sites 1 and 2 are same-size
-overwrites; site 3 is not padded (`strlen + 1`), so a longer name resizes the
-section, which re-packs that scene MAN and rewrites its descriptor size word.
-Since that moves MAN bytes, run this in the same slot as the door randomizer -
-**after** a language pack, whose dialog edits are keyed by byte offsets into the
-same buffers.
-
-> Verified by the `location_name_real` + `place_names_real` disc oracles: the
-> pinned SCUS names decode at their coordinates (idx 3/4 = the element caves at
-> `0x64378`/`0x64398`), the three kingdom MANs carry one identical 29-record
-> table, `town01`'s section 2 is `"Rim Elm"` at exactly `strlen + 1` bytes, a
-> two-place rename lands 1 landmark cell + 6 world-map records + 20 banners
-> across 23 bundles, near-miss names and every unrelated banner are untouched,
-> every sector stays EDC/ECC-valid, re-applying is a no-op, and an
-> oversized / non-ASCII / out-of-range name is refused without a write. The
-> banner and world-map halves are additionally runtime-verified on a patched
-> disc under PCSX-Redux (`autorun_location_banner_source.lua`): the on-entry
-> draw arrives with the new name, and the live table the label pass walks
-> carries it too.
-
-### Earth Egg coin threshold
-
-The **Earth Ra-Seru Egg** is *not* a row in the four-block casino prize table
-([casino prize exchange](#casino-prize-exchange)); it is a **bespoke scripted exchange** in the
-`koin1` scene's field-VM script (the MAN, retail PROT entry **543**). The Sol
-Tower "Prize Counter" offers it only once the casino-coin bank clears a
-threshold, then gives item `0x6E` and debits the coins. Two verified literals
-drive it: the **gate** is a field-VM op-`0x4E` INVENTORY_CMP sub-op 11 (coin u32
-compare) whose value is retail **99999** (`coins > 99999`, i.e. `>= 100000`),
-and the **debit** is an op-`0x4C` nibble-E sub-5 add-coins of `-100000`. Retail
-keeps `gate = price - 1`, `debit = price`.
-
-`--earth-egg-price VALUE` sets both together so the repriced egg stays coherent
-(require `VALUE` coins, remove exactly `VALUE`); `VALUE` is the coins required,
-range `1..=8388608` (the debit is a signed 24-bit field). The threshold and
-debit are same-size value swaps in the decompressed MAN, which is LZS-recompressed
-and written back in place (the `koin1` MAN is zero-slack, but the re-packer fits
-it). `legaia-patcher earth-egg` prints the current value. In the browser patcher
-the field lives in the **Manual value edits** group.
-
-> Verified by the `earth_egg_real` disc oracle: the gate is located in PROT 543
-> at the retail shape (coins 100000 / gate 99999 / debit 100000, item `0x6E`,
-> `GIVE_ITEM 0x39 0x6E` present); a price edit re-decodes to `gate = value - 1`
-> and `debit = value`, changes only the threshold-half and debit bytes in the
-> decompressed MAN, keeps every neighbouring descriptor + the touched sector
-> EDC/ECC-valid, refuses `0` / over-range, and is a no-op on re-apply.
-
-### Treasure chests
-
-A chest gives its item via the field-VM **`GIVE_ITEM` opcode `0x39`**, encoded
-`[0x39, item_id]` - the item id is a **single inline operand byte** in the
-per-scene field-VM script bytecode, not a per-scene table. (Pinned in the
-dispatcher `FUN_801DE840` case `0x39` at `0x801E0448`: inventory-window setup
-`FUN_8004313C` then add-by-id `FUN_800421D4(item_id, 1)`, PC += 2. The routine
-printed `FUN_801D71F0` is not an add-item copy - it is the field overlay's
-unreferenced per-slot equip applier `FUN_801E5A08` under a mis-based VA, and
-its `FUN_800421D4` call is a refund. See
-[script-vm.md](../subsystems/script-vm.md).) The give sites live in the MAN
-partition-1 per-actor interaction scripts (a chest is an interactable actor).
-
-`chest::give_item_sites` finds them with a **dialogue-skipping opcode-aware
-walk** - it walks each partition-1 record's interaction script from its true
-entry PC with the field-VM disassembler ([`legaia_asset::field_disasm`], moved
-into Track 1 for exactly this reuse). A chest's give op almost always sits
-**after** the inline dialogue that announces it ("There is a {item} in the
-treasure chest!" → give → "{name} now has the {item}!"). That dialogue is a
-stream of `0x1F`-lead glyph segments, not bytecode, so a decode error **at a
-`0x1F` byte** is treated as a segment to skip (advance past `0x1F`, consume
-glyphs to the terminating `0x00`, with `0xC?` top-nibble bytes as 2-byte
-escapes per the dialog box-pack format), and decoding resumes - the
-inter-segment control bytes (`0x24`/`0x25`/`0x48` Nop, `0x26` `JMP_REL`, `0x36`
-`SCENE_FADE`, …) are genuine ops that stay in sync, so the walk reaches the
-post-dialogue `0x39`. Any **other** decode error stops the walk, and each
-record's walk is bounded to the next record's start offset, so it can never run
-off into unrelated data and mis-read a `0x39` data byte as an op - never a naive
-`0x39` byte scan. (An earlier walk stopped at the *first* `0x1F` instead of
-skipping it, which silently missed the post-announcement give in roughly 85% of
-sites - including every chest in a scene whose first interactable record opens
-with dialogue, such as `keikoku`.) Multi-`0x39` runs are genuine multi-item
-gifts (a 10× consumable chest, the fishing starter kit of a rod + several lures,
-the Genesis-Tree Ra-Seru equipment sets), each `0x39 <id>` its own op.
-
-**Display vs grant - the announcement names the item from a different byte.** A
-chest's flavor text ("There is a {item} in the treasure chest!" / "{name} now has
-the {item}!") renders the item *name* from a dialogue **item-name token** `0xC2
-<id>`, which is a **separate byte** from the `0x39` give operand that actually
-adds the item to the bag. Patching only the give operand grants the new item but
-leaves the message reading the old one - verified in-game: the inventory receives
-the new item while the chest still *says* the original (an `0xC2 <old_id>` token
-sits resident in the loaded MAN right beside the patched `0x39 <new_id>`). Pinned
-across the corpus: of every `0xC?` 2-byte dialogue escape in chest records, only
-`0xC2`'s argument matches the give operand (the other escapes are character-name /
-glyph controls), and 241 of 275 sites carry one (announcement + "now has"). So
-`give_sites_and_display_tokens` recovers, per give site, the `0xC2` token offsets
-in the same record whose id equals that site's give operand (routed to the
-*nearest* give so multi-item-gift records map each token correctly), and
-`SceneChests::set_site` rewrites the operand **and** those tokens together - flavor
-text stays in sync with the grant. Sites whose dialogue doesn't name the item
-(~34) simply have no token to sync.
-
-Chest item ids are global inventory ids, so `apply::randomize_chests` reassigns
-them **globally** across every site (`Shuffle` redistributes the existing
-multiset, `Random` draws from the valid item pool), then recompresses each
-touched MAN like the encounter path. A scene whose recompressed MAN overflows is
-excluded from the shuffle pool entirely (determined iteratively), so its items
-neither leave nor enter circulation and `Shuffle` preserves the global multiset
-exactly. On the retail disc this is 275 give sites across 50 scenes (one scene,
-too tight to re-pack, is skipped).
-
-### Town shops (what stores sell)
-
-A gold merchant's stock is **inline in the scene's field-VM script** (the MAN),
-the same place chests and doors live - *not* a global table. Opening a shop is
-field-VM **op `0x49` (`STATE_RESUME`)**, the multi-frame state machine that
-drives the menu-request register `_DAT_8007B450`. Its sub-op-`0` inline payload,
-for a shop, is `[u8 count][count× u8 item_id][ASCII name\0]` followed by the
-shop's `0x1F` dialogue ("Welcome!", "Thank you!"). This was pinned from a live
-PCSX-Redux capture standing in the Rim Elm Variety Store - its 10 item ids match
-the curated [shop table](../reference/gamedata.md).
-
-`shop::SceneShops` finds sites by **scanning** the decompressed MAN for the
-op-`0x49` sub-op-`0` shop signature - *not* by an opcode walk. A shop's `0x49` is
-often gated behind a dialogue confirm-picker ("Buy them?") whose option-jump
-table desyncs a linear disassembler before it reaches the op (Biron Monastery's
-Corey vendor is the case that exposed this), so a walk silently misses those
-shops. The scan doesn't care how the script reaches the op; false positives are
-ruled out by strict record validation: the byte after the opcode must be `0x00`
-(sub-op 0 - this alone rejects almost every stray `0x49`), the count is small and
-non-zero, every id is non-zero, and the trailing shop name is a printable,
-letter-initial, `0x00`-terminated string. The apply layer additionally passes a
-SCUS "id names a real item" mask (`locate_with_items`), so an id that names
-nothing can't anchor a false shop. `apply::randomize_shops` then reassigns the
-item-id bytes **globally** across every town shop (`Shuffle` redistributes the
-existing shop-item multiset, `Random` draws from the **sellable pool**),
-same-size, and recompresses each touched MAN like the chest path.
-
-**No quest items; chest gear gets a price.** The sellable pool is "items the game
-prices `> 0`" (`item_price::sellable_pool`, read from the item table's per-record
-price - `u16` at record `+2`, base `0x80074368`; see
-[item-table.md](../formats/item-table.md)). Quest / key / story items all ship at
-price `0`, so this automatically keeps them out of shops - no hand-maintained
-exclusion list. The flip side is that a handful of genuinely-equippable items are
-normally *only found in chests* and so also ship at price `0` (the Ra-Seru
-weapon/armor/shoe set + Astral Sword); `randomize_shops` first prices those
-(`item_price::CHEST_EQUIPMENT_PRICES`, ~28800–55000 gold, approximated from the
-nearest priced gear of the same type) with a same-size SCUS edit, so they're
-non-free and part of the sellable pool. On the retail disc this is
-34 shops (the picker-gated vendors a walk used to miss, plus duplicate scene
-clusters and per-story-phase shop records). `--shops shuffle|random`; read-only
-`legaia-patcher shops` lists every shop's stock.
-
-### Casino prize exchange
-
-The **casino** prize list (redeem coins for prizes) is a different mechanism from
-the gold town shops: it is a **static table** in the menu overlay's data segment
-(`DAT_801e4518`), and it debits the casino **coin** bank (`_DAT_800845A4`), not
-gold - which is how it's told apart from a gold merchant. It lives in **PROT
-entry 899** (`0899_xxx_dat`, stored raw), file offset `0x15D00` (VA `0x801E4518`
-under the overlay data-segment load base `0x801CE818`), as four `0x60`-byte
-blocks of 8-byte `[u16 item_id][u16 story-gate][u32 coin-price]` records (the
-high-value prizes carry a non-zero gate that locks them behind casino
-progression). `casino::CasinoExchange` shuffles / randoms the whole records (so a
-prize keeps its coin price and progression gate wherever it lands), a same-size
-raw edit with no LZS. `--casino shuffle|random`; read-only `legaia-patcher casino`.
-At runtime the prize-exchange UI is a menu-overlay session: it runs at
-`game_mode 0x17` (the CARD/menu pair) with PROT 0899 resident in slot A, the
-same hosting as the pause menu and the gold shop (see
-[`subsystems/shop.md`](../subsystems/shop.md)).
-
-### Steal items (Evil God Icon)
-
-What the player steals from a monster (Evil God Icon equipped) is a per-monster
-entry in a **static `SCUS_942.54` table** at `DAT_80077828` - `[steal_chance_pct,
-steal_item_id]` per 1-based monster id, item at `+id*2+1` (see
-[steal-table.md](../formats/steal-table.md)). It is **not** in the PROT 867
-record. Because it's a plain executable table, an edit is the simplest of the
-four: a single same-size byte overwrite of the item, applied straight to the
-SCUS file via `DiscPatcher::patch_named_file` (the non-PROT sibling of
-`patch_prot_entry`, built on `legaia_iso::write::patch_file_logical`). No LZS
-re-pack, no overflow, so nothing is ever skipped. `apply::randomize_steals`
-reassigns the item for every stealable monster (`Shuffle` redistributes the
-existing steal-item multiset, `Random` draws from the valid item pool) and
-**preserves each monster's steal chance** - the item changes, the rate doesn't.
-On the retail disc 189 monsters are stealable. `legaia-patcher steals` lists the
-current table (the audit surface).
 
 ### Monster combat stats
 
@@ -3229,7 +972,7 @@ emit the same bytes. Clamps mirror the stat scale's: a zero reward stays zero,
 a non-zero one floors at `1` (a `0.1x` run still pays *something* per kill)
 and saturates at `65535` (a `5x` run cannot wrap Gaza's 42000 into garbage).
 Seedless and idempotent; each edit re-packs the monster's slot through the
-same-size machinery ([Re-pack slack](#re-pack-slack)), so it composes with the
+same-size machinery ([Re-pack slack](randomizer-internals.md#re-pack-slack)), so it composes with the
 drop / stat passes on the same archive. Module `rewards`; apply
 `apply::scale_monster_exp`; disc oracle `tests/rewards_real.rs`.
 
@@ -3328,6 +1071,8 @@ non-zero-cost** spells participate, so free / internal enemy-tier entries never
 gain a cost and names / target shapes are untouched. The table is in
 `SCUS_942.54`, so the edit is a same-size in-place SCUS patch via
 `patch_named_file` (like steals). `legaia-patcher spell-costs` lists the table.
+
+## Equipment
 
 ### Equipment stat bonuses
 
@@ -3505,6 +1250,8 @@ off the patched image for weapon, Ra-Seru, footwear Up and default records,
 Noa's section-3 keying, the fall-through report, EDC/ECC validity,
 idempotence).
 
+## Arts and AP
+
 ### Arts button combos
 
 Each art's combo lives in **two** files, and both must change together
@@ -3556,7 +1303,7 @@ byte, e.g. Gala's spirit-only Biron Rage, is skipped), then recompresses to fit.
 no menu display). A combo shared across characters (e.g. `UDU`) edits the
 matching art in each file. `legaia-patcher arts` lists every art's combo, AP, and
 current power tiers. Seedless targeted edit; no Sony bytes. Module
-[`legaia_patcher::arts_power`](../../crates/patcher/src/arts_power.rs); disc oracle
+[`legaia_patcher::arts_power`](../../crates/arts-patch/src/arts_power.rs); disc oracle
 `crates/patcher/tests/arts_power_real.rs`. The web patcher exposes this (and the
 AP override below) as a per-art picker - "Tactical-Art overrides": choose the art
 by name, pick a per-hit damage tier or "no damage", and a note under the row
@@ -3570,7 +1317,7 @@ spells out any combo-sharing art the edit also reaches; the raw
 (`0x0C..=0x1F`, or `0` to disable the hits), sets every active per-strike byte of
 the named Super Art (hit count preserved), and is a same-size `record0` edit with
 no display copy to sync. Module
-[`legaia_patcher::super_art_power`](../../crates/patcher/src/super_art_power.rs);
+[`legaia_patcher::super_art_power`](../../crates/arts-patch/src/super_art_power.rs);
 disc oracle `crates/patcher/tests/super_art_power_real.rs`. Browser: the fifteen
 Super Arts are options in the "Tactical-Art overrides" **picker**, in a per-
 character `... - Super Arts` group beside that character's regular arts. A Super
@@ -3642,277 +1389,26 @@ arts that triggers it.
 ### Show Super Arts on the in-battle move list
 
 `--show-super-arts` lists a character's Super Arts on the Tactical-Arts list the
-Triangle button opens in battle. Retail lists them nowhere: they behave like
-hidden arts and stay invisible even after you have performed one. A row appears
-once you have **performed** that Super Art, sits **in AP order** among the
-regular arts, and carries the Super Art's **name**, the chain's **AP cost** and
-the **arrows you type**.
+Triangle button opens in battle, and on the pause menu's Status Moves page.
+Retail lists them nowhere. A row appears once that Super Art has been
+**performed**, sits in AP order among the regular arts, and carries the name, the
+chain's AP cost and the arrows to type.
 
-#### What "performed" means, and where it lives
-
-Retail has nowhere to record that a Super Art was performed: the learned list at
-record `+0x74E..` holds regular-art ids only, and the Super applier
-`FUN_801EF9E4` is a find/replace over the finished action queue that marks
-nothing. But its match arm at `0x801EFBCC` - the `sw 1 -> 0x801F696C` "a Super
-fired" flag - runs with `t5` = the character (0-based) and `t2` = sixteen times
-the matched trigger-table row (the replace-row offset from `0x801EFB04`, which
-the copy loop never writes; `a1`, the loop index, is reused by that loop for the
-bytes it copies and reads as the finisher constant there - the runtime probe
-caught exactly that). And the character record has one free, save-persistent
-byte: `+0x75D` (save-record `+0x195`), the **sixteenth learned-id slot**, which a
-fifteen-art character can never reach and which nothing in the corpus
-references. A two-word detour from that arm sets bit `row` there and keeps a
-population count in the top three bits:
-
-```text
-record + 0x75D  =  count << 5  |  performed mask   (bit i = trigger-table row i)
-```
-
-The byte rides in the SC block like the rest of the record: the rows survive a
-save/load, an older save starts with none, and a Super Art appears from the next
-time the list opens after the battle it was first performed in. Terra has no
-Super Arts and no writer ever sets her byte, so her list stays retail's.
-
-#### What a row shows
-
-- **AP** is the chain's - the sum of the chain arts' `rec[+2]` AP bytes, read
-  off the disc's arts-name table at patch time. A Super Art has no AP of its own
-  (the chain arts pay it), so the chain's total is the truthful number, and it is
-  also what the row sorts by. Retail's `+0x6C0 & 0x800` halving still applies,
-  because the value is drawn by retail's own digit loop.
-- **Name** is chased in RAM through the same
-  `DAT_801C9360[char] -> +0x58 -> +4 -> (constant - 0x10) * 0xD0 -> +0x10` chain
-  retail indexes with in `FUN_8004AD80`; only the per-Super byte offset from the
-  record array is carried (one `u16`).
-- **Arrows** are the Super Art's **physical input**. A Super's `find` pattern
-  (`19 27 0F 19 1F 0E 19 27` for Tri-Somersault) is what the input *tokenizes*
-  to, not what the player types: retail's builder writes `0x19` over the last
-  arrow of a matched art, inserts the constant after it, keeps the leading
-  arrows, and walks tail-first with restarts, so arts **overlap** - the seven
-  arrows `↑↓↑↑↑↓↑` are Somersault, Cyclone and Somersault sharing arrows, and the
-  "connectors" in the pattern are their leftovers ([`legaia_art::tokenize`],
-  which reproduces the in-the-wild capture byte-exact; see
-  [art-data.md](../formats/art-data.md#super-arts)). Every retail Super derives to
-  a unique 7..=9-arrow string, and fourteen of the fifteen agree with the
-  independent walkthrough table (Dragon Fangs' printed input had dropped an
-  arrow). The strings ride two bits per arrow and are expanded per row into the
-  `[count][0x81 0xA8+dir]*` glyph layout retail's own strings use. The style
-  markers (`0xFF style`, zero width; the style is the arrow sprite's CLUT,
-  `gp+0x13c` -> CLUT id `0x7F86 + style` on VRAM row 510) colour the arrows the
-  way a chain reads: blue by default, the regular art-end yellow (style 6) on
-  every arrow a sub-art ends on (`legaia_art::art_ends`, three bits per packed
-  arrow), and the Miracle-Art orange (style 9) on the Super's final arrow -
-  Tri-Somersault reads blue blue yellow blue yellow blue orange: the ends of
-  Somersault and Cyclone, then the Super's own trigger. (Regular rows carry one
-  marker before their last arrow; Hyper Arts carry it first and draw all-yellow;
-  Miracle Arts are all-orange. Style 2 on the same CLUT row is a red retail
-  never uses in this list.)
-
-#### Where a row sits
-
-Retail keeps the learned list **sorted by id** (`FUN_801EFBFC` inserts with an
-ascending shift, `0x801EFD64..0x801EFDB0`), and the arts-name table's ids run in
-**descending AP** (Miracle 99, then the Hyper Arts, then the normal arts) - so
-the list the player sees is AP-descending, and "sorted by AP" means interleaving.
-The five Super Arts are carried per character in AP-descending order, each with
-a **threshold id** `thr` = the lowest id of that character whose AP is at or
-below the Super's; the id hook merges the two sequences on the fly, skipping
-Super Arts not yet performed, so e.g. Vahn with everything performed reads
-Miracle 99, Rolling Combo 66, Tri-Somersault 60, Maximum Blow / Fire Tackle /
-Power Slash 54, Burning Flare 50, ... Ties keep trigger-table order and put the
-Super first.
-
-#### What it patches
-
-The list renderer `FUN_80034358` (SCUS, one caller at `0x8003238C`) walks
-`0..count` over the acting character's learned ids and draws each row out of a
-20-byte record of the static arts-name table `DAT_80075EC4`, found by a linear
-scan on `(character, id)`. Rather than re-implement that draw, the feature
-**synthesises a record** in dead space - `+2` AP, `+0x8` glyph pointer, `+0xC`
-name pointer filled per row - and jumps past the scan straight into its hit arm
-with `s5` already pointing at it, so name, AP, arrows and the row's whole layout
-are drawn by retail's own code.
-
-| Site | VA | Stock words | Role |
-|---|---|---|---|
-| A count | `0x800343C4` | `lbu v0,0x74d(v0)` + `sra a2,a2,0x1f` | reads the performed byte off `v0` (still the record there) before the stock load replaces it; returns `count + performed` |
-| B id | `0x80034450` | `lbu s2,0x74e(v0)` + `sltiu v1,v1,0x63` | merges; a learned row replays the stock load at the merged index, a Super row branches into (F) |
-| F fill | dead space | - | fills the scratch record, chases the name, expands the arrows, enters the hit arm |
-| W performed | `0x801EFBCC` (PROT 0898) | `lui v1,0x801f` + `addiu v0,zero,1` | records the Super Art the applier just matched |
-| D pager | `0x801D3748` (PROT 0898) | `addiu sp,sp,-0x18` | page while another page exists |
-
-(A) and (B) gate on the master game-mode selector `_DAT_8007B83C == 0x15`, so
-nothing fires while the battle overlay is unloaded (the renderer also serves the
-field and menu overlays' windows). (D) replaces the whole 81-instruction pager
-in place - it has one caller and no external reference to its interior - so the
-page offset steps while `scroll + 5 < learned + performed`, reading the same
-record byte; its spare tail hosts (W), battle-only code in battle-only space.
-
-**Byte-inert when off:** the toggle writes nothing unless asked for, and the
-oracle patches an unrelated feature and requires every hook word, all four
-regions, the pager body and the applier back byte-identical.
-
-**Verified live, not only on disc.** A PCSX-Redux probe injected the planned
-edits into a real arts-input battle state, marked Super Arts performed, and
-pressed Triangle: the list opened with Tri-Somersault first (`60`,
-`↑↓↑↑↑↓↑`, name chased out of RAM), the fourteen learned arts shifted below it,
-paged four times with all five performed in AP order, and closed. A second probe
-drove the retail applier itself over Tri-Somersault (row 0) and Rolling Combo
-(row 4) and read the record byte back as `0x21` and `0x30`.
-
-#### The status screen's Moves page
-
-The pause menu's Status page (Left from the condition page) lists a
-character's arts too - up to seven rows with name and AP, the selected row's
-command arrows and a two-line description - drawn by the menu overlay's own
-panel renderer `FUN_801D33D8` (submenu 3), not by the battle widget. The same
-toggle lists the performed Super Arts there, in the same AP order: four detours
-into PROT 0899 - the two learned-count reads (`0x801D4454`, `0x801D4440`) gain
-the performed count, the per-row scan entry `0x801D4480` becomes the same merge
-hook (B) runs in battle (a learned row re-enters the scan at its merged index, a
-Super row fills a menu scratch record - character, AP, glyph buffer, name,
-description - and enters the found arm at `0x801D44C8`), and the cursor bound
-`0x801DA64C` gains the performed count. Routines, names, the scratch record and
-the glyph buffer sit in the dead run `--seru-trade` shares (`0x801EAF10..`,
-past its highest blob); the descriptions (`Super Arts. Somersault,|Cyclone,
-Somersault.`) in a second run (`0x801EB400..`). Both are all-zero in the file,
-referenced by nothing in any image, above both save-screen card buffers, and
-zero in every library capture with the overlay resident
-([where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live)).
-No SCUS bytes, so this half composes with everything. Verified live: Carl's
-Moves page opens with Tri-Somersault first, its coloured arrows and description
-on the selected row, the cursor and scroll walk all fifteen rows, and Noa's page
-slots Triple Lizard between Hurricane Kick and Vulture Blade. Module
-[`legaia_patcher::super_art_menu`](../../crates/patcher/src/super_art_menu.rs).
-
-#### Placement + exclusivity
-
-| Region | Holds | Used |
-|---|---|---|
-| `SCUS_GAP` `0x80077728` | routine (B), the scratch record and the glyph buffer | 253 of 256 B |
-| `ARENA1` `0x8007AE00` | routine (F) and the packed arrows | 256 of 256 B |
-| `ARENA2` `0x8007AFF8` | routine (A) | 44 of 72 B |
-| `SLOT6` `0x80078A88` | the fifteen 4-byte Super Art records | 60 of 68 B |
-
-Those are exactly the four regions `--shiny-seru`, `--arts-ap-grant` /
-`--arts-ap-cost`, `--oscillating-ap` and the Delilas Challenge contend over, so
-`--show-super-arts` is **mutually exclusive** with them - enforced in the CLI
-and the web patcher.
-
-#### The injected-code arena budget
-
-Every hand-assembled feature lands in the same four verified-dead SCUS regions,
-and they add up to **652 bytes**:
-
-| Region | Span | Size | Used by `--shiny-seru` |
-|---|---|---|---|
-| `SCUS_GAP` | `0x80077728..0x80077828` | 256 B | 246 B |
-| `ARENA1` | `0x8007AE00..0x8007AF00` | 256 B | 252 B |
-| `ARENA2` | `0x8007AFF8..0x8007B040` | 72 B | 64 B |
-| `SLOT6` | `0x80078A88..0x80078ACC` | 68 B | 56 B |
-
-Shiny Seru alone occupies **618 of the 652 bytes**, leaving 34 bytes split into
-fragments of 4, 5, 8 and 12. `--show-super-arts` needs 613 (~450 B of code, the
-rest tables), so no allocator and no packing makes that pair fit; the exclusion
-is not a hard-coded region clash that a smarter allocator would dissolve. A
-sweep of every zero run in the whole `SCUS_942.54` image outside the known live
-tables finds **53 further candidate bytes** in total, so there is no fifth region
-to grow into either. (The 4208-byte run at `0x800797D0` is the PsyQ
-interrupt-callback block. `ResetCallback` zero-fills `0x800797D8..0x8007A83F`
-at boot, and its callback stack uses only the top ~640 bytes. So the floor of
-that run is unused, but anything written there in the disc image is erased
-before it could run - see ["zero is not dead"](../../crates/patcher/README.md)
-and the [memory map](../reference/memory-map.md#scus_94254-data-segment-0x8006f180-0x8007b7ff).)
-
-The zero-run sweep counts only bytes that are already zero. Larger pools exist,
-and each has a cost. Unreferenced SCUS function bodies come to about 15 KB:
-159 functions in 94 ranges with no reference of any form anywhere on the disc.
-The Delilas course and `--enemy-hp-bar` already live in some of them, and the
-"zero is not dead" rule still asks for a live read-watch before one is reused.
-The ~1.8 KB of format strings read only by BIOS `printf` (`FUN_800567A8`)
-become free if every call to it is stubbed out, along with the libgpu hook word
-at `0x80078D50`. The RAM above slot B, from `0x801FA9D8`, can be loaded by
-growing PROT 0900 / 0901, but that needs a PROT relayout rather than a
-same-size patch ([memory map](../reference/memory-map.md#free-ram-and-stack-0x801fa9d8-0x801fffff)).
-
-What paid for the arrows, the sort and the performed gate inside that budget:
-folding the shared unlock leaf into hook (A) (which can read the performed byte
-before the stock load clobbers `v0`), letting (B) read the byte itself, dropping
-the record-cursor hook (E) - (B) can enter the hit arm directly with `s5` set -
-packing the arrows two bits each, and carrying a `u16` name offset instead of a
-finisher constant to chase from. Every table entry is derived from the user's own
-disc (AP costs, thresholds, inputs out of `SCUS_942.54`'s arts-name table) or
-from `legaia_art::SUPER_ARTS`, and the plan re-proves on the user's disc that
-all fifteen Super Art records carry their own names at `+0x10` before it writes
-anything.
-
-**Moving the payload into the battle overlay does not work either**, and the
-reason is a measured reference fact rather than a judgement call. The list
-renderer `FUN_80034358` has exactly one reference of any form anywhere on the
-disc - a `jal` at `0x8003238C`, inside the SCUS window-content dispatcher
-`FUN_80031D00` - and that dispatcher has **64** `jal` references, from SCUS, the
-**field** overlay (0897) and the **menu** overlay (0899). The arts list is a
-window widget, so the renderer runs with PROT 0898 *not* resident, and a hook
-inside it that jumped into 0898's address space would execute whatever the field
-or menu overlay has paged there. Scan:
-`scripts/ghidra-analysis/find-address-word-refs.py 80034358 --prot` and the same
-for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)). The
-one piece that *does* live in 0898 - the performed-byte writer - is reached only
-from the applier, which is 0898 code itself.
-
-A Super Art's **damage** row carries no AP override and never claims the arena,
-so `--super-art-power` composes with everything.
-
-Every region above, and the menu overlay's, is listed once with its owner in
-`legaia_patcher::space_ledger`, the table language packs consult too: a
-translation never writes a mod's region, and the one region reserved for
-relocated translation strings is never a mod's
-([`space-and-budgets.md`](translation/space-and-budgets.md#sharing-room-with-mods-the-space-ledger)).
-The ledger also lists the **runtime buffers** no region may overlap
-(`space_ledger::BUFFERS`), and a test enforces it.
-
-#### Where menu-overlay hooks may live
-
-A zero run in PROT 0899 is not automatically room. The save screen's two card
-buffers - the card-read buffer `0x801E5120..0x801E7120` and the save compose
-buffer `0x801E7120..0x801E9120` - are all-zero in the file. At runtime they are
-full of save data, and they are not confined to the title's Continue screen. On
-the overworld, the pause menu's Save row runs the save driver `FUN_801DAEF4`.
-The compose step `FUN_801E1934` memsets the compose buffer and copies the live
-game state over it. The driver then writes `1` to the sub-screen selector and
-returns to the root picker, with the overlay still resident. The Load row does
-the same with the read buffer. Code placed in either buffer is therefore
-overwritten, and the next menu screen that reaches it runs save-block bytes.
-
-`--seru-trade` and `--show-super-arts` once placed their runs at `0x801E74E0..`
-and `0x801E65F4..`, inside those buffers. The trade screen was safe by
-accident, because a shop is its own overlay residency and never reaches a card
-driver. The Moves page was not: Save, then Status → Moves, jumped into the
-compose buffer. Both runs now sit in the save-menu atlas's blank lower band,
-`0x801EA440..0x801EB94F`. That band is atlas rows 162..203, zero in the file
-and never sampled by the card screen. It lies above both buffers, no image
-forms an address inside it, and it is zero in every library capture with the
-overlay resident. The full list of 0899's runtime spans is in
-[`space-and-budgets.md`](translation/space-and-budgets.md#zero-is-not-room-runtime-buffers).
-
-**Known cosmetic gap.** The Triangle caption's own page thresholds (`< 6`,
-`< 11`, in `FUN_801D3444`) stay retail, so on a later page the prompt can still
-read "View Hyper Arts list" where it should read "View Next page". The list
-contents are correct; only that one caption string is stale.
-
-Seedless toggle, off by default; no Sony bytes (chain membership, AP costs,
-thresholds and inputs come out of the user's own `SCUS_942.54`, the trigger
-table from `legaia_art::SUPER_ARTS`). Module
-[`legaia_patcher::super_art_list`](../../crates/patcher/src/super_art_list.rs);
-disc oracle `crates/patcher/tests/super_art_list_real.rs`, which also checks
-every derived input against the curated walkthrough table.
+It is mutually exclusive with `--shiny-seru`, the arts AP overrides,
+`--oscillating-ap`, `--super-arts-pack` and `--delilas-challenge`: they contend
+for the same injected-code regions.
+<a id="the-injected-code-arena-budget"></a>
+Why the pair cannot fit is the
+[arena budget](randomizer-internals.md#the-injected-code-arena-budget); the hook
+itself is described under
+[internals](randomizer-internals.md#show-super-arts-on-the-in-battle-move-list).
 
 ### Super Arts Pack (by ZetaPhoenix)
 
 `--super-arts-pack` installs the **Super Arts Pack**, a community mod by
-**ZetaPhoenix**. Each character gains **five Super Arts** on top of the
-retail five, each with its own name banner, hit count and animation, triggered
-by its own arts chain exactly the way a retail Super Art is:
+**ZetaPhoenix**. Each character gains **five Super Arts** on top of the retail
+five, each with its own name banner, hit count and animation, triggered by its
+own arts chain exactly the way a retail Super Art is:
 
 | | Added Super Arts |
 |---|---|
@@ -3920,397 +1416,56 @@ by its own arts chain exactly the way a retail Super Art is:
 | Noa | Double Lizard, Falcon Talons, Chilling Smash, Zephyr Swipes, Grand Maelstrom |
 | Gala | Ground Pound, Storm Kick, System Shock, Skyvolt Knee, Raging Bull |
 
-The retail five per character keep their triggers and their queue results: the
-pack carries them verbatim as the first five rows of its own trigger table, and
-the patcher checks those rows against the disc's own table before it writes
-anything. Their **animations** do pass through the pack - the animation hook
-fires for any action in the pack's seventeen listed constants, and three of
-Noa's and Gala's retail finishers are among them. Each clip is a pair of
-`(offset, values)` edit-lists over the art record: "A" adds the added Super's
-extra element and bumps the record's `+0x14` / `+0x8C` / `+0x9A` fields, "B"
-writes the plain values back, so a shared constant plays with B - ZetaPhoenix's
-own restore path.
-
-**ZetaPhoenix authored the payload; this is its disc-patch carrier.** He wrote
-it as a GameShark-style RAM patch - a 3764-byte block forced into main RAM at
-`0x801FD000` during battle, plus a handful of word edits pointing retail code at
-it. The block ships in
-[`crates/patcher/data/zetaphoenix-super-arts-pack.bin`](../../crates/patcher/data/zetaphoenix-super-arts-pack.bin)
-and is installed **unmodified**: nothing is re-assembled, relocated or rewritten.
-Its licence still needs confirming with him before a tagged release ships it -
-see that directory's `README.md`.
-
-#### What the block holds
-
-The whole mod is one contiguous image, and every address in it is confirmed by
-the block's own code referencing it:
-
-| VA | What |
-|---|---|
-| `0x801FD000` | find table, 13-byte rows, **10 rows per character** (rows 0..4 retail, 5..9 ZetaPhoenix's) |
-| `0x801FD186` | replace table, 16-byte rows, same order |
-| `0x801FD366` | fifteen hit-count seeds, one per added Super Art |
-| `0x801FD376` / `0x801FD378` | two runtime cells: the per-queue hit bit-train, and which added Super is playing |
-| `0x801FD380` / `0x801FD3DC` | routines A and B - the applier's post-match arm, and the per-queue reset |
-| `0x801FD400` | the fifteen 16-byte names |
-| `0x801FD4F0` | three per-character action-constant groups (6 / 5 / 6 = 17) |
-| `0x801FD510` / `0x801FD538` | routines C and D - keep an installed banner name, and install one + apply the art's animation edits |
-| `0x801FD71C` / `0x801FD760` | two 17-entry pointer tables into 34 animation edit-lists at `0x801FD7A4` |
-
-#### Getting the bytes there
-
-`0x801FD000..0x801FE000` is free RAM: all-zero in every state of this project's
-save library, battles included, with the deepest observed stack use at
-`0x801FE420` - 1388 bytes above the block's end. No overlay covers it either;
-slot A ends at `0x801F7018` (PROT 0898's `0x28800` bytes from `0x801CE818`).
-
-So the block is parked in the [`DMY.DAT` annex](#re-pack-slack) and streamed to
-`0x801FD000` at battle load by a 12-instruction stub in the verified-dead SCUS
-arena. The stub is entered from battle init `FUN_80055B6C` at `0x80055DBC` -
-one instruction **after** the `FUN_8003DE7C(0)` that waits for the battle
-overlay's own CD read, so the drive is idle and the read happens in the same
-between-frames context every other load runs in. It calls the game's own
-synchronous reader `FUN_8005E4D4(sectors, lba, dest)`, then the BIOS
-`FlushCache` (the block is code, and the PSX I-cache is not DMA-coherent).
-
-Growing PROT 0898 to cover `0x801FD000` was the alternative and is worse: it
-needs 14 sectors taken from a neighbouring entry, and it would zero
-`0x801F7018..0x801FD000` at every battle load - the persistent `0x801F****`
-effect and world state the field overlay leaves there.
-
-#### The word edits
-
-Fourteen edited words across ten sites, every one same-size and PPF-safe -
-**ZetaPhoenix's own hook set, supplied by him and installed verbatim**, plus
-the battle-load hook, which is this project's addition (his RAM patch had
-nothing to load):
-
-| Site | Retail word | Becomes |
-|---|---|---|
-| `0x801EFA0C` | `nop` (a load-delay slot) | `sll t5,t5,1` - `t5` (the character, from the intact `move t5,a1`) doubles, so the applier's stride math lands on ten rows |
-| `0x801EFA38` / `0x801EFA3C` | `lui v0,0x801f` / `addiu t6,v0,0x6524` | `lui t6,0x8020` / `addiu t6,t6,0xd000` - the find table becomes `0x801FD000` |
-| `0x801EFA58` / `0x801EFA5C` | `lui v0,0x801f` / `addiu t8,v0,0x65e8` | `lui t8,0x8020` / `addiu t8,t8,0xd186` - the replace table becomes `0x801FD186` |
-| `0x801EFBE0` | `slti v0,a1,5` | `slti v0,a1,10` - all ten rows are tried |
-| `0x801EFBD8` | `li a1,5` | `li a1,10` - the match arm's exit seed keeps pace with the bound, so a match still ends the scan |
-| `0x801EFB94` | `nop` (a load-delay slot) | `j 0x801FD380` (routine A) |
-| `0x801EED20` / `0x801EED24` | `move t9,a0` / `sw s3,0x54(sp)` | `j 0x801FD3DC` / `move t9,a0` - routine B, with the displaced `move` relocated into the jump's delay slot; routine B itself replays the displaced `sw` |
-| `0x8004BC10` | `sw v0,0x74c(a0)` | `j 0x801FD538` (routine D) |
-| `0x8004C718` / `0x8004C71C` | `sw v0,0x74c(s0)` / `sw v0,0x734(s0)` | `j 0x801FD510` + `nop` - routine C re-stores both words on its non-skip path and neither on its skip path |
-| `0x80055DBC` | `lui a2,0x1f80` | `j` the battle-load stub |
-
-The `t5` edit is the whole retarget. The applier computes a character's find
-base as `t5*65` and its replace base as `t5*80`, so a doubled `t5` gives
-`130 = 10*13` and `160 = 10*16` exactly - the pack's strides. It is also what
-makes routine A's own `(t5>>1) + t5 + t5` read as `5*character`, the flat 0..14
-index it stores at `0x801FD378` and uses against the hit-seed and name tables.
-Nothing reads `t5` between its `move t5,a1` source (which stays intact and is
-fingerprinted at patch time) and the doubling. Routine A returns immediately
-for a row below 5 (`slti t0,0x50`), so a retail Super Art never picks up a pack
-name or hit count.
-
-The exit seed and the bound move together. The applier's match arm runs
-`li a1,5` so the following `addiu a1,a1,1` / `slti v0,a1,5` pair falls out of
-the row loop - widening the bound without widening the seed leaves a match
-resuming the scan at row 6 against the already-rewritten queue. On the pack's
-own chains the rescan finds no second match (verified end-state-identical in
-the interpreter, at roughly a third more instructions per match), but the exit
-is the retail semantics and part of ZetaPhoenix's hook set.
-
-#### What is ZetaPhoenix's and what is this project's
-
-The block and every hook in the table above except the battle-load detour are
-his; the hook words are installed exactly as he supplied them. The loader stub
-and its `0x80055DBC` hook are this project's by construction, because a RAM
-cheat had nothing to load.
-
-His hook set is also independently confirmed by the block: each of his routines
-replays the exact retail instruction it displaces and returns to the
-instruction after it, which pins its own hook site, and the doubled `t5` is
-forced by his tables' strides and his index arithmetic. A reconstruction from
-the block alone reproduces every jump and lands byte-different only where the
-block is silent: the two loop-control immediates (bound and exit seed) it
-cannot pin, which retarget register carries the table `lui`, and whether the
-displaced `move t9,a0` rides a trampoline or the jump's own delay slot.
-
-**Banner centring:** retail centres the art-name banner for the wrong name on
-every Super / Miracle finisher (see
-[the author's name-length fix](#the-authors-name-length-fix) below), which the
-pack's longer names ("Blazing Typhoon", "Grand Maelstrom") make slightly more
-visible. The pack ships with the author's own fix, its routine parked directly
-behind the battle-load stub.
-
-#### The author's name-length fix
-
-The pack ships with a second piece of ZetaPhoenix's work, installed verbatim: a
-fix for a **retail bug** his added names made more visible.
-
-**The retail bug.** An art's display name lives in two places: the SCUS
-arts-name table (the real names of regular and Hyper Arts) and the arts
-animation data (placeholder names for regular/Hyper Arts, the *real* names of
-Super Arts and the Miracle finisher). The banner routine `FUN_8004AD80` first
-measures the name behind the fixed pointer at `0x80076024` - always
-"Vulture Blade" (the measure at `0x8004BBB4`) - and a later check re-measures
-with the correct table name **only for regular/Hyper Arts**. A Super or Miracle
-finisher keeps Vulture Blade's width no matter which one fired, so its banner
-is centred for the wrong name. Root cause traced by ZetaPhoenix, reproduced on
-vanilla by renaming a finisher and firing it back-to-back with a Hyper Art.
-
-**The fix.** A 3-word detour at `0x8004BC3C` - the banner path's
-`li a0,0x4C; jal FUN_801D8DE8; move a1,zero` tail - into a 17-instruction
-routine that re-measures the **installed** name pointer (`+0x74C` of the banner
-block at `0x80076C10`), recomputes `x = 160 - width/2`, stores it into the four
-banner X halfwords (`+0x742`/`+0x73A`/`+0x72A`/`+0x722`), replays the three
-displaced words and returns. It corrects every banner, vanilla's five Super
-Arts and the Miracle finishers included - the author's own update to his mod,
-installed as part of the pack.
-
-**One relocation, and why.** The author's patch parks the routine at
-`0x80079100` - a 128-byte all-zero run the
-[address-reference scan](address-reference-scan.md) also finds unreferenced in
-every image. But that address sits inside the `0x80078D00..0x80079800` SsAPI
-sound-table window, the cluster where an all-zero-therefore-dead assumption
-previously produced the Healing-Leaf freeze: zero *padding between live
-tables* is reachable by indexed reads a static scan cannot see. This carrier
-holds injection sites to the read-watch standard, so it installs his
-instruction stream unchanged (the routine is position-independent - every jump
-in it is absolute) but parks it directly behind the pack's battle-load stub in
-**verified-dead arena 1**. Only the hook's `j` word differs from the author's
-patch. Module
-[`legaia_patcher::arts_name_fix`](../../crates/patcher/src/arts_name_fix.rs);
-disc oracle `crates/patcher/tests/arts_name_fix_real.rs`, plus an in-crate
-interpreter test that runs the hook + routine over a fake banner block and
-checks the four X halfwords come out `160 - width/2` for the installed name.
-
-#### Where it lives, and what it excludes
-
-The battle-load stub is 48 bytes at `0x8007AE00`, the head of the
-verified-dead SCUS arena 1 - so the pack is **mutually exclusive with
-`--shiny-seru`, `--show-super-arts`, `--arts-ap-grant` / `--arts-ap-cost`,
-`--oscillating-ap` and `--delilas-challenge`**, the other claimants of the same
-652 bytes (see
-[Show Super Arts](#show-super-arts-on-the-in-battle-move-list) for the arena
-budget). `--show-super-arts` would conflict anyway: it detours the same applier.
-
-Seedless toggle, off by default, in no preset. Module
-[`legaia_patcher::super_arts_pack`](../../crates/patcher/src/super_arts_pack.rs);
-disc oracle `crates/patcher/tests/super_arts_pack_real.rs`, plus a runtime oracle
-that executes the **patched retail applier** - real `FUN_801EF9E4` instructions
-off the patched disc, with the block read back out of the annex - over a live
-action queue and checks all fifteen added chains fire with the right replace
-string and the right name index, and that the retail fifteen still fire
-untouched. The one link neither reaches - the CD read itself - is covered by an
-emulator probe, `scripts/pcsx-redux/autorun_super_arts_pack_load.lua`: on the
-patched disc it walks a save state into a random encounter and reads
-`0x801FD000` at the stub's return, having first checked that address was clear
-(catalogued in [pcsx-redux-automation.md](pcsx-redux-automation.md#runtime-probes-lua-autorun)).
+The author's block and hook words are installed byte-for-byte, with his
+name-banner fix. Mutually exclusive with `--shiny-seru`, `--show-super-arts`,
+the arts AP overrides and `--delilas-challenge`. What the block holds, how it
+reaches RAM and which words are edited:
+[internals](randomizer-internals.md#super-arts-pack-by-zetaphoenix).
 
 ### Arts AP override
 
 `--arts-ap-grant [CHARACTER:]COMBO=AMOUNT` makes a targeted Tactical Art
-**grant** `AMOUNT` AP (Spirit, `actor[+0x170]`, clamped at the native 100 cap)
-instead of costing it, and admits it at any AP level.
-`--arts-ap-cost [CHARACTER:]COMBO=AMOUNT` instead sets what the art **costs**,
-replacing the value retail computes. Both ride one MIPS code hook into the
-**party** arts queue-builder `FUN_801EED1C` (PROT 0898, base `0x801CE818`;
-slot < 3, so enemies are unaffected) - three same-size detours plus the routines
-and a `4 x 32` `i8` config table injected into verified-dead SCUS regions. The
-pinned sites, the AP math, and the placement are documented in
+**grant** `AMOUNT` AP (clamped at the native 100 cap) instead of costing it, and
+admits it at any AP level. `--arts-ap-cost [CHARACTER:]COMBO=AMOUNT` instead sets
+what the art **costs** (`1..=100`), replacing the value retail computes; the
+art's menu AP number is rewritten to match. Both are keyed per (character, arts
+row), are repeatable or comma-separated, leave enemies untouched, and are
+mutually exclusive with `--shiny-seru`.
+
+```bash
+legaia-patcher randomize --input DISC.bin --arts-ap-grant Vahn:RDLDL=10   # Burning Flare grants 10 AP
+legaia-patcher randomize --input DISC.bin --arts-ap-cost  Vahn:RDLDL=5    # ... or costs a flat 5
+```
+
+Hook design: [internals](randomizer-internals.md#arts-ap-override) and
 [arts-command-gauge.md](../subsystems/arts-command-gauge.md#arts-ap-override-hook).
-
-**Retail has no per-art AP cost to edit.** The builder computes it as
-`multiplier x command_count`, the multiplier coming from three code immediates
-keyed on the art's position in its character's list. A per-art cost therefore
-exists only because the hook introduces one, which is also why the cost side
-cannot be a plain table patch.
-
-`AMOUNT` is `1..=100` in both directions. `0` is unavailable: it is the config
-table's "leave at retail" value, so the cheapest configurable art is 1 AP rather
-than free.
-
-An art is targeted by its **input combo** (like `--arts-power`), optionally
-prefixed with `Vahn:` / `Noa:` / `Gala:`. The config is keyed by
-**(character, arts row)**, so an override never moves another character's art;
-without a prefix, every character holding that combo is targeted, each in its own
-cell. (`--arts-power` is different - it rewrites the shared art record, so a
-combo two characters share changes for both.) Because the injected bytes are the
-same verified-dead regions the [Shiny Seru](#shiny-seru) feature reuses, **the
-arts AP override is mutually exclusive with `--shiny-seru`** - enforced in the
-CLI and the web patcher.
-
-Each targeted art's **menu AP number** is rewritten alongside the hook. That
-number is a separate byte (`+2` of the SCUS arts-name table record) with its own
-single reader in the menu overlay, so patching only the hook would leave the
-pause-menu arts list showing the retail figure. A cost writes the cost; a grant
-writes `0`, which no retail art carries and no configurable cost can produce -
-the in-game marker for "this art pays you". The number renderer draws digits
-only, so a literal `+`/`-` is not available without a further code injection.
-
-Seedless targeted edit; no Sony bytes. Module
-[`legaia_patcher::arts_ap_grant`](../../crates/patcher/src/arts_ap_grant.rs); disc
-oracle `crates/patcher/tests/arts_ap_grant_real.rs`. **A disc oracle proves only
-where the bytes land, not in-game behaviour** - a live battle playtest (a
-configured art grants or costs what it says, admits at the right AP level, clamps
-at 100, the refund is not double-counted, and the pause-menu list shows the new
-number) is required before treating it as runtime-verified.
 
 ### Spirit AP
 
-`--spirit-ap AP` sets how much AP the **Spirit** command charges into the
-battle AP gauge (`actor[+0x170]`, the 0..100 gauge Super and Miracle Arts
-spend). Retail charges 32; `0` turns Spirit into a pure defensive stance (the
-guard boost is untouched - only the AP gain goes), and `100` fills the whole
-gauge in one press.
-
-The retail value is the per-action AP accrual the battle-action state machine
-`FUN_801E295C` (PROT 0898, base `0x801CE818`) applies in its state-`0x50`
-cleanup arm: `actor[+0x224]` is set to `8` for every action, overwritten with
-`0x20` when the action category (`actor[+0x1DE]`) is `4` = Spirit, then added
-into the gauge and clamped at 100. The patch rewrites that immediate
-(`addiu v0,zero,0x20` at `0x801E5D84`) **plus the three state-`0x46`
-gauge-widget ramp targets that mirror it** (`+0x20`/`+0x28`/`+0x23` at
-`0x801E5320`/`0x801E536C`/`0x801E5378` - the boosted values are the accrual
-plus the AP Boost equipment bonuses, `n + n/4` and `n + n/10`), so the
-on-screen gauge animation always agrees with the real grant. Four same-size
-immediate edits in the raw overlay entry; opcodes and registers untouched.
-
-**Negative values** make Spirit *cost* AP. Retail reads the staged accrual
-back with `lbu` and adds it under a ceiling clamp only, so a two's-complement
-byte alone would read as +200-odd and pin the gauge at 100 - the sign has to
-be honoured by the consumer as well. A negative setting therefore also
-rewrites the add/clamp tail into a signed add with a **floor at zero**; see
-[the signed accrual tail](#the-signed-accrual-tail) below for how it fits in
-place.
-
-Seedless single-value edit; re-applying a different value re-targets cleanly
-(including across the sign) and `32` restores the stock bytes. The build is
-fingerprint-verified (the adjacent category-test / store / boost-branch
-words) before writing; an unrecognized image is refused. Module
-[`legaia_patcher::spirit_ap`](../../crates/patcher/src/spirit_ap.rs); disc
-oracle `crates/patcher/tests/spirit_ap_real.rs` (stock-immediate baseline,
-four-word surgical diff, determinism, idempotence, retarget + restore round
-trip, and a stock-word check for every word the negative form rewrites). In
-the browser patcher the same edit is the **Spirit AP slider** in the Gameplay
-group.
+`--spirit-ap AP` sets how much AP the **Spirit** command charges into the battle
+AP gauge (the 0..100 gauge Super and Miracle Arts spend). Retail charges 32. `0`
+turns Spirit into a pure defensive stance (the guard boost is untouched), `100`
+fills the gauge in one press, and a negative value makes Spirit drain the gauge.
+Range `-100..=100`. Patched site:
+[internals](randomizer-internals.md#spirit-ap).
 
 ### Enemy-damage AP
 
-`--damage-ap AP` sets how much AP an actor's battle gauge gains when it is
-**damaged**, expressed as AP per **100% of max HP lost**. Retail is 100: a
-hit that would empty the HP bar fills the whole 100-point gauge, a hit for a
-quarter of max HP grants 25, and every damaging hit grants at least 1. `0`
-stops damage feeding the gauge entirely (the min-1 floor goes with it), `200`
-fills twice as fast, and a **negative** value makes being hit *drain* the
-gauge instead, floored at zero.
+`--damage-ap AP` sets how much AP an actor's gauge gains when it is **damaged**,
+as AP per **100% of max HP lost**. Retail is 100: a hit for a quarter of max HP
+grants 25, and every damaging hit grants at least 1. `0` stops damage feeding
+the gauge, `200` fills twice as fast, and a negative value makes being hit drain
+the gauge, floored at zero. Range `-200..=200`. Patched sites:
+[internals](randomizer-internals.md#enemy-damage-ap).
 
-The retail scale lives in the spirit-gauge fill: `pct = max(1, damage * 100 /
-max_hp)` added into `actor[+0x170]` and clamped at 100 (kernel mirror:
-`legaia_engine_vm::battle_formulas::spirit_gauge_fill`). Overlay 0898 carries
-**two inlined copies** of that kernel and a hit reaches one or the other -
-`FUN_801DDB30`, the closed-form finisher, for magic / summon / special-attack
-hits, and `FUN_801EC3E4`, the arms execution resolver, for ordinary physical
-hits. The patch always writes **both**; editing only the finisher leaves the
-common case (a regular enemy swing) running stock, which reads as a slider
-that does nothing, and an image whose two copies disagree is refused as
-partially patched. See
-[battle-formulas.md](../subsystems/battle-formulas.md#the-spirit-gauge-fill-is-duplicated)
-for the structural sweep that pins the count at two.
-
-In each copy the `100` is synthesized as a shift/add chain rather than an
-immediate:
-
-```text
-801de1c8  sll  v0,v1,0x1     ; d*2
-801de1cc  addu v0,v0,v1      ; d*3
-801de1d0  sll  v0,v0,0x3     ; d*24
-801de1d4  addu v0,v0,v1      ; d*25
-801de1d8  lhu  v1,0x14e(s1)  ; max HP
-801de1dc  sll  v0,v0,0x2     ; d*100
-801de1e0  divu v0,v1
-```
-
-so a general factor needs the chain restated as an explicit multiply
-(`ori v0,zero,N` / `multu` / `mflo v0`, the two spare words nopped; copy B's
-chain begins in a branch delay slot, so its scale factor loads there and the
-multiply lands on the join). The retail factor keeps retail's own chain,
-which is what makes `--damage-ap 100` a genuine no-op. `--damage-ap 0`
-additionally rewrites each copy's min-1 floor (`sltiu rX,v0,0x1`) to a
-`move`, without which "no AP from damage" would still grant 1 per hit.
-
-A negative value reuses that scale for the magnitude and turns the accrual
-into a subtract with a floor at zero, in place:
-
-```text
-801de2c0  subu v0,v0,a1        ; gauge -= pct (may go negative)
-801de2c4  bgez v0,0x801de2d0
-801de2c8  nop
-801de2cc  move v0,zero         ; floor at 0
-801de2d0  sh   v0,0x170(s1)
-```
-
-Retail's clamp-at-100 occupied those words and is not needed on a draining
-site - the gauge cannot grow here, and its other growth sites (the per-action
-accrual in `FUN_801E295C`, [above](#spirit-ap)) keep their own clamps.
-
-Seedless single-value edit; re-applying a different value re-targets cleanly
-(including across the sign) and `100` restores the stock bytes. The build is
-fingerprint-verified (the damage subtract, the max-HP load, the `divu`, the
-party-only gate and both ability-bit tests) before writing; an unrecognized
-image is refused. Module
-[`legaia_patcher::damage_ap`](../../crates/patcher/src/damage_ap.rs); disc
-oracle `crates/patcher/tests/damage_ap_real.rs` (stock-word baseline over all
-31 sites across both copies, surgical diff, the `0` floor removal, the
-negative tail, determinism, idempotence, retarget across the sign + restore
-round trip). In the browser patcher the same edit is the **AP from taking
-damage** slider in the Gameplay group.
-
-### The signed accrual tail
-
-Both AP sliders share one constraint at negative settings: the gauge is a
-`u16` at `actor[+0x170]` and every retail site that grows it clamps only
-against the 100 ceiling, never against zero. A drain therefore needs a floor
-inserted where retail has none.
-
-On the [enemy-damage](#enemy-damage-ap) site that is free - retail's ceiling
-words are dead once the site only subtracts, so the floor fits in them. The
-[Spirit](#spirit-ap) site is tighter: its add/clamp tail is **shared** with
-the `+8` every non-Spirit action grants, so the ceiling must survive
-alongside the new floor, and the two together do not fit in the tail's own
-words. They fit because a negative setting makes the **AP-Boost-1 arm dead**:
-both boost arms read `+0x224` with `lbu` and would misread a negative byte as
-a large positive, so a drain makes their guard branches unconditional. The
-head of the dead arm then hosts the relocated over-100 clamp:
-
-```text
-801e5e78  bgez v1,0x801e5e84
-801e5e7c  _slti v0,v1,0x65         ; delay slot: ceiling test
-801e5e80  move v1,zero             ; floor at 0
-801e5e84  beq  v0,zero,0x801e5e40  ; over 100 -> the relocated clamp
-801e5e88  _sh  v1,0x170(s3)        ; delay slot: the store
-; in the dead AP-Boost-1 arm:
-801e5e40  li   v1,0x64
-801e5e44  sh   v1,0x170(s3)
-801e5e48  j    0x801e5e90
-```
-
-The consequence to know about: **while either slider is negative, its
-AP-Boost ("spirit gain up") accessory arm is inert** - the accessory neither
-deepens nor softens the drain. The state-`0x46` gauge-widget ramp targets
-follow the same rule (all three collapse to `-N`) and their ceiling clamp is
-swapped for a floor, so the on-screen animation still agrees with the real
-value. No injected code and no dead-space arena is involved: every word is a
-same-size rewrite inside PROT 0898, and restoring the retail value restores
-the stock bytes exactly.
-
-Both negative modes are **statically verified only** - the disc oracles prove
-which words land where and that the hand-assembled branches resolve to the
-instructions claimed above. A live battle playtest (gauge drains by the
-configured amount, stops at empty, non-Spirit actions still grant their `+8`
-and still cap at 100) has not been run.
+<a id="the-signed-accrual-tail"></a>
+Negative settings of both sliders need a zero floor retail does not have; see
+[the signed accrual tail](randomizer-internals.md#the-signed-accrual-tail).
 
 ### Oscillating AP costs
 
-`--oscillating-ap [DAMAGE_PCT]` deals every Tactical Art, at the start of
-every battle, onto one of two sides at random:
+`--oscillating-ap [DAMAGE_PCT]` deals every Tactical Art, at the start of every
+battle, onto one of two sides at random:
 
 | Side | AP | Damage |
 |---|---|---|
@@ -4318,95 +1473,108 @@ every battle, onto one of two sides at random:
 | **grant** | admitted at any AP level; *adds* the AP it would have cost (clamped at 100) | `DAMAGE_PCT`% (default 20) |
 
 The deal is per art and per battle, so a fight is a mix of both sides and the
-next fight a different mix. Enemies are untouched. The in-battle Tactical-Arts
-list (Triangle) shows a grant-side art as **`0` AP** for that battle - the same
-marker the arts AP override uses - so the deal is readable before committing a
-combo. The field pause menu keeps retail's numbers: outside a battle no deal is
-in force.
+next fight a different mix. Enemies are untouched, and the in-battle arts list
+shows a grant-side art as `0` AP. Mutually exclusive with every other feature
+that uses the injected-code regions. Hook design:
+[internals](randomizer-internals.md#oscillating-ap-costs).
 
-**How it is built.** The AP half is the [arts AP override](#arts-ap-override)'s
-machinery with the per-art config byte replaced by a **per-battle side bit**:
-the same three detours into the party arts queue-builder `FUN_801EED1C` (PROT
-0898) at `0x801EF410` (guard), `0x801EF490` (debit) and `0x801EF988` (refund),
-keyed the same way - `(DAT_8007BD10[slot] - 1) * 32 + (s3 - 0x0B)` - into a
-16-byte side table. A set bit reads as affordable at the guard and, at the
-debit, adds retail's own computed charge (the `mflo a2` the stock `subu` was
-about to spend) instead of subtracting it, skipping the spent accrual so the
-end-of-turn refund has nothing to double-count. Two pieces are new:
+## Added mechanics
 
-- **The roll.** A detour at the battle loader's setup site `0x80051A20`
-  (`FUN_800513F0`, after the monster-setup loop - the site `--shiny-seru` also
-  hooks; `ra` is dead there and every caller-saved register free) calls retail's
-  `rand` veneer `FUN_80056798` sixteen times and stores the low byte of each
-  draw into the side table, the loop counter kept in a scratch word because the
-  BIOS clobbers the temporaries. Sixteen extra draws per battle shift the RNG
-  stream and nothing else. The routine is exactly 17 words - it fills `SLOT6`.
-- **The damage scale.** A detour in the arms execution resolver `FUN_801EC3E4`
-  at `0x801EDA10`, the word after the 9999 cap, where `s0 - s1` is the strike's
-  final damage. The kernel does not know which art it is executing - it is
-  handed one **action entry** (`a1`, spilled at `[sp+0x54]` by its own
-  `sw a1,0x54(sp)`) and walks its per-strike bytes - but that entry is a
-  pointer into the character's art bank: the SCUS anim commit `FUN_8004AD80`
-  materialises a staged art id `id >= 0x10` as `bank + 4 + (id - 0x10) * 0xD0 +
-  0x24` (`0x8004BC80`; `bank = record0[+0x58]` at `0x8004B710`, `bank + 4` the
-  very base the builder walks `s3 * 0xD0` from), so the row is
-  `(entry - bank - 0x28) / 0xD0 - 0x0B`, taken only when the division is
-  exact. What the routine must **not** key on is the playing anim id
-  `actor[+0x1D9]`: the commit stores the entry at `record0[q*4]` and snaps
-  `+0x1D9 = q` where `q` is a *staging slot* handed out in queue order
-  (`0x10`, `0x11`, ...; a live probe on a Tri-Somersault chain read `0x0F`,
-  `0x10`, `0x11` for a swing, a connector and Cyclone), not the art id - a
-  routine keyed on `q - 0x1B` never scales anything. A plain direction swing
-  (its entries live outside the bank, copied by `FUN_800557B8`), a Super /
-  Miracle chain connector (record index below the first row), a Super Art row
-  past the 26, a monster attacker or an entry below the bank falls through to
-  retail damage. On a set bit it rewrites `s0 = s1 + (s0 - s1) * pct / 100`
-  in exact integer arithmetic (`mflo` three words clear of the `divu`), then
-  replays the two displaced words; `t0..t6` are free there and `HI`/`LO` hold
-  nothing the kernel still reads. Emulator-verified on the Tri-Somersault
-  chain with the side table forced to grant: the swing's 101 stays 101, and
-  Cyclone's strikes of 218 and 239 land as 43 and 47 at 20%.
-- **The list read-out.** A detour at `0x800344D8` in the SCUS arts-list widget
-  `FUN_80034358` - the `lbu s0,-0x6(s5)` that loads the AP number a row draws
-  from the static arts-name table (`s5 = record + 8`; `+0` character, `+1`
-  row, `+2` AP). While the game mode is battle (`0x8007B83C == 0x15`) a
-  grant-side row draws `0`; any other case, and every draw outside battle
-  (the same widget serves the field pause menu), replays the stock load.
+These features add behaviour the game has no table for, so each one writes a
+small machine-code hook into the executable or an overlay instead of editing
+data. All are off unless asked for. The user-visible behaviour is below; the
+hook sites, register contracts and placement are on
+[`randomizer-internals.md`](randomizer-internals.md#code-injection-features).
 
-The four consumers share one **side leaf** (`(row, character) -> grant?`) they
-reach with `jal`: `ra` is dead at every site, each host having saved it in its
-prologue and issuing `jal`s of its own before its epilogue.
+### Run-away EXP
 
-**Placement.** The leaf, guard, debit and list routines in `ARENA1`, the
-refund in `ARENA2`, the roll in `SLOT6`, the damage routine + side table +
-counter in `SCUS_GAP` - all four of
-[the injected-code arena](#the-injected-code-arena-budget)'s regions, so the
-knob is **mutually exclusive with `--shiny-seru`, `--arts-ap-grant` /
-`--arts-ap-cost`, `--show-super-arts`, `--super-arts-pack` and
-`--delilas-challenge`**: enforced up front in the CLI and the web patcher, and
-structurally by the all-zero check on every region (whichever runs second is
-refused). The side table and its counter stay zero on disc; the roll fills them
-per battle.
+`--flee-exp` banks a slice of a fight's experience into the party whenever they
+**successfully run away** (`--flee-exp-pct N`, default 5%). Retail awards nothing
+for fleeing. [Internals](randomizer-internals.md#run-away-exp).
 
-Seedless toggle, off by default, in no preset. Module
-[`legaia_patcher::oscillating_ap`](../../crates/patcher/src/oscillating_ap.rs)
-(unit tests execute every routine on the crate's R3000 model - guard, debit,
-list, roll against a fake `rand`, damage across every fall-through shape); disc
-oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently transcribed
-retail words at every fingerprinted site, byte-exact landing, surgical diff,
-determinism, idempotence, the exclusions both ways, refusal of a corrupted
-site or a dirty region). In the browser patcher it is the **Oscillating AP
-costs** toggle + slider in the Gameplay group.
+### Enemy HP bars
 
-> **Verification state**: the roll is emulator-verified - the probe
-> `scripts/pcsx-redux/autorun_oscillating_ap_roll.lua` walks a pre-encounter
-> state on the patched disc into a battle and reads the side table filled and
-> the counter at 16 at the setup site's resume - and so is the damage scale:
-> `autorun_oscillating_ap_damage.lua` resumes an art-executing battle state
-> with the side table forced to grant and reads every strike before and after
-> the routine (a swing kept, an art's strikes at the fraction). The AP side
-> and the list read-out have been played (grant-side arts give AP back and
-> show `0` across battles).
+`--enemy-hp-bar` draws a red HP gauge with a numeral over every living monster
+in battle. Retail never shows a monster's HP. The plate reuses the game's own
+gauge and icon primitives, so it adds no art.
+[Internals](randomizer-internals.md#enemy-hp-bars).
+
+### Enemy ally (charm)
+
+`--enemy-ally` gives a per-battle chance (`--enemy-ally-pct N`, default 20%)
+that a random enemy fights on the **player's** side as an uncontrolled ally. It
+applies to multi-enemy fights only: charming the lone enemy of a scripted or
+tutorial fight would stall it. [Internals](randomizer-internals.md#enemy-ally-charm).
+
+### Shiny Seru
+
+`--shiny-seru` gives a per-battle chance (`--shiny-pct N`, default 2%) that the
+frontmost **capturable** enemy spawns as a rare *shiny* variant: +35% combat
+stats and a translucent render, and the Seru captured from it deals **+35%
+damage** on every future cast, permanently. A shiny cast draws the summoned
+creature semi-transparent with a "+35% DMG!" caption. The project's engine
+implements the same rule (`legaia_engine_core::seru_learning`).
+[Internals](randomizer-internals.md#shiny-seru).
+
+### Seru trading
+
+`--seru-trade` adds a Seru-trading vendor that runs on the retail game: every
+merchant grows a fourth **Buy / Sell / Trade / Quit** row, and Trade opens a
+screen where a party member swaps a learned Seru-magic for a different one at a
+stated level. Offers rotate every two in-game hours and are deterministic from
+the run's seed; `--seru-trade-offers N` caps offers per vendor. The project's
+engine reads the same embedded config and runs the same offer kernel
+(`legaia_asset::seru_trade`). [Internals](randomizer-internals.md#seru-trading).
+
+### Jewel fix
+
+`--jewel-fix` makes the boss cinematic casts - Xain's Bloody Horns / Terio Punch
+/ Bull Charge, Cort's Guilty Cross and the Delilas trio's signatures - respect
+Jewels, elemental guards and All Guard like every other special. In retail those
+six cast modules skip the party-defender resist block.
+[Internals](randomizer-internals.md#jewel-fix).
+
+### Approach-softlock fix
+
+`--approach-softlock-fix` closes the retail "endless camera orbit" softlock: a
+monster whose approach animation dies mid-walk is re-staged and resumes walking
+instead of parking the battle forever. The anatomy of the defect is in
+[battle-action.md](../subsystems/battle-action.md#root-cause-the-walk-tag-fallback-in-state-0x14);
+the patch is under [internals](randomizer-internals.md#approach-softlock-fix).
+
+### Delilas Challenge
+
+`--delilas-challenge` adds a fourth option to the Muscle Dome enrollment clerk:
+a new 2-round arena course retail never ships - **Che and Lu Delilas together,
+then Gi** - unlocked after the Koru event. A clear pays **5000 coins** plus a
+Honey, or the three custom items when `--custom-items` is also set.
+`--custom-items` is a standalone feature: it injects Nature's Elixir, Ra-Seru
+Tear and Fury Bloom into cut item slots and adds them to the `random` drop /
+chest / steal fill pools. Full reference:
+[`randomizer-delilas.md`](randomizer-delilas.md#delilas-challenge).
+
+### Delilas party swap
+
+`--delilas-party gi,lu,che` (any permutation, in Vahn, Noa, Gala order) lets the
+party play **as the Delilas siblings**: each character keeps their own stats,
+magic and story but wears the mapped sibling's battle model, name and element,
+while the Nivora Ravine duels and the Muscle Dome Master legs field Vahn, Noa
+and Gala performing the Delilas move sets. It cannot be combined with
+`--delilas-challenge`; the patcher refuses the pair.
+
+| Option | Values | Meaning |
+|---|---|---|
+| `--delilas-arts-voice` | `original` (default), `adjusted`, `removed` | what the arts shouts and Super / Hyper fanfare banks carry |
+| `--delilas-moves` | `hybrid` (default), `delilas` | whose animations the Tactical Arts play: only the signature Hyper is the sibling's, or the whole art archive is rebuilt from the sibling's clips |
+
+<a id="casting-a-sibling-signature-attack-from-a-party-slot"></a>
+<a id="the-retail-cast-route"></a>
+Full reference, including
+[the retail cast route](randomizer-delilas.md#the-retail-cast-route) and
+[casting a sibling signature attack from a party slot](randomizer-delilas.md#casting-a-sibling-signature-attack-from-a-party-slot):
+[`randomizer-delilas.md`](randomizer-delilas.md#delilas-party-swap).
+
+## Navigation
 
 ### Doors (scene transitions)
 
@@ -4599,6 +1767,53 @@ engine's kind-0 dispatch kernels, asserting the player is seated at the
 rewired destination (baseline = the runtime-pinned Vahn's-house doorstep
 seat).
 
+### Location names
+
+A place name is shown in **three** places and each reads its own copy off the
+disc, so renaming a town means editing three carriers - the well-known
+`SCUS_942.54` table alone leaves the world map and the entry banner saying the
+old name. The three, their byte layouts and their consumers are on
+[`place-names.md`](../formats/place-names.md):
+
+| Site | Display | Carrier |
+|---|---|---|
+| 1 | quick-travel / Door-of-Wind destination list | `SCUS_942.54` `0x80073B18`, 16 fixed `0x20`-byte cells |
+| 2 | the label drawn over the world map at the place's map position | the 29-record location table trailing every kingdom MAN |
+| 3 | the banner on entering the scene (and the save-screen location row) | that scene MAN's section-2 display name |
+
+`--rename-location TARGET=NAME` rewrites all three. `TARGET` is either a
+landmark cell index or the place's **current name** - the latter is how the 13
+places with a world-map label but no quick-travel cell (Hunter's Spring,
+Snowdrift Cave, Sol Tower, Mt. Letona, ...) are addressable. Matching is exact,
+so renaming `Conkram` leaves `Conkram (Past)` alone and renaming the `Sol` cell
+does not touch the `Sol Tower` scenes. `legaia-patcher locations` lists all
+three sites. In the browser patcher the same editor lists every target with its
+current name, and the raw list under **Manual value edits** takes one
+`target=name` per line.
+
+Names are ASCII, up to **23** characters - the tightest of the three carriers
+(site 2's 24-byte name field minus its NUL). Sites 1 and 2 are same-size
+overwrites; site 3 is not padded (`strlen + 1`), so a longer name resizes the
+section, which re-packs that scene MAN and rewrites its descriptor size word.
+Since that moves MAN bytes, run this in the same slot as the door randomizer -
+**after** a language pack, whose dialog edits are keyed by byte offsets into the
+same buffers.
+
+> Verified by the `location_name_real` + `place_names_real` disc oracles: the
+> pinned SCUS names decode at their coordinates (idx 3/4 = the element caves at
+> `0x64378`/`0x64398`), the three kingdom MANs carry one identical 29-record
+> table, `town01`'s section 2 is `"Rim Elm"` at exactly `strlen + 1` bytes, a
+> two-place rename lands 1 landmark cell + 6 world-map records + 20 banners
+> across 23 bundles, near-miss names and every unrelated banner are untouched,
+> every sector stays EDC/ECC-valid, re-applying is a no-op, and an
+> oversized / non-ASCII / out-of-range name is refused without a write. The
+> banner and world-map halves are additionally runtime-verified on a patched
+> disc under PCSX-Redux (`autorun_location_banner_source.lua`): the on-entry
+> draw arrives with the new name, and the live table the label pass walks
+> carries it too.
+
+## The new game
+
 ### Starting items
 
 A vanilla New Game begins with one inventory slot - Healing Leaf (item `0x77`)
@@ -4742,9 +1957,8 @@ level 1 / experience 0; a coherent level-`N` start takes same-size in-place edit
 1. **Level** - the seed loop's level literal + stores set `+0x130 = N` (packed
    `addiu $v0, (1<<8)|N; sh $v0, 0x6f8($s0); nop`, keeping the magic-rank byte
    `+0x131` at 1) for **every** party record. This is what makes the status screen
-   read **LV N**. (An earlier version stamped the level on all slots but only seeded
-   the lead's stats, so Noa/Gala read **LV N** with level-1 stats - the bug step 4
-   fixes.)
+   read **LV N**. (Stamping the level without seeding stats would leave Noa / Gala
+   reading **LV N** with level-1 stats; step 4 seeds them.)
 2. **Experience** - seed **each growth-capable slot's** `+0x0` to the **midpoint of
    level `N`'s XP band** (between the disc's own thresholds to reach `N` and `N+1`,
    `legaia_asset::level_up_tables::xp_thresholds_from_scus`), so every character's
@@ -4755,8 +1969,8 @@ level 1 / experience 0; a coherent level-`N` start takes same-size in-place edit
    (the old Noa + Gala threshold literals and a redundant `lui $at`), targeting Vahn
    `0x5c8` / Noa `0x9dc` / Gala `0xdf0`. The preload is a single 16-bit immediate, so
    the value must fit a positive `imm16` (`<= 0x7FFF`), which caps the level at **14**.
-   (An earlier version seeded only the lead, leaving Noa with experience `0` and Gala
-   with a stale level-1 threshold of `140` - which dings her almost immediately.)
+   (Seeding only the lead would leave Noa with experience `0` and Gala with the
+   level-1 threshold of `140`, which levels her almost immediately.)
 3. **Next threshold** - set **each growth slot's** `+0x4` cell (the "next" readout) to
    `reach(N+1)`. The literal at `STARTING_XP_SEED_VA` (`0x800560F0`, vanilla
    `addiu $v0, $zero, 0x79` = 121) loads it into `$v0`; dropping the per-character
@@ -4789,6 +2003,8 @@ at level 5 in the web "Balanced" preset and level 10 in "Full Chaos" - Chaos
 randomizes monster stats and rolls encounters at world scope, so it can seat an
 over-levelled fight in the first region and wants the higher floor. Off in
 "Vanilla" / "Item Shuffle".
+
+## Content and art
 
 ### Unused content
 
@@ -4871,7 +2087,7 @@ encoder copies the original's pixel mode, CLUT layout, and every VRAM
 placement field, so the write is same-size in place through
 `DiscPatcher::patch_prot_entry` (or `patch_named_file` for gap TIMs) with
 each touched sector's EDC/ECC re-encoded - the standard
-[patch chain](#the-patch-chain). Alpha maps to the PSX STP bit
+[patch chain](randomizer-internals.md#the-patch-chain). Alpha maps to the PSX STP bit
 ([the exact rule](../formats/tim.md#alpha---stp-mapping)).
 
 **Multi-palette textures.** A 4bpp TIM with several palettes is several
@@ -5019,143 +2235,26 @@ and palettes stay untouched (the output is disc-derived and stays
 local). CLI-only for now (the browser ROM-patcher page does not expose
 model replacement).
 
-### Re-pack slack
+## How a patch is written
 
-A scene MAN is packed with **no compressed slack** (the next asset starts right
-after it), so the re-packed stream must be no larger than the original. The
-[LZS re-packer's lazy matching](../formats/lzs.md#encoding-re-packing) makes that
-hold for every scene MAN but one (and for every monster-archive slot). The rare
-stream that still overflows is **skipped** (its scene / slot left unchanged) and
-recorded in the apply report rather than aborting the run; the CLI prints the
-skipped entries.
+The write path - the LZS encoder, the Mode 2/2352 sector write-back with EDC/ECC
+re-encode, the `DiscPatcher` bridge through the PROT table of contents, the
+re-pack budget a scene MAN is held to, the injected-code arenas, and the test
+catalogue - is documented on
+[`randomizer-internals.md`](randomizer-internals.md).
 
-The "no larger than the original" budget is measured from the scene asset-table
-**boundary** (the MAN's allotted span up to the next descriptor's offset), *not*
-from the current compressed length. That matters when several passes (encounter,
-chest, shop) edit the same scene MAN in one run: our re-packer is often a touch
-tighter than Sony's, so reading the budget back from the just-written shorter
-stream would shrink it on every pass and make a later pass needlessly overflow
-and skip a scene - which is what left some shops (e.g. Biron Monastery's) vanilla
-when run alongside encounters/chests. The boundary is fixed (all edits are
-same-size in place), so every pass gets the same full budget.
-
-## The patch chain
-
-A PROT-entry-relative edit maps to a disc byte range like this:
-
-```text
-disc image (2352-byte sectors)
-  -> ISO 9660: PROT.DAT lives at disc sector prot_lba
-    -> PROT TOC: entry N starts at start_lba[N] * 2048 bytes into PROT.DAT
-      -> asset: an edit at offset_in_entry bytes into the entry
-```
-
-so a PROT-entry-relative offset becomes the PROT.DAT-logical offset
-`start_lba[N] * 2048 + offset_in_entry`, which
-`legaia_iso::write::patch_file_logical` turns into physical-sector writes plus
-EDC/ECC re-encode. `DiscPatcher::patch_prot_entry` is the generic entry point;
-`patch_monster_slot` / `monster_slot` are the `battle_data` helpers.
-
-## EDC/ECC: not game-specific
-
-The error-correction math is the generic CD-ROM scheme from ECMA-130 / the
-Yellow Book - the same EDC (CRC, reversed polynomial `0xD8018001`) and
-Reed-Solomon P/Q ECC (over GF(2⁸), generator `0x11D`) every PSX disc and every
-mastering tool uses. The header (`0x00C..0x010`) is treated as zero per the
-Form 1 convention, so parity is independent of the sector's MSF address. It
-embeds no game bytes. The decisive correctness check is the disc-gated test that
-re-encodes real PROT.DAT sectors and reproduces their stored EDC/ECC
-bit-for-bit.
-
-## Tests
-
-| Test | Gate | What it proves |
-|---|---|---|
-| `crates/lzs` unit tests | CI | `decompress(compress(x)) == x` across literals, RLE, repeats, pseudorandom, >4 KB-window input; structured data actually compresses |
-| `crates/asset` `lzs_compress_roundtrip_real` | disc-gated | the encoder round-trips real monster records + LZS-container sections, and compresses them |
-| `crates/iso` `write` unit tests | CI | encode is idempotent / self-consistent; corrupting user data invalidates until re-encoded; ECC is address-independent; a seam-straddling patch keeps both sectors valid |
-| `crates/iso` `ecc_real` | disc-gated | the encoder reproduces real PROT.DAT sectors' EDC/ECC bit-for-bit; a one-byte patch + restore round-trips a real sector exactly |
-| `crates/patcher` unit tests | CI | seeded planner determinism; shuffle preserves the drop multiset; surgical `set_drop`; PPF diff/write/apply round-trip; a synthetic-disc patch round-trips through the disc → ISO → PROT chain |
-| `crates/patcher` `disc_patch_real` | disc-gated | patch a real monster's drop onto a scratch copy of the disc; it re-decodes off the patched image with neighbours untouched and sectors valid |
-| `crates/patcher` `rando_cli_real` | disc-gated | full-archive shuffle: plan from a seed → apply → each monster reads its planned drop (skipped slots unchanged) → diff into a PPF that reproduces the patched image; deterministic for a fixed seed |
-| `crates/patcher` `encounter_patch_real` | disc-gated | whole-disc encounter shuffle: re-decode every patched scene MAN off the disc and assert counts + id multiset preserved, ids in-pool, sectors EDC/ECC-valid, deterministic; **plus** every scripted/boss formation (Tetsu id `0x4F` among them) is byte-identical after the shuffle |
-| `crates/patcher` `chest_patch_real` | disc-gated | whole-disc chest shuffle: re-decode every patched scene MAN, assert give-item site offsets unchanged + chest-item multiset preserved + sectors valid + deterministic |
-| `crates/patcher` `steal_patch_real` | disc-gated | whole-disc steal shuffle: re-read the patched `SCUS_942.54` steal table, assert the steal-item multiset preserved + every steal chance byte untouched + the table sector EDC/ECC-valid + deterministic |
-| `crates/patcher` `arts_patch_real` | disc-gated | arts-combo shuffle + random: re-decode the patched combos, assert every art keeps its input count + each character's combos stay unique + the Miracle Arts untouched + (shuffle) the global per-length set of distinct combos preserved + sector EDC/ECC-valid + deterministic; **plus the MATCHER GUARD** - decompress each character's player-file `record0` and assert every art's display combo is present as a matcher record and the records actually changed (the desync the feature tripped over) |
-| `crates/asset` `man_edit` unit tests | CI | the MAN relocation engine: grow / shrink a destination name relocates the section + later-record offsets, a spanning relative jump's delta is fixed (a non-spanning one isn't), the rebuilt MAN re-parses |
-| `crates/patcher` `door_enumerate_real` | disc-gated | whole-disc door census: 160 doors across 48 scenes, every destination a clean CDNAME label, the pinned town01 → map01 exit present, the overworld hubs fan out |
-| `crates/patcher` `door_patch_real` | disc-gated | whole-disc door shuffle (one-way + coupled): re-decode every patched scene MAN, assert the destination multiset preserved (clean shuffle) / names valid (with skips), sectors EDC/ECC-valid, image size unchanged, deterministic |
-| `crates/patcher` `house_door_classifier_real` | disc-gated | house-door warp census: every classified site carries the `0xA3 0xF8` cross-context player-MOVE_TO signature, the per-scene ＩＮ/ＯＵＴ class counts match the audited population (12 scenes, 27 + 29 sites), targets non-sentinel, and the runtime-captured Mei's-house interior `(97, 54)` is among town01's ＩＮ targets |
-| `crates/patcher` `house_door_patch_real` | disc-gated | whole-disc intra-town (house) door shuffle: re-decode every patched scene MAN, assert the per-scene ＩＮ-class and ＯＵＴ-class door-warp target multisets each preserved, sectors EDC/ECC-valid, image size unchanged, deterministic |
-| `crates/patcher` `starting_items_patch_real` | disc-gated | starting-item randomize: re-decode the rewritten `FUN_80034A6C` seed off the patched `SCUS_942.54`, assert the seeded items match the plan + are in-pool consumables + the surrounding function bytes are untouched + image size unchanged + sector EDC/ECC-valid + deterministic |
-| `crates/patcher` `equipment_drops_real` | disc-gated | inject the bonus equipment drop into a scratch `SCUS_942.54`; assert off the patched image that the hook site holds `j routine` + nop, the routine + id table decode as the hand-assembled bytes (replaying the two displaced instructions and returning), the table holds pool equipment ids, the edit is surgical (only the hook + routine regions change) and the disc still parses; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
-| `crates/patcher` `flee_exp_real` | disc-gated | inject the run-away EXP hook: assert the real disc's escape-teardown site (PROT 898, VA `0x801E5A10`) **is** the expected displaced pair, then off the patched image that the overlay detour is `j routine` + nop, the SCUS routine decodes as the hand-assembled bytes (replaying the displaced pair + returning), each edit is surgical (only the 8-byte hook / the routine region change), the patched overlay + image still parse and stay EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook site / non-dead routine region |
-| `crates/patcher` `enemy_hp_bar_real` | disc-gated | inject the enemy HP bars: assert every host body on the real disc **is** the fingerprinted retail routine (prologue words + its own `jr ra`), then off the patched image that the popup detour is `j fragment-A` + nop, all four fragments decode as the assembled words, nothing outside the five spans changed, every touched sector stays EDC/ECC-valid, the patch is byte-deterministic, and a second application refuses |
-| `crates/patcher` `enemy_ally_real` | disc-gated | inject the enemy-ally charm: assert the real disc's setup hook (SCUS, VA `0x80051990`) **is** `lui v1,0x8008` / `lbu v1,-0x42f4(v1)` and the victory site (PROT 898, VA `0x801E6638`) **is** `andi v0,v0,0x4`, then off the patched image that the SCUS detour is `j routine` + nop, the routine decodes as the hand-assembled bytes (sets `0x380`, replays the displaced pair, returns), the victory word is widened to `andi v0,v0,0x384`, each edit is surgical, it composes with flee-EXP in the same gap, the image stays EDC/ECC-valid; byte-deterministic; the build guard refuses a corrupted hook / non-dead routine region / unexpected victory word |
-| `crates/patcher` `shiny_seru_real` | disc-gated | inject shiny Seru: assert all nine hook sites match the known US build and the SCUS regions (`0x80077728` gap 1 / `0x8007AE00` arena 1 / `0x8007AFF8` arena 2 / `0x80078A88` slot 6) are all-zero dead space outside every live table - incl. the `0x80079xxx` SsAPI sound tables the old arena3/4/5 squatted in (routine VAs 4-byte aligned), and the victory mouth-override row at `0x800781B0` keeps the clean keyframes; then off the patched image: every detour became `j routine` + nop, the bitmap has Gimard set / gobu clear, bytes outside the planned edits are untouched, the disc stays EDC/ECC-valid, it composes with enemy-ally, is byte-deterministic, and the guards refuse a corrupted / non-dead / in-table region |
-| `crates/patcher` `approach_fix_real` | disc-gated | apply the approach-softlock fix: assert the baseline window at PROT 898 `+0x14D50` holds the stock nine facing-recompute words (and the pose/range-check context around it matches the documented disassembly), then off the patched image that exactly the nine window words changed, the image still parses, the edit is byte-deterministic, and a second application is a clean no-op |
-| `crates/patcher` `jewel_fix_real` | disc-gated | apply the jewel fix: assert all thirteen cast-module call sites across PROT 944 / 952 / 953 / 958 / 959 / 960 hold the stock `jal FUN_801DD6B4` word, then off the patched image that every site reads `jal FUN_801DD4B0` and that per touched window exactly the planned words changed - the 09xx extents tile exactly, so each window is asserted to hold no other module's head and each site to lie inside its own extent - plus the image still parses, the edit is byte-deterministic, and re-application / an unrecognized build is refused |
-| `crates/patcher` `fishing_price_real` | disc-gated | apply a fishing-exchange price edit: assert the Buma Water Egg row is at PROT 972 offset 0x9874 (20000 points), then off the patched image that the price becomes the target as a same-size u32, exactly the targeted price words changed, the overlay re-parses, re-applying is a no-op, and an absent item is refused |
-| `crates/patcher` `location_name_real` | disc-gated | rename world-map locations: assert the pinned landmark names decode at their SCUS coordinates (idx 3/4 = element caves at 0x64378/0x64398), then off the patched image that a rename is a same-size 32-byte slot overwrite re-parsing to the NUL-terminated new name, only the targeted slots change, re-applying is a no-op, and an oversized / non-ASCII / OOB name is refused |
-| `crates/patcher` `earth_egg_real` | disc-gated | locate the Earth Egg scripted exchange in the koin1 MAN (PROT 543) at the retail shape (coins 100000 / gate 99999 / debit 100000, item 0x6E, give present); off the patched image a price edit re-decodes to gate = value-1 / debit = value, changes only the threshold-half + debit bytes in the decompressed MAN, keeps neighbouring descriptors + the touched sector EDC/ECC-valid, refuses 0 / over-range, and is a no-op on re-apply; byte-deterministic |
-| `crates/patcher` `shop_patch_real` | disc-gated | enumerate every town shop (assert the Rim Elm Variety Store + its 10 ids, names printable, ids named); a town-shop shuffle preserves the global multiset + per-shop counts/names + is deterministic; a casino shuffle preserves the (item, coin-price) prize multiset + block counts + is deterministic |
-| `crates/patcher` `item_price_real` | disc-gated | the 13 chest-found equipment items ship at price 0 and get the reviewed shop values (idempotent), the sellable pool (item price > 0) includes them + excludes known quest/key ids, and a shop `Random` pass only stocks priced (non-quest) items |
-| `crates/patcher` `unused_content_real` | disc-gated | the unused-content facts: Evil Bat ids 176/177/178 are byte-identical clones of id 140, "Comm" (id 78) is a populated standalone record (not a clone); item `0x6B` is named vs `0xFD` unnamed (so the pool widens by exactly one); the `--unused-enemies` toggle injects an unused id only when enabled (deterministic); and the "Seru Bell" injection names only `0xFD` (others stay blank), same-size, sector EDC/ECC-valid, idempotent |
-| `crates/patcher` `monster_stats_real` | disc-gated | whole-archive monster-stat shuffle: re-decode every patched `battle_data` record off the disc, assert each stat column's multiset is preserved, every non-randomized field (the AGL gauge, drop, exp, gold, name, element) byte-identical, every protected monster's (tutorial enemies + story bosses) combat stats unchanged, slot footprints fixed, deterministic. A second test covers the difficulty scale: patched stats equal each monster's own disc values times the multiplier (both directions), bosses among them, the pinned tutorial fight untouched, rewards unmoved, `1x` a true no-op, and the scale multiplying a prior shuffle. Per-stat scales get the same assertions plus an independent check that a stat left at `1x` stays byte-identical |
-| `crates/patcher` `attack_count_real` | disc-gated | enemy attack-count scale: re-decode every patched `battle_data` record, assert each command-band attack entry's AGL cost equals the exact per-entry expectation (round-half-up, floor 1, AGL affordability cap), every retail attacker still affords at least one attack at the slowest setting, sentinel / overpriced entries and every non-cost field byte-identical, the pinned tutorial fight untouched, slot footprints fixed, `1x` a true no-op, deterministic, and composed with the difficulty scale on one image |
-| `crates/patcher` `move_power_real` | disc-gated | special-attack power shuffle: re-parse the patched PROT 0898 move-power table, assert the power multiset preserved + every non-power record byte byte-identical (only `+0x00` moves) + deterministic |
-| `crates/patcher` `element_affinity_real` | disc-gated | element-affinity shuffle: re-parse the patched PROT 0898 matrix, assert the scale-percent multiset preserved + the per-character element + summon-power sibling tables untouched + deterministic |
-| `crates/patcher` `spell_cost_real` | disc-gated | spell MP-cost shuffle: re-read the patched `SCUS_942.54` spell table, assert the MP-cost multiset + the named/costed-spell id set preserved + the table sector EDC/ECC-valid + deterministic |
-| `crates/patcher` `equip_bonuses_real` | disc-gated | equipment stat-bonus shuffle: re-read the patched `SCUS_942.54` bonus table, assert each slot category's `+0..+4` stat-tuple multiset preserved (no tuple crosses categories) + every row's `+5/+6/+7` tail (passive/mask/slot) byte-identical + the table sectors EDC/ECC-valid + deterministic |
-| `crates/patcher` `equip_masks_real` | disc-gated | equip-mask shuffle: re-read the patched bonus table, assert each slot category's `+6` equip-mask multiset preserved (no mask crosses categories) + every non-`+6` byte untouched + no referenced row left unequippable + sectors EDC/ECC-valid + deterministic + composes with the stat pass |
-| `crates/patcher` `seru_trade_real` | disc-gated | seru-trade config write: assert an unpatched disc reports no config, then off the patched image the embedded blob decodes back to the written `(enabled, seed, offer cap)`, the write is same-size + a tiny localized edit, re-running with a new seed overwrites the prior blob, and a fixed seed is byte-deterministic |
-| `crates/engine-core` `seru_trade_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch the seru-trade config onto the disc, re-decode it from the patched SCUS, install it into a `World` holding a known party, open a vendor session, confirm the first offer, assert the owner's spell list swaps give→receive, and that advancing past a two-in-game-hour boundary reseeds the offers (baseline: an unpatched disc reports trading disabled) |
-| `crates/engine-core` `chest_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one chest, re-decode the MAN off the patched image, drive its inline interaction script through the real field VM, assert the runtime grants the patched id (not the original) |
-| `crates/engine-core` `monster_drop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's drop item, re-decode the record off the patched archive, build the engine catalog, drive a one-monster formation through the victory-spoils path (`apply_battle_loot`), assert the runtime grants the patched drop (not the original) |
-| `crates/engine-core` `encounter_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one scene formation's slot-0 monster id, re-decode the MAN off the patched image, build the encounter table + per-row formation defs from those bytes, force that row into a battle through the live-loop encounter path, assert the spawned enemy actor carries the patched id (not the original) |
-| `crates/engine-core` `steal_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch one monster's steal item byte in `SCUS_942.54`, re-decode the steal table off the patched image, drive the engine steal-grant kernel (`World::apply_steal`), assert the runtime steals the patched id (not the original); chance preserved |
-| `crates/engine-core` `arts_randomizer_runtime_e2e` | disc-gated | runtime oracle: shuffle the arts combos (in-place glyph-byte edits), re-decode them off the patched image, and drive the real combo-recognition kernel (`battle_arts::chain_matches_record`) - assert every changed art fires on the new combo bytes and no longer on the old one (baseline: each art fires on its original combo) |
-| `crates/engine-core` `door_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch Rim Elm's exit (the `0x3F` op → map01) to a differently-named scene, re-decode the patched MAN off the patched image, drive the patched op through the real field VM (`World::load_field_script` + `tick`), assert the runtime warps to the patched destination (not the original) |
-| `crates/engine-core` `house_door_randomizer_runtime_e2e` | disc-gated | runtime oracle: baseline town01's Mei's-house entry warp (`0xA3 0xF8`) through the real field VM at the live-captured world coords `(0x30C0, 0x1B40)`, shuffle the house doors on a scratch copy, re-decode the patched MAN, drive the same op offset and assert the runtime warps to the patched interior tile (not Mei's) |
-| `crates/engine-core` `starting_items_randomizer_runtime_e2e` | disc-gated | runtime oracle: confirm a New Game off the unpatched disc seeds Healing Leaf ×5 (baseline), randomize the seed on a scratch copy, re-decode it off the patched image, seed a fresh world via `World::seed_starting_inventory`, assert the bag holds exactly the patched items (not the vanilla Healing Leaf ×5) |
-| `crates/engine-core` `unused_enemy_randomizer_runtime_e2e` | disc-gated | runtime oracle: run the `--unused-enemies` toggle path until it places an unused Evil Bat id at a formation slot, re-decode off the patched image, force that row into a battle, assert the spawned enemy actor carries an unused-enemy id (baseline spawns the vanilla monster) |
-| `crates/engine-core` `unused_item_randomizer_runtime_e2e` | disc-gated | runtime oracle: apply the "Seru Bell" name injection and assert the item table resolves `0xFD` to it (others stay blank), then patch a monster's drop to `0xFD` and drive `apply_battle_loot`, asserting the bag receives the unused accessory (baseline grants the original) |
-| `crates/engine-core` `shop_randomizer_runtime_e2e` | disc-gated | runtime oracle: patch a town-shop slot (scene MAN op `0x49`) and a casino prize (PROT 899 table), re-decode the patched stock, drive `World::buy_from_shop` (shared with the menu `ShopConfirm` commit), assert the runtime sells/grants the patched id (not the original) |
-| `crates/patcher` `delilas_party_real` | disc-gated | Delilas party swap: apply / re-decode both battle directions / idempotence / determinism / mapping rearrangement, plus a hybrid-mode contrast against retail pinning every coordinate the pass owns |
-| `crates/asset` `party_swap_real` | disc-gated | the nine sibling-to-host conversions round-trip: part permutation, rest-pose bake, texel re-layout, on every equipment variant |
-| `crates/patcher` `delilas_cast_stage_real` | disc-gated | staged caster rows: the Che-mapped file's rows `0x0A`/`0x0B` decode as real whole-skeleton streams below `clut_a_off`, Block re-homed on row `0x06` in all four files, the `+0x5C` sibling word tracks, and the palette walk still parses |
-| `crates/patcher` `delilas_cast_remap_real` | disc-gated | the 958/960 staged-id remaps (incl. 960's stage/confirm gate pair): retail expect words match, only the edit words change, second apply is a clean skip, a partial patch refuses, sectors stay EDC/ECC-valid |
-| `crates/patcher` `enemy_anim_mirror_real` | disc-gated | the enemy-side hero animations land in the swapped monster blocks and re-decode |
-| `crates/patcher` `nivora_field_real` | disc-gated | the duel field scene's rebuilt NPC pack re-parses with the hero rigs on members 106-108 and every other member byte-identical |
-| `crates/patcher` `monster_model_real` / `monster_texture_real` | disc-gated | custom model / skin replacement: re-encoded block re-parses, part count preserved, texel pages land in their own footprint |
-| `crates/patcher` `super_art_list_real` / `super_art_power_real` | disc-gated | the Super-Arts move-list injection and the Super power-run edits re-decode off the patched image with the arena accounting intact |
-
-Disc-gated tests read `LEGAIA_DISC_BIN`; with it unset they skip and pass.
-
-The `engine-core` runtime oracles answer a question the `crates/patcher`
-patch tests don't: not just that the patched byte is *written* faithfully, but
-that a runtime actually *reads it and acts on it* - grants the new item, spawns
-the new monster, or warps to the new scene. A savestate can't prove this - the
-scene MAN / `battle_data` archive / steal table is resident in RAM the moment
-you're in the room / battle (or as soon as the executable loads), so a state
-captured on a patched disc still serves the original from the cached RAM copy;
-the patched value is only seen after a fresh scene / battle / executable load
-re-streams it off disc. The from-scratch engine sidesteps that cache by decoding
-straight from disc bytes and running the actual grant / spawn / warp path, so it
-observes the patch a savestate would mask.
-
-## No-Sony-bytes hygiene
-
-The crate never embeds, commits, or redistributes game bytes. A patched `.bin`
-contains Sony data and is never committed; the intended distribution form is a
-patcher tool + seed, and/or the **PPF patch** the CLI emits. A PPF carries only
-the deltas between the user's original disc and the patched one - it is
-meaningless without the original image the user already owns, so it is safe to
-share where a patched `.bin` is not.
+The crate never embeds, commits or redistributes game bytes. A patched `.bin`
+contains Sony data and is never committed; what is meant to be shared is the
+tool plus a seed, or the PPF, which is meaningless without the original image the
+user already owns.
 
 ## See also
 
+- [`randomizer-internals.md`](randomizer-internals.md) - write path, code hooks, tests.
+- [`randomizer-delilas.md`](randomizer-delilas.md) - Delilas Challenge, custom items, party swap.
 - [`crates/patcher`](../../crates/patcher/README.md) - the crate.
+- [Modding guide](../guides/modding-and-translation.md) - task-oriented walkthroughs.
+- [Translation packs](translation/index.md) - the other patcher track.
 - [LZS compression](../formats/lzs.md) - the encoder this builds on.
 - [PSX disc geometry](../formats/disc.md) - the Mode 2/2352 sector layout.
 - [PROT.DAT TOC](../formats/prot.md) - entry → LBA addressing.

@@ -1,6 +1,6 @@
 //! Per-actor "third motion" VM, ported from `FUN_8003774C`
-//! (SCUS_942.54). Distinct from the actor / sprite VM in [`super`] and the
-//! move-table VM in [`super::move_vm`]:
+//! (SCUS_942.54). Distinct from the actor / sprite VM in `legaia_engine_vm`
+//! and the move-table VM in `legaia_engine_vm::move_vm`:
 //!
 //! PORT: FUN_8003774C
 //!

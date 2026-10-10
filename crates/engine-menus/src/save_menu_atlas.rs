@@ -119,6 +119,15 @@ pub const ATLAS_RECT_LABEL_COIN: (u32, u32, u32, u32) = (150, 216, 24, 10);
 pub const ATLAS_RECT_PAGER_LEFT: (u32, u32, u32, u32) = (104, 232, 16, 16);
 pub const ATLAS_RECT_PAGER_RIGHT: (u32, u32, u32, u32) = (124, 232, 16, 16);
 
+/// Atlas placement of the dialogue **page mark** - the two-frame "press"
+/// icon a waiting page shows at its box's lower-right rim (kind `1` of the
+/// cursor sprite primitive `FUN_8002B994`, [`crate::cursor_sprite`]). The
+/// frames' sheet cells `(224, 64)` / `(240, 64)` fall inside rows this atlas
+/// gives the load screen's empty-slot frame, so they are re-seated here;
+/// CLUT row 7, the pointing hand's.
+pub const ATLAS_RECT_ADVANCE_ICON: [(u32, u32, u32, u32); 2] =
+    [(192, 160, 16, 16), (208, 160, 16, 16)];
+
 /// Atlas placement of the field-menu **tab-banner plaque** pieces (left
 /// cap 8x20, 16x20 body tile, right cap 8x20), copied from CLUT row 12 of
 /// the system-UI TIM (`title_pak::OVERLAY_SYSTEM_UI_TAB_*`).
@@ -792,6 +801,17 @@ pub fn build_atlas(
             ATLAS_RECT_PAGER_RIGHT,
         ),
     ] {
+        copy_rect(&mut out, ATLAS_WIDTH, &cursor_rgba, panel_src_w, src, dst);
+    }
+
+    // The dialogue page mark's two frames - the cursor primitive's record 1,
+    // same CLUT row 7 plane.
+    for (uv, dst) in crate::cursor_sprite::CURSOR_RECORDS[crate::cursor_sprite::KIND_PAGE_MARK]
+        .uv
+        .iter()
+        .zip(ATLAS_RECT_ADVANCE_ICON)
+    {
+        let src = (u32::from(uv.0), u32::from(uv.1), 16, 16);
         copy_rect(&mut out, ATLAS_WIDTH, &cursor_rgba, panel_src_w, src, dst);
     }
 

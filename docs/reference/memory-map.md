@@ -1,14 +1,15 @@
 # RAM map + key globals
 
-What lives where in Legaia's RAM. The page is ordered by address: the [region map](#region-map) says which region an address falls in, and each region's section lists the globals inside it, lowest address first. **Grep it for your address**, or find the region and scan that section.
+What lives where in the PlayStation's memory while Legend of Legaia (USA, `SCUS_942.54`) runs. Every address is a **VA** - a virtual address as the CPU sees it, written `0x8xxxxxxx` - and the page is ordered by address: the [region map](#region-map) says which region a VA falls in, and each region's section lists its globals lowest address first, so **grep it for your address**.
 
-Three things to know before you use it:
+Four terms recur:
 
-- **An address in the overlay windows is ambiguous on its own.** Every slot-A overlay links at `0x801CE818` and every slot-B module at `0x801F69D8`, and only one of each is resident at a time, so the same address means different things in field, battle and menu mode. The overlay sections are split per image; see [Overlay slot A](#overlay-slot-a-0x801ce818).
-- **`0x1F800000` is not main RAM.** It is the 1 KB PSX scratchpad, and Legaia keeps the field-VM's transient flag word and several per-frame cells there - so a flag a script tests may not be in the 2 MB map at all. See [PSX scratchpad](#psx-scratchpad-0x1f800000-0x1f8003ff).
-- **`gp` is `0x8007B318`.** The entry stub sets it once, and most of the executable's globals are reached as `imm(gp)` - which an absolute-address search never sees. A row's `gp+0xNNN` is that form.
+- **`gp`** is the MIPS global-pointer register, set once by the entry stub to `0x8007B318`. Most of the executable's globals are reached as `imm(gp)`, which an absolute-address search never sees; a row's `gp+0xNNN` is that form.
+- **PROT** is `PROT.DAT`, the disc archive that holds the game's assets and its runtime code images, addressed by entry number (`PROT 0897`).
+- **Overlay slot A / slot B** are two RAM windows, `0x801CE818+` and `0x801F69D8+`, that code images from PROT are loaded into at runtime. Every slot-A image links at the first base and every slot-B module at the second, and one of each is resident at a time, so an address in either window means different things in field, battle and menu mode. The overlay sections are split per image; see [Overlay slot A](#overlay-slot-a-0x801ce818).
+- **The scratchpad** is 1 KB of separate on-chip RAM at `0x1F800000`, outside the 2 MB of main RAM. Legaia keeps the field-VM's transient flag word and several per-frame cells there, so a flag a script tests may not be in the 2 MB map at all. See [PSX scratchpad](#psx-scratchpad-0x1f800000-0x1f8003ff).
 
-Rows carry their provenance: a `FUN_` address, a `ghidra/scripts/funcs/` dump path, or the cheat code that pinned them. Where a global's semantics are only partly understood the row says so - "exact semantics **open**" is a real value here, not an omission.
+Rows carry their provenance: a `FUN_` address, a `ghidra/scripts/funcs/` dump path, or the cheat code that pinned them. Where a global's semantics are only partly understood the row says so.
 
 ## Region map
 
@@ -19,8 +20,12 @@ The PlayStation has 2 MB of main RAM, which the game addresses through the cache
 | `0x80000000..0x8000FFFF` | 64 KB | [Kernel RAM](#kernel-ram-0x80000000-0x8000ffff): exception vectors and the BIOS's own tables. |
 | `0x80010000..0x80015E8F` | 24 KB | [`SCUS_942.54` image head](#scus_94254-image-head-0x80010000-0x80015e8f): jump tables, constant matrices, strings. |
 | `0x80015E90..0x8006F17F` | 357 KB | [`SCUS_942.54` code](#scus_94254-code-0x80015e90-0x8006f17f): game code and the statically linked PsyQ libraries. |
-| `0x8006F180..0x8007B7FF` | 50 KB | [`SCUS_942.54` data segment](#scus_94254-data-segment-0x8006f180-0x8007b7ff): static game tables, then the `gp` small-data block. |
-| `0x8007B800..0x800917FF` | 88 KB | [Static work area](#static-work-area-0x8007b800-0x800917ff): uninitialised globals - the rest of the `gp` block, actor and mesh tables, the save block, the sound-driver work area. |
+| `0x8006F180..0x8007B7FF` | 50 KB | [`SCUS_942.54` data segment](#scus_94254-data-segment-0x8006f180-0x8007b7ff): static game tables, then the `gp` small-data block from `0x8007B318`. |
+| `0x8007B800..0x800917FF` | 88 KB | [Static work area](#static-work-area-0x8007b800-0x800917ff): uninitialised globals, in the four parts below. |
+| - `0x8007B800..0x8007BFFF` | 2 KB | [`gp` globals](#gp-globals-0x8007b800-0x8007bfff): mode and pad words, debug flags, battle / camera / sound globals. |
+| - `0x8007C000..0x8008413F` | 32 KB | [Actor and mesh tables](#actor-and-mesh-tables-0x8007c000-0x8008413f): the global TMD pointer table, the actor allocator, the VDF table. |
+| - `0x80084140..0x80085B57` | 6.5 KB | [Save block](#save-block-0x80084140-0x80085b57): the `0x1A18` bytes a save is composed from - character records, flags, item bag. |
+| - `0x80085B58..0x800917FF` | 47 KB | [Work buffers](#work-buffers-0x80085b58-0x800917ff): the sound-driver work area, CDNAME table, pad history. |
 | `0x80091800..0x801C5FFF` | 1234 KB | [Heap](#heap-0x80091800-0x801c5fff): scene bundles, models, sound banks, the battle context and actor pool. |
 | `0x801C6000..0x801CE817` | 34 KB | [Resident buffers](#resident-buffers-0x801c6000-0x801ce817): the in-RAM PROT TOC, the XA clip table, libcd / SsAPI state. |
 | `0x801CE818..0x801F7017` | up to 162 KB | [Overlay slot A](#overlay-slot-a-0x801ce818): one per-mode image at a time - field, battle, menu, a minigame, boot, FMV. |
@@ -29,7 +34,26 @@ The PlayStation has 2 MB of main RAM, which the game addresses through the cache
 | `0x1F800000..0x1F8003FF` | 1 KB | [Scratchpad](#psx-scratchpad-0x1f800000-0x1f8003ff): separate on-chip RAM, not part of the 2 MB. |
 | `0x1F801000+` | - | [Hardware I/O registers](#hardware-io-registers-0x1f801000): DMA, MDEC, GPU, SPU. |
 
-Two overlaps are real rather than errors in the table. Slot B begins `0x640` bytes below the top of PROT 0898's extent, so the battle image and a slot-B module share `0x801F69D8..0x801F7017` and whichever loaded last owns it. And the heap's top end and the resident buffers are adjacent, with nothing between them.
+Two adjacencies are real rather than errors in the table. Slot B begins `0x640` bytes below the top of PROT 0898's extent, so the battle image and a slot-B module share `0x801F69D8..0x801F7017` and whichever loaded last owns it. And the heap's top end and the resident buffers are adjacent, with nothing between them.
+
+The two overlay windows are filled independently. The slot-B modules pair with the slot-A image whose mode pages them:
+
+```mermaid
+flowchart LR
+    subgraph A["Slot A at 0x801CE818 - one image at a time"]
+        F["0897 field"]
+        B["0898 battle"]
+        M["0899 menu and title"]
+        O["0895 boot, 0970 FMV, minigames, debug"]
+    end
+    subgraph S["Slot B at 0x801F69D8 - one module at a time"]
+        W["0900 and 0901, field-time"]
+        C["0903..0966 cast, 0967..0969 stage"]
+        L["0978 background loader"]
+    end
+    F --- W
+    B --- C
+```
 
 ## Kernel RAM (`0x80000000-0x8000FFFF`)
 
@@ -41,10 +65,10 @@ The executable loads at `0x80010000`, and its first 24 KB carry no code - the fi
 
 | Address | Type | Purpose |
 |---|---|---|
-| `0x80010B84` | `MATRIX` (ROM) | The **constant** base matrix the non-field view build `FUN_80026F50` folds instead: `16384 * I`, a 4x scale. Two different base matrices is the clearest signal that the two builders are different modes' rather than one routine seen twice. |
+| `0x80010B84` | `MATRIX` (ROM) | The **constant** base matrix the non-field view build `FUN_80026F50` folds in place of the per-mode one (`0x8007BF10`): `16384 * I`, a 4x scale. The two view builders belong to different modes. |
 | `0x800111C4` | u32 | CD / XA **transport state word** - the 11 states `FUN_8003D764` walks. Engine mirror `xa_transport`. |
 | `0x80014FA0` | u32[132] | Battle-applier **selector jump table**. 132 slots over 15 distinct targets; 116 of them point at the shared epilogue `0x800421A8`, so the space above `0x0E` is almost entirely empty. The one body above `0x0E` is slot `0x82` at `0x800421A0`, the Incense window top-up `FUN_80046870` (see `0x8007B600`), not a brightness ramp. |
-| `0x800156EC` | text | The literal ASCII `MoveImage`, materialised by `FUN_80058490` for the PsyQ debug-name registration `FUN_80058170`. It is the anchor that settles that routine's identity: `FUN_80058490` is a `MoveImage` wrapper, not a sound-driver lane, so the table at `0x801F6418` holds VRAM **x** coordinates rather than cue ids. |
+| `0x800156EC` | text | The literal ASCII `MoveImage`, materialised by `FUN_80058490` for the PsyQ debug-name registration `FUN_80058170`. It identifies `FUN_80058490` as a `MoveImage` wrapper, not a sound-driver lane, so the table at `0x801F6418` holds VRAM **x** coordinates rather than cue ids. |
 
 ## `SCUS_942.54` code (`0x80015E90-0x8006F17F`)
 
@@ -91,7 +115,7 @@ The initialised data: static game tables (the mode table at `0x8007078C`, the tr
 | `0x800788B8` | u16[0x110] | Streamed-**voice** clip duration table (index = cue id - `0x100`), read by both the arts shout and the Seru cast voice; `FUN_8004FE5C` and `FUN_8004FCC8` convert to sectors as `(raw*60 + 99)/100`. Live rows run to index `0x10F` with interior zero runs (`0x37..0x40`, `0x78..0x88`, `0xE8..0x10A`), and **neither reader bounds the index** - the only test is `id >= 0x100` - so a consumer that stops short drops the high rows silently. |
 | `0x80078DFC..0x80078E0F` | u32[5] | Statically-linked libgpu `MoveImage` packet template: `[tag 0x04FFFFFF][GP0 0x80000000][src yx][dst yx][wh]`. `FUN_80058490` (MoveImage) patches src/dst/wh in place per call, then submits through the driver vtable at `*(0x80078D4C)+8`. The frame-clear fill template (`x=0, y=4`, 320×224) sits just above at `0x80078DC0`. |
 | `0x80078E84` | i16[192] | **Square-root mantissa table** for the PsyQ-shaped `SquareRoot0` leaf `FUN_8005B0B8` (`lh t5,-0x717c(t5)` at `0x8005B11C`), which seeds GTE `LZCS` with the argument, reads the leading-zero count back off `LZCR` and shifts the looked-up mantissa by half the exponent. |
-| `0x800797D8..0x8007A83F` | struct + stack | **PsyQ interrupt-callback state and its private stack.** `ResetCallback` (`FUN_8005FF20`) zero-fills the block word by word (`FUN_8006046C(0x800797D8, 0x41A)` at `0x8005FF78`) and stores the callback stack top `0x8007A7F0` at `0x80079814`. The stack is `0xFDC` bytes; the lowest non-zero byte in 274 of 275 library states is `0x8007A570`, about 640 bytes of use. The floor below that is zero on the disc and in every state, but it is cleared at boot, so bytes patched into the image here do not survive. Code placed here has to be copied in at run time, after `ResetCallback`. The cheat-derived `0x8007A6BC` row below falls inside the used part of this stack. |
+| `0x800797D8..0x8007A83F` | struct + stack | **PsyQ interrupt-callback state and its private stack.** `ResetCallback` (`FUN_8005FF20`) zero-fills the block at boot (`FUN_8006046C(0x800797D8, 0x41A)` at `0x8005FF78`) and stores the callback stack top `0x8007A7F0` at `0x80079814`, so bytes patched into the image here do not survive. [Details ↓](#0x800797d8---the-callback-stack) |
 | `0x8007A6BC` | u16 | Shared "currently-acting character" HP/MP scratch. Cheat: Every "Infinite HP/MP" cheat hits this first. |
 | `0x8007A894` | u16 | Frame-pacing logic timer. Cheat: `Slow Motion` writes `0x68FB`. |
 | `0x8007A940` | table | SsAPI per-note pitch / per-voice volume exponential lookup table (read by `FUN_80066E50` / `FUN_80067550`). |
@@ -113,30 +137,30 @@ The initialised data: static game tables (the mode table at `0x8007078C`, the tr
 | `0x8007B464` | u32 | Nine-slice **style** selector (`gp[+0x14C]`). `FUN_8002C69C` indexes `0x800732A4 + style*12` with it and `jr`s the table at `0x80010D18` on the descriptor's byte 0. Style `0x03` is the post-battle report band; `0x01` / `0x02` are the HUD plaques. |
 | `0x8007B48C` | per-char | The **equip mask** the SCUS candidate builder reads for the armament rows (`lui`/`addiu` at `0x80031538`). It is the builder's own copy, not the menu overlay's `0x801E43F0`, and the Goods rows read no mask at all. |
 | `0x8007B5FC` | u32 | Encounter step counter - one word across doors, not reset per scene. Written from five sites, every one a `FUN_801DDF48` roll: SCUS `0x8003AC90` (adds half a roll while below 487), `FUN_801D1EC4` at `0x801D1F6C` (when `<= 0`), op `0x3E` at `0x801E076C`, `4C EC` at `0x801E34F8`, and the copy inlined in `FUN_801D9E1C`; read and stored as a word. Cheat: `No Random Battles` writes `0x0377`. |
-| `0x8007B600` | u32 | **Incense window** (`gp+0x2E8`), in walk-regen ticks. `FUN_80046870` (item class `0x82`, `jal` at `0x800421A0`) adds `0x40` and caps it at `0x100`; the walk tick `FUN_801D0B90` drains it (`0x801D0CD4`) and, at zero, installs record `0x801F2278` as `_DAT_8007B450`; the region encounter roll `FUN_801D9E1C` skips its whole roll while it is non-zero (`0x801DA174`); the Use list greys Incense from `0xE0` (`FUN_80046898`). See [`field-menu.md`](../subsystems/field-menu.md#command-sub-flows-use--throw-out--arrange). Drained on the kingdom overworld too: `FUN_801D1344` calls the walk tick (`jal` at `0x801D16EC`) on field and overworld alike. |
+| `0x8007B600` | u32 | **Incense window** (`gp+0x2E8`), in walk-regen ticks. `FUN_80046870` (item class `0x82`, `jal` at `0x800421A0`) adds `0x40` and caps it at `0x100`; the walk tick `FUN_801D0B90` drains it (`0x801D0CD4`), on field and kingdom overworld alike (`FUN_801D1344`'s `jal` at `0x801D16EC`), and at zero installs record `0x801F2278` as `_DAT_8007B450`. While it is non-zero the region encounter roll `FUN_801D9E1C` skips its whole roll (`0x801DA174`); the Use list greys Incense from `0xE0` (`FUN_80046898`). See [`field-menu.md`](../subsystems/field-menu.md#command-sub-flows-use--throw-out--arrange). |
 | `0x8007B604` | u8 | World-map encounter countdown - an **unsigned byte**; the zero / disabled path leaves it at zero. |
 | `0x8007B606` | u8 | **Field-camera ease enable** (`gp+0x2EE`) - the developer menu's CAMERA row prints it as `OFF` / `ON` (strings `0x801F318C`). Seeded by the new-game data init `FUN_80034A6C` as `_DAT_8007B868 == 0` (SCUS `0x80034B60`), so it is `1` in retail and `0` on the dev/dual-mode leg; its only other writers are the developer menu's CAMERA row (`0x801EAD38`, `0x801EA1C8`). While it is zero the per-frame ease `FUN_801DB510` takes its pin leg (`0x801DB820`): the focus is set to the negated player position and the shake tail runs, but nothing composes or eases - it does not return at once. See [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table). |
 | `0x8007B607..0x8007B627` | block | **Field-camera parameter block** - one scene camera-region record after `FUN_801DBC20` has split it. `+0x00` mode/strength byte (high nibble picks the composer arm), `+0x01..+0x04` the sweep and floor-coupling bytes, `+0x04` high nibble the ease-shift code, then the mode's own words at `+0x05`, `+0x09`, `+0x0D`, `+0x11`. It is the composer's input, not the live camera: `FUN_801DAB90` turns it into the staging descriptor at `0x801F3580` and only the ease writes the live globals. |
 | `0x8007B62C` | ptr | **Live screen-effect actor** - the pool slot field-VM op `0x34` sub-0 keeps its colour tween in. The arm retires whatever it names (`+0x10 \|= 8`) before spawning the walk-out, and an all-zero operand stores zero here and leaves without spawning, which is how a beat ends. See [`cutscene.md`](../subsystems/cutscene.md#the-arm-is-a-pair-and-the-sub-op-byte-carries-both-selectors). |
 | `0x8007B648` | u8 | `gp+0x330`, the battle-load stage: below `0x80` the loader `FUN_80052770` runs; `0xFF` while the battle runs (`0x80046EEC`). The ghost pass's `lb` at `0x800470EC` reads it negative on every battle state. |
-| `0x8007B64A` | u8 | Battle **stage id**, and the byte that selects which stage image is paged in: the `0x8005269C` site hands the slot-B pager `FUN_8003EC70` this byte `+ 71`, and the pager's index is `a0 + 895` with no upper clamp, so `2` / `3` page PROT `0968` / `0969` and `0` skips the load. Cleared by the stage module itself (`0x801F7120` in PROT 0968) when it hands the flow back. The **value** writer is the field entity tick `FUN_801DA51C` - clear at `0x801DA69C`, `1` at `0x801DA6A8` when system flag `0x19` is set - and battle latches `3` at `0x801E6D2C`. Every access is `gp`-relative, so an absolute-address sweep sees none of them; zeroing sites are SCUS `0x80046E74` / `0x800557AC` / `0x80056114`, field `0x801DA69C` and both stage images at `0x801F7120`. |
+| `0x8007B64A` | u8 | Battle **stage id**, the byte that selects which stage image is paged into slot B: `2` / `3` page PROT `0968` / `0969` and `0` skips the load. Every access is `gp`-relative. [Details ↓](#0x8007b64a---the-battle-stage-id) |
 | `0x8007B64B` | u8 | **backdrop last-object keep flag** (`gp+0x333`). Zero means the battle scene loader `FUN_800513F0` removes object index 1 from both backdrop actors' part lists (`0x80051ABC..0x80051BAC`) - the Muscle Dome arena's dust decal is trimmed this way. One writer: the field handoff `FUN_801D9E1C` at `0x801DA0AC`, `(s2[+8] >> 5) & 1`. Readers `0x80051ABC`, `0x80046D34`, 0979 `0x801CF700`. Capture-confirmed `0x00` through a Muscle Dome contest (zero writes). |
 | `0x8007B650` | u8[4] | The `K` weights `[2, 1, 1, 0]` of that re-centring term (SCUS file `0x6BE50`, followed by the `Auto` / `Command` strings - which is what fixes the file/VA pairing). `K` makes the arm chip grow *away* from the D-pad glyph between the pair. |
 | `0x8007B6A8` | u8 | Save-anywhere allow flag: `MAN[1] & 1`, stored by the scene installer `FUN_8003AEB0` (`sb` at `0x8003AF54`); the same bit raises the fog cap `0x8007BCB0` to `0x48` (every kingdom overworld). Cheat: `Save Anywhere (Press Select+X)` (writes a halfword). |
 | `0x8007B6AC` | u32 | The clip override's **references**: written by `4C CE` (`0x801E2A30`) and zeroed at scene entry (SCUS `0x8003B6F0`); read by the settle, op `0x22`'s player arm (`0x801DEA04`), op `4C 51`'s player arm (`0x801E19B4`) and the unreferenced `FUN_801E58A8` - not by op `0x43` sub-1. |
 | `0x8007B6B0` / `0x8007B6B4` | i32 / i32 | The **kind-0 warp timer** and the **post-warp pad hold**. `FUN_801D1EC4` arms the timer to `0x26` on a kind-0 crossing, counts it down by the frame delta, and at zero stores the hold `0x28` and parks the timer at `-1000`, which the system channel's `FUN_801DA51C` clears to `0` the same tick (`0x801DA7D8`); the player tick `FUN_801D1344` drains the hold and skips the pad controller while the timer is positive or the hold non-zero ([`field-locomotion.md`](../subsystems/field-locomotion.md#the-timed-kind-0-warp)). |
 | `0x8007B6C8` | u32 | **PROT 0978 staged-background-loader phase word.** SCUS's `FUN_80025358` owns phases `0` and `1` - phase 0 issues `FUN_8003EC70(0x53)` (extraction 0978) and bumps the word, phase 1 waits on `FUN_8003DE7C(1)` and bumps again - and from phase 2 it `jal`s the paged module's `FUN_801F6B24`, which uses the same word as the index into whichever of its two arm tables `_DAT_8007BAC0` selects. Zeroed by the mode-INIT core reset, the door warp `FUN_80025980`, the field MAIN INIT (`0x801D6C54`) and the arena init. `see ghidra/scripts/funcs/80025358.txt`. |
-| `0x8007B6D0` | u32 | **World-map dev counter** (`gp+0x3B8`). Booted clear by `sw zero,0x3b8(gp)` at `0x80015F64`; its only non-zero writers disc-wide are the debug menu's store at `0x801CED54` (PROT 0971) and the pad-driven 12-bit ring at `0x801EA00C` / `0x801EA030` in the field overlay, which increments on pad bit `0x2000` and decrements on `0x8000`. Bit `1` is load-bearing for the renderer: while it is up, the actor allocator `FUN_80020DE0` stamps `actor[+0x42] = 2` at `0x80020EC0`, so every actor allocated under it draws through the table-driven mesh renderer ([`renderer.md`](../subsystems/renderer.md#the-disc-does-ship-writers-of-0x42)). |
+| `0x8007B6D0` | u32 | **World-map dev counter** (`gp+0x3B8`). Booted clear by `sw zero,0x3b8(gp)` at `0x80015F64`; its only non-zero writers disc-wide are the debug menu's store at `0x801CED54` (PROT 0971) and the pad-driven 12-bit ring at `0x801EA00C` / `0x801EA030` in the field overlay, which increments on pad bit `0x2000` and decrements on `0x8000`. While bit `1` is up, the actor allocator `FUN_80020DE0` stamps `actor[+0x42] = 2` at `0x80020EC0`, so every actor allocated under it draws through the table-driven mesh renderer ([`renderer.md`](../subsystems/renderer.md#the-disc-does-ship-writers-of-0x42)). |
 | `0x8007B6D8` | u16[4] | Pending-SFX cue ring (counter = battle ctx `+0x9`, wraps past 3). Written by the cue router `FUN_8004FE5C` (and directly by minigame overlays), drained by `FUN_80016B6C` against the SFX descriptor table. Engine mirror `legaia_engine_core::sfx_cue`. |
 | `0x8007B6F4` | u16 | GTE `H` projection register (focal length / zoom), written through `setCopControlWord(2, ...)`; op `0x45` param 9 commits it, and the world-map top view steps it +/-4 per D-pad frame. A retail `dolk` field state holds `768`. The "camera mode word" / "small maps" labels are the cheat database's, off the same word outside world-map mode - see [`world-map.md`](../subsystems/world-map.md). Cheat: `Control Camera` and `Small Maps`. |
-| `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset**, and the scripted motion VM's low-operand model base (op `0x0E`). Count of party-character TMDs that precede the kingdom-bundle TMDs in `DAT_8007C018`. The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, so this shifts world-map actor-kind indices past the party prefix. Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`). `dolk` field-scene snapshot = `5`. Field-VM `4C D8` reads it as a halfword (`lhu s0, -0x4908(v1)` at `0x801E2DE0`) and adds its model operand, so that operand is a **scene-bank** index ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#the-model-operand-is-a-scene-bank-index)). |
+| `0x8007B6F8` | u32 | **Kingdom-TMD prefix offset**: the count of party-character TMDs that precede the scene's TMDs in `DAT_8007C018`, added to a model index by the world-map dispatcher, motion-VM op `0x0E` and field-VM `4C D8`. `dolk` field-scene snapshot = `5`. [Details ↓](#0x8007b6f8---the-kingdom-tmd-prefix-offset) |
 | `0x8007B724` | u32 | Last-played SFX id - the cue router's dedupe compare. |
 | `0x8007B750` | u32 | Sound flag word coordinating the BGM track-swap handshake (bit 1 = pause, bit 2 = set by BGM sub-op 6 and read by the field per-scene initializer at `0x801D6A84` / `0x801D6B88` to skip its BGM level ramp and the key-off of voices `0x10..0x17`, bit 3 = load settled, bit 4 = release ack; `FUN_80026478`'s re-attach also needs `_DAT_8007B438 == 0`, which holds in every library state); full bit map + writer census in [`audio.md`](../subsystems/audio.md#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa). |
 | `0x8007B75C` | ptr | **PROT 0874 section-1 buffer pointer** - the party / character animation-clip bank (`actor[+0x10] & 0x01000000`); live `map01`: `0x801589E4`, 23 clips. Allocated at `gp[+0x6C8]` bytes by `FUN_8001E1B4` immediately before its section-0 sibling (`sw v0,-0x48a4(at)` at `0x8001E2DC`). |
-| `0x8007B76C` | u32 | The sibling of `0x8007BACC` on the same unreachable path. No writer has been found for it; after `0x8007BACC`, read that as "none the sweeps can see" rather than none. |
+| `0x8007B76C` | u32 | The sibling of `0x8007BACC` on the same unreachable path. No writer is visible to the reference sweeps - which is weaker than "none", since `0x8007BACC`'s only store sits in a `jal` delay slot. |
 | `0x8007B774` | u32 | Install counter for `DAT_8007C018`. Bumped by `FUN_80026B4C` on each install. `dolk` field-scene snapshot = `0x8F` (143 entries installed). |
 | `0x8007B790` | u16[3] | Head of the live **camera rotation trio** - `0x8007B790` pitch, `0x8007B792` yaw, `0x8007B794` roll, the GTE `RotMatrix` angles (12-bit, `0x1000` = one turn). The field follow camera eases the pitch and the yaw toward the staging descriptor at `0x801F3580` (`FUN_801DB510`); the roll is not in that list. "Zoom-state register" is the cheat database's label for the word it pokes, not what the word is. Cheat: `Control Camera` reads here. |
-| `0x8007B7AC` | mode | Mode-dispatch-cluster cell read by `FUN_8001DCF8:370` (`if (_DAT_8007B7AC == 1)`), a function that also branches on `_DAT_8007B83C` against mode constants `0x0E/0x02/0x18/0x14`. Reads as the **outgoing / previous** game mode rather than a boolean: the mode-entry prologue `FUN_80016230` gates its whole field-state snapshot (player XZ into `0x80084568`/`0x8008456C`, `_DAT_8007B8B8 = 1`, the actor-pool park into VRAM) on `_DAT_8007B7AC == 3`, and `3` is MAIN MODE - a guard whose job is "only preserve field state when the mode being left is the field". That is an inference from the guard's purpose, not a pinned writer; a write-watchpoint across a field→battle transition closes it. Provenance: `ghidra/scripts/funcs/8001dcf8.txt`, `80016230.txt`. |
+| `0x8007B7AC` | mode | Mode-dispatch cell, read as the **outgoing / previous** game mode. `FUN_8001DCF8:370` tests `_DAT_8007B7AC == 1` beside its `_DAT_8007B83C` compares against `0x0E/0x02/0x18/0x14`, and the mode-entry prologue `FUN_80016230` gates its field-state snapshot (player XZ into `0x80084568`/`0x8008456C`, `_DAT_8007B8B8 = 1`, the actor-pool park into VRAM) on `== 3`, MAIN MODE. Inferred from the guards' purpose; no writer is pinned. Provenance: `ghidra/scripts/funcs/8001dcf8.txt`, `80016230.txt`. |
 | `0x8007B7B0` | u32 | Ambient base colour: `0x808080` on every overworld state; field-VM `4C 10` writes it, and `FUN_80026CE4` copies it into `0x1F800398`. |
 | `0x8007B7C0` | u32 | Previous-frame held mask: `FUN_8001822C` keeps the word it just built here (`s1 = 0x8007B7C0`, stored after the edge masks are formed). |
 | `0x8007B7C4` | u32 | Changed-this-frame mask (`held ^ prev`, `FUN_8001822C`). |
@@ -161,20 +185,20 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007B820` | u32 | Title **row counter / 2-option cursor** for sub-mode `0x10`; `AttractIdle` steps it free-running and wraps it with `andi v1,v1,0x1` at `0x801DDC00`. Up/down are `pad & 0x1000` / `0x4000` (the packer's own map - `0x1000` Up, `0x2000` Right, `0x4000` Down, `0x8000` Left), confirm `0x844`. |
 | `0x8007B824` | u32 | Per-pack start index into `DAT_8007C018`. Set when a new pack begins, read by `FUN_8001E928` / `FUN_8001E890` post-install to update `DAT_8007B6F8`. `dolk` field-scene snapshot = `0`. It is also the **second** model base the scripted motion VM's op `0x0E` binds against: the op splits its operand unsigned at `0xF0`, low operands resolving through `DAT_8007B6F8` and high ones through this word. `FUN_8001EBEC` reads it to address the three active-party battle-TMD pointers `DAT_8007C018[0x8007B824 + 0..2]` for the equipment-conditional mesh swap. |
 | `0x8007B828` | u32 | TMD-magic-mismatch error bits, and the scripted motion VM's assert cell: the `b1 & 0xC0 == 0xC0` encoding of ops `0x10`/`0x11`/`0x12` stores `0x3039` here and then dereferences null, so the word is what a crashed frame leaves behind. Set by `FUN_80026B4C` when an input fails the `*(input)==0x80000002` check (only flags the error; does not reject the install). `dolk` / `geremi` field-scene snapshots = `0x00000000` - every installed entry passes the magic check. |
-| `0x8007B83C` | u16 | **Next game-mode index** (master mode selector; stored via `sh`). Drives the per-frame mode dispatcher: `0x02` / `0x03` field INIT / MAIN, `0x14` / `0x15` battle INIT / MODE, `0x16` / `0x17` the menu and title (`CARD`), `0x1A` STR FMV. Title-attract underflow writes `0x1A` (see `0x801EF018`). The front-end writes it six times on the way to the field - [details ↓](#0x8007b83c---the-front-end-mode-chain). Also indexes the mode table - `(&DAT_800707A0)[_DAT_8007B83C * 0x18]` (entry·24 + 0x14 = the mode's `param`) - which `FUN_8001DCF8` uses to seed the **lower 16 bits** of the field-VM flag word `0x1F800394` on each mode switch (see the `0x1F800394` row and [`save-screen.md`](../subsystems/save-screen.md)). |
+| `0x8007B83C` | u16 | **Next game-mode index** - the master mode selector (stored via `sh`) the per-frame dispatcher reads: `0x02` / `0x03` field INIT / MAIN, `0x14` / `0x15` battle INIT / MODE, `0x16` / `0x17` the menu and title (`CARD`), `0x1A` STR FMV. It also indexes the mode table at `0x8007078C`. [Details ↓](#0x8007b83c---the-front-end-mode-chain) |
 | `0x8007B840` | ptr | MOVE2 buffer base - the type-`0x0B` high-id animation-clip bank (`actor[+0x5C] >= 0x400`). |
 | `0x8007B850` | u32 | Per-frame **held** button mask (built by `FUN_8001822C`; the word field-VM op `0x42` mode 1 tests against the compass at `0x801F28D0`; retail truncates to port 0's low 16 bits - port 1 fills the high half only under `0x8007B98C != 0`). Packed layout, not the raw pad word: face/shoulder byte in bits 0-7, dpad/system byte in bits 8-15. Engine mirror `legaia_engine_core::retail_pad`. |
 | `0x8007B854` | u32 | **Ambient-particle master gate.** Raised by field-VM op `0x4C` outer nibble 3 sub-`0` (`sw v0,-0x47ac(v1)`, `v0 = 1`, at `0x801E0F38`) and cleared by sub-`1` (`sw zero,-0x47ac(v0)` at `0x801E0F44`), both in a `j` delay slot off the 16-entry table at `0x801CEEB8`. Six references disc-wide: two SCUS clears (`0x800259AC`, `0x8003B690`), the field render pass at `0x80026EBC` which stages the particle table into scratchpad when the word is set and the game mode is `3`, the emitter's own load at `0x801D605C`, and the two script stores. Not an input lock. |
 | `0x8007B85C` | ptr | **DATA_FIELD bundle base**, the `0x62C00`-byte staging buffer the per-stage init `FUN_8001E1B4` allocates. Scene bundles, the battle side-band part pool (`+0x44000`) and the streaming chunk requests all land in it. |
 | `0x8007B868` | u32 | Dev/dual-mode gate the actor-sound family and several loaders check (`retail 0`). A disc-wide sweep finds two stores: the boot store of `FUN_8002B92C`'s result, which is always `0`, and the bit-1 clear in `FUN_8001DCF8` (`0x8001E008`). Baka Fighter's developer menu (state `0xC8`, `0x801D08E8`) and so its keyframe editor are gated on it, which is why neither is reachable on a retail disc. |
 | `0x8007B874` | u32 | Newly-pressed edge mask, `held & ~prev` (`FUN_8001822C` at `0x80018540`) - the word most menus and minigames test for a press. |
-| `0x8007B878` | `void *` | Base of the **second half** of the battle loader's contiguous `etmd`+`vdf` read (raw TOC 873 + 874). Formed as `gp[0xa8c] + sectors(raw 873) * 2048` and stored at `0x80052538`; the flat `[u32 count][u32 offsets[count]]` pack the VDF registration walks starts here, offsets added to the base as **bytes**. Three writers in all, and the byte-offset pack walk at `0x8005255C` that reads it is one of the two candidate producers of the rebuilt-container wild read ([open thread](open-rev-eng-threads.md#containers--data-blobs)). |
+| `0x8007B878` | `void *` | Base of the **second half** of the battle loader's contiguous `etmd`+`vdf` read (raw TOC 873 + 874). Formed as `gp[0xa8c] + sectors(raw 873) * 2048` and stored at `0x80052538` (three writers in all); the flat `[u32 count][u32 offsets[count]]` pack the VDF registration walks at `0x8005255C` starts here, offsets added to the base as **bytes**. That walk is excluded as the source of the wild read a rebuilt PROT 0874 produces, by the bytes its buffer holds ([`character-mesh.md`](../formats/character-mesh.md#what-can-reach-0x808425f8-and-what-cannot)); the rebuilt-disc cold boot that would reproduce the read itself is unmeasured. |
 | `0x8007B87C` | index | Mode index rendered on the dev **CONFIG / test screen**. `FUN_800188C8:340`: `(&PTR_s_CONFIG_8007078c)[_DAT_8007B87C * 6]` - indexes the `0x8007078C` table at stride **6 words = 24 bytes** (independently re-confirms the 24-byte entry stride) to fetch the entry's CONFIG label string for `FUN_8001AA68` to draw. Provenance: `ghidra/scripts/funcs/800188c8.txt`. |
 | `0x8007B880` | i32 | Battle sound set: stored by op-`0x35` sub-op 7 (-1 = none), zeroed by the scene map-init `FUN_8003AEB0`. The battle intro loads bundle `0x36F + id` from it (none for -1, [audio](../subsystems/audio.md#the-battle-sound-set-picks-the-fights-track)); the field initializer's `0x801D6B48` level ramp tests it for negative. |
 | `0x8007B888` | `void *` | Type-`0x05` (MOVE) animation-clip bank pointer (set by `FUN_8001F05C` case 5 at `0x8001F3A8`; **not** installed into `DAT_8007C018`). On the world map it is kingdom slot 4 - the scene's ANM bank, read by the clip selector `FUN_800204F8` (1-based lookup) and the animated renderer `FUN_8001B964`; live `map01` pins it at `0x8011A624`. Six references image-wide, none in a render-dispatch path. Its high-id sibling is the MOVE2 bank at `0x8007B840`. |
 | `0x8007B8B8` | u32 | **Field entry-mode argument** - a one-shot argument, not a latch. Ten writers and 25 readers over 84 images: `0x80016414` inside the mode-transition pass `FUN_80016230` raises it when the mode being left is the field, `0x80026094` and `0x801CEF18` write `2`, `0x80046E28` writes `2` only when it is already non-zero, and six sites write zero. Nothing retains it across a load, so the field MAIN INIT `FUN_801D6704`'s `== 0` test at `0x801D6FD8` passes on ordinary scene entry and the `0x801F271C` template spawn is **per-scene**. |
 | `0x8007B8C2` | u16 | Dev/retail loader-path flag. 40 `lh` reads in SCUS; written once, at cold boot, to `1` - [details ↓](#0x8007b8c2---build-mode-devretail-loader-selector). |
-| `0x8007B8CC` | u32 | Read at exactly one site, written at none, and above `SCUS_942.54`'s loaded extent, so nothing the disc executes ever stores to it. The arm that reads it is therefore dead in retail whatever it does, which is what makes it a candidate producer to rule *out* rather than in. |
+| `0x8007B8CC` | u32 | Read at exactly one site and written at none. It is above `SCUS_942.54`'s loaded extent, so nothing the disc executes stores to it and the arm that reads it is dead in retail. |
 | `0x8007B8D0` | u32 | Sound subsystem current-bundle pointer (`gp+0x5B8`): `bse.dat`'s 0x1800-byte buffer during battle, repointed at the scene's prescript bundle on every field load (`FUN_8001F7C0` at `0x8001F864`). See [`bse-dat.md`](../formats/bse-dat.md). |
 | `0x8007B8F8` | u16 | **Party leader** character id. `FUN_801E58A8` and `FUN_801D1BA0`'s tail step `_DAT_8007BDD8 + leader * 7` into the locomotion clip bank. |
 | `0x8007B910` | u32 | **Live audio level** (`0..255`), halved into libsnd's `0..0x7F` by every reader; persistent reference at `0x8008457C`. Not screen brightness - that is `0x8007B440`. See [`battle-action.md`](../subsystems/battle-action.md#the-_dat_8007b910-ramps-are-an-audio-duck). |
@@ -186,7 +210,7 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007B9B8` |  | One-shot latch gating the field init's slot-10 load (raw `0x428` then `0x422`) together with track `0x814` at `0x8007BAC8` (`0x801D71A0..0x801D7274`). The load sets it itself, in the delay slot at `0x801D71CC`; SCUS `FUN_800243F0` reads it at `0x800243F4`; its only clearer is the DEBUG MODE overlay's init (PROT 0971, `0x801CE9B4`). It is the **credits latch**: the load it gates is the credits theme, and while it is set `FUN_800243F0` returns at once (`0x8002440C`), so the ordinary BGM loader stands aside. |
 | `0x8007B9C4` | u32 | PROT 0874 **load-state gate** (`gp+0x6AC`), the word `FUN_8001E890` branches on: `0` read the entry, decompress and register; `2` re-sum and decompress and register; `1` register only. Twelve writers, and they are why the register-only arm never runs over a reused buffer - the mode-transition pass `FUN_80016230` zeroes it on every mode step outside 2/3 (`0x800163B4`), PROT 0978's post-battle restore writes `0` and then `2`, and the core reset, the minigame warp and the field overlay all write `0`. `see ghidra/scripts/funcs/8001e890.txt`. |
 | `0x8007B9D0` | u32 | **Container checksum** for PROT `0x36C` (`gp+0x6B8`) - the word sum the boot loader `FUN_8001ED60` takes of the raw entry. Exactly one reader disc-wide: `FUN_8001E890` at `0x8001E9F8`, comparing it against a re-sum of the same container read back out of VRAM, and reloading from the CD on a mismatch. Siblings in the same block: `gp+0x6AC` (`0x8007B9C4`) load state, `gp+0x6BC` (`0x8007B9D4`) the section-0 buffer, `gp+0x69C` / `gp+0x6C8` the two descriptor size words. See [`character-mesh.md`](../formats/character-mesh.md). |
-| `0x8007B9D4` | ptr | **PROT 0874 section-0 buffer pointer** (the character pack), `gp+0x6BC` (`gp = 0x8007B318`). Allocated at `gp[+0x69C]` bytes by the per-stage init `FUN_8001E1B4` (`sw v0,0x6bc(gp)` at `0x8001E2E8` - its only writer disc-wide), read by `FUN_8001E890`'s decode arms and by the model-pack registrar at `0x8001EAFC`, which takes the pack count off `+0x00` with no clamp and `jal`s `FUN_80026B4C` once per word offset. It holds `0x8014D53C` on every measured entry route and names the same heap block in 97 of 98 catalogued states; it reads as another allocation in the battle states, because the battle load reuses the block - but the registrar is never *entered* over one, because its `gp+0x6AC` gate is reset first ([settled](re-settled-threads.md#battle--arts--level-up)). |
+| `0x8007B9D4` | ptr | **PROT 0874 section-0 buffer pointer** (the character pack), `gp+0x6BC`. Allocated at `gp[+0x69C]` bytes by the per-stage init `FUN_8001E1B4` (`sw v0,0x6bc(gp)` at `0x8001E2E8`, its only writer disc-wide); holds `0x8014D53C` on every measured entry route. [Details ↓](#0x8007b9d4---the-prot-0874-section-0-buffer) |
 | `0x8007B9D8` | u32 (also read `lbu`) | Per-mode **frame-step floor** the adaptive frame step `DAT_1F800393` cannot drop below (`FUN_80016B6C`, `0x80017178..0x80017198`). Field init `FUN_801D6704` writes `2` (`0x801D6990`); a scene's own prescript raises it through move-VM ext sub-op `0x2F` (`0x801D45E4`, `opdeene`'s `3`); name entry `FUN_801F03F0` holds `1` while open. |
 | `0x8007B9E0` | u32 | PROT 0874 **section-1 decoded size** (`gp+0x6C8`), the same treatment of the header's `+0x10` word (`0x8001EE2C`). |
 | `0x8007BA34` / `0x8007BA36` | u16 / u16 | The mode-24 minigame warp's **sub-id** (`u16`; `4` Baka Fighter, `5` the Muscle Dome arena) and a separate word beside it - two fields, not one `u32` (capture). |
@@ -196,11 +220,11 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007BAA0` | i32 | Side-band `vab_01` bank **acknowledge** cell, latched from the request by `FUN_800243F0` at `0x8002448C` / `0x800244F0`. `-1` is the *idle* sentinel, not an error. It is also the **barrier** half of the second streaming slot: the block at `0x800244C0` applies the same `0x1000` park test the BGM slot uses, copying the request onto this word so the load is skipped. |
 | `0x8007BAB4` | u32 | Title **pre-attract hold**, seeded `0x100` by the SCUS stager at `0x8002579C` (its only writer outside the tick) and spent at `8 * frame_scalar` per frame by sub-mode `0x11` `AttractDelay` - 33 frames before the menu comes up. |
 | `0x8007BABC` | i32 | Side-band `vab_01` bank **request id** - the other half of the pair. The field overlay seeds `(8, -1)` at `0x801D6880..0x801D688C` and tears down to `(-1, -1)` at `0x801D74AC..0x801D74B8`; op `0x36`'s subs `0`/`1`/`2` are request, gated store and wait on the pair's equality ([`script-vm.md`](../subsystems/script-vm.md)). `FUN_800243F0`'s second streaming slot resolves the request into a slot-3 / slot-6 `vab_01` bank; `0x1000` parks. |
-| `0x8007BAC0` | u32 | **Special-battle restriction word.** Bit `0x100` bars Item, `0x200` forbids the Ra-Seru chip (row below), course = `((word - 1) & 0xFF) >> 4`. Two writer families: SCUS battle init keyed on the first enemy monster id (`0x800519FC`; `0x8005200C` on map `0xC` / `0x15`), and the **arena seeding the word whole** - `FUN_801CEA6C` stores `0x101` / `0x111` / `0x321` at `0x801CEBA0` / `0x801CEBB4` / `0x801CEBC8` on story flags `0x536` / `0x537` / `0x538`, last match winning, over a zero at `0x801CEB8C`. All three seeds carry `0x100`, the top one `0x200`. Any set bit suppresses gold, EXP, drop, steal, absorb, spell XP and a granted monster flee ([settled](re-settled-threads.md#battle--arts--level-up)); `0x100` also gates `0x801E7978` / `0x801E7B40`. |
+| `0x8007BAC0` | u32 | **Special-battle restriction word.** Bit `0x100` bars Item, `0x200` forbids the Ra-Seru chip (row below), course = `((word - 1) & 0xFF) >> 4`; any set bit suppresses the battle's spoils ([settled](re-settled-threads/battle.md)). [Details ↓](#0x8007bac0---the-special-battle-restriction-word) |
 | `0x8007BAC0` bit `0x200` | flag | **Ra-Seru forbidden.** Battle init `FUN_800513F0` clears a word that is exactly `0x200`, then raises the bit for first monster `0xAF` (`0x800519C0..0x80051A04`); the formation roll `FUN_80051D84` raises it for monsters `0x3D..0x3F` on map `0x0C` / `0x15`, the Rim Elm ambush (`0x8005200C..0x8005205C`). Its only two bit readers are the round driver's ring: the cross-out at `0x801D12DC` and the refused arm at `0x801D1448`. ([`battle.md`](../subsystems/battle.md#the-ra-seru-forbidden-bit-of-the-special-battle-word)). |
 | `0x8007BAC4` | u32 | The scene id the fishing overlay reads to pick its venue (`lw` at `0x801CF5A4` in PROT 0972): `0xF4` selects Vidna (venue 1), `0x187` Buma (venue 0), into `0x801D90D0`. That these ids are the departure overworlds is an inference from the two venues. |
-| `0x8007BAC8` | u16 | **BGM request id**. Four `sw` sites disc-wide, all in PROT 0897: `0x801E012C` (field-VM op `0x35` sub-1), `0x801E0254` (sub-9), `0x801EAD1C` (the dev menu's `BGM CALL` row, installing a sound-test table id) and `0x801D6844` - a conditional `sw $zero` inside the per-scene field initializer `FUN_801D6704`. So the scene **loader clears** the id and the script installs it. Reachable only through a `gp`-relative sweep. The value `0x1000` is a **park sentinel**, not a track: the resolver compares against it at `0x8002454C` and copies the pending index onto the loaded-index barrier, skipping the load ([`audio.md`](../subsystems/audio.md#0x1000-is-a-park-sentinel-not-a-track)). |
-| `0x8007BACC` | u32 | Gates a recentre-window form that is **unreachable**, but not for want of a writer: `sw zero,-0x4534($v0)` at `0x801D6F50` writes it, sitting in the delay slot of the `jal 0x800567A8` before it - the position a call-target sweep steps over, which is why a five-form scan reported none. The arm is dead because the only store is a **zero** ([falsified](re-do-not-re-walk.md#field--locomotion)). |
+| `0x8007BAC8` | u16 | **BGM request id**. The scene loader clears it and the scene's script installs it; `0x1000` is a **park sentinel**, not a track ([`audio.md`](../subsystems/audio.md#0x1000-is-a-park-sentinel-not-a-track)). [Details ↓](#0x8007bac8---the-bgm-request-id) |
+| `0x8007BACC` | u32 | Gates a recentre-window form that is **unreachable**: its only store, `sw zero,-0x4534($v0)` at `0x801D6F50`, writes zero. The store sits in the delay slot of the `jal 0x800567A8` before it, a position a call-target sweep steps over ([falsified](re-do-not-re-walk.md#field--locomotion)). |
 | `0x8007BAFC` | u32 | **Field-bank latch** (`gp+0x7E4`). The field init `FUN_801D6704` loads PROT 0876 into VAB slot 6 and sets it only while it is clear (`0x801D6FF4..0x801D7048`); battle mode init `FUN_8001DCF8` (`0x8001DFC0`, closing slots 6 and 3, only when the mode word `0x8007B83C` reads `0x14` - a minigame's call with `0x18` skips it), the minigame warp `FUN_80025980` (`0x800259A4`) and the side-band teardown `FUN_801D8450` clear it ([`sfx-table.md`](../formats/sfx-table.md#one-region-per-mode-slot-2-and-slot-6)). |
 | `0x8007BB00` | u32 | Title **entry word**. Raised unconditionally by the boot `init.pak` itself (`li s2,0x1` / `sw s2,-0x4500(s0)` at `0x801CEB84`, `s0 = 0x80080000`), which is why a cold boot never shows title sub-mode `0x02` ([`boot.md`](../subsystems/boot.md#a-cold-boot-always-shows-sub-mode-0x10-never-0x02)). Reads `2` on a re-entry from the attract FMV. Both master-mode-`2` writers (`0x801DFC00` new game, `0x801DFAFC` load) clear it. |
 | `0x8007BB04` / `0x8007BB08` | ptr | The overworld's **screen-Y curvature** pair, both `0x8000`-byte buffers `FUN_800271A8` allocates via `FUN_80017888` (each guarded by a `== 0` first-use check) when `FUN_8003AEB0` calls it as `(0x28, 0x2AB980)` under `_DAT_8007B6A8`. `0x8007BB08` holds a `0x4000`-entry quadratic drop ramp; `0x8007BB04` the `0x2000`-entry `i16` table of `SY - 0x78` for points `RTPS`ed along it, which `FUN_80043390`'s overworld leaves and `FUN_8003F86C` add to `SY` at index `(SZ >> 5) + 1` and `FUN_8001C394` at `(ΣSZ >> 2) >> 5`. It is not a depth ramp for a GTE reset ([`renderer.md`](../subsystems/renderer.md#frame-setup--present)). |
@@ -209,7 +233,7 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007BB28` | u32 | Caller tag stored at arm time (`gp+0x810`). |
 | `0x8007BB2C` | u32 | Auto-release **deadline** in vsyncs (`gp+0x814`). |
 | `0x8007BB34` | u32 | Auto-release **elapsed** accumulator (`gp+0x81C`); advanced by `DAT_1F800393`, so the deadline is cadence-invariant. |
-| `0x8007BB38` | u32 | **Walker counter** - the id **just issued**, because `FUN_80026B4C` publishes it through `gp[+0x820]` *before* the increment, so a walker bounding a loop with it as a count reads one entry long. Also written by `FUN_80026B4C` via `gp[+0x820]`; the `addu` between the gp-relative `lui+addiu` materialiser and the `sw` is what hides this store from Ghidra's xref database. Used by `FUN_801D8280` to bound the table walk. `dolk` snapshot = `0x8E` (= install counter − 1). |
+| `0x8007BB38` | u32 | **Walker counter** - the id **just issued**: `FUN_80026B4C` publishes it through `gp[+0x820]` *before* the increment, so a walker bounding a loop with it as a count reads one entry long. `FUN_801D8280` bounds its table walk with it. The store is absent from Ghidra's xref database, because an `addu` sits between the gp-relative `lui+addiu` materialiser and the `sw`. `dolk` snapshot = `0x8E` (= install counter − 1). |
 | `0x8007BB48` | u8[3] | `gp+0x830`: `0xF0F0F0` on the overworld; `FUN_80026CE4` stores it when `_DAT_8007BA90` is set and passes it to `SetFarColor`. The overworld ground's own far colour is the later literal `0x100` per channel. |
 | `0x8007BB4C` | u32 | Selector between PROT **0900**'s depth-cued / flat ground-cell emitter **pair**: `FUN_801F69EC` (file `+0x14`, `GTE.dpcs` + `swc2 $22`) and `FUN_801F6D48` (`+0x370`, plain colour store), picked at `0x801F79A0`; the non-zero arm calls `SetFarColor` first. Both gate on `cell & 0x1000`; the decoration pass `FUN_801F7088` is a third routine gating on `0x2000`. |
 | `0x8007BB80` | u32 | Menu window-slide latch: non-zero while a window is sliding; every menu sub-screen SM gates its interactive phase on `== 0`. |
@@ -235,9 +259,9 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007BCD0..D8` | u32[3] | Source globals for the gate-arm scale / step / OT-layer params. `FUN_801D1344` reads these and forwards as args to `FUN_801D8258`. Field-VM op `0x4C` nibble-4 sub-9 dispatches the arm table `0x801E1480..0x801E162C` that writes them; subs `0xA` / `0xB` / `0xC` store the horizon gate in the **delay slot** of the `j` leaving the arm (`0x801E1648` / `0x801E1688` / `0x801E16C8`), and sub `0xD` scales `_DAT_8008457C >> 12` into `0x8007B910`. |
 | `0x8007BCE0` | u32 | Op `0x34` sub-0 **blend** - `(op0 & 1) ? 2 : 1`. Blend `2` over a white target loses an eighth of the tween's duration, which is why a capture reads 57 frames for the operand word `0x41`. |
 | `0x8007BD04` | u32 | **Auto-command stage gate**. While it is set, `FUN_801DA34C` reads the acting seat's staged command band at record `+0x1A7` / `+0x1B7` and `FUN_801DA59C` writes one back; the band is chosen by `sltu(+0x156, +0x154)`. |
-| `0x8007BD0C` | u8[4] | **Formation cell** - the per-slot monster id, indexed by 0-based monster index (monster `m` is battle-actor slot `m + 3`, `0x801EA008`). Filled from the encounter record by `FUN_801DA51C`, or from a scripted battle id by `FUN_8005567C`. The AI picker `FUN_801E9FD4` switches on it (`0x801EB73C`), so each case is bespoke AI for one monster id. `see ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`. Also the index the PROT 0898 179-arm `jr` table at `0x801CF1CC` reads (`lbu(0x8007BD0C + $s7) - 4` at `0x801EA9FC`, bound `0xB3`), written back at actor `+0x1DE` by the same body. The cells run `0x8007BD09 + seat`, so seat 3 (monster 0) is `0x8007BD0C`; the battle draw tick `FUN_800480D8` reads `0x8007BD0D` as `gp+0x9F5`, zero meaning a lone monster. |
+| `0x8007BD0C` | u8[4] | **Formation cell** - the per-slot monster id, indexed by 0-based monster index (monster `m` is battle-actor slot `m + 3`, `0x801EA008`). Filled from the encounter record by `FUN_801DA51C`, or from a scripted battle id by `FUN_8005567C`; the AI picker `FUN_801E9FD4` switches on it. [Details ↓](#0x8007bd0c---the-formation-cell) |
 | `0x8007BD10` | u8[] | **Per-seat character id**, 1-based (`1` Vahn, `2` Noa, `3` Gala, `0` empty), indexed by battle-actor slot: battle slot -> roster id. Selects the character record (the queue builder, actor seeding and strike loop index `0x80084140 + (id - 1) * 0x414` through it), the battle-mesh install slot (`FUN_800513F0`), the element row, the caption label, the Rot limb row at `0x80077998` and the attack camera's per-character jump table (`FUN_801D71B8` at `0x801D7290`). `4` is the **AI-companion** seat, which is what the selectable scans' `!= 4` term excludes - not an action state ([falsified](re-do-not-re-walk.md#battle--arts--level-up)). |
-| `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`). `+0x27` is the steal latch, set by `FUN_8004AD80` at `0x8004B3E4` and cleared at each strike chain's exit (`0x801E3A84` in `FUN_801E295C`). `0x800EB654` while a battle is resident, `0` in the field. Base of the battle-actor / AI ctx block (`+0x07` = the action-state cursor the whole battle keys on, `+0x13` = active slot, `+0x276` = the side-band applier's stage byte, which both CD-XA cue arms also test (`FUN_8004FCC8` and `FUN_8004FE5C`); it is written by `FUN_801DABA4`, `FUN_801E295C` and `FUN_801F12D0` and is **not** a tutorial flag, `+0x279` = module phase byte while a capture-class [cast module](../subsystems/cast-module.md) is paged, `+0x28A` = battle-mode counter; the pending-SFX write counter lives at `+0x9`). |
+| `0x8007BD24` | u32 | Battle context pointer (`_DAT_8007BD24`): `0x800EB654` while a battle is resident, `0` in the field. `+0x07` is the action-state cursor the whole battle keys on. [Field list ↓](#0x8007bd24---battle-context-fields) |
 | `0x8007BD30` | 5008 bytes | Effect-runtime pool: 16-byte head + 128 child slots + 32 master slots. |
 | `0x8007BD5C` | u32 | Effect 2-pack wrapper buffer pointer (post-init). |
 | `0x8007BD60` | u8 | Region **battle-stage variant**, `region[+8] & 0x1F`, written by the region re-read `FUN_801D9E1C` that op `0x3E` and the step roll both run; battle init `FUN_800513F0` loads the backdrop from entry `0x80084540 + variant` (raw TOC `+5`). The same re-read stores `_DAT_8007B64B` (keep backdrop object 1), the Door of Light / Wind gates in `0x1F800394` and the world-map return triple `0x80084624` / `0x80084628` / `0x8008462C` ([`script-vm.md`](../subsystems/script-vm.md#the-region-battle-setup)). |
@@ -249,7 +273,7 @@ Everything from the image's end to the heap base is uninitialised global storage
 | `0x8007BDC0` | u32 | `gp+0xAA8`. The PROT 0920 (`cast_slippery`) **effect-drain counter** whose non-zero arm is the only thing that reaches SCUS `0x800481A0`'s `jal 0x801F7B88`. Five writers, all inside 0920: `0x801F6BBC` zeroes it, `0x801F6FEC` seeds `0x204`, `0x801F70CC` drains 8, `0x801F712C` **floors** it at 4 and `0x801F7B4C` clears it - so it never reaches zero on its own while the cast runs, and the call fires on ordinary in-battle frames (212 hits in one driven Slippery cast) ([`cast-module.md`](../subsystems/cast-module.md)). |
 | `0x8007BDC8` / `0x8007BDCC` | i32 / i32 | The player's **last crossed tile** `(x, z)` (`world >> 7`), the compare `FUN_801D1EC4` runs a tile's triggers against; re-stamped at a warp landing. |
 | `0x8007BDD0` / `0x8007BDD4` | i32 / i32 | The pending kind-0 warp's **destination** in half-tiles, `(rec[2], rec[3])`; the landing seats the player at `(dest_x * 64 + 64, (dest_z + 1) * 64)`. |
-| `0x8007BDD8` / `0x8007B6AC` | u32 / u32 | The field clip **base** and the clip **override** op `4C CE` writes; `FUN_801E58A8` and the settle tail pick `base + override - 1` when the override is non-zero, `leader + 1` when the base is `99`. The base's main writer is the pad controller `FUN_801D01B0` (`0x801D0424..0x801D04A4`: idle `2`, walk `1`, run `3`, `99` under `0x8007B6A8`); the hop phase machine `FUN_801D2298` writes `6` / `7` / `1`, and `FUN_801D1EC4` writes `2` on one arm (`0x801D21AC`). The system channel's `FUN_80039B7C` stores `2` every field tick at `0x80039D94`, after the settle has read the base, which is why the player idles whenever the pad step is skipped ([`field-locomotion.md`](../subsystems/field-locomotion.md#retail-capture-of-the-base-writers)). |
+| `0x8007BDD8` / `0x8007B6AC` | u32 / u32 | The field clip **base** and the clip **override** op `4C CE` writes; `FUN_801E58A8` and the settle tail pick `base + override - 1` when the override is non-zero, `leader + 1` when the base is `99`. [Base writers ↓](#0x8007bdd8---the-field-clip-base-writers) |
 | `0x8007BF10` | `MATRIX` | **Per-mode base matrix** folded into the view rotation by `FUN_8005B3A8` inside the view build. A live field state holds `24576 * I`, i.e. a uniform 6x against the GTE's `4096 = 1.0`. A renderer drawing geometry at `1x` reproduces retail's framing by dividing the eye trio by this scale - the perspective divide is invariant under a uniform scale of the whole eye-space vector. Anything added **after** the view transform lives in this scaled space: a field attached light's extents (`FUN_800195A8`) are a sixth of the same number in world units ([`script-vm.md`](../subsystems/script-vm.md#the-extents-are-view-space-units-retail-capture)). |
 
 ### Actor and mesh tables (`0x8007C000-0x8008413F`)
@@ -308,9 +332,9 @@ Above the save block: the libsnd sound-driver work area handed to `FUN_800644C0`
 |---|---|---|
 | `0x80087AF8` | u32 | Result of `FUN_80020224` descriptor walker, set by town-overlay MAIN INIT. |
 | `0x80088758` | record[] | Resident **CDNAME define table** (`FUN_80019788` returns it): `0x10`-byte records, a scene name with an `s16` define at `+0xC` (read by `FUN_8003CE9C`); 125 records in a retail image. The travel arts scan it for their destination - it is not a visited-map table. |
-| `0x80089118` | i32[3] | **Camera focus trio** - `0x80089118` X, `0x8008911C` Y, `0x80089120` Z, each stored **negated** (`subu v0,zero,v0` at `0x801DAB64` / `0x801DAB80` in `FUN_801DAA50`, off the script-set focus tiles `0x8007B628` / `0x8007B62A`, which field-VM op `0x4C` fills from the operand tile or - operand `0xFF` - from the player's own `+0x14` / `+0x18`). In the **field** only X and Z are written, so `0x8008911C` reads `0` on every sampled frame and the vertical framing rides the eye trio instead. The world-map top view scrolls X with Left / Right and Z with Up / Down (`0x801E7834..0x801E78BC`); rows that label those two the other way round have the axes crossed. |
+| `0x80089118` | i32[3] | **Camera focus trio** - `0x80089118` X, `0x8008911C` Y, `0x80089120` Z, each stored **negated** (`subu v0,zero,v0` at `0x801DAB64` / `0x801DAB80` in `FUN_801DAA50`, off the script-set focus tiles `0x8007B628` / `0x8007B62A`, which field-VM op `0x4C` fills from the operand tile or - operand `0xFF` - from the player's own `+0x14` / `+0x18`). In the **field** only X and Z are written, so `0x8008911C` reads `0` on every sampled frame and the vertical framing rides the eye trio instead. The world-map top view scrolls X with Left / Right and Z with Up / Down (`0x801E7834..0x801E78BC`), not the other way round. |
 | `0x80089128` | u32[32] | 32 × u32 held-mask history ring, one entry per elapsed vsync (write index `gp+0x62C` = `0x8007B944`). |
-| `0x800917B0` | u32 per VAB id | The fixed SPU address `FUN_8002630C` (`a3 = 0`) opens VAB `vabid` at through `FUN_80068D34` (`0x80026344..0x80026358`); `a3 = 1` sends more of the body instead (`0x80069230`). Seeded by `FUN_800265E8`: `[0] = [10] = 0x1010`, `[1] = [5] = 0x10010`, `[2] = [6] = 0x33010`, `[3] = 0x60010`, `[4] = [7] = 0x65010`, `[8] = 0x6C810`, `[11] = 0x6F010`. Entries 10 and 0 share a base, so the credits bank (`0x1010..0x641C0`) lands over the resident SFX banks of slots 0 to 3 but short of slot 4 / 7; engine `legaia_engine_audio::spu_layout`. The table is words (`sw` at `+0x4` .. `+0x2C` in `FUN_800265E8`), as the values above `0xFFFF` require. |
+| `0x800917B0` | u32 per VAB id | The fixed SPU address `FUN_8002630C` (`a3 = 0`) opens VAB `vabid` at through `FUN_80068D34` (`0x80026344..0x80026358`); `a3 = 1` sends more of the body instead (`0x80069230`). Seeded by `FUN_800265E8`; engine `legaia_engine_audio::spu_layout`. [Values ↓](#0x800917b0---the-spu-address-table) |
 
 ## Heap (`0x80091800-0x801C5FFF`)
 
@@ -327,18 +351,18 @@ The `0x8818` bytes between the heap's end and the overlay load base are fixed bu
 
 | Address | Type | Purpose |
 |---|---|---|
-| `0x801C6220` |  | Shop buy-list **staging array** - a resident buffer below slot A, written by the SCUS row builder (`0x80030F1C..0x80030F90`) while the menu overlay runs. The builder splits the walked rows at `record_count - 3`; rows below the split stage here tagged `0x3000` and are appended after the rows at or above it (tagged `0xA000`, ink 5). The hoisted band is the **Platinum Card** stock: it is walked only while `FUN_80042F4C(0xFF)` finds item `0xFF` in the bag or an equipment block, so without the card the list stops at `record_count - 3` (capture: 13 rows with the card, 10 without, on Retock's Items Shop; [`shop.md`](../subsystems/shop.md#the-last-rows-come-first)). |
+| `0x801C6220` |  | Shop buy-list **staging array**, written by the SCUS row builder (`0x80030F1C..0x80030F90`) while the menu overlay runs. The builder splits the walked rows at `record_count - 3`: rows below the split stage here tagged `0x3000` and are appended after the rows at or above it (tagged `0xA000`, ink 5). The three hoisted rows are the **Platinum Card** stock, walked only while `FUN_80042F4C(0xFF)` finds item `0xFF` in the bag or an equipment block (capture: 13 rows with the card, 10 without, on Retock's Items Shop; [`shop.md`](../subsystems/shop.md#the-last-rows-come-first)). |
 | `0x801C6460` | u16[64] | 64-entry × u16 scratchpad slot table. Written by op 0x4C nibble-C sub-A; adjusted by sub-B / sub-C. |
 | `0x801C66A0` | record[64] | 64-slot ramp scheduler pool (stride 0x20). Installed by `FUN_8003C5F0`, walked by `FUN_80036D80`. |
-| `0x801C6EA4` | ptr | Current world / scene struct pointer. `scene[+0x2E]` is the submode stamp and `scene[+0x40]` the **parked return state** the op-`0x49` enter writes (`0x801F1400` / `0x801F148C`) - a write-only word: no image loads it at any width, and a live read watch across a submode enter records none ([settled](re-settled-threads.md#field--locomotion)). |
-| `0x801C6ED8` | [CdlLOC, u32] x 34 | CD-XA streaming-clip table: 34 slots of `[CdlLOC][u32 byte_len]` (8-byte stride, indexed by clip id; `+0x0` = 4-byte BCD-MSF `CdlLOC` disc start, `+0x4` = length, zero = empty slot). **Slot `i` = file `XA<i+1>.XA`** - lengths byte-exact vs the disc. Filled at boot by `FUN_801CFA78` (PROT 0895 `init.pak`), which sprintf-generates `\XA\XA%d.XA;1` per slot and stages `[BCD-MSF][size]` via ISO9660 lookup `FUN_8005DBB4` - no XA LBA is stored absolutely, so the table survives disc relayout. Read by the XA cue starter `FUN_8003D53C` (via `msf_to_lba`, `FUN_8005C42C`), which drives the CdSync-callback state machine `FUN_8003D764` (`CdlSetfilter {file 1, chan}` per cue). See [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection). |
+| `0x801C6EA4` | ptr | Current world / scene struct pointer. `scene[+0x2E]` is the submode stamp and `scene[+0x40]` the **parked return state** the op-`0x49` enter writes (`0x801F1400` / `0x801F148C`) - a write-only word: no image loads it at any width, and a live read watch across a submode enter records none ([settled](re-settled-threads/field.md)). |
+| `0x801C6ED8` | [CdlLOC, u32] x 34 | CD-XA streaming-clip table: 34 slots of `[CdlLOC][u32 byte_len]` on an 8-byte stride, indexed by clip id. **Slot `i` = file `XA<i+1>.XA`**, lengths byte-exact against the disc. Filled at boot by `FUN_801CFA78` (PROT 0895 `init.pak`); read by the XA cue starter `FUN_8003D53C`. [Details ↓](#0x801c6ed8---the-cd-xa-clip-table) |
 | `0x801C70F0` | TOC | In-RAM PROT TOC - populated at boot by `FUN_8003E4E8`. Different stride from on-disc. |
 | `0x801C8980` | table | **Resident `monster.snd` bank index** (PROT 0891), staged by `init.pak`'s `memcpy` of `0x400` bytes at `0x801CEF74`: `[u32 reserved][u32 count][u32 start_sector[count + 1]]`. The per-monster SE bank streamer `FUN_8003E104` bounds its argument against the count at `0x801C8984` and reads sectors `[table[i], table[i + 1])` relative to raw TOC entry `0x37D`'s start LBA, so the trailing word is the archive's own sector length rather than a bank. `see ghidra/scripts/funcs/8003e104.txt`. |
 | `0x801C8FE0` |  | Enemy **Steal** result band, resident scratch below slot A. PROT 0941's `0x51` writes the stolen item id at `0x801C8FE0 + (seat - 3) * 4` and a per-seat counter at `+ (seat + 5) * 4`; the message pointer it pairs with is `0x800774AC` (`ctx[+0x18] = 0x5B`). Seat 4's cell is `0x801C8FE4`, which PROT 0964 uses for something else, so this is scratch two slot-B modules address independently rather than a dedicated structure. |
 | `0x801C8FE4` |  | **Element-cycling counter**, resident scratch: the last accepted `rand() % 3`. PROT 0964's element-change tick (`0x801F88EC`) redraws until the roll differs from it, then writes the enemy record's `+0x1D` element and its `+0x1C` ME group from the in-image table `0x801F9B70`. It is the only routine on the disc that mutates a live enemy record's element. |
 | `0x801C9060` | i16[6] | `FUN_8004998C`'s per-part unwrap journal (`next` / `cur` pairs at `+0/+2`, `+4/+6`, `+8/+A`), where the re-blend retry rewrites the next frame's triple. |
 | `0x801C9370` | ptr[8] | **Battle actor pointer table**: party in slots 0..2, monsters in 3..7; every battle helper reaches an actor through `DAT_801C9370[slot]` ([`level-up.md`](../subsystems/level-up.md), [`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)). The pointers name the actor pool in the heap. |
-| `0x801CB408` | record[128] | Libcd directory-entry cache, up to 128 entries of stride `0x2C`, populated by `FUN_8005DEA0` (`lui at,0x801d` + `sw ...,-0x4bf8(at)`; the cap is the two `slti a3,0x80` tests at `0x8005E0E0` / `0x8005E100`). The routine forms no address in `0x801C4***`. Where the long-standing `0x801C4BEC` came from is **not** settled: `0x4BEC` occurs at no word in SCUS, and the only relation the bytes carry is `0x801D0000 - 0x4BEC = 0x801CB414`, a record's `+0x0C` name field. |
+| `0x801CB408` | record[128] | Libcd directory-entry cache, up to 128 entries of stride `0x2C`, populated by `FUN_8005DEA0` (`lui at,0x801d` + `sw ...,-0x4bf8(at)`; the cap is the two `slti a3,0x80` tests at `0x8005E0E0` / `0x8005E100`). Not `0x801C4BEC`: the routine forms no address in `0x801C4***`, `0x4BEC` occurs at no word in SCUS, and the only relation the bytes carry to that figure is `0x801D0000 - 0x4BEC = 0x801CB414`, a record's `+0x0C` name field. |
 | `0x801CD2B8` | u16 | SsAPI 16-bit slot-allocation bitmap. Bit `i` = sequencer slot `i` allocated. |
 | `0x801CD2C0` | ptr[16] | SsAPI 16-entry per-slot pointer table. Each entry → `0xB0`-byte sequence-state struct. |
 
@@ -369,7 +393,7 @@ The extents are the PROT entries' own sectors, the slice the loader streams. Whe
 
 Because the loader streams exactly that many sectors (the TOC gap, unclamped), what sits above a short image is whatever the previous image left there. While the field (0897) or menu (0899) is loaded, `0x801F3818..0x801F69D7` holds leftovers - the battle image's bytes, or `init.pak`'s, whose extent runs to `0x801F4017` and which references the range 104 times. Neither 0897 nor 0899 forms an address in it; the SCUS references at `0x801F53D4` / `0x801F53D8` are battle-only ([`move-power.md`](../formats/move-power.md)). The menu overlay replaces the field overlay at the same base when the pause menu opens, so a menu-time address in `0x801CE818..0x801F3817` never names field code.
 
-The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C5818`" readings are both retired: the title screen is PROT 0899 code (its tick `FUN_801DD35C` is 0899 file `+0xEB44`), and `0x801C5818` is heap.
+Neither a "title overlay at `0x801C0000`" nor a "menu overlay = PROT 0896 at `0x801C5818`" exists: the title screen is PROT 0899 code (its tick `FUN_801DD35C` is 0899 file `+0xEB44`), and `0x801C5818` is heap.
 
 ### Field / dialog / world map (PROT 0897)
 
@@ -378,9 +402,9 @@ The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C
 | `0x801CEC40` |  | `u32[8]` screen-frame **corner-writer table**. The eight `jr` targets `801DDA90` / `AB8` / `AE0` / `B00` / `B20` / `B4C` / `B78` / `BA0` that the per-actor frame emitter `FUN_801DD9D4` dispatches through, one per iteration; each writes four `POLY_F4` corner halfword pairs at `a1[+0x08..+0x16]` and `j`s the shared tail `0x801DDBC8`. These words are the family's only references. |
 | `0x801CF344` | text | The world-map **dev-menu row strings**, PROT 0897 file offset `0xB2C`, formed by the `lui`/`addiu` pairs at `0x801EAE44` and `0x801EB320`. PROT 0981 aliases the VA as the other slot-A occupant and the two are never co-resident. |
 | `0x801D065C` / `0x801D06BC` / `0x801D071C` / `0x801D078C` | code | `Walk Thru Walls` cheat sites. Each word is a `beq v0,zero,...` in the player movement controller `FUN_801D01B0`'s collision path (`0x10400025` / `0x1040000D` / `0x10400028` / `0x1040000C`); the cheat writes `0x06` over the low byte, i.e. it rewrites the branch displacement - a code patch, not a collision-state byte. |
-| `0x801D5C08` / `0x801D5D60` |  | The `+0x08` handlers of two ledge-hop templates. The templates are at `0x801F227C` and `0x801F22AC` (`[0, 0xFFFF0000, handler, 0, 0, 0]`), spawned through `FUN_80020DE0` at `0x801D245C` / `0x801D2634` / `0x801D57C0` and `0x801D2760`. A five-form reference sweep run `--tables-only` reported neither address as referenced, because that mode drops hits classed as incidental code; the words are data ([falsified](re-do-not-re-walk.md#field--locomotion)). |
+| `0x801D5C08` / `0x801D5D60` |  | The `+0x08` handlers of two ledge-hop templates. The templates are at `0x801F227C` and `0x801F22AC` (`[0, 0xFFFF0000, handler, 0, 0, 0]`), spawned through `FUN_80020DE0` at `0x801D245C` / `0x801D2634` / `0x801D57C0` and `0x801D2760`. The handler addresses are referenced only as data words in those templates, which a five-form reference sweep run `--tables-only` drops as incidental code ([falsified](re-do-not-re-walk.md#field--locomotion)). |
 | `0x801F21B4` / `0x801F2214` / `0x801F2254` |  | The **three probe tables**. Not one twelve-row table: the actor-collision probes at `0x801F21B4` (six rows, formed at `0x801CFE74` / `0x801D5A70`), the leading-edge wall probes at `0x801F2214` (four rows, `0x801CFEE8` / `0x801CFFC0` / `0x801D009C`) and the interact facing compass at `0x801F2254` (eight `±64` points, `0x801D0834`); the last ends at the `lw`/`sw` scalar `0x801F2274`. Together the head of the overlay's **data segment** (file `0x2399C..0x25000`), which is not one table. `legaia_asset::field_probe_tables`. |
-| `0x801F271C` |  | The one plain **actor template** MAIN INIT spawns. 24-byte descriptor whose `+0x08` handler is `FUN_801D6058`. Materialised once, by `addiu a1,0x271c` at `0x801D6FC0` -> `jal 0x80024c88` at `0x801D6FD8`, with `sh s0,0x1a(v0)` seeding the `+0x1A = 1` scene arm; gated on `_DAT_8007B8B8 == 0`, which is a **per-scene** gate rather than a boot-only one, so the template is spawned on every ordinary scene entry. Its spawn seat is `(0xA40, 0, 0xA40)` - the coordinates a field-locomotion reading once attributed to the player. It is not a cutscene element. |
+| `0x801F271C` |  | The one plain **actor template** MAIN INIT spawns. 24-byte descriptor whose `+0x08` handler is `FUN_801D6058`. Materialised once, by `addiu a1,0x271c` at `0x801D6FC0` -> `jal 0x80024c88` at `0x801D6FD8`, with `sh s0,0x1a(v0)` seeding the `+0x1A = 1` scene arm; gated on `_DAT_8007B8B8 == 0`, a **per-scene** gate rather than a boot-only one, so the template is spawned on every ordinary scene entry. Its spawn seat is `(0xA40, 0, 0xA40)` - the template's, not the player's. It is not a cutscene element. |
 | `0x801F2738..0x801F3538` |  | The dialog pager's row window: `0x801F2738` row scroll (1/16 px), `0x801F273C` hide countdown, `0x801F2748` reveal counter, `0x801F274C` collapse ramp, `0x801F2750` scroll speed / skip latch (`0x24` / `0x25`), `0x801F275C` short-row hold, `0x801F3534` rows on the page, `0x801F3538` pending text pointer. See [`mes.md`](../formats/mes.md). |
 | `0x801F2778` / `7C` / `80` / `84` | 4 × i32 | Write-only mirrors of the scratchpad visible tile window `0x1F8003E8..EB`; no reader on the disc. |
 | `0x801F2798` / `0x801F279C` |  | The **camera ease descriptor list**. Six records of `(live global, staging field, width code)` the ease `FUN_801DB510` and the snap `FUN_801DB8EC` walk: pitch `0x8007B790` from staging `+0x02`, yaw `0x8007B792` from `+0x06`, the eye trio `0x800840B8` / `BC` / `C0` from `+0x0E` / `+0x12` / `+0x16`, and GTE `H` `0x8007B6F4` from `+0x26`. Roll is not in the list - the follow camera never rolls. |
@@ -406,7 +430,7 @@ The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C
 | `0x801F4DFC` | ptr[3] | PROT 0898: the per-character Ra-Seru absorb-caption prefixes (index character id - 1); `0x801F4C28` is the shared suffix. Battle element `0x59` composes prefix + Seru spell name + suffix into `ctx+0x1F9`, the buffer elements `0x59` and `0x65` both render. Parser `legaia_asset::absorb_caption`. |
 | `0x801F5CF8` / `0x801F5D90` | code | The `effect_id` special-case handlers of the battle effect cluster ([`effect-vm.md`](../subsystems/effect-vm.md)). |
 | `0x801F6950` | u32 | **battle-action overlay PRNG state** (`FUN_801D0290`). Overlay-resident, so it is not the SCUS `rand()` seed and its draws do not perturb that stream. |
-| `0x801F696C` |  | The queue builder's **special-trigger** flag. Cleared at the head of `FUN_801EED1C` (`0x801EED88`); set to `1` by the Miracle arm (`sw` at `0x801EF5B8`, the delay slot of the `j` at `0x801EF5B4`), by the Super tail match (`0x801EFBD4`) and by `FUN_801F0450` at `0x801F0518` - the head of its **auto-fill** arm, the first instruction past the `+0x16E & 0x404` veto, not the art insertion tail an earlier revision named, so it is raised for every party slot that arm takes. Its one reader, `0x801E3840`, gates the strike loop's per-frame swing drift for a clip that carries a header byte (port `swing_drift`); what makes Miracle-before-Super ordering observable. See [`battle-action.md`](../subsystems/battle-action.md). |
+| `0x801F696C` |  | The arts queue builder's **special-trigger** flag: cleared at the head of `FUN_801EED1C` (`0x801EED88`), set to `1` by the Miracle arm, the Super tail match and `FUN_801F0450`'s auto-fill arm. Its one reader, `0x801E3840`, gates the strike loop's per-frame swing drift. [Details ↓](#0x801f696c---the-special-trigger-flag) |
 | `0x801F6978` / `0x801F6980` |  | Battle-overlay data just below the slot-B base: `0x801F6980..0x801F6987` is the multi-cast **value-readout window** (four slots, count at `0x801F6974`, row `0x801F6834`) that `FUN_801E805C` renders and tears down. PROT 0915 also writes it (seven pairs), reaching *down* into PROT 0898's data ([`cast-module.md`](../subsystems/cast-module.md)). |
 | `0x801F6990` | u32[16] | The arts queue-builder's per-token side array: `1` = an accepted art's starter (build loop), `4` = a Super tail-replace starter; read by the marked-starter reorder pass `0x801EF8A0..0x801EF968`, and by SCUS `FUN_8004AD80` at `0x8004B804`, whose store at `0x8004B80C` raises the Arts banner selector `ctx[+0x28B]` over the `3` written just before it. |
 
@@ -491,7 +515,7 @@ The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C
 | `0x801D1A7C` |  | The still's **level** - broadcast into all three colour bytes of each quad, the call skipped at zero (`beqz a0, 0x801D00B8`). Six hub arms own it: the re-entry init zeroes it at `0x801CECD0`; arm `0x0A` raises it `4 dt` to `0x80`, `0x0B` lowers it `2 dt` to `0x40` while tally lane 0 sits at its clamp, `0x0C` and `0x15` hold, `0x14` raises it again on the latch-`1` arm, and `0x16` drains it `2 dt` to `0` at `0x801D002C..0x801D0040` ([`ringside-still.md`](../formats/ringside-still.md#on-a-natural-re-entry)). |
 | `0x801D1ABC` / `0x801D1AC0` / `0x801D1AC4` / `0x801D1AB8` |  | The tally screen's four per-lane **fade counters**, each clamped at `0x10` - the brightness source the six drawn rows pick from, using four of them (`[0, 1, 2, 0, 3, 3]`) rather than six. |
 | `0x801D1AC8` |  | The shared **sink** lanes 0..2 drain into - the HP-restore accumulator - drawn as row **3**, between lanes 2 and 3 rather than under them. Lane 3's own sink is `_DAT_80084440`, the running contest tally, drawn as row 5. |
-| `0x801D1ACC` / `0x801D1AD0` / `0x801D1AD4` / `0x801D1AAC` |  | The four per-lane **pending** values the count-up drains, drawn as rows 0, 1, 2 and 4. `0x801D1ACC` is lane 0's - `FUN_801D1184` re-forms the `0x801D` base into a different register between the product and the store (`0x801D11E0` / `0x801D11F0`), which is what once mis-attributed the lanes to each other. |
+| `0x801D1ACC` / `0x801D1AD0` / `0x801D1AD4` / `0x801D1AAC` |  | The four per-lane **pending** values the count-up drains, drawn as rows 0, 1, 2 and 4. `0x801D1ACC` is lane 0's: `FUN_801D1184` re-forms the `0x801D` base into a different register between the product and the store (`0x801D11E0` / `0x801D11F0`), so the store's lane has to be read off the second base. |
 | `0x801D1AE0` |  | **Panel-still latch** in the contest hub PROT 0977. Zero draws the hub's live six-tile scene; non-zero draws the ringside still as two `POLY_FT4` quads (`FUN_801D00F8`). Written only by the arena init `FUN_801CEA6C` - `0` at `0x801CEB54` on a first entry, `1` at `0x801CEC04` on every re-entry - so the still is a re-entry screen. |
 | `0x801D1AE4` |  | Free-running **SFX voice counter**; `FUN_801D1288` round-robins one key-on per frame across voices `0x10..=0x13` on `counter & 3`. Not a brightness cell. |
 
@@ -499,7 +523,7 @@ The old "title overlay at `0x801C0000`" and "menu overlay = PROT 0896 at `0x801C
 
 | Address | Type | Purpose |
 |---|---|---|
-| `0x801D46CC` | records | Dance-overlay **HUD widget table**, 34 records x 20 bytes (`addiu v0,v0,0x46cc` at `0x801D2F74`, index `(a2 & 0x3FF) * 20`). Record 0 is the count-in banner - CBA `0x7D0A` at `+0x06`, texel seat `(0x48, 0x90)` at `+0x08`, texel cell `0xA0` x `0x20` at `+0x0A` - and `FUN_801D2F38` halves those two at the caller's `0x1000` unit scale (`(w * scale) >> 13` at `0x801D3180..0x801D319C`) before centring on the seat, so the drawn banner is 160 x 32. Reading `+0x0A` as half-extents doubles it. The callers pass the seat `0x77` for the slide halves and `0x78` for the hold, patching the `+0x0F` blend byte to `1` and `0`. Layout in [`minigame-dance.md`](../subsystems/minigame-dance.md#hud-widget-table-dat_801d46cc--emitter-geometry). |
+| `0x801D46CC` | records | Dance-overlay **HUD widget table**, 34 records x 20 bytes (`addiu v0,v0,0x46cc` at `0x801D2F74`, index `(a2 & 0x3FF) * 20`). Record 0 is the count-in banner: CBA `0x7D0A` at `+0x06`, texel seat `(0x48, 0x90)` at `+0x08`, texel cell `0xA0` x `0x20` at `+0x0A`. The cell is a full extent, not a half-extent: `FUN_801D2F38` halves both at the caller's `0x1000` unit scale (`(w * scale) >> 13` at `0x801D3180..0x801D319C`) before centring on the seat, so the drawn banner is 160 x 32. Layout and the slide / hold callers (seats `0x77` / `0x78`) in [`minigame-dance.md`](../subsystems/minigame-dance.md#hud-widget-table-dat_801d46cc--emitter-geometry). |
 | `0x801D53CC` |  | Dance-points counter. |
 
 ### PROT 0896 (never loaded)
@@ -521,10 +545,10 @@ Because the band starts inside PROT 0898's extent, a module paged during battle 
 | `0x801F73F8` | u32 | PROT 0968 stage-module-local dt countdown (module base `0x801F69D8` + `0xA20`); its expiry hands `ctx[+0x06]` back to `0x0B` at `0x801F713C`. |
 | `0x801F7A9C..0x801F8F28` | code | PROT 0900's **screen-effect widget family**: the sprite widget `FUN_801F7A9C` and its spawner `FUN_801F8004`, the iris mask `FUN_801F811C` and its control API `FUN_801F8D4C`, the letterbox `FUN_801F8A34` / `FUN_801F8F28`; spawn descriptors at `0x801F8FE4` / `0x801F8FFC`. Field-VM op `0x43` subs `0x10` / `0x11` call into them ([`move-vm.md`](../subsystems/move-vm.md#screen-effect-widget-family-prot-0900)). |
 | `0x801F8534` / `0x801F853C` |  | Slot-B module PROT 0907 (`summon_nighto`): its two roll sites. `0x801F8534` is `rand() % 8` - zero kills the victim, anything else confuses it - and `0x801F853C` is the resist roll `rand() % (0x13 - level) >= 9`. The resist is **forced** rather than rolled when the fight is scripted and the victim's monster record carries `+0x20`, and forced again on `rand() % 3 == 0` for character index 3. Only the kill roll forks the module's phase. |
-| `0x801F864C` / `0x801F83EC` / `0x801F7A04` |  | Slot-B band: three more of the per-module arm countdowns. One VA per image, not one cell: `0x801F864C` is PROT 0940's (and, at the same address in a different image, PROT 0913's move-VM stager), `0x801F83EC` is PROT 0941's and `0x801F7A04` is PROT 0943's. Each is drained by its own arm's multiplier of the scratchpad frame byte, the same shape as PROT 0955's `0x801F9D28` above. |
+| `0x801F864C` / `0x801F83EC` / `0x801F7A04` |  | Slot-B band: three more of the per-module arm countdowns. One VA per image, not one cell: `0x801F864C` is PROT 0940's (and, at the same address in a different image, PROT 0913's move-VM stager), `0x801F83EC` is PROT 0941's and `0x801F7A04` is PROT 0943's. Each is drained by its own arm's multiplier of the scratchpad frame byte, the same shape as PROT 0955's `0x801F9D28` below. |
 | `0x801F8BA8` / `0x801F9200` |  | Slot-B modules PROT 0908 / 0904: the victim latch each writes. A module-local word holding the seat the arm resolved, so later arms of the same cast act on it without re-resolving. Both sit inside their own image's content. |
 | `0x801F8EE0..0x801F8EF4` |  | Slot-B PROT 0901 (world map): a **save / restore** of the scratchpad walk box and view-window bytes. It saves `0x1F800384` / `0x1F800385` and `0x1F8003E8..EB` at `0x801F6AA0` and restores them at `0x801F7344` (two references each); the world map reads the same box the field publishes, so the dev menu's CAMERA readout lacks only its row, not a box. |
-| `0x801F9D28` / `0x801F9D2C` |  | Slot-B module PROT 0955 (`cast_white_shield`): the two words its tick bodies share. Module-resident (`base + 0x3350` / `+0x3354` of a `0x3800`-byte image), read and written by 48 sites inside 0955 alone. `0x801F9D28` is the per-arm **frame countdown**, drawn down by the `scratch[0x37D] * scratch[0x393]` product; `0x801F9D2C` is the accessory **slot index** the Void Accessories arm rolls. The countdown's frame values are measured for the player-Seru half of the band and unmeasured for the fourteen trampoline-reached capture-class arms - [open thread](open-rev-eng-threads.md#battle--rendering). |
+| `0x801F9D28` / `0x801F9D2C` |  | Slot-B module PROT 0955 (`cast_white_shield`): the two words its tick bodies share. Module-resident (`base + 0x3350` / `+0x3354` of a `0x3800`-byte image), read and written by 48 sites inside 0955 alone. `0x801F9D28` is the per-arm **frame countdown**, drawn down by the `scratch[0x37D] * scratch[0x393]` product; `0x801F9D2C` is the accessory **slot index** the Void Accessories arm rolls. The countdown's frame values are measured for the player-Seru half of the band; for the fourteen trampoline-reached capture-class arms they are unmeasured ([`cast-module.md`](../subsystems/cast-module.md#frame-gating-measured)). |
 
 ## Free RAM and stack (`0x801FA9D8-0x801FFFFF`)
 
@@ -556,10 +580,10 @@ The PSX has 1 KB of fast on-chip RAM here, outside the 2 MB. Legaia uses the low
 | `0x1F80037E` | u16 | Scratchpad **near cutoff** (`0x1F800314 + 0x6A`), `0x10` from the scene init (`FUN_8001D424`). Every TMD prim handler behind `FUN_80043390` drops a primitive whose `OTZ` is below it ([renderer](../subsystems/renderer.md#the-per-primitive-near-reject)); the segment emitter `FUN_801D5C2C` rejects a segment whose two transformed Z both fall inside it. |
 | `0x1F800384..87` | 4 × u8 | Current walk-region AABB in tiles, store order `rec[0], [3], [2], [1]`; default `0, 0, 0x7F, 0x7F`. |
 | `0x1F800388..0x1F80038E` | 4 x u16 | Draw-context **2-D clip rect** (`0x1F800314 + 0x74..0x7A`) used by `FUN_801D56E4`: x-min, y-min, x-max, y-max. The PROT 0900 mask widget reads the same `0x1F800388` / `0x1F80038E` as its screen x-origin and height. |
-| `0x1F800393` | u8 | **Per-frame tick byte** - how many display frames the last loop iteration took. The frame pacer `FUN_80016E4C` writes it (`sb v0,0x393(at)` at `0x80017068` on the vsync-locked leg; the measured leg picks `1` / `2` / `3` / `4` against the elapsed-time thresholds `0xF1` / `0x1FF` / `0x2D1` at `0x80017124..0x8001715C`, then caps the result against `_DAT_8007B9D8`), and the previous frame's value is kept at `0x1F800392`. Read by op 0x4A `WAIT_FRAMES` and the 0xFFFF sentinel in op 0x4C nibble-C sub-B/C. Also subtracted from the title-attract countdown at `0x801EF16C` every tick (see [`subsystems/boot.md`](../subsystems/boot.md#tick-function)). `see ghidra/scripts/funcs/80016e4c.txt`. |
-| `0x1F800394` | u32 | **Field-VM transient flag word** (32-bit; **not** persisted - distinct from the saved story-flag bitmap). Script-VM bits are set/clear/tested by `GFLAG_SET` / `GFLAG_CLR` / `GFLAG_TST` (ops 0x2E / 0x2F / 0x30, `1 << (idx & 0x1f)`); also gates op 0x4C nibble-4 sub-9's tristate dispatch via bits `0x01000000` / `0x02000000`. The **lower 16 bits** are re-seeded on every mode switch from `mode_table[_DAT_8007B83C].param` (`+0x14`) by `FUN_8001DCF8 @ 0x8001E17C` - its sole non-RMW writer (see [`save-screen.md`](../subsystems/save-screen.md)). Bit 0x40 is set by the scene-change packet `FUN_8001FD44` (a scene-transition-pending flag, **not** a "dialog active" lock - an earlier mislabel). Bit 22 is the [camera re-query gate](#the-camera-re-query-gate). |
+| `0x1F800393` | u8 | **Per-frame tick byte** - how many display frames the last loop iteration took; the previous frame's value is kept at `0x1F800392`. Written by the frame pacer inside `FUN_80016B6C`. [Details ↓](#0x1f800393---the-per-frame-tick-byte) |
+| `0x1F800394` | u32 | **Field-VM transient flag word** - 32 bits, **not** persisted, distinct from the saved story-flag bitmap. `GFLAG_SET` / `GFLAG_CLR` / `GFLAG_TST` (ops `0x2E` / `0x2F` / `0x30`) address bit `1 << (idx & 0x1f)`; the lower 16 bits are re-seeded on every mode switch. [Named bits ↓](#0x1f800394---the-transient-flag-word) |
 | `0x1F800394` bit 0 | flag | **Kingdom-overworld flag.** Set on every non-battle kingdom-overworld state (`map01` / `map02` / `map03`, field-run and pause menu) across the mednafen save-state library and clear on every other state, battles fought on an overworld included (capture). The ambient-particle spawner `FUN_801D629C` (PROT 0897) reads it twice (`lw v0,0x80(s4)` with `s4 = 0x1F800314`): at `0x801D6448` it adds a camera-space depth test before the slot pop, and at `0x801D651C` a further `-0x28` height lift; the emitter `FUN_801D6058` switches to its dense profile on it ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-pool-on-the-kingdom-overworld)). |
-| `0x1F800394` bit 23 | flag | Forks op `0x34` sub-0 (`lui v1, 0x80` at `0x801DFD1C` / `0x801DFEB0` in PROT 0897): set -> `FUN_80024E80`, clear -> `FUN_801DE2B0`. No store the disc executes sets it, so retail always takes the clear arm ([settled](re-settled-threads.md#field--locomotion)). |
+| `0x1F800394` bit 23 | flag | Forks op `0x34` sub-0 (`lui v1, 0x80` at `0x801DFD1C` / `0x801DFEB0` in PROT 0897): set -> `FUN_80024E80`, clear -> `FUN_801DE2B0`. No store the disc executes sets it, so retail always takes the clear arm ([settled](re-settled-threads/field.md)). |
 | `0x1F800398` | u32 | Overworld ground `RGBC` loaded by `FUN_801F89B8` before its depth cue (`0x2C808080` on keikoku) - the base colour, not the far colour. `FUN_80026CE4` rewrites it every frame as `0x2C000000 \| (0x8007B7B0 & 0xFFFFFF)`. |
 | `0x1F8003A0` | ptr | **Active primitive/packet write cursor** (`[0x1F800314]+0x8C`). The `POLY_*` emitters (`FUN_8003C43C` G4, `FUN_8003C510` G3, `FUN_8002BDC4` gradient tile, and the TMD per-primitive emitter `FUN_80027C6C`) allocate their packet here, post-increment by the packet size, then link it through `FUN_8003D2C4`. |
 | `0x1F8003E8..EB` | 4 × i8 | Camera **visible tile window** `[nearX, nearZ, farX, farZ]`, signed tile offsets from the camera tile. Written by `FUN_801DBC20` and field-VM op `0x46`; read by the render library's cell emitters, `FUN_801DAA50`, `FUN_801D6058` and dev-menu rows `0x12..0x15`. Formed as `lui 0x1F80; ori 0x314; lb 0xD4(rX)`, so the word scan never sees it. |
@@ -588,24 +612,13 @@ Per-actor fields cited elsewhere in this map. Battle actors live in the pool at 
 
 ### Field actor `+0x72` / `+0x74` / `+0x78` - scale, tint, draw mode
 
-Three per-actor halfword / word fields that read as one another, and have
-each been mistaken for a different channel.
+Three per-actor fields that sit side by side and are easy to mis-assign:
 
-- **`+0x72`** is the **render scale** `FUN_8001B964` reads, written by the
-  scripted motion VM's op `0x14`. It is the same halfword the field
-  locomotion code reads as a speed multiplier, which is what makes the
-  neighbouring fields easy to mis-assign.
-- **`+0x74`** is a packed `[R][G][B][mode]` word - **byte 0 is red**, split
-  low byte first by `FUN_80043390` into `cr21/22/23` at `0x800434C8`. Motion
-  op `0x0C` fades it through scheduler kind 3.
-- **`+0x78`** is the **draw mode** the same op-`0x0C` fade carries alongside
-  the tint. Neither field is a position channel, so "op `0x0C` is a glide"
-  describes a movement the VM does not perform
-  ([falsified](re-do-not-re-walk.md#field--locomotion)).
+- **`+0x72`** is the **render scale** `FUN_8001B964` reads, written by the scripted motion VM's op `0x14`. The field locomotion code reads the same halfword as a speed multiplier.
+- **`+0x74`** is a packed `[R][G][B][mode]` word - **byte 0 is red**, split low byte first by `FUN_80043390` into `cr21/22/23` at `0x800434C8`. Motion op `0x0C` fades it through scheduler kind 3.
+- **`+0x78`** is the **draw mode** the same op-`0x0C` fade carries alongside the tint.
 
-The ribbon literals in `FUN_8005112C` are a *different* word, reached through
-`FUN_80048310` -> `FUN_800485BC` at byte 2 - which is what once made the two
-look like one field.
+Neither `+0x74` nor `+0x78` is a position channel, so op `0x0C` is not a glide ([falsified](re-do-not-re-walk.md#field--locomotion)). The ribbon literals in `FUN_8005112C` are a *different* word, reached through `FUN_80048310` -> `FUN_800485BC` at byte 2.
 
 ## Global / cell details
 
@@ -641,8 +654,8 @@ carried while locked leaves the focus behind until it next walks.
 ### `0x1F80035C` - the floor-elevation ladder
 
 Sixteen signed heights, indexed by the low nibble of a collision byte. Three
-things install a ladder and three read one, and mixing them up is what produced
-the "inverted-Y mirror table" reading.
+things install a ladder and three read one. It is not an "inverted-Y mirror
+table", and it is at `0x1F800314 + 0x48`, not at `0x1F800314`.
 
 **Writers.** Scene entry: `FUN_8003AEB0` copies the MAN header's sixteen
 **negated** `short`s from `_DAT_8007B898 + 2`. Script: field-VM op `0x4C`
@@ -663,9 +676,9 @@ The nibble-9 arm's own write-up is in
 ### `0x8007B83C` - the front-end mode chain
 
 Six stores carry a cold boot from the logo to the field, and each one lives in
-the handler that hands off - there is no table field naming the next mode. That
-is why a trace which samples the mode word once, early, reads the title screen
-as running under `0x10`.
+the handler that hands off - there is no table field naming the next mode. A
+trace that samples the mode word once, early, sees `0x10`; the title screen
+runs under `0x17`.
 
 | Store site | Writes | Meaning |
 |---|---|---|
@@ -682,12 +695,9 @@ See [`boot.md`](../subsystems/boot.md).
 
 Mechanism-first treatment (the window, the helper family, the design intent, the folklore): [`inventory.md`](../subsystems/inventory.md).
 
-**Item inventory** array (= SC `+0x1818`), 2-byte stride `(id, count)`; the `Have 99 Items` cheat targets the count bytes over `0x80085958..0x800859E8`, which is that cheat's 72-slot general-item **page**, not an engine bound. Stacks cap at 99. The read/consume/merge accessors (`FUN_80042310`/`_42EE0`/`_42F4C`/`_423E0`/`_43048`) all scan/write within the active window `gp[+0x2D2]..gp[+0x2D4]` and fully bound the slot index on `gp[+0x2D4]`.
+The array is save block `+0x1818`, on a 2-byte stride `(id, count)`; stacks cap at 99. The read / consume / merge accessors (`FUN_80042310`/`_42EE0`/`_42F4C`/`_423E0`/`_43048`) all scan and write within the active window `gp[+0x2D2]..gp[+0x2D4]` and fully bound the slot index on `gp[+0x2D4]`. The `Have 99 Items` cheat targets the count bytes over `0x80085958..0x800859E8`, which is that cheat's 72-slot general-item **page**, not an engine bound.
 
-**The active window is context state, installed by `FUN_8004313C`** - the sole
-`SCUS_942.54` writer of either halfword (11 callers; `FUN_800423E0` calls it
-before normalizing). It branches on the party-member count at SC`+0x454`
-(`0x80084594`):
+**The active window is context state, installed by `FUN_8004313C`** - the sole `SCUS_942.54` writer of either halfword (11 callers; `FUN_800423E0` calls it before normalizing). It branches on the party-member count at save block `+0x454` (`0x80084594`):
 
 | members | window installed |
 |---|---|
@@ -695,61 +705,38 @@ before normalizing). It branches on the party-member count at SC`+0x454`
 | `1` | story flag 20 (`FUN_8003CE64`) set: `[0, 256)`; clear: the half chosen by `0x80084598` - `[128, 256)` when nonzero, else `[0, 128)` |
 | `>= 2` | `[0, 256)`, no flag test |
 
-The length also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or
-`256`. Live cross-check on a mid-game battle state with a three-member party:
-`3` at `0x80084594`, `(start, end, len) = (0, 256, 256)`, 160 contiguous
-occupied slots. A sweep of the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) finds one direct array write: the Throw Out confirm `FUN_801D8734` zeroes the selected slot's id and count itself (`sb zero` at `0x801D88FC` / `0x801D8910`, see [`inventory.md`](../subsystems/inventory.md)); every other inventory op calls these SCUS helpers (passing item ids / helper-returned slots), so the menu has no raw-index sort/swap primitive.
+The length also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or `256`. A mid-game battle state with a three-member party reads `3` at `0x80084594`, `(start, end, len) = (0, 256, 256)` and 160 contiguous occupied slots.
 
-The **add** helper `FUN_800421D4` is the one exception worth noting: its id store precedes the bound check, so a full-window add writes the item id **one slot past** the window (`0x80085958 + gp[+0x2D4]*2`); only its count store is guarded (see [`functions.md`](functions.md)).
+**The menu has no raw-index sort / swap primitive.** Across the item-menu overlay (`overlay_menu.bin`, all 129 functions via `dump_menu_inventory_refs.py`) one routine writes the array directly: the Throw Out confirm `FUN_801D8734` zeroes the selected slot's id and count itself (`sb zero` at `0x801D88FC` / `0x801D8910`, see [`inventory.md`](../subsystems/inventory.md)). Every other inventory op calls the SCUS helpers, passing item ids or helper-returned slots.
 
-**Where the OOB lands.** The target is `0x80085958 + gp[+0x2D4]*2`, so with `FUN_8004313C`'s only two `end` values it is `0x80085A58` (`end = 128`) or `0x80085B58` (`end = 256`) - the latter the first byte past the save block, where the sound-driver work area begins. It is not `0x800859E8` (save block `+0x18A8`): that address is only the end of the 72-slot cheat page, which is not the window.
+**The add helper stores the id before its bound check.** In `FUN_800421D4` the id store at `0x800422BC` precedes the guard and only the count store is guarded (see [`functions.md`](functions.md)), so a full-window add writes the item id **one slot past** the window, at `0x80085958 + gp[+0x2D4]*2`. With `FUN_8004313C`'s only two `end` values that is `0x80085A58` (`end = 128`) or `0x80085B58` (`end = 256`) - the latter the first byte past the save block, where the sound-driver work area begins. It is not `0x800859E8` (save block `+0x18A8`), which is only the end of the 72-slot cheat page.
 
-**The `pc=0x800422BC` probe hits are not OOB evidence.** That store executes on
-*every* successful add, before the guard - the free-slot scan runs once and
-exits either at the first `id == 0` slot (ordinary, in-window) or at
-`i == end` (the primitive). The probe's two hits - casino prize-exchange
-`id=0x9C` at `0x800859E8` and equip-unequip `id=0xD0` at `0x800859EA` - are
-consecutive slots 72 and 73, i.e. exactly the ordinary id store for a bag whose
-first free slot was 72. **Reachability of the primitive: unreachable through the
-retail add call sites in normal play.** A `[0,256)` window holds at most 255
-distinct ids (the merge pass keys on the id byte, `0` is the empty sentinel), so
-a hole always remains and the free-slot scan exits in-window; the half-windows
-are a transient solo phase whose real item population is well below 128. Only a
-non-add path (debug menu / cheat / crafted save) can force the `i == end` exit.
-See [`re-settled-threads.md`](re-settled-threads.md#full-window-item-add-oob-reachability).
+A hit on the `pc=0x800422BC` store is not out-of-window evidence by itself: it executes on *every* successful add, and the free-slot scan before it exits either at the first `id == 0` slot (ordinary, in-window) or at `i == end` (the primitive). Captured writes of `id=0x9C` at `0x800859E8` (casino prize exchange) and `id=0xD0` at `0x800859EA` (equip-unequip) are consecutive slots 72 and 73 - the ordinary id store for a bag whose first free slot was 72.
 
-A memory-safe RE model of this accessor family (incl. the primitive surfaced as
-`AddOutcome::OobIdWrite { oob_target, written_id }`) lives in
-[`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
+**The primitive is unreachable through the retail add call sites in normal play.** A `[0,256)` window holds at most 255 distinct ids (the merge pass keys on the id byte, `0` is the empty sentinel), so a hole always remains and the free-slot scan exits in-window; the half-windows are a transient solo phase whose real item population is well below 128. Only a non-add path (debug menu / cheat / crafted save) can force the `i == end` exit. See [`re-settled-threads.md`](re-settled-threads/title-boot-overlays.md#full-window-item-add-oob-reachability).
+
+A memory-safe model of this accessor family, with the primitive surfaced as `AddOutcome::OobIdWrite { oob_target, written_id }`, lives in [`legaia_save::retail_inventory`](../../crates/save/src/retail_inventory.rs).
 
 ### `0x8007C018` - Global TMD pointer table
 
-**Global TMD pointer table.** Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer (verified across SCUS + every world-map overlay via [`find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)). Every populated entry `[0..DAT_8007BB38]` is a post-fixup Legaia TMD: magic `0x80000002`, flags = 1, `group_count` at `+0x8`, group-descriptor array (`0x1C`-byte stride) at `+0xC`.
+Installer `FUN_80026B4C @ 0x80026BA8` is the *sole* writer, across SCUS and every world-map overlay ([`find_addr_materializer_dat_8007c018.py`](../../ghidra/scripts/find_addr_materializer_dat_8007c018.py)). Every populated entry `[0..DAT_8007BB38]` is a post-fixup Legaia TMD: magic `0x80000002`, flags = 1, `group_count` at `+0x8`, group-descriptor array (`0x1C`-byte stride) at `+0xC`.
 
-A settled **field-scene** snapshot (scene `dolk`, `game_mode 0x03`, scene id `0x3c`): 143 entries - `[0..4]` = 5 character-mesh TMDs (disc source: PROT 0874 `befect_data` section 0, byte-equality verified; see [`world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04)),
+Only asset-dispatcher cases `0x02` / `0x09` reach `FUN_80026B4C`. The type-`0x05` slot-4 bank does **not** install into `DAT_8007C018`, so the slot-4 outer-pack signature is absent from steady-state RAM.
 
-`[5..142]` = 138 **scene-pack** TMDs - the scene's field-file TMD pack, installed as one contiguous 138-entry pack by the single descriptor-walk `FUN_80020224` → `FUN_8001f05c` case 2 → `FUN_80026B4C` (the `0x8011xxxx` addresses in it are TMDs from that pack, not slot-4 bodies; type-`0x05` slot-4 does **not** install into `DAT_8007C018` - only cases `0x02`/`0x09` reach `FUN_80026B4C` - so the slot-4 outer-pack signature is absent from steady-state RAM). A mid-load snapshot (the `geremi` field scene, scene id `0xa5`, captured mid-load) shows fewer installed entries; reading past `DAT_8007BB38` returns stale pointers from the previous game state, **but no consumer ever does this**. Consumed by `FUN_801F69D8` (world-map top-view),
+A settled **field-scene** state (scene `dolk`, `game_mode 0x03`, scene id `0x3c`) holds 143 entries:
 
-`FUN_80021B04` / `FUN_80024D78` (SCUS actor allocators), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker), `FUN_8001E890` (per-pack count override), `FUN_8001EBEC` (per-party-member group-descriptor patch - equipment-conditional mesh swap for 3 party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`).
+- `[0..4]` - 5 character-mesh TMDs. Disc source: PROT 0874 `befect_data` section 0, byte-equality verified; see [`world-map-overlay.md` § Disc-side source of `[0..4]`](../formats/world-map-overlay.md#disc-side-source-of-04).
+- `[5..142]` - 138 **scene-pack** TMDs, the scene's field-file TMD pack, installed as one contiguous pack by the single descriptor walk `FUN_80020224` → `FUN_8001f05c` case 2 → `FUN_80026B4C`. The `0x8011xxxx` addresses in it are TMDs from that pack, not slot-4 bodies.
+
+A mid-load state (the `geremi` field scene, scene id `0xa5`) shows fewer installed entries. Entries past `DAT_8007BB38` are stale pointers from the previous game state, and no consumer reads them.
+
+Consumers: `FUN_801F69D8` (world-map top view), `FUN_80021B04` / `FUN_80024D78` (SCUS actor allocators), `FUN_801D77F4` (overlay actor allocator), `FUN_801D8280` (table walker), `FUN_8001E890` (per-pack count override), `FUN_8001EBEC` (per-party-member group-descriptor patch - the equipment-conditional mesh swap for 3 party slots at `DAT_8007C018[DAT_8007B824 + 0..2]`).
 
 ### `0x80076C10` - one table, three names
 
-Three subsystems index this array, and each was documented after the consumer
-that found it: a battle **pose-slot array**, the party-panel **publish
-target**, and the Muscle Dome's **element layout table** / "battle HUD block
-base". All three cite the same base and the same `0x18` stride, so there was
-never a disagreement about the bytes - only three names for one table, none of
-which said what a record is.
+Three subsystems index this array, each under its own name: a battle **pose-slot array**, the party-panel **publish target**, and the Muscle Dome's **element layout table** / "battle HUD block base". All three cite the same base and the same `0x18` stride; they are one table. Prefer "screen-element placement table".
 
-A record is a **screen-element placement**, and the disassembly settles it. The
-"pose-slot re-mapped copy" `FUN_801D5778` clones a record and writes
-`dst[+0xA] = src[+0xA] - 0x140`. `0x140` is 320 - the PSX display width - so
-the field it shifts is a **screen X**, and the operation is "place this element
-one screen to the left". Poses do not get offset by a display width; that is a
-slide-in / off-screen staging idiom. The initialised data agrees: `+0x08` reads
-`0x0C` in every record (a 12-pixel line height), `+0x0A`/`+0x0C` carry a second
-x/y that goes negative (e.g. `-44`) where `+0x02`/`+0x04` do not, and `+0x14`
-is either null or a pointer into the `0x8007B6xx` gp-pool band.
+A record is a **screen-element placement**, not a pose. `FUN_801D5778` clones a record and writes `dst[+0xA] = src[+0xA] - 0x140`; `0x140` is 320, the PSX display width, so the field it shifts is a **screen X** and the operation is the slide-in idiom "place this element one screen to the left". The initialised data agrees: `+0x0A`/`+0x0C` carry a second x/y that goes negative (e.g. `-44`) where `+0x02`/`+0x04` do not, and `+0x14` is either null or a pointer into the `0x8007B6xx` gp-pool band.
 
 | Offset | Field |
 |---|---|
@@ -762,36 +749,13 @@ is either null or a pointer into the `0x8007B6xx` gp-pool band.
 | `+0x12` | zero in all 103 records |
 | `+0x14` | content **string** pointer - measured by the rendered-width kernel `FUN_80035F04` into `+0x06`; the battle name plaque points it at the acting actor's display-name buffer `actor+0x1BC` (not an animation descriptor) |
 
-The record is a **two-seat pair**: `FUN_801D8DE8` has one spawn arm per seat
-(`0x801D92E8` for A, `0x801D935C` for B, chosen by `mode & 1`) and arms the
-glide `FUN_801DB7B0` toward the seat it did not spawn from. Three movers copy
-records around the table: `FUN_801D5718` (land: seat B into both seats),
-`FUN_801D5778` (launch: seat B pushed `-0x140`), `FUN_801D57E8` (clone).
+`+0x08` is not one constant: `0x0C` is the 12-pixel line height of the plate-run family (name plaque, party status bar, command chips), while the roster panels carry `50` and the framed windows `120` / `42` / `28` / `26`.
 
-The array holds **103 initialised records**, `0x80076C10..0x800775B8`; parser
-`legaia_asset::screen_elements`, disc-gated oracle
-`crates/asset/tests/screen_elements_real.rs`. Records 41/42 (`+0x3D8` /
-`+0x3F0`) are the pair `FUN_801D5854` shifts inline (42 inherits 41's string,
-width and seat-B x; 41 takes `actor+0x1BC`, is measured, and re-seated at
-centre x 232 with a right clamp at 304 and a park at 328 or beyond).
+The record is a **two-seat pair**: `FUN_801D8DE8` has one spawn arm per seat (`0x801D92E8` for A, `0x801D935C` for B, chosen by `mode & 1`) and arms the glide `FUN_801DB7B0` toward the seat it did not spawn from. Three movers copy records around the table: `FUN_801D5718` (land: seat B into both seats), `FUN_801D5778` (launch: seat B pushed `-0x140`), `FUN_801D57E8` (clone). Records 41/42 (`+0x3D8` / `+0x3F0`) are the pair `FUN_801D5854` shifts inline: 42 inherits 41's string, width and seat-B x; 41 takes `actor+0x1BC`, is measured, and is re-seated at centre x 232 with a right clamp at 304 and a park at 328 or beyond.
 
-The disc bytes bound the extent. The run is
-**not** 200 records to `0x80077ED0`: index 129 is `0x80077828`, the per-monster
-[steal table](../formats/steal-table.md), so 129 is a hard ceiling, and the
-placement shape itself stops at 103 - every record below keeps all four
-coordinates within `+/-416` while record 105 already carries `-1000`. And
-`+0x08` is **not** `0x0C` throughout: `0x0C` is the line height of the
-plate-run family (name plaque, party status bar, command chips), while the
-roster panels carry `50` and the framed windows `120` / `42` / `28` / `26`.
+The array holds **103 initialised records**, `0x80076C10..0x800775B8`; parser `legaia_asset::screen_elements`, disc-gated oracle `crates/asset/tests/screen_elements_real.rs`. The disc bytes bound the extent. It is not 200 records to `0x80077ED0`: index 129 is `0x80077828`, the per-monster [steal table](../formats/steal-table.md), so 129 is a hard ceiling, and the placement shape itself stops at 103 - every record below keeps all four coordinates within `+/-416` while record 105 already carries `-1000`.
 
-A record is a **content box**, and the chrome around it is derived rather than
-stored - `pen = (x, y - 2)` and `plate = (x - 8, y - 6)` sized `(w + 16, 20)`.
-[`battle.md`](../subsystems/battle.md#one-placement-record-derives-every-plate)
-has the packet evidence and the per-surface table.
-
-Prefer "screen-element placement table" when naming it. "Pose-slot array" is
-the narrowest of the three names and the only one the record layout
-contradicts.
+A record is a **content box**, and the chrome around it is derived rather than stored - `pen = (x, y - 2)` and `plate = (x - 8, y - 6)` sized `(w + 16, 20)`. [`battle.md`](../subsystems/battle.md#one-placement-record-derives-every-plate) has the packet evidence and the per-surface table.
 
 ### `0x8007B8C2` - build-mode (dev/retail) loader selector
 
@@ -825,8 +789,7 @@ once during cold-boot init:
 `FUN_8003F084` is a two-instruction leaf that returns the constant `1`
 unconditionally, and `0x80015F00` is its only caller - a stubbed-out build-mode
 predicate the dev build presumably returned `0` from. The store is **gp-relative**,
-which is why address sweeps that searched only the absolute `lui 0x8008` /
-`-0x473e` form reported "zero writers" (see
+so a sweep for only the absolute `lui 0x8008` / `-0x473e` form finds no writer (see
 [`tooling/ghidra.md`](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims)).
 
 The flag is **not** established by BSS zero-init: `SCUS_942.54`'s PS-X EXE header
@@ -840,7 +803,7 @@ it is byte +3 (MSB, little-endian) of the 32-bit debug-mode word `_DAT_8007B98C`
 and that word is the consumer surface - statically pinned at `FUN_8001822C` plus the
 resident field-overlay gates. Poking `_DAT_8007B98F = 1` brings up the debug menu on
 SELECT+triangle in the NA retail build. See
-[`re-settled-threads.md`](re-settled-threads.md#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c).
+[`re-settled-threads.md`](re-settled-threads/title-boot-overlays.md#_dat_8007b98f-is-byte-3-of-the-debug-mode-word-_dat_8007b98c).
 None of the 557 catalogued GameShark / Pro-Action-Replay codes in
 [`legaia-cheats`](cheats.md) target `0x8007B8C2` or `0x8007B98F`.
 
@@ -856,6 +819,145 @@ includes `0x8007B8C2` (it lies below both lower bounds) - there is no
 out-of-bounds flag-index path from script bytecode to the build-mode selector or
 the debug-menu enable. A from-scratch engine should treat both as build-time
 constants and keep its flag-bank writes bounded.
+
+### `0x800797D8` - the callback stack
+
+`ResetCallback` (`FUN_8005FF20`) clears `0x800797D8..0x8007A83F` word by word at boot and points the PsyQ interrupt-callback stack at its top, `0x8007A7F0`.
+
+- The stack is `0xFDC` bytes. The lowest non-zero byte in 274 of 275 library states is `0x8007A570`, about 640 bytes of use.
+- The floor below that is zero on the disc and in every state. Because the block is cleared at boot, code placed there has to be copied in at run time, after `ResetCallback`; bytes patched into the image do not survive.
+- The cheat-derived `0x8007A6BC` row (the acting character's HP/MP scratch) falls inside the used part of this stack.
+
+### `0x8007B64A` - the battle stage id
+
+The byte selects which boss-stage image the battle loader pages into slot B.
+
+- **Reader.** The `0x8005269C` site hands the slot-B pager `FUN_8003EC70` this byte `+ 71`, and the pager's index is `a0 + 895` with no upper clamp, so `2` / `3` page PROT `0968` / `0969` and `0` skips the load.
+- **Value writers.** The field entity tick `FUN_801DA51C` clears it at `0x801DA69C` and writes `1` at `0x801DA6A8` when system flag `0x19` is set; battle latches `3` at `0x801E6D2C`.
+- **Zeroing sites.** SCUS `0x80046E74` / `0x800557AC` / `0x80056114`, field `0x801DA69C`, and both stage images at `0x801F7120` (PROT 0968 and 0969) when the module hands the flow back.
+
+Every access is `gp`-relative, so an absolute-address sweep sees none of them.
+
+### `0x8007B6F8` - the kingdom-TMD prefix offset
+
+The count of party-character TMDs that precede the kingdom-bundle (scene) TMDs in `DAT_8007C018`. Three consumers add it to a model index:
+
+- The world-map dispatcher does `DAT_8007C018[(actor_kind8 + DAT_8007B6F8) * 4]`, which shifts world-map actor-kind indices past the party prefix.
+- The scripted motion VM's op `0x0E` uses it as the low-operand model base (the high-operand base is `0x8007B824`).
+- Field-VM `4C D8` reads it as a halfword (`lhu s0, -0x4908(v1)` at `0x801E2DE0`) and adds its model operand, so that operand is a **scene-bank** index ([`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#the-model-operand-is-a-scene-bank-index)).
+
+Writers: `FUN_80020118` (field-load entry; resets to 0) and `FUN_8001E890` / `FUN_8001E928` (set to `DAT_8007B824 + *player_pack_count`).
+
+### `0x8007B9D4` - the PROT 0874 section-0 buffer
+
+The pointer to the decoded character pack. Its readers are `FUN_8001E890`'s decode arms and the model-pack registrar at `0x8001EAFC`, which takes the pack count off `+0x00` with no clamp and `jal`s `FUN_80026B4C` once per word offset.
+
+It names the same heap block in 97 of 98 catalogued states. In the battle states it reads as another allocation, because the battle load reuses the block - but the registrar is never *entered* over a reused block, because its `gp+0x6AC` gate (`0x8007B9C4`) is reset first ([settled](re-settled-threads/battle.md)).
+
+### `0x8007BAC0` - the special-battle restriction word
+
+Any set bit suppresses gold, EXP, drop, steal, absorb, spell XP and a granted monster flee ([settled](re-settled-threads/battle.md)). Bit `0x100` also gates `0x801E7978` / `0x801E7B40`.
+
+Two writer families:
+
+- **SCUS battle init**, keyed on the first enemy monster id (`0x800519FC`; `0x8005200C` on map `0xC` / `0x15`).
+- **The arena, seeding the word whole.** `FUN_801CEA6C` stores zero at `0x801CEB8C` and then `0x101` / `0x111` / `0x321` at `0x801CEBA0` / `0x801CEBB4` / `0x801CEBC8` on story flags `0x536` / `0x537` / `0x538`, last match winning. All three seeds carry `0x100`, the top one `0x200`.
+
+### `0x8007BAC8` - the BGM request id
+
+Four `sw` sites disc-wide, all in PROT 0897 and all `gp`-relative, so only a `gp`-relative sweep reaches them:
+
+| Site | Writer |
+|---|---|
+| `0x801E012C` | field-VM op `0x35` sub-1 |
+| `0x801E0254` | field-VM op `0x35` sub-9 |
+| `0x801EAD1C` | the dev menu's `BGM CALL` row, installing a sound-test table id |
+| `0x801D6844` | a conditional `sw $zero` inside the per-scene field initializer `FUN_801D6704` |
+
+So the scene **loader clears** the id and the script installs it. The value `0x1000` is a park sentinel: the resolver compares against it at `0x8002454C` and copies the pending index onto the loaded-index barrier, skipping the load.
+
+### `0x8007BD0C` - the formation cell
+
+The cells run `0x8007BD09 + seat`, so seat 3 (monster 0) is `0x8007BD0C`.
+
+- The AI picker `FUN_801E9FD4` switches on the cell (`0x801EB73C`), so each case is bespoke AI for one monster id. `see ghidra/scripts/funcs/overlay_battle_action_801e9fd4.txt`.
+- The same body indexes the PROT 0898 179-arm `jr` table at `0x801CF1CC` with it (`lbu(0x8007BD0C + $s7) - 4` at `0x801EA9FC`, bound `0xB3`) and writes it back at actor `+0x1DE`.
+- The battle draw tick `FUN_800480D8` reads `0x8007BD0D` as `gp+0x9F5`, zero meaning a lone monster.
+
+### `0x8007BD24` - battle context fields
+
+Offsets into the battle context block the pointer names (the battle-actor / AI ctx block):
+
+| Offset | Field |
+|---|---|
+| `+0x07` | the action-state cursor the whole battle keys on |
+| `+0x9` | the pending-SFX write counter |
+| `+0x13` | active slot |
+| `+0x27` | the steal latch, set by `FUN_8004AD80` at `0x8004B3E4` and cleared at each strike chain's exit (`0x801E3A84` in `FUN_801E295C`) |
+| `+0x276` | the side-band applier's stage byte, written by `FUN_801DABA4`, `FUN_801E295C` and `FUN_801F12D0`; both CD-XA cue arms (`FUN_8004FCC8` and `FUN_8004FE5C`) test it. Not a tutorial flag |
+| `+0x279` | module phase byte while a capture-class [cast module](../subsystems/cast-module.md) is paged |
+| `+0x28A` | battle-mode counter |
+
+### `0x8007BDD8` - the field clip base writers
+
+- The pad controller `FUN_801D01B0` is the main writer (`0x801D0424..0x801D04A4`): idle `2`, walk `1`, run `3`, `99` under `0x8007B6A8`.
+- The hop phase machine `FUN_801D2298` writes `6` / `7` / `1`.
+- `FUN_801D1EC4` writes `2` on one arm (`0x801D21AC`).
+- The system channel's `FUN_80039B7C` stores `2` every field tick at `0x80039D94`, after the settle has read the base, which is why the player idles whenever the pad step is skipped ([`field-locomotion.md`](../subsystems/field-locomotion.md#retail-capture-of-the-base-writers)).
+
+### `0x800917B0` - the SPU address table
+
+`FUN_800265E8` seeds the table as words (`sw` at `+0x4` .. `+0x2C`), as the values above `0xFFFF` require:
+
+| Entries | SPU address |
+|---|---|
+| `[0]`, `[10]` | `0x1010` |
+| `[1]`, `[5]` | `0x10010` |
+| `[2]`, `[6]` | `0x33010` |
+| `[3]` | `0x60010` |
+| `[4]`, `[7]` | `0x65010` |
+| `[8]` | `0x6C810` |
+| `[11]` | `0x6F010` |
+
+Entries 10 and 0 share a base, so the credits bank (`0x1010..0x641C0`) lands over the resident SFX banks of slots 0 to 3 but short of slot 4 / 7.
+
+### `0x801C6ED8` - the CD-XA clip table
+
+Each of the 34 slots is `[CdlLOC][u32 byte_len]`: `+0x0` is the 4-byte BCD-MSF `CdlLOC` disc start, `+0x4` the length, and zero marks an empty slot.
+
+- **Fill.** `FUN_801CFA78` (PROT 0895 `init.pak`) sprintf-generates `\XA\XA%d.XA;1` per slot and stages `[BCD-MSF][size]` via the ISO9660 lookup `FUN_8005DBB4`. No XA LBA is stored absolutely, so the table survives a disc relayout.
+- **Read.** The XA cue starter `FUN_8003D53C` converts the entry through `msf_to_lba` (`FUN_8005C42C`) and drives the CdSync-callback state machine `FUN_8003D764`, which issues `CdlSetfilter {file 1, chan}` per cue. See [`cutscene.md`](../subsystems/cutscene.md#xa-channel-selection).
+
+### `0x801F696C` - the special-trigger flag
+
+Three sites set the flag to `1` after `FUN_801EED1C` clears it at its head (`0x801EED88`):
+
+- the Miracle arm (`sw` at `0x801EF5B8`, the delay slot of the `j` at `0x801EF5B4`);
+- the Super tail match (`0x801EFBD4`);
+- `FUN_801F0450` at `0x801F0518` - the head of its **auto-fill** arm, the first instruction past the `+0x16E & 0x404` veto, not its art insertion tail - so it is raised for every party slot that arm takes.
+
+Its one reader, `0x801E3840`, gates the strike loop's per-frame swing drift for a clip that carries a header byte (port `swing_drift`). That reader is what makes Miracle-before-Super ordering observable. See [`battle-action.md`](../subsystems/battle-action.md).
+
+### `0x1F800393` - the per-frame tick byte
+
+The frame pacer is the block at `0x80016E4C` inside `FUN_80016B6C` (`see ghidra/scripts/funcs/80016e4c.txt`).
+
+- **Vsync-locked leg:** `sb v0,0x393(at)` at `0x80017068`.
+- **Measured leg:** picks `1` / `2` / `3` / `4` against the elapsed-time thresholds `0xF1` / `0x1FF` / `0x2D1` at `0x80017124..0x8001715C`, then caps the result against `_DAT_8007B9D8`.
+
+Readers: op `0x4A` `WAIT_FRAMES`; the `0xFFFF` sentinel in op `0x4C` nibble-C sub-B/C; and the title-attract countdown at `0x801EF16C`, which subtracts it every tick ([`boot.md`](../subsystems/boot.md#tick-function)).
+
+### `0x1F800394` - the transient flag word
+
+The **lower 16 bits** are re-seeded on every mode switch from `mode_table[_DAT_8007B83C].param` (`+0x14`; the table row is `(&DAT_800707A0)[_DAT_8007B83C * 0x18]`) by `FUN_8001DCF8 @ 0x8001E17C`, the word's sole non-RMW writer ([`save-screen.md`](../subsystems/save-screen.md)). The upper half therefore starts clear on every mode change.
+
+| Bit | Meaning |
+|---|---|
+| bit 0 | kingdom-overworld flag (own row in the scratchpad table) |
+| `0x40` | scene-transition pending, set by the scene-change packet `FUN_8001FD44`. Not a "dialog active" lock |
+| bit 22 (`0x400000`) | the [camera re-query gate](#the-camera-re-query-gate) |
+| bit 23 | forks op `0x34` sub-0 (own row in the scratchpad table) |
+| `0x01000000` / `0x02000000` | gate op `0x4C` nibble-4 sub-9's tristate dispatch |
 
 ## See also
 

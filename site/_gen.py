@@ -439,6 +439,15 @@ def _wasm_version() -> str:
     return f"{glue[:6]}{bg[:6]}" if glue or bg else "0"
 
 
+# Applies a stored light-theme choice before first paint, so a reader who
+# picked it never sees the dark page flash. Dark is the default and needs no
+# attribute; the toggle itself lives in layout.js (`buildThemeToggle`).
+THEME_BOOT_JS = (
+    "try{if(localStorage.getItem('site-theme')==='light')"
+    "document.documentElement.setAttribute('data-theme','light')}catch(e){}"
+)
+
+
 def html_template(page_title: str, depth: int, active_key: str, body: str, extra_head: str = "", head_meta: str = "") -> str:
     css = "../" * depth + "css/styles.css"
     layout_js = "../" * depth + "js/layout.js"
@@ -462,6 +471,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   <title>{html.escape(page_title)}</title>
   {head_meta}
   <link rel="icon" href="{favicon}" type="image/svg+xml">
+  <script>{THEME_BOOT_JS}</script>
   <link rel="stylesheet" href="{css}">
   <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
   <script src="{util_js}"></script>
@@ -1742,6 +1752,7 @@ def main() -> int:
   <meta name="robots" content="noindex">
   <title>Page not found - {SITE_NAME}</title>
   <link rel="icon" href="{SITE_URL}/img/favicon.svg" type="image/svg+xml">
+  <script>{THEME_BOOT_JS}</script>
   <link rel="stylesheet" href="{SITE_URL}/css/styles.css">
 </head>
 <body>

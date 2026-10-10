@@ -1,6 +1,16 @@
 # MES dialog format
 
-Container format for Legaia's dialog text. Two on-disc variants share an offset table + bytecode tail. The bytecode encoding is a stream of glyph bytes interleaved with substitution opcodes; the interpreter is statically linked into `SCUS_942.54` (it is not overlay-resident).
+MES is the container and text encoding for Legaia's dialog. A message is a stream of glyph bytes (indices into the [dialog font](dialog-font.md)) interleaved with two-byte substitution opcodes that splice in a character, item, spell or art name at draw time. The byte-level interpreter is statically linked into `SCUS_942.54`; the pager that types, scrolls and pages the text in a window is overlay-resident (`FUN_801D84D0`). This page covers both: the on-disc encoding first, then the pager, because the control bytes that follow a page of text only mean something to the pager.
+
+| Topic | Where |
+|---|---|
+| Container variants (Compact `0x0404`, Records `0x44 0x78`) | [Variants](#variants) |
+| Glyph and substitution bytes | [Bytecode encoding](#bytecode-encoding) |
+| Japanese-build line framing | [Japanese build](#japanese-build-count-led-shift-jis-lines) |
+| The four SCUS text routines | [Interpreter functions](#interpreter-functions) |
+| Pager states, scrolling, control bytes, pickers | [Dialog window pager](#dialog-window-pager---fun_801d84d0) |
+| Parser | `crates/mes` (`legaia_mes`: `interp`, `dialog_box`, `picker`) |
+| Engine port | `crates/engine-dialog` (`dialog_window`, `dialog_pacing`, `dialog_picker_slide`, `dialog`, `inline_dialogue`), re-exported at the `engine-core` paths used below |
 
 ## Variants
 
@@ -40,9 +50,8 @@ Each offset is a byte offset from `0xC8` to the start of that message's bytecode
 The Records format has no fixed header. The parser identifies record boundaries
 by scanning for recurring `0x44 0x78` marker pairs (at least 4 hits required).
 Each marker starts a variable-stride record; the inter-record contents are
-the bytecode and any embedded header fields. Full per-record structure is not
-yet reversed - capture a town or field overlay to observe how the runtime
-parses this variant.
+the bytecode and any embedded header fields. The per-record structure is
+**Unknown**; `legaia_mes` detects the variant and reports marker boundaries only.
 
 ## Bytecode encoding
 
@@ -131,7 +140,47 @@ Then it walks the input and inlines `0xC1..0xC5` / `0xC7` substitutions: each su
 
 Lives in the dialog overlay. Distinct from the byte-level interpreter - this is the per-frame state machine that pages text on input. 26 outer states (`_DAT_801F2734`, range `0..0x19`) covering load / scroll / drain / wait-for-input / done. Stores per-line bytecode pointers in `_DAT_801F3540[line]` (16-line buffer at `0x801F3580`). Test `(byte & 0x7F) < 0x20` is used to detect line terminators (catches both `0x00..0x1F` and `0x80..0x9F`).
 
-The engine port lives in `engine-core`: `dialog_window` (the row window, the scroll and the confirm arms), `dialog_pacing` (the typing row's reveal counter and hold) and `dialog::OwnedDialogPanel`, which drives both over the page's decoded rows on the path both play hosts share. `engine-vm` only cites the pager. An earlier sentence here placed the port in `engine-vm`; no pager code was ever there.
+The engine port is `crates/engine-dialog`: `dialog_window` (the row window, the scroll and the confirm arms), `dialog_pacing` (the typing row's reveal counter and hold) and `dialog::OwnedDialogPanel`, which drives both over the page's decoded rows on the path both play hosts share.
+
+```mermaid
+stateDiagram-v2
+    state "0x19 wait for confirm" as Wait
+    state "0 / 6 reset box" as Reset
+    state "3 keep rows" as Keep
+    state "9 reset, then 0xA collapse" as Collapse
+    state "1 / 4 / 7 idle" as Idle
+    state "2 / 5 / 8 load text" as Load
+    state "0x0B type row" as Type
+    state "0x0C scroll one row" as Scroll
+    state "0x0D complete page" as Complete
+    state "0x0E scroll overflow" as Overflow
+    state "0x0F scroll off old rows" as Trim
+    state "0x11 / 0x13 / 0x15 / 0x17 slide" as Slide
+    state "0x12 / 0x14 / 0x16 / 0x18 picker" as Picker
+    Wait --> Reset: 0x25, 0x4C 0xFF
+    Wait --> Keep: 0x24
+    Wait --> Collapse: 0x48
+    Wait --> Slide: 0x27..0x2A
+    Reset --> Idle
+    Keep --> Idle
+    Collapse --> Idle
+    Idle --> Load: text pointer stored
+    Load --> Type
+    Type --> Scroll: window full, more lines
+    Scroll --> Type
+    Type --> Complete: confirm pressed
+    Scroll --> Complete: confirm pressed
+    Complete --> Overflow: fourth row
+    Type --> Trim: page ends, old rows above
+    Overflow --> Trim
+    Type --> Wait: page ends
+    Overflow --> Wait
+    Trim --> Wait
+    Slide --> Picker: count reaches 0
+    Picker --> Idle: confirm, via the same control-byte dispatch
+```
+
+The diagram groups the states by role and shows the main edges only; per-state handlers and addresses are in the tables below.
 
 ### Box geometry
 
@@ -150,7 +199,7 @@ The `0x27` / `0x28` / `0x29` picker arms write their box rect literally: `x = 0x
 
 ### Box render
 
-The pager draws the window each frame through the shared SCUS box emitter: `FUN_80034B6C(skin)` stages the window-skin index (standard reading box = skin `0x61`; a box whose `ctx+0x10` class byte is `2` resets to skin `0`), then `FUN_8002C69C(x, y, w, h)` emits the box. For the main reading box the call is `FUN_8002C69C(ctx+0x12, ctx+0x14 + d, 0xF4, h - 8)` with `h = lines*0xF + 5`; `d` and `h` move only with the `0x48` collapse (state `0xA`, above) - the frame never scrolls, the rows do. An earlier reading here named `d` the scroll. The picker box passes its own rect.
+The pager draws the window each frame through the shared SCUS box emitter: `FUN_80034B6C(skin)` stages the window-skin index (standard reading box = skin `0x61`; a box whose `ctx+0x10` class byte is `2` resets to skin `0`), then `FUN_8002C69C(x, y, w, h)` emits the box. For the main reading box the call is `FUN_8002C69C(ctx+0x12, ctx+0x14 + d, 0xF4, h - 8)` with `h = lines*0xF + 5`; `d` and `h` move only with the `0x48` collapse (state `0xA`, above) - the frame never scrolls, the rows do (`d` is not the scroll). The picker box passes its own rect.
 
 Draw order inside the frame is text first, box last: every packet goes on the same ordering-table entry (`[0x1F8003F4] + 4`) through `FUN_8003D2C4`, which links at the head.
 So the GPU meets the last-added packet first and the box renders behind its glyphs.
@@ -168,13 +217,13 @@ Hand sprites come from the cursor family `FUN_8002B994`: the **page-advance hand
 
 A field NPC's interaction text is a flat pool of `0x1F`-lead lines, each `0x1F <glyphs> 0x00`. The pager types **consecutive** lines as one **page**: the byte after a line's `0x00` terminator being another line (`(b & 0x7F) < 0x20`, `0x801D8AB4`) means "same page, next row". A page ends only at the post-page control byte the pager reads in state `0x19` (the table below), however many lines precede it - a fourth line scrolls the three-row window rather than waiting ([Row window and scrolling](#row-window-and-scrolling)). So a three-line speech box is three back-to-back `0x1F` lines followed by a single `0x24` (next page); multi-page speech is several such pages chained by `0x24`.
 
-The earlier statement that a box ends after at most three rows was a packing convention read as pager behaviour: nothing in the pager stops at three.
+Nothing in the pager stops a page at three rows; three is the window height and an authoring convention.
 
 The advance loop in `FUN_80039B7C` (state `0x2`, the `for (; 0x1e < *pbVar4; ...)` walk that skips a line the SM has shown) masks `(*pbVar4 & 0xF0) == 0xC0` and consumes the following data byte as part of the same token. So a `0xC0..=0xCF` escape whose argument byte falls in the `0x00..=0x1E` range - e.g. a `0xC1 0x00` character-name substitution - does **not** terminate the line early; the line ends only at a terminator that is not a `0xC?` escape argument. Every `0xC0..=0xCF` byte is a 2-byte token (see the token table above), so the standard interpreter strides past them correctly.
 
 The rule matters most at a line's **head**: a line can open on an escape, and 113 of the 1586 talkable partition-1 records open their first line that way (`1F C1 00 ...`, the lead character's name, is the common case - `town01` `P1[16]` at record `+0x4C`). A scanner that ends a line at its first `0x00` reads such a line as one byte long, rejects it as a stray marker and resumes inside its text, so every consumer starts one line late.
 
-The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) walks lines with `legaia_mes::dialog_box::line_end` for that reason; the same walk also stops at the other terminators (`0x01..=0x1E`), which retires the stray `0x1F` bytes in opcode operands that a scan-to-`0x00` used to accept by swallowing the real line after them. Disc-gated pin: `engine-core/tests/dialog_escape_led_line_disc.rs`.
+The engine's segment finder (`man_field_scripts::first_inline_dialog_offset`) walks lines with `legaia_mes::dialog_box::line_end` for that reason; the same walk also stops at the other terminators (`0x01..=0x1E`), so a stray `0x1F` byte in an opcode operand is not accepted as a line lead. Disc-gated pin: `engine-core/tests/dialog_escape_led_line_disc.rs`.
 
 Decoded by `legaia_mes::dialog_box`:
 
@@ -285,9 +334,9 @@ O+N*2+1                               continuation byte (0x24/0x25/0x48/0x4C 0xF
 N * [ 0x1F label segment 0x00 ]       the on-screen option labels
 ```
 
-The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). An earlier note that "the option labels are the 2-byte entries between the open byte and the continuation" is **falsified** - those 2-byte entries are the per-option **jump table**, not the labels.
+The on-screen **option labels are standard `0x1F`-lead glyph segments located after the continuation byte** (the pager render loop at `FUN_801D84D0` ~lines 2166-2185 measures each with `FUN_8003CA38` and draws it with `FUN_80036888`). The 2-byte entries between the open byte and the continuation are the per-option **jump table**, not the labels.
 
-**Two continuation forms.** The byte at `O+N*2+1` is either a post-page dispatch byte (`0x24`/`0x25`/`0x48`/`0x4C`) before the labels, **or** the first label's `0x1F` lead directly - an **immediate-labels** menu with no post-page continuation. The `izumi` book menu uses the dispatch-byte form; **Rim Elm's Tetsu spar menu** (and town01's other pickers) use the immediate-labels form (open `0x29`, 4 jump entries, then the labels - option 2 "I want to practice with you." is the training fight). `parse_picker_at` accepts both (an earlier version required the dispatch byte and so found zero pickers in town01); pinned live by `scripts/pcsx-redux/autorun_tetsu_picker_data.lua` (the spar dialogue buffer) + disc-gated `tetsu_spar_picker_disc`.
+**Two continuation forms.** The byte at `O+N*2+1` is either a post-page dispatch byte (`0x24`/`0x25`/`0x48`/`0x4C`) before the labels, **or** the first label's `0x1F` lead directly - an **immediate-labels** menu with no post-page continuation. The `izumi` book menu uses the dispatch-byte form; **Rim Elm's Tetsu spar menu** (and town01's other pickers) use the immediate-labels form (open `0x29`, 4 jump entries, then the labels - option 2 "I want to practice with you." is the training fight). `parse_picker_at` accepts both; pinned live by `scripts/pcsx-redux/autorun_tetsu_picker_data.lua` (the spar dialogue buffer) + disc-gated `tetsu_spar_picker_disc`.
 
 Each 2-byte entry is a **signed 16-bit little-endian relative jump**. The inline-script control handler `FUN_80038050` (the per-actor `actor[+0x90]` script stepper, distinct from the pager) applies it on confirm: it reads the cursor at `DAT_801C6EA4+0xC` and sets the script PC `actor[+0x9E]` to
 

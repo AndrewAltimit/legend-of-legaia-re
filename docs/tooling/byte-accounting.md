@@ -13,6 +13,16 @@ run of bytes that no parser claims and that does not look like padding is a form
 
 Module `legaia_asset::byte_account`; CLI `asset account`.
 
+```mermaid
+flowchart LR
+    E["PROT entry"] --> K["format class"]
+    K --> W["every parser that<br/>applies to the class"]
+    W --> R["consumed byte ranges"]
+    R --> U["complement:<br/>unclaimed runs"]
+    U --> S["classified by shape,<br/>largest run first"]
+    S --> G["byte-account-coverage.py<br/>ratchet"]
+```
+
 ## Running it
 
 ```bash

@@ -1,12 +1,36 @@
 # summon.dat / readef.DAT - battle side-band streaming slots
 
-`\data\battle\summon.dat` and `\data\battle\readef.DAT` are the two battle
-side-band streaming files (CDNAME block `bat_back_dat`): per-special-attack
-VRAM texture pages plus summon-creature actor records, streamed from disc
-mid-battle in fixed `0x10800`-byte (33-sector) slots while a cast plays.
+`\data\battle\summon.dat` and `\data\battle\readef.DAT` are the two files the battle streams from disc *while a fight is running* (CDNAME block `bat_back_dat`). Each is a flat array of fixed `0x10800`-byte (33-sector) slots. A slot holds one of four things: a texture page with its palette rows, a summon creature's actor record, a big summon's raw palette + page + part pool, or a party member's art-animation `"ME"` archive. The action id of the cast or turn picks a group of three or four consecutive slots.
 
-Parser: `crates/battle-models/src/summon_readef.rs`. Confidence: **Confirmed**
-(byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
+Parser: `legaia_asset::summon_readef` (`crates/battle-models/src/summon_readef.rs`). Confidence: **Confirmed** (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
+
+## At a glance
+
+| File | Retail TOC index | Extraction entry | Slots | Holds |
+|---|---|---|---|---|
+| `summon.dat` | `0x37F` | 893 | 103 | player Seru and Ra-Seru casts: texture pages + actor records |
+| `readef.DAT` | `0x380` | 894 | 78 | 26 three-slot groups: party `"ME"` archives (groups 0..3) and monster-family texture pages |
+
+| Slot kind | Head | Consumer | Section |
+|---|---|---|---|
+| Texture | `u32 mode` in `{0, 1, 2}` | `FUN_801F12D0` cases 2 / 4 → VRAM | [Texture slot](#texture-slot-u32-mode--0-1-2) |
+| Actor record | three `u32` offsets (name, TMD, texture pool) | `FUN_801F19EC` → battle slot 7 | [Actor-record slot](#actor-record-slot-last-streamed-slot-of-a-group) |
+| Big-summon raw | headerless | `FUN_801F12D0` case 6 | [Big-summon raw slot](#big-summon-raw-slot-3rd-slot-base--0xcb-only) |
+| `"ME"` archive | `'M' 'E'`, count, sizes | `FUN_8002B28C` from `FUN_8004AD80` | [Art "ME" slot](#art-me-stream-archive-slot-readef-groups-03) |
+
+```mermaid
+flowchart TD
+    id["action id (actor +0x1DF) or turn group"] --> base["base byte ctx+0x277"]
+    base -- "bit 7 set" --> summon["summon.dat (extraction 893)"]
+    base -- "bit 7 clear" --> readef["readef.DAT (extraction 894)"]
+    summon --> slot["slot = base & 0x7F, 0x10800 bytes each"]
+    readef --> slot
+    slot --> buf["stream buffer *0x8007BD74"]
+    buf --> tex["texture slot -> VRAM CLUT row + page"]
+    buf --> rec["actor record -> FUN_801F19EC -> slot-7 actor"]
+    buf --> raw["big-summon raw slot -> VRAM + part pool"]
+    buf --> me["ME archive -> art entry +0x88 stream"]
+```
 
 ## PROT entries and how the dev paths resolve
 
@@ -363,7 +387,7 @@ byte accounting claims it.
 The `+0x1D` byte is the **element the damage pipeline attributes to the
 cast**: `FUN_801F19EC` installs the record pointer at `0x801C9358`
 (= record-pointer table `0x801C9348[4]`, i.e. battle slot 7), the per-spell
-summon overlay modules (PROT 0902..0934) call the damage roll
+summon overlay modules (PROT 0903..0934) call the damage roll
 `FUN_801DD0AC` with a **hardcoded attacker slot 7** (`li a1, 7` before the
 `jal` in every module), and the scale / finisher kernels
 (`FUN_801DD864` / `FUN_801DDB30`) resolve any slot `>= 3` element as
@@ -514,8 +538,7 @@ arrives in `*0x8007BD74` and nothing reads it.
 LZS-decoded record in the PROT 0867 archive: `+0x1C` never takes the values
 19, 20 or 21, so the per-turn seed cannot reach bases `0x39` / `0x3C` /
 `0x3F` at all, and the duplicated actor records in slots 58 / 61 / 64 are
-unreachable through the enemy path. (Earlier notes left this open on the
-assumption that some enemy special selected them.)
+unreachable through the enemy path.
 
 ### Which monsters name which readef group
 

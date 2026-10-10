@@ -88,6 +88,13 @@ pub struct ScreenshotConfig {
     /// of [`Self::hud_countdown`]. Set by the retail-compare image channel
     /// from the battle state's own rotation global.
     pub battle_orbit_yaw: Option<f32>,
+    /// `LEGAIA_BATTLE_BACKDROP_YAW=<angle>`: the backdrop draw's slot-1 Y
+    /// angle the capture must show (`World::seed_battle_backdrop_slot_1_yaw`),
+    /// held on every battle frame. The angle is time spent in keeping fights
+    /// since boot, so this is its phase alignment - the backdrop twin of
+    /// [`Self::battle_orbit_yaw`]. Set by the retail-compare image channel
+    /// from the battle state's `0x800891D2`.
+    pub battle_backdrop_yaw: Option<u16>,
     /// `LEGAIA_BATTLE_CAM_ALIGN=<16 numbers>`: retail's live battle camera
     /// and its tween endpoints (pitch, yaw, eye trio, focus trio each), for
     /// starting the captured phase's glide where retail's stood
@@ -125,6 +132,12 @@ pub struct ScreenshotConfig {
     /// drawn actors' live model ids, written over the placed objects' stream
     /// swaps (`World::object_live_models`) on the capture frame.
     pub seat_object_models: Vec<(usize, i16)>,
+    /// `LEGAIA_SEAT_OBJECT_CLIPS=<record>:<clip>:<cursor>:<flags>:<rate>;..`:
+    /// a retail state's drawn actors' clip words
+    /// (`legaia_parity::retail_compare::retail_object_clips`), written over
+    /// the matching placed props' clips on the capture frame
+    /// (`World::seed_object_prop_clip`).
+    pub seat_object_clips: Vec<legaia_parity::retail_compare::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
     /// over the engine's on the capture frame (`World::seed_field_morph`).
@@ -142,6 +155,11 @@ pub struct ScreenshotConfig {
     /// draw environment's `r0 / g0 / b0`), written over the engine's on the
     /// capture frame - the system script's op-`4C 13` history.
     pub seat_clear: Option<[u8; 3]>,
+    /// `LEGAIA_SEAT_PAGE_MARK=frame`: which frame of the dialogue page
+    /// mark's two-frame strip a retail state's displayed frame shows
+    /// (`legaia_parity::retail_compare::retail_page_mark`), seated on the
+    /// capture frame.
+    pub seat_page_mark: Option<u8>,
     /// `LEGAIA_SEAT_FOG`: a retail state's live fog-pool records, installed
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
@@ -426,6 +444,9 @@ impl ScreenshotConfig {
             battle_orbit_yaw: std::env::var("LEGAIA_BATTLE_ORBIT_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            battle_backdrop_yaw: std::env::var("LEGAIA_BATTLE_BACKDROP_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             battle_cam_align: std::env::var("LEGAIA_BATTLE_CAM_ALIGN")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare_battle::cam_align_from_env(&v)),
@@ -450,6 +471,9 @@ impl ScreenshotConfig {
                 let c: Vec<u8> = v.split(',').filter_map(|e| e.trim().parse().ok()).collect();
                 <[u8; 3]>::try_from(c).ok()
             }),
+            seat_page_mark: std::env::var("LEGAIA_SEAT_PAGE_MARK")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             seat_panel: std::env::var("LEGAIA_SEAT_PANEL")
                 .ok()
                 .and_then(|v| legaia_parity::retail_compare::panel_from_env(&v)),
@@ -458,6 +482,9 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
                 .map(|v| legaia_parity::retail_compare::morphs_from_env(&v))
+                .unwrap_or_default(),
+            seat_object_clips: std::env::var("LEGAIA_SEAT_OBJECT_CLIPS")
+                .map(|v| legaia_parity::retail_compare::object_clips_from_env(&v))
                 .unwrap_or_default(),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
@@ -1280,6 +1307,15 @@ struct PlayWindowApp {
     /// textured prims; leaving them out punches holes in the arena shell.
     /// `None` when the stage shell has no untextured prims.
     battle_stage_color_mesh: Option<usize>,
+    /// Mesh index of the backdrop's drawn slot 1, one copy
+    /// (`SceneHost::battle_stage_layers`): the object the backdrop draw
+    /// turns about Y every frame - on a stage that keeps object 1, the
+    /// horizon mist ribbon. Drawn twice a frame, once per backdrop copy,
+    /// under `backdrop_slot_1_basis`. `None` on a one-object draw list.
+    battle_stage_spun_mesh: Option<usize>,
+    /// The untextured half of [`Self::battle_stage_spun_mesh`], in
+    /// `color_meshes`.
+    battle_stage_spun_color_mesh: Option<usize>,
     /// The object list and second-copy transform the stage shell meshes were
     /// built from (`SceneHost::battle_stage_object_indices`). A mid-fight
     /// change - the evolved-Cort arrival's slot-0 rebind - rebuilds them

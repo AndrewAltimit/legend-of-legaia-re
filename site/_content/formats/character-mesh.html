@@ -290,18 +290,6 @@
     </div>
   </details>
 
-  <details class="disclosure" id="history">
-    <summary>History: readings that were wrong</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>&ldquo;Battle reuses the field pack&rdquo; and &ldquo;battle renders PROT 1204 directly, posed from 1203&rdquo; - the partial byte match was the default-section geometry both sources share; the equipped-variant objects are in no 1204 chunk, and no 1203 record is resident in battle RAM.</li>
-        <li>&ldquo;Seven atlases inside 1204, the last truncated&rdquo; - an over-reading entry size ran 1204 into 1205; there are eight whole atlases in 1205.</li>
-        <li>&ldquo;Nominal CBA, no relocation, the palette is scene residue at rows 490..497&rdquo; - those rows hold the scene environment palette; the party palette is uploaded to 481..483 by the battle loader.</li>
-        <li>&ldquo;The per-frame patch loop adds the equipment groups&rdquo; - it is a pose toggle and never changes the object count. The &ldquo;+2-row scroll phase&rdquo; reading of a Noa strip variant was a cutscene blink stamp.</li>
-      </ul>
-      <p>Full entries: <a href="../reference/re-do-not-re-walk.html#battle">do-not-re-walk &sect; battle</a>, <a href="../reference/re-do-not-re-walk.html#containers">&sect; containers</a>, <a href="../reference/re-do-not-re-walk.html#field">&sect; field</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="cli">

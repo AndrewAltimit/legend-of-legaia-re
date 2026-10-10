@@ -315,6 +315,13 @@ impl World {
         if self.tick_battle_tutorial_boxes() {
             return None;
         }
+        // The sparring fight's open: retail's flow sits in `0x0A` / `0x0B`
+        // under the enemy names and reaches no round until they have gone
+        // (`World::sparring_open_held`), so nothing below runs either.
+        // REF: FUN_801D0748 (flow states `0x0A` / `0x0B`)
+        if self.battle.sparring_round_pending {
+            return None;
+        }
 
         // Retail-compare debug seed: a capture taken mid-cast starts its cast
         // from the first command prompt, bypassing the pad - once the camera's

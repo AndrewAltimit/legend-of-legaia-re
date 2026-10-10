@@ -192,17 +192,6 @@
       </ul>
     </div>
   </details>
-  <details class="disclosure">
-    <summary>History: superseded readings</summary>
-    <div class="disclosure-body">
-      <ul class="bullets">
-        <li>"<code>+0x130</code> is Magic Rank, not character level" - reconciled the per-event <code>+1</code> tick with the Level 99 cheat the wrong way round; falsified by the starting-level boot test. The magic-rank byte is not the adjacent <code>+0x131</code> either: that byte has one writer (<code>0x800561C8</code>) and no reader in any image, while a save-pair capture pins the magic-rank counter at record <code>+0x9C</code>.</li>
-        <li>"The level-up logic reads <code>+0x004</code> as cumulative XP" - conflated the threshold the applier reads with the XP it compares against.</li>
-        <li>"<code>+0x161..+0x184</code> is a parallel spell-level array" - it is the 16-summon level array.</li>
-      </ul>
-      <p>The falsified-reading catalogue is <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p>
-    </div>
-  </details>
 </section>
 
 <section class="doc-section" id="how-we-know">

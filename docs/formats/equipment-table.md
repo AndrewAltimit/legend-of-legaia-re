@@ -61,9 +61,9 @@ equip +4  ->  DAT_801EF098  <- record +0x6E0  =  char +0x118  =  SPD
 ```
 
 So equipment modifies ATK / UDF / LDF / SPD / INT and **never** AGL (the AGL
-accumulator `DAT_801EF088` takes no equipment add). The earlier "agility /
-speed pair" reading of `+0`/`+4` is **falsified**: `+0` is the INT bonus
-(head gear), `+4` is the SPD bonus (footwear).
+accumulator `DAT_801EF088` takes no equipment add). `+0`/`+4` are not an
+"agility / speed pair": `+0` is the INT bonus (head gear), `+4` is the SPD
+bonus (footwear).
 
 ### The five adds, in instruction order
 

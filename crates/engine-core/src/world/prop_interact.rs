@@ -123,6 +123,75 @@ impl World {
         }
     }
 
+    /// A cross-context op from a spawned record changed a placed object's
+    /// clip words - the control word `+0x62` (`AB` / `AC <id> <bit>`,
+    /// `CC <id> 35` / `36`) or the cursor step `+0x6A` (`CC <id> 41`) - with
+    /// no `A2` after it. They are the words the object's anim tick
+    /// `FUN_800204F8` reads every frame, so the clip it already has bound
+    /// takes them at once: `town01`'s opening swings Vahn's front door open
+    /// with `CC 00 41 10`, `AC 00 07`, `AC 00 01`, `AB 00 03` alone (P2[3]
+    /// `+0xFF`: step 8, forward, release the spawn hold, clamp at the end).
+    ///
+    /// Only the bits the op changed are written (`before` / `after` are the
+    /// object channel's context words either side of the op), so the prop
+    /// keeps whatever its spawn program left in the others. A zero step is
+    /// not taken, as [`Self::play_object_prop_clip`] does not take one.
+    ///
+    /// REF: FUN_800204F8, FUN_801DE840
+    pub(crate) fn poke_object_prop_words(
+        &mut self,
+        record: u16,
+        flags: (u16, u16),
+        rate: (i16, i16),
+    ) {
+        let changed = flags.0 ^ flags.1;
+        let new_rate = (rate.0 != rate.1 && rate.1 != 0).then_some(rate.1);
+        if changed == 0 && new_rate.is_none() {
+            return;
+        }
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == usize::from(record))
+        {
+            p.anim.flags = (p.anim.flags & !changed) | (flags.1 & changed);
+            if let Some(r) = new_rate {
+                p.anim.rate = r;
+            }
+        }
+    }
+
+    /// Capture alignment: write a placed object's clip cursor and control
+    /// word over its prop's own, where the prop has that clip bound. Which
+    /// frame of a door's swing is up is touch history a seat does not
+    /// replay; a prop on another clip is left alone, so the seed never
+    /// re-binds what the engine's own spawn or script chose. The retail
+    /// comparison's image child only.
+    pub fn seed_object_prop_clip(
+        &mut self,
+        record: usize,
+        clip: u8,
+        cursor: i16,
+        flags: u16,
+        rate: i16,
+    ) {
+        for p in self
+            .props
+            .bank
+            .props
+            .values_mut()
+            .filter(|p| p.record == record && p.anim.anim_id == clip)
+        {
+            p.anim.cursor = cursor;
+            p.anim.flags = flags;
+            if rate != 0 {
+                p.anim.rate = rate;
+            }
+        }
+    }
+
     /// Advance the placed-prop layer one field tick: step the clips, step an
     /// in-flight prop record run, and start a run for a movement touch posted
     /// by this tick's locomotion.
@@ -275,7 +344,11 @@ impl World {
             // on this frame's tick is shown first and commits on a later
             // confirm, so a mashed confirm never picks option 0 unseen.
             let menu_was_open = panel.menu_active();
-            panel.tick_at_auto(self.clock.frame_step, &mut self.dialog.auto_press);
+            panel.tick_at_auto_drawn(
+                self.clock.frame_step,
+                &mut self.dialog.auto_press,
+                &mut self.dialog.cursor_sprites,
+            );
             // The pager's automatic press (`_DAT_80073F00`, op `4C 89`) is a
             // confirm the player did not make.
             let confirm = confirm || panel.take_auto_press();
@@ -791,6 +864,68 @@ mod tests {
             },
         );
         (w, anchor)
+    }
+
+    /// A spawned record's clip-word pokes at a placed object swing the clip
+    /// it already has bound, with no `A2` after them - `town01` P2[3]'s door
+    /// (`CC 00 41 10`, `AC 00 07`, `AC 00 01`, `AB 00 03`). Only the changed
+    /// bits land, a zero step is not taken, and another record's prop is not
+    /// touched.
+    #[test]
+    fn clip_word_pokes_swing_a_placed_objects_bound_clip() {
+        use crate::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
+        let mut w = World::new();
+        let prop = |record: usize| {
+            let mut anim = PropAnim::spawned(2, 6, false, 0);
+            // The spawn program's park: held on frame 0, plus a bit the
+            // object channel's context never saw.
+            anim.flags = ANIM_HOLD | ANIM_REVERSE | 0x0004;
+            PropAnimState {
+                anim,
+                program: PropProgram::default(),
+                world: (0, 0),
+                collider: (0, 0),
+                record,
+                record_body: std::sync::Arc::new(Vec::new()),
+                parked_pc: 0,
+                cflags: 0,
+            }
+        };
+        w.props.bank.props.insert((1, 1), prop(0));
+        w.props.bank.props.insert((2, 2), prop(5));
+        let door = |w: &World| w.props.bank.props[&(1, 1)].anim;
+
+        // Held: the cursor does not move.
+        w.tick_actor_anims();
+        assert_eq!(door(&w).cursor, 0);
+
+        // `CC 00 41 10`: the step, halved by the op (16 -> 8 is no change
+        // from the spawn rate; a real change lands, a zero does not).
+        w.poke_object_prop_words(0, (0x82, 0x82), (8, 12));
+        assert_eq!(door(&w).rate, 12);
+        w.poke_object_prop_words(0, (0x82, 0x82), (12, 0));
+        assert_eq!(door(&w).rate, 12);
+        // `AC 00 07`, `AC 00 01`, `AB 00 03`.
+        w.poke_object_prop_words(0, (0x82, 0x02), (12, 12));
+        w.poke_object_prop_words(0, (0x02, 0x00), (12, 12));
+        w.poke_object_prop_words(0, (0x00, 0x08), (12, 12));
+        assert_eq!(door(&w).flags, ANIM_CLAMP | 0x0004);
+
+        // The clip now plays once and clamps on its last frame.
+        w.tick_actor_anims();
+        assert_eq!(door(&w).cursor, 12);
+        for _ in 0..16 {
+            w.tick_actor_anims();
+        }
+        assert_eq!(door(&w).cursor, 6 * 16 - 1);
+        assert_ne!(door(&w).flags & ANIM_END, 0);
+
+        // The other record's prop stayed parked.
+        let other = w.props.bank.props[&(2, 2)].anim;
+        assert_eq!(
+            (other.cursor, other.flags, other.rate),
+            (0, ANIM_HOLD | ANIM_REVERSE | 0x0004, 8)
+        );
     }
 
     /// The number escapes resolve against the field VM's script-counter

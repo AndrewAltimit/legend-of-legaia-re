@@ -16,60 +16,60 @@
 
 <section class="doc-section" id="pipeline">
   <h2>The pipeline</h2>
-  <p>Going top to bottom: a PSX disc image, then the ISO filesystem, then the archive (<code>PROT.DAT</code>), then per-entry containers, then individual sub-assets, and finally the engine that brings them to life. Click any layer to read its format page or the crate that handles it.</p>
+  <p>Going top to bottom: a PSX disc image, then the ISO filesystem, then the archive (<code>PROT.DAT</code>), then per-entry containers, then individual sub-assets, and finally the engine that brings them to life. Each layer's title links to the page that documents it.</p>
 
-  <!-- Layer diagram. Each .layer is a link. -->
+  <!-- Layer diagram. The layer TITLE is the link - a layer body carries links of its own, and a link cannot nest inside a link. -->
   <div class="layers-diagram" id="layers" aria-label="Layered architecture diagram">
 
-    <a class="layer" href="formats/disc.html" data-detail="disc">
+    <div class="layer">
       <div class="layer-head">
         <span class="layer-num">1</span>
-        <span class="layer-title">PSX disc image (.bin Mode2/2352)</span>
+        <a class="layer-title" href="formats/disc.html">PSX disc image (.bin Mode2/2352)</a>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/iso → <code>disc-extract</code></div>
         <div class="layer-desc">A CD is a run of 2352-byte sectors, each with 2048 bytes of real data wrapped in sync, header and error-correction bytes. This layer strips the wrapper. The same crate can re-encode sectors, which is what lets the patcher write a modified disc back.</div>
       </div>
-    </a>
+    </div>
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer" href="formats/disc.html" data-detail="iso">
+    <div class="layer">
       <div class="layer-head">
         <span class="layer-num">2</span>
-        <span class="layer-title">ISO9660 filesystem</span>
+        <a class="layer-title" href="formats/disc.html">ISO9660 filesystem</a>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/iso</div>
         <div class="layer-desc">The disc's directory: <code>PROT.DAT</code> (the archive), <code>SCUS_942.54</code> (the executable), <code>DMY.DAT</code> (dev fixture data), the <code>MOV/</code> movies, the <code>XA/</code> voice streams, <code>CDNAME.TXT</code> (the archive's name list) and <code>SYSTEM.CNF</code>.</div>
       </div>
-    </a>
+    </div>
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer" href="formats/prot.html" data-detail="prot">
+    <div class="layer">
       <div class="layer-head">
         <span class="layer-num">3</span>
-        <span class="layer-title">PROT.DAT - the archive</span>
+        <a class="layer-title" href="formats/prot.html">PROT.DAT - the archive</a>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/prot → <code>prot-extract</code></div>
         <div class="layer-desc">1233 entries located by a table of contents the game reads at boot. An entry's size is the gap to the next entry's start. Names come from <code>CDNAME.TXT</code>, whose numbers are raw table indices and sit two ahead of the extraction numbering (<a href="formats/cdname.html">why</a>).</div>
       </div>
-    </a>
+    </div>
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer" href="subsystems/asset-loader.html" data-detail="asset">
+    <div class="layer">
       <div class="layer-head">
         <span class="layer-num">4</span>
-        <span class="layer-title">Asset dispatch + categorize</span>
+        <a class="layer-title" href="subsystems/asset-loader.html">Asset dispatch + categorize</a>
       </div>
       <div class="layer-body">
         <div class="layer-crate">crates/asset → <code>asset</code></div>
         <div class="layer-desc">Entries carry no type label, so detectors classify each one by its bytes: LZS-compressed, TIM-pack, streaming container, scene bundle, effect bundle, sound-driver output, sound bank, or a code overlay. One pack format is read two ways (at offset 0, or four bytes in past a chunk header), beside a separate magic-prefixed effect bundle - the <a href="formats/pack.html">pack</a> pages keep their header math apart.</div>
       </div>
-    </a>
+    </div>
 
     <div class="layer-arrow">↓</div>
 
@@ -86,16 +86,16 @@
 
     <div class="layer-arrow">↓</div>
 
-    <a class="layer layer-engine" href="subsystems/engine.html">
+    <div class="layer layer-engine">
       <div class="layer-head">
         <span class="layer-num">5</span>
-        <span class="layer-title">Engine reimplementation</span>
+        <a class="layer-title" href="subsystems/engine.html">Engine reimplementation</a>
       </div>
       <div class="layer-body">
         <div class="layer-crate">engine-core / engine-vm / engine-battle / engine-effects / engine-minigames / engine-fishing / engine-minigame-scenes / engine-menus / engine-dialog / engine-field / engine-system / engine-ui / engine-render / engine-audio / engine-session / engine-shell</div>
         <div class="layer-desc">The from-scratch Rust port: world and scene state, the script VMs, the battle, effect and minigame kernels, the menus, a software PSX video memory drawn through wgpu, and a recreated sound chip. One native window and one WebAssembly build tick the same game session - the <a href="play.html">play page</a> is the engine itself, not a second implementation. The <a href="subsystems/engine.html#crate-layout">engine page</a> draws how the engine crates stack.</div>
       </div>
-    </a>
+    </div>
   </div>
 
   <div class="see-also">
@@ -116,15 +116,19 @@
       <tr>
         <td><strong>Preservation</strong></td>
         <td>Every asset off the disc as PNG / WAV / OBJ / glTF / JSON, a format spec per file type with the game function that reads it named as evidence, and round-trip parsers that can write assets back.</td>
-        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the static tables (<code>game-tables</code>), battle model formats (<code>battle-models</code>) and code-overlay image formats (<code>overlay-images</code>) <code>asset</code> re-exports, the <code>extract</code> driver, and the <code>patcher</code> over <code>disc-patch</code>, <code>translate</code>, <code>party-swap</code> and <code>texture-replace</code>.</td>
+        <td>The container crates (<code>iso</code>, <code>prot</code>, <code>lzs</code>, <code>asset</code>), one crate per format, the static tables (<code>game-tables</code>), battle model formats (<code>battle-models</code>) and code-overlay image formats (<code>overlay-images</code>) <code>asset</code> re-exports, the <code>extract</code> driver, and the <code>patcher</code> over <code>disc-patch</code>, <code>translate</code>, <code>code-hooks</code>, <code>arts-patch</code>, <code>texture-replace</code>, <code>party-swap</code> and <code>delilas-party</code>.</td>
       </tr>
       <tr>
         <td><strong>Reimplementation</strong></td>
         <td>A playable engine built from those specs plus logic traced in Ghidra and rewritten fresh - never a decompilation or static recompile of Sony's executable. Retail behaviour is the measured ground truth; enhancements (dynamic lighting, see-through walls, free-angle movement, VR) are toggles that leave the faithful mode bit-identical when off.</td>
-        <td>The simulation (<code>engine-core</code> over <code>engine-vm</code>, <code>engine-battle-vm</code>, <code>engine-battle</code>, <code>engine-effects</code>, <code>engine-minigames</code>, <code>engine-fishing</code>, <code>engine-minigame-scenes</code>, <code>engine-menus</code>, <code>engine-dialog</code>, <code>engine-field</code>, <code>engine-system</code>), presentation (<code>engine-ui</code> over <code>render-kernels</code>, <code>engine-render</code>, <code>engine-audio</code>), the shared game loop (<code>engine-session</code>, <code>engine-screens</code>), the <code>parity</code> oracles, the native <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
+        <td>The simulation (<code>engine-core</code> over <code>engine-vm</code>, <code>engine-battle-vm</code>, <code>engine-motion-vm</code>, <code>engine-battle</code>, <code>engine-effects</code>, <code>engine-minigames</code>, <code>engine-fishing</code>, <code>engine-minigame-scenes</code>, <code>engine-menus</code>, <code>engine-dialog</code>, <code>engine-field</code>, <code>engine-system</code>), presentation (<code>engine-ui</code> over <code>render-kernels</code>, <code>engine-render</code>, <code>engine-audio</code>), the shared game loop (<code>engine-session</code>, <code>engine-screens</code>), the <code>parity</code> oracles, the native <code>engine-shell</code>, and the <code>asset-viewer</code> / <code>web-viewer</code> front ends.</td>
       </tr>
     </tbody>
   </table>
+  <aside class="callout callout-tip">
+    <p class="callout-title">Where the port stands</p>
+    <p>The engine is playable: a New Game runs through towns, dungeons, the world map, battles, menus, shops, saves, the minigames and the cutscenes, natively and in the <a href="play.html">browser</a>. It is not finished - expect the occasional bug and scenes that do not yet match the original frame for frame. The <a href="index.html#status">home page</a> carries the measured figures.</p>
+  </aside>
   <p>What keeps the two honest is a set of parity oracles: the engine's video memory, sound output and game-mode trace are compared against emulator captures of the real game, so a doc that is wrong shows up as a pixel or a sample that differs. The <a href="subsystems/engine.html">engine page</a> has the boundaries and the current list of enhancement toggles.</p>
 </section>
 

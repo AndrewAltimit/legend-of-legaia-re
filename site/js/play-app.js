@@ -26,11 +26,13 @@
   const NPC_MESH_BASE  = 910000;
   const TILE_MESH_BASE = 920000;   /* one mesh per board-owned actor slot */
   /* Battle 3D layer: 930000 backdrop, +1 ground grid, +2 the effect-pool
-   * billboard batch, +16+i actor meshes, +256+tmd the 3D FX model cache
+   * billboard batch, +3 the backdrop's spun slot (the horizon mist ribbon),
+   * +16+i actor meshes, +256+tmd the 3D FX model cache
    * (keyed by the engine's global-TMD-pool index, so one upload per distinct
    * effect mesh per fight). */
   const BATTLE_MESH_BASE = 930000;
   const BATTLE_FX_BILLBOARD_MESH = BATTLE_MESH_BASE + 2;
+  const BATTLE_BACKDROP_SPUN_MESH = BATTLE_MESH_BASE + 3;
   const BATTLE_FX_MODEL_BASE = BATTLE_MESH_BASE + 256;
   /* Field-frame FX: a scene-pack stager part uploaded on demand (slot i of
    * the env pack that no placement drew), and script-spawned actor meshes
@@ -3352,6 +3354,19 @@ void main() {
       if (b.backdrop && !backdropHidden) {
         draws.push({ meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue });
       }
+      /* The backdrop's drawn slot 1 (on a stage that keeps object 1, the
+       * horizon mist ribbon) turns about Y every battle frame, so it is one
+       * copy drawn under the two per-frame models the engine composes -
+       * the native window's two draws. */
+      if (b.backdropSpun && !backdropHidden
+          && typeof rt.play_battle_backdrop_spun_models === 'function') {
+        const models = rt.play_battle_backdrop_spun_models();
+        for (let o = 0; o + 16 <= models.length; o += 16) {
+          draws.push({
+            meshId: b.backdropSpun, model: models.slice(o, o + 16), cue: backdropCue,
+          });
+        }
+      }
       /* The grid rides the stage's own GTE depth cue (`DAT_80078C1C` outdoor
        * table / indoor grey), as a PER-DRAW cue - nothing else in the frame
        * fogs. The engine resolved the far colour + ramp window at battle
@@ -3767,7 +3782,7 @@ void main() {
         vramSerial,
         scale: (typeof rt.play_battle_world_scale === 'function')
           ? rt.play_battle_world_scale() : 4.0,
-        backdrop: 0, ground: 0, actors: [],
+        backdrop: 0, backdropSpun: 0, ground: 0, actors: [],
         /* global-TMD-pool index -> "this slot uploaded geometry", so an FX
          * model decodes once per fight (and a dud slot is not retried). */
         fxMeshes: new Map(),
@@ -3787,6 +3802,13 @@ void main() {
       b.backdrop = up(BATTLE_MESH_BASE, rt.play_battle_backdrop_positions(),
         rt.play_battle_backdrop_uvs(), rt.play_battle_backdrop_cba_tsb(),
         rt.play_battle_backdrop_indices(), rt.play_battle_backdrop_flat_rgba());
+      /* Guarded against a cached WASM without the exports. */
+      if (typeof rt.play_battle_backdrop_spun_positions === 'function') {
+        b.backdropSpun = up(BATTLE_BACKDROP_SPUN_MESH,
+          rt.play_battle_backdrop_spun_positions(), rt.play_battle_backdrop_spun_uvs(),
+          rt.play_battle_backdrop_spun_cba_tsb(), rt.play_battle_backdrop_spun_indices(),
+          rt.play_battle_backdrop_spun_flat_rgba());
+      }
       b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
         rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
         rt.play_battle_ground_indices(),

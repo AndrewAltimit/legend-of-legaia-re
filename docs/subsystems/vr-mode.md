@@ -8,12 +8,10 @@ scene to a VR headset over WebXR: stereo rendering through the
 
 **VR is an enhancement retail never had, and it is opt-in.** The 1998 game has no
 stereo path; this is a presentation mode the port adds on top of the same geometry,
-entered only when a reader presses the `VR:` button on a page. It sits alongside the
-engine's other explicit, default-off enhancement toggles (dynamic lighting,
-free-angle movement, the debug orbit camera) rather than claiming to reproduce
-anything on the disc. Behavioural fidelity to retail remains the baseline for game
-logic; nothing here changes simulation, and parity oracles and replays are
-unaffected.
+entered only when a reader presses the `VR:` button on a page. It is one of the
+port's [enhancements](engine.md#fidelity-and-enhancements) and, unlike enhanced
+lighting or ground fog, it stays off until asked for. Nothing here changes the
+simulation, and parity oracles and replays are unaffected.
 
 Nothing about the flat path changes. A browser that reports no
 `immersive-vr` device runs exactly the render code it ran before: no
@@ -62,6 +60,18 @@ unconditional `gl.clear`, so per eye the VR loop:
 3. calls the page's normal draw closure.
 
 Both shadows are removed in a `finally`.
+
+```mermaid
+flowchart TD
+    F["XR frame callback"] --> T["engine tick (play page)"]
+    T --> B["bind XRWebGLLayer framebuffer"]
+    B --> E{"for each XRView (eye)"}
+    E --> S["scissor to the eye rect"]
+    S --> V["shadow gl.viewport and buildWorldOrbitVp"]
+    V --> D["page's normal draw closure<br/>(renderAssembled)"]
+    D --> U["remove shadows"]
+    U --> E
+```
 
 **The view-projection matrix.** `renderAssembled` builds its VP from the
 page's orbit camera by calling the global `buildWorldOrbitVp`

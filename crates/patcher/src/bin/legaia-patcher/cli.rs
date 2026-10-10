@@ -975,7 +975,7 @@ pub(crate) struct RandomizeArgs {
     /// coins. Unlocks after the Koru event in Nivora Ravine (the `nilboa2`
     /// story flag). Losing a round returns to the Sol venue by the dome's
     /// own design - no game over. A `koin1` script edit plus a small
-    /// arena/SCUS code injection.
+    /// arena/SCUS code injection. Mutually exclusive with `--delilas-party`.
     #[arg(long, default_value_t = false)]
     pub(crate) delilas_challenge: bool,
     /// **Custom items**: inject three brand-new items into cut item slots -
@@ -999,7 +999,7 @@ pub(crate) struct RandomizeArgs {
     /// rebuild from the same sibling models, and the party's battle grunt
     /// voices resample from the siblings' own voice banks; what the
     /// Tactical Arts shout banks carry is picked by
-    /// `--delilas-arts-voice`.
+    /// `--delilas-arts-voice`. Mutually exclusive with `--delilas-challenge`.
     #[arg(long, value_name = "V,N,G", value_parser = parse_delilas_party)]
     pub(crate) delilas_party: Option<legaia_patcher::delilas_party::PartyMapping>,
     /// With `--delilas-party`: keep Che's welded giant hammer on his

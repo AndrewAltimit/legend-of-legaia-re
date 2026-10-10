@@ -1,43 +1,84 @@
 # Audio
 
 Everything that makes sound: music, sound effects, character voice, and the
-streamed CD audio under cutscenes - plus the PsyQ sound stack the game drives it
-all through.
+streamed CD audio under cutscenes. Retail drives all of it through Sony's PsyQ
+sound libraries, statically linked into `SCUS_942.54`: **libsnd / SsAPI** (the
+sequencer that plays `.SEQ` scores against VAB instrument banks) on top of
+**libspu** (the driver for the SPU, the PlayStation's 24-voice sample chip).
+This page covers how the game picks and swaps a track, how a note or a cue
+becomes a keyed SPU voice, where voice clips come from, and how the Rust port
+reproduces and measures each step.
 
-**The stack, top to bottom.** The path-string cluster builds audio file paths;
-the SCUS dispatchers consume them; underneath sit the actual formats, VAB sound
-banks and SEQ sequences. The per-scene `.dpk` / `sound_data2` pack decodes as a
+The port plays all of it on both hosts (native window and browser page): scene
+and battle music, cutscene track swaps, field and battle sound effects, arts
+shouts, cast voices, victory lines and movie audio, through a from-scratch SPU
+and sequencer in `crates/engine-audio`. Byte-level formats live on their own
+pages - [SEQ](../formats/seq.md), [VAB](../formats/vab.md),
+[XA](../formats/xa.md), [SFX descriptors](../formats/sfx-table.md),
+[`bse.dat`](../formats/bse-dat.md) - and are linked, not repeated, here.
+
+## The stack at a glance
+
+```mermaid
+flowchart TD
+    S["Field script op 0x35<br/>BGM id"] --> P["Asset poller<br/>FUN_800243F0"]
+    P --> I["Chunk installer FUN_8001E54C<br/>VAB bank + SEQ score"]
+    I --> Q["SsAPI sequencer<br/>SsSeqCalc once per vsync"]
+    Q --> A["Voice allocation<br/>FUN_80066B00"]
+    C["SFX cue ring<br/>drainer FUN_80016B6C"] --> K["Cue key-on<br/>FUN_80065034"]
+    A --> V["Key-on volume and pitch<br/>FUN_80067550"]
+    K --> V
+    V --> F["Per-frame flush<br/>FUN_80065BAC"]
+    F --> U["SPU, 24 voices<br/>ADPCM, Gaussian resample, ADSR"]
+    U --> R["Reverb network<br/>Studio C"]
+    U --> M["Master mix"]
+    R --> M
+    X["CD-XA clip<br/>FUN_8003D53C"] --> M
+    M --> O["Output, 44.1 kHz"]
+```
+
+| Layer | Retail | Port |
+|---|---|---|
+| Track selection | Field-VM op `0x35` writes `_DAT_8007BAC8`; `FUN_800243F0` resolves and swaps | `SceneHost::route_bgm_events` into `AudioBgmDirector` (`crates/engine-session`) |
+| Bank + score install | `FUN_8001FC00` stream, `FUN_8001E54C` chunk walk, `SsVabOpenHead` | `chunk_install::owned_bank_offsets`, `VabBank::upload`, `spu_layout` |
+| Sequencer | libsnd `SsSeqCalc` tier, `0x80061-0x80067` | `Sequencer`, with `seq_calc` / `seq_events` as instruction-level reference kernels |
+| Voice allocation | `FUN_80066B00` + flush `FUN_80065BAC` | `Sequencer::alloc_voice`, `flush_key_ons` |
+| SPU | hardware under libspu, `0x80068-0x8006D` | `spu::Spu` (voices, ADSR, ADPCM, Gaussian, reverb) |
+| Sound effects | four-slot cue ring, static table + runtime bank | `SfxScheduler`, `SfxBank`, `BgmTail`, `SfxBankResidency` |
+| Voice clips | CD-XA one-shots through `FUN_8003D53C` | `XaClipBank`, `ArtsShoutBank`, mixed beside the SPU output |
+| Sound state | `_DAT_8007B750` flag word, timed release `FUN_800267FC` | `AudioState` (`engine-core::world`), `sound_state` (`crates/engine-system`) |
+| Output | SPU DAC | `AudioOut` (cpal) and `WebAudioOut`, one `StreamResampler` core |
+| Parity | - | `legaia_parity::audio_trace_oracle`, `mednafen-state spu`, key-on census |
+
+Three facts that catch people out:
+
+- **Legaia's SEQ is not stock PsyQ SEQ.** The version field is a u32 BE, and
+  meta events carry no MIDI `length` byte: `0xFF 0x51` is followed directly by
+  three tempo bytes. Reading a phantom length byte drops the first-body tempo
+  override and plays ~3x fast against the 240 BPM placeholder header. See
+  [`formats/seq.md`](../formats/seq.md).
+- **A score sits at a non-zero offset in its entry.** A music entry is a chunk
+  stream, `[chunk0 hdr][VAB header][chunk1 hdr][VAG bodies][chunk hdr][SEQ]`.
+  Walk the chunk list (`chunk_install::seq_chunk_offset`,
+  `SceneAssets::bgm_seq_offset`); do not probe fixed offsets.
+- **Every real music track is a global-pool id.** Scenes carry no score of
+  their own; the scene's script picks an id `>= 2000` out of the `music_01`
+  bank ([below](#which-track-a-scene-plays)).
+
+The per-scene `.dpk` / `sound_data2` pack decodes as a
 [VAB + SEQ bundle](../formats/sound-driver.md#the-dpk--sound_data2-payload-is-a-vab--seq-bundle);
-the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates are **not** present as
+the `.MAP` / `.PCH` / `.spk` / `.pac` PsyQ intermediates are not present as
 separate retail chunks.
-
-**Where it lives.** All SCUS-resident: the SsAPI sequencer at the
-`0x80061-0x80067` cluster, libspu / SPU control at `0x80068-0x8006D`.
-
-**Port counterpart.** `crates/engine-audio` - a from-scratch SPU plus an
-SsAPI-shaped `Sequencer`, mixed through cpal. `crates/vab`, `crates/seq` and
-`crates/xa` parse the formats; `mednafen-state spu` is the parity oracle.
-
-**The thing that catches people out:** Legaia's SEQ is **not** stock PsyQ SEQ.
-The version field is u32 BE (not u16), and its meta events carry **no** MIDI
-variable-length `length` byte - `0xFF 0x51` is followed directly by three tempo
-bytes. Reading a phantom length byte swallows the first-body tempo override and
-pins playback ~3x fast against the 240 BPM placeholder header. See
-[`formats/seq.md`](../formats/seq.md).
-
-**A second one:** most retail BGM lives at a **non-zero offset** inside its
-entry - `[u32 chunk_header][VAB][chunk1_header][SEQ]`. Slice past the wrapper
-with `SceneAssets::seq_in_stream_entries` / `bgm_seq_offset`.
 
 ## Contents
 
-- [Path-string cluster](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [File-API leaf cluster](#file-api-leaf-cluster)
-- [VAB sound banks](#vab-sound-banks) · [per-actor SFX](#per-actor-sound-effects) · [monster sound bank](#monster-sound-bank---hmpackmonstersnd)
-- [BGM dispatch](#bgm-dispatch) · [global-pool BGM (`music_01`)](#global-pool-bgm-the-music_01-bank)
-- [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) - [globals](#globals) · [public SEQ API](#public-seq-api) · [SEQ internals](#seq-internals) · [voice / mixer](#voice--mixer-audible-output-critical-path) · [VAB attr accessors](#vab-attribute-accessors--utility-note-triggers) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [SPU command shims](#spu-command-shims-0x81-scaling--0127--016383) · [per-channel event handlers](#per-channel-event-handlers-over-_dat_801cd2c0-the-0x80060a1c0x80061bf8-family) · [further libsnd leaves](#further-libsnd--libspu-leaves) · [renderer-citation correction](#renderer-citation-correction)
-- [libspu / SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) - [SPU globals](#spu-globals) · [primitives](#libspu-primitives) · [init / reset / key](#spu-init--reset--key-registers) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb model](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)
-- [Engine-audio: Sequencer port](#engine-audio-model---sequencer-port) · [from-scratch SPU port](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
-- [Battle arts-voice shout path](#battle-arts-voice-shout-path-engine) · [Audio-trace parity oracle](#audio-trace-parity-oracle) - [which channel differs first](#which-channel-differs-first-on-the-per-vsync-comparand) · [comparing per voice](#comparing-per-voice) - [align the windows](#align-the-windows-before-comparing-them) · [the envelope channel is not on emulated time](#the-envelope-channel-is-not-on-emulated-time) · [What's left](#whats-left)
+- **Loading**: [path strings](#path-string-cluster) · [SCUS consumers](#scus-consumers) · [VAB banks](#vab-sound-banks) · [VAB slots](#vab-slots---one-installer-twelve-records) · [monster bank](#monster-sound-bank---hmpackmonstersnd) · [file-API leaves](#file-api-leaf-cluster)
+- **Music**: [BGM dispatch](#bgm-dispatch) · [which track a scene plays](#which-track-a-scene-plays) · [swap handshake](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa) · [stop / pause / replay](#the-control-words-stop-pause-replay) · [movies](#movies-and-the-score) · [cold scene entry](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like) · [battle track](#the-battle-sound-set-picks-the-fights-track) · [`music_01` bank](#global-pool-bgm-the-music_01-bank)
+- **libsnd**: [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) · [tempo](#where-wall-clock-tempo-becomes-an-integer-tick-step) · [event decode](#the-decoder-does-not-consume-a-whole-event) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)
+- **libspu**: [SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [seq-management layer](#ssapi-seq-management-layer-above-libspu)
+- **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [XA-ADPCM](#xa-adpcm)
+- **Voice**: [arts shout](#battle-arts-voice-shout-path-engine) · [animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc) · [XA dispatchers and census](#cd-xa-voice-clip-dispatchers-and-static-cue-census) · [a normal attack](#what-a-normal-attack-sounds-like)
+- **Measurement**: [audio-trace parity oracle](#audio-trace-parity-oracle) · [open items](#open-items)
 
 ## Path-string cluster
 
@@ -50,7 +91,7 @@ The string cluster at `0x8007B380` holds the file extensions the sound subsystem
 | `FUN_8001FA88` | **Battle sound-bank / `.dpk` loader.** Loads `bse.dat` (the battle occupant of the `>= 0x200` SFX descriptor bank - called only from battle init `FUN_800513F0`, not at boot), then per-scene `.dpk` from `h:\main\bg\domepack\…`. |
 | `FUN_8001FC00` | **Streaming-asset loader.** Builds paths under the `sound\` prefix; the XA / `.pac` / `STR` consumer. |
 
-`FUN_8001EBEC` was previously listed here as a third "mode-aware extension dispatcher"; that is a misread. The decomp shows it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads `DAT_8007C018[_DAT_8007B824 + 0..2]`, the loaded battle-character TMD pointers), not a sound consumer - see [`formats/sound-driver.md`](../formats/sound-driver.md#consumers) and [`formats/character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap).
+`FUN_8001EBEC` is not a third sound consumer: it is the graphics-side character-TMD equipment-conditional group-transform swap (it reads `DAT_8007C018[_DAT_8007B824 + 0..2]`, the loaded battle-character TMD pointers) - see [`formats/sound-driver.md`](../formats/sound-driver.md#consumers) and [`formats/character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap).
 
 Both `FUN_8001FA88` and `FUN_8001FC00` carry a dev/retail split via `_DAT_8007B8C2`. The **retail** branch (`!= 0`, the value retail boots with) loads via PROT indices directly. The **dev** branch (`== 0`) opens an `h:\` path through `FUN_8003E6BC`, which is a plain host-trap wrapper - `strcpy`, then `FUN_800608F0` (`break 0x103`), then fseek/fread/fclose. It performs no name resolution of any kind, and the paths it opens do not exist on the disc, so retail never takes it. Note the opening gate in both functions is the unrelated word `_DAT_8007B868`; they reach `_DAT_8007B8C2` further into the body.
 
@@ -127,8 +168,6 @@ The gate is `beq v0,zero,0x8003E25C` at `0x8003E1FC`, so the **zero** arm is the
 - **Dev path** (`_DAT_8007B8C2 == 0`) - `0x8003E25C` onward, using the host-trap file API: `FUN_800608F0` (`break 0x103`) → `FUN_80060920` (fseek to record × 0x800) → `FUN_80060944` (fread) → `FUN_80060910` (fclose). Path string: `h:\mpack\monster.snd`.
 - **Retail path** (`_DAT_8007B8C2 != 0`, the fall-through) - runs `FUN_8003EE7C` / `FUN_8003ED04`, stages `(size, dst)` into the gp window at `+0x97c` / `+0x894`, kicks the async CD read via `FUN_8003F128`. Sets a 120-frame timeout at `+0x91c`.
 
-The same pattern (`h:\mpack\…` paths + per-record TOC at a small data structure) is the shape we expect for the rest of the still-TBD audio formats - read the `FUN_8003E104` dump as the canonical example.
-
 ### Hero victory voices - the tail clips of `monster.snd`
 
 `monster.snd`'s TOC (count word `0xCE` at file offset `+4`, then sector offsets) indexes more than the per-monster banks: its **tail clips carry the party's victory-pose voice lines**, streamed by the same `FUN_8003E104` at results time - which is why these vocals survive any sweep of the `XA/` CD-audio files. Runtime-confirmed via recomp CD-sector capture: a forced weak victory reads exactly the selected clip's sectors at pose time.
@@ -183,19 +222,16 @@ extraction `990` = global slot `2` - the track id `2002` plays. The side-band
 resolver's scene-local arms end the same way (`vab_01 + 2`,
 [`sfx-table.md`](../formats/sfx-table.md#the-side-band-bank-a-field-script-selects)).
 
-So retail has no scene-local bank, and no scene bank staging at all: the field
+So retail has no scene-local bank and stages no scene bank at all: the field
 initialiser's only bank loads are slot 6 (PROT 0876) and the ending arm below,
-and the one BGM slot changes only when the resolved track does. The port's old
-model - stage the scene block's first VAB-bearing entry at scene entry and play
-a scene-local SEQ over it, then skip that restage whenever a global track was
-carried across a door - reproduced neither half. Only `teien` among the field
-scenes has a VAB-bearing entry in its block at all. Both play hosts now stage no
-scene bank, and `SceneHost::route_bgm_events` plays a scene-local id through
-the owned-VAB path on `SCENE_LOCAL_BGM_FALLBACK_ID`'s entry, keeping the id
-itself for the directors' same-track test (as retail's change test keeps its
-own index); `engine-core/tests/global_bgm_owned_vab_disc.rs` pins it. The
-disc-wide op-`0x35` census has no scene-local start, so no shipped script takes
-the arm.
+and the one BGM slot changes only when the resolved track does. Only `teien`
+among the field scenes has a VAB-bearing entry in its block. Both play hosts
+match: they stage no scene bank, and `SceneHost::route_bgm_events` plays a
+scene-local id through the owned-VAB path on
+`SCENE_LOCAL_BGM_FALLBACK_ID`'s entry, keeping the id itself for the
+directors' same-track test (as retail's change test keeps its own index);
+`engine-core/tests/global_bgm_owned_vab_disc.rs` pins it. The disc-wide
+op-`0x35` census has no scene-local start, so no shipped script takes the arm.
 
 #### `0x1000` is a park sentinel, not a track
 
@@ -262,6 +298,27 @@ down; install the SEQ (`FUN_8001E54C`); re-attach the slot
 (`FUN_80026478`) **unless** bit 1 (pause) is set; latch
 `_DAT_8007BA9C = _DAT_8007BAB8`.
 
+A script-owned swap (sub-op 9, committed by sub-op `0xA`), using the flag bits
+tabulated below:
+
+```mermaid
+sequenceDiagram
+    participant S as Script, op 0x35
+    participant F as Flag word 0x8007B750
+    participant P as Poller FUN_800243F0
+    S->>F: sub-op 9 stores the new id, sets bit 0
+    P->>P: wait for CD idle, arm 30-frame settle
+    Note over P: bit 0 set, so the old track keeps the slot
+    P->>P: kick payload load, count the settle down
+    P->>F: set bit 3, load settled
+    Note over P: stalls while bit 0 is set and bit 4 is clear
+    S->>F: sub-op 0xA sees bit 3
+    S->>S: detach and close the old track
+    S->>F: set bit 4, clear bit 1
+    P->>P: install SEQ, re-attach slot
+    P->>F: clear bits 0, 3, 4 and latch the loaded index
+```
+
 The sound flag word `_DAT_8007B750` coordinates it with the script. The full
 writer census (SCUS + every based overlay image; store-offset scan, see
 [`../tooling/address-reference-scan.md`](../tooling/address-reference-scan.md)):
@@ -324,12 +381,11 @@ ghidra/scripts/funcs/800266e0.txt`, `80064370.txt`, `800641ec.txt`,
 `8006282c.txt`, `8006275c.txt`, `80062880.txt`, `800628f0.txt`,
 `80062f98.txt`.
 
-The engine's router once read sub-op `3` as a resume and `4` as a stop -
-the legacy labels - so the census's most common control word after the
-start / commit pair silenced the score where retail brings it back. The
-battle and minigame restores that stop the score when no field track was
-playing raise the engine's own word, `BGM_SUB_OP_ENGINE_STOP`, which retail's
-bounds test would dispatch nowhere.
+Sub-op `3` is the pause and `4` the replay; the legacy labels have them the
+other way round, and routing by those labels silences the score where retail
+brings it back. The battle and minigame restores that stop the score when no
+field track was playing raise the engine's own word,
+`BGM_SUB_OP_ENGINE_STOP`, which retail's bounds test would dispatch nowhere.
 
 ### Movies and the score
 
@@ -340,36 +396,32 @@ with the pass `FUN_80016230` it calls) issue no BGM-slot call and no `SsSeq*`
 call; the play loop's only sound calls open and close the SPU CD input
 (`FUN_800643C4`, `FUN_80062A0C`). The sequencer is clocked from the
 root-counter callback (the word at `0x8007A910` names `FUN_80062F98`), not
-from the main loop. So a mid-game movie inherits whatever state the script
-left: the nine `0x4C 0xE2` triggers are preceded by their own op-`0x35`
-words - a pause, a commit, a flag set, nothing - scene by scene.
+from the main loop. So **a movie inherits whatever state the script left**:
+each of the nine `0x4C 0xE2` movie triggers is preceded by its own op-`0x35`
+words - a pause, a commit, a flag set, or nothing.
 
-A track the script left running stays audible under the movie. The capture
+**A running score plays on under the movie** (`capture`). The probe
 `scripts/pcsx-redux/autorun_movie_bgm_audibility.lua` makes the trigger op's
 two stores (`sh fmv_id -> 0x8007BA78`, `sh 0x1A -> 0x8007B83C`, handler
 `0x801E30E4..0x801E3104` in PROT 0897) from a field state whose score is
-sounding - `town01_field_card_boot` with `fmv_id 1`, `chitei2_field_card_boot`
-with `fmv_id 3` - and samples the SPU every ten vsyncs while the movie is on
-screen:
+sounding and samples the SPU every ten vsyncs while the movie is on screen. A
+sounding voice is one with a non-zero envelope level and a non-zero channel
+volume.
 
-| Scene | Samples with a sounding voice | Samples with a fresh key-on (envelope at or above `0x7000`) | Master volume | SPUCNT |
+| Scene (state) | Samples with a sounding voice | Samples with a fresh key-on (envelope `>= 0x7000`) | Master volume | SPUCNT |
 |---|---|---|---|---|
-| `town01`, `fmv_id 1` | 81 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
-| `chitei2`, `fmv_id 3` | 83 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+| `town01`, `fmv_id 1` (`town01_field_card_boot`) | 81 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
+| `chitei2`, `fmv_id 3` (`chitei2_field_card_boot`) | 83 of 84 | 79 of 84 | `0x3FFF` throughout | `0xC081` |
 
-A sounding voice is one with a non-zero envelope level and a non-zero channel
-volume. The BGM id at `0x8007BAC8` stays the scene's own track throughout, and
-screenshots taken alongside the samples show the movie frames. So the sequencer keeps keying notes
-and the SPU keeps mixing them next to the CD input. The movie plays over the
-score, not instead of it. The poke skips the op-`0x35` words the record runs
-first, and for these scenes those words leave the score sounding: `town01`
-starts and commits a new track (sub-ops 9, `0xA`) and sets flag bit 2 (sub-op
-6), `deroa` and `chitei2` only set bit 2. Bit 2 is the flag the field
-initializer reads to skip its BGM ramp and its key-off of voices `0x10..0x17`,
-which fits a score meant to run through the movie into the next scene.
+The BGM id at `0x8007BAC8` stays the scene's own track throughout and the
+screenshots beside the samples show movie frames: the sequencer keeps keying
+notes and the SPU mixes them next to the CD input. The words these records run
+first leave the score sounding - `town01` starts and commits a new track
+(sub-ops 9, `0xA`) and sets flag bit 2 (sub-op 6); `deroa` and `chitei2` only
+set bit 2, the flag the field initialiser reads to skip its BGM ramp and its
+key-off of voices `0x10..0x17`.
 
-A score the script has stopped stays silent under the movie. Two more captures
-cover that side:
+**A stopped score stays silent under the movie** (`capture`):
 
 | Run | Samples with a sounding voice, movie on | Before the movie |
 |---|---|---|
@@ -380,36 +432,30 @@ cover that side:
 - **Sub-op 2** (`taiku`'s one word before its trigger) is the arm at
   `0x801E0138`: it raises `_DAT_8007B750` bit 1 and calls `FUN_800266E0` on
   the slot `0x8007052C`, whose `FUN_80064370` stops the sequence. The probe
-  runs exactly that - the same flag store and the same call with the same
-  argument, from the field tick (`LEGAIA_CALL`, `LEGAIA_FLAGS_OR`) - then the
-  trigger's two stores. It needs the interpreter core, under which neither
-  this run nor its control had put a movie frame on screen within 840 vsyncs;
-  the pair differs only in the call.
+  issues the same flag store and call from the field tick (`LEGAIA_CALL`,
+  `LEGAIA_FLAGS_OR`), then the trigger's two stores. It runs on the
+  interpreter core, where neither run nor control draws a movie frame within
+  840 vsyncs, so the pair differs only in the call.
 - **`garmel`** plays its own trigger record from `chapter2_garmel_post_zeto`
-  with `LEGAIA_MASH_EVERY=30` (mode `0x1A` at vsync 2619, `fmv_id 2`). The
-  score was already stopped when the state was taken (`_DAT_8007B750` bit 1
-  set from the first vsync, track id `2043`). What sounds in the field are
-  voices in the `0x10..0x17` band the field initializer keys off, and they end
+  (`LEGAIA_MASH_EVERY=30`; mode `0x1A` at vsync 2619, `fmv_id 2`). The score is
+  already stopped in that state (`_DAT_8007B750` bit 1 set, track id `2043`);
+  what sounds in the field are voices in the `0x10..0x17` band, which end
   before the switch. Its sub-op 7 (arm `0x801E01DC`) makes no sequencer call:
   it stores the operand, or `-1` for `0xFF`, to `_DAT_8007B880`. The field
-  initializer (`FUN_801D6704`) reads that word at `0x801D6B48` and, when it is
+  initialiser `FUN_801D6704` reads that word at `0x801D6B48` and, when it is
   not negative and a track is attached, calls `FUN_80062004` with `0xB4` - a
   level ramp on the next scene's entry.
 
-So each movie inherits the score's state: running, it plays on; stopped, the
-movie plays over silence. The records `town0d` and `jouine` are not
-captured - no library state sits in `town0d`, and `jouine`'s trigger is the
-post-Cort record `P2[16]`, past every `jouine` state - but their words settle
-which side each lands on. `town0d`'s Songi record `P2[31]` runs `9` (`2034`),
-`5` (`120`), `0xA`, then a long scene before `fmv_id 6`; `jouine`'s `P2[16]`
-runs `9` (`2040`), `0xA`, `5` (`60`), then `9` (`2069`), a 60-frame wait, `0xA`,
-a 20-frame wait and `fmv_id 8`. In both the last word before the trigger is a
-commit that attaches a fresh track (the timed release fades and stops the
-track before it - [the timed release](#the-timed-release-is-a-scheduled-bgm-pause)),
-which is the `town01` shape the captures above measured sounding: both
-movies play over the score.
+`town0d` and `jouine` are not captured (`inference` from their script words).
+`town0d`'s Songi record `P2[31]` runs `9` (`2034`), `5` (`120`), `0xA`, then a
+long scene before `fmv_id 6`; `jouine`'s post-Cort record `P2[16]` runs `9`
+(`2040`), `0xA`, `5` (`60`), then `9` (`2069`), a 60-frame wait, `0xA`, a
+20-frame wait and `fmv_id 8`. In both the last word before the trigger is a
+commit that attaches a fresh track (the timed release fades and stops the one
+before it - [the timed release](#the-timed-release-is-a-scheduled-bgm-pause)),
+the `town01` shape measured sounding above, so both movies play over the score.
 
-The title attract is the exception. The attract underflow arm of the title
+**The title attract is the exception.** The attract underflow arm of the title
 tick releases the slot - `FUN_800266E0` + `FUN_80026520` at `0x801DDD7C` /
 `0x801DDD84`, behind the entry word `_DAT_8007BB00 != 0`, which the boot image
 always raises - and the return runs `CARD INIT` (`FUN_8002574C`), which streams
@@ -418,8 +464,8 @@ the title theme again (raw TOC `0x41F` into category 1,
 restarts from its first beat. The load route's `LaunchFade` arm releases the
 slot the same way (`0x801DFB74`) before master mode 2 brings the field up.
 
-Both hosts decode a movie's XA onto the mixer the BGM plays through, so the
-port decides the layering itself, in one engine-side policy
+**Port.** Both hosts decode a movie's XA onto the mixer the BGM plays through,
+so the layering is one engine-side policy
 (`legaia_engine_core::movie_audio::MovieScore`) the native window and the
 browser page both consult:
 
@@ -463,7 +509,7 @@ the Rim Elm theme (`35 E0 07 01`, 2016) and then, on exactly that pair,
 takes the attack arm (`P1[0]` `+0xF3`): the attack theme `35 DA 07 01`
 (2010) over the subtractive night grade `34 01 30 30 00 14`. Every retail
 `town0b` state holds `0x8007BAC8 = 2010`; a picker entry with neither flag
-staged took the other arm and played 2016, so the staging seeds `0x147`.
+staged takes the other arm and plays 2016, so the staging seeds `0x147`.
 
 #### The cold scene-entry sequence, and what each missing step sounds like
 
@@ -473,16 +519,40 @@ one is separately load-bearing for whether music sounds:
 
 | Step | Kernel | Skipping it |
 |---|---|---|
-| Free-roam story staging | `World::seed_free_roam_story_baseline` | The entry script's authored pause parks the track: a sequencer attaches on the first frame and its playhead never leaves tick 0. |
-| Live field entry | `BootSession::enter_field_live` (browser: the same pair in `runtime.rs`) | `load_scene` alone installs no field record, so the field VM steps nothing and op `0x35` never executes. |
-| Global-pool start hook | `BgmDirector::start_owned_vab` | Every real music cue is a global id, so a director that leaves this on the trait's no-op default plays nothing while looking fully wired. |
+| 1. Free-roam story staging | `World::seed_free_roam_story_baseline` | The entry script's authored pause parks the track: a sequencer attaches on the first frame and its playhead never leaves tick 0. |
+| 2. Live field entry | `BootSession::enter_field_live` (browser: the same pair in `runtime.rs`) | `load_scene` alone installs no field record, so the field VM steps nothing and op `0x35` never executes. |
+| 3. Global-pool start hook | `BgmDirector::start_owned_vab` | Every real music cue is a global id, so a director that leaves this on the trait's no-op default plays nothing while looking fully wired. |
 
-All three read identically from outside - silence - which is why a driver
-missing any one of them reports as "the engine starts no BGM on scene entry".
+```mermaid
+sequenceDiagram
+    participant H as Host or headless driver
+    participant W as World + field VM
+    participant R as SceneHost router
+    participant D as BGM director
+    participant M as Mixer, SPU + Sequencer
+    H->>W: 1. seed_free_roam_story_baseline
+    H->>W: 2. enter_field_live, installs the field record
+    W->>W: entry script runs op 0x35 sub-op 1, global id
+    W->>R: FieldEvent Bgm
+    R->>D: 3. start_owned_vab with the music_01 entry bytes
+    D->>M: upload the entry's VAB, attach its Sequencer
+```
 
-The engine port reuses this same dispatch for the **Battle↔Field music swap**: `World::set_battle_bgm` configures a battle track id, and the live gameplay loop queues an ordinary `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`) and resumes the stashed field track on battle end (`restore_field_bgm`). Both transitions run through the host's `AudioBgmDirector` `start_inner` path - no separate battle-audio code path.
+All three failures read identically from outside - silence - which is why a
+driver missing any one of them reports as "the engine starts no BGM on scene
+entry".
 
-The battle id resolves like any op-`0x35` id: scene-local (`< 2000`) through the scene's own BGM table, global-pool (`>= 2000`) through the `music_01` bank arm (`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's `battle_id == 0` bundle `0x36F` = extraction 877 = sound-test #26), installed by `LiveLoopOpts::playable()` so both hosts swap without per-scene configuration.
+**Battle↔Field swap.** The port reuses the same dispatch: `World::set_battle_bgm`
+configures a battle track id, the live gameplay loop queues an ordinary
+`FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`)
+and resumes the stashed field track on battle end (`restore_field_bgm`). Both
+transitions run through the host's `AudioBgmDirector` `start_inner` path - no
+separate battle-audio code path. The battle id resolves like any op-`0x35` id
+(`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the
+global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's
+`battle_id == 0` bundle `0x36F` = extraction 877 = sound-test #26), installed
+by `LiveLoopOpts::playable()` so both hosts swap without per-scene
+configuration.
 
 #### The battle sound set picks the fight's track
 
@@ -515,19 +585,15 @@ it, then the last sound-set selection
 evolved-Cort fights then play their event's theme instead of the scene
 entry's track and the default battle theme.
 
-Retail BGM changes are **hard cuts** (or short `SsSeqSetVol` ramps), so
-`start_inner` swaps tracks the faithful way: when a track is already playing it
-calls `AudioOut::swap_bgm`, which key-offs the outgoing sequencer (its notes
-release through their own ADSR envelopes, so nothing hard-cuts to a
-discontinuity) and installs the new sequencer to tick from its first event that
-same instant. The incoming track's intro is audible immediately - only a brief
-click-guard fade-in on the SPU master (a couple of frames) softens the onset.
-This replaces the earlier serial cross-fade (`crossfade_to`), which faded the
-old track down to silence *before* installing the new one and then faded that
-back up, holding the incoming intro near-silent for its first half-second - both
-an artifact and less faithful than retail. `crossfade_to` and its `pending_seq`
-fade-out-then-swap machinery remain for callers that genuinely want a symmetric
-cross-fade; BGM transitions no longer use it.
+**Track changes are hard cuts.** Retail BGM changes cut (or run a short
+`SsSeqSetVol` ramp), so `start_inner` calls `AudioOut::swap_bgm` when a track
+is already playing: it keys off the outgoing sequencer - its notes release
+through their own ADSR envelopes, so nothing cuts to a discontinuity - and
+installs the new sequencer to tick from its first event that same instant.
+Only a click-guard fade-in on the SPU master (a couple of frames) softens the
+onset. `AudioOut::crossfade_to`, a symmetric fade-out-then-swap, remains for
+callers that want one; BGM transitions do not use it, because it holds the
+incoming intro near-silent for its first half-second.
 
 ### The timed release is a scheduled BGM pause
 
@@ -561,11 +627,10 @@ large share of those run a sub-op `5` before the commit. The port starts the
 incoming track at sub-op `9`, so it keeps retail's bit 0 as
 `AudioState::start_pending_commit` (raised by sub-op `9`, ended by `0xA` and
 by the scene load) and drops an expiry that lands inside the window: the
-track it would release is already gone. Without that, the expiry paused the
-new score and the commit then released the paused source, so every such
-cutscene - `korb3`'s Gaza event among them - went silent from the commit on.
-An expiry after the commit (`jouine`'s `9 · 0xA · 5`) stops the new track,
-as retail's does.
+track it would release is already gone, and pausing the new score there would
+leave every such cutscene - `korb3`'s Gaza event among them - silent from the
+commit on. An expiry after the commit (`jouine`'s `9 · 0xA · 5`) stops the new
+track, as retail's does.
 
 ### Sub-op 8 replays an empty record
 
@@ -660,7 +725,8 @@ host that can leave the credits (a save load, a scene jump).
 `engine-audio/tests/credits_bank_spu_layout_disc.rs` is the evidence: all 45
 bodies upload (`0x1000..0x641B0`), the resident banks' bytes are overwritten,
 and the re-staged banks land at the same addresses with the same bytes, the
-menu cursor cue rendering as it did at boot. Nobody has listened to it.
+menu cursor cue rendering as it did at boot. That test is the
+evidence; the path has no listening check.
 
 ## SsAPI sequencer (`0x80061-0x80067` cluster)
 
@@ -679,7 +745,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `_DAT_801CE080..AC` | Voice-attribute slots (per-voice pitch + vol working state). |
 | `_DAT_801CE088[voice]` | Voice base-note table (stride 2). |
 | `_DAT_801CE204` | Ring index (0..15) into `_DAT_801CE208`, advanced once per `FUN_80065BAC` flush. |
-| `_DAT_801CE208` | **16-word silent-history ring**: one word per recent flush frame, bit `v` set when voice `v`'s envelope read zero that frame. AND of all 16 = "silent 16 consecutive frames", the condition that unreserves a voice. (Not a free/busy bitmap - that earlier reading came from the gap-map fingerprints and is corrected by the per-instruction read.) |
+| `_DAT_801CE208` | **16-word silent-history ring**: one word per recent flush frame, bit `v` set when voice `v`'s envelope read zero that frame. AND of all 16 = "silent 16 consecutive frames", the condition that unreserves a voice. Not a free/busy bitmap. |
 | `_DAT_801CDB50` | Per-voice driver records (24 × stride `0x36`): `+0x02` allocation age, `+0x06` live envelope level, `+0x1A` note priority, `+0x1D` in-use marker. The state the allocation scan (`FUN_80066B00`) reads. |
 | `_DAT_801CE362` | Chosen-voice halfword: the allocation scan's winner, consumed by `_SsVoKeyOnDirect` (`FUN_80065978`). |
 | `_DAT_801CDB48 / _DAT_801CDB4A` | **Key-ON mask accumulator** (lo/hi 16 of the 24-voice key-on word). OR'd by the voice-alloc path, flushed to the SPU by `FUN_8006C048`, cleared at flush. Register-for-register the retail twin of `engine-audio`'s `Spu::key_on_mask`. |
@@ -727,7 +793,7 @@ advances through `FUN_80063CEC` (calls the varint decoder `FUN_80061C68`, steps
 `_DAT_801CD220..230`). The per-`+0x98`-flag-bit map of everything `FUN_80062F98`
 fans out to is tabulated once, in
 [`reference/functions/audio.md`](../reference/functions/audio.md); this page
-carries only the handlers whose labels had been wrong.
+carries the handlers that need more than a table row.
 
 **The volume-slide pair.** `FUN_8006320C` and `FUN_8006352C` are the
 **ascending** and **descending** halves of one slide, not note or expression
@@ -791,18 +857,15 @@ The recompute is skipped entirely on the sub-step early-out (a positive `+0x4E`
 off its boundary returns before reaching the tail), so the budget only moves on
 frames the tempo itself moved.
 
-The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` reads as tenths
-of a tick per frame with `divisor` the frame rate, which would make `+0x54` a
-fixed-point ×10 quantity. `0x801CD2BC` reads `60` in every catalogued save
-state (`capture`), so the reading holds: the budget is tenths of a tick per
-vsync (`seq_calc::RETAIL_TICK_DIVISOR`). The **×10 half of that reading is no longer an inference**, though: the varint
-delta-time reader `FUN_80061C68` multiplies every decoded delta by `10` before
-returning it and before accumulating it into `+0x88`, so the pump's
-`+0x90 >= +0x54` comparison is tenths against tenths on both sides. Two
-independent routines agreeing on a scale is a measurement; one formula's shape
-was not. The divisor matters because the engine `Sequencer` clocks in integer
-SPU samples: it spaces events at the rate this budget implies, not at the
-written tempo - see
+The shape `(ticks/quarter × beats/minute × 10) / (divisor × 60)` is tenths of a
+tick per vsync, a fixed-point ×10 quantity. Two independent facts pin it:
+`0x801CD2BC` reads `60` in every catalogued save state (`capture`;
+`seq_calc::RETAIL_TICK_DIVISOR`), and the varint delta-time reader
+`FUN_80061C68` multiplies every decoded delta by `10` before returning it and
+before accumulating it into `+0x88`, so the pump's `+0x90 >= +0x54` comparison
+is tenths against tenths on both sides. The divisor matters because the engine
+`Sequencer` spaces events at the rate this budget implies, not at the written
+tempo - see
 [the tempo a track actually plays at](#the-tempo-a-track-actually-plays-at).
 
 ### The decoder does not consume a whole event
@@ -835,19 +898,16 @@ hand has to do the same.
 three-operand, no-length-byte layout recorded in
 [`seq.md`](../formats/seq.md).
 
-**Correction** (label ≠ role): `FUN_8006352C` / `FUN_8006320C` were tagged
-elsewhere as "fixed-point div" pitch kernels. Neither is a pitch kernel - but the
-earlier stated reason, that they carry no division, is itself wrong. Each carries
-exactly one `div`, and it is a **modulo of the slide tick counter, not a
-fixed-point pitch divide**: `FUN_8006320C` at `0x8006329C..0x800632C4` and
-`FUN_8006352C` at `0x800635BC..0x800635E4`, both dividing the just-decremented
-remaining-tick counter `+0xA0` by the signed per-tick step `+0x4C` and reading
-the **remainder** back with `mfhi`. A non-zero remainder skips the update, so the
-pair is a sub-tick divider - one volume unit every `N` ticks rather than `N`
-units every tick. The divisor is positive on that path: a `blez` diverts a
-non-positive step to its own arm first. The fixed-point note→pitch math is
-confined to `FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4`
-(`_SsKey2Pitch`); no additional pitch kernel exists in this cluster.
+**The slide pair is not a pitch kernel.** `FUN_8006352C` / `FUN_8006320C` each
+carry exactly one `div`, and it is a **modulo of the slide tick counter**:
+`FUN_8006320C` at `0x8006329C..0x800632C4` and `FUN_8006352C` at
+`0x800635BC..0x800635E4` divide the just-decremented remaining-tick counter
+`+0xA0` by the signed per-tick step `+0x4C` and read the **remainder** back
+with `mfhi`. A non-zero remainder skips the update, so the pair is a sub-tick
+divider - one volume unit every `N` ticks rather than `N` units every tick.
+The divisor is positive on that path: a `blez` diverts a non-positive step to
+its own arm first. The fixed-point note→pitch math is confined to
+`FUN_80066E50` (`_SsPitchFromKey`) and `FUN_8006C6E4` (`_SsKey2Pitch`).
 
 **Track end is a loop-repeat chain, not a vab release.** `FUN_80063AA8` handles
 the last repeat of a track by **chaining to another `(slot, channel)`** named by
@@ -860,7 +920,7 @@ Nothing in the body releases a VAB.
 
 | Function | Role |
 |---|---|
-| `FUN_80067550(voice, key, vel, ...)` | `_SsVoNoteOn` - the key-on volume chain: `vel × bank_mvol(hdr+0x18) × 0x3FFF / 0x3F01`, then `× prog_mvol(801CE352) × tone_vol(801CE355) / 0x3F01`; seq path folds channel vol L/R (`+0x58/+0x5A`, `/0x7F` per side), then three one-sided pan attenuations (tone pan, prog `mpan`, staged channel pan), a mono fold on `_DAT_801CE330`, and - seq path only, not SFX slot `0x21` - a closing square taper `v²/0x3FFF` per side. Writes `&DAT_801CE080[voice]`, flags `0x7`, active-voice masks `_DAT_801CDB48/4A/4C/4E` + `_DAT_801CE248/24A`. Engine port: `VabBank::fire` (head + pans) and `sequencer::channel_mix` (channel fold + taper). |
+| `FUN_80067550(voice, key, vel, ...)` | `_SsVoNoteOn` - the key-on volume chain: `vel × bank_mvol(hdr+0x18) × 0x3FFF / 0x3F01`, then `× prog_mvol(801CE352) × tone_vol(801CE355) / 0x3F01`; seq path folds channel vol L/R (`+0x58/+0x5A`, `/0x7F` per side), then three one-sided pan attenuations (tone pan, prog `mpan`, staged channel pan), a mono fold on `_DAT_801CE330`, and - seq path only, not SFX slot `0x21` - a closing square taper `v²/0x3FFF` per side. Writes `&DAT_801CE080[voice]`, flags `0x7`, active-voice masks `_DAT_801CDB48/4A/4C/4E` + `_DAT_801CE248/24A`. Engine port: `VabBank::fire` (head + pans) and `Sequencer::note_volume` + `sequencer::channel_tail` (channel fold + taper). |
 | `FUN_80067E9C(slot, vol, pan, ...)` | `_SsSeqNoteOn` - iterates `DAT_801CE344`, calls `FUN_80068B98` (the VAB program-change - see the [SsApi seq-management layer](#ssapi-seq-management-layer-above-libspu)), runs the same vol/pan chain as `FUN_80067550`. Sequence-driven keyon. |
 | `FUN_80065978(...)` | `_SsVoKeyOnDirect` - consumes the **already-chosen** voice at `_DAT_801CE362` (the `FUN_80066B00` scan's winner): clears that voice's bit from all 16 silent-history ring words at `_DAT_801CE208`, sets its envelope word to `0x7FFF`, looks up region in `_DAT_801CE334` (stride `0x10`), writes pitch + base note to `&DAT_801CE088 + voice*2`, ORs flags `0x8/0x30` into `&DAT_801CE060`. |
 | `FUN_80066E50(key, fine)` | `_SsPitchFromKey` - indexes 12-entry pitch table `&DAT_8007A940`, octave-shift by `(oct-5)`. Returns 16-bit SPU PITCH register value. |
@@ -943,19 +1003,50 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 
 | Function | Role |
 |---|---|
-| `FUN_80066B00()` | **The voice-allocation scan** (winner lands at `_DAT_801CE362`). Ascending scan over the `_DAT_801CDB50` records: the **first** unreserved + envelope-silent voice wins, scan stops. Else steal the minimum-priority voice with priority `<=` the request (threshold starts at the tone `prior`, tightens per lower priority seen); ties: lowest envelope, then largest age. No candidate → returns the voice count as an out-of-range sentinel; the note is **dropped**. On success every age increments, the winner's resets and adopts the request priority. (`0x63` is the sentinel 99 "no voice", not a loop count - the gap-map "cold-init fill" reading is corrected.) |
-| `FUN_80065BAC()` | **Per-frame voice flush** (SsSeqCalc tier). Advances ring index `_DAT_801CE204`, clears the new ring word, services each voice via `FUN_8006C9A8`, records envelope-silent voices into `_DAT_801CE208[ring]`; voices silent across all 16 ring words get the in-use marker cleared (marker-2 → reverb release `FUN_8006A7A4`). Stages per-voice vol/pitch/addr/ADSR attrs per the `_DAT_801CE060` flag bits through `FUN_8006C048`, flushes sounding/key-on/key-off masks to the SPU, zeroes the sounding + key-on accumulators. (It does not choose voices - the earlier "claims a slot from the bitmap" reading is corrected.) |
+| `FUN_80066B00()` | **The voice-allocation scan** (winner lands at `_DAT_801CE362`). Ascending scan over the `_DAT_801CDB50` records: the **first** unreserved + envelope-silent voice wins, scan stops. Else steal the minimum-priority voice with priority `<=` the request (threshold starts at the tone `prior`, tightens per lower priority seen); ties: lowest envelope, then largest age. No candidate → returns the voice count as an out-of-range sentinel; the note is **dropped**. On success every age increments, the winner's resets and adopts the request priority. `0x63` is the sentinel 99 "no voice", not a loop count. |
+| `FUN_80065BAC()` | **Per-frame voice flush** (SsSeqCalc tier). Advances ring index `_DAT_801CE204`, clears the new ring word, services each voice via `FUN_8006C9A8`, records envelope-silent voices into `_DAT_801CE208[ring]`; voices silent across all 16 ring words get the in-use marker cleared (marker-2 → reverb release `FUN_8006A7A4`). Stages per-voice vol/pitch/addr/ADSR attrs per the `_DAT_801CE060` flag bits through `FUN_8006C048`, flushes sounding/key-on/key-off masks to the SPU, zeroes the sounding + key-on accumulators. It does not choose voices. |
 | `FUN_800675C8()` | **Key-OFF / release sweep** (no callees, pure state). Scans sounding voices, clears the per-voice flag `_DAT_801CE060`, sets the key-off accumulator `_DAT_801CDB4C/4E`, updates the sounding mask `_DAT_801CE248/24A`. |
 | `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
 
-**engine-audio port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order (`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the tightening-threshold steal tier keyed on the VAB tone `prior` byte (`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail signedness quirk - challenger age sign-extends, incumbent zero-extends), the drop-when-outranked case, and the age bookkeeping.
-**A note-on keys one voice per covering tone.** `FUN_80068568` walks the program's tones on its page (count `0x801CE348`, page `0x801CE34F`) and records every tone whose `min (+6) <= key <= max (+7)`; `FUN_80066308` then runs the allocation scan and the key-on once per recorded tone (`0x800664F0..0x8006684C`), staging each tone's own `prior` as the request and skipping only the layer whose scan fails. A program that stacks two tones over a key - a two-sample instrument - therefore sounds on two voices.
-The port does the same (`VabBank::layer_tones`, `Sequencer::key_layer`); keying only the first covering tone dropped the second layer, which the [key-on census](#count-the-key-ons-not-the-edges) measured as `165` engine key-ons against `173` on `vozz` (`2004`), `173` against `173` once every layer keys.
+**Port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order
+(`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the
+tightening-threshold steal tier keyed on the VAB tone `prior` byte
+(`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail
+signedness quirk - challenger age sign-extends, incumbent zero-extends), the
+drop-when-outranked case, and the age bookkeeping. Engine stand-ins: "reserved"
+= bound to an active sequencer note; "envelope" = the live ADSR level. The
+engine keeps no 16-frame silent-history ring - a released voice unreserves when
+its owning note drops, and its decaying tail stays steal-visible through the
+envelope tie-break.
 
-**A key-on waits for the flush, and a key-off before it cancels it.** A note-on only ORs its voice into the key-on accumulator `_DAT_801CDB48/4A`; `FUN_80065BAC` writes it to the SPU once per `SsSeqCalc`, after the key-off mask. The key-off `FUN_80067480` sets the voice's key-off bit and clears every accumulated key-off bit out of the key-on accumulator (`0x80067500..0x80067544`), so a note whose note-off is processed in the same vsync as its note-on never keys at all - the census sees those notes allocate a voice and then appear only in the KOFF mask.
-The port stages each layer the same way (`Sequencer::flush_key_ons`, every `FLUSH_SAMPLES` = one 60 Hz vsync of SPU samples): the voice is chosen and reserved at the note-on, the key-on is written at the period's end unless a note-off cancelled it. That brought `tunnelb` (`2007`) from `296` engine key-ons against `291` retail to `291`, and `korb2` / `uru` (`2008`) to exact; it also puts every BGM key-on on the vsync grid retail keys on.
-Engine stand-ins: "reserved" = bound to an active sequencer note; "envelope" = the live ADSR level. The engine keeps no 16-frame silent-history ring - a released voice unreserves when its owning note drops, and its decaying tail stays steal-visible through the envelope tie-break.
-Provenance: per-instruction read of `FUN_80066B00` / `FUN_80065BAC` / `FUN_80065978` / `FUN_80066308`. The "no Ghidra dump exists for this tier" caveat this line used to carry is **stale** - all four now have dumps carrying full disassembly sections (163 / 271 / 132 / 353 instructions), so the readings above are checkable against the instruction stream rather than a C rendering. `see ghidra/scripts/funcs/80066b00.txt`, `80065bac.txt`, `80065978.txt`, `80066308.txt`.
+**A note-on keys one voice per covering tone.** `FUN_80068568` walks the
+program's tones on its page (count `0x801CE348`, page `0x801CE34F`) and records
+every tone whose `min (+6) <= key <= max (+7)`; `FUN_80066308` then runs the
+allocation scan and the key-on once per recorded tone
+(`0x800664F0..0x8006684C`), staging each tone's own `prior` as the request and
+skipping only the layer whose scan fails. A program that stacks two tones over
+a key - a two-sample instrument - therefore sounds on two voices. The port does
+the same (`VabBank::layer_tones`, `Sequencer::key_layer`); the [key-on
+census](#count-the-key-ons-not-the-edges) reads `173` against `173` on `vozz`
+(`2004`), where keying only the first covering tone reads `165`.
+
+**A key-on waits for the flush, and a key-off before it cancels it.** A note-on
+only ORs its voice into the key-on accumulator `_DAT_801CDB48/4A`;
+`FUN_80065BAC` writes it to the SPU once per `SsSeqCalc`, after the key-off
+mask. The key-off `FUN_80067480` sets the voice's key-off bit and clears every
+accumulated key-off bit out of the key-on accumulator
+(`0x80067500..0x80067544`), so a note whose note-off is processed in the same
+vsync as its note-on never keys at all - it allocates a voice and then appears
+only in the KOFF mask. The port stages each layer the same way
+(`Sequencer::flush_key_ons`, every `FLUSH_SAMPLES` = one 60 Hz vsync of SPU
+samples): the voice is chosen and reserved at the note-on, the key-on is
+written at the period's end unless a note-off cancelled it. That puts every BGM
+key-on on the vsync grid retail keys on, and the census agrees exactly on
+`tunnelb` (`2007`, `291`) and `korb2` / `uru` (`2008`).
+
+Provenance: per-instruction read of the four dumps' disassembly sections. `see
+ghidra/scripts/funcs/80066b00.txt`, `80065bac.txt`, `80065978.txt`,
+`80066308.txt`.
 
 ### SPU command shims (`*0x81` scaling = 0..127 → 0..16383)
 
@@ -975,10 +1066,8 @@ its result at `+0x90`, the record's stream cursor - i.e. they are the handler
 leaves of the same dispatch `FUN_8006171C` drives, one per MIDI-style event
 class, and `+0x90` is where each leaf republishes the advanced cursor.
 
-The `0xB0` stride and the `+0x90` cursor are the two facts to carry away; they
-are what make an unfamiliar `0x80060xxx`/`0x80061xxx` routine recognisable as a
-member rather than as unported game logic. Provenance for the whole family is
-the disassembly of each dump named below.
+The `0xB0` stride and the `+0x90` cursor are what identify an unfamiliar
+`0x80060xxx` / `0x80061xxx` routine as a member of this family.
 
 | Function | Record bytes written | Reading |
 |---|---|---|
@@ -1023,9 +1112,16 @@ Provenance: `see ghidra/scripts/funcs/80064bd0.txt`, `80065b98.txt`,
 
 ### Renderer-citation correction
 
-The cluster appears in xrefs from per-frame draw loops near `FUN_80026410+` only because battle / field code triggers SFX cues during render passes. None of these functions is libgpu / libgs - they're all libsnd. The "renderer / GPU primitives" inventory in `docs/reference/functions.md` previously listed `FUN_80061EDC / FUN_80067E9C / FUN_80066E50 / FUN_80067550` under the renderer; they belong here.
+None of the functions in this cluster is libgpu / libgs. They appear in xrefs
+from per-frame draw loops near `FUN_80026410+` only because battle / field code
+triggers SFX cues during render passes; `FUN_80061EDC` / `FUN_80067E9C` /
+`FUN_80066E50` / `FUN_80067550` are libsnd.
 
-Interpretation: `_DAT_8007BAC8 = bgm_id` written by field-VM `0x35` is consumed by `FUN_800243F0` to load a `.SEQ` payload via the [streaming-asset path](../formats/scene-bundles.md), and that payload is then handed to `FUN_80062340` for sequencer playback. Engine reimpl can stub the entire cluster behind a `legaia-engine-audio::Sequencer` trait without touching the per-note math.
+End to end: field-VM `0x35` writes `_DAT_8007BAC8 = bgm_id`, `FUN_800243F0`
+loads the track's stream via the [streaming-asset
+path](../formats/scene-bundles.md), and the score chunk is handed to
+`FUN_80062340` for sequencer playback. The port replaces the whole cluster with
+`legaia-engine-audio`'s `Sequencer`.
 
 ## libspu / SPU control (`0x80068-0x8006D` cluster)
 
@@ -1156,17 +1252,17 @@ history that survives ADPCM block boundaries. The pitch step clamps at
 | Function | Role |
 |---|---|
 | `FUN_800683D8(vab, prog)` | `SsVabTransfer`-shaped - VAB program-attr lookup at `DAT_801CD2C0[vab&0xFF] + (prog>>8)*0xB0 + 0x58/0x5A`. |
-| `FUN_800684CC(owner_key)` | Key-off by owner - iterates the `0x36`-stride voice records at `0x801CDB60`, publishes the index at `0x801CE362` and calls `FUN_80067480(0)` for every voice whose `+0x0` halfword equals the argument. The key is `seq \| track << 8` - what `FUN_800638D8` and `FUN_80061D18` pass, and what the key-on `FUN_80066308` stamps at `+0x0` from its first argument (`0x8006661C`); `0xFF` / `-1` mark a free voice. Not a VAB id: the earlier `SsVabClose` label read the search key wrong. |
-| `FUN_80068B98(vab_id, program)` | **VAB program-change.** Bounds-checks `vab_id < 0x10` + open-state, `program < _DAT_801CE332` (the bank's program-slot count), then installs the current-bank globals (`_DAT_801CE334` prog base / `_DAT_801CE33C` header / `_DAT_801CE340` tone base) and `DAT_801CE34F` = the `ProgAtr[program]+8` **packed tone-page index** the open wrote (below). Earlier "SsSeqOpen / track count" label corrected from the disassembly. |
-| `FUN_80068C5C` / `FUN_80068C70` | `SsSetMono` / `SsSetStereo` - `_DAT_801CE330 = 1 / 0`, the mono-fold flag `FUN_80067550` reads. (Earlier "auto-poll" label corrected.) |
+| `FUN_800684CC(owner_key)` | Key-off by owner - iterates the `0x36`-stride voice records at `0x801CDB60`, publishes the index at `0x801CE362` and calls `FUN_80067480(0)` for every voice whose `+0x0` halfword equals the argument. The key is `seq \| track << 8` - what `FUN_800638D8` and `FUN_80061D18` pass, and what the key-on `FUN_80066308` stamps at `+0x0` from its first argument (`0x8006661C`); `0xFF` / `-1` mark a free voice. Not a VAB id, and not `SsVabClose`. |
+| `FUN_80068B98(vab_id, program)` | **VAB program-change.** Bounds-checks `vab_id < 0x10` + open-state, `program < _DAT_801CE332` (the bank's program-slot count), then installs the current-bank globals (`_DAT_801CE334` prog base / `_DAT_801CE33C` header / `_DAT_801CE340` tone base) and `DAT_801CE34F` = the `ProgAtr[program]+8` **packed tone-page index** the open wrote (below). Not `SsSeqOpen`. |
+| `FUN_80068C5C` / `FUN_80068C70` | `SsSetMono` / `SsSetStereo` - `_DAT_801CE330 = 1 / 0`, the mono-fold flag `FUN_80067550` reads. |
 | `FUN_80068C80(vab_id)` | VAB close (per-vab tables) - if the open-state byte at `0x801CE368+vab` is set, `SpuFree`s the bank's allocation from the addr table `0x801CE3C8+vab*4`, clears the state, decrements the open-bank count `_DAT_801CE3C0`. |
 | `FUN_80068D34(hdr, vab_id, addr)` | `SsVabOpenHeadSticky`-shape wrapper - tail-calls `FUN_80068D94` with the caller-supplied SPU address (skips the `SsSpuMalloc`). |
-| `FUN_80068D94(hdr, vab_id, sticky, addr)` | **`SsVabOpenHead` core.** Validates `pBAV` magic, sets `_DAT_801CE332` to 0x40 (0x80 for version >= 5), checks `ps` (`+0x12`) against it, registers header / ProgAtr / tone-region base pointers in the per-vab tables, and builds the **program-number → packed-tone-page rank map** into the ProgAtr `+8` reserved words ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)). Sums VAG sizes, `SsSpuMalloc`s (`FUN_8006A158`) unless sticky, stashes per-VAG SPU addresses `>>3` in ProgAtr `+0xC/+0xE`. Engine port of the rank map: `VabBank::upload`. (Earlier "SsSepOpen / 'VAP' SEP loader" reading falsified - [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#audio--sound-driver).) |
+| `FUN_80068D94(hdr, vab_id, sticky, addr)` | **`SsVabOpenHead` core.** Validates `pBAV` magic, sets `_DAT_801CE332` to 0x40 (0x80 for version >= 5), checks `ps` (`+0x12`) against it, registers header / ProgAtr / tone-region base pointers in the per-vab tables, and builds the **program-number → packed-tone-page rank map** into the ProgAtr `+8` reserved words ([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)). Sums VAG sizes, `SsSpuMalloc`s (`FUN_8006A158`) unless sticky, stashes per-VAG SPU addresses `>>3` in ProgAtr `+0xC/+0xE`. Engine port of the rank map: `VabBank::upload`. (Not an `SsSepOpen` / `VAP` SEP loader - [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md#audio--sound-driver).) |
 | `FUN_80069170(slot)` | `SsSeqPlayResolved` - final play-start stage; calls `8006BB08(0)` (xfer-mode), `8006BAB0` (commit), `8006BA50` (data feed). |
 | `FUN_80069230(...)` | Streaming SEP feeder - partial-buffer continuation via `_DAT_8007AAC4/AAC8`. |
 | `FUN_80069390(...)` | `SsIsEos` - tail-call to `FUN_8006BBC8`. |
 
-The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801CD2B8` → ptr table @ `0x801CD2C0` → per-slot record (stride `0x36`) at `0x801CDB60` → VAB program-attr (stride `0xB0`) at `0x801CD2C0[i] + prog*0xB0`.
+The runtime sequencer chain: slot bitmap @ `_DAT_801CD2B8` → ptr table @ `0x801CD2C0` → per-slot record (stride `0x36`) at `0x801CDB60` → VAB program-attr (stride `0xB0`) at `0x801CD2C0[i] + prog*0xB0`.
 
 ### Not SsAPI: the `0x801CE628` cluster is libpad
 
@@ -1174,8 +1270,9 @@ The runtime sequencer chain is now nearly fully mapped: slot bitmap @ `_DAT_801C
 driver-context array - stride `0xF0`, `0x1E0` bytes total, one context per
 controller socket - and every entry that resolves a context through the
 `_DAT_801CE564` hook is a libpad API call. Nothing in the cluster touches an
-SPU register, a VAB, or a voice key. The correction is recorded on this page
-because this is where the corpus filed the cluster.
+SPU register, a VAB, or a voice key. It is recorded here because the
+`0x8006C000..0x8006F000` band also holds genuine libspu / libsnd code and the
+two are easy to conflate.
 
 The chain anchors on the game's controller + memory-card init `FUN_8001D230`,
 which `bzero`s `0x44` = 2 x `0x22` bytes at `0x800840F8` and hands the two
@@ -1208,22 +1305,18 @@ handler to the direct driver; `FUN_8005FD78` = `ChangeClearRCnt` (C0 `0x0A`);
 mode `0x2000`, no handler) are the **memory-card** event set, not SPU or DMA
 interrupts.
 
-**What put the SsAPI label there.** Three things, each individually
-reasonable: the `0x8006C000..0x8006F000` band does hold genuine libspu /
-libsnd code; a vtable of installed hooks over a stride-`0xF0` record array
-with an `0xFF` idle fill and a per-record state byte reads exactly like the
-sequence-worker table; and with `param_1` dropped, `FUN_8006CE30` renders as a
-two-argument "set user data on a resolved context". It fails on the buffers
-(`ctx+0x30` is provably the button report `FUN_8001822C` decodes), on
-`FUN_8006CB3C`'s `term = 4` branch (an id-table query with no sequencer
-analogue), and on the record count, which is 2 - the number of controller
-sockets, not a sequencer's slot count.
+**Why it is not a sequence-worker table**, despite a vtable of installed hooks
+over a stride-`0xF0` record array with an `0xFF` idle fill and a per-record
+state byte: `ctx+0x30` is provably the button report `FUN_8001822C` decodes;
+`FUN_8006CB3C`'s `term = 4` branch is an id-table query with no sequencer
+analogue; and the record count is 2 - the number of controller sockets, not a
+sequencer's slot count.
 
 **Consequence.** `DAT_800915DA` / `DAT_800915DB` are port 0's two actuator
 bytes, so the per-frame kernel `FUN_80018DB0` that writes them is a **rumble**
 cadence, not an audio one - see the
 [`80018DB0` row](../reference/functions/audio.md) and
-[`re-settled-threads.md`](../reference/re-settled-threads.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
+[`re-settled-threads.md`](../reference/re-settled-threads/audio.md#fun_80018db0-is-a-rumble-cadence-not-an-audio-one).
 
 Provenance: `see ghidra/scripts/funcs/8006e2b4.txt`, `8006ce30.txt`,
 `8006d7b4.txt`, `8006cdb0.txt`, `8006ca7c.txt`, `8006cb3c.txt`, `8006d1e0.txt`,
@@ -1250,11 +1343,8 @@ sequencer cluster above. Surface mirrors `SsSeqOpen` / `SsSeqPlay` /
 | `Sequencer::stop(spu)` | `_SsSeqCtrl(mode=1)` - silences and freezes |
 | `Sequencer::rewind_to(idx, spu)` | `SsSeqRewind` |
 
-Voice allocation follows the retail scan order (`alloc_voice`,
-`// PORT: FUN_80066B00` - see the "Voice allocator + key-on/off flush"
-section above): first idle voice in ascending order, else steal the
-minimum-priority voice at or below the note's VAB tone `prior`
-(quietest-envelope then oldest-age tie-breaks), else drop the note. The
+Voice allocation is the retail scan
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)). The
 sequencer tracks `(channel, key) → voice` so the matching key-off can
 shut down the right slot. Tempo events from the SEQ override the running
 tempo at the event's absolute tick (matching libsnd's mid-stream
@@ -1305,11 +1395,10 @@ events fire until the accumulated waits reach the budget, re-read after every
 event so a tempo meta retunes the vsync it lands in, and the overshoot carries
 - then writes the period's key-ons
 ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)).
-Firing events on their own samples instead put notes near a vsync boundary in
-the neighbouring flush after any tempo change: `rugi` read `200` key-ons
-against `201`, and `s3_rimelm_freeroam` matched `286` of `292` within a frame
-where the pump matches all `292`. `set_exact_tempo(true)` keeps the
-sample clock at the written tempo.
+With the pump, `s3_rimelm_freeroam` matches all `292` census key-ons and
+`rugi` all `201`; firing each event on its own sample instead moves notes near
+a vsync boundary into the neighbouring flush after any tempo change.
+`set_exact_tempo(true)` keeps the sample clock at the written tempo.
 
 **Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
 sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
@@ -1350,17 +1439,15 @@ four retail tracks with no markers.
 `rewind_to`), and `render_bgm_loop_region` (in `legaia-engine-audio`) uses it
 to render one **seamless loop period** off-line: it renders until the second
 rewind and returns the PCM trimmed to that boundary plus the
-`[loop_start, loop_end)` sample offsets. The playhead tick alone can't mark the
-boundary - on a zero-delta EOT the tick peaks and resets inside a single sample
-- which is why the counter exists. The site plays this as an
-`AudioBufferSourceNode` with `loopStart`/`loopEnd` set to one true period, so
-minigame BGM repeats without the seam a fixed-window hard-loop leaves.
-An off-line render has to build its SPU the way the live mixer core does
-(`StreamResampler`, which every output drives: cpal, WebAudio and the test
-sink): `Spu::new()` plus `set_retail_reverb()`. A bare `Spu::new()` renders
-the score dry, so the site's minigame and audio pages played music the play
-page and the native window play wet. With the reverb installed the pre-render
-equals the live core sample for sample (at the interpolator's two-sample lag;
+`[loop_start, loop_end)` sample offsets. The playhead tick alone cannot mark
+the boundary - on a zero-delta EOT the tick peaks and resets inside a single
+sample. The site plays the result as an `AudioBufferSourceNode` with
+`loopStart`/`loopEnd` set to one true period, so minigame BGM repeats without
+a seam. An off-line render has to build its SPU the way the live mixer core
+does (`StreamResampler`, which every output drives: cpal, WebAudio and the
+test sink): `Spu::new()` plus `set_retail_reverb()`. A bare `Spu::new()`
+renders the score dry. With the reverb installed the pre-render equals the
+live core sample for sample (at the interpolator's two-sample lag;
 `test_sink::the_pre_render_path_matches_the_live_mixer_core`).
 
 **Controller census.** A disc-wide sweep of every SEQ-bearing PROT entry
@@ -1370,10 +1457,10 @@ carry the bulk; CC99 carries **only** the two loop-marker values 20 and 30
 (so the loop handler drops nothing); and CC6 (Data Entry) is a constant 127
 emitted ~once per track (a fixed init the engine ignores - it varies nothing,
 so it is not a per-track parameter). Notably **absent**: expression (CC11)
-and reverb-depth (CC91). So per-channel volume swells and per-cue reverb
-sends are not encoded in the SEQ stream - consistent with the capture
-finding above that reverb is a fixed global (Studio C, master-on, voices
-routed by default), not a per-cue or per-channel parameter the score drives.
+and reverb-depth (CC91). So per-channel volume swells and reverb sends are not
+encoded in the SEQ stream - consistent with reverb being a fixed global
+network (Studio C, master-on) whose per-voice send comes from the keyed tone,
+not from the score ([reverb](#per-voice-reverb-send-is-the-tones-mode-bit-2)).
 
 **Dynamic channel expression (CC7 volume + CC10 pan).** Volume and pan are
 the two most-used controllers, and both are **dynamic** - the score swells
@@ -1416,19 +1503,19 @@ linear, level 8 = unity) set the two gains through
 `AudioSink::set_bus_volumes` on both play hosts. At the default the mix is
 bit-identical to the single-bus one; XA streams ride neither bus.
 
-**Timebase.** The production playback path ticks the sequencer once per SPU
-sample (`tick_sample`), so the music clock is locked to the audio clock.
-Timing is computed with an **exact integer accumulator** (units of
+**Timebase.** The production path ticks the sequencer once per SPU sample
+(`tick_sample`), so the music clock is locked to the audio clock. Under
+`set_exact_tempo(true)` timing is an **exact integer accumulator** (units of
 `sample × ppqn × 1_000_000`; an event of delta `d` fires when the accumulator
 reaches `d × tempo_us × 44100`) - no per-tick float, no long-track drift, and
-bit-deterministic for the replay oracle. Note the SEQ tempo gotcha documented
-in [`formats/seq.md`](../formats/seq.md): the header tempo is a 240 BPM
-placeholder, immediately overridden by the first body `0xFF 0x51` (which, in
-PSX SEQ, carries its 3 tempo bytes with **no** MIDI length prefix). Mis-parsing
-that override pinned playback at the 240 BPM placeholder (~3x too fast).
+bit-deterministic for the replay oracle. The header tempo is a 240 BPM
+placeholder that the first body `0xFF 0x51` overrides
+([`formats/seq.md`](../formats/seq.md)).
 
-See [`crates/engine-audio/src/sequencer.rs`](../../crates/engine-audio/src/sequencer.rs)
-for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
+Implementation:
+[`crates/engine-audio/src/sequencer.rs`](../../crates/engine-audio/src/sequencer.rs);
+its unit tests use synthetic SEQs and a stubbed `VabBank`, and the disc-gated
+tests named above run it over real scores.
 
 ## Engine-audio model - from-scratch SPU port
 
@@ -1441,13 +1528,22 @@ for the implementation; tests use synthetic SEQs + a stubbed `VabBank`.
 | [`spu::adsr`](../../crates/engine-audio/src/spu/adsr.rs) | The 5-phase ADSR envelope (Attack-Decay-Sustain-Release-Off) with linear / exponential / increase / decrease modes per the standard PSX formula. Increasing phases step by the `+7..+4` (`7 - step_bits`) StepValue table; every *decreasing* phase (decay, linear/exponential release, sustain-decrease) steps by the `-8..-5` (`-8 + step_bits`) table - the two sign tables differ by one unit, so a decreasing phase driven from the increase table fades ~one step slow. The `(adsr1, adsr2)` words are read verbatim off the VAB tone metadata (a decoded tone's ADSR word equals the SPU `ADSRControl` register libspu writes at key-on - no transform). |
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
 | [`spu::ram`](../../crates/engine-audio/src/spu/ram.rs) | 512 KB SPU RAM model + libspu-shaped transfer engine (`SpuRam::set_direction` / `write` / `read` + `SpuAllocator` for `SsSpuMalloc` / `SpuFree`). |
-| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch math matches `_SsKey2Pitch` / libspu key-to-pitch; key-on volume is `bank x prog x vel / 127^3 x 0x3FFF`, and the tone pan applies the same `FUN_80067550` attenuation as the channel pan. |
+| [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch is the [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center); key-on volume and pans are the `FUN_80067550` chain ([above](#voice--mixer-audible-output-critical-path)). |
 | [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate (linear). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
 
-What this **does not** model (out of scope for the first port pass):
+Not modelled:
 
-- Pitch modulation, noise, FM. None of these are used by Legaia (verified against the libspu calls in the SCUS dumps - `SpuSetPitch` is the only pitch path).
-- Asynchronous DMA timing. The transfer engine here is synchronous (the queue + drain are collapsed) - fine because the playback layer reads SPU RAM directly during voice ticks. The real hardware is asynchronous via the transfer engine described above; the model preserves the *API shape* (`set_transfer_start_units_8` / `set_direction` / `write`) so the libspu callers map cleanly.
+- Pitch modulation, noise, FM. None of these are used by Legaia (verified
+  against the libspu calls in the SCUS dumps - `SpuSetPitch` is the only pitch
+  path).
+- Asynchronous DMA timing. The transfer engine here is synchronous (the queue +
+  drain are collapsed) - fine because the playback layer reads SPU RAM directly
+  during voice ticks. The model preserves the *API shape*
+  (`set_transfer_start_units_8` / `set_direction` / `write`) so the libspu
+  callers map cleanly. One measurable consequence: retail parks a KON mask
+  while a transfer is busy, which the [key-on
+  census](#count-the-key-ons-not-the-edges) sees as a lag of up to three
+  vsyncs.
 
 ## SFX bank + scheduler
 
@@ -1455,7 +1551,15 @@ Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay s
 
 `SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
-**The bank those programs index is named by the cue itself.** `FUN_80065034` calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that repoints the libsnd current-bank globals (`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`) at the slot the cue's `+4` category selects. The older reading - "the globals hold whichever VAB is open, so a cue plays out of the scene's music bank" - was a save-state artefact: the globals really are shared with the sequencer, so a state sampled after a BGM note holds the music bank, and across the catalogue that is 13 distinct VABs. Full law, the category -> slot -> PROT map and its four entries: [`formats/sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
+**The bank those programs index is named by the cue itself.** `FUN_80065034`
+calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that
+repoints the libsnd current-bank globals
+(`_DAT_801ce33c`/`_DAT_801ce334`/`_DAT_801ce340`) at the slot the cue's `+4`
+category selects. Not "whichever VAB is open": the globals are shared with the
+sequencer, so a save state sampled after a BGM note holds the music bank in
+them (13 distinct VABs across the catalogue), which says nothing about where a
+cue keys. Full law, the category -> slot -> PROT map and its four entries:
+[`formats/sfx-table.md`](../formats/sfx-table.md#category-is-a-bank-selector-and-four-banks-are-open-at-once).
 
 Practically, that makes the low id range emphatically **not** the scene's music VAB. The class-2 bank (PROT 0869) that the battle scene loader `FUN_800520F0` (`a1 = 2`) and the Baka init `FUN_801CF00C` stage carries a purpose-built SFX key map at **program 0**: one distinct VAG per semitone, single-note windows `min == max == 60 + i`, lining up 1:1 with the descriptor notes of the UI cue ids (`0x20` note 60, `0x21` note 61, `0x23` note 63, `0x09` note 69). The slot-0 system bank (PROT 0868) carries its own copy of that map, and it is the one the shared UI cues - which are category `0` - actually key.
 
@@ -1538,9 +1642,7 @@ and closes nothing; `FUN_8001DCF8(0x0C)` runs from the minigame overlay
 the mode word reading `0x14` (`0x8001DF74..0x8001DF80`) - does **not** run; the
 overlay then loads PROT 0869 into slot `2` (`0x801CF250` / `0x801CF288`). From
 vsync 381 on, slots 2 **and** 6 are both enabled over the one region: slot 6's
-header is PROT 0876's, the samples under it PROT 0869's. That is the reading the
-format page gave as an inference for the Muscle Dome, observed here on the Baka
-Fighter's path.
+header is PROT 0876's, the samples under it PROT 0869's.
 
 **The Muscle Dome's hub** (`minigame_muscle_dome`, a retail mednafen state at mode
 `0x19`): latch `0`, slot 2 **closed**, slot 6 **open**, and the shared header at
@@ -1601,19 +1703,15 @@ track whose samples end past a borrower's base overwrote it and drops it
 with the field-family mode, and the reward bank is dropped whenever the world
 is in one.
 
-The two directors used to keep two different rules. The native one dropped both
-banks inside every owned-bank upload and bumped a generation, then restaged the
-side-band on the next tick; the page kept them until a fire- or tick-time check
-found the new track past their base. Neither dropped the reward bank at the
-field init, so it outlived its battle whenever the field track was smaller.
+Both directors apply that one rule, including the reward bank's drop at the
+field init, so it cannot outlive its battle when the field track is smaller.
 
 **The retry memo keys on the free tail.** A side-band bank that does not fit is
 not re-read every tick: the attempt is remembered against
 `BgmTail::generation`, which moves only when the free tail can have changed - the
-track's sample end moved, or a borrower was dropped. The page used to clear its
-memo on every scene change as well. A door stages no bank, so the free tail is
-unchanged and the retry could never succeed; the memo now survives a door on
-both hosts, as retail's side-band request does.
+track's sample end moved, or a borrower was dropped. A door stages no bank, so
+the free tail is unchanged and the memo survives a door on both hosts, as
+retail's side-band request does.
 
 The director calls `observe_bgm_end` after every track upload and before each
 tail placement; the call is idempotent.
@@ -1661,7 +1759,14 @@ unread.
 
 ## XA-ADPCM
 
-`crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its per-channel PCM matches an external lossless reference decode sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2 Form 2 - the earlier "non-standard interleave" was Form-1 truncation damage in the old extractor, not a bespoke format. The demuxer (`legaia_xa::demux`) splits raw 2352-byte sectors by `(file_no, ch_no)` and the group decoder reconstructs each channel. See [`formats/xa.md`](../formats/xa.md) for the sound-group decode (parameter/nibble layout, full-precision predictor) and [Cutscene / STR](cutscene.md) for the interleaved A/V path.
+`crates/xa` decodes CD-XA 4-bit ADPCM bit-exactly: on a real cutscene track its
+per-channel PCM matches an external lossless reference decode
+sample-for-sample. The on-disc `.XA` / `.STR` audio is standard CD-XA Mode 2
+Form 2 (read it from raw 2352-byte sectors; a 2048-byte Form-1 view truncates
+it). The demuxer (`legaia_xa::demux`) splits sectors by `(file_no, ch_no)` and
+the group decoder reconstructs each channel. See
+[`formats/xa.md`](../formats/xa.md) for the sound-group decode and [Cutscene /
+STR](cutscene.md) for the interleaved A/V path.
 
 ## Battle arts-voice shout path (engine)
 
@@ -1695,7 +1800,7 @@ The engine wires this end-to-end:
   - the same degradation retail applies to an art with no cue-table entry.
   Drain: `World::drain_battle_shout_cues`.
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
-- **Playback** (`engine-audio` / `engine-session`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override no host installs the formation for yet) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+- **Playback** (`engine-audio` / `engine-session`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
@@ -1861,14 +1966,14 @@ resolves in-file under that base.
    cache.
 
 Caller: the init overlay's boot tick at `0x801CF500` (phase word == 3, one-shot
-guarded by `_DAT_8007B868`), followed by `FUN_8003F120`. This closes the loop
-on three earlier observations: the table is title-capture byte-exact vs the
-disc's `XA/XA1.XA..XA34.XA` because it is *built from* the ISO directory at
-boot (slot `i` = file `XA<i+1>.XA` by constructed name, not directory order -
-the raw directory is alphabetical: `XA1, XA10, XA11, ...`); no `XA` filename
-exists anywhere in SCUS because the names are `sprintf`-generated inside the
-overlay; and a disc relayout stays safe because no absolute XA LBA is stored
-anywhere on the disc (see [`formats/disc.md`](../formats/disc.md)).
+guarded by `_DAT_8007B868`), followed by `FUN_8003F120`. Three consequences:
+the table is byte-exact against the disc's `XA/XA1.XA..XA34.XA` in a title
+capture because it is *built from* the ISO directory at boot (slot `i` = file
+`XA<i+1>.XA` by constructed name, not directory order - the raw directory is
+alphabetical: `XA1, XA10, XA11, ...`); no `XA` filename exists anywhere in
+SCUS because the names are `sprintf`-generated inside the overlay; and a disc
+relayout stays safe because no absolute XA LBA is stored anywhere on the disc
+(see [`formats/disc.md`](../formats/disc.md)).
 
 #### One-shot cue census (`FUN_8003D53C`)
 
@@ -1882,9 +1987,9 @@ file carries PROT 0898's bytes from `+0x25000`, the slot-machine file carries
 PROT 0976's from `+0x6000` - see
 [`dump-corpus-integrity.md`](../tooling/dump-corpus-integrity.md)). Every
 "field" hit above `+0x25000` and every "slot machine" `FUN_8003D53C` hit is
-such an alias; the historical per-character-voice site "`0x8020a264`" is the
-same double-shift (PROT 0897 file `+0x4A264` mapped at `0x801C0000`) and is
-really battle-overlay VA `0x801F3A7C`.
+such an alias. The per-character-voice site sometimes cited as `0x8020a264` is
+the same double-shift (PROT 0897 file `+0x4A264` mapped at `0x801C0000`); it is
+battle-overlay VA `0x801F3A7C`.
 
 **Literal `(clip_id, chan, dur)` cues** (`clip_id` = `0x801C6ED8` slot; slot
 `i` = `XA<i+1>.XA`):
@@ -1935,17 +2040,15 @@ captures; the full per-art table lives in
 
 #### Streamed cue census (`FUN_8003EAE4` / `FUN_80019794`)
 
-Same sweep + dedupe. None of these rows plays audio: each parks the drive on
-the file named, and the voice itself is a later `FUN_8003D53C` one-shot on the
-same slot. The scripted-scene program shows the pairing in two consecutive
-states - `FUN_80019794(0x10)` in state `0x16`, then `FUN_8003D53C(0x10, 7,
-0x135)` in state `0x17` - and the battle selector and the summon modules both
-store `0` into the drive-state word `_DAT_8007BC20` straight after the call,
-so a seek never reads as a clip in flight. An earlier reading of this table
-("a streamed cue plays the whole clip, no channel filter") took command
-`0x15` for a play command; it is `CdlSeekL`.
-The world-map-render (0901) and gameover (0902) raw hits are pure over-read
-aliases - neither overlay seeks of its own.
+Same sweep + dedupe. None of these rows plays audio: command `0x15` is
+`CdlSeekL`, not a play command, so each row parks the drive on the file named
+and the voice itself is a later `FUN_8003D53C` one-shot on the same slot. The
+scripted-scene program shows the pairing in two consecutive states -
+`FUN_80019794(0x10)` in state `0x16`, then `FUN_8003D53C(0x10, 7, 0x135)` in
+state `0x17` - and the battle selector and the summon modules both store `0`
+into the drive-state word `_DAT_8007BC20` straight after the call, so a seek
+never reads as a clip in flight. The world-map-render (0901) and gameover
+(0902) raw hits are pure over-read aliases - neither overlay seeks of its own.
 
 | clip | file it seeks to | context | callsite |
 |---|---|---|---|
@@ -2047,30 +2150,29 @@ an ordinary party swing - which pages in no capture-class module - reads it as
 null. Callers that treat it as a mode flag (the melee selector here, and the
 damage finisher's enemy-defender halve) are testing that handle for null.
 
-The port carries the producer (`World::fire_melee_impact_cue`: the selector
-on `MonsterAiState::flag_bd84`, the grunt request or the routed `0x10C`, a
-modelled busy window of `dur` vsyncs for the router's drive gate, the
-`0x800788B8` table off the user's SCUS) and, on the native window, the
-playback: boot
-demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank`
+**Port.** `World::fire_melee_impact_cue` is the producer: the selector on
+`MonsterAiState::flag_bd84`, the grunt request or the routed `0x10C`, a
+modelled busy window of `dur` vsyncs for the router's drive gate, and the
+`0x800788B8` table off the user's SCUS. Both hosts play it. The native window
+demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank` at boot
 (`read_battle_xa_clip_bank`) and `AudioBgmDirector::play_xa_clip` mixes the
-requested `(slot, channel)` PCM, cut at the retail read span, through the
-same XA path as the arts shouts. The browser play page has the same lane:
-`web-viewer`'s `play_xa` demuxes the raw sectors the page slices out of the
-visitor's own disc bytes into the same two banks and plays them through
-`WebAudioOut::play_xa_shout`, so both hosts sound the melee cue and the arts
-shout. The monster leg's `0x2A8` resolves to a `bse.dat` row keyed through
-the struck monster's `monster.snd` slot (7 / 8), which both hosts stage per
-battle. One gap sits beside it: the **cast** voice
-leg, declined on both hosts for want of a staged clip file
+requested `(slot, channel)` PCM, cut at the retail read span, through the same
+XA path as the arts shouts. The browser page's `web-viewer` `play_xa` demuxes
+the raw sectors the page slices out of the visitor's own disc bytes into the
+same banks and plays them through `WebAudioOut::play_xa_shout`. The monster
+leg's `0x2A8` resolves to a `bse.dat` row keyed through the struck monster's
+`monster.snd` slot (7 / 8), which both hosts stage per battle. A Seru cast's
+own voice also sounds on both hosts ([above](#the-cast-voice-in-the-engine));
+what both decline is the cast-audio dispatcher's separate cue band, which no
+measured retail cast raises
 ([`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg)).
 
 `FUN_8004DA00`, the resident per-frame selector `battle_voice` ports, hands
 its clip to `FUN_8003EAE4`, which seeks the drive to the clip file (`CdlSeekL`,
 `li a0,0x15` at `0x8003EB68`) and raises `gp+0x908` / `gp+0x910` / `gp+0x890`.
-Those three cells are **not** what drives playback, and the driver is not
-untraced. The CD-callback sequencer is `FUN_8003D764`
-([`functions/script-vms.md`](../reference/functions/script-vms.md)), it
+Those three cells do not drive playback. The CD-callback sequencer is
+`FUN_8003D764`
+([`functions/script-vms.md`](../reference/functions/script-vms.md)); it
 dispatches solely on the state ring `gp+0x928`, and the only writer of `gp+0x928`
 is `FUN_8003D53C` (`0x8003D6F4`, `0x8003D724`), which also registers the
 callback. `FUN_8003EAE4` never writes `gp+0x928` - it only *reads* it, as an
@@ -2079,109 +2181,126 @@ entry gate that makes the whole routine a no-op while a clip is already armed
 three cells, `gp+0x908` is read widely as a "streamed clip busy" level (the
 grunt gate above is one reader), while `gp+0x910` and `gp+0x890` have **no
 reader anywhere** in SCUS or the 1233 PROT entries - every access to them on the
-disc is a store. What `FUN_8003EAE4` alone does is therefore a seek plus
-bookkeeping; without a `FUN_8003D53C` arm nothing streams. The engine models the
-busy level and has no drive to seek.
+disc is a store. So `FUN_8003EAE4` alone is a seek plus bookkeeping; without a
+`FUN_8003D53C` arm nothing streams. The engine models the busy level and has no
+drive to seek.
 
 ## Audio-trace parity oracle
 
-Mirror of the VRAM-byte and mode-trace parity oracles on a third axis: per-frame voice activity. The retail side has two capture shapes, with the same `AudioTraceFrame` JSONL wire format on both:
+The third parity axis beside the VRAM-byte and mode-trace oracles: what the SPU
+voices are doing, frame by frame, in the engine against retail. It answers two
+questions of different strength. "Does music start on scene entry?" is a hard
+gate. "Does the engine play the same notes?" is answered exactly by the
+[key-on census](#count-the-key-ons-not-the-edges), and only approximately by
+anything read off a captured envelope.
 
-1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb mode, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`. Convergence is "did any engine frame in the window match retail's voice mask?".
-2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) running inside PCSX-Redux: per-vsync `PCSX.createSaveState()` calls, the SPU sub-message sliced out via FFI pointer arithmetic, decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py). Convergence becomes "for every retail vsync with audio playing, did the engine ever match?", applied frame-by-frame via [`first_audio_trace_divergence_multi`](../../crates/parity/src/audio_trace_oracle.rs).
+| Comparand | Retail source | Decides | Strength |
+|---|---|---|---|
+| Voice mask + sample start, one frame | mednafen save state (`.mc`) SPU section | music starts at all; master volume; reverb setup | hard floor, weak beyond it |
+| Per-vsync voice state | PCSX-Redux save-state dump per vsync | pitch / ADSR-word vocabulary of the sounding voices | good for register writes, not for envelopes |
+| Key-on census | PCSX-Redux breakpoint on `SpuSetKey` | every note the score keys, with timing | exact |
+| Per-voice programming | mednafen states | pitch, ADSR words, L/R volume, reverb send of each BGM voice | exact per state (`engine-shell/tests/mednafen_voice_parity.rs`) |
 
-The engine side runs a standalone `legaia_engine_audio::Spu` + optional `Sequencer` alongside a headless `BootSession::tick`, sampling voice / master / reverb state after each frame. The private SPU is configured through `set_retail_reverb` exactly as the shipped cpal host configures its own - an oracle whose engine differs from the engine cannot report a difference. Convergence rule per retail frame: at least one engine frame's `active_voice_mask` is a superset of retail's mask AND for every retail-active voice the engine matches `start_addr` (when both sides report it).
+### Capture shapes and the trace record
 
-JSONL record: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, reverb_eon, reverb_depth, reverb_work_area, spu_control, active_voice_mask, voices[24] }`, each voice `{ active, start_addr, loop_addr, pitch, env_level, vol_left, vol_right, adsr_control, reverb_send }`. Every field is optional and omitted when its emitter cannot fill it, so the three emitters produce one shape without claiming to know things they do not. Two fields exist only on one side each: `reverb_mode` is a libspu mode *number*, which no hardware capture holds, and `spu_control` is a hardware register the engine models no equivalent of.
+The retail side has two capture shapes with one `AudioTraceFrame` JSONL wire
+format:
 
-PCSX-Redux's Lua API does not expose the SPU register file directly
-(`SPUInterface::lockSPURAM` is C++-internal, not bound). The probe leans on
-`PCSX.createSaveState()` which returns the full state as a protobuf slice
-(~20 MiB); the autorun script walks the slice in-place via FFI and writes only
-the ~600 KiB SPU sub-message to disk so per-vsync GC pressure doesn't disrupt
-`GPU::Vsync` event delivery (same shape as the `readAt(2 MiB)` caveat in
-[`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The SPU
-schema is the one declared in PCSX-Redux's `src/core/sstate.h` +
-`src/spu/types.h`: `Channel.Data.on || .stop` is the retail-side "audible"
-criterion (`ADSRInfoEx.state` is the configured next-attack shape and reads as
-Sustain even for unused voices, so it's not a reliable audibility signal).
+1. **Single-cycle snapshot** lifted from a mednafen save state's `SPU` section via `legaia_mednafen::PsxSpu` (24 voice records, master volume sweep, voice-on/-off masks, reverb registers, 512 KiB SPU RAM). One `.mc{slot}` save → one retail `AudioTraceFrame`.
+2. **Multi-frame trace** captured by [`autorun_audio_trace.lua`](../tooling/pcsx-redux-automation.md#runtime-probes-lua-autorun) inside PCSX-Redux and decoded offline into JSONL by [`extract_audio_trace_from_sstates.py`](../../scripts/pcsx-redux/extract_audio_trace_from_sstates.py), compared frame by frame via [`first_audio_trace_divergence_multi`](../../crates/parity/src/audio_trace_oracle.rs).
 
-Two known asymmetries the diff function explicitly models:
+PCSX-Redux's Lua API does not expose the SPU register file
+(`SPUInterface::lockSPURAM` is C++-internal), so the probe calls
+`PCSX.createSaveState()` each vsync, walks the ~20 MiB protobuf slice in place
+via FFI and writes only the ~600 KiB SPU sub-message, which keeps GC pressure
+from disrupting `GPU::Vsync` delivery (the `readAt(2 MiB)` caveat in
+[`pcsx-redux-automation.md`](../tooling/pcsx-redux-automation.md)). The schema
+is PCSX-Redux's `src/core/sstate.h` + `src/spu/types.h`.
 
-1. **Headless engine SPU.** `BootSession` only attaches a real cpal `AudioOut` when `enable_audio = true`, which fails in CI. The oracle constructs a standalone `Spu` in parallel and routes scene-resolved BGM events into it. Not bit-identical to the retail SPU, but the voice-activity envelope is.
-2. **Retail capture shape.** The single-snapshot case freezes one SPU cycle; the multi-frame case carries per-vsync state. Engine produces `frames + 1` records either way. `NoFrameMatched` stays tolerable drift in both modes; `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures.
+The engine side runs a standalone `legaia_engine_audio::Spu` + `Sequencer`
+alongside a headless `BootSession::tick` (a real cpal `AudioOut` cannot open in
+CI), sampling voice / master / reverb state after each frame. A private
+`TraceBgmDirector` owns that `Spu` the way `AudioBgmDirector` owns the cpal
+one, takes the
+[cold scene-entry sequence](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like),
+and routes op-`0x35` events in lock-step with `SceneHost::route_bgm_events`.
+The private SPU is built through `set_retail_reverb`, exactly as the shipped
+mixer core builds its own: an oracle whose engine differs from the engine
+cannot report a difference.
+
+Record: `AudioTraceFrame { frame, sequencer_playhead_ticks, sequencer_finished, master_volume, reverb_mode, reverb_eon, reverb_depth, reverb_work_area, spu_control, active_voice_mask, voices[24] }`, each voice `{ active, start_addr, loop_addr, pitch, env_level, vol_left, vol_right, adsr_control, reverb_send, key_ons }`. Every field is optional and omitted when its emitter cannot fill it. `reverb_mode` is a libspu mode *number*, which no hardware capture holds; `spu_control` is a hardware register the engine has no equivalent of. In a PCSX-Redux ports blob (the hardware window `0x1F801C00..0x1F801DFF` verbatim) offset `0x1AA` is **`SPUCNT`** and `EON` sits at `0x198` / `0x19A` - `0xC081` there means SPU enabled, unmuted, reverb master on, CD audio on, not a voice-routing mask.
+
+Convergence rule per retail frame: at least one engine frame's
+`active_voice_mask` is a superset of retail's mask, and for every retail-active
+voice the engine matches `start_addr` (when both sides report it).
+`NoFrameMatched` is tolerable drift in both capture shapes;
+`VoiceStartAddrMismatch`, `MasterVolumeMismatch`, and an engine trace whose
+voice mask is empty where retail had voices are hard failures. The engine
+produces `frames + 1` records either way.
 
 Entry points:
 
 - Library: [`legaia_parity::audio_trace_oracle`](../../crates/parity/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
-- CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), or `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture).
+- CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture), `--per-voice`, `--retail-keyon-csv`.
 - Disc-gated tests:
   - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
   - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
 
-The engine drives BGM through a private `TraceBgmDirector` that owns the trace's `Spu` the way `AudioBgmDirector` owns the cpal one, takes the cold scene-entry sequence above, and routes field-VM op `0x35` events into a headless `Sequencer` in lock-step with `SceneHost::route_bgm_events`. `VoiceStartAddrMismatch` and `MasterVolumeMismatch` are hard failures, and so is an engine trace whose voice mask is empty for a scenario where retail had voices - the floor below is what that assertion rests on.
-
 ### Why `converged` is not the audio oracle's fidelity measure
 
-A mednafen save is a mid-playthrough freeze, so the set of voices it reports audible is the question the comparand turns on - and it was long read off the wrong register. Mednafen's `ADSR.Phase` runs `0 = Attack` .. `3 = Release` with **no** `Off` member: a key-off parks a voice in `Release` and it stays there once the envelope drains. A `phase != 0` test therefore counts the residue of every cue since boot as audible (and, symmetrically, calls a voice that has just keyed on silent). Over the retail state corpus it marks all but a couple of dozen of 2352 voice slots active, 69% of them sitting at envelope level zero. Against a rule that asks some engine frame's mask to be a **superset** of that, `NoFrameMatched` was the standing answer for any window, however faithful the playback.
+**Audible means a non-zero envelope, on every emitter.** Mednafen's
+`ADSR.Phase` runs `0 = Attack` .. `3 = Release` with **no** `Off` member: a
+key-off parks a voice in `Release` and it stays there once the envelope
+drains. A `phase != 0` test counts the residue of every cue since boot as
+audible - over the retail state corpus it marks all but a couple of dozen of
+2352 voice slots active, 69% of them at envelope level zero - and calls a
+voice that has just keyed on silent. So `SpuVoiceState::is_active` reads
+`ADSR.EnvLevel`, the retail analogue of the engine's `Phase::Off` line, and
+the PCSX-Redux extractor reads `ADSRInfoEx.EnvelopeVol` (`Channel.Data.stop`
+stays set after the tail drains, and `ADSRInfoEx.state` reads Sustain even for
+unused voices). On that definition both sides sit in the same range: a median
+of seven or eight audible voices per retail state against the engine's own
+single-digit concurrent score.
 
-The audible set is the **envelope**: `SpuVoiceState::is_active` reads `ADSR.EnvLevel`, which is the retail analogue of the line the engine's own trace draws at `Phase::Off`, and the PCSX-Redux extractor reads `ADSRInfoEx.EnvelopeVol` for the same reason (its `on || stop` predicate had the same defect - `stop` stays set after the tail drains). That puts the two sides in the same range: a median of seven or eight audible voices per retail state against the engine's own single-digit concurrent score. What survives of the old caveat is narrower and still real - a freeze frame and a cold scene-entry window are different moments, so the superset rule can still miss on timing alone, and `0 converged` remains a weak signal rather than a fidelity verdict.
-
-What the `.mc` axis still decides is the floor: with the scene's track playing, the engine's mask must be non-empty. That is what an actual scene-entry BGM regression looks like - the field VM never reaching op `0x35`, the director declining a global-pool start, an entry-script pause parking the track - and each of those otherwise reads as one more ordinary drift row. Deciding *which* voices belong to the score needs the per-vsync PCSX-Redux trace (`--retail-jsonl`) - and, as the section below records, a retail capture whose loaded track is the one the engine side plays. A save's scene does not settle that: `0x8007BAC8` does.
+A freeze frame and a cold scene-entry window are still different moments of a
+track, so the superset rule can miss on timing alone: `0 converged` is a weak
+signal, not a fidelity verdict. What the `.mc` axis decides is the **floor** -
+with the scene's track playing, the engine's mask must be non-empty. That is
+what a scene-entry BGM regression looks like: the field VM never reaching op
+`0x35`, the director declining a global-pool start, an entry-script pause
+parking the track.
 
 ### Which channel differs first on the per-vsync comparand
 
-Both channels this section used to name as divergences were instrument
-defects, and neither survives a corrected read.
+None of the global channels does, once both sides play the same track.
 
-**Reverb was the wrong register.** The trace record's `reverb_mode` carried
-three different quantities under one name: the engine's libspu mode byte, the
-mednafen side's `Reverb_Mode` sub-entry (which is really `EON`), and, on the
-PCSX-Redux side, whatever sat at SPU-ports offset `0x1AA`. That offset is
-**`SPUCNT`**, the SPU control register - the ports blob is the hardware window
-`0x1F801C00..0x1F801DFF` verbatim, so `0x1AA` is `0x1F801DAA`. The value that
-read as "retail routes voices 0, 7, 14 and 15" is `0xC081` = SPU enabled,
-unmuted, reverb master on, CD audio on. The real `EON` register two words
-earlier (`0x198`/`0x19A`) reads `0x00FFFFFF` on every frame of the same
-capture. The engine's own `0` was a second, independent defect: the trace and
-PCM oracles built a bare `Spu` where the shipped cpal host builds one through
-`set_retail_reverb`, so the oracle was measuring an engine the port does not
-ship. With both fixed the engine reports `EON = 0x00FFFFFF`, depth
-`(0x3264, 0x3264)` and work area `0x79020` on every frame, which is what that
-capture reports on every frame of its own. The all-voices mask is a property
-of the track, not of the routing: every tone of track `2000`'s bank carries
-`mode & 4`, and the send is set per keyed tone
-([above](#per-voice-reverb-send-is-the-tones-mode-bit-2)), so a battle bank's
-dry hit tones leave their voices out of `EON`.
-
-**The voice-count gap was two different pieces of music.** An engine
-`--scene town01` trace plays the id that scene's own prescript selects with op
-`0x35`, which is global `2016` (Rim Elm's theme). The retail `town01` capture
-it was compared against holds `_DAT_8007BAC8 = 2000` - the overworld track -
-because that save reached the town by chaining forward from the world map, and
-`0x8007BA9C` / `0x8007BC64` both read `990`, so the resolver's
-`base + (id - 2000)` confirms the loaded entry is the pool's first. Paired
-instead against an engine trace of a scene that *does* select `2000`
-(`map01`), and run long enough to cover a comparable stretch of a 131-second
-track, the two sides land in the same place.
+**Pair by the loaded track, not by the scene.** An engine `--scene town01`
+trace plays the id that scene's prescript selects, global `2016`. A retail
+capture taken in `town01` can hold a different track: one such capture holds
+`_DAT_8007BAC8 = 2000`, the overworld theme, because the save reached the town
+by chaining forward from the world map (`0x8007BA9C` / `0x8007BC64` both read
+`990`, the pool's first entry). `0x8007BAC8` names the track; the scene does
+not. Paired against an engine trace of a scene that selects `2000` (`map01`):
 
 | Channel | Engine | Retail | Verdict |
 |---|---|---|---|
 | master volume | `(0x3FFF, 0x3FFF)` every frame | identical | not a difference |
 | reverb `EON` / depth / work area | `0x00FFFFFF` / `0x3264` / `0x79020` | identical | not a difference |
-| concurrent voices, same track | mean 9.67, max 18 | mean 9.78, max 19 | not a comparand - see below |
-| concurrent voices, 4-second window | mean 7.03, max 8 | mean 9.78, max 19 | window, not engine |
+| concurrent voices, same track, 60-second engine window | mean 9.67, max 18 | mean 9.78, max 19 | not a comparand |
+| concurrent voices, 4-second engine window | mean 7.03, max 8 | mean 9.78, max 19 | window, not engine |
 
-The last row is the one worth keeping, because it is what the old headline
-measured. The engine trace starts a track at tick 0; a retail save is frozen
-somewhere inside it. Track `2000`'s own score answers how much of the gap that
-accounts for: decoded straight from the SEQ, its note concurrency peaks at
-**9** over the first 4.3 seconds, 14 by 15 seconds, and **19** over the whole
-piece - the same 19 the retail capture shows as its maximum. Over a 60-second
-engine window the port reaches 18. Nothing is being dropped on the way there:
-with trace logging on, the sequencer's three note-drop paths (no tone for the
-program/key, tone not playable, no voice free) fire **zero** times across the
-window, so the allocator is not the gap either.
+The all-voices `EON` is a property of the track: every tone of track `2000`'s
+bank carries `mode & 4`, and the send is set per keyed tone
+([above](#per-voice-reverb-send-is-the-tones-mode-bit-2)), so a battle bank's
+dry hit tones leave their voices out of `EON`.
+
+The voice-count rows measure the window. The engine trace starts a track at
+tick 0; a retail save is frozen somewhere inside it. Decoded straight from the
+SEQ, track `2000`'s note concurrency peaks at **9** over the first 4.3
+seconds, 14 by 15 seconds, and **19** over the whole piece - the retail
+capture's maximum. Nothing is dropped on the way: with trace logging on, the
+sequencer's three note-drop paths (no tone for the program/key, tone not
+playable, no voice free) fire **zero** times across the 60-second window.
 
 ### Comparing per voice
 
@@ -2189,53 +2308,36 @@ window, so the allocator is not the gap either.
 *covers* a retail frame's, which two windows taken at different moments of the
 same track can fail while playing identically. The per-voice comparison
 ([`compare_voice_allocation`](../../crates/parity/src/audio_trace_oracle.rs),
-`legaia-engine audio-trace --per-voice`) asks a different question: what were
-the sounding voices *doing*.
+`legaia-engine audio-trace --per-voice`) asks what the sounding voices were
+*doing*.
 
 Its currencies are the ones that survive the two sides' independent SPU-RAM
 allocators. **Pitch** is a hardware register computed from note against the
 tone's centre, so it compares directly. The packed **ADSR config word** is the
 closest thing the SPU keeps to "which tone programmed this voice". A voice's
-`start_addr` is not a comparand at all and is only counted, never equated.
+`start_addr` is not a comparand and is only counted, never equated. Neither is
+the sounding-voice **count**, nor pitch / tone *vocabulary* counts across two
+windows of different length, nor the **voice index** a note lands on (see
+[below](#count-the-key-ons-not-the-edges)).
 
-The statistic that moves between pairings is the **slots-per-note** factor -
-sounding voices divided by distinct `(sample, pitch)` pairs. It is a property
-of the arrangement, not a fixed difference between the two sides, and reading
-it as one is what the first pairing did.
+The **slots-per-note** factor - sounding voices divided by distinct
+`(sample, pitch)` pairs - is a property of the arrangement, not a fixed
+difference between the two sides:
 
 | Pairing | Retail | Engine |
 |---|---|---|
 | track `2000` (`map01`), retail capture taken in town01 | `1.158` | `1.002` |
-| track `2016` (`town01`), retail capture taken in town01 | `1.002` | `1.037` - `1.061` |
+| track `2016` (`town01`), retail capture `s3_rimelm_freeroam` | `1.002` | `1.037` - `1.061` |
 
-The second row is a per-vsync capture from `s3_rimelm_freeroam`, whose
-`_DAT_8007BAC8` holds `2016` - the id `town01`'s own prescript selects - so
-both sides play the same piece. On it **retail is the side that never doubles
-a note** and the port is the one running a few percent over, the reverse of
-the first row. That also disposes of the first row's open caveat: the doubling
-could not be town SFX in the retail window, because a second retail capture
-taken in the same town, walking the same streets, reports `1.002`. The `0.156`
-belongs to track `2000`'s own arrangement.
-
-The sounding-voice **count** is not one of those currencies either, and the
-residual it used to carry was two instrument defects stacked. Both are below;
-what survives them is that the two sides play the same notes.
-
-Pitch and tone *vocabulary* counts are likewise not comparable across two
-windows of different length - a two-second retail window and a sixty-second
-engine window see different amounts of the same piece.
-
-The trace record carries `env_level`, `vol_left`, `vol_right`, `adsr_control`
-and `reverb_send` per voice, filled by all three emitters - the engine
-sampler, the mednafen `.mc` loader, and the PCSX-Redux extractor - so these
-questions can be asked of the artifact directly.
+The two rows point opposite ways, and a second retail capture walking the same
+town streets reports `1.002`, so the first row's doubling is track `2000`'s
+own arrangement and not town SFX in the retail window.
 
 ### Align the windows before comparing them
 
 An engine trace opens its track at tick `0`; a capture sits wherever the
-playthrough parked it. Pairing frame 0 of each therefore compares two
-different bars of one piece and reports the difference between the bars as a
-difference between the sides.
+playthrough parked it. Pairing frame 0 of each compares two different bars of
+one piece.
 
 [`best_alignment_offset`](../../crates/parity/src/audio_trace_oracle.rs)
 slides the retail window over the engine trace and scores each offset by the
@@ -2245,79 +2347,81 @@ first whatever it is playing, because a window with more voices contains more
 of retail's pitches by construction.
 [`compare_voice_allocation_aligned`](../../crates/parity/src/audio_trace_oracle.rs)
 is `compare_voice_allocation` over the window that scores highest, and
-`audio-trace --per-voice` reports the offset it used.
+`audio-trace --per-voice` reports the offset it used. The engine trace must be
+at least the aligned frame plus the retail window's length: a trace only as
+long as the retail window has nowhere to slide, lands on frame `1`, and an
+edge-rate pairing there reads `0.244` against `0.488` - a statement about
+which bars were compared.
 
-On the track-`2016` pairing the alignment is unambiguous and it is nowhere
-near frame 0: the retail window from `s3_rimelm_freeroam` lands at engine
-frame `3103` of a 3601-frame trace (with the sequencer on retail's
-quantised tempo; `3111` at the written one), and both scores - symmetric and
-intersection-only - peak there. What the aligned windows then show is
-agreement in every channel that is a property of the score:
+On the track-`2016` pairing the retail window from `s3_rimelm_freeroam` lands
+at engine frame `3103` of a 3601-frame trace (`3111` at the written tempo),
+with both scores peaking there. The aligned windows agree in every channel
+that is a property of the score:
 
 - the **same ten packed ADSR words**, with neither side carrying one the
   other does not;
 - the **same key-on count per tone** - `8, 13, 4, 12, 2, 8, 4, 6, 2` on both
-  sides across nine of the ten tones, the tenth reading twelve engine key-ons
-  against eight retail ones - and `71` engine key-ons against `67` retail
-  over the 120 frames;
+  sides across nine of the ten tones, the tenth reading twelve engine edges
+  against eight retail ones, and `71` engine edges against `67` retail over
+  the 120 frames (edge counts, superseded by the census below);
 - **the same note lengths wherever the tone's release is instant**: the one
-  tone in the window whose `adsr2` selects a *linear* release at shift `7`
-  (packed `0x0D07AAD9`, which drains from peak inside one frame) sounds a
-  mean of `22.62` frames per key-on on the engine against `22.38` on retail.
+  tone whose `adsr2` selects a *linear* release at shift `7` (packed
+  `0x0D07AAD9`, draining from peak inside one frame) sounds a mean of `22.62`
+  frames per key-on on the engine against `22.38` on retail.
 
 Every tone that does *not* drain instantly sounds two to six times longer on
 the engine side of the same window - `0xCDAC80FF` `29.00` frames against
-`5.25`, `0xCDAA80FF` `13.08` against `4.85`. A difference that appears only
-where the envelope has to run, on windows whose key-ons agree, is a statement
-about the envelope, not about the score.
+`5.25`, `0xCDAA80FF` `13.08` against `4.85`. That difference is the capture's,
+as the next section shows.
 
 ### The envelope channel is not on emulated time
 
-The engine's envelope is the one that matches the hardware model. Measured
-straight off its own trace, a voice on `0xCDAA80FF` (exponential release,
-shift `10`, so one step of `-16 x level / 32768` per sample) falls by a
-factor of `0.68` per frame, a time constant near `1900` samples against the
-formula's `2048`; a voice on `0xCDAC80FF` (shift `12`, one step of
-`-8 x level / 32768` per two samples) falls by `0.907` per frame, near `7500`
-samples against the formula's `8192`. The residue of the run is the `>> 15`
-floor turning the tail linear at `-1` per step, which is the hardware's
-behaviour too.
+The engine's envelope matches the hardware model. Off its own trace, a voice
+on `0xCDAA80FF` (exponential release, shift `10`, one step of
+`-16 x level / 32768` per sample) falls by a factor of `0.68` per frame, a
+time constant near `1900` samples against the formula's `2048`; a voice on
+`0xCDAC80FF` (shift `12`, one step of `-8 x level / 32768` per two samples)
+falls by `0.907` per frame, near `7500` samples against `8192`. The residue is
+the `>> 15` floor turning the tail linear at `-1` per step, which is the
+hardware's behaviour too.
 
-The PCSX-Redux side of a per-vsync capture does not advance that envelope on
-the emulated clock at all. That emulator's SPU runs on **its own thread**
-(`PCSX::SPU::impl::MainThread`), and the thread is paced by the audio device
-accepting samples - `m_audioOut.feedStreamData` - not by the emulated CPU's
-cycle budget, while `PCSX::SPU::ADSR::mix` steps the envelope once per sample
-the thread produces. A capture that writes a ~19 MiB save state every vsync
-runs the emulator far below real time, so each captured "frame" carries an
-uncontrolled amount of envelope motion. Two measurements pin it:
+A PCSX-Redux per-vsync capture does not advance the envelope on the emulated
+clock. That emulator's SPU runs on **its own thread**
+(`PCSX::SPU::impl::MainThread`), paced by the audio device accepting samples
+(`m_audioOut.feedStreamData`), not by the emulated CPU's cycle budget, and
+`PCSX::SPU::ADSR::mix` steps the envelope once per sample the thread produces.
+A capture that writes a ~19 MiB save state every vsync runs far below real
+time, so each captured "frame" carries an uncontrolled amount of envelope
+motion:
 
 - across a 250-frame capture the wall-clock gap between consecutive captured
   vsyncs averages `169` ms (min `61`, max `282`) against the emulated
   `16.67` ms, and the observed per-frame envelope decay rises across the
-  quartiles of that gap rather than staying flat;
+  quartiles of that gap;
 - two captures of **the same save state with no pad input**, over the same
   250 emulated vsyncs, differing only in a host-side delay after each
   snapshot (mean gap `169` ms against `260` ms), agree on the voice *pitch*
-  register - written by the emulated CPU - for `5285` of `6000` voice-frames
-  but on `env_level` for only `404` of the `1000` voice-frames either side
-  reports non-zero, with a median absolute difference of `8190` out of
-  `32767`; the `active_voice_mask` is identical on `109` of `250` vsyncs, and
-  the mean sounding-voice count itself reads `4.041` against `3.694`.
+  register for `5285` of `6000` voice-frames but on `env_level` for only
+  `404` of the `1000` voice-frames either side reports non-zero (median
+  absolute difference `8190` of `32767`); the `active_voice_mask` is identical
+  on `109` of `250` vsyncs, the mean sounding-voice count reads `4.041`
+  against `3.694`, and the envelope-edge counts read `122` against `130`.
 
-A statistic that moves by nine percent when the host gets slower is not a
-parity comparand. A key-on is: it is a register write the score performs from
-the game's own vsync handler, so it is on the emulated clock on both sides.
-But a capture can only *see* a key-on as a voice's envelope rising from zero
-(`VoiceAllocationStats::onsets_per_frame`, `onset_ratio` on the comparison),
-and that edge is read off the same host-clocked envelope. A short note can
-attack and drain between two captures and never be seen, and a note re-keyed
-while its voice still rings is no edge at all. The two captures of one state
-above report `122` and `130` edges over the same 250 emulated vsyncs.
+So envelope level, note length, sounding-voice count and envelope *edges*
+(`VoiceAllocationStats::onsets_per_frame`, `onset_ratio`) from such a capture
+are not parity comparands: a short note can attack and drain between two
+captures, and a note re-keyed while its voice still rings is no edge. The
+probe that carries the wall-clock stamp is
+[`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
+with `scripts/pcsx-redux/analyze_audio_clock.py` as its offline half. A
+mednafen `.mc` save is a single frozen SPU cycle, so it has no per-frame rate
+to distort, and cannot measure a rate either.
 
 ### Count the key-ons, not the edges
 
-The exact count needs no SPU state on either side:
+A key-on is a register write the score performs from the game's own vsync
+handler, so it is on the emulated clock on both sides, and counting it needs
+no SPU state:
 
 - **Retail**:
   [`autorun_keyon_census.lua`](../../scripts/pcsx-redux/autorun_keyon_census.lua)
@@ -2357,98 +2461,97 @@ comparison honest:
   slot, `3` a battle or minigame track), and `--pin-bgm` keeps `--bgm-id`
   playing over the scene's own op-`0x35` starts.
 
-On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census reads **`292`
-engine key-ons against `292` retail**, every one matched. No drops: the
-allocator never returns its out-of-range sentinel, so every note-on the
-score issues reaches the KON register. The same holds across the field
-states cold-booted from a memory card, the Gobu Gobu battle (`2026`), the
-title menu (`2065`) and the minigames - the casino floor (`2018`), the Baka
-Fighter duel (`2055`), the dance (`2060`), the fishing pond (`2017`) - with
-one exception: `dolk2_market_noa` reads `358` against `357`. Its odd key-on
-is a note whose note-off lands while retail's KON is still parked behind the
-busy transfer; the key-off path of `FUN_8006B854` clears the parked bit, and
-the port models no SPU transfer.
+**Result.** On `s3_rimelm_freeroam` (track `2016`) a 597-vsync census reads
+**`292` engine key-ons against `292` retail**, every one matched. No drops:
+the allocator never returns its out-of-range sentinel, so every note-on the
+score issues reaches the KON register. The same holds across the field states
+cold-booted from a memory card, the Gobu Gobu battle (`2026`), the title menu
+(`2065`) and the minigames - the casino floor (`2018`), the Baka Fighter duel
+(`2055`), the dance (`2060`), the fishing pond (`2017`) - with one exception:
+`dolk2_market_noa` reads `358` against `357`. Its odd key-on is a note whose
+note-off lands while retail's KON is still parked behind the busy transfer;
+the key-off path of `FUN_8006B854` clears the parked bit, and the port models
+no SPU transfer.
 
-The census found four sequencer defects: every tone layered over a key keys
-a voice ([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)),
-a note on an unused program slot keys none
-([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)), a note
-released inside its own flush period never keys, and a repeated note-on of a
+The sequencer rules the census pins, each of which moves the count when
+broken: every tone layered over a key keys a voice
+([voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)); a note
+on an unused program slot keys none
+([`vab.md`](../formats/vab.md#program-slots-vs-packed-tone-pages)); a note
+released inside its own flush period never keys; and a repeated note-on of a
 key already sounding on its channel keys fresh voices without releasing the
-first (`FUN_80061B24` calls `FUN_80066308` straight). Two states needed a
+first (`FUN_80061B24` calls `FUN_80066308` straight). Two states need a
 different track than their scene's: `rikuroa_pre_caruban` plays `2028` from
 sequence slot `3` while `_DAT_8007BAC8` still names `2006`, and
 `retock_field_card_boot`'s story flags select `2015` where the port's
 free-roam staging starts `2005`.
 
-The `1.148` the edge statistic reported on the same scenario is therefore not
-a key-on surplus. Two instrument effects made it. The edge count is
-host-clocked, as above. And the census and the older SPU capture of that
-scenario do not start at the same bar of the track: the capture's sounding
-pitches align it at engine frame `3103`, the census's key-on rhythm at
-`2936`, one phrase earlier, where the first 84 vsyncs carry the sparser
-accompaniment the census logs. The pitch-Jaccard alignment of a capture lands
-on a bar that rings the same pitches, which is not the same as one that keys
-the same notes. And the allocator's free-voice test reads each voice's
-envelope back off the SPU (`FUN_80065BAC` stores `ENVX`, fetched by
-`FUN_8006C9A8`, into `+0x06` of the `0x801CDB50` record at `0x80065C24`), so on
-PCSX-Redux even the **voice index** a note lands on varies from run to run of
-one state. It is not a comparand either.
-
-The alignment matters for any per-window statistic. An engine trace only as
-long as the retail window has nowhere to slide - the best offset is frame
-`1`, the track's opening bars - and an edge-rate pairing then reads `0.244`
-against `0.488`, a ratio of `0.5` that is a statement about which bars were
-compared, not about the port. Ask `audio-trace` for at least the aligned frame
-plus the retail window's length. The capture probe that carries the
-wall-clock stamp is
-[`autorun_w1a_audio_clock.lua`](../../scripts/pcsx-redux/autorun_w1a_audio_clock.lua),
-and `scripts/pcsx-redux/analyze_audio_clock.py` is the offline half.
-
-The mednafen axis is not affected the same way - a `.mc` save is a single
-frozen SPU cycle, so there is no per-frame rate to distort - but it cannot
-measure a rate either.
+Two cautions when reading a capture beside a census. A pitch-Jaccard alignment
+lands on a bar that *rings* the same pitches, which need not be the bar that
+*keys* the same notes: on `s3_rimelm_freeroam` the capture aligns at engine
+frame `3103` and the census's key-on rhythm at `2936`, one phrase earlier, so
+an edge ratio of `1.148` there is not a key-on surplus. And the allocator's
+free-voice test reads each voice's envelope back off the SPU (`FUN_80065BAC`
+stores `ENVX`, fetched by `FUN_8006C9A8`, into `+0x06` of the `0x801CDB50`
+record at `0x80065C24`), so on PCSX-Redux even the voice index a note lands on
+varies from run to run of one state.
 
 ### The Field↔Battle swap is not on this axis
 
-The **Field↔Battle BGM-swap** is *not* yet observable through this
-voice-activity oracle. The audible path itself is no longer blocked: the
-default battle track is the global-pool id `2026`
-(`music_labels::BATTLE_THEME_1_BGM_ID`), which resolves through the
-`music_01` bank arm of `route_bgm_events` (`music_bank_entry_bytes` →
-`start_owned_vab`) regardless of the field scene's own BGM table - the same
-path the disc-gated `global_bgm_owned_vab_disc` test pins. What remains
-un-oracled is the trace side: the scenario captures predate the default swap,
-so the v0.1 playthrough oracle pins the Field→Battle transition on the
-mode-trace axis (`v0_1_battle_leg_mode_trace_matches_expected`), not the
-audio axis. The swap *contract* (track stash → battle start → field restore)
-is regression-tested at the `World` level
+The Field↔Battle BGM swap plays on both hosts but is not measured by this
+oracle: the scenario captures hold no battle-entry window, so no trace pairs
+the swap against retail. The default battle track is the global-pool id `2026`
+(`music_labels::BATTLE_THEME_1_BGM_ID`), which resolves through the `music_01`
+bank arm of `route_bgm_events` (`music_bank_entry_bytes` → `start_owned_vab`),
+the path the disc-gated `global_bgm_owned_vab_disc` test pins. The transition
+itself is pinned on the mode-trace axis
+(`v0_1_battle_leg_mode_trace_matches_expected`), and the swap *contract*
+(track stash → battle start → field restore) at the `World` level
 (`battle_bgm_swaps_on_encounter_and_restores_on_finish`,
-`playable_default_swaps_to_the_standard_battle_theme`).
+`playable_default_swaps_to_the_standard_battle_theme`). The battle key-on
+census above covers the battle theme's notes once it is playing.
 
-## What's left
+<a id="whats-left"></a>
 
-The byte-level layouts of `.MAP / .PCH / .spk / .dpk / .pac` are still TBD, and
-the dispatch chain *into* them is fully traced
-([`sound-driver.md`](../formats/sound-driver.md)).
+## Open items
 
-What is **no longer** open is the `FUN_8001FA88` read this section used to name
-as the next move. The body is decoded, and its buffer `_DAT_8007B8D0` does not
-hold a `.dpk` at all - it holds `bse.dat`, the battle SFX descriptor bank
-([`bse-dat.md`](../formats/bse-dat.md)). The `u16` at `+2` is not a divisor and
-not a record count: the tail rounds it toward zero to an even value and adds it
-to the base as a **byte offset**, `gp[0x678] = base + 2 * (n / 2)`
-(`0x8001FB9C..0x8001FBC0`; the `sll 16` / `sra 16` pair makes `n` signed, and
-the `srl 31` / `addu` / `sra 1` / `sll 1` run is the truncating `n/2*2` idiom,
-which is *not* the same as `n & ~1` for a negative `n`). `see
-ghidra/scripts/funcs/8001fa88.txt`.
-
-Eventual home: a `crates/sound` companion to `crates/vab`.
+- **Credits bank SPU layout** is pinned by
+  `engine-audio/tests/credits_bank_spu_layout_disc.rs`, not by a listening
+  check ([above](#where-the-credits-bank-lands-in-spu-ram)).
+- **Arts-shout forced channel.** `FUN_8004C140` forces channel `0xC` when the
+  first formation id `gp+0x9F4` is `0x4F`; the port carries the rule
+  (`shout::FORCED_CHANNEL_FORMATION_ID`) but neither host supplies the
+  formation id, so it is inert.
+- **Miracle / Super Art shouts** answer one constant, the finisher; the
+  per-constant staging inside a replacement queue is not captured.
+- **Field-VM XA seek** (`FUN_80019794`, the zero-duration operand shape) has no
+  engine counterpart: the port has no drive to seek.
+- **SPU transfer timing** is not modelled, which is the one-key-on residual on
+  `dolk2_market_noa`.
+- **Reverb resampler.** The hardware's 39-tap FIR is approximated by
+  decimation and zero-order hold.
+- **The Field↔Battle swap** has no retail audio trace
+  ([above](#the-fieldbattle-swap-is-not-on-this-axis)).
+- **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
+  dispatch chain into them and the `.dpk` payload are traced on
+  [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer
+  `_DAT_8007B8D0` holds `bse.dat`, not a `.dpk`: the `u16` at `+2` is a byte
+  offset the tail rounds toward zero to an even value,
+  `gp[0x678] = base + 2 * (n / 2)` (`0x8001FB9C..0x8001FBC0`; the `sll 16` /
+  `sra 16` pair makes `n` signed, and the `srl 31` / `addu` / `sra 1` /
+  `sll 1` run is the truncating `n/2*2` idiom, which is *not* `n & ~1` for a
+  negative `n`). `see ghidra/scripts/funcs/8001fa88.txt`,
+  [`bse-dat.md`](../formats/bse-dat.md).
 
 ## See also
 
-**Reference** -
 [VAB sound bank](../formats/vab.md) ·
 [SEQ sequence](../formats/seq.md) ·
+[XA audio](../formats/xa.md) ·
+[SFX descriptor table](../formats/sfx-table.md) ·
+[`bse.dat`](../formats/bse-dat.md) ·
 [Sound-driver outputs](../formats/sound-driver.md) ·
-[Cutscene / STR](cutscene.md)
+[Music tracks](../reference/music-tracks.md) ·
+[Audio function tables](../reference/functions/audio.md) ·
+[Cutscene / STR](cutscene.md) ·
+[Host drift](../tooling/host-drift.md)

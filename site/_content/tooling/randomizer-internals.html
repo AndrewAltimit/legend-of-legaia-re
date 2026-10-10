@@ -34,13 +34,74 @@
     <li><b>ISO 9660</b><span><code>PROT.DAT</code>'s own LBA turns that into a disc sector. <code>legaia_iso</code></span></li>
     <li><b>Sector write</b><span>The 2352-byte sector is rewritten with fresh EDC/ECC. <code>legaia_iso::write</code></span></li>
   </ol>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ri-wp-title ri-wp-desc">
+      <title id="ri-wp-title">The patcher's write path</title>
+      <desc id="ri-wp-desc">Four kinds of edit feed DiscPatcher: a same-size overwrite of bytes in an entry or in the executable; an LZS re-pack of a decoded record that must fit its original compressed span; a MAN relocation that resizes one record and then re-packs; and an annexed blob written into spare sectors of DMY.DAT. DiscPatcher turns each into whole-sector writes, the sector writer recomputes EDC and ECC, and the result is diffed against the original disc to produce a PPF patch and, optionally, a patched image with a cue sheet.</desc>
+      <defs><marker id="ri-wp-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <text class="dg-edge-label" x="14" y="18">what a feature produces</text>
+      <rect class="dg-node" x="14" y="28" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="134" y="52">Same-size overwrite</text><text class="dg-sub" x="134" y="72">table bytes, script operands, code words</text>
+      <rect class="dg-node" x="14" y="104" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="134" y="128">LZS re-pack</text><text class="dg-sub" x="134" y="148">decode, edit, re-encode within the span</text>
+      <rect class="dg-node" x="14" y="180" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="134" y="204">MAN relocation</text><text class="dg-sub" x="134" y="224">resize a record, fix offsets, re-pack</text>
+      <rect class="dg-node" x="14" y="256" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="134" y="280">Annexed blob</text><text class="dg-sub" x="134" y="300">new data in spare DMY.DAT sectors</text>
+
+      <rect class="dg-node-accent" x="330" y="120" width="200" height="104" rx="6"/>
+      <text class="dg-label" x="430" y="150">DiscPatcher</text>
+      <text class="dg-sub" x="430" y="172">entry + offset to disc LBA</text>
+      <text class="dg-sub" x="430" y="190">via the PROT TOC and</text>
+      <text class="dg-sub" x="430" y="208">the ISO 9660 directory</text>
+
+      <rect class="dg-node" x="600" y="120" width="246" height="104" rx="6"/>
+      <text class="dg-label" x="723" y="150">Sector writer</text>
+      <text class="dg-sub" x="723" y="172">replace 2048 payload bytes,</text>
+      <text class="dg-sub" x="723" y="190">recompute EDC + P/Q ECC,</text>
+      <text class="dg-sub" x="723" y="208">leave sync and header alone</text>
+
+      <rect class="dg-node-ok" x="330" y="296" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="450" y="320">PPF 3.0 patch</text><text class="dg-sub" x="450" y="340">changed runs only, no game bytes to share</text>
+      <rect class="dg-node-ok" x="606" y="296" width="240" height="60" rx="5"/>
+      <text class="dg-label" x="726" y="320">Patched .bin + .cue</text><text class="dg-sub" x="726" y="340">optional, for local play</text>
+
+      <path class="dg-edge" d="M254 58 L292 58 L292 150 L328 150" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge" d="M254 134 L280 134 L280 164 L328 164" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge" d="M254 210 L280 210 L280 182 L328 182" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge" d="M254 286 L292 286 L292 198 L328 198" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge" d="M530 172 L598 172" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge" d="M723 224 L723 260 L450 260 L450 294" marker-end="url(#ri-wp-arrow)"/>
+      <path class="dg-edge-dim" d="M723 260 L726 260 L726 294" marker-end="url(#ri-wp-arrow)"/>
+      <text class="dg-edge-label" x="470" y="254">diff against the original image</text>
+    </svg>
+    <figcaption>Every feature reduces to one of four kinds of edit, and all four leave through the same door: whole-sector writes with fresh checksums. The patch is the byte difference between the result and the disc you supplied, which is why a PPF carries only your changes.</figcaption>
+  </figure>
+  <h3 id="sector">One sector on the disc</h3>
+  <p>A data sector is 2352 bytes, of which the game sees 2048. The patcher replaces the payload and recomputes the two fields that guard it.</p>
+  <div class="byte-map">
+    <div class="bm-cell bm-dim"><span class="bm-off">0x000</span><span class="bm-name">sync</span><span class="bm-size">12</span></div>
+    <div class="bm-cell bm-dim"><span class="bm-off">0x00C</span><span class="bm-name">header</span><span class="bm-size">4</span></div>
+    <div class="bm-cell bm-dim"><span class="bm-off">0x010</span><span class="bm-name">sub&shy;header</span><span class="bm-size">8</span></div>
+    <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">0x018</span><span class="bm-name">user data - what an edit changes</span><span class="bm-size">2048</span></div>
+    <div class="bm-cell"><span class="bm-off">0x818</span><span class="bm-name">EDC</span><span class="bm-size">4</span></div>
+    <div class="bm-cell" style="--w:2"><span class="bm-off">0x81C</span><span class="bm-name">ECC P + Q</span><span class="bm-size">276</span></div>
+  </div>
+  <p class="dg-note">Not to scale. Mode 2 Form 1; the EDC covers the subheader and the payload, and the ECC treats the header as zero so parity does not depend on where the sector sits.</p>
   <p class="hint">These are the hops of <code>DiscPatcher::patch_prot_entry</code>. <code>patch_named_file</code> is the sibling for edits straight into <code>SCUS_942.54</code>; <code>patch_monster_slot</code> wraps the battle_data archive.</p>
   <h3>The editing rule</h3>
   <ul class="bullets">
-    <li><strong>Same size, in place.</strong> No sector address, PROT entry or ISO directory record ever moves, so a patch is a pure byte overwrite plus checksum recompute. The disc image's size never changes.</li>
+    <li><strong>Same size, in place.</strong> By default no sector address, PROT entry or ISO directory record moves, so a patch is a pure byte overwrite plus checksum recompute and the disc image's size never changes.</li>
     <li><strong>Fixed slots pad; tight streams re-pack.</strong> A monster record is re-emitted zero-padded back to its <code>0x14000</code>-byte slot in the battle_data archive (PROT 867). A scene MAN has no compressed slack, so the encoder's lazy matching has to fit the exact original span; the rare stream that overflows is skipped and reported.</li>
     <li><strong>Budget from the boundary.</strong> A MAN's re-pack budget is its span up to the next descriptor, not its current compressed length - otherwise a second pass over the same scene (encounters, then chests, then shops) would shrink the budget each time.</li>
     <li><strong>Doors and place names are the exception.</strong> A destination carries its scene name inline and a banner name is stored unpadded, so re-pointing or renaming changes a record's length. The <a href="../formats/man-relocation.html">MAN relocation engine</a> fixes every offset the resize disturbs and rewrites the descriptor's size word.</li>
+  </ul>
+  <h3 id="more-room">When an edit needs more room</h3>
+  <p>Three escapes exist for content that cannot fit its slot, in the order the patcher reaches for them. The first two keep the image the same size, so they still ship as a PPF.</p>
+  <ul class="bullets">
+    <li><strong>Move a boundary.</strong> Neighbouring PROT entries can trade whole sectors: re-packing one with a tighter LZS parse frees sectors its neighbour takes, and only the table-of-contents words between them change (<code>DiscPatcher::reassign_prot_entries</code>).</li>
+    <li><strong>The <code>DMY.DAT</code> annex.</strong> <code>DMY.DAT</code> is developer fixture data no retail code path loads, which makes it the disc's spare room. New data is parked there in whole sectors behind a bump allocator, and the table or loader that needs it is pointed at the new sector (<code>DiscPatcher::annex_blob</code>).</li>
+    <li><strong>Whole-disc relayout.</strong> With <code>--allow-relayout</code> an entry grows by whole sectors and everything after it shifts, with the PROT table and the ISO directory rewritten to match (<code>DiscPatcher::grow_prot_entries</code>). The image changes size, so this path writes a full image and no PPF. <a href="translation.html">Translation imports</a> use it to give long dialog room; the randomizer falls back to it only when the annex is missing or full.</li>
   </ul>
   <p>The error-correction math is the generic CD-ROM scheme (ECMA-130): EDC is a CRC over reversed polynomial <code>0xD8018001</code>, ECC is Reed-Solomon P/Q over GF(2<sup>8</sup>) with generator <code>0x11D</code>, and the header is treated as zero so parity is independent of the sector's address. It embeds no game bytes, and it reproduces real <code>PROT.DAT</code> sectors bit-for-bit.</p>
 </section>
