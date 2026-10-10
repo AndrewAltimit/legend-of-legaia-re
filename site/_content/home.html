@@ -9,23 +9,28 @@
   <div class="hero-copy">
     <div class="hero-eyebrow">PSX &middot; SCUS-94254 &middot; 1998</div>
     <h1>Legend of Legaia, taken apart and running again.</h1>
-    <p class="hero-sub-line">A fan project that pulls the 1998 PlayStation RPG apart piece by piece and
-    puts it back together: play a from-scratch rewrite of the engine, look at every model, texture and
-    tune on the disc, mod your own copy, and read how the game really works underneath. All in your
-    browser. The engine port is a work in progress; for a polished playthrough today, the
-    <a href="tooling/rom-patcher.html">ROM patcher</a>'s mods run on your own emulator or console.</p>
-    <span class="legal-pill">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
-      Zero Sony bytes shipped &mdash; bring your own disc
-    </span>
+    <p class="hero-sub-line">A from-scratch Rust port of the 1998 PlayStation RPG that you can play in
+    this tab, every model, texture, tune and cutscene on the disc laid open, a patcher that mods your
+    own copy, and the documentation of how the game works underneath.</p>
+    <p class="hero-status">
+      <span class="status-badge sb-works">playable</span>
+      <span>Most of the game runs in the port: towns and dungeons, battles, menus, shops, saves,
+      minigames, music and cutscenes. Expect the occasional bug and some differences from the
+      original; <a href="#status">where it stands</a> has the detail.</span>
+    </p>
     <div class="cta-row">
       <a class="btn btn-primary" href="play.html">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l14-8z"/></svg>
         Play in your browser
       </a>
-      <a class="btn btn-ghost" href="viewer.html">Browse the disc</a>
-      <a class="cta-tertiary" href="architecture.html">Read how it works &rarr;</a>
+      <a class="btn btn-ghost" href="tooling/rom-patcher.html">Patch your disc</a>
+      <a class="btn btn-ghost" href="viewer.html">Browse the assets</a>
+      <a class="cta-tertiary" href="architecture.html">Read the docs &rarr;</a>
     </div>
+    <span class="legal-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4.5"/></svg>
+      No Sony data shipped &mdash; bring your own disc image
+    </span>
   </div>
   <div class="hero-media">
     <video controls preload="none" playsinline poster="img/tiles/hero.jpg">
@@ -48,44 +53,38 @@
   <button type="button" class="browse">Choose .bin file</button>
 </div>
 
-<section class="doc-section" id="what-you-can-do">
+<section class="doc-section" id="status">
   <div class="group">
-    <div class="group-head"><h2>What you can do here</h2><span class="rule"></span><span class="count">four doors in</span></div>
+    <div class="group-head"><h2>Where it stands</h2><span class="rule"></span><span class="count">the port, measured</span></div>
   </div>
-  <div class="card-grid">
-    <a class="card" href="play.html">
-      <h3>Play</h3>
-      <p>Walk the towns and fields of Legaia inside a rewrite of the game's engine. Not an emulator,
-      not a video: the engine itself, compiled for the browser, reading your disc.</p>
-    </a>
-    <a class="card" href="viewer.html">
-      <h3>Browse</h3>
-      <p>Every 3D model, texture, town, monster, tune and cutscene on the disc, decoded on the spot.
-      Spin a boss, export a town to Blender, listen to the sound test.</p>
-    </a>
-    <a class="card" href="tooling/rom-patcher.html">
-      <h3>Patch</h3>
-      <p>Randomize your own copy - drops, chests, shops, doors, arts - or fix a 27-year-old softlock.
-      The patcher runs in the tab and hands you a patched image; nothing leaves your machine.</p>
-    </a>
-    <a class="card" href="architecture.html">
-      <h3>Read</h3>
-      <p>How the disc is laid out, how the script and battle engines work, and how each fact was
-      proved - written for fans first, with the byte-level detail one click deeper.</p>
-    </a>
-  </div>
-  <p class="hint">Everything on this site is a fan reconstruction. The project ships none of Sony's
-  data: each page reads the disc image you supply, in your browser, and forgets it when you ask.</p>
-</section>
-
-<section class="doc-section" id="progress">
+  <ul class="status-list cols-2">
+    <li><span class="status-badge sb-works">works</span>
+      <div><b>Towns, dungeons and the world map</b><span>Walk, talk, open chests, ride the story scripts from a New Game. The same scene scripts the original runs, interpreted by the port.</span></div></li>
+    <li><span class="status-badge sb-works">works</span>
+      <div><b>Battles</b><span>Random and boss encounters, Tactical Arts, Seru magic and summons, items, spoils and level-ups.</span></div></li>
+    <li><span class="status-badge sb-works">works</span>
+      <div><b>Menus, shops, inns and saves</b><span>The pause menu, equipment, shops and inns, and saving and loading - including real memory-card saves.</span></div></li>
+    <li><span class="status-badge sb-works">works</span>
+      <div><b>Minigames</b><span>Fishing, the slot machine, Baka Fighter, Noa's dance and the Muscle Dome, each on <a href="minigames.html">its own page</a> too.</span></div></li>
+    <li><span class="status-badge sb-works">works</span>
+      <div><b>Music, sound and cutscenes</b><span>Sequenced music and sound effects through a recreated sound chip, voice streams, and the full-motion videos.</span></div></li>
+    <li><span class="status-badge sb-partial">rough edges</span>
+      <div><b>Not finished, and it says so</b><span>You will meet the occasional bug, and some scenes and effects do not yet match the original frame for frame. The numbers below are measured against the retail game, not estimated.</span></div></li>
+  </ul>
+  <p class="hint">Beyond the original: enhanced lighting, volumetric fog, see-through walls around the
+  player, free-angle movement and VR ship as toggles, with the retail look one switch away. For a
+  playthrough on real hardware or an emulator, the <a href="tooling/rom-patcher.html">ROM patcher</a>'s
+  mods apply to your own disc.</p>
+  <!-- `#progress` is linked from the measurement pages; keep the id. -->
+  <div id="progress">
   <!--PROGRESS_METER-->
   <!--IMAGE_PORT_STATUS-->
+  </div>
 </section>
 
 <section class="doc-section" id="explore">
   <div class="group">
-    <div class="group-head"><h2>Play</h2><span class="rule"></span><span class="count">2 tools</span></div>
+    <div class="group-head"><h2>Play</h2><span class="rule"></span><span class="count">the engine, in this tab</span></div>
     <div class="tiles">
       <a class="tile lg" href="play.html">
         <div class="collage">
@@ -98,7 +97,7 @@
         </div>
         <div class="tile-body">
           <h3>Play the port</h3>
-          <p>The from-scratch engine running the real game &mdash; flat or in VR.</p>
+          <p>New Game to wherever you get: the from-scratch engine running the real game, flat or in VR, with saves kept in your browser.</p>
         </div>
       </a>
       <a class="tile lg" href="minigames.html">
@@ -119,23 +118,40 @@
   </div>
 
   <div class="group">
-    <div class="group-head"><h2>Modding</h2><span class="rule"></span><span class="count">1 tool</span></div>
+    <div class="group-head"><h2>Mod your disc</h2><span class="rule"></span><span class="count">patched locally, nothing uploaded</span></div>
     <div class="tiles">
       <a class="tile wide" href="tooling/rom-patcher.html">
         <div class="shot"><img src="img/tiles/patcher.jpg" alt="Randomizer options: drops, chests, and shops set to shuffle or randomize" loading="lazy">
           <span class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h4c3.5 0 4.5 8 8 8h4M4 16h4c1.4 0 2.4-1.1 3.2-2.3M12.8 10.2C13.8 9 14.8 8 16 8h4"/><path d="M18 6l2.5 2L18 10M18 14l2.5 2-2.5 2"/></svg></span></div>
         <div class="tile-body">
-          <h3>ROM patcher (randomizer)</h3>
-          <p>Randomize drops, encounters, chests, shops, doors, arts combos, and code-injected extras
-          like the in-shop Seru-trading vendor. Outputs a patched image &mdash; nothing is uploaded.
-          Translators: the same toolkit exports the game's text to an editable pack and reimports
-          it (<a href="tooling/translation.html">translation</a>).</p>
+          <h3>ROM patcher and randomizer</h3>
+          <p>Shuffle drops, encounters, chests, shops, doors and arts combos, tune the difficulty,
+          fix an original softlock, or add code-injected extras like the in-shop Seru-trading vendor.
+          You get a patched image and a shareable patch file that plays on an emulator or a console.</p>
+        </div>
+      </a>
+    </div>
+    <div class="doc-tiles" style="margin-top:0.85rem">
+      <a class="doc-tile" href="tooling/translation-workbench.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M8.5 4v2M6 6c.5 3 2.5 5.500 6 7M11 6c-.5 3-2.500 5.500-6 7"/><path d="M13 20l3.500-9 3.500 9M14.200 17h4.600"/></svg></span>
+        <div>
+          <h3>Translation workbench</h3>
+          <p>Export the game's text to an editable pack, translate it, and import it back onto your disc.</p>
+          <span class="meta">Open the workbench &rarr;</span>
+        </div>
+      </a>
+      <a class="doc-tile" href="guides/modding-and-translation.html">
+        <span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5C5.5 4.5 7.5 4 9 4s3 .5 3 .5V19s-1.5-.5-3-.5-3.5.5-5 1.5zM20 5.5C18.5 4.5 16.5 4 15 4s-3 .5-3 .5V19s1.5-.5 3-.5 3.5.5 5 1.500z"/></svg></span>
+        <div>
+          <h3>Modding and translation guide</h3>
+          <p>Every mod family, hand-editing a monster, swapping a texture, and building a language pack.</p>
+          <span class="meta">Read the guide &rarr;</span>
         </div>
       </a>
     </div>
   </div>
   <div class="group">
-    <div class="group-head"><h2>Browse the disc</h2><span class="rule"></span><span class="count">10 tools</span></div>
+    <div class="group-head"><h2>Explore the game data</h2><span class="rule"></span><span class="count">decoded from your disc</span></div>
     <div class="tiles cols3">
       <a class="tile" href="viewer.html">
         <div class="shot"><img src="img/tiles/viewer.jpg" alt="The TIM texture catalog decoded from the disc" loading="lazy">
