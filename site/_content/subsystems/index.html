@@ -276,6 +276,29 @@
   </div>
 </section>
 
+<section class="doc-section" id="more">
+  <h2>More subsystem docs (on GitHub)</h2>
+  <p>The pages above are the explainers. These subsystems are documented at reference depth in the repository only; each opens the full Markdown page.</p>
+  <h3>Minigames</h3>
+  <p>All five are playable on the <a href="../minigames.html">minigames page</a> and inside the port.</p>
+  <ul class="bullets">
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md" target="_blank" rel="noopener"><strong>Fishing</strong></a> - the lure and bite tick, the tension-gauge reel, catch scoring, the point exchange and the per-venue spawn tables.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-slot-machine.md" target="_blank" rel="noopener"><strong>Slot machine</strong></a> - the reel state machine, its two RNGs and the five-payline payout; a 3D scene, not sprites.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-baka-fighter.md" target="_blank" rel="noopener"><strong>Baka Fighter</strong></a> - the duel's round loop, the rock-paper-scissors exchange and the combo damage.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-dance.md" target="_blank" rel="noopener"><strong>Dance</strong></a> - Noa's rhythm game: the beat clock, the timing-window judge, the step chart and the groove gauge.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-muscle-dome.md" target="_blank" rel="noopener"><strong>Muscle Dome</strong></a> - the arena ladder: ordinary battle rounds under a contest hub.</li>
+  </ul>
+  <h3>Field + battle detail</h3>
+  <ul class="bullets">
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/script-vm-menuctrl.md" target="_blank" rel="noopener"><strong>Script VM: MENU_CTRL</strong></a> - opcode <code>0x4C</code> and its 16 sub-dispatchers, the door into shops, menus and party changes.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md" target="_blank" rel="noopener"><strong>Field ambient effects</strong></a> - palette-walk tables, the scene-entry effect tree and the palette cycler behind pulsating floors and lightning.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/tile-board.md" target="_blank" rel="noopener"><strong>Tile board</strong></a> - a step-per-press grid mode in the field overlay that no shipped scene installs; not how towns are walked.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/move-vm-overlay-ext.md" target="_blank" rel="noopener"><strong>Move VM: overlay extension</strong></a> - opcode <code>0x2F</code> and its 61 overlay-resident sub-opcodes.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener"><strong>Cast modules</strong></a> - the per-spell code images paged in for Seru magic and summons, and the phase machine each one runs.</li>
+    <li><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/vm-inventory.md" target="_blank" rel="noopener"><strong>VM inventory</strong></a> - a census of every interpreter-shaped subsystem in the game, beyond the five on this page.</li>
+  </ul>
+</section>
+
 <section class="doc-section" id="port">
   <h2>The from-scratch port</h2>
   <p>The Rust port has its own page: goals, the fidelity / enhancement split, how the crates stack, and the legal posture.</p>
