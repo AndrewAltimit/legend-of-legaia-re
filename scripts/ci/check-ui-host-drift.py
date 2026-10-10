@@ -1756,6 +1756,10 @@ def signature_end(text: str, start: int) -> int:
 NATIVE_REDRAW_STEP_FILES = (
     "crates/engine-shell/src/window/event_handler/redraw_tick.rs",
     "crates/engine-shell/src/window/event_handler/redraw_draws.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws/actors.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws/battle.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws/field_env.rs",
+    "crates/engine-shell/src/window/event_handler/redraw_draws/world_map.rs",
     "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
     "crates/engine-shell/src/window/event_handler/redraw_prep.rs",
     "crates/engine-shell/src/window/event_handler/redraw_present.rs",
