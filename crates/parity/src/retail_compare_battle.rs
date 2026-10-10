@@ -248,6 +248,13 @@ pub struct RetailBattle {
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// Retail's live camera and the endpoints its tween table
+    /// (`ctx[+0x118C]`) steps toward, in the engine's pose space
+    /// ([`retail_cam_tween`]): `(live, end)`.
+    pub cam_tween: (
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+    ),
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
@@ -1230,6 +1237,83 @@ fn camera_landed(ram: &[u8], ctx: u32) -> bool {
     })
 }
 
+/// Retail's live camera pose and its tween endpoints, in the engine's pose
+/// space: the 12-bit angles, the eye translation `0x800840B8/BC/C0`, and the
+/// focus `0x80089118/1C/20` un-negated (retail stores it negated, and so do
+/// the focus records of the table). The walker steps the low halfwords, so
+/// the endpoints are halfwords too.
+fn retail_cam_tween(
+    ram: &[u8],
+    ctx: u32,
+) -> (
+    legaia_engine_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_vm::battle_cam_script::BattleCamPose,
+) {
+    use legaia_engine_vm::battle_cam_script::BattleCamPose;
+    let word = |va: u32| game_anchors::u32_at(ram, va) as i32 as f32;
+    let live = BattleCamPose {
+        pitch: f32::from(game_anchors::u16_at(ram, 0x8007_B790) & 0xFFF),
+        yaw: f32::from(game_anchors::u16_at(ram, 0x8007_B792) & 0xFFF),
+        tr: [word(0x8008_40B8), word(0x8008_40BC), word(0x8008_40C0)],
+        focus: [-word(0x8008_9118), -word(0x8008_911C), -word(0x8008_9120)],
+    };
+    let end_at = |k: u32| game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16;
+    let end = BattleCamPose {
+        pitch: f32::from(end_at(0) as u16 & 0xFFF),
+        yaw: f32::from(end_at(1) as u16 & 0xFFF),
+        tr: [3, 4, 5].map(|k| f32::from(end_at(k))),
+        focus: [6, 7, 8].map(|k| -f32::from(end_at(k))),
+    };
+    (live, end)
+}
+
+/// [`RetailBattle::cam_tween`] as the image child's `LEGAIA_BATTLE_CAM_ALIGN`:
+/// sixteen comma-separated numbers, the live pose then the endpoints, each
+/// `pitch, yaw, tr.x, tr.y, tr.z, focus.x, focus.y, focus.z`.
+pub fn cam_align_to_env(
+    tween: &(
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+        legaia_engine_vm::battle_cam_script::BattleCamPose,
+    ),
+) -> String {
+    [tween.0, tween.1]
+        .iter()
+        .flat_map(|p| {
+            [p.pitch, p.yaw]
+                .into_iter()
+                .chain(p.tr)
+                .chain(p.focus)
+                .collect::<Vec<_>>()
+        })
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Parse [`cam_align_to_env`]'s string back; `None` on any malformed field.
+pub fn cam_align_from_env(
+    v: &str,
+) -> Option<(
+    legaia_engine_vm::battle_cam_script::BattleCamPose,
+    legaia_engine_vm::battle_cam_script::BattleCamPose,
+)> {
+    use legaia_engine_vm::battle_cam_script::BattleCamPose;
+    let n: Vec<f32> = v
+        .split(',')
+        .map(|f| f.trim().parse().ok())
+        .collect::<Option<_>>()?;
+    if n.len() != 16 {
+        return None;
+    }
+    let pose = |o: usize| BattleCamPose {
+        pitch: n[o],
+        yaw: n[o + 1],
+        tr: [n[o + 2], n[o + 3], n[o + 4]],
+        focus: [n[o + 5], n[o + 6], n[o + 7]],
+    };
+    Some((pose(0), pose(8)))
+}
+
 fn in_ram(p: u32) -> bool {
     (0x8000_0000..0x8020_0000).contains(&p)
 }
@@ -1319,6 +1403,7 @@ impl RetailBattle {
                 legaia_engine_vm::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
+            cam_tween: retail_cam_tween(ram, ctx),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
@@ -2013,6 +2098,20 @@ pub fn run_engine_battle(
         && let Some(cam) = session.host.world.battle.camera.as_mut()
     {
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
+    }
+    // A capture inside an action reads its camera part-way along a glide
+    // whose start is the previous framing's leftover - an earlier action's
+    // side-and-tilt coin, the orbit's clock at the commit - which the replay
+    // reached on its own stream. Where the engine heads for retail's
+    // endpoint, start it from retail's live value, so the channel scores the
+    // framing rather than that history (`BattleCamera::align_glide_origin`;
+    // the image child does the same, `LEGAIA_BATTLE_CAM_ALIGN`). Pad drives
+    // only: a replayed cast's close-ups and module shots measured worse
+    // aligned (`flute_spikefish_midcast` image `.910` to `.828`).
+    if matches!(driven, Some(Some(_)))
+        && let Some(cam) = session.host.world.battle.camera.as_mut()
+    {
+        cam.align_glide_origin(battle.cam_tween.0, battle.cam_tween.1);
     }
     let world = &session.host.world;
     // How far the drive moved each placed combatant: a capture of a running

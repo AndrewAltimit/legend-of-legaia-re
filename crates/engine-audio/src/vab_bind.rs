@@ -386,6 +386,12 @@ impl VabBank {
             // tone, not a global all-voices routing - most battle hit tones
             // are authored dry.
             v.reverb_send = tone_reverb(tone);
+            // Engine mix bus: a sequencer note is music, a cue key-on is a
+            // sound effect (the config file's `bgm_volume` / `sfx_volume`).
+            v.bus = match path {
+                PitchPath::Sequencer => crate::spu::VoiceBus::Bgm,
+                PitchPath::Cue => crate::spu::VoiceBus::Sfx,
+            };
         }
         {
             let crate::spu::Spu {

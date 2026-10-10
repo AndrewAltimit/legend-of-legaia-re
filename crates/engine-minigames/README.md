@@ -29,9 +29,12 @@ simulation crate:
 - **World glue** - `World::enter_dance` / `tick_fishing` / the hub and
   exchange methods, `minigame_entry` (mode-24 door warps), `minigame_status`,
   `casino_coin_bank`, `fishing_exchange_input`, `timed_fight`.
-- **Scene assembly** - `dance_venue`, `dance_cast_scene`, `baka_duel_scene`,
-  `fishing_scene`, `fishing_venue`, `muscle_dome_scene`: they build meshes and
-  cameras out of a loaded `Scene` / `SceneResources`. Where such a module
+- **Scene assembly** - `dance_venue`, `dance_cast_scene`, `fishing_scene`,
+  `fishing_venue`: they build meshes and cameras out of a loaded `Scene` /
+  `SceneResources`. The duel and arena surfaces (`baka_duel_scene`,
+  `muscle_dome_scene`) load through a `read_prot` closure instead and live in
+  [`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md), which
+  needs `engine-menus` and so cannot sit in this crate. Where such a module
   carried a pure kernel (the duel camera, the dance camera track), the kernel
   moved here and the module re-exports it.
 - **Disc and scene readers** - `dance::stage_dance_hud_vram` (reads the HUD

@@ -800,7 +800,7 @@ the `DAT_80078B50` mirror list: the dome contest leaves `_DAT_80084540` and
 `DAT_8007BD60` at `3` each (the retail `minigame_muscle_dome` state), and
 backdrop id `6` is not on the list. The choice is visible here - only about a
 third of the shell's vertices are symmetric in `z`. Kernel
-`engine-core::muscle_dome_scene::arena_ring`, shared by every dome host.
+`engine-minigame-scenes::muscle_dome_scene::arena_ring`, shared by every dome host.
 
 Site consumer: the minigames page's dome panel draws the ring + the retail
 ground grid through `legaia_web_viewer` (`muscle_arena_*` / `muscle_vram`),
@@ -810,7 +810,7 @@ decal omitted per the capture above (`muscle_arena_hybrid` filters it).
 
 In the play hosts (the native window and the browser play page) the same
 shell, grid, fighter and monster come from one engine surface,
-`engine-core::muscle_dome_scene::MuscleDomeSurface`: it seats the course
+`engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface`: it seats the course
 ladder's current rung, loads the bodies and the merged VRAM once per seated
 pair, replays a resolved turn's plays as swings (the defender flinching on a
 connecting one), holds the loser's knockdown when the leg settles, and hands
@@ -2141,7 +2141,7 @@ decode, and a log line says so when they are used.
 Because a leg is an ordinary battle, its camera is the battle camera
 director `FUN_801D5854` driven by the round and action state machines - not
 a dome-specific shot. The 3D surface every dome host draws
-(`engine-core::muscle_dome_scene::MuscleDomeSurface`) therefore seats the
+(`engine-minigame-scenes::muscle_dome_scene::MuscleDomeSurface`) therefore seats the
 fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)`
 (`battle_seats`, facings `0` / `0x800`) at the battle world scale, and steps
 the shared `legaia_engine_vm::battle_cam_script` once a frame with the phase

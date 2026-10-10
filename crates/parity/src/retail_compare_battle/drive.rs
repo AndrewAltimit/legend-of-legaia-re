@@ -958,6 +958,17 @@ impl BattleDrive {
         {
             world.battle_ctx.camera_variant = style;
         }
+        // The stamp above lands on the tick after it is made, and the seed
+        // pass `0x0C` rolls its own variant on the very tick that hands the
+        // action to the state that arms the framing - so a capture one or
+        // two passes into its action would be filmed on the engine's coin.
+        // Pin it through the seed instead
+        // (`BattleActionCtx::camera_variant_pin`), for the driven seat only.
+        world.battle_ctx.camera_variant_pin = style.filter(|_| {
+            ours && seat < 3
+                && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
+                && !CAPTURE_BAND.contains(&want)
+        });
         if end == SpanGate::Landed {
             let gliding = world.battle.camera.as_ref().is_some_and(|c| c.is_gliding());
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);

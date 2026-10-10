@@ -2093,11 +2093,10 @@ impl LegaiaRuntime {
     /// the store (also called once when audio comes up, so a persisted
     /// Monaural / muted state applies to a fresh `AudioContext`).
     ///
-    /// The same two audio knobs the native window applies - the retail
-    /// options screen's Stereo / Monaural row and the engine-only master
-    /// mute - plus the one simulation knob (`precise_movement`).
-    /// `bgm_volume` / `sfx_volume` are read by neither host today: that is a
-    /// host-identical gap, not drift.
+    /// The same audio knobs the native window applies - the retail options
+    /// screen's Stereo / Monaural row, the engine-only master mute and the
+    /// engine-only `bgm_volume` / `sfx_volume` bus levels - plus the
+    /// simulation knobs.
     pub(crate) fn apply_options_side_effects(&mut self) {
         #[cfg(target_arch = "wasm32")]
         if let Some(audio) = self.audio_out.as_ref() {
@@ -2106,6 +2105,7 @@ impl LegaiaRuntime {
                 legaia_engine_core::options::AudioMode::Mono
             ));
             audio.set_muted(self.options_state.muted);
+            audio.set_bus_volumes(self.options_state.bgm_volume, self.options_state.sfx_volume);
         }
         if let Some(host) = self.scene_host.host_mut() {
             // The simulation knobs (precise movement, Field Move default,

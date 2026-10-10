@@ -16,6 +16,15 @@ const RUN_WAIT_STATE: u8 = 0x65;
 /// (`sll v1,v1,0x5` at `0x801E59B4`).
 const ESCAPE_EYE_Z_BACK_PER_VSYNC: f32 = 32.0;
 
+/// [`BattleCamera::align_glide_origin`]'s endpoint agreement, per component
+/// family: angles in 12-bit units, the eye translation in its prescaled
+/// units (the depth prescale truncates), the focus in world units (retail's
+/// focus trio is read off live actor pairs that a replay lands within a few
+/// units of).
+const ALIGN_ANGLE_TOLERANCE: f32 = 2.0;
+const ALIGN_TR_TOLERANCE: f32 = 2.0;
+const ALIGN_FOCUS_TOLERANCE: f32 = 8.0;
+
 impl BattleCamera {
     /// New camera snapped to the entry phase's framing (a battle that opens
     /// on tutorial dialogue starts in the held close-up; any other battle
@@ -537,6 +546,58 @@ impl BattleCamera {
         }
         self.pose.yaw = yaw.rem_euclid(4096.0);
         true
+    }
+
+    /// Phase-align the glide's **origin** to a retail instant: every driven
+    /// component whose framing endpoint agrees with retail's (`end`, the
+    /// endpoints of retail's tween table `ctx[+0x118C]`) takes retail's live
+    /// value (`live`), and keeps stepping toward its own endpoint from
+    /// there. Components whose endpoints disagree are left alone, so a wrong
+    /// framing still reads as one. Applies outside the far framing's
+    /// [`BattleCamPhase::Menu`] phase only (the orbit has its own clock,
+    /// [`Self::align_orbit_yaw`]); returns the aligned components as a mask
+    /// in [`BattleCamPose`] order (`pitch, yaw, tr.x/y/z, focus.x/y/z`).
+    ///
+    /// Where a glide starts is the previous framing's leftover: the side and
+    /// tilt an earlier action's `rand()` coin chose, the orbit's clock at the
+    /// commit, how far the last re-arm got. A replay reaches a capture's
+    /// action on its own stream, so its glide sets out from somewhere else
+    /// even when it is heading to retail's framing; this is the capture
+    /// harness's handle for scoring the framing rather than that history,
+    /// the in-action twin of the orbit alignment. Nothing in play calls it.
+    pub fn align_glide_origin(&mut self, live: BattleCamPose, end: BattleCamPose) -> u8 {
+        if self.phase == BattleCamPhase::Menu {
+            return 0;
+        }
+        let target = self.glides.front().map_or(self.pose, |g| g.target);
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        let mut mask = 0u8;
+        // Both angles keep the engine's own unwrap: each lands on the live
+        // angle's representative nearest its current value (retail's words
+        // are masked to 12 bits; the summon close-up's pitch runs negative).
+        let nearest = |from: f32, to: f32| {
+            let d = (to - from).rem_euclid(4096.0);
+            from + if d > 2048.0 { d - 4096.0 } else { d }
+        };
+        if ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE {
+            self.pose.pitch = nearest(self.pose.pitch, live.pitch);
+            mask |= 1;
+        }
+        if ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE {
+            self.pose.yaw = nearest(self.pose.yaw, live.yaw);
+            mask |= 2;
+        }
+        for k in 0..3 {
+            if (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE {
+                self.pose.tr[k] = live.tr[k];
+                mask |= 4 << k;
+            }
+            if (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE {
+                self.pose.focus[k] = live.focus[k];
+                mask |= 32 << k;
+            }
+        }
+        mask
     }
 
     /// Retail's `ctx[+0x87C]` - the close-up accumulator the framing

@@ -585,6 +585,42 @@ fn orbit_alignment_applies_only_to_the_idle_orbit() {
     assert_eq!(cam.pose().yaw, before);
 }
 
+/// The capture harness's glide-origin alignment takes retail's live value
+/// only for the components whose endpoint the engine agrees on, never in
+/// the far framing's orbit phase, and lands the yaw on the representative
+/// nearest the engine's own unwrap.
+#[test]
+fn glide_origin_alignment_takes_only_agreeing_components() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    let pose = cam.pose();
+    assert_eq!(cam.align_glide_origin(pose, pose), 0, "the orbit phase");
+    cam.set_phase(BattleCamPhase::Action);
+    steps(&mut cam, 200);
+    assert!(!cam.is_gliding());
+    // Landed: its endpoint is its pose.
+    let at = cam.pose();
+    let mut end = at;
+    end.focus[0] += 100.0; // a framing the engine does not head for
+    let live = BattleCamPose {
+        pitch: 77.0,
+        yaw: (at.yaw + 4096.0 + 30.0).rem_euclid(4096.0),
+        tr: [1.0, 2.0, 3.0],
+        focus: [4.0, 5.0, 6.0],
+    };
+    let mask = cam.align_glide_origin(live, end);
+    assert_eq!(mask, !0x20u8, "everything but focus.x");
+    let got = cam.pose();
+    assert_eq!(got.pitch, 77.0);
+    assert!(
+        (got.yaw - (at.yaw + 30.0)).abs() < 1e-3,
+        "{} vs {}",
+        got.yaw,
+        at.yaw
+    );
+    assert_eq!(got.tr, [1.0, 2.0, 3.0]);
+    assert_eq!(got.focus, [at.focus[0], 5.0, 6.0]);
+}
+
 /// `phase_for` is the shared boolean mapping: dialogue outranks the
 /// submenu (retail's tutorial text draws over an open menu), and an
 /// executing action outranks only the idle far framing.

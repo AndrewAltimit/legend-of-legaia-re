@@ -244,6 +244,17 @@ pub(super) fn battle_image(
     if battle.orbit_owns_yaw() {
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", retail.camera.yaw.to_string()));
     }
+    // The captured phase's glide starts where retail's stood, as the
+    // headless channel aligns it (`BattleCamera::align_glide_origin`).
+    if matches!(
+        battle.battle_drive(),
+        Some(crate::retail_compare_battle::BattleDrive::Action { .. })
+    ) {
+        env.push((
+            "LEGAIA_BATTLE_CAM_ALIGN",
+            crate::retail_compare_battle::cam_align_to_env(&battle.cam_tween),
+        ));
+    }
     env.push((
         "LEGAIA_BATTLE_CAMERA_OPTION",
         battle.camera_option.to_string(),

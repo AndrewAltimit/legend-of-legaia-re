@@ -4438,6 +4438,7 @@ ENGINE_API_CRATES = (
     "engine-menus",
     "engine-system",
     "engine-minigames",
+    "engine-minigame-scenes",
     "engine-vm",
     "engine-battle-vm",
     "engine-ui",

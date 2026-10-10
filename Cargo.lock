@@ -1384,6 +1384,7 @@ dependencies = [
  "legaia-engine-effects",
  "legaia-engine-field",
  "legaia-engine-menus",
+ "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -1453,6 +1454,21 @@ dependencies = [
  "legaia-save",
  "legaia-tim",
  "serde",
+]
+
+[[package]]
+name = "legaia-engine-minigame-scenes"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-engine-battle",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-minigames",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-tim",
+ "legaia-tmd",
 ]
 
 [[package]]

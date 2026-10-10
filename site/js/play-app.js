@@ -2964,6 +2964,10 @@ void main() {
       window.LegaiaFieldActors.frame(this.renderer, this._actorApi, this.npcs, draws, {
         advance,
         skipSlot: (slot) => this.tileActorSlots.has(slot),
+        /* Retail's actor cull under the visible-tile crop - the native NPC
+         * pass's `npc_actor_visible` gate. */
+        culled: typeof rt.play_npc_culled === 'function'
+          ? rt.play_npc_culled(this.debugCamera) : null,
         /* Actor draw: exempt from the occlusion fade, like the player. */
         extra: { noOccl: true },
       });

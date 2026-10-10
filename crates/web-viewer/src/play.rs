@@ -1683,6 +1683,17 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// Per catalogued NPC: `1` = retail's actor cull (`FUN_801D79E8`) hides
+    /// it under this frame's visible-tile crop, so the page skips its draw
+    /// (`FieldActors::culled`). Empty while no crop applies.
+    pub fn play_npc_culled(&self, debug_camera: bool) -> Vec<u8> {
+        let Some(h) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        let cells = self.field_view_cells_now(debug_camera);
+        self.actors.culled(h, cells.as_ref())
+    }
+
     /// Every catalogued NPC's draw pose (`FieldActors::draw_poses`, the
     /// engine's `World::field_npc_draw_pose` - the native window's NPC
     /// transform), 8 floats per entry.

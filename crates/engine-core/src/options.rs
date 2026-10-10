@@ -99,9 +99,13 @@ pub struct OptionsState {
     /// Dual Shock "Encounters" vibration.
     pub vibration_encounters: bool,
     // --- Engine-only knobs (config file only; retail shows no UI) ---
-    /// 0..=10. Engines convert to their per-channel scalar.
+    /// 0..=10 music level: scales every sequencer voice (the mixer's BGM
+    /// bus, `AudioSink::set_bus_volumes`), linear with the default 8 at unity
+    /// (the retail mix) and 10 a 1.25x boost. Both hosts apply it.
     pub bgm_volume: u8,
-    /// 0..=10. Engines convert to their per-channel scalar.
+    /// 0..=10 sound-effect level: scales every cue voice (the mixer's SFX
+    /// bus), same curve as [`Self::bgm_volume`]. XA voice / FMV audio rides
+    /// neither bus.
     pub sfx_volume: u8,
     /// 1..=8 (1 = slowest). Reserved: **no host reads it**. Retail's options
     /// screen has no message-speed row (the menu overlay's row descriptors at

@@ -29,6 +29,26 @@ pub const SPU_INTERNAL_RATE: u32 = 44_100;
 /// Pitch unit: 0x1000 = 1× sample rate.
 pub const PITCH_UNITY: u16 = 0x1000;
 
+/// The engine mix bus a voice belongs to (see [`Voice::bus`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VoiceBus {
+    /// Background music: voices keyed by the SEQ sequencer.
+    Bgm,
+    /// Sound effects: voices keyed by a cue (field / battle / menu SFX).
+    #[default]
+    Sfx,
+}
+
+impl VoiceBus {
+    /// Index into [`crate::spu::Spu::bus_gain`].
+    pub const fn index(self) -> usize {
+        match self {
+            Self::Bgm => 0,
+            Self::Sfx => 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Voice {
     /// Base address (bytes) into SPU RAM where this voice's ADPCM stream
@@ -54,6 +74,12 @@ pub struct Voice {
     /// per keyed tone from the VAB tone's `mode & 4`, as retail's
     /// `FUN_80067550` sets the voice's `EON` bit.
     pub reverb_send: bool,
+    /// Which engine mix bus the voice's output sums into ([`VoiceBus`]):
+    /// stamped at key-on by whoever keys it - a sequencer note is
+    /// [`VoiceBus::Bgm`], a cue key-on [`VoiceBus::Sfx`]. Engine-only (retail
+    /// has one SPU mix); it lets the config file's `bgm_volume` /
+    /// `sfx_volume` scale the two independently ([`crate::spu::Spu::bus_gain`]).
+    pub bus: VoiceBus,
 
     // --- runtime state --------------------------------------------------
     /// Absolute address of the *current* ADPCM block in SPU RAM.
@@ -88,6 +114,7 @@ impl Default for Voice {
             adsr_cfg: AdsrConfig::default(),
             adsr: AdsrState::default(),
             reverb_send: false,
+            bus: VoiceBus::Sfx,
             cur_block_addr: 0,
             sample_idx: 0,
             sample_frac: 0,

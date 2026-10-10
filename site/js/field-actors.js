@@ -183,6 +183,7 @@
    * draw at the world's live position / heading / tilt. `opts`:
    * `advance` (the page is not paused - drives the wall-clock fallback),
    * `skipSlot(slot)` (an actor another pass draws, e.g. a tile-board cell),
+   * `culled` (per-entry actor-cull mask, `1` = skip),
    * `extra` (fields merged into each draw). */
   function frame(renderer, a, recs, draws, opts) {
     if (!recs || !recs.length || !a.draw_poses) return;
@@ -209,6 +210,9 @@
       /* Not drawn: parked in the off-map hide box, or at zero render scale. */
       if (!np[base]) continue;
       if (o.skipSlot && o.skipSlot(n.slot | 0)) continue;
+      /* Retail's actor cull under the visible-tile crop (`culled`, one byte
+       * per catalog entry; empty = no crop). */
+      if (o.culled && n.i < o.culled.length && o.culled[n.i]) continue;
       let morphMoved = false;
       if (morphStates && n.i < morphStates.length) {
         const mg = morphStates[n.i];

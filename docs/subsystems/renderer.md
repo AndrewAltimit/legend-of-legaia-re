@@ -2050,9 +2050,10 @@ What removes geometry is retail's own rules, plus the projection's clip volume:
   `CameraDistance::Far`, the drag / tilt / zoom knobs or `F3` the map is drawn
   whole, because the window was sized for retail's frustum
   ([engine.md](engine.md#the-visible-tile-crop-follows-the-framing)).
-- **The actor cull** on placed objects and NPCs (`placed_actor_visible` over
-  `World::field_actor_culled_at`), applied under the same crop and off with
-  it, and retail's near reject on placed objects
+- **The actor cull** on placed objects and NPCs (`placed_actor_visible` /
+  `npc_actor_visible` over `World::field_actor_culled_at`; the browser page
+  reads the NPC half as `play_npc_culled`), applied under the same crop and
+  off with it, and retail's near reject on placed objects
   ([below](#the-placed-object-near-reject)).
 - **The per-primitive rejects**: the near reject
   ([below](#the-per-primitive-near-reject)) and, in battle, the GPU

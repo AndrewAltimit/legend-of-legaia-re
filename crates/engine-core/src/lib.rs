@@ -18,11 +18,10 @@ pub use legaia_engine_battle::{
 };
 pub mod actor_alloc_host;
 pub use legaia_engine_battle::arts_command_input;
+pub use legaia_engine_battle::battle_arts;
 pub use legaia_engine_field::actor_handler;
 pub use legaia_engine_field::actor_look;
 pub use legaia_engine_field::anim_cue;
-pub mod baka_duel_scene;
-pub use legaia_engine_battle::battle_arts;
 pub mod battle_cam_inputs;
 pub mod battle_flow;
 pub mod battle_hud;
@@ -119,7 +118,6 @@ pub mod model_bank;
 pub mod move_buffer_host;
 pub mod muscle_dome;
 pub use legaia_engine_system::movie_audio;
-pub mod muscle_dome_scene;
 pub mod muscle_ringside;
 pub use legaia_engine_menus::name_entry;
 pub use legaia_engine_system::music_labels;
@@ -581,3 +579,8 @@ pub use legaia_engine_minigames::{
     fishing_chrome, minigame_actor, minigame_floor, minigame_fx, other_game_overlay,
     prize_exchange, slot_machine,
 };
+
+// The minigames' 3D scene surfaces (the Baka Fighter duel and the Muscle Dome
+// arena) live in `legaia-engine-minigame-scenes`; re-exported at their old
+// paths.
+pub use legaia_engine_minigame_scenes::{baka_duel_scene, muscle_dome_scene};

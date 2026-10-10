@@ -768,6 +768,24 @@ fn action_seed_camera_variant_follows_the_category_arm() {
     }
 }
 
+/// The capture harness's variant pin lands over the seed's roll and the
+/// category arm's narrowing, and leaves the draws themselves in place.
+#[test]
+fn action_seed_camera_variant_pin_overrides_the_roll_not_the_draws() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Item, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    host.rng_seq = vec![3, 1];
+    ctx.camera_variant_pin = Some(3);
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_variant, 3);
+    let (mut unpinned, mut host2) = fresh(ActionCategory::Item, 1);
+    unpinned.action_state = ActionState::ActionSeed.as_byte();
+    host2.rng_seq = vec![3, 1];
+    step(&mut host2, &mut unpinned);
+    assert_eq!(*host.rng_pos.borrow(), *host2.rng_pos.borrow());
+    assert_eq!(ctx.action_state, unpinned.action_state);
+}
+
 /// The banner byte is cleared at the head of every action, so a tail extended
 /// by one action's level-up cannot leak into the next one.
 #[test]

@@ -1866,7 +1866,43 @@ Retail rebuilds its camera tween every frame
 words are a framing *plus* the distance still to close, and that distance
 depends on where the camera stood before and how long it has been easing.
 The capture's step table (`ctx[+0x118C]`) records the endpoint, so the target
-is checkable even where the pose is not. Two seeding limits follow.
+is checkable even where the pose is not.
+
+**The glide's origin is aligned, the endpoint is not.** On a capture the pad
+drive reached, both sides start the in-flight glide from retail's
+live camera for every component whose engine endpoint agrees with the step
+table's (`BattleCamera::align_glide_origin`; the headless seed before it
+samples `camera`, the image child on the captured phase through
+`LEGAIA_BATTLE_CAM_ALIGN`). Angles agree within `2` units, the eye trio within
+`2`, the focus within `8` world units. A component whose endpoint disagrees
+keeps the engine's own value, so a wrong framing - a yaw base, a focus on the
+wrong body - still reads as one; what the alignment removes is the start,
+which is the previous framing's leftover (an earlier action's side-and-tilt
+coin, the orbit's clock at the commit) and is recorded nowhere in the state.
+It is the in-action twin of [the orbit alignment](#battle-states). Replayed
+casts are left out: their close-ups and module shots measured worse aligned
+(`flute_spikefish_midcast` `image` `.910` to `.828`,
+`shiny_refactor_gimard_precast` `.904` to `.861`, with the camera channel
+level), so the step table there is not the whole of what retail framed. A
+correct camera can also cost a frame whose content differs: aligned,
+`battle_melee_hit_spark` films the engine's mid-somersault Vahn closer up
+(`camera` `.948` to `.990`, `image` `.566` to `.536`). The `super_queue_replace_*`
+trio, captured two passes into `0x14`, read pitch `128` at rest in retail's
+table - tilted by an earlier action's style - against the engine's `3`; with
+the variant pinned and the origin aligned the trio's frames went from `.331`
+to `.547`, the remaining gap the per-art yaw and the approach focus.
+
+The variant needs a pin, not a stamp, to reach a capture that early: the
+seed pass `0x0C` rolls `ctx[+0xD]` and hands the action to the state that
+arms the framing on the same tick, so a stamp made before the tick is rolled
+over and one made after it lands a pass late. The drive sets
+`BattleActionCtx::camera_variant_pin` for its seat across the pre-seed states
+and the seed itself; the seed stores the pin over its roll after the draws
+(the `rand()` stream is unchanged).
+
+The cases that led here, each a start no word records, and what still
+separates them where an endpoint is a few units off the engine's
+(`battle_noa_miracle_art_combo`'s yaw `1778` against `1771` stays unaligned):
 
 - **No clock under the Far option.** `battle_noa_miracle_art_combo` is
   captured in a component strike `0x1E` with Battle Camera Far

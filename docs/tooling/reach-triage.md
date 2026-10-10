@@ -862,10 +862,15 @@ over one ladder (field entry, menu open, menu close) and asserts the chains
   `other_warp_init_stage` and `mode_init_bare` are walked - but nothing loads
   an image at a base and calls the entry the plan names, which is
   `crate::overlay_loader`'s gap, not the seat's.
-- the frame-begin skip's *producer*. `World::clock.frame_begin_skip` now has a
-  consumer on a host (the seat clears it on every edge and `ModeDriver::tick`
-  reads it), and still no writer outside tests, so the "a skipped frame runs no
-  frame-end pass" law remains unexercised end to end.
+- nothing, on the frame-begin skip's side. `World::clock.frame_begin_skip`
+  has a consumer on a host (the seat clears it on every edge and
+  `ModeDriver::tick` reads it) and no writer outside tests, which is retail's
+  shape too: the flag's only setter, the toggle at `0x80018850`, sits in
+  `FUN_8001822C`'s tail behind `beq v0,zero` at `0x800185FC` on the dev-build
+  word `_DAT_8007B98C`, zero on retail. It is a debug pause (R1 held, Start
+  pressed), so the "a skipped frame runs no frame-end pass" law is unexercised
+  by any retail playthrough, not by a missing wire
+  ([`live-audit-triage.md`](live-audit-triage.md#worldclockframe_begin_skip-has-no-producer-because-retail-has-none)).
 
 **One of the laws in that unreached shape is a live gameplay divergence**, and
 it is the reason the family is worth more than its four rows. Mode 23 CARD is

@@ -130,6 +130,15 @@ impl PlayWindowApp {
         {
             cam.align_orbit_yaw(yaw);
         }
+        // ... and, on the captured phase itself, the glide's origin
+        // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
+        if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+            && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+        {
+            cam.align_glide_origin(live, end);
+        }
     }
 
     /// Fold the script-animated floor-height ladder into the four baked
