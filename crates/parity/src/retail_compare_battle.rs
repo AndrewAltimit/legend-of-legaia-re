@@ -2516,7 +2516,15 @@ impl RetailBattle {
                     yaw: Some(self.walk_yaw_base),
                     coin: Some(self.track_coin),
                     message: self.timed_message,
-                    plate_cleared: self.target_plate_cleared && seat < 3,
+                    // An empty content word is the counter swap's only on
+                    // an attack: a Spirit action never opens the target
+                    // plaque, so its word reads zero with no swap behind it
+                    // (`nivora_duel_pre_megaton_press`, Gala's Spirit hold),
+                    // and steering the counter HUD there raised a readout
+                    // bar under the AP bar retail draws alone.
+                    plate_cleared: self.target_plate_cleared
+                        && seat < 3
+                        && self.queued_category == 3,
                     arts: seat < 3 && self.queued_category == 3 && self.arts_queue,
                     gauge: self
                         .acting_gauge
