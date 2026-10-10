@@ -1899,6 +1899,8 @@ pub fn battle_hud_draws_for(
                 fill: rects.gauge_fill,
                 box_: rects.gauge_box,
                 digits: rects.gauge_digits,
+                tip: rects.gauge_tip,
+                full_mark: rects.gauge_100,
             },
             value,
             origin,

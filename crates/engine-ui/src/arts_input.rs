@@ -642,11 +642,15 @@ pub struct ApPlateRects {
     pub fill: (u32, u32, u32, u32),
     pub box_: (u32, u32, u32, u32),
     pub digits: (u32, u32, u32, u32),
+    /// The plate's right tip (ICO `0x6A`, 8x16).
+    pub tip: (u32, u32, u32, u32),
+    /// The `100` glyph a full gauge shows in place of digits (16x6).
+    pub full_mark: (u32, u32, u32, u32),
 }
 
 /// The bottom-right AP plate: cap + trough, the gouraud fill scaled to
-/// `frame.plate_value` out of 100, the value box, and the value's digits
-/// out of the red 6x6 strip.
+/// `frame.plate_value` out of 100, the value box, the right tip, and the
+/// value out of the red 6x6 strip (or the `100` glyph).
 pub fn arts_input_ap_plate_draws(
     rects: &ApPlateRects,
     frame: &ArtsInputFrame<'_>,
@@ -657,6 +661,13 @@ pub fn arts_input_ap_plate_draws(
 }
 
 /// The AP plate at its pinned seat, showing `value` out of 100.
+///
+/// It is the status screen's gauge widget (staged kind `0x31`) and both
+/// battle captures of it draw the same five sprites:
+/// `nivora_duel_pre_megaton_press` (a full gauge) puts cap `(208, 172)`,
+/// trough `(232, 172)`, box `(288, 172)`, tip `(304, 172)` and the `100`
+/// glyph at `(288, 177)`; `v0_1_battle_command_submenu` (an empty one) the
+/// same four frame pieces and the digit `0` at `(294, 177)`.
 ///
 /// One widget, two owners: the arts-entry screen keeps it (sub-draw step 9
 /// snaps placement record 82 in place, `52/3`) and the command ring is
@@ -707,16 +718,48 @@ pub fn ap_plate_draws(
     }
     let box_x = px + rects.cap.2 as i32 + rects.trough.2 as i32;
     push(rects.box_, box_x, py, rects.box_.2, rects.box_.3);
-    // Value digits, right-aligned inside the box.
-    let (dx, dy, _, dh) = rects.digits;
-    let digit_w = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_W;
-    let pitch = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_PITCH;
-    let text = value.to_string();
-    let mut cx = box_x + rects.box_.2 as i32 - 3 - (text.len() as i32) * digit_w as i32;
-    for ch in text.bytes() {
-        let d = (ch - b'0') as u32;
-        push((dx + d * pitch, dy, digit_w, dh), cx, py + 5, digit_w, dh);
-        cx += digit_w as i32;
+    // The right tip closes the plate past the value box (anchor `+0x60`).
+    push(
+        rects.tip,
+        box_x + rects.box_.2 as i32,
+        py,
+        rects.tip.2,
+        rects.tip.3,
+    );
+    // The value, as the gauge widget lays it (`FUN_8002C0B0`, the status
+    // screen's `ap_gauge_sprites`): a full gauge is the `100` glyph at the
+    // box's left edge; below it the tens digit (when non-zero) sits there
+    // and the ones digit one cell right.
+    let value = value.min(100);
+    if value == 100 {
+        push(
+            rects.full_mark,
+            box_x,
+            py + 5,
+            rects.full_mark.2,
+            rects.full_mark.3,
+        );
+    } else {
+        let (dx, dy, _, dh) = rects.digits;
+        let digit_w = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_W;
+        let pitch = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_PITCH;
+        let (tens, ones) = (u32::from(value) / 10, u32::from(value) % 10);
+        if tens > 0 {
+            push(
+                (dx + tens * pitch, dy, digit_w, dh),
+                box_x,
+                py + 5,
+                digit_w,
+                dh,
+            );
+        }
+        push(
+            (dx + ones * pitch, dy, digit_w, dh),
+            box_x + digit_w as i32,
+            py + 5,
+            digit_w,
+            dh,
+        );
     }
     out
 }
@@ -982,5 +1025,53 @@ mod tests {
             assert_eq!(b.dst.3, a.dst.3 * 2);
             assert_eq!(b.src, a.src);
         }
+    }
+
+    /// The plate is the gauge widget's five sprites on the seats two retail
+    /// display lists draw them at: a full gauge
+    /// (`nivora_duel_pre_megaton_press`) closes with the tip at `(304, 172)`
+    /// and shows the `100` glyph at `(288, 177)`; an empty one
+    /// (`v0_1_battle_command_submenu`) shows its lone digit at `(294, 177)`.
+    #[test]
+    fn the_ap_plate_is_the_gauge_widgets_five_sprites() {
+        let rects = ApPlateRects {
+            cap: (0, 0, 24, 16),
+            trough: (24, 0, 56, 16),
+            fill: (0, 32, 1, 6),
+            box_: (80, 0, 16, 16),
+            digits: (0, 16, 60, 6),
+            tip: (96, 0, 8, 16),
+            full_mark: (0, 24, 16, 6),
+        };
+        let at = |draws: &[SpriteDraw], src: (u32, u32, u32, u32)| {
+            draws
+                .iter()
+                .find(|d| d.src == src)
+                .map(|d| (d.dst.0, d.dst.1))
+        };
+        let full = ap_plate_draws(&rects, 100, (0, 0), 1);
+        assert_eq!(at(&full, rects.cap), Some((208, 172)));
+        assert_eq!(at(&full, rects.trough), Some((232, 172)));
+        assert_eq!(at(&full, rects.box_), Some((288, 172)));
+        assert_eq!(at(&full, rects.tip), Some((304, 172)));
+        assert_eq!(at(&full, rects.full_mark), Some((288, 177)));
+
+        let empty = ap_plate_draws(&rects, 0, (0, 0), 1);
+        assert_eq!(at(&empty, rects.tip), Some((304, 172)));
+        assert_eq!(at(&empty, rects.full_mark), None);
+        let zero = (
+            rects.digits.0,
+            rects.digits.1,
+            title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_W,
+            rects.digits.3,
+        );
+        assert_eq!(at(&empty, zero), Some((294, 177)));
+
+        // Two digits: tens on the box's left edge, ones one cell right.
+        let mid = ap_plate_draws(&rects, 37, (0, 0), 1);
+        let pitch = title_pak::OVERLAY_SYSTEM_UI_GAUGE_DIGIT_PITCH;
+        let cell = |d: u32| (rects.digits.0 + d * pitch, zero.1, zero.2, zero.3);
+        assert_eq!(at(&mid, cell(3)), Some((288, 177)));
+        assert_eq!(at(&mid, cell(7)), Some((294, 177)));
     }
 }

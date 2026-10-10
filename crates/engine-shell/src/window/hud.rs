@@ -1695,6 +1695,8 @@ impl PlayWindowApp {
                 fill: assets.rects.gauge_fill,
                 box_: assets.rects.gauge_box,
                 digits: assets.rects.gauge_digits,
+                tip: assets.rects.gauge_tip,
+                full_mark: assets.rects.gauge_100,
             },
             &frame,
             stage_origin,
