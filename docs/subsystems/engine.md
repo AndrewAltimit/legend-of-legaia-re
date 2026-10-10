@@ -418,8 +418,12 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 | v3 (`LGX3`) | The full 512-byte story-flag bitmap. |
 | v4 (`LGX4`) | The per-spell-slot shiny-Seru block. |
 | `LGX5` trailer (optional, no version bump) | The resume point (`SaveResume`): the CDNAME label of the scene the save was written in and its banner name. Appended only when populated, so a file without one is byte-identical to a v4 file. Continue / Load re-enter that scene before hydrating the world. |
+| `LGX6` trailer (optional) | The item-slot block: slot-level bag data. |
+| `LGX7` trailer (optional) | The minigame purses: casino coin bank, Point Card bank, fishing point record. |
+| `LGX8` trailer (optional) | The field position (`i16 x`, `i16 z`). |
+| `LGX9` trailer (optional) | The audio levels (`i32 configured_level`, `i32 voice_volume`). |
 
-The writer emits the highest version any populated field requires; readers accept every earlier one. The retail-card bridge carries the same engine-only state in the SC block's unread tail (`LGXE`, [save-screen](save-screen.md#the-engine-ext-blob-in-the-unread-tail)).
+Each optional trailer is emitted only when it has something to carry, so a save without one is the same bytes as before the trailer existed. The writer emits the highest version any populated field requires; readers accept every earlier one. The retail-card bridge carries the same engine-only state in the SC block's unread tail (`LGXE`, [save-screen](save-screen.md#the-engine-ext-blob-in-the-unread-tail)).
 
 ## Render + audio
 
