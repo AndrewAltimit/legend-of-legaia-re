@@ -1241,7 +1241,7 @@ measured channels.
 | `scene` | 1 when the engine landed in retail's scene |
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
-| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field class only; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
+| `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
 | `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
@@ -1438,7 +1438,7 @@ outside a `--filter`, or one the run could not seed, keeps its baselined
 channels, and a run without a display keeps each state's baselined image
 score. A state the run did seed otherwise takes the run's channel set, so a
 channel that no longer applies to it (a field state re-classed `world_map`
-has no `footing`) leaves the file rather than failing every later check as
+has no `facing`) leaves the file rather than failing every later check as
 `not measured`. A baselined state missing from the local library is
 skipped (backups are per-machine), and the image channel is skipped unless
 the run renders frames (`LEGAIA_RETAIL_COMPARE_IMAGES=1`, which needs a

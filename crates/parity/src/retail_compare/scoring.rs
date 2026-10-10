@@ -406,7 +406,7 @@ pub fn compare(
             ),
         );
     }
-    if retail.class == StateClass::Field
+    if matches!(retail.class, StateClass::Field | StateClass::WorldMap)
         && let (Some(r), Some(floor)) = (retail.player, engine.floor_at_retail)
     {
         match retail.script_height {
