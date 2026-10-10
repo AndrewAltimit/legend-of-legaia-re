@@ -700,7 +700,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "`OwnedDialogPanel::picker_labels`, resolved through the panel's "
         "substitution table",
         "sites": {
-            "native": ("crates/engine-shell/src/window/hud.rs", "dialog_snapshot"),
+            "native": ("crates/engine-shell/src/window/hud/dialog.rs", "dialog_snapshot"),
             "web": ("crates/web-viewer/src/play_dialog.rs", "from_panel"),
         },
         "mode": "symbols_all",
@@ -766,7 +766,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "with its own keys; the page once printed only the menu, so a "
         "player there never learned how to leave or reach the exchange",
         "sites": {
-            "native": (NATIVE_HUD, "build_hud"),
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
             "web": ("crates/web-viewer/src/play_fishing.rs", "fishing_status_draws"),
         },
         "mode": "pattern_same",
@@ -1057,7 +1057,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "block, so the play page - same run, same `DanceGame` - drew a plain "
         "status line and no frame at all. Both sites must read the rows",
         "sites": {
-            "native": (NATIVE_HUD, "build_hud"),
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
             "web": (WEB_PLAY_ARENA, "dance_status_draws"),
         },
         "mode": "symbols_all",
@@ -1074,7 +1074,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "exposed only the folded bool. Both sites must read "
         "`PrizeExchange::is_latched`",
         "sites": {
-            "native": (NATIVE_HUD, "build_hud"),
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
             "web": (WEB_PLAY_FISHING, "play_fishing_prizes_json"),
         },
         "mode": "symbols_all",
@@ -1158,7 +1158,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "lesson: a paired constant pins a value, not the space it lands in. "
         "Both composition sites must reach the transform and the scale pass",
         "sites": {
-            "native": (NATIVE_HUD, "build_hud"),
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
             "web": (WEB_PLAY_SHOP, "play_overlay_draws_json"),
         },
         "mode": "symbols_all",
