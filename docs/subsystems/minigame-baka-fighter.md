@@ -1116,7 +1116,7 @@ The cabinet takes the live accumulator from the host (`BakaCabinet::set_pot`) an
 |---|---|---|
 | native play window | the casino door warp, or the `B` key (same mode-24 warp; `B` again aborts with no coins) | `SceneMode::BakaFighter`; `engine-shell` `window/minigames.rs` |
 | browser play page | the casino door warp | `crates/web-viewer/src/play_minigame_arena.rs`, `site/js/play-minigames.js` |
-| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-viewer/src/minigames.rs` + `minigames_baka.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
+| minigames page | `baka_start_cabinet`, stepped with `baka_frame` | `crates/web-viewer/src/minigames/baka_session.rs` + `minigames_baka.rs`, `site/js/minigame-baka.js`; keeps the winnings accumulator the play hosts keep on the world, and no ladder of its own |
 
 The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for the cameo and keeps ticking past the deciding exchange so the cabinet's tally, the result close-up and the pinned win flourish draw.
 
