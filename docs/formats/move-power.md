@@ -242,7 +242,7 @@ Ids `0x0A`, `0x2D` and `0x2E` also latch the spawned handle into `ctx+0x1028`
 and seed the per-frame delta triple at `ctx+0x1184`, which makes their effect
 follow the actor.
 
-Engine: `engine-battle::move_power::EffectListEntry::classify` - `Spawn`
+Engine: `game-tables::move_power::EffectListEntry::classify` - `Spawn`
 (`0x01..=0x63`), `AltEffect` (bit 7), `FixedFlash` (`0x64`), `Skip`,
 `Terminator`.
 

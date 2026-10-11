@@ -207,7 +207,7 @@ The engine's, not the page's. `play_camera_vp(w, h)` resolves which camera owns
 the frame through the shared `engine-core::camera_view::resolve_field_camera` -
 the retail field follow view, an op-`0x45` cutscene shot with its between-beat
 glide, the overworld walk view, or the world map's top-view debug camera - and
-returns the column-major view-projection `site/js/play-app.js` uploads.
+returns the column-major view-projection the play page's script uploads.
 `play_camera_eye` is the same frame's world-space lens, which is what the
 occlusion fade ray-casts from; `play_camera_orbit_by` / `play_camera_tilt_by`
 / `play_camera_zoom_by` steer the user's three follow-camera knobs
@@ -552,7 +552,7 @@ art: `LegaiaRuntime::boot_title_*` drives the engine's `TitleSession` (FadeIn ->
 PressStart -> MainMenu) and serves the title-TIM bands (wordmark, Press Start,
 NEW GAME / CONTINUE, copyright) as sprite quads off `title_screen_atlas`
 (PROT 0888), blitted onto the same overlay canvas the pause menu uses, over
-black. `site/js/play-app.js` exposes the `AtlasBlitter`; the page's small boot
+black. `site/js/play-atlas-blitter.js` exposes the `AtlasBlitter`; the page's small boot
 controller runs before any scene exists, feeds the title edge-triggered pad
 words, and on the New Game outcome seeds the retail defaults + enters the
 opening prologue chain (`play_cutscene` above) - after `begin_new_game`
@@ -871,14 +871,14 @@ grip is open, a `fused` one carries its limb. Completeness over purity: no
 equipped section yields nothing. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry).
 Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
-in `crates/battle-models/tests/equip_item_real.rs`.
+in `crates/actor-formats/tests/equip_item_real.rs`.
 
 `equipped_item_only_glb(section)` is the second download beside it: the
 **item alone** - no host limb, no skin, no unchanged default geometry - the
 opinionated cut of `battle_char_assembly::equip_isolate` under the section's
 default reading (colour diff against the bare limb for held items and
 headgear, geometry-and-colour identity for body and footwear) or the
-record's committed rule in `crates/battle-models/data/equip-isolation.toml`. The
+record's committed rule in `crates/actor-formats/data/equip-isolation.toml`. The
 summary's per-item `isolation` object and the glTF root name carry the mode,
 the kept / dropped primitive counts and whether a rule hand-checked the
 record, and the grip repair's `bridges` / `bridged_triangles`
@@ -891,8 +891,8 @@ file holds; `equipped_mesh_item_mask(section)` (per-vertex `0 / 1 / 2`:
 outside the section / left behind / item) is the pre-repair view of the
 same cut. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-alone---an-opinionated-cut-with-a-committed-rule-table);
-sweep + table integrity in `crates/battle-models/tests/equip_isolate_real.rs`, the
-grip sweep in `crates/battle-models/tests/equip_repair_real.rs`.
+sweep + table integrity in `crates/actor-formats/tests/equip_isolate_real.rs`, the
+grip sweep in `crates/actor-formats/tests/equip_repair_real.rs`.
 
 The characters page's **equipment panel** - every slot, every piece as its
 own card - runs on `equipment_item_card_json(slot, section, id)` /

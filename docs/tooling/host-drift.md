@@ -9,7 +9,7 @@ so a host does not re-spell it.
 | Host | Crate | Driven by |
 |---|---|---|
 | native play-window | [`crates/engine-shell`](../../crates/engine-shell/) | wgpu via [`crates/engine-render`](../../crates/engine-render/README.md) |
-| browser play page | [`crates/web-viewer`](../../crates/web-viewer/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) |
+| browser play page | [`crates/web-viewer`](../../crates/web-viewer/README.md) `runtime.rs` + `play_*.rs` | [`site/js/play-app.js`](../../site/js/play-app.js) + the `play-view-*.js` files it names |
 | browser minigames page | same crate, `minigames*.rs` (`LegaiaMinigames`) | per-minigame modules under `site/js/` |
 
 Both play hosts tick one `engine-session::BootSession`; the minigames page
@@ -827,7 +827,7 @@ type unowned, no variant unanswered, no entry hotkey-only.
    what the checker measures, not about a capability.
 
 The browser's frame path is **two** files, and the Rust half is the one
-without the interesting arm. `site/js/play-app.js::_frame` calls
+without the interesting arm. `site/js/play-view-frame.js::_frame` calls
 `rt.tick_frame()` inside `if (advance && !menuOpen && !shopOpen &&
 !namingOpen)` and calls `this._drawOverlay()` outside it, so a guarded frame
 runs no kernel at all and still draws - all nineteen at once. A Rust-only scan
@@ -1217,7 +1217,7 @@ reverse-engineering questions, so they are not on
 | battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
 | save rack port 1 | Native mounts its `.lgsf` directory as port 1 and `--card` as port 2; the page mounts two card images and resumes `.lgsf` through the save bar. Closing it is storage work. |
 | per-tick screen owners | Both hosts hand a frame to the pause menu, then name entry, then a menu-overlay screen, each spelling that order itself; no gate reads the JS side. |
-| placed-object move / turn tables | The page still applies them in `play-app.js`, in its own Y-up frame. |
+| placed-object move / turn tables | The page still applies them in `play-view-field-sync.js`, in its own Y-up frame. |
 | prologue lit-row ambient | Native stages the dim ambient (`0x20`, `DAT_8007B788`) on light-source rows; the page draws them neutral. |
 | screen prims vs text | The page concatenates `under` and `over` into one sort; native draws its text between them. |
 | STR decoders | The page counts assembled frames and assumes 4-bit XA; native counts decoded frames and reads the bit depth. |

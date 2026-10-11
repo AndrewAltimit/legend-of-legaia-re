@@ -121,7 +121,7 @@ Key globals:
 - `DAT_8007ba34` - pending warp sub_id (0–6); read by `FUN_80025980`  
 - `DAT_8007bae8` - WARP handler's backup of the previous scene name (8 bytes)  
 
-The `DefaultMapIdResolver` in `engine-core::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.
+The `DefaultMapIdResolver` in `engine-scene::scene` uses CDNAME blocks in ascending PROT-index order as a positional approximation. The actual retail warp only supports 7 destinations, not the full CDNAME scene list.
 
 ### Name-based scene change (`FUN_8001FD44`) + the transition streamer (`FUN_80021934`)
 
@@ -164,7 +164,7 @@ The base the walker receives is `_DAT_8007b85c` because the transition streamer 
 
 ### The walk is what fills the mesh pool
 
-Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`, and the walk above is the only path to them: type `0x02` (`TMD`) decodes its payload to an [`container-formats::pack`](../formats/pack.md) and calls `FUN_80026B4C` once per member, type `0x09` (`TMD2`) registers a single bare mesh. `FUN_80026B4C` stores at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments, so the pool is those registrations in walk order, past the resident 5-mesh head. Byte-level detail, and why a magic sweep of a scene block is not equivalent, in [`scene-bundles.md` § The mesh pool is the descriptor walk](../formats/scene-bundles.md#the-mesh-pool-is-the-descriptor-walk). Engine side: `legaia_scene_formats::scene_asset_table::mesh_pool` feeding `legaia-engine-core::scene_resources`.
+Two dispatcher cases register into the runtime TMD pointer table `DAT_8007C018`, and the walk above is the only path to them: type `0x02` (`TMD`) decodes its payload to an [`container-formats::pack`](../formats/pack.md) and calls `FUN_80026B4C` once per member, type `0x09` (`TMD2`) registers a single bare mesh. `FUN_80026B4C` stores at `DAT_8007C018 + DAT_8007b774 * 4` and post-increments, so the pool is those registrations in walk order, past the resident 5-mesh head. Byte-level detail, and why a magic sweep of a scene block is not equivalent, in [`scene-bundles.md` § The mesh pool is the descriptor walk](../formats/scene-bundles.md#the-mesh-pool-is-the-descriptor-walk). Engine side: `legaia_scene_formats::scene_asset_table::mesh_pool` feeding `legaia-engine-scene::scene_resources`.
 
 ## CLUT-data scattering
 

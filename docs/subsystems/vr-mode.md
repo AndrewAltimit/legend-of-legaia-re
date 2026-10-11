@@ -24,8 +24,8 @@ The flat renderer stays the geometry source: only the framebuffer (per-eye
 `XRWebGLLayer` + scissor) and the view-projection (per-eye XRFrame matrices) fork.
 
 Implementation: [`site/js/vr-mode.js`](../../site/js/vr-mode.js), plus
-per-page hooks in `world-overview-app.js`, `field-scene-view.js` and
-`play-app.js`.
+per-page hooks in `world-overview-app.js`, `field-scene-view.js` and the play
+page's `play-app.js` / `play-view-*.js`.
 
 ## Contents
 

@@ -178,7 +178,7 @@ and discards either way).
 Port: `EffectSprite::packet_tsb` (`crates/engine-core/src/world/types.rs`),
 called by the native window's billboard builder and the play page's battle and
 field FX builders. Pinned by `packet_tsb_forces_the_prim_semi_enable` and a
-`SIM_PAIRS` row in `check-ui-host-drift.py`.
+`SIM_PAIRS` row of the host-drift gate (`scripts/ci/ui_host_drift/rows/sim_pairs.py`).
 
 ### The half-extent is a view-space quantity
 
@@ -477,7 +477,7 @@ call, so those per-call scales are not carried.
 
 Port: `engine-effects::effect_sprite_arm` turns every live sprite-arm node
 into a one-quad mesh. The quad geometry is
-`engine-minigames::baka_impact_fx::sprite_arm_quad`, the one Baka Fighter's
+`render-kernels::sprite_arm::sprite_arm_quad`, the one Baka Fighter's
 impact flash draws through.
 `crates/engine-core/tests/effect_sprite_arm_carriers_real.rs` reports the
 slot-B images whose programs reach the arm and pins that each lands on the

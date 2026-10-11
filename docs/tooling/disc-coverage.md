@@ -565,7 +565,7 @@ the image stops holding them at all. Every MIPS body ends in `jr ra`, so the
 word after an image's **last** `jr ra` and its delay slot is the floor of that
 image's data segment: below it a body may sit un-dumped, at or above it none can
 end. That floor is a decode of the bytes, not a threshold - `data_floor` in
-`scripts/ci/disc-coverage.py`.
+`scripts/ci/disc_coverage/gaps.py`.
 
 The floor alone is not enough, because one case it cannot exclude is a body the
 **entry boundary cut short**. Two measured images end exactly that way: PROT
@@ -609,7 +609,7 @@ at file `+0x21C4` / `+0xD3E4` / `+0x18E04` / `+0x1CE44`.
 Every shape above is a property of MIPS - where a body can end, which words
 delimit one, what a `nop` decodes to. This one is not: it is a range a parser
 in this workspace claims, `legaia_overlay_images::slot_b_module`, and the mirror in
-`scripts/ci/disc-coverage.py` is that parser's rule rather than a test over the
+`scripts/ghidra-analysis/slot_b_band.py` is that parser's rule rather than a test over the
 bytes' distribution. The full layout is
 [`slot-b-module-layout.md`](../formats/slot-b-module-layout.md); what matters
 here is the evidence and the seam.

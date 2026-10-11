@@ -90,8 +90,9 @@ Worklist buckets:
 <a id="a-third-way-a-row-closes-promote-the-oracle-that-already-drove-it"></a>
 
 **Before writing a fixture for an (a) row, grep the test corpus for its
-address.** `CANONICAL_LADDERS` in the script is the only statement of union
-membership, and a green test outside it exports nothing.
+address.** `CANONICAL_LADDERS` in `scripts/ci/replay_port_coverage/ladders.py`
+is the only statement of union membership, and a green test outside it exports
+nothing.
 `w1f2_field_vm_op_arms_disc` drove the `4C EA` and `4C 52` rows off the disc's
 own bytecode for as long as they sat here. The bulk version of that grep is a
 measurement: build every engine integration test instrumented, export each
@@ -175,7 +176,7 @@ recomputes them each run.
 says the flee roll is "ladder-covered
 (`crates/engine-core/tests/battle_flee_ladder.rs`)". Both statements hold, and
 the join between them is the denominator: only the test binaries named in
-`CANONICAL_LADDERS` in `replay-port-coverage.py` are in the union, and a ladder
+`CANONICAL_LADDERS` (`replay_port_coverage/ladders.py`) are in the union, and a ladder
 that seats the player by building a `World` by hand measures a different thing
 however pad-driven the rest of its run is. **`CANONICAL_LADDERS` is the only
 statement of membership**; this page deliberately does not restate it, because

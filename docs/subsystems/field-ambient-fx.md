@@ -929,7 +929,7 @@ oscillators.
   emitter `engine-field::plain_template_actors::AmbientEmitter`, overworld
   flat bucket depth `engine-field::overworld_draw_order`, 5-bit blend
   `render-kernels::screen_prim::psx_texture_blend`. World draws stand in for BIOS
-  `rand()` through `engine-battle-vm::battle_formulas::bios_rand_shape`. The
+  `rand()` through `engine-system::rand::bios_rand_shape`. The
   effect-texture pool is underlaid beneath each scene build on unwritten
   cells only. A separate non-retail volumetric ground fog never touches this
   pool ([renderer](renderer.md#volumetric-ground-fog-enhancement)).

@@ -1645,7 +1645,7 @@ re-aggregate. A non-equipment id draws current values with no arrows.
 
 Port: `engine-ui::equip_compare_panel_fields` (window 25, from
 `pause_screens::EquipCompareModel`) and `party_compare_panel_fields` (window
-41, from `engine-menus::shop::party_compare_members`, drawn for the whole buy
+41, from `engine-core::shop::party_compare_members`, drawn for the whole buy
 flow through `engine-ui::shop_screen`). The port installs the staged id in a
 copy of the equip bytes and re-runs the aggregator rather than swapping
 blocks.

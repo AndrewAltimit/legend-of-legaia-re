@@ -151,7 +151,8 @@
 /* Retail pause menu (Start): the real window-descriptor draw path. The engine
    serves the byte-pinned gold 9-slice chrome + proportional font glyphs as
    textured quads; this overlay canvas sits pixel-for-pixel over the GL view and
-   the quads blit onto it (see play-app.js `_drawMenu` / `AtlasBlitter`). */
+   the quads blit onto it (see play-view-overlay.js `_drawOverlay` and the
+   `AtlasBlitter` in play-atlas-blitter.js). */
 .play-menu-overlay {
   position: absolute; inset: 0; width: 100%; height: 100%;
   pointer-events: none; image-rendering: pixelated;
@@ -1130,7 +1131,7 @@
      * has opened a menu yet. Asking once at title entry therefore always got
      * `false` and left these two screens skinless. The same trap cost the
      * running page every chrome sprite once a per-frame caller was added; see
-     * `_ensureMenuBlitters` in play-app.js. */
+     * `_ensureMenuBlitters` in play-view-overlay.js. */
     let chromeBlit = null;
     const ensureChrome = () => {
       if (chromeBlit) return chromeBlit;
@@ -1341,7 +1342,8 @@
   /* ---------------- field pause menu overlay (Bug 1) ---------------- */
 
   /* The pause menu is drawn by the view itself (engine-driven retail chrome +
-   * font glyphs blitted onto the overlay canvas - see play-app.js `_drawMenu`),
+   * font glyphs blitted onto the overlay canvas - see play-view-overlay.js
+   * `_drawOverlay`),
    * so the HUD no longer renders a DOM menu. */
 
   /* ---------------- per-frame HUD ---------------- */

@@ -12,7 +12,7 @@
     <dt>Screens</dt><dd>Menu overlay (PROT 0899) window-descriptor table; no separate shop overlay</dd>
     <dt>Purses</dt><dd>Gold <code>_DAT_8008459C</code>; Point Card <code>_DAT_800845B4</code>; casino coins <code>_DAT_800845A4</code> - all capped at 9,999,999</dd>
     <dt>Stack cap</dt><dd>99 per item id, enforced by the list ink and the quantity clamp</dd>
-    <dt>In the port</dt><dd><code>engine-core::shop</code>, <code>engine-screens</code>, <code>legaia_scene_formats::shop_stock</code></dd>
+    <dt>In the port</dt><dd><code>engine-menus::shop</code>, <code>engine-screens</code>, <code>legaia_scene_formats::shop_stock</code></dd>
     <dt>Confidence</dt><dd>Confirmed - stock scan validated disc-wide; every screen traced in the menu overlay</dd>
     <dt>Used by</dt><dd><a href="../shops.html">Shops browser</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> shop shuffle, <a href="inventory.html">inventory</a></dd>
   </dl>
@@ -121,7 +121,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-core::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
+  <p>The stock scan is <code>legaia_scene_formats::shop_stock</code>; the session, quantity stepper, recipient picker, Point Card bank and row-ink rules live in <code>engine-menus::shop</code>; and the screens - every window above, the prize exchange and the coin counter - are composed once in <code>engine-screens</code> and drawn by both play hosts. The grant kernel refuses a buy past 99, as the retail clamp does. The literal restore amounts of consumables stay curated, because they live in overlay code rather than in the item-effect table.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

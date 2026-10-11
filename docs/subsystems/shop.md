@@ -18,7 +18,7 @@ a menu-overlay session - see [inn.md](inn.md).)
 | Is there a Yes / No confirm? | No. The quantity stepper commits the transaction itself. |
 | Stack cap | 99 per item id. |
 | Extra purses | The Point Card bank (`_DAT_800845B4`, [below](#point-card)); the casino coin bank belongs to the prize exchange, a separate table. |
-| Port | `engine-core::shop` + `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
+| Port | `engine-menus::shop` (rules and sessions) + `engine-core`'s `MenuRuntime`, drawn by `legaia_engine_screens::gold_shop_screen` on both hosts. |
 
 ```mermaid
 stateDiagram-v2
@@ -121,8 +121,8 @@ kernel tests the row word's `0x800` bit on confirm and buzzes before the
 sub-screen's own state-2 dispatch runs, so the hand stays on the row
 (capture-confirmed: a 99-stack row neither opens the stepper nor buys).
 
-Port: `engine-core::shop::{ShopScreenPhase, shop_screen_windows,
-party_compare_members}` and `MenuRuntime::{shop_screen_phase,
+Port: `engine-menus::shop::{ShopScreenPhase, shop_screen_windows}`,
+`engine-core::shop::party_compare_members` and `MenuRuntime::{shop_screen_phase,
 covers_field}`; `engine-ui::shop_screen` composes the frames (window 33
 wears the carved plaque), the picker, the paged list, window 41 and the
 painters' hand / currency-pictogram sprites, and
@@ -371,7 +371,7 @@ verdict, so the ink is not a priority list:
 4. `_DAT_800845A4 < price` -> `0`, grey - **even when the marker set `6`**.
 
 Ported with the geometry constants as
-`engine-core::shop::{shop_stock_row_ink, shop_cursor_mode}`. The prize
+`engine-menus::shop::{shop_stock_row_ink, shop_cursor_mode}`. The prize
 screen's `PrizeRow` is the caller of `shop_stock_row_ink`; the gold shop's buy
 list inks its rows through `shop_buy_row_ink` (the `0x3000` / `0xA000` row-ink
 arm of `FUN_80032A44`) inside `legaia_engine_screens::gold_shop_screen`.
@@ -423,7 +423,7 @@ sentinel that suppresses the draw.
 The whole body is gated on the staged id word `DAT_801E46B0` being
 **positive**, with one exception: the `0x90 x 0x28` shade box at
 `(WX, WY + 0x45)` draws unconditionally, so an empty panel is not an empty
-rectangle. Ported as `engine-core::shop::{shop_sell_detail_panel,
+rectangle. Ported as `engine-menus::shop::{shop_sell_detail_panel,
 item_passive_index}`; **both** hosts draw it for the sell list in place of the
 buy-side info window 34, through one shared draw
 (`legaia_engine_screens::sell_detail_window_draws`). The two windows are alternatives, not
@@ -475,7 +475,7 @@ the card.
 
 Port: `World::minigames.point_card` is the bank, with `World::point_card_held` /
 `World::credit_point_card` beside it (the accrual + clamp);
-`engine-core::shop::{point_card_credit, apply_point_card}` are the
+`engine-menus::shop::{point_card_credit, apply_point_card}` are the
 arithmetic kernels. `MenuRuntime` runs the accrual on the stepper's `Bought`
 event (`arm_point_card_toast`) and on both recipient-picker arms, and holds
 `MenuRuntime::point_card_toast` - the window-31 beat - until a press, with
@@ -749,7 +749,7 @@ cues are not modelled.
 
 ## Key data structures
 
-### `ShopItem` (`engine-core::shop`)
+### `ShopItem` (`engine-menus::shop`)
 
 One item the shop offers:
 
@@ -764,7 +764,7 @@ table's price halfword (not a per-shop price), floored, and capped at
 instead. (`ShopInventory::sell_price`'s `max(buy / 2, 1)` belongs to the
 unreached `try_sell`.)
 
-### `ShopInventory` (`engine-core::shop`)
+### `ShopInventory` (`engine-menus::shop`)
 
 The set of items a particular shop stocks:
 
@@ -773,7 +773,7 @@ The set of items a particular shop stocks:
 | `shop_id` | `u8` | Opaque ID tying this stock list to a CDNAME scene block |
 | `items` | `Vec<ShopItem>` | Ordered list of buy-side items |
 
-### `ShopSession` (`engine-core::shop`)
+### `ShopSession` (`engine-menus::shop`)
 
 Mutable state for one open shop interaction. Installed on
 `MenuRuntime` by `open_shop` before the menu VM enters `ShopBuy`.

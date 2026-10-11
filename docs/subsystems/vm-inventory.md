@@ -119,7 +119,7 @@ The two are not rival ports:
   walk ops, the waits and the ramp scheduler in `ambient_motion.rs`, the rest in
   `ambient_motion_ops.rs` as further `impl` blocks on the same type. Nothing is
   stepped over by width.
-- **The static decoder** is `legaia_engine_scene::man_field_scripts::npc_motion`,
+- **The static decoder** is `legaia_engine_field::man_field_scripts::npc_motion`,
   which answers questions about a stream without running it: which placement a
   record binds to, what pace its walk ops carry, what its first `0x17`
   default-move write is. The scene loader uses it to seed the channels the

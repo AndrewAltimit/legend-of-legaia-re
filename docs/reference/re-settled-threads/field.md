@@ -736,8 +736,8 @@ under mode `0x17` (23, the CARD pair).
   handler `0x80025EEC`; only mode 13 (world map) and mode 23 (memory card) carry their own.
 - **Next-mode field.** The retail `+0x0A` field is `ModeEntry::next_mode`: `-1` = self-managed, `0` =
   fall back to mode 0. The word `0xFFFF0000` is `-1` over a zero low half, not a sentinel.
-- **Port.** `engine_core::mode::GameMode::scene_mode()` maps `MainMode (3) -> SceneMode::Field`;
-  `engine_core::mode` holds `SceneMode::Field` for both modes 2 / 3 (an init mode holds its
+- **Port.** `legaia_engine_mode::mode::GameMode::scene_mode()` maps `MainMode (3) -> SceneMode::Field`;
+  `legaia_engine_mode::mode` holds `SceneMode::Field` for both modes 2 / 3 (an init mode holds its
   successor's scene mode, as the Mapdisp / Battle / Str pairs do) and maps the CARD pair to
   `SceneMode::Menu`. `BootSession` hosts the field-menu session headlessly (`open_field_menu` / the
   Start-edge path in `tick`), and the windowed host layers its sub-session UI on the same session.

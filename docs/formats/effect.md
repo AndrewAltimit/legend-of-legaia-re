@@ -416,7 +416,7 @@ row's **source x** (values `0x00` / `0xB0` / `0xC0` / `0xD0`), not a sound id
 `FUN_801e22c8 in PROT entry 0898`,
 `ghidra/scripts/funcs/overlay_battle_action_801e22c8.txt` (disassembly).
 
-Engine: `engine-battle::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
+Engine: `game-tables::move_power::EffectListEntry` (`Spawn` vs `AltEffect`).
 
 <a id="effect-id--triggering-move---the-join-run-against-the-disc"></a>
 
