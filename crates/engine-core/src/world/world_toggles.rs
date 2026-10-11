@@ -141,8 +141,93 @@ impl WorldToggles {
     }
 }
 
+impl WorldToggles {
+    /// Pin every fidelity toggle to retail's behaviour: no entry pulse, no
+    /// photosensitivity slew, the retail tile crop, no volumetric fog, the
+    /// uniform monster target, the damage finisher and the battle pass's
+    /// discarded draw. The loop and dialogue-routing switches and the option
+    /// mirrors are host wiring, not fidelity, and are left alone.
+    ///
+    /// A bare [`WorldToggles::new`] is not this: it keeps the
+    /// photosensitivity slew and the entry pulse on, so a host that never
+    /// plumbs options is safe by default. A headless comparison against
+    /// retail calls this.
+    pub fn pin_retail(&mut self) {
+        self.entry_pulse_enabled = false;
+        self.reduce_flashing = false;
+        self.view_window_crop = true;
+        self.volumetric_fog = false;
+        self.smarter_monster_targeting = false;
+        self.use_damage_finish = true;
+        self.overworld_marker_overlay = false;
+        self.battle_pass_rand_draw = true;
+    }
+
+    /// The fidelity toggles currently off their retail value, by field name.
+    /// Empty after [`Self::pin_retail`].
+    pub fn retail_deviations(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.entry_pulse_enabled {
+            out.push("entry_pulse_enabled");
+        }
+        if self.reduce_flashing {
+            out.push("reduce_flashing");
+        }
+        if !self.view_window_crop {
+            out.push("view_window_crop");
+        }
+        if self.volumetric_fog {
+            out.push("volumetric_fog");
+        }
+        if self.smarter_monster_targeting {
+            out.push("smarter_monster_targeting");
+        }
+        if !self.use_damage_finish {
+            out.push("use_damage_finish");
+        }
+        if self.overworld_marker_overlay {
+            out.push("overworld_marker_overlay");
+        }
+        if !self.battle_pass_rand_draw {
+            out.push("battle_pass_rand_draw");
+        }
+        out
+    }
+}
+
 impl Default for WorldToggles {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod fidelity_tests {
+    use super::WorldToggles;
+
+    #[test]
+    fn pinned_toggles_report_no_deviation() {
+        let mut t = WorldToggles::new();
+        // The bare default keeps two safety / enhancement toggles on.
+        assert_eq!(
+            t.retail_deviations(),
+            ["entry_pulse_enabled", "reduce_flashing"]
+        );
+        t.pin_retail();
+        assert!(t.retail_deviations().is_empty());
+    }
+
+    #[test]
+    fn every_deviation_is_one_pin_undoes() {
+        let mut t = WorldToggles::new();
+        t.view_window_crop = false;
+        t.volumetric_fog = true;
+        t.smarter_monster_targeting = true;
+        t.use_damage_finish = false;
+        t.overworld_marker_overlay = true;
+        t.battle_pass_rand_draw = false;
+        assert_eq!(t.retail_deviations().len(), 8);
+        t.pin_retail();
+        assert!(t.retail_deviations().is_empty());
     }
 }

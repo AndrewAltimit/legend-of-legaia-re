@@ -46,11 +46,7 @@ pub fn cmd_play_window(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: Option<bool>,
-    dyn_shadows: bool,
-    entry_pulse: bool,
-    occlusion_fade: bool,
-    volumetric_fog: bool,
+    fidelity: super::LaunchFidelity,
     debug_seeds: super::DebugSeeds,
 ) -> Result<()> {
     cmd_play_window_with_record(
@@ -79,11 +75,7 @@ pub fn cmd_play_window(
         screenshot,
         seed_party,
         battle,
-        dynamic_lighting,
-        dyn_shadows,
-        entry_pulse,
-        occlusion_fade,
-        volumetric_fog,
+        fidelity,
         debug_seeds,
         None,
     )
@@ -323,11 +315,7 @@ pub(super) fn cmd_play_window_with_record(
     screenshot: Option<super::ScreenshotConfig>,
     seed_party: bool,
     battle: Option<&str>,
-    dynamic_lighting: Option<bool>,
-    dyn_shadows: bool,
-    entry_pulse: bool,
-    occlusion_fade: bool,
-    volumetric_fog: bool,
+    fidelity: super::LaunchFidelity,
     debug_seeds: super::DebugSeeds,
     record_to: Option<RecordTarget>,
 ) -> Result<()> {
@@ -362,7 +350,7 @@ pub(super) fn cmd_play_window_with_record(
     apply_launch_toggles(
         &mut session,
         LaunchToggles {
-            entry_pulse,
+            entry_pulse: fidelity.entry_pulse,
             vm_dialogue,
             terrain_y,
             edge_collision,
@@ -479,10 +467,10 @@ pub(super) fn cmd_play_window_with_record(
         save_dir,
         extracted_root,
         disc,
-        dyn_shadows,
-        occlusion_fade,
+        dyn_shadows: fidelity.dyn_shadows,
+        occlusion_fade: fidelity.occlusion_fade,
     });
-    app.apply_launch_options(volumetric_fog, dynamic_lighting);
+    app.apply_launch_options(fidelity);
 
     // On demand, not `run_app`: only `run_app_on_demand` clears the exit
     // request a phase-1 movie left on this loop. Through `run_app` the game

@@ -233,6 +233,52 @@ impl OptionsState {
         world.toggles.volumetric_fog = self.volumetric_fog;
     }
 
+    /// Pin every engine-only knob to the value that leaves the port framing,
+    /// moving and drawing as retail does. The rows retail's own options
+    /// screen carries (battle camera, select attack, field move, HP display,
+    /// sound) are the player's and are not touched.
+    ///
+    /// This is the definition of "retail-faithful" for the persisted
+    /// options; [`Self::retail_deviations`] is its reading. A knob added to
+    /// this struct that changes what a frame or a tick does belongs in both.
+    pub fn pin_retail(&mut self) {
+        self.camera_distance = legaia_engine_field::camera::CameraDistance::Retail;
+        self.precise_movement = false;
+        self.reduce_flashing = false;
+        self.retail_static_window = true;
+        self.retail_view_window = true;
+        self.volumetric_fog = false;
+        self.enhanced_lighting = false;
+    }
+
+    /// The engine-only knobs currently off their retail value, by field
+    /// name. Empty after [`Self::pin_retail`].
+    pub fn retail_deviations(&self) -> Vec<&'static str> {
+        let mut out = Vec::new();
+        if self.camera_distance != legaia_engine_field::camera::CameraDistance::Retail {
+            out.push("camera_distance");
+        }
+        if self.precise_movement {
+            out.push("precise_movement");
+        }
+        if self.reduce_flashing {
+            out.push("reduce_flashing");
+        }
+        if !self.retail_static_window {
+            out.push("retail_static_window");
+        }
+        if !self.retail_view_window {
+            out.push("retail_view_window");
+        }
+        if self.volumetric_fog {
+            out.push("volumetric_fog");
+        }
+        if self.enhanced_lighting {
+            out.push("enhanced_lighting");
+        }
+        out
+    }
+
     /// Step the follow-camera distance preset one place along its cycle and
     /// hand the new preset back for the host to put on its camera, then
     /// persist.
@@ -969,6 +1015,30 @@ impl OptionsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_options_report_no_retail_deviation() {
+        let mut o = OptionsState::default();
+        // The interactive defaults that are not retail's.
+        assert_eq!(
+            o.retail_deviations(),
+            [
+                "camera_distance",
+                "reduce_flashing",
+                "volumetric_fog",
+                "enhanced_lighting"
+            ]
+        );
+        o.precise_movement = true;
+        o.retail_static_window = false;
+        o.retail_view_window = false;
+        assert_eq!(o.retail_deviations().len(), 7);
+        let rows = (o.battle_camera, o.field_move, o.audio);
+        o.pin_retail();
+        assert!(o.retail_deviations().is_empty());
+        // The rows retail's own options screen carries stay the player's.
+        assert_eq!((o.battle_camera, o.field_move, o.audio), rows);
+    }
 
     /// The cycle steps the stored option - the value an options apply
     /// re-asserts onto the camera - so a host that puts the returned preset

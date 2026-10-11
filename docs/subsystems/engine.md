@@ -285,6 +285,29 @@ flowchart LR
     FAITH --> ORA["parity oracles,<br/>replays, retail-compare"]
 ```
 
+### One definition of retail-faithful
+
+The knobs below live in three places: the persisted options
+(`OptionsState`), the world's toggles (`WorldToggles`) and the native
+window's launch flags. Each has one function that sets its share to retail and
+one that reads back what is off it:
+
+| Where | Pin | Reading |
+|---|---|---|
+| persisted options | `OptionsState::pin_retail` | `OptionsState::retail_deviations` |
+| world toggles | `WorldToggles::pin_retail` | `WorldToggles::retail_deviations` |
+| `play-window` launch | `--retail` (`LaunchFidelity::retail`) | - |
+
+`--retail` turns every enhancement off and applies the options pin for the
+session, writing nothing back. It is what the retail-compare image child
+runs under, so a new enhancement that is added to `LaunchFidelity::retail`
+is off in the comparison without anyone remembering a `--no-*` flag.
+
+A bare `World` is **not** retail-pinned: `WorldToggles::new` keeps the
+photosensitivity slew and the entry pulse on, so a host that never plumbs
+options is safe by default. A headless comparison against retail calls
+`pin_retail`.
+
 ### Current knobs and defaults
 
 | Knob | Default | Effect |

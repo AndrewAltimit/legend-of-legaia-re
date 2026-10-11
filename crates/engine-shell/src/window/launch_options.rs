@@ -4,6 +4,56 @@
 
 use super::*;
 
+/// The launch's fidelity switches: which of the port's enhancements this
+/// session runs with. One value, so "retail-faithful" has one definition on
+/// the command line ([`Self::retail`], the `--retail` flag) instead of a
+/// list of `--no-*` flags every caller has to keep complete.
+#[derive(Debug, Clone, Copy)]
+pub struct LaunchFidelity {
+    /// Enhanced lighting forced on or off; `None` takes the persisted option.
+    pub dynamic_lighting: Option<bool>,
+    /// The enhanced point lights' shadows.
+    pub dyn_shadows: bool,
+    /// The scene-entry VDF pulse over packs retail never arms.
+    pub entry_pulse: bool,
+    /// The camera-occlusion fade around the player.
+    pub occlusion_fade: bool,
+    /// The volumetric ground fog.
+    pub volumetric_fog: bool,
+    /// Pin every persisted engine-only option to its retail value for the
+    /// session (`OptionsState::pin_retail`): the framing, the movement
+    /// decode, the photosensitivity slew, the tile windows.
+    pub retail: bool,
+}
+
+impl LaunchFidelity {
+    /// The play-window's interactive default: every enhancement at its
+    /// persisted option.
+    pub fn enhanced() -> Self {
+        Self {
+            dynamic_lighting: None,
+            dyn_shadows: true,
+            entry_pulse: true,
+            occlusion_fade: true,
+            volumetric_fog: true,
+            retail: false,
+        }
+    }
+
+    /// Retail-faithful: every enhancement off, and the persisted options
+    /// pinned. What a parity capture and a replay run under.
+    pub fn retail() -> Self {
+        Self {
+            dynamic_lighting: Some(false),
+            dyn_shadows: false,
+            entry_pulse: false,
+            occlusion_fade: false,
+            volumetric_fog: false,
+            retail: true,
+        }
+    }
+}
+
 /// Deterministic screenshot harness for `play-window`: render one frame
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
 /// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
