@@ -6,7 +6,7 @@
 //! A `.sstate` is `gzip(rawsstate)`, where `rawsstate` is PCSX-Redux's
 //! protobuf-encoded state. We don't need the protobuf schema: the 2 MiB main RAM
 //! is located **format-agnostically** by the existing SCUS anchor search
-//! ([`legaia_mednafen::extract::main_ram_via_anchor`]) - it matches a string
+//! ([`legaia_ram_image::extract::main_ram_via_anchor`]) - it matches a string
 //! known to live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both
 //! the SCUS binary and the decompressed payload and derives the RAM base. (For
 //! the captured anchors the RAM happens to start at payload offset `0x27`, but
@@ -35,7 +35,7 @@ use anyhow::{Context, Result};
 // same KSEG0-addressed 2 MiB image, so "which scene is this state in?" has one
 // implementation. Re-exported here so existing `legaia_pcsxr::SCENE_NAME_VA`
 // consumers keep resolving.
-pub use legaia_mednafen::game_anchors::{
+pub use legaia_ram_image::game_anchors::{
     GAME_MODE_VA, PLAYER_PTR_VA, PLAYER_X_OFF, PLAYER_Z_OFF, SCENE_NAME_VA, StateIdentity,
 };
 
@@ -169,7 +169,7 @@ impl SaveState {
         } else {
             bytes
         };
-        let ram = legaia_mednafen::extract::main_ram_via_anchor(payload)
+        let ram = legaia_ram_image::extract::main_ram_via_anchor(payload)
             .context("locate main RAM in PCSX-Redux payload (anchor search)")?
             .to_vec();
         // Absent rather than fatal: a state written by a build whose memory
@@ -185,39 +185,39 @@ impl SaveState {
     }
 
     pub fn u8_at(&self, va: u32) -> u8 {
-        legaia_mednafen::game_anchors::u8_at(&self.ram, va)
+        legaia_ram_image::game_anchors::u8_at(&self.ram, va)
     }
     pub fn u16_at(&self, va: u32) -> u16 {
-        legaia_mednafen::game_anchors::u16_at(&self.ram, va)
+        legaia_ram_image::game_anchors::u16_at(&self.ram, va)
     }
     pub fn i16_at(&self, va: u32) -> i16 {
-        legaia_mednafen::game_anchors::i16_at(&self.ram, va)
+        legaia_ram_image::game_anchors::i16_at(&self.ram, va)
     }
     pub fn u32_at(&self, va: u32) -> u32 {
-        legaia_mednafen::game_anchors::u32_at(&self.ram, va)
+        legaia_ram_image::game_anchors::u32_at(&self.ram, va)
     }
 
     /// Active CDNAME scene label (e.g. `"town01"`), trimmed at the first NUL /
     /// non-printable byte.
     pub fn scene_name(&self) -> String {
-        legaia_mednafen::game_anchors::scene_name(&self.ram)
+        legaia_ram_image::game_anchors::scene_name(&self.ram)
     }
 
     /// Next game-mode index (`0x03` = field-run, `0x15` = battle, ...).
     pub fn game_mode(&self) -> u8 {
-        legaia_mednafen::game_anchors::game_mode(&self.ram)
+        legaia_ram_image::game_anchors::game_mode(&self.ram)
     }
 
     /// The player actor struct pointer (`*0x8007C364`), or `None` if it is not a
     /// plausible KSEG0 main-RAM pointer.
     pub fn player_ptr(&self) -> Option<u32> {
-        legaia_mednafen::game_anchors::player_ptr(&self.ram)
+        legaia_ram_image::game_anchors::player_ptr(&self.ram)
     }
 
     /// Player world position `(x, z)` read as 16-bit signed from the player
     /// struct, or `None` if the struct pointer is implausible.
     pub fn player_pos(&self) -> Option<(i16, i16)> {
-        legaia_mednafen::game_anchors::player_pos(&self.ram)
+        legaia_ram_image::game_anchors::player_pos(&self.ram)
     }
 
     /// The state's 64 KiB `hardware` blob (`psxH`), or `None` when the payload
@@ -249,6 +249,6 @@ impl SaveState {
 
     /// Scene + mode + player position in one record.
     pub fn identity(&self) -> StateIdentity {
-        legaia_mednafen::game_anchors::identify(&self.ram)
+        legaia_ram_image::game_anchors::identify(&self.ram)
     }
 }

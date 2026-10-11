@@ -27,8 +27,11 @@ cli = ["dep:clap"]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 flate2.workspace = true
-legaia-mednafen.workspace = true
+legaia-ram-image.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+legaia-mednafen.workspace = true
 
 [[test]]
 name = "integration"

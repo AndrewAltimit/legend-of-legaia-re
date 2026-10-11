@@ -35,7 +35,8 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice, scenarios};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{ScenarioManifest, extract::ram_slice, scenarios};
 
 /// PSX address of `gp[0x754]` - the battle effect-model-library additive base
 /// (`gp` base `0x8007B318` + `0x754`). See `docs/formats/move-power.md`.

@@ -100,7 +100,7 @@ fn decompress(bytes: &[u8]) -> Result<std::borrow::Cow<'_, [u8]>> {
 pub fn load_with_scus(path: &Path, scus: &[u8]) -> Result<(crate::SaveState, Option<PcsxGpu>)> {
     let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let payload = decompress(&raw)?;
-    let ram = legaia_mednafen::extract::main_ram_via_anchor_with_scus(&payload, scus)
+    let ram = legaia_ram_image::extract::main_ram_via_anchor_with_scus(&payload, scus)
         .context("locate main RAM in PCSX-Redux payload (anchor search)")?
         .to_vec();
     let hardware = crate::find_hardware(&payload).map(<[u8]>::to_vec);

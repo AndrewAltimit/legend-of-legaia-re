@@ -17,7 +17,7 @@ capture corpus with `invalid gzip header`.
 
 Either way the reader doesn't need the protobuf schema: it locates the 2 MiB
 main RAM **format-agnostically** by reusing the SCUS anchor search
-([`legaia_mednafen::extract::main_ram_via_anchor`]) - matching a string known to
+([`legaia_ram_image::extract::main_ram_via_anchor`]) - matching a string known to
 live in the loaded SCUS region (e.g. `h:\prot\cdname.dat`) in both the SCUS
 binary and the payload to derive the RAM base. (For the captured anchors the RAM
 happens to start at payload offset `0x27`, but the anchor search makes the reader
@@ -32,7 +32,7 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 
 `SaveState` exposes `main_ram()` + KSEG0 virtual-address readers
 (`u8_at`/`u16_at`/`i16_at`/`u32_at`) plus the convenience accessors above. The
-anchors and their readers live in `legaia_mednafen::game_anchors`, shared with
+anchors and their readers live in `legaia_ram_image::game_anchors`, shared with
 the mednafen reader so both emulators answer "which scene is this state in?"
 identically; this crate re-exports the constants and delegates. The position
 fields are read as `i16` - the facing word at `player+0x16` sits between `+0x14`
@@ -80,7 +80,7 @@ engine's behaviour against the captured retail facts. The anchor search reads
 - `crates/pcsxr/tests/anchor_load.rs` - the reader's own oracle (reads back each
   anchor's pinned facts).
 
-Depends only on `legaia-mednafen` (for the anchor search), `flate2` and
+Depends only on `legaia-ram-image` (for the anchor search), `flate2` and
 `serde_json` (plus `clap` behind the default `cli` feature); never on
 `legaia-engine-core`, so the dev-only oracle edges stay acyclic. No Sony bytes are
 committed - the `.sstate` files are gitignored, local-only under `saves/library/`.

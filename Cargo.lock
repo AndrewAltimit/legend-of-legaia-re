@@ -1851,6 +1851,7 @@ dependencies = [
  "legaia-cheats",
  "legaia-overlay-images",
  "legaia-prot",
+ "legaia-ram-image",
  "libc",
  "png",
  "serde",
@@ -1985,6 +1986,7 @@ dependencies = [
  "clap",
  "flate2",
  "legaia-mednafen",
+ "legaia-ram-image",
  "serde_json",
 ]
 
@@ -1997,6 +1999,15 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-ram-image"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
 ]
 
 [[package]]

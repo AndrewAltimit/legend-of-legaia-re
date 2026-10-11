@@ -2822,7 +2822,7 @@ character / NPC mesh chains in `_DAT_8007C354` and siblings.
 `mednafen-state prim-dispatch-table <save>` decodes both tables out of a save
 state's main RAM; `--overlay-targets-only` emits the eight addresses for a
 Ghidra `dump_funcs.py` `TARGETS` list
-([`legaia_mednafen::prim_dispatch`](../../crates/mednafen/src/prim_dispatch.rs)).
+([`legaia_mednafen::prim_dispatch`](../../crates/ram-image/src/prim_dispatch.rs)).
 
 #### Per-slot delta vs SCUS sibling
 

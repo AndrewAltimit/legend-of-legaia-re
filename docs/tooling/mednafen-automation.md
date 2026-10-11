@@ -326,7 +326,7 @@ empty when the world-map overlay isn't paged in; pass
 `dump_funcs.py` `TARGETS` list. See
 [`docs/subsystems/world-map.md`](../subsystems/world-map.md#top-view-bulk-terrain-render-path-overlay-replaced-per-prim-renderers)
 for the mechanism and
-[`crates/mednafen/src/prim_dispatch.rs`](../../crates/mednafen/src/prim_dispatch.rs)
+[`crates/ram-image/src/prim_dispatch.rs`](../../crates/ram-image/src/prim_dispatch.rs)
 for the typed accessors.
 
 ### Survey dispatch tables across multiple saves

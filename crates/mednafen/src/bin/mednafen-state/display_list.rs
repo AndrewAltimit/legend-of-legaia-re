@@ -22,9 +22,8 @@
 //! `POOL_BASE_DEFAULT` is a world-map constant and does not hold for scenes.
 
 use anyhow::{Context, Result, bail};
-use legaia_mednafen::{
-    SaveState, extract::PSX_RAM_KSEG0, game_anchors, prim_pool, prim_pool::Prim,
-};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{extract::PSX_RAM_KSEG0, game_anchors, prim_pool, prim_pool::Prim};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -34,7 +33,7 @@ use std::path::Path;
 /// runs the other way).
 fn load_ram(path: &Path) -> Result<Vec<u8>> {
     let raw = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    if raw.len() == legaia_mednafen::PSX_RAM_SIZE {
+    if raw.len() == legaia_ram_image::PSX_RAM_SIZE {
         return Ok(raw);
     }
     let st = SaveState::from_path(path).with_context(|| {

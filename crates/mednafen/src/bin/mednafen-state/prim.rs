@@ -2,7 +2,8 @@
 //! decode/survey subcommands for `mednafen-state`.
 
 use anyhow::{Context, Result, bail};
-use legaia_mednafen::{SaveState, extract::PSX_RAM_KSEG0};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::extract::PSX_RAM_KSEG0;
 use std::path::{Path, PathBuf};
 
 /// Default RAM windows to scan for tile-signature matches. Both come from
@@ -22,7 +23,7 @@ pub fn cmd_prim_trace(
     scan_all_ram: bool,
     json_out: Option<&Path>,
 ) -> Result<()> {
-    use legaia_mednafen::{prim_pool, source_hunt};
+    use legaia_ram_image::{prim_pool, source_hunt};
     use serde::Serialize;
 
     if pool_end <= pool_base {
@@ -310,7 +311,7 @@ pub fn cmd_prim_trace(
 }
 
 pub fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Result<()> {
-    use legaia_mednafen::prim_dispatch::{
+    use legaia_ram_image::prim_dispatch::{
         HIGH_MODE_END, LOW_MODE_END, LOW_MODE_START, SLOT_BYTES, SlotKind, classify, decode_both,
     };
 
@@ -347,7 +348,7 @@ pub fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Resul
     );
     println!();
 
-    let print_table = |label: &str, t: &legaia_mednafen::prim_dispatch::DispatchTable| {
+    let print_table = |label: &str, t: &legaia_ram_image::prim_dispatch::DispatchTable| {
         println!("=== {label} (base 0x{:08X}) ===", t.base);
         for (row_idx, row) in t.rows.iter().enumerate() {
             println!("  alpha row #{row_idx}  (+0x{:02X})", row.alpha_offset);
@@ -428,7 +429,7 @@ pub fn cmd_prim_dispatch_table(save: &Path, overlay_targets_only: bool) -> Resul
 }
 
 pub fn cmd_prim_dispatch_survey(saves: &[PathBuf]) -> Result<()> {
-    use legaia_mednafen::prim_dispatch::{
+    use legaia_ram_image::prim_dispatch::{
         HIGH_MODE_END, HIGH_MODE_START, SCUS_ALPHA_ROWS, SCUS_TABLE_BASE, SLOT_BYTES, classify,
         decode, decode_both,
     };
@@ -515,7 +516,7 @@ pub fn cmd_prim_dispatch_survey(saves: &[PathBuf]) -> Result<()> {
             .high_mode_targets()
             .iter()
             .map(|t| {
-                use legaia_mednafen::prim_dispatch::SlotKind;
+                use legaia_ram_image::prim_dispatch::SlotKind;
                 let mark = match classify(*t) {
                     SlotKind::Overlay => "",
                     SlotKind::Scus => "(SCUS!)",
@@ -538,7 +539,7 @@ pub fn cmd_prim_dispatch_survey(saves: &[PathBuf]) -> Result<()> {
         };
         println!("{truncated:<48}  {status:>6}  {summary:<40}  {targets}");
     }
-    let row_bytes = SLOT_BYTES * legaia_mednafen::prim_dispatch::SLOTS_PER_ROW as u32;
+    let row_bytes = SLOT_BYTES * legaia_ram_image::prim_dispatch::SLOTS_PER_ROW as u32;
     println!(
         "\n[info] row stride = 0x{row_bytes:X} bytes; high-mode slots = {}..{}",
         HIGH_MODE_START,

@@ -32,12 +32,12 @@ Mednafen save-state parser + watchpoint-equivalent automation toolkit.
   scenario's save preferring its immutable `saves/library` backup (by
   `backup_fingerprint`) over the wipe-prone live `.mc{slot}`.
 
-Modules: `container` (MDFNSVST section index), `extract` (main RAM), `psx`
-(CPU / GTE register snapshot), `gpu` / `spu` (typed section accessors),
-`prim_pool` + `source_hunt` (prim-pool decode, fixed-stride source-table
-search), `prim_dispatch` (per-prim renderer table decode), `diff`, `bisect`,
-`scenarios`, `game_anchors` (scene / mode / position shared with
-`legaia-pcsxr`).
+Modules: `container` (MDFNSVST section index), `psx` (CPU / GTE register
+snapshot), `gpu` / `spu` (typed section accessors). The emulator-neutral
+analysis of the RAM a state carries - `extract`, `game_anchors`, `diff`,
+`bisect`, `prim_pool` + `source_hunt`, `prim_dispatch`, `scenarios` - lives in
+[`legaia-ram-image`](../ram-image/README.md) and is re-exported here at its
+old paths; the CLI below drives both.
 
 ## CLI
 
@@ -72,8 +72,8 @@ target in world units, alongside the walk-view / top-view mode flag.
 `identify` prints the scene name, game mode and player position of a batch of
 states, mirroring `pcsxr-state identify` so `scripts/mednafen/state-index.py`
 can sweep both emulators' corpora into one scene index. Unreadable states report
-as an `!` row instead of aborting the sweep. The anchors live in the shared
-`game_anchors` module, which `legaia-pcsxr` delegates to - so a mednafen `.mc`
+as an `!` row instead of aborting the sweep. The anchors live in
+`legaia_ram_image::game_anchors`, which `legaia-pcsxr` reads through too - so a mednafen `.mc`
 and a PCSX-Redux `.sstate` answer "which scene is this?" identically.
 
 `display-list` reads a frame's libgpu ordering table straight out of a RAM

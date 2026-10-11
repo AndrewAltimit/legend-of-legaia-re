@@ -37,7 +37,8 @@
 
 use std::path::PathBuf;
 
-use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::{ScenarioManifest, extract::ram_slice};
 
 /// 8-slot battle-actor pointer table (`DAT_801C9370`).
 const ACTOR_TABLE: u32 = 0x801C_9370;

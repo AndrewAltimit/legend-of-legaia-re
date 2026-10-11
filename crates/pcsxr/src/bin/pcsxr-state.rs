@@ -93,7 +93,7 @@ fn main() -> Result<()> {
                 match SaveState::from_path(path) {
                     Ok(st) => {
                         let id = st.identity();
-                        let label = legaia_mednafen::game_anchors::game_mode_label(id.game_mode);
+                        let label = legaia_ram_image::game_anchors::game_mode_label(id.game_mode);
                         if json {
                             println!(
                                 "{}",

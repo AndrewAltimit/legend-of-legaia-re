@@ -2,11 +2,11 @@
 //! subcommands for `mednafen-state`.
 
 use anyhow::{Context, Result, bail};
-use legaia_mednafen::{
-    SaveState, ScenarioManifest, bisect,
+use legaia_mednafen::{SaveState, psx::PsxMain};
+use legaia_ram_image::{
+    ScenarioManifest, bisect,
     diff::{DiffOptions, diff_ram, sort_by_size},
     extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE, ram_slice},
-    psx::PsxMain,
 };
 use std::path::{Path, PathBuf};
 
@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 /// the corpus contains half-written and foreign-format files, and one of them
 /// must not cost the index for the other sixty-nine.
 pub fn cmd_identify(saves: &[PathBuf], json: bool) -> Result<()> {
-    use legaia_mednafen::game_anchors;
+    use legaia_ram_image::game_anchors;
 
     if saves.is_empty() {
         bail!("no save states given");

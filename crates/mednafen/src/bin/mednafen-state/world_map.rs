@@ -2,7 +2,8 @@
 //! `mednafen-state`.
 
 use anyhow::{Result, bail};
-use legaia_mednafen::{SaveState, extract::ram_slice};
+use legaia_mednafen::SaveState;
+use legaia_ram_image::extract::ram_slice;
 use std::path::PathBuf;
 
 /// World-map top-view camera-state globals. See `docs/subsystems/world-map.md`
@@ -154,7 +155,7 @@ pub fn cmd_world_map_camera(saves: &[PathBuf], table: bool) -> Result<()> {
 #[cfg(test)]
 mod camera_decode_tests {
     use super::*;
-    use legaia_mednafen::extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE};
+    use legaia_ram_image::extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE};
 
     fn synth_ram_with(values: &[(u32, &[u8])]) -> Vec<u8> {
         let mut ram = vec![0u8; PSX_RAM_SIZE];

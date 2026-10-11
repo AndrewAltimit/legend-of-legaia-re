@@ -29,6 +29,7 @@ clap = { workspace = true, optional = true }
 flate2.workspace = true
 legaia-battle-models = { workspace = true, optional = true }
 legaia-cheats = { workspace = true, optional = true }
+legaia-ram-image.workspace = true
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true

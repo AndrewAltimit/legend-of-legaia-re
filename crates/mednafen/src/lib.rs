@@ -26,26 +26,26 @@
 //! `mcs/` directory) and pass-skip when unset, matching the project-wide
 //! `LEGAIA_DISC_BIN` convention.
 
-pub mod bisect;
 pub mod container;
-pub mod diff;
-pub mod extract;
-pub mod game_anchors;
 pub mod gpu;
-pub mod prim_dispatch;
-pub mod prim_pool;
 pub mod psx;
-pub mod scenarios;
-pub mod source_hunt;
 pub mod spu;
 
 pub use container::{SaveState, Section, SubEntry};
-pub use diff::{RamDiff, RegionDiff};
-pub use extract::{PSX_RAM_KSEG0, PSX_RAM_SIZE, ram_slice};
-pub use game_anchors::{StateIdentity, game_mode_label, identify};
 pub use gpu::{
     GpuRegs, PsxGpu, VRAM_BYTES, VRAM_HEIGHT, VRAM_WIDTH, bgr555_to_rgba8, vram_to_rgba8,
 };
 pub use psx::{CpuRegs, PsxMain};
-pub use scenarios::{Scenario, ScenarioManifest, WatchpointSpec};
 pub use spu::{NUM_VOICES as SPU_NUM_VOICES, PsxSpu, SPU_RAM_BYTES, SpuVoiceState};
+
+// Transitional aliases: the emulator-neutral RAM-image analysis lives in
+// `legaia-ram-image`. New code names that crate.
+#[doc(hidden)]
+pub use legaia_ram_image::{
+    PSX_RAM_KSEG0, PSX_RAM_SIZE, RamDiff, RegionDiff, Scenario, ScenarioManifest, StateIdentity,
+    WatchpointSpec, game_mode_label, identify, ram_slice,
+};
+#[doc(hidden)]
+pub use legaia_ram_image::{
+    bisect, diff, extract, game_anchors, prim_dispatch, prim_pool, scenarios, source_hunt,
+};

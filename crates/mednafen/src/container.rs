@@ -189,11 +189,11 @@ impl SaveState {
     /// the SCUS-anchor heuristic if the structured path doesn't pan out.
     pub fn main_ram(&self) -> Result<&[u8]> {
         if let Some(bytes) = self.entry_bytes("MAIN", "MainRAM.data8")
-            && bytes.len() == crate::extract::PSX_RAM_SIZE
+            && bytes.len() == legaia_ram_image::extract::PSX_RAM_SIZE
         {
             return Ok(bytes);
         }
-        crate::extract::main_ram_via_anchor(&self.payload)
+        legaia_ram_image::extract::main_ram_via_anchor(&self.payload)
     }
 
     /// 1 KiB of PSX scratchpad RAM - index `0` corresponds to

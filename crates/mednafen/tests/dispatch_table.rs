@@ -18,7 +18,7 @@
 //! pattern in `real_saves.rs`. CI runs without disc-side saves.
 
 use legaia_mednafen::SaveState;
-use legaia_mednafen::prim_dispatch::{
+use legaia_ram_image::prim_dispatch::{
     OVERLAY_ALPHA_ROWS, OVERLAY_TABLE_BASE, ROW_BYTES, SCUS_ALPHA_ROWS, SCUS_TABLE_BASE,
     SLOTS_PER_ROW, decode, decode_both,
 };
@@ -155,7 +155,7 @@ fn overlay_dispatch_table_only_populated_for_world_map() {
             populated_slots.push(*slot);
             // High-mode targets must classify as Overlay (inside the
             // documented 0x801C0000..0x801F9000 window).
-            use legaia_mednafen::prim_dispatch::{SlotKind, classify};
+            use legaia_ram_image::prim_dispatch::{SlotKind, classify};
             for tgt in overlay.high_mode_targets() {
                 assert_eq!(
                     classify(tgt),
