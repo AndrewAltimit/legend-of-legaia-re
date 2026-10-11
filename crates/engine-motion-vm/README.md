@@ -7,8 +7,8 @@ original executable.
 This crate sits strictly **below** `legaia-engine-vm`: every module's whole
 dependency closure inside the engine is in this crate, `legaia-asset` (the MAN
 motion-script opcode widths) and
-[`legaia-engine-battle-vm`](../engine-battle-vm/README.md) (the PsyQ `rand`
-step and the bearing LUT). `legaia-engine-vm` re-exports each module at its
+[`legaia-engine-system`](../engine-system/README.md) (the PsyQ `rand`
+step). `legaia-engine-vm` re-exports each module at its
 old path, so `legaia_engine_vm::ambient_motion` and
 `legaia_engine_motion_vm::ambient_motion` name the same module. Free of wgpu,
 winit and cpal, so it builds for native and `wasm32` alike.

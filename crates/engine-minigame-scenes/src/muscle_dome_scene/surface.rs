@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::muscle_dome::{DomeContest, DomePlay};
-use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use legaia_engine_battle_vm::battle_cam_script as cam;
+use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
 use std::sync::Arc;
 
 /// The dome's camera: one pose of the battle camera script, projected the

@@ -48,10 +48,10 @@
 //! hypothesis against the indexed-formation-table hypothesis
 //! (see [`legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
-use legaia_asset::man_section::{ActorPlacement, ManFile};
 use legaia_asset::field_disasm::{
     EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
+use legaia_asset::man_section::{ActorPlacement, ManFile};
 
 use legaia_engine_battle::encounter_record::EncounterRecord;
 

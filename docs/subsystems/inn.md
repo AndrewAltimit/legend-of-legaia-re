@@ -205,7 +205,7 @@ one, both hosts draw it through the shared fallback panel
 | Commit | - | Deducts gold, restores all active party members' HP / MP. |
 | Exit | - | Returns to field without resting on No or insufficient gold. |
 
-The menu state machine (`engine-vm::menu`) routes the prompt: `InnConfirm` Yes
+The menu state machine (`engine-menus::menu`) routes the prompt: `InnConfirm` Yes
 (slot 0) commits the rest and routes to the transient `InnSleep` fade, which
 auto-advances to the menu's `Closing` state after `transient_hold_frames`;
 `InnConfirm` No (slot 1) and Triangle route straight to `Closing`. Either way the

@@ -34,11 +34,11 @@
 //!   Spirit charge to apply, so the fighter simply does not swing.
 
 use super::*;
-use legaia_engine_battle::arts_command_input::{
-    ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, ArtsCommandPad, ArtsInputResolution,
-};
 use crate::battle_input::{
     BattleCommand, BattleCommandInput, BattleCommandSession, CommandPhase, Resolution,
+};
+use legaia_engine_battle::arts_command_input::{
+    ARTS_LIST_ROWS_PER_PAGE, ArtsCommandInputSession, ArtsCommandPad, ArtsInputResolution,
 };
 use legaia_engine_battle::target_picker::SlotState;
 
@@ -483,7 +483,9 @@ impl MuscleDomeSession {
     /// the pad - the snapshot the shared arts-input chrome draws from
     /// (`legaia_engine_core::world::World::arts_input_view` hands it to the hosts during a
     /// dome leg).
-    pub fn arts_input_view(&self) -> Option<legaia_engine_battle::arts_command_input::ArtsInputView<'_>> {
+    pub fn arts_input_view(
+        &self,
+    ) -> Option<legaia_engine_battle::arts_command_input::ArtsInputView<'_>> {
         let DomeMenu::Input(s) = &self.menu else {
             return None;
         };

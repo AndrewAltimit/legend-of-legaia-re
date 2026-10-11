@@ -606,9 +606,10 @@ mod tests {
         let loco = crate::field_anim::synth_anm_bundle(&[(10, 2), (2, 3)]);
         let mut w = World::new();
         w.mode = SceneMode::Field;
-        w.field_vm
-            .channels
-            .push(party_channel(3, legaia_engine_field::field_player_clip::PARTY_BANK_FLAG));
+        w.field_vm.channels.push(party_channel(
+            3,
+            legaia_engine_field::field_player_clip::PARTY_BANK_FLAG,
+        ));
         let ten = FieldClipPlayer::from_record(&loco, 0).unwrap();
         w.bind_npc_clip_cursor(3, 1, &ten);
         w.npcs.anim_cues.insert(3, (1, 2, Vec::new()));

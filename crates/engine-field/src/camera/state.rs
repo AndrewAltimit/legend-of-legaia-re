@@ -441,7 +441,9 @@ impl Camera {
     pub fn take_camera_snap_beats(&mut self) -> Vec<Vec<(usize, f32)>> {
         std::mem::take(&mut self.camera_snap_beats)
             .iter()
-            .map(|b| legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b))
+            .map(|b| {
+                legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b)
+            })
             .collect()
     }
 

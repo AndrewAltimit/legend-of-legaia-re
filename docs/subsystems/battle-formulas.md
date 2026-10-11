@@ -962,7 +962,7 @@ INT 247` from record `288/222/200/220` with flag `4`; a world-map Gobu Gobu `ATK
 seru-side-effect`); per-record verdict `Susceptibility::for_record`, which the
 site's enemy table renders per row by fight class
 (`legaia_asset::formation_census`, CLI `asset formation-census`). Both halves
-run in the live loop: `engine-vm::seru_side_effect::stage_side_effect` once per
+run in the live loop: `engine-battle-vm::seru_side_effect::stage_side_effect` once per
 player cast through `World::stage_seru_side_effect`, for exactly the ids whose
 module calls it (`summon::module_stages_side_effect`); `apply_hit` per damaged
 target through `World::apply_seru_side_effect`; the banner pass is
@@ -1520,7 +1520,7 @@ inline twin in `FUN_801EC3E4` (dump lines 2800-2808).
 **Provenance.** `overlay_battle_action_801e752c.txt` (760 bytes / 190
 instructions); called by the round driver `FUN_801D0748` state `0x14`, after
 `FUN_801D88CC` / `FUN_801DA780`. **Port.** `status_effects::toxic_tick_damage`
-/ `venom_tick_damage` (module `engine-vm::status_effects`); the roll scales are
+/ `venom_tick_damage` (module `engine-battle-vm::status_effects`); the roll scales are
 `apply_status_weaken`. The scripted-fight one-tick clear for monsters is not
 modelled.
 
@@ -1928,8 +1928,8 @@ not reproduced as a whole; the state machine lives in
 | `stat_init.rs` | `init_party_battle_stats`, `equip_stat_bonuses` | `FUN_80053CB8` |
 | `actor_tween.rs` | `packed3_approach_target`, `approach_channel_clamped` | `FUN_80050F30`, the battle-actor tint / tween step ([battle.md](battle.md#additional-scus-battle-band-helpers)) - presentation, not a stat |
 
-Kernels that live elsewhere: `engine-vm::status_effects` (`toxic_tick_damage`,
-`venom_tick_damage`, `agl_status_inflict_roll`), `engine-vm::seru_side_effect`,
+Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_damage`,
+`venom_tick_damage`, `agl_status_inflict_roll`), `engine-battle-vm::seru_side_effect`,
 `engine-vm::battle_damage_wrappers`, `engine-vm::battle_action` (`limb_misses`,
 `done`), `engine-battle::magic_xp`, `engine-battle::spells`.
 

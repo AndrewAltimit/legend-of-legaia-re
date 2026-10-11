@@ -94,8 +94,8 @@ pub use legaia_engine_ui::{
     text_balloon_text_draws_for, text_balloon_text_width, text_draws_for,
     tile_board_prompt_sprites_for, tile_board_prompt_text_draws_for,
     timed_fight_strip_chrome_draws, timed_fight_strip_text_draws, title_band_sprites,
-    title_draws_for, title_menu_draws_for, title_strip_sprites, ui_baka_strips,
-    ui_boot_logos, ui_dance, ui_fishing_exchange, ui_fishing_hub, ui_fishing_line, ui_fishing_rod,
+    title_draws_for, title_menu_draws_for, title_strip_sprites, ui_baka_strips, ui_boot_logos,
+    ui_dance, ui_fishing_exchange, ui_fishing_hub, ui_fishing_line, ui_fishing_rod,
     ui_fishing_sprite, ui_slot_cabinet, ui_slot_paylines, ui_text_lines, vram_capture,
 };
 

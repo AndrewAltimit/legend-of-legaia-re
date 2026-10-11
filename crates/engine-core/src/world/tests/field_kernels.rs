@@ -2,8 +2,8 @@
 //! table, so they stay on the engine-core side of the crate split.
 
 use crate::field_anim::{FieldClipPlayer, FieldPlayerAnim, synth_anm_bundle};
-use legaia_engine_mode::card_request::{CARD_REQUEST_MODE, request_card_mode};
 use crate::scene_transition_actor::{HeldTransition, SceneTransitionHold};
+use legaia_engine_mode::card_request::{CARD_REQUEST_MODE, request_card_mode};
 
 #[test]
 fn world_tick_drives_walk_idle_switch_into_pose_frame() {

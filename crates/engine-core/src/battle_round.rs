@@ -24,8 +24,8 @@ use crate::battle_stats::{
     BattleStats, EquipmentTable, StatRecord, StatusModifiers, compute_battle_stats,
 };
 use crate::world::World;
-use legaia_engine_vm as vm;
 use legaia_engine_battle_vm::status_effects::StatusKind;
+use legaia_engine_vm as vm;
 
 /// One round of battle. Constructed by [`BattleRound::begin`]; consumed
 /// by [`BattleRound::end`].
@@ -418,10 +418,10 @@ mod tests {
         // Mark slot 1 as Sleep before begin. No on-disc byte maps to Sleep
         // since the 4/5 remap (4 = Toxic, 5 = Rot per the pinned appliers),
         // so apply the host-driven kind directly.
-        world
-            .battle
-            .status_effects
-            .apply(1, legaia_engine_battle_vm::status_effects::StatusKind::Sleep);
+        world.battle.status_effects.apply(
+            1,
+            legaia_engine_battle_vm::status_effects::StatusKind::Sleep,
+        );
 
         let mut per_slot: [Option<StatRecord>; 8] = Default::default();
         per_slot[1] = Some(StatRecord {

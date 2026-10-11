@@ -121,7 +121,7 @@ Scope: the routine touches only the character record. It does not write the batt
 
 Not an SM state. The round driver `FUN_801D0748` calls it once per round (flow state `0x14`, gated on the round counter `ctx[+0x28A] != 0`, so the first round never ticks). It applies the Venom / Toxic HP drains off the `+0x16E` status bits, and the same walk pays the Life Grail / Magic Grail per-round recoveries for party slots.
 
-Arithmetic, caps and the never-kill clamp: [battle-formulas.md](battle-formulas.md#per-round-status-dot-ticker---fun_801e752c). Port: `engine-vm::status_effects::toxic_tick_damage` / `venom_tick_damage` (`StatusEffectTracker::tick_actor`).
+Arithmetic, caps and the never-kill clamp: [battle-formulas.md](battle-formulas.md#per-round-status-dot-ticker---fun_801e752c). Port: `engine-battle-vm::status_effects::toxic_tick_damage` / `venom_tick_damage` (`StatusEffectTracker::tick_actor`).
 
 ### `FUN_801DD4B0` / `FUN_801DD6B4` - per-move damage-roll wrappers
 
@@ -741,7 +741,7 @@ Port: `battle_action::target_cursor_highlight`. See `overlay_battle_action_801da
 
 Gated on `ctx[+0x6CE] == 0`. Emits one `POLY_FT4` (tag `0x09000000`, colour `0x2C808080`) sampling the `etim` Rot stamp (`(0x50, 0x60)` 32x24, CLUT `0x770B`) over `(x, y, cost)`, widened by `(cost - 0x1E) >> 1` each side, and links it via `FUN_8003D2C4`. Called only by the round driver's arts-entry arm, once per rotted limb; see [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating).
 
-Port: `engine-vm::battle_party_panel::rot_stamp_on_arts_chip`.
+Port: `engine-battle-vm::battle_party_panel::rot_stamp_on_arts_chip`.
 
 ## Camera and pose
 

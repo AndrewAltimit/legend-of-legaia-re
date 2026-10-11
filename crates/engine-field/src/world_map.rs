@@ -26,9 +26,9 @@
 //!
 //! `ghidra/scripts/funcs/801e76d4.txt` (decompiled from `overlay_world_map.bin`).
 
-use crate::world_map_panel_host::packed_pad;
 use crate::world_map_dim::{ScreenDimPass, emit_screen_dim};
 use crate::world_map_horizon::{HorizonBatch, emit_horizon};
+use crate::world_map_panel_host::packed_pad;
 
 /// Top-view camera control - live when `view_mode != 0` **and** the L1
 /// modifier is held.
@@ -628,9 +628,15 @@ mod tests {
             ..Default::default()
         };
         let (held, edge) = toggle_chord();
-        assert!(!ctrl.tick(held | legaia_engine_system::input::PadButton::Up.mask(), edge));
+        assert!(!ctrl.tick(
+            held | legaia_engine_system::input::PadButton::Up.mask(),
+            edge
+        ));
         assert_eq!(ctrl.view_mode, 0);
-        assert!(!ctrl.tick(held, edge | legaia_engine_system::input::PadButton::Circle.mask()));
+        assert!(!ctrl.tick(
+            held,
+            edge | legaia_engine_system::input::PadButton::Circle.mask()
+        ));
         assert_eq!(ctrl.view_mode, 0);
     }
 

@@ -67,7 +67,8 @@ pub fn derive_field_carriers(man_file: &ManFile, man: &[u8]) -> Vec<DerivedField
                 && record_battle_entry_rows(man_file, man, 1, p.index).contains(&training_row)
             {
                 FieldCarrierConfig::ScriptedEncounter {
-                    formation_id: legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
+                    formation_id:
+                        legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID,
                 }
             } else if matches!(kind, PlacementKind::Npc { .. }) {
                 FieldCarrierConfig::Npc {

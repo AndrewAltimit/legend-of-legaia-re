@@ -80,8 +80,8 @@
 
 use legaia_engine_vm::move_vm::ActorState;
 
-use legaia_render_kernels::sprite_arm::ColourWord;
 use crate::effect_ribbon::TrigTable;
+use legaia_render_kernels::sprite_arm::ColourWord;
 
 /// Texture page word the untextured modes' packets carry (`li a3,0x1f` at
 /// `0x80028C74`) - the same 2x2 patch the ribbon samples.

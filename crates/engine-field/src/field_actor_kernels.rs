@@ -276,7 +276,10 @@ pub struct ColourTweenStep {
 ///
 /// [`ActorHandler::ColourTween`]: crate::actor_handler::ActorHandler::ColourTween
 /// [`World::screen_tint_pushes`]: legaia_engine_core::world::World::screen_tint_pushes
-pub fn tween_from_fade_template(t: &legaia_engine_system::fade::FadeTemplate, kind: i16) -> ColourTween {
+pub fn tween_from_fade_template(
+    t: &legaia_engine_system::fade::FadeTemplate,
+    kind: i16,
+) -> ColourTween {
     let c = |v: [i16; 3]| (v[0] as u16, v[1] as u16, v[2] as u16);
     ColourTween {
         from: c(t.start_rgb),

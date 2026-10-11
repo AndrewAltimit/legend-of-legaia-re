@@ -146,7 +146,7 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
           <tr><td><code>0x801CF344</code></td><td>dev-menu string table; <code>DAT_8007B5F8</code> encounter-rate readout; <code>_DAT_801F2E90</code> BGM readout</td></tr>
         </tbody>
       </table></div>
-      <p>Port: <code>engine-core::world_map::WorldMapController</code> models the four camera globals and the toggle (<code>tick(pad_input)</code>); <code>engine-vm::world_map_overlay</code> holds the 24-row dev-menu model (<code>DevMenuRow</code>, <code>is_closed</code>, <code>cursor_step</code>, <code>format_fixed_decimal</code>, <code>decode_camera_readout</code>), the escape-timer scheduler, the battle-records model and the equipment stat-comparison preview; <code>engine-ui</code> owns the draw halves (<code>records_screen_draws_for</code>, <code>dev_menu_list_draws_for</code>). <code>legaia-engine play-window --world-map</code> shows the camera state in the HUD.</p>
+      <p>Port: <code>engine-core::world_map::WorldMapController</code> models the four camera globals and the toggle (<code>tick(pad_input)</code>); <code>engine-field::dev_menu_leaves</code> holds the 24-row dev-menu model (<code>DevMenuRow</code>, <code>is_closed</code>, <code>cursor_step</code>, <code>format_fixed_decimal</code>, <code>decode_camera_readout</code>), the escape-timer scheduler, the battle-records model and the equipment stat-comparison preview; <code>engine-ui</code> owns the draw halves (<code>records_screen_draws_for</code>, <code>dev_menu_list_draws_for</code>). <code>legaia-engine play-window --world-map</code> shows the camera state in the HUD.</p>
       <p>History: an earlier reading of the top-view controller as "the world-map controller with a normal-walk path" is falsified by its own branch target (the walk branch is the epilogue). The overworld opens the pause menu through the ordinary field arm. See <a href="save-screen.html">save screen</a>.</p>
     
 </section>
@@ -156,7 +156,7 @@ sw   $tmp,         0x10(&lt;actor&gt;)</code></pre>
   <div class="table-wrap"><table class="data-table">
     <thead><tr><th>Module</th><th>Ports</th><th>Notes</th></tr></thead>
     <tbody>
-      <tr><td><code>engine-vm::world_map</code></td><td>carrier entity SM</td><td><code>EntityState</code> (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code>, <code>step(entity_idx, ctx, host)</code>; per-entity roles <code>EncounterZone</code> / <code>Portal</code> / <code>Npc</code>. Serves field-resident carriers too.</td></tr>
+      <tr><td><code>engine-field::world_map_entity</code></td><td>carrier entity SM</td><td><code>EntityState</code> (Idle / Activating / Transitioning / Terminal), <code>WorldMapEntityHost</code>, <code>step(entity_idx, ctx, host)</code>; per-entity roles <code>EncounterZone</code> / <code>Portal</code> / <code>Npc</code>. Serves field-resident carriers too.</td></tr>
       <tr><td><code>engine-core::World</code></td><td>walk, regions, portals, NPC talk</td><td><code>tick_world_map</code>, <code>set_world_map_regions</code>, <code>enter_world_map_scene</code>, <code>auto_engage_world_map_portals</code>; battles return via <code>battle_return_mode</code>.</td></tr>
       <tr><td><code>engine-core::world_map</code></td><td>top-view controller</td><td>camera globals + toggle.</td></tr>
       <tr><td><code>build_walk_heightfield</code> / <code>prim_dispatch</code></td><td>ground, top-view terrain</td><td>heightfield with baked per-cell texturing; overlay-variant prim table.</td></tr>

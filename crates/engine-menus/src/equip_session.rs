@@ -10,10 +10,10 @@
 //! record and re-runs [`compute_battle_stats`] so the world's resolved
 //! stats stay in sync.
 
+use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
 use legaia_engine_battle::battle_stats::{
     BattleStats, EquipmentTable, ItemModifier, StatRecord, StatusModifiers, compute_battle_stats,
 };
-use crate::equipment::{DiscEquipInfo, EquipSlot, engine_slot_disc_category};
 use legaia_engine_battle_vm::status_effects::StatusKind;
 
 mod best_equipment;

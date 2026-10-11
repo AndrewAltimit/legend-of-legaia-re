@@ -125,10 +125,22 @@ fn the_countdown_cap_lands_a_short_retail_value_under_a_long_idle() {
 /// document independently.
 #[test]
 fn packed_pad_swaps_the_byte_halves() {
-    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Cross.mask()), 0x0040);
-    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Circle.mask()), 0x0020);
-    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Up.mask()), 0x1000);
-    assert_eq!(packed_pad(legaia_engine_system::input::PadButton::Down.mask()), 0x4000);
+    assert_eq!(
+        packed_pad(legaia_engine_system::input::PadButton::Cross.mask()),
+        0x0040
+    );
+    assert_eq!(
+        packed_pad(legaia_engine_system::input::PadButton::Circle.mask()),
+        0x0020
+    );
+    assert_eq!(
+        packed_pad(legaia_engine_system::input::PadButton::Up.mask()),
+        0x1000
+    );
+    assert_eq!(
+        packed_pad(legaia_engine_system::input::PadButton::Down.mask()),
+        0x4000
+    );
     // And the round trip is an involution, so a host can convert back.
     assert_eq!(packed_pad(packed_pad(0x1234)), 0x1234);
 }
@@ -144,7 +156,9 @@ fn the_action_masks_are_packed_not_raw() {
         "raw Cross is not packed Cross"
     );
     assert_eq!(
-        u32::from(packed_pad(legaia_engine_system::input::PadButton::Cross.mask())) & PANEL_ACTION_A,
+        u32::from(packed_pad(
+            legaia_engine_system::input::PadButton::Cross.mask()
+        )) & PANEL_ACTION_A,
         PANEL_ACTION_A
     );
 }

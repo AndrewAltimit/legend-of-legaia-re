@@ -392,8 +392,11 @@ impl MonsterAnimPlayer {
         rate: legaia_engine_battle_vm::battle_anim_rate::AnimRate,
         slowed_idle: bool,
     ) -> PoseFrame {
-        let step =
-            legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(self.step, rate, slowed_idle);
+        let step = legaia_engine_battle_vm::battle_anim_rate::scaled_anim_step(
+            self.step,
+            rate,
+            slowed_idle,
+        );
         self.advance(step)
     }
 

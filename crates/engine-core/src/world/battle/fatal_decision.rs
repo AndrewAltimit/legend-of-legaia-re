@@ -336,7 +336,8 @@ impl World {
         self.battle.status_effects.cure(victim, StatusKind::Numb);
         let down = match self.actors.get_mut(usize::from(victim)) {
             Some(a) => {
-                a.battle.field_flags &= !legaia_engine_battle_vm::status_effects::display_flags::NUMB;
+                a.battle.field_flags &=
+                    !legaia_engine_battle_vm::status_effects::display_flags::NUMB;
                 a.battle.hp == 0
             }
             None => return,

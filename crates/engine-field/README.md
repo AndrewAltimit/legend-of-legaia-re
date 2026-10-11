@@ -20,8 +20,11 @@ its old path, so `legaia_engine_core::camera_zone` and
 
 A module moves here when its whole dependency closure inside the engine is in
 this crate, `legaia-engine-system` (pad input, fades, mode-entry
-initialisers), `legaia-engine-vm` or the other `World`-free crates below
-`engine-core`. Tests that need a `World` stay on the engine-core side (the
+initialisers), `legaia-engine-mode` (the game-mode seat), `legaia-engine-vm`
+or the other `World`-free crates below `engine-core`. The field-overlay
+kernels the field VM itself does not import live here rather than in
+`legaia-engine-vm`, and `legaia-engine-fishing`, `legaia-engine-minigames`
+and `legaia-engine-menus` sit above this crate. Tests that need a `World` stay on the engine-core side (the
 world test module `field_kernels`). Doc links that point back up at
 `engine-core` are plain code spans, since rustdoc cannot resolve a link into
 a dependent crate.
@@ -93,6 +96,25 @@ a dependent crate.
   rearm term, the present-party rows); see
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 
+- **Field-overlay kernels** (moved in from `legaia-engine-vm`) -
+  `field_regions` (the `.MAP` region-table scan and zone queries),
+  `field_player_clip`, `field_warp_tile`, `field_actor_reflect`,
+  `field_actor_timers` (the shutter envelope, the eased move and the floor
+  ladder; the shutter's two quads are `render-kernels::shutter_bars`),
+  `field_passive_hud`, `field_state_pick`, `field_subsystem_enter`,
+  `pooled_actor_seed`, `code_lock_actor`, `escape_timer`, `motion_pause`,
+  `clut_fade_actor` and `incense_window` (the Incense top-up `FUN_80046870`).
+- **Submode, panels and the dev menu** - `submode_hub_actors` (the op-`0x49`
+  submode system-actor handler family), `world_map_panel` /
+  `world_map_panel_actors` (the panel window system and its actor state
+  machines), `dev_menu_leaves`, `dev_menu_adjust` and `dev_equip_commit`.
+- **World map** - `world_map_entity` (the entity state machine
+  `FUN_801DA51C`), `world_map_dim`, `world_map_horizon` and
+  `travel_art_actor` (Riremito and Rula).
+- **Script contexts** - `inline_dialogue` (the resumable state of an actor's
+  inline interaction script) and `cutscene_timeline` (the spawned
+  partition-2 record context); both hold a `legaia-engine-dialog` panel.
+
 ## The larger modules
 
 - `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
@@ -123,6 +145,52 @@ a dependent crate.
   `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
   CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; engine-core's battle
   actor tick (`world::actors`) drains them into the SFX ring.
+
+## `world_map_entity` - `FUN_801DA51C`
+
+Per-entity overworld state machine (5 states on `entity[+0x8A]`:
+Idle → Activating → Transitioning → Terminal). `step` drains the shared
+encounter countdown in the Idle state, fires `on_encounter` /
+`on_interact` / `on_scene_transition` host callbacks, and advances the
+scene-transition states. `legaia_engine_core::World` drives one
+`WorldMapEntityCtx` per installed overworld entity each
+`SceneMode::WorldMap` tick, bridging `on_encounter` into a real
+Field-machinery battle (returning to the world map on resolution) and
+`on_interact` into a `FieldInteract` event.
+
+## `escape_timer` - `FUN_801D2EBC`
+
+The scripted countdown the field VM arms with `0x4C 0xD3`
+(`SCHEDULE_TIMED_FLAGS`) - retail's collapsing-dungeon escape clock. One
+retail function does three things per frame and all three live here:
+`EscapeTimer::tick` subtracts the play-clock delta from the counter and
+reports the below-threshold and expiry story flags the crossing fires (the
+expiry also disarms), `hud_fields` decomposes what is left into MM:SS.ff, and
+`timer_ink` picks the readout colour. A "busy" frame - retail's three
+short-circuit conditions - leaves the counter standing.
+
+`legaia_engine_core::World` joins the installer and the drain: the field VM's
+operand triple reaches `World::schedule_timed_flags` through
+`FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer` runs
+the drain once per retail frame, raising each fired flag in the system-flag
+bank and publishing the readout.
+
+## `field_subsystem_enter` - `FUN_801F1278`
+
+The installer of the field subsystem actor that op `0x49` and the menu button
+both spawn: input suspend, the context-flag and pad-latch writes, the roster
+resolve and three-cell roster seed, and the handler install. Its default handler
+id `7` is the state pick `FUN_801F1F4C` (`field_state_pick`), which hands on to
+the pause-menu session - it is not a party picker. A one-member party lands in
+the middle roster cell and a two-member party takes the outer two.
+
+## `motion_pause` - `FUN_8003C9AC`
+
+`motion_pause` is the sibling kick (`FUN_8003C9AC`) a
+field interaction and a partition-2 record spawn both end with: it rewrites
+every moving-class actor's requested move to its standing move. It is a clip
+request, not a halt - the motion VM keeps running, and a walker its ops send
+on to another step asks for its walk anim again before the request plays.
 
 ## See also
 

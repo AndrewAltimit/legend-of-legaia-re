@@ -204,7 +204,9 @@ impl World {
                     &mut flag_writes,
                 )
             } else if a.state == SOFT_RESET_SLOT {
-                use legaia_engine_field::world_map_panel_actors::{SoftResetInput, soft_reset_tick};
+                use legaia_engine_field::world_map_panel_actors::{
+                    SoftResetInput, soft_reset_tick,
+                };
                 let (phase, slide, fx) = soft_reset_tick(
                     soft_reset.phase,
                     SoftResetInput {

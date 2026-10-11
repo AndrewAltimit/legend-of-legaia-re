@@ -315,7 +315,8 @@ pub fn accrue_and_level(
     let mut list = record.spell_list();
     let level = list.levels[slot];
     let xp = spell_xp(record, slot);
-    if !legaia_engine_battle_vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, table) {
+    if !legaia_engine_battle_vm::battle_formulas::summon_magic_levels_up(spell_id, level, xp, table)
+    {
         return None;
     }
     list.levels[slot] = level + 1;

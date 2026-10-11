@@ -674,7 +674,7 @@ Port: `dance::{dance_hud_draws, dance_score_box_slots}` behind `DanceGame::hud_d
 
 Widget 0's cell is the word **`READY...`** alone: `u = 0x48`, `v = 0x90`, `0xA0 x 0x20` on the `(512, 0)` page, palette column `0x0A` of the row-500 strip. The `1 2 3`, `GO!` and `FINISH!` beside it on the sheet belong to other draws.
 
-Port: `dance_countin_banner_envelope` + `engine-ui::ui_dance::dance_countin_prims`.
+Port: `dance_countin_banner_envelope` + `engine-ui::dance::dance_countin_prims`.
 
 ### The count-in, state by state
 
@@ -839,7 +839,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | Marker kernel | `legaia_engine_fishing::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
 | Venue | `engine-core::dance_venue`, `dance_cast_scene` | hall build, staging, camera, face stamps, posed cast surface |
-| Draw builders | `engine-ui::ui_dance` | HUD / count-in / tutorial screen primitives |
+| Draw builders | `engine-ui::dance` | HUD / count-in / tutorial screen primitives |
 | Hosts | `engine-shell` (`window/minigames.rs`, `window/hud.rs`), `web-viewer` (`minigames_dance.rs`, `play_minigame_arena.rs`) | upload and input |
 
 **Rules.** `DanceGame::press` returns the full event (Miss / Hit / Sequence with its points / Groovy with its landed flag, lock frames and remaining stock / NoCharge / Ignored-while-spinning) and applies the score, gauge and latch side effects. `judge_press` folds it to a three-way Miss / Hit / Sequence result. `advance` steps the clock and runs the competitors' auto-fed presses through the same award path; `dancer_score(i)` / `dancer_triangles(i)` expose their runs.

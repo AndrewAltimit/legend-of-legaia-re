@@ -9,8 +9,8 @@
 //! across many ticks. Stays disc-free (no Sony bytes, no PROT lookups).
 
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
 use legaia_engine_system::rand::psyq_rand_step;
+use legaia_engine_vm::battle_action::{ActionState, BattleEndCause, StepOutcome};
 use legaia_engine_vm::battle_formulas::accuracy_roll;
 
 const PARTY_HP: u16 = 200;

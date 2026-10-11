@@ -39,7 +39,9 @@ impl World {
             .get(usize::from(slot))
             .map(|a| a.battle.field_flags)
             .unwrap_or(0);
-        raw | legaia_engine_battle_vm::status_effects::pack_display_flags(self.battle.status_effects.statuses(slot))
+        raw | legaia_engine_battle_vm::status_effects::pack_display_flags(
+            self.battle.status_effects.statuses(slot),
+        )
     }
 
     /// The party rows as the two pool scans read them: liveness halfword plus

@@ -19,9 +19,9 @@ virtual address; **SCUS** is the main executable `SCUS_942.54`.
 |---|---|---|---|
 | Entry + init | `FUN_80026C28` → `main()` `FUN_80015E90` | SCUS | `engine-session`'s `BootSession` construction |
 | TOC load | `FUN_8003E4E8` → RAM `0x801C70F0` | SCUS | `legaia_prot` reads the disc image directly |
-| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-field::mode` (`ModeSeat`, `GameMode`); parser `legaia_asset::mode_table` |
+| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-mode::mode` (`ModeSeat`, `GameMode`); parser `legaia_asset::mode_table` |
 | Publisher logos | `FUN_801CE9C0` + sequencer `FUN_801CEFD4` | PROT 0895 (`init.pak`) | `engine-menus::publisher_logos` |
-| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-vm::title_overlay` |
+| Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-menus::title_overlay` |
 | New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_asset::new_game` |
 | Field entry | mode 2 `FUN_80025B64` → `FUN_801D6704` | SCUS + PROT 0897 | `BootSession::enter_field_live` |
 | Opening chain | scene scripts; skip in `FUN_801D1344` | PROT 0897 + scene MANs | `engine-core` `world/narration.rs` |
@@ -334,7 +334,7 @@ Modes 4, 16 and 20 carry no overlay request at all.
 - **Mode 20 is an ordinary call.** `FUN_80055B6C` is the battle scene setup
   entry and is linked into SCUS, so battle needs no overlay swap here.
 
-All three are mirrored as `mode_init_bare` in `engine-field::mode`, beside
+All three are mirrored as `mode_init_bare` in `engine-mode::mode`, beside
 `mode_init_stage` for the staging rows.
 
 ##### Two debug modes that cannot run on a retail console
@@ -390,7 +390,7 @@ whole frame. That handler ends `move v0,zero`, so the caller's abort test never
 fires and the frame-end pass always runs - which is why the timed sound-source
 release and the cadence resolver keep working under the menu.
 
-Port: `engine-field::mode::runs_master_frame_driver`, which `World::tick`
+Port: `engine-mode::mode::runs_master_frame_driver`, which `World::tick`
 consults to suspend its actor / effect / move-VM passes. `BootSession` hosts
 the pause-menu session (`open_field_menu` and the Start edge in
 `BootSession::tick`), holding the world in `SceneMode::Menu`, which `GameMode`

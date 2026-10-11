@@ -550,9 +550,10 @@ impl SceneResources {
                 anm_packs,
                 shared_tim_count,
                 shared_tmd_count,
-                render_policy: legaia_render_kernels::prim_dispatch::SceneRenderPolicy::from_scene_kind(
-                    options.kind.render_hint(),
-                ),
+                render_policy:
+                    legaia_render_kernels::prim_dispatch::SceneRenderPolicy::from_scene_kind(
+                        options.kind.render_hint(),
+                    ),
                 world_map_slot4: parse_world_map_slot4(scene, options.kind),
             },
             upload_stats,

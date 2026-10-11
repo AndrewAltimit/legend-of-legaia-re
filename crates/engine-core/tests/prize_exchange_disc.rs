@@ -147,7 +147,7 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
 
 /// The four exchange windows (43 tab / 44 list / 45 coin counter / 46
 /// confirm) carry sane on-stage rects in the disc descriptor table - the
-/// rects `engine-ui::ui_prize_exchange` anchors every draw on.
+/// rects `engine-ui::prize_exchange` anchors every draw on.
 #[test]
 fn the_exchange_windows_rects_are_on_stage() {
     let Some(overlay) = menu_overlay() else {

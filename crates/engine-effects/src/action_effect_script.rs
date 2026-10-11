@@ -790,7 +790,8 @@ impl HomingSlots {
             match s.phase {
                 2 => {
                     s.heading = heading_to(s.pos, t);
-                    let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(s.heading);
+                    let (sin, cos) =
+                        legaia_engine_battle_vm::battle_action::motion::trig12(s.heading);
                     // `(lut * speed * delta) << 3 >> 15`, delta one vsync.
                     s.pos[2] += (i32::from(cos) * speed * 8) >> 15;
                     s.pos[0] += (i32::from(sin) * speed * 8) >> 15;

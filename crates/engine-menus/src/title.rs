@@ -371,12 +371,9 @@ impl TitleSession {
                 }
                 self.menu.row_counter = cursor as i32;
                 let (edge, held) = Self::pad_words(input);
-                let stepped = self.menu.step(
-                    edge,
-                    held,
-                    1,
-                    crate::title_overlay::TITLE_MENU_ROWS,
-                );
+                let stepped = self
+                    .menu
+                    .step(edge, held, 1, crate::title_overlay::TITLE_MENU_ROWS);
                 for e in stepped {
                     use crate::title_overlay::TitleMenuEvent as Vm;
                     match e {

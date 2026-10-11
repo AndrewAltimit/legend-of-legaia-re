@@ -32,7 +32,7 @@ portrait sheet on [`save-icon.md`](../formats/save-icon.md).
 | Directory walk | `FUN_801E3AF0` / `FUN_801E3BA0` / `FUN_801E1208` | `card_directory_scan` / `card_free_blocks` / `classify_card_directory` |
 | Block compose | `FUN_801E1934`: memset, copy `0x1A18` live bytes, checksum at `+0x1FFC` | `engine-core::card_write::write_save_into_card` over `legaia_save` |
 | Checksum | `FUN_801E38D8` | `save_block_checksum`, `legaia_save::card::sc_block_checksum_valid` |
-| Drawing | `FUN_801E1C1C`, `FUN_801E36C4`, `FUN_801E06C0`, `FUN_801E08D8` | `engine-ui::ui_title_save` (`save_select_overlay_draws`) |
+| Drawing | `FUN_801E1C1C`, `FUN_801E36C4`, `FUN_801E06C0`, `FUN_801E08D8` | `engine-ui::title_save` (`save_select_overlay_draws`) |
 
 The `engine-menus` modules named on this page are re-exported by `engine-core`
 at their old paths (`legaia_engine_core::save_select`, `save_screen`,
@@ -299,7 +299,7 @@ wraps (an index reaching `count` snaps to `0`, a decrement from `0` goes to
 `count - 1`). Every call site in this overlay passes `1` except sub-screen
 `0x15`'s row picker.
 
-Port: `engine-vm::menu_input::menu_cursor_nav(cursor, count, wrap,
+Port: `engine-system::menu_input::menu_cursor_nav(cursor, count, wrap,
 NavButtons)`, returning a `CursorNav` whose `sfx_cue()` hands the host the
 retail cue id; `CURSOR_INDEX_MASK` / `CURSOR_FLAGS_MASK` expose the split.
 `SaveSelectSession::tick_confirm` consumes it for the Yes / No cursor.

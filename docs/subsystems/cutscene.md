@@ -2097,7 +2097,7 @@ un-darkened **neutral** packets in the sampled region:
   port's lack of distance culling widens the sampled far region.
 
 Both play hosts shade light-source rows through `engine-core::field_lit_mesh` (over
-`engine-vm::field_light`), replacing the builder's neutral `0x80`; the engine figures above are
+`render-kernels::field_light`), replacing the builder's neutral `0x80`; the engine figures above are
 those prims at the neutral packet.
 
 ## Field-to-battle transition (the battle-intro overlay)
@@ -2424,7 +2424,7 @@ outer bands stop being circular and become the screen rectangle.
 `0x80043390`. It is a *packet-descriptor builder*: it assembles a synthetic Legaia TMD object in
 the scratch block at `_DAT_8007B85C + 0x5DC00` and hands it to the generic per-prim dispatcher.
 All projection, culling, depth cue and OT linking happen inside the SCUS dispatch handler, which
-the engine already models (`engine-vm::prim_dispatch` + `engine-ui::gte`). The emitter never
+the engine already models (`render-kernels::prim_dispatch` + `engine-ui::gte`). The emitter never
 writes the tile record; the integration in the same function does.
 
 The object: 8 vertices (the record's `+0x14` corner array), 10 primitives at `0x18` stride,

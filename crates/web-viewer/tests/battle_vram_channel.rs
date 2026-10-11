@@ -19,11 +19,11 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
+use legaia_engine_battle_vm::battle_arith_cores::bgr555_to_grey;
 use legaia_engine_core::battle_effect_clut::{
     EFFECT_CLUT_DEST_X, EFFECT_CLUT_ENTRIES, EFFECT_CLUT_ROW,
 };
 use legaia_engine_core::battle_status_clut::{PARTY_CLUT_ENTRIES, PARTY_CLUT_ROW_BASE};
-use legaia_engine_battle_vm::battle_arith_cores::bgr555_to_grey;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const VRAM_WIDTH: usize = 1024;

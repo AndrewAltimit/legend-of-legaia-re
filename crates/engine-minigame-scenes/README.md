@@ -22,7 +22,8 @@ loaded `Scene` or a renderer. Their kernel dependencies all sit in the
 World-free crates below `engine-core`: the rules engines in
 `legaia-engine-minigames`, the dome session and battle command menu in
 `legaia-engine-menus`, the battle seats in `legaia-engine-battle`, the packet
-colour helpers in `legaia-engine-field`, the cameras in `legaia-engine-vm`.
+colour helpers in `legaia-engine-field`, the cameras in
+`legaia-engine-battle-vm`.
 The crate root aliases each one at the `crate::<module>` path the surfaces
 were written against.
 

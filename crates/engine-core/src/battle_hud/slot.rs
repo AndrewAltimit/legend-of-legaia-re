@@ -163,7 +163,10 @@ impl BattleSlotHud {
     /// [`StatusIcon::BaseWithCount`], whose "count" is [`Self::level`].
     // PORT: FUN_8002C2E4 (the selection; the kernel lives in engine-vm)
     pub fn status_element(&self) -> StatusIcon {
-        legaia_engine_battle_vm::status_effects::status_icon(self.status_display_flags(), self.alive)
+        legaia_engine_battle_vm::status_effects::status_icon(
+            self.status_display_flags(),
+            self.alive,
+        )
     }
 
     /// The retail sprite id the status element resolves to (`0x18..=0x20`),

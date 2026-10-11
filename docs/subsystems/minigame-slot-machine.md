@@ -19,15 +19,15 @@ The code lives in a minigame overlay (a code module loaded into RAM for the visi
 | Balance / coin bank | overlay-local `DAT_801d4114` / global `_DAT_800845A4` |
 | Assets | PROT 1200 (five TIMs, cabinet TMD, ANM), PROT 1198 (VAB) and PROT 1199 (`efect.dat`) |
 | Parsers | `legaia_asset::minigame_slot_scene`, `slot_payout`, `minigame_art`, `minigame_sfx` |
-| Port | rules `legaia_engine_minigames::slot_machine`; draws `engine-ui::ui_slot_cabinet` / `ui_slot_paylines`; world wiring `World::tick_slot_machine` |
+| Port | rules `legaia_engine_minigames::slot_machine`; draws `engine-ui::slot_cabinet` / `ui_slot_paylines`; world wiring `World::tick_slot_machine` |
 
 Provenance: the dumps are `ghidra/scripts/funcs/overlay_slot_machine_<addr>.txt`. Confidence is marked per claim. The reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are **Confirmed** from the disassembly. Table *values* (payout bytes, HUD descriptors) decode from the user's disc and are not reproduced here.
 
-**Not the prize exchange.** Trading coins for items is a separate static table (`DAT_801e4518`, PROT 899 file `0x15D00`) that debits the coin bank. The randomizer edits it (`casino::CasinoExchange`) and the engine runs it: field-VM op `0x49` sub-op 7 at the koin1 / balden prize counters arms `PrizeExchangeSession` (`engine-minigames::prize_exchange`, re-exported by `engine-core`; windows 43/44/45/46, `engine-ui::ui_prize_exchange`). The slot machine pays *into* the coin balance; the exchange spends it.
+**Not the prize exchange.** Trading coins for items is a separate static table (`DAT_801e4518`, PROT 899 file `0x15D00`) that debits the coin bank. The randomizer edits it (`casino::CasinoExchange`) and the engine runs it: field-VM op `0x49` sub-op 7 at the koin1 / balden prize counters arms `PrizeExchangeSession` (`engine-minigames::prize_exchange`, re-exported by `engine-core`; windows 43/44/45/46, `engine-ui::prize_exchange`). The slot machine pays *into* the coin balance; the exchange spends it.
 
 ## Entry from the field
 
-The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 103` (`sub_id 3`), which sets game mode `0x18` and loads PROT 0975 (`FUN_80025980` → `FUN_8003EBE4(0x50)`, init entry `0x801CEC94`). The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `MinigameSubId` (`engine-field::minigame_entry`, re-exported as `legaia_engine_core::minigame_entry`).
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 103` (`sub_id 3`), which sets game mode `0x18` and loads PROT 0975 (`FUN_80025980` → `FUN_8003EBE4(0x50)`, init entry `0x801CEC94`). The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `MinigameSubId` (`engine-mode::minigame_entry`, re-exported as `legaia_engine_core::minigame_entry`).
 
 The reel state machine `FUN_801CF0D8` and the payout `FUN_801D13E8` land on function prologues in PROT 975 at base `0x801CE818`, and the `"insert 3 coins"` / `"game_coin %d"` strings sit inside its runtime slice. Two sibling dev modules take sub-ids 1 / 2 (PROT 973 `OTHER2`, a 1-sector module; PROT 974 `OTHER3`); their identities are open. Mode 0 loads the debug-menu overlay PROT 971, not this one.
 
@@ -161,7 +161,7 @@ The rules row (states `0x33..0x39`) fades to black `0x10` a frame (`FUN_80024EE4
 
 The not-enough-coins prompt (`0x5a`) is one 256x48 `SPRT` at `(192, 100)` off page `(768, 0)`, `uv (0, 208)`, CLUT `0x7A8D`. It takes no other input: an empty machine can only leave.
 
-Port: `SlotMachine::cash_out_input` (states, cursor arithmetic, cues, fades), `SlotMachine::screen` / `fade_level` (what a host draws), and `engine-ui::ui_slot_cabinet::slot_menu_prims` / `slot_rules_text_draws_for` (the draws). The rules text and chart order are read by `legaia_asset::minigame_slot_scene::parse_rules`.
+Port: `SlotMachine::cash_out_input` (states, cursor arithmetic, cues, fades), `SlotMachine::screen` / `fade_level` (what a host draws), and `engine-ui::slot_cabinet::slot_menu_prims` / `slot_rules_text_draws_for` (the draws). The rules text and chart order are read by `legaia_asset::minigame_slot_scene::parse_rules`.
 
 ## RNG
 
@@ -378,7 +378,7 @@ The bank round-trips by *assignment* on both ends; it is not debited or credited
 
 ### The coin-exchange counter is a field-overlay screen
 
-Coins are bought with gold at a counter, not inside the slot overlay. The counter is the field VM's op-`0x49` sub-op 6 (the koin1 / balden counters), which runs submode handler slot `0x25`, `FUN_801F0ADC`, in the **field overlay** (PROT 0897, base `0x801CE818`). The state machine (entry, Yes/No, commit of coins into `_DAT_800845A4` and gold out of `_DAT_8008459C`) is ported as `engine-vm::baka_hub_actors::coin_exchange`.
+Coins are bought with gold at a counter, not inside the slot overlay. The counter is the field VM's op-`0x49` sub-op 6 (the koin1 / balden counters), which runs submode handler slot `0x25`, `FUN_801F0ADC`, in the **field overlay** (PROT 0897, base `0x801CE818`). The state machine (entry, Yes/No, commit of coins into `_DAT_800845A4` and gold out of `_DAT_8008459C`) is ported as `engine-field::submode_hub_actors::coin_exchange`.
 
 `FUN_801E6F70` is the counter's **entry panel**. It is not slot-machine code: the extent attribution (`scripts/ghidra-analysis/dump-extent-attribution.csv`) puts its bytes in PROT 0897 and nowhere else, and the `overlay_slot_machine_801e6f70.txt` dump is the same resident field-overlay code seen through a minigame capture. It is the painter word (`+0x18`) of record `10` of the field overlay's panel-window table at `0x801F2B98`, and the counter's idle descriptor `0x801F3340` (`[5, 0] [6, 10] [1, 10]`) opens that record.
 
@@ -400,7 +400,7 @@ The Yes/No confirm opens record `11` (`FUN_801F1890`, the three-line panel) with
 
 The installer `FUN_801E9B3C` dispatches a descriptor entry's op through the table at `0x801CF25C`; op `5` is `FUN_80035A4C`, a walk of the live window list that starts the close of every window still opening or open. The confirm program has no op `5`, so the entry panel stays drawn **under** the Yes/No. When the player backs out, the state machine re-installs the idle program, whose leading op `5` closes the Yes/No and whose op `1` re-opens the entry panel. A painter's `a0` is the window's actor, which op `1` places at the record's geometry through `FUN_800357FC` (target x / y into the actor's `+0x0A` / `+0x0C`).
 
-Both hosts draw the counter through one builder. `engine-core::field_submode_screen::coin_counter_lines` resolves the entry panel and the confirm's hub-painter draws to positioned, pen-tagged lines with the labels read off the user's disc, and `engine-ui::ui_text_lines::pen_line_draws_for` turns them into text draws on the native window and the play page. The window frames and the two system-UI sprites (the hand cursor, the caret cell) are text stand-ins. Disc-gated `casino_coin_counter_disc` pins the labels off PROT 0897.
+Both hosts draw the counter through one builder. `engine-core::field_submode_screen::coin_counter_lines` resolves the entry panel and the confirm's hub-painter draws to positioned, pen-tagged lines with the labels read off the user's disc, and `engine-ui::text_lines::pen_line_draws_for` turns them into text draws on the native window and the play page. The window frames and the two system-UI sprites (the hand cursor, the caret cell) are text stand-ins. Disc-gated `casino_coin_counter_disc` pins the labels off PROT 0897.
 
 ## RAM state
 
@@ -629,7 +629,7 @@ Retail links the packet at the OT bucket derived from the **second** endpoint's 
 Port: `slot_machine::payline_prims` + `payline_ot_depth`, with the geometry from the parsed table (`legaia_asset::minigame_slot_scene::SlotScene::paylines`). The projection runs once for every host, in `slot_machine::projected_paylines`, through `minigame_slot_scene::project`.
 
 - Both browser pages stroke the projected segments in the prim's colour, half-blended for the `0x43` code (`sa` / `sb` in `slot_payline_prims_json` / `play_mg_slot_payline_prims_json`).
-- The native window stages the geometry on the machine (`SlotMachine::with_paylines`) and draws the segments as one-pixel flat quads through `engine-ui::ui_slot_paylines`, as the play page does whenever it draws the machine through the shared builder ([who draws the machine](#who-draws-the-machine)).
+- The native window stages the geometry on the machine (`SlotMachine::with_paylines`) and draws the segments as one-pixel flat quads through `engine-ui::slot_paylines`, as the play page does whenever it draws the machine through the shared builder ([who draws the machine](#who-draws-the-machine)).
 - OT linkage stays caller-side: all three hosts draw the lines over the reels.
 
 ### The furniture is billboards - `FUN_801d08e4`
@@ -684,7 +684,7 @@ A negative `msg` id is `FUN_801d069c`'s **clear** command: the `bgez $a0` at its
 
 `counter` is `DAT_801d3ca0`, which the reel renderer's tail advances once a frame (`0x801CFF00..0x801CFF24`, beside the `DAT_801d3c9c` blink counter). `FUN_801d069c` resets it to `100`, and scrolls from column `0` that call, on the frame the message id differs from the last one it drew (`DAT_801d3c88`).
 
-Port: `minigame_slot_scene::attract_legend` plus the reset in `engine-ui::ui_slot_cabinet::SlotMarqueeClock`, with the latch from `SlotMachine::anticipation`.
+Port: `minigame_slot_scene::attract_legend` plus the reset in `engine-ui::slot_cabinet::SlotMarqueeClock`, with the latch from `SlotMachine::anticipation`.
 
 <a id="the-two-screen-space-draws---fun_801d2cc0"></a>
 
@@ -763,7 +763,7 @@ Not the casino room's geometry (`koin1`..`koin6`): the `minigame_slot_machine` c
 
 ### Who draws the machine
 
-Both play hosts draw the whole frame through one builder, `engine-ui::ui_slot_cabinet::slot_cabinet_prims`: the native window from its slot frame, the browser play page through its screen-prim pass with the art pack uploaded as the renderer's VRAM for the visit. The builder emits:
+Both play hosts draw the whole frame through one builder, `engine-ui::slot_cabinet::slot_cabinet_prims`: the native window from its slot frame, the browser play page through its screen-prim pass with the art pack uploaded as the renderer's VRAM for the visit. The builder emits:
 
 - the cabinet mesh (PROT 1200's `TMD` descriptor, decoded by `minigame_slot_scene::parse_cabinet`, back faces culled);
 - the reel faces with their per-edge depth-cue shade;

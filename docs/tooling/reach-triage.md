@@ -68,7 +68,7 @@ export: an export is a full instrumented build per ladder.
 | never entered, worklist | Live, unexecuted, and owed a verdict in one of the buckets below. |
 | <a id="a-live-row-its-own-tag-and-the-strict-graph-both-call-dead"></a>never entered, disclosed and receiver-gated dead | Every permissively-live anchor carries `NOT WIRED:` or `REPLACED-BY:` and the strict graph reaches none of them (`disclosed_dead_addresses`). Three instruments agree, so it is not reach work. If a ladder later enters one it surfaces as *disclosed executed*. The memory-card I/O machines (`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the stream-file reader and `scene_name_sync.rs` have this shape. |
 | not observable (const) | A tag above a `const` / `static` / `type` alias has no lines to execute. It resolves through executed references (`port-catalog.py: item_reference_patterns` / `item_reference_hit`) and otherwise files here - never "entered", never "never entered". Type anchors resolve through the executed methods of the type's own `impl` blocks. |
-| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`, `battle_stream_slot.rs`, `incense_window.rs`, `code_lock_actor.rs`. |
+| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `actor_node_pool.rs`, `overlay_rng.rs`, `clut_fade_actor.rs`, `battle_stream_slot.rs`, `incense_window.rs`, `code_lock_actor.rs`. |
 | defect lists | Disclosed `NOT WIRED` anchors that executed, and the item-verdict defects. Normally empty. |
 
 Worklist buckets:
@@ -385,7 +385,7 @@ listed so the bucket count is the whole of what no host reaches.
 | group | n | addresses | why |
 |---|---|---|---|
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | **`REPLACED-BY`** `legaia_save::emu::CardView` + `legaia_save::card` - out of the wiring denominator, not owed a host. |
-| `cutscene_script_elements.rs` | 2 | `801d5d60` `801d6058` | Since closed both ways. `801d6058` has a producer - `World::install_field_scene_elements` seats the emitter on every cold field entry, so any field ladder enters it. `801d5d60` (and `801d5c08`) were **duplicate** ports: every allocation from their templates is the hop-arc family, ported and live as `field_ledge_hop_arc::{advance_hop_arc, release_watcher_tick}`, so the element-channel copies were deleted rather than wired. |
+| `plain_template_actors.rs` | 2 | `801d5d60` `801d6058` | Since closed both ways. `801d6058` has a producer - `World::install_field_scene_elements` seats the emitter on every cold field entry, so any field ladder enters it. `801d5d60` (and `801d5c08`) were **duplicate** ports: every allocation from their templates is the hop-arc family, ported and live as `field_ledge_hop_arc::{advance_hop_arc, release_watcher_tick}`, so the element-channel copies were deleted rather than wired. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
 | `effect_ribbon.rs` | 1 | `801cfa48` | Wired: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. Not reached - the "since reached" this cell carried was a module-tag credit; see [the module-tag note](#a-module-tag-answers-for-its-file-not-for-its-routine). |
@@ -888,7 +888,7 @@ cross and the level-up banner.
 |---|---|---|---|
 | `new_game.rs` | 1 | `8001ffa4` | `GAME_STATE_COLD_RESET` is a `const`, read in production by `scene/host/lifecycle` and `world/frame_tick` - wired; the reach report resolves an item anchor through its executed references (the const-anchor note above), so the row reports off those readers' own coverage |
 | `baka_cabinet.rs` | 1 | `801d553c` | the developer action-table dump retail writes as `ot5stat.txt` |
-| `cutscene_script_elements.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
+| `plain_template_actors.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
 
 The character-parameter editor (`801d6e18`) left this bucket: the play page's
 dev-menu opt-in is itself pad-driven library code, so the composition ladder
@@ -924,13 +924,13 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`op43_sub9_tween`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b), **converted** | `w9_passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
-| `scus_battle_helpers.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
-| `scus_core_helpers.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
-| `world_map_clut_fade.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
+| `battle_arith_cores.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
+| `actor_node_pool.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
+| `clut_fade_actor.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
 
 Seven module rows this table used to carry are closed by ladders that are now
 canonical, and the shape of what closed them is the useful part rather than
-the count. The `baka_hub_actors.rs` cluster (thirteen addresses, the page's
+the count. The `submode_hub_actors.rs` cluster (thirteen addresses, the page's
 largest single (a) group) went with `w1b_hub_ladder`; the `lib.rs` actor-VM
 seven went with the widget-script resolver and the composition ladder; the
 `battle_intro_*` / `battle_target_group` / `pool_ops` render rows went with
@@ -942,7 +942,7 @@ seven went with the widget-script resolver and the composition ladder; the
 
 **Whether the `(c)` rows are measured is not a property of the rows.** The
 page's [unmeasured bucket](#a-row-can-also-be-neither-entered-nor-never-entered)
-named `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`,
+named `actor_node_pool.rs`, `overlay_rng.rs`, `clut_fade_actor.rs`,
 `battle_stream_slot.rs`, `incense_window.rs` and `code_lock_actor.rs` as
 addresses no binary in the union carried a record for - outside both counts,
 so their verdict was *unmeasured* rather than never-entered. A later export
@@ -1043,7 +1043,7 @@ A reach bucket is a property of the Rust anchor, the same rule
 three the answer is none. The cell said what would drive the retail actor.
 
 The page already carried the contradiction and nothing joined it up.
-`world_map_clut_fade.rs` is named in the paragraph above as one of the
+`clut_fade_actor.rs` is named in the paragraph above as one of the
 [unmeasured rows](#a-row-can-also-be-neither-entered-nor-never-entered) that
 now has a record and reads never entered - which is the coverage half of
 exactly this verdict - while its table row still read `(a) world-map`. A
@@ -1121,7 +1121,7 @@ pause-menu screens, field panels, window painters, name entry, dev-menu list,
 records screen and the live fishing HUD rows; `w1f1_fishing_banner_ladder`
 took the five one-shot banner animators; `w1c_battle_render_ladder` took the
 five `battle_intro.rs` styles; `w5_native_minigame_ladder` took the
-`other_game_hud.rs` dome rows; `w1f1_pause_special_use_ladder` and
+`muscle_dome_hud.rs` dome rows; `w1f1_pause_special_use_ladder` and
 `w1f2_menu_depth_ladder` took the special-use confirms, the item target panel,
 the entry-context pair, the spell-level notice and the title/save screens.
 
@@ -1300,7 +1300,7 @@ pre-resolver measurement.
 
 ## The op-`0x49` submode screens
 
-The `baka_hub_actors.rs` row above was the page's largest single (a) cluster,
+The `submode_hub_actors.rs` row above was the page's largest single (a) cluster,
 and its blocker was not a missing ladder: the engine had **no mapping from an
 op-`0x49` sub-op to a handler slot**, so `slot_for_op49_sub_op` answered
 "close tick" for all eleven non-dedicated sub-ops and every screen a script
@@ -1337,7 +1337,7 @@ remaining proposal would still move:
 | ladder | rows | what it drives |
 |---|---|---|
 | FMV | *built* | `w1a_fmv_ladder` plays every retail `fmv_id` and spawns `CARGO_BIN_EXE_mdec`; one `mdec` row is left |
-| Baka Fighter hub | *built* | `w1b_hub_ladder` opens the op-`0x49` submode screens; no `baka_hub_actors.rs` row is left |
+| Baka Fighter hub | *built* | `w1b_hub_ladder` opens the op-`0x49` submode screens; no `submode_hub_actors.rs` row is left |
 | audio | *built* | `audio_session_ladder` attaches the mixer; one `engine-audio` row is left |
 | world-map panels | *built* | `w1d_world_map_render_ladder` and the dev-menu ladder between them; the panel-actor cluster is gone |
 | boot chain | *built* | `w3c_boot_logos_ladder` opens the publisher-logo phase - the one stage every other member starts after |

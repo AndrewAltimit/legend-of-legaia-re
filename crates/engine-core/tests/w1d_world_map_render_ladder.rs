@@ -590,7 +590,9 @@ fn rung11_soft_reset(w: &mut World) -> Result<(), String> {
     let mut at_rest = false;
     for _ in 0..512 {
         frame(w, 0);
-        if ctrl(w).panels.slide == legaia_engine_field::world_map_panel_actors::SOFT_RESET_SLIDE_REST {
+        if ctrl(w).panels.slide
+            == legaia_engine_field::world_map_panel_actors::SOFT_RESET_SLIDE_REST
+        {
             at_rest = true;
             break;
         }
@@ -613,7 +615,8 @@ fn rung11_soft_reset(w: &mut World) -> Result<(), String> {
     let mut reached = false;
     for _ in 0..512 {
         frame(w, 0);
-        if ctrl(w).panels.slide >= legaia_engine_field::world_map_panel_actors::SOFT_RESET_RELOAD_AT {
+        if ctrl(w).panels.slide >= legaia_engine_field::world_map_panel_actors::SOFT_RESET_RELOAD_AT
+        {
             reached = true;
             break;
         }

@@ -47,8 +47,10 @@ impl Camera {
     /// [`Self::reset_for_free_roam`] and the field locomotion step run on,
     /// so the camera is the player's exactly when the character is.
     pub fn follow_knobs_live<W: CameraWorld + ?Sized>(&self, world: &W) -> bool {
-        matches!(world.scene_mode(), legaia_engine_mode::mode::SceneMode::Field)
-            && !world.cutscene_timeline_active()
+        matches!(
+            world.scene_mode(),
+            legaia_engine_mode::mode::SceneMode::Field
+        ) && !world.cutscene_timeline_active()
     }
 
     /// Swing [`Self::manual_orbit`] by `radians` (compass sense), when the
@@ -73,7 +75,10 @@ impl Camera {
     /// so a drag on the world map or in battle cannot rewrite the compass the
     /// locomotion remap reads. Returns whether the gesture was taken.
     pub fn debug_orbit_by<W: CameraWorld + ?Sized>(&mut self, world: &W, radians: f32) -> bool {
-        if !matches!(world.scene_mode(), legaia_engine_mode::mode::SceneMode::Field) {
+        if !matches!(
+            world.scene_mode(),
+            legaia_engine_mode::mode::SceneMode::Field
+        ) {
             return false;
         }
         self.manual_orbit = (self.manual_orbit + radians).rem_euclid(std::f32::consts::TAU);

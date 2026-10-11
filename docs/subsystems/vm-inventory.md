@@ -240,7 +240,7 @@ Live, and worth knowing why:
   menu half ([`TitleMenuState`](#what-of-the-tick-runs-on-both-hosts)) and a
   `TitleTickState`.
 - **`vram_rect_copy`** (called from `engine-core::world::vram_rect_fx`) and
-  **`cutscene_trigger`** (called from `engine-field::mode` and the native
+  **`cutscene_trigger`** (called from `engine-mode::mode` and the native
   boot-cutscene path).
 
 Reading `port-catalog.py --live-audit`: `move_vm_overlay_ext`'s `step` and

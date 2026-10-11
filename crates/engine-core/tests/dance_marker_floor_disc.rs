@@ -64,8 +64,9 @@ fn the_dance_venue_has_marker_cells_and_they_flip() {
     let Some(overlay) = dance_overlay(&index) else {
         panic!("dance overlay 0980 must resolve");
     };
-    let script = legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(&overlay, 0x801C_E818)
-        .expect("the marker script table must parse out of the dance overlay");
+    let script =
+        legaia_engine_fishing::dance_marker::MarkerScript::from_overlay(&overlay, 0x801C_E818)
+            .expect("the marker script table must parse out of the dance overlay");
     for class in 0..legaia_engine_fishing::dance_marker::MARKER_SCRIPT_ROWS {
         eprintln!("[ok] marker class {class}: {} steps", script.steps(class));
     }

@@ -49,8 +49,8 @@
 //! REF: FUN_801d688c (cursor navigator) / FUN_8003fb10 (relevance probe)
 //! / FUN_80035394 (MP-cost kernel) / FUN_800402f4 (field applier)
 
-use legaia_engine_system::input::PadButton;
 use legaia_engine_battle::spells::{SpellCatalog, SpellEffect, SpellOutcome};
+use legaia_engine_system::input::PadButton;
 
 /// Rows per page of the retail Magic-screen spell list (the capture-pinned
 /// list-page layout, shared with the Items list - see
@@ -772,7 +772,11 @@ mod tests {
                 hp_max: 100,
             },
         ];
-        let mut s = SpellMenuSession::new(party, targets, legaia_engine_battle::spells::SpellCatalog::vanilla());
+        let mut s = SpellMenuSession::new(
+            party,
+            targets,
+            legaia_engine_battle::spells::SpellCatalog::vanilla(),
+        );
         let _ = s.tick(SpellMenuInput {
             cross: true,
             ..Default::default()
@@ -823,7 +827,11 @@ mod tests {
             hp: 60,
             hp_max: 100,
         }];
-        let mut s = SpellMenuSession::new(party, targets, legaia_engine_battle::spells::SpellCatalog::vanilla());
+        let mut s = SpellMenuSession::new(
+            party,
+            targets,
+            legaia_engine_battle::spells::SpellCatalog::vanilla(),
+        );
         let _ = s.tick(SpellMenuInput {
             cross: true,
             ..Default::default()

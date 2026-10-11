@@ -5,10 +5,15 @@ written from the routine's disassembly (the decompiled C in
 `ghidra/scripts/funcs/<addr>.txt` is a reading aid, not the evidence - see
 [`ghidra.md`](../../docs/tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims))
 plus the format notes in `docs/subsystems/`, with no static-recompiled bytes
-from the original executable. The sections below cover the VMs proper; the rest of
-the crate is the SCUS and overlay leaf kernels those VMs sit among; the
-battle-side VMs are re-exported from `legaia-engine-battle-vm` and the two
-motion VMs from `legaia-engine-motion-vm`.
+from the original executable. The crate is the VMs and what they import: the
+window-widget VM at the root, `field`, `effect_vm`, `move_vm` with its buffers
+and extension, `anim_vm`, and the actor allocator and tick. The battle-side VMs
+are re-exported from `legaia-engine-battle-vm` and the two motion VMs from
+`legaia-engine-motion-vm`. Kernels that are not a VM live in the crate whose
+role they fit - field-overlay kernels in `legaia-engine-field`, the title and
+menu state machines in `legaia-engine-menus`, draw-prep kernels in
+`legaia-render-kernels`, pad input and the BIOS `rand` in
+`legaia-engine-system`.
 
 The side-effect-free field-VM disassembler this crate re-exports from
 `legaia-asset` (`field_disasm`) has its CLI on the `asset` binary:
@@ -25,13 +30,9 @@ scene's MAN - use `legaia-engine man-scripts` instead.
 - [`effect_vm` - `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080`](#effect_vm---fun_801de914--fun_801dfdf0--fun_801e0080)
 - [`move_vm` - `FUN_80023070`](#move_vm---fun_80023070)
 - [`motion_vm` - `FUN_8003774C` / `FUN_80038158`](#motion_vm---fun_8003774c--fun_80038158)
-- [`world_map` - `FUN_801DA51C`](#world_map---fun_801da51c)
-- [`escape_timer` - `FUN_801D2EBC`](#escape_timer---fun_801d2ebc)
 - [`actor_tick` - `FUN_80021DF4`](#actor_tick---fun_80021df4)
-- [`status_effects`](#status_effects)
-- [`scus_core_helpers`](#scus_core_helpers)
+- [`actor_node_pool`](#actor_node_pool)
 - [Battle-overlay leaves outside the action SM](#battle-overlay-leaves-outside-the-action-sm)
-- [`field_subsystem_enter` - `FUN_801F1278`](#field_subsystem_enter---fun_801f1278)
 - [Other modules](#other-modules)
 - [Battle VM kernels](#battle-vm-kernels)
 - [See also](#see-also)
@@ -125,41 +126,6 @@ one, and are re-exported here at their old paths
 (`legaia_engine_vm::motion_vm`, `legaia_engine_vm::ambient_motion`,
 `legaia_engine_vm::ambient_motion_ops`).
 
-`motion_pause` is the sibling kick (`FUN_8003C9AC`) a
-field interaction and a partition-2 record spawn both end with: it rewrites
-every moving-class actor's requested move to its standing move. It is a clip
-request, not a halt - the motion VM keeps running, and a walker its ops send
-on to another step asks for its walk anim again before the request plays.
-
-## `world_map` - `FUN_801DA51C`
-
-Per-entity overworld state machine (5 states on `entity[+0x8A]`:
-Idle → Activating → Transitioning → Terminal). `step` drains the shared
-encounter countdown in the Idle state, fires `on_encounter` /
-`on_interact` / `on_scene_transition` host callbacks, and advances the
-scene-transition states. `legaia_engine_core::World` drives one
-`WorldMapEntityCtx` per installed overworld entity each
-`SceneMode::WorldMap` tick, bridging `on_encounter` into a real
-Field-machinery battle (returning to the world map on resolution) and
-`on_interact` into a `FieldInteract` event.
-
-## `escape_timer` - `FUN_801D2EBC`
-
-The scripted countdown the field VM arms with `0x4C 0xD3`
-(`SCHEDULE_TIMED_FLAGS`) - retail's collapsing-dungeon escape clock. One
-retail function does three things per frame and all three live here:
-`EscapeTimer::tick` subtracts the play-clock delta from the counter and
-reports the below-threshold and expiry story flags the crossing fires (the
-expiry also disarms), `hud_fields` decomposes what is left into MM:SS.ff, and
-`timer_ink` picks the readout colour. A "busy" frame - retail's three
-short-circuit conditions - leaves the counter standing.
-
-`legaia_engine_core::World` joins the installer and the drain: the field VM's
-operand triple reaches `World::schedule_timed_flags` through
-`FieldHost::op4c_n_d_sub3_party_setup`, and `World::tick_escape_timer` runs
-the drain once per retail frame, raising each fired flag in the system-flag
-bank and publishing the readout.
-
 ## `actor_tick` - `FUN_80021DF4`
 
 Per-actor physics tick - the `FUN_8002519C`-driven per-frame loop calls
@@ -180,21 +146,7 @@ which subset of side-effects fires:
 Cross-cutting effects surface as `TickEvent` entries; engines drain
 them into their own audio mixer / scene graph / move-VM driver.
 
-## `status_effects`
-
-Per-actor status-effect tracker. `StatusKind` covers the retail
-condition kinds, named with the game's in-game ailment terms (Toxic /
-Numb / Venom / Rot / Curse / Stone / Faint, plus host-driven Sleep /
-Confuse). The tracker maintains per-instance turn counters, drains
-queued `StatusEvent`s into the engine's HUD pipeline, and bridges from
-art-record `EnemyEffect` bytes through `StatusKind::from_enemy_effect` -
-the byte map follows the pinned appliers (3 = Venom, 4 = Toxic, 5 = Rot,
-6 = Curse). Rot carries a per-instance rolled limb (`set_rot_limb` /
-`rot_limb`) whose attack command the battle session refuses.
-Damage-over-time formulas (Toxic = `max_hp / 16`, Venom = `current_hp /
-8`) live alongside.
-
-## `scus_core_helpers`
+## `actor_node_pool`
 
 Five leaf helpers in `SCUS_942.54`. `ActorNodePool` is the per-scene
 actor node pool: a LIFO free-stack over 143 fixed-stride nodes
@@ -216,69 +168,37 @@ chunk walk in `legaia_asset::parse_streaming_with`.
 
 ## Battle-overlay leaves outside the action SM
 
-Two more `0898` bodies whose kernels are ported here (the rest of the
-battle-overlay leaves are in
+One `0898` body whose kernel is ported here because the move VM's host names
+it (the rest of the battle-overlay leaves are in
 [`legaia-engine-battle-vm`](../engine-battle-vm/README.md#battle-overlay-leaves-outside-the-action-sm)).
-Both are reached from `engine-core` or a host - `battle_burst` through
+`battle_burst` is reached from `engine-core` through
 `World::flush_battle_bursts`, which runs `run_burst` and seats each child on
-the arm's actor - and
-`battle_party_panel`'s label-actor open is `REPLACED-BY:` the immediate-mode
-battle HUD:
+the arm's actor:
 
 | Module | Retail | What is ported |
 |---|---|---|
-| `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801DBD04`, `FUN_801DBDDC`, `FUN_801DBEC4`, `FUN_801D84C0` | The label-actor open (`FUN_801DBB8C`, handle at `0x801F4E0C`), the cross-out mark blit (`FUN_801DBC30`), the command ring's Rot stamp / Curse plate and the arts-entry Rot stamp (`RingMarks`), the per-party-size anchors, and `FUN_801D84C0`'s battle-result message buffers (victory with spoils, defeat, escaped, escape failed) - not party-name panels. |
 | `battle_burst` | `FUN_801F30C4` | The two-mode radial effect burst: four compass iterations x three spawn blocks, the per-block placement / spread / tail arithmetic, and both parameter sets. |
 
-Both are ported from a disassembly of the mapped `0898` image rather
-than from the dump corpus, because four of those five VAs carry an
-`overlay_0897` dump that disagrees with the battle-action image about the body's
-own length (or, for `FUN_801DBB8C`, is a four-instruction label slice and not a
-function). Reproduce with `scripts/ghidra-analysis/disasm-overlay-fn.py` at base
-`0x801CE818`.
-
-## `field_subsystem_enter` - `FUN_801F1278`
-
-The installer of the field subsystem actor that op `0x49` and the menu button
-both spawn: input suspend, the context-flag and pad-latch writes, the roster
-resolve and three-cell roster seed, and the handler install. Its default handler
-id `7` is the state pick `FUN_801F1F4C` (`field_state_pick`), which hands on to
-the pause-menu session - it is not a party picker. A one-member party lands in
-the middle roster cell and a two-member party takes the outer two.
+It is ported from a disassembly of the mapped `0898` image rather than from
+the dump corpus; reproduce with `scripts/ghidra-analysis/disasm-overlay-fn.py`
+at base `0x801CE818`.
 
 ## Other modules
 
-The crate's remaining modules are leaf kernels; by family:
+The crate's remaining modules are what the VMs import; by family:
 
 - **Animation + actors** - `anim_vm` (the per-actor animation runtime:
   `FUN_80024CFC` seat, `FUN_8004998C`'s `BoneFrame` unpack), `actor_alloc`
   (the allocator host traits), `move_buffer` (`FUN_800204F8` /
-  `FUN_80020740`), `camera_rel_actor` (`FUN_80021248`'s parameter block),
-  `menu_actor_seed`, `gte_divide` (the GTE's UNR reciprocal).
-- **Menus + title** - `menu` (the engine's pause / shop / inn menu state
-  machine, not a port of a single retail routine), `dev_equip_commit` (the
-  per-slot equip commit), `title_overlay` (the title tick `FUN_801DD35C`) and
-  `title_prim`, `gameover_banner` (`FUN_801CE844`).
-- **Battle rules leaves** - `scus_battle_helpers`, `seru_side_effect`,
-  `battle_party_panel`, `battle_burst`.
-- **Move VM extension + render** - `move_vm_overlay_ext` / `move_ext_strip`
-  (the op-`0x2F` extension VM `FUN_801D362C` and its sub-op `0x2C` scanline
-  strip `FUN_801D31B0`), `prim_dispatch` / `vdf_morph` (the per-prim
-  renderer dispatch `FUN_80043390`, VDF vertex-morph staging
-  `FUN_8001C604`), `vram_rect_copy` (GP0 `0x80`, field-VM sub-op
-  `0x43`/`0x12`).
-- **Field overlay leaves** - `field_helpers` (the field dispatcher's
-  helpers), `field_light` (the GTE light the light-source TMD rows shade
-  through), `field_state_pick`, `field_actor_billboard`,
-  `field_actor_reflect`, `field_actor_timers`, `field_ledge_hop_arc`,
-  `field_passive_hud`, `field_player_clip`, `field_warp_tile`,
-  `code_lock_actor`, `baka_hub_actors` (the op-`0x49` submode system-actor
-  family), `panel_backread_loader` (PROT 0978's staged loader),
-  `cutscene_trigger` (every retail FMV trigger site), `dance_marker`.
-- **World map** - `world_map_overlay` and `world_map_panel` /
-  `world_map_panel_actors` / `world_map_dev_menu` / `world_map_clut_fade` /
-  `world_map_dim` / `world_map_horizon` / `world_map_sky` (the overworld sky
-  band, `FUN_801F73E4`), plus `travel_art_actor` (Riremito and Rula).
+  `FUN_80020740`).
+- **Move VM extension** - `move_vm_overlay_ext` / `move_ext_strip` (the
+  op-`0x2F` extension VM `FUN_801D362C` and its sub-op `0x2C` scanline strip
+  `FUN_801D31B0`) and `vdf_morph` (VDF vertex-morph staging `FUN_8001C604`
+  and the move-VM actor's morph lanes).
+- **Field VM leaves** - `field::dispatch_leaves` (the dispatcher's operand
+  and table helpers), `field_actor_billboard`, `field_ledge_hop_arc` and
+  `vram_rect_copy` (GP0 `0x80`, field-VM sub-op `0x43`/`0x12`): each is a
+  body the field VM's own step calls.
 
 ## Battle VM kernels
 

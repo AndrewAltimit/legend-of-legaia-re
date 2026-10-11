@@ -166,8 +166,8 @@ fn buy_item_count_reflects_inventory_length() {
     assert_eq!(s.buy_item_count(), 2);
 }
 
-use legaia_engine_system::input::PadButton;
 use crate::menu_list_rows::ListSelection;
+use legaia_engine_system::input::PadButton;
 
 #[test]
 fn sell_credit_is_half_price_floored() {

@@ -67,7 +67,8 @@ pub(super) fn op_4c_n8<H: FieldHost>(
             }
             let mut words = [0i16; 6];
             for (i, w) in words.iter_mut().enumerate() {
-                *w = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1 + i * 2..]) as i16;
+                *w = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1 + i * 2..])
+                    as i16;
             }
             let source_id = bytecode[operand + 13];
             host.op4c_n8_sub6_install_reflection(ctx, source_id, words);
@@ -216,7 +217,8 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                     next_pc: pc + header_size + 5,
                 },
                 ActorSearchResult::Found => {
-                    let target = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
+                    let target =
+                        crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
                     StepResult::Advance {
                         next_pc: target as usize,
                     }

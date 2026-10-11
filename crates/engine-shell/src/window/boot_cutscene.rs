@@ -989,8 +989,10 @@ impl PlayWindowApp {
                     TitlePhase::FadeIn { .. } => return Vec::new(),
                     TitlePhase::PressStart { .. } => (false, 0),
                 };
-                let phase_id =
-                    legaia_engine_menus::title_overlay::title_text_phase(s.retail_submode(), menu_open);
+                let phase_id = legaia_engine_menus::title_overlay::title_text_phase(
+                    s.retail_submode(),
+                    menu_open,
+                );
                 // When the title-screen atlas is uploaded, the
                 // main-menu rows render through the sprite path,
                 // sampling NEW GAME / CONTINUE sub-rects from the

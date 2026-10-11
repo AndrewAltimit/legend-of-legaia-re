@@ -29,7 +29,7 @@ Three things it is **not**:
 | Data file | `data\field\other6.lzs` = extraction 1220..=1225 (hub art, ringside stills, arena backdrop) |
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
-| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
+| Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
 | Disc parsers | `legaia_asset::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
 Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_core::muscle_dome::X`.
@@ -54,7 +54,7 @@ flowchart TD
 
 ## Entry from the field
 
-The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-field::minigame_entry::MinigameSubId`.
+The arena is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 105` (`sub_id 5`), which sets game mode `0x18` and loads the door/init slot PROT 0977. The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp); the port's id decoder is `engine-mode::minigame_entry::MinigameSubId`.
 
 Every dome door on the disc is in `koin1` P1[9] - three sites in one record, which is the **course menu**: each arm debits its entry fee through `0x4C 0xE5` and latches one of the course flags before its own `0x3E 0x69`. `taiku` carries none (its only `0x3E` sites are `0xFF` interacts), so it is not the arena's door despite the label. Census test: `crates/engine-core/tests/minigame_entry_census_disc.rs`.
 
@@ -355,7 +355,7 @@ In the port the in-world dome's decided leg closes on Cross through `World::tick
 
 While the hub owns the frame neither host draws the field or battle chrome, and a decided leg puts no text up. Start between legs is the give-up arm (the contest ends and the tally is void). Locked by `engine-core/tests/muscle_contest_world.rs` and `web-viewer/tests/play_ringside_still_disc.rs`.
 
-Both hosts draw the hub screens through the shared `engine-ui::other_game_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
+Both hosts draw the hub screens through the shared `engine-ui::muscle_dome_hud` emitters: the browser dome page via `muscle_hub_quads_json`, the native play-window by baking the two hub page TIMs per referenced sub-palette into a sprite atlas and running the same builders (`crates/engine-shell/src/window/minigames.rs`, `muscle_hub_sprite_draws`).
 
 <a id="arena-backdrop-extraction-1225"></a>
 
@@ -900,7 +900,7 @@ Port: `engine-menus::timed_fight` (gate, numbers, lifetime; re-exported by `engi
 - `FUN_801F3D3C` runs at cast time from the spell's summon module and **stages**: it selects the `[summon element][level band]` record of the table at `0x801F6870`, writes its percent to `0x801F6960` (shaved off the target per hit by the damage finisher's element switch) and its banner-string pointer to `0x800775B4`, and seeds the hold `0x801F6964 = 0xB4`.
 - `FUN_801F3C34` runs at the summon's return-from-fade, **reads** `0x801F6960`, and when it is still zero installs the "No effect." string (`0x801CFA20`) instead.
 
-The stager's gates (the scripted-fight suppression roll on `ctx[+0x287]`, the per-element base-vs-record compare) and the table are on [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). Port: `engine-battle-vm::move_no_effect_guard` (the banner pass, live from state `0x36`) and `engine-vm::seru_side_effect` (stager + finisher switch). See `ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
+The stager's gates (the scripted-fight suppression roll on `ctx[+0x287]`, the per-element base-vs-record compare) and the table are on [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch). Port: `engine-battle-vm::move_no_effect_guard` (the banner pass, live from state `0x36`) and `engine-battle-vm::seru_side_effect` (stager + finisher switch). See `ghidra/scripts/funcs/overlay_muscle_dome_801f3d3c.txt`.
 
 ## RAM state
 
@@ -1020,8 +1020,8 @@ The port models the same two layers and shares every rule between the native `pl
 | Contest | `engine-minigames::muscle_dome` (`contest.rs`) | `DomeContest` (cursor, unlock seed, Master clamp, tally rows, start restore), `settle_contest`, `leg_boundary_raises_interval` |
 | Damage | `engine-minigames::muscle_dome` (`damage.rs`) | `DomeDamageModel`: move-power row via the id map, predamage roll (`FUN_801DD0AC`), element affinity (`FUN_801DD864`), finisher (`FUN_801DDB30`), on a PsyQ `rand()` stream in retail call order; defender's `+0x170` gauge accrues per hit |
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-core::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
-| Leg session | `engine-menus::muscle_dome` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
-| Command flow | `engine-menus::muscle_dome` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::muscle_dome::magic_loadout_for` |
+| Leg session | `engine-menus::muscle_dome_session` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
+| Command flow | `engine-menus::muscle_dome_session` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::muscle_dome::magic_loadout_for` |
 | World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera`, `turn_timeline` |
 | Minigames page | `web-viewer::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |

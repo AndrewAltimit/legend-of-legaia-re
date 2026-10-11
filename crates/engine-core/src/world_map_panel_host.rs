@@ -232,9 +232,8 @@ mod tests {
         }
         // The last held frame armed the full countdown; the released frames
         // spend it, and the one that takes it to zero draws.
-        let idle = i32::from(legaia_engine_field::world_map_panel_actors::hud_idle_frames(
-            0, false,
-        ));
+        let idle =
+            i32::from(legaia_engine_field::world_map_panel_actors::hud_idle_frames(0, false));
         assert_eq!(
             first_draw,
             Some(idle - 1),

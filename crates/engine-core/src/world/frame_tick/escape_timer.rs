@@ -90,7 +90,8 @@ impl World {
                 self.battle.escape_timer_hud = None;
                 return;
             }
-            self.battle.escape_timer_actor = Some(legaia_engine_field::escape_timer::EscapeTimerHud::default());
+            self.battle.escape_timer_actor =
+                Some(legaia_engine_field::escape_timer::EscapeTimerHud::default());
         }
         let busy = self.escape_timer_busy();
         let flag_word = self.battle.escape_timer_flag_word;

@@ -86,8 +86,8 @@
 #![allow(clippy::too_many_arguments)]
 
 mod bytecode_decode;
-pub mod dispatch_leaves;
 mod ctx;
+pub mod dispatch_leaves;
 mod host;
 mod types;
 

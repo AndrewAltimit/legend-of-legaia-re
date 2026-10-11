@@ -319,7 +319,7 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 | Battle ambient | `legaia_engine_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
 | Actor tint | `legaia_engine_vm::battle_actor_tint`, `battle_actor_draw` |
 | Animated palettes | `engine-core::clut_cell_fx`, `World::step_clut_fx`, `legaia_asset::clut_walk` |
-| Light-source rows | `engine-core::field_lit_mesh` over `engine-vm::field_light`; kernels `gte::lighting` |
+| Light-source rows | `engine-core::field_lit_mesh` over `render-kernels::field_light`; kernels `gte::lighting` |
 | Blend | `psx_blend` (`Renderer::set_semi_blend`, default on) |
 | Dither | `psx_dither` (`Renderer::set_psx_mode`, default off - the one step the port does not apply by default) |
 

@@ -168,7 +168,10 @@ fn the_system_channel_reset_idles_a_player_who_opened_a_talk_running() {
     w.field_settle_clip_tail();
     assert_eq!(w.locomotion.player_clip, 3);
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_IDLE);
+    assert_eq!(
+        w.locomotion.clip_base,
+        legaia_engine_field::field_player_clip::BASE_IDLE
+    );
     // The box is up from here on: the pad step is skipped and the lock
     // closes the reset, so the settle binds the base the first tick left.
     w.dialog.current = Some(DialogRequest {
@@ -185,7 +188,10 @@ fn the_system_channel_reset_idles_a_player_who_opened_a_talk_running() {
     // reset does not run under the lock (the poked-walk capture).
     w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_WALK;
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_WALK);
+    assert_eq!(
+        w.locomotion.clip_base,
+        legaia_engine_field::field_player_clip::BASE_WALK
+    );
 }
 
 /// The movement-lock bit, a ledge hop and the tile board each close the
@@ -202,7 +208,10 @@ fn the_reset_runs_through_a_warp_but_not_under_a_lock() {
     assert!(!w.field_player_movement_locked(), "a warp is not a lock");
     w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_WALK;
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_IDLE);
+    assert_eq!(
+        w.locomotion.clip_base,
+        legaia_engine_field::field_player_clip::BASE_IDLE
+    );
 }
 
 /// `CC F8 50 lo hi`: op `4C 50` aimed at the player writes the player's

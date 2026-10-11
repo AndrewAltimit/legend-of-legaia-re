@@ -25,13 +25,13 @@
 //! numbers.
 
 use legaia_asset::menu_windows::{MenuWindowDescriptor, MenuWindowTable, window_ids};
+use legaia_engine_ui::menu::window_dispatch as dispatch;
 use legaia_engine_ui::pause_menu::{
     EquipComposeInput, GenericContent, ItemsScreenView, MENU_WINDOW_FALLBACK, MagicScreenView,
     MenuRects, OptionsScreenView, PauseMenuCtx, PauseMenuDraws, PauseScreen, SpecialConfirmView,
     StatusScreenView, TopLevelView, equip_screen_compose, pause_screen_draws,
     spell_level_notice_draws, stage_transform,
 };
-use legaia_engine_ui::menu::window_dispatch as dispatch;
 use legaia_engine_ui::{
     ArtsChainRow, ArtsEditorDrawArgs, ArtsEditorPhase, EquipDrawPhase, FieldMenuPartyView,
     FieldMenuRowView, InventoryItemRow, InventoryUseDrawArgs, OptionsPopupDraw, OptionsRowView,

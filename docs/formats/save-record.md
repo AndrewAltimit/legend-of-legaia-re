@@ -230,7 +230,7 @@ element selector `FUN_8002C2E4` indexes `0x80084140 + slot * 0x414`, and
 `+0x6CE` is `+0x106` (current HP) and its `+0x6F8` is `+0x130` below. The
 per-bit map, and the accessory-guard clear masks that pin it, are in
 [`accessory-passive-table.md`](accessory-passive-table.md#status-guard-clear-masks)
-and mirrored at `engine-vm::status_effects::display_flags`.
+and mirrored at `engine-battle-vm::status_effects::display_flags`.
 
 ### `+0x130` is the displayed character level.
 

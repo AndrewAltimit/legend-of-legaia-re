@@ -540,7 +540,10 @@ impl LegaiaRuntime {
                 TitlePhase::MainMenu { cursor } => (true, cursor),
                 _ => (false, 0u8),
             };
-            let phase = legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open);
+            let phase = legaia_engine_menus::title_overlay::title_text_phase(
+                session.retail_submode(),
+                menu_open,
+            );
             // The menu rows are the glyph layer's job whenever that atlas
             // resolved; the font only ever stands in for a row nothing else
             // can draw. (The Press Start prompt has no glyph-atlas form, so
@@ -618,7 +621,9 @@ impl LegaiaRuntime {
             TitlePhase::MainMenu { cursor } => (true, cursor),
             _ => (false, 0),
         };
-        if legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open) != 2 {
+        if legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open)
+            != 2
+        {
             return Vec::new();
         }
         // Anchor inside the same centred + integer-scaled 256x256 title stage

@@ -611,7 +611,9 @@ impl World {
         spell_id: u8,
         targets: &[u8],
     ) -> Option<(legaia_asset::seru_side_effect::SideEffectKind, u8)> {
-        use legaia_engine_battle_vm::seru_side_effect::{StagerInputs, StagerOutcome, StagerTarget, stage_side_effect};
+        use legaia_engine_battle_vm::seru_side_effect::{
+            StagerInputs, StagerOutcome, StagerTarget, stage_side_effect,
+        };
         let table = self.tables.seru_side_effects.clone()?;
         let level = self.caster_magic_power_byte(caster, spell_id);
         // The summon creature's record element. Prefer the disc-resolved

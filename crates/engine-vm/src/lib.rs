@@ -163,7 +163,6 @@ pub use legaia_engine_battle_vm::psx_camera;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
 
-
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;
 

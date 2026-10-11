@@ -16,8 +16,8 @@
 //! was ported, and runs against the live record in
 //! `legaia_engine_core::field_menu_dispatch::apply_list_order_outcome`.
 
-use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 use crate::save_subscreen::{Sub15Frame, Sub15ListSource, sub15_frame, sub15_list_source};
+use legaia_engine_system::menu_input::{CursorNav, NavButtons, menu_cursor_nav};
 
 /// Rows the page shows at once.
 ///

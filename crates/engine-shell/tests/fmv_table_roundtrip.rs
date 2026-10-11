@@ -146,8 +146,8 @@ fn fmv_table_lbas_match_iso_walk_when_overlay_resident() {
         eprintln!("[skip] LEGAIA_MEDNAFEN_DIR unset");
         return;
     };
-    use legaia_parity::capture_observations::str_fmv_overlay;
     use legaia_mednafen::SaveState;
+    use legaia_parity::capture_observations::str_fmv_overlay;
 
     // Probe every .mc{0..9} for the FMV-overlay residency signature.
     // Skip-pass if no save in the user's directory has it.

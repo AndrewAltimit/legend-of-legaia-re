@@ -41,8 +41,8 @@ use legaia_engine_core::monster_catalog::{
     FormationDef, MonsterCatalog, vanilla_formation_table, vanilla_monster_catalog,
 };
 use legaia_engine_core::world::{Actor, SceneMode, World};
-use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
 use legaia_engine_system::rand::psyq_rand_step;
+use legaia_engine_vm::battle_action::{ActionState, ActorFlags, StepOutcome};
 use legaia_engine_vm::battle_formulas::accuracy_roll;
 use legaia_save::{CharacterRecord, HpMpSp, Party, SaveExt, SaveExtV2, SaveFile};
 

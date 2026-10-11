@@ -159,7 +159,7 @@ Rows 2 and 3 copy the persistent lure index `_DAT_80084450` into `0x801D90DC` be
 
 Rows are named by the `0xC2 id` item-name escape over lure ids `0x9D..0x9F` and rod ids `0xA0..0xA2`, at `x = 0x89` from `y = 0x50` on a 16 px pitch, lure counts at `x = 0xF1`, the equipped row in palette `7` (`_DAT_8007b454 = 7`), rods only when owned, cursor at `x = 0x78`.
 
-Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::ui_fishing_hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
+Port: `fishing_hub` - `FishingHubText` reads the text off the user's disc; `FishingHub` runs the screens over the ported picker (`FishingMenu`), help layout (`help_panel_layout`) and tackle kernel (`RodLureSelect`); `PondSession::hub_step` opens it from the idle phase. The native window and the browser play page reach it through `World::tick_fishing_hub` / `World::fishing_hub_lines` and draw it with `engine-ui::fishing::hub`; the minigames page steps the same kernel and draws its `fishing_hub_json` lines. The help footers' `0xCE` button escapes are consumed without a glyph on every host.
 
 ## Reel input
 
@@ -456,7 +456,7 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 
 Both venues spend and latch against the same globals. The rows match the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) row for row, plus one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price. Row contents decode from the user's disc.
 
-Parser: [`legaia_asset::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::ui_fishing_exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
+Parser: [`legaia_asset::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::fishing::exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
 
 In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: Up / Down move, Cross or L1 trades one, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance).
 
@@ -509,7 +509,7 @@ A hooked rod bent past its cap with the countdown `_DAT_801D90C4` spent raises t
 
 Port: `fishing_actors` - `RodMesh` (the three rods and the bend, lifted off the venue scene's bank), `RodActor` (`tick` = `FUN_801D1C5C`, `drive` = the lure tick's rod writes), `rod_tip_screen` (the integer matrix chain and `RTPS` with the UNR divide, `legaia_render_kernels::gte::divide`) and `fishing_line` (the clip and the packet).
 
-`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::ui_fishing_line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
+`PondSession` spawns the rod at the cast lock and exposes `line_frame`, which every host calls once a frame with its own projection of the fish end. The native window and the browser play page project through the venue camera (`fishing_venue::fishing_line_frame`) and wrap the packet with `engine-ui::fishing::line`; the minigames page projects its own lure and strokes the endpoints `fishing_line_json` returns. The port's lure exists from the landing, so the line is out while waiting and hooked, not during the flight.
 
 ### The rod model
 
@@ -524,7 +524,7 @@ All three rods are untextured: rods 0 and 1 are 8 flat triangles, 18 flat quads 
 
 The dispatcher loads `ZSF3 = 0x555 >> s` and `ZSF4 = 0x400 >> s` with `s` the scratch byte `0x1F8003A4` (`0x80043568..0x8004357C`), `3` in the `minigame_fishing` state. A primitive whose `OTZ` is below the scratch halfword `0x1F80037E` (`0x10` in the same state) is dropped; the packet links at `OTZ >> 2` (the word index `OTZ & 0xFFFC` addresses). With `s = 3` that bucket is the mean depth `/ 32`, the scale the line's `IR3 >> 5` links at, so the rod's far end and the line share buckets. The rod actor runs ahead of the lure tick, so in a shared bucket its packets draw after the line: the line meets the rod under its tip.
 
-Port: `fishing_actors::rod_faces` (per-vertex projection, both culls, the two averages, the cutoff and the bucket) over `RodMesh::prims`, off the pose the rod actor records each tick (`RodActor::pose`), reached through `PondSession::rod_faces`. The native window and the browser play page wrap each face with `engine-ui::ui_fishing_rod::fishing_rod_prim` and submit them ahead of the line in the same screen-prim pass. The minigames page fills the faces `fishing_rod_json` returns in the same draw order, each face in its corners' mean colour (its canvas has no per-vertex colour, so Gouraud quads lose their gradient there).
+Port: `fishing_actors::rod_faces` (per-vertex projection, both culls, the two averages, the cutoff and the bucket) over `RodMesh::prims`, off the pose the rod actor records each tick (`RodActor::pose`), reached through `PondSession::rod_faces`. The native window and the browser play page wrap each face with `engine-ui::fishing::rod::fishing_rod_prim` and submit them ahead of the line in the same screen-prim pass. The minigames page fills the faces `fishing_rod_json` returns in the same draw order, each face in its corners' mean colour (its canvas has no per-vertex colour, so Gouraud quads lose their gradient there).
 
 ### The shore party and the venue camera
 
@@ -651,7 +651,7 @@ The strike splash sits at `x = 0xa0`, rising one pixel every 32 frames from `y =
 
 The two styles use two emitters: `FUN_801D7DD8` patches sprite record `6` to `u = digit * 8 + 0x28`; `FUN_801D7D44` patches record `0x18` to `u = digit << 4` and draws it twice, as ids `0x418` / `0x818`.
 
-The fill loop is shared with `FUN_801D1308`, the Muscle Dome door/init overlay's decimal readout (same `-1` init, pre-seeded units slot, `!= 0` store gate, eight `/10` steps by the `0x66666667` magic multiply). The emit halves differ: `FUN_801D1308` has one emitter, one pen and one widget id (`9`), and passes the digit by patching that widget descriptor's texture column (`digit * 8 - 0x80`) and CLUT in place, restoring the CLUT on return. The port shares the fill - `number_digit_cells` takes its slots from `engine-ui::other_game_hud::decimal_slots` - and keeps the emit halves apart.
+The fill loop is shared with `FUN_801D1308`, the Muscle Dome door/init overlay's decimal readout (same `-1` init, pre-seeded units slot, `!= 0` store gate, eight `/10` steps by the `0x66666667` magic multiply). The emit halves differ: `FUN_801D1308` has one emitter, one pen and one widget id (`9`), and passes the digit by patching that widget descriptor's texture column (`digit * 8 - 0x80`) and CLUT in place, restoring the CLUT on return. The port shares the fill - `number_digit_cells` takes its slots from `engine-ui::muscle_dome_hud::decimal_slots` - and keeps the emit halves apart.
 
 ### Sprite emitter
 

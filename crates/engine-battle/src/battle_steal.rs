@@ -215,7 +215,11 @@ pub fn compose_caption(strings: &BattleUiStrings, spoils: DeathSpoils) -> Option
     // Room for the token + its terminator, the fixed-buffer contract
     // `mes_append_escape` documents.
     buf.extend_from_slice(&[0, 0, 0]);
-    let end = legaia_engine_battle_vm::mes_escape_append::mes_append_escape(&mut buf, 0xC2, spoils.item());
+    let end = legaia_engine_battle_vm::mes_escape_append::mes_append_escape(
+        &mut buf,
+        0xC2,
+        spoils.item(),
+    );
     buf.truncate(end + 2);
     buf.extend(strings.get(tail).map(latin1_bytes).unwrap_or_default());
     Some(buf)

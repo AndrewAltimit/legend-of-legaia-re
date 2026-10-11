@@ -9,10 +9,10 @@
 
 use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::world::World;
-use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot};
 use legaia_engine_field::dev_menu_leaves::EquipPanelDraw;
+use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot};
 
-/// Panel-window record the entry list paints. Taken from `baka_hub_actors`
+/// Panel-window record the entry list paints. Taken from `submode_hub_actors`
 /// rather than spelled here: the record table's base was off by four records,
 /// and a literal at every call site is what hid it.
 const ENTRY_LIST_WINDOW: usize = legaia_engine_field::submode_hub_actors::window::ENTRY_LIST;

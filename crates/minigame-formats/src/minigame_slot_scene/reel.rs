@@ -76,7 +76,7 @@ pub fn cos_4096(angle: i32) -> i32 {
 // PORT: FUN_801d0fa8 (reel cylinder y: sin(a) * -0x249 >> 12)
 //
 // The native window draws the cylinders through this kernel
-// (`engine-ui::ui_slot_cabinet::slot_cabinet_prims`, from the play-window's
+// (`engine-ui::slot_cabinet::slot_cabinet_prims`, from the play-window's
 // slot-machine frame). The browser pages still do the cylinder maths in
 // JavaScript: `slot_marquee_json` exports this module's *constants*
 // (REEL_Y_RADIUS, REEL_Z_SHIFT, REEL_SHADE_*, ANGLE_FULL, PROJ_*) and

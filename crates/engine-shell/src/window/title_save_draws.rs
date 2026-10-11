@@ -320,7 +320,10 @@ impl PlayWindowApp {
             TitlePhase::MainMenu { cursor } => (true, cursor),
             _ => (false, 0),
         };
-        let phase_id = legaia_engine_menus::title_overlay::title_text_phase(session.retail_submode(), menu_open);
+        let phase_id = legaia_engine_menus::title_overlay::title_text_phase(
+            session.retail_submode(),
+            menu_open,
+        );
         if phase_id != 2 {
             return Vec::new();
         }

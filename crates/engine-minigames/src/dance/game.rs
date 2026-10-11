@@ -293,7 +293,14 @@ impl DanceGame {
         let delta = frame_delta.min(u32::from(u8::MAX)) as u8;
         let bias = legaia_asset::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         for m in self.markers.iter_mut() {
-            legaia_engine_fishing::dance_marker::step_marker(m, &self.marker_script, delta, bias, 0, 0);
+            legaia_engine_fishing::dance_marker::step_marker(
+                m,
+                &self.marker_script,
+                delta,
+                bias,
+                0,
+                0,
+            );
         }
     }
 

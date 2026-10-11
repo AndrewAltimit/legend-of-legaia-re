@@ -557,7 +557,7 @@ The floor is `FUN_801CEB84`, the battle ground grid's emitter (`FUN_801D02C0` in
 
 `engine-minigame-scenes::baka_duel_scene` is the whole 3D surface, and every duel host draws through it:
 
-- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-vm::camera_rel_actor` and `engine-vm::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
+- `DuelCamera` (`engine-minigames::baka_duel`) holds the ten globals and runs the round setup's snap, the spin, the glides (through `engine-battle-vm::camera_rel_actor` and `engine-battle-vm::camera_rel_glide`) and the tally-exit close-up. It hands a host one view-projection (`vp_raw`) for raw Y-down world vertices - the same unmirrored projection as retail. `BakaFight` owns it and steps it every tick; `parse_special_cameras` reads the player's table.
 - `BakaDuelScene` builds one buffer set - both fighters, two darkened ghost copies of each, the four walls, the floor (`legaia_asset::battle_backdrop::build_ground_grid_sized`) - and poses it each frame from the display clips, the afterimage passes, the wall cull and the round-start [cameo](#the-round-start-cameo). The impact parts draw into reserved ranges of the same buffers.
 - `BakaDuelSurface` is the per-host cache: it decodes the assets once (PROT 1203 / 1204 / 1205 and the ladder packs), rebuilds the buffers when a rung seats a new opponent, and poses them.
 
@@ -800,7 +800,7 @@ Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 097
 
 | Host | Widgets | Fallback |
 |---|---|---|
-| native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::ui_baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
+| native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
 | minigames page | widget corners and inclusive UV spans from `baka_hud_quad_json`, drawn with the sheet art; chrome from `baka_chrome_json`; bar frames from `baka_bar_frame_json` | page-drawn banners only for a run with no engine chrome |
 
 The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `ui_baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
@@ -1003,7 +1003,7 @@ The statically extracted Baka Fighter overlay stops at `0x801DC818` and cannot h
   `overlay_0897_801f0adc.txt` carries the whole discontiguous 264-instruction body.
 - `field_subsystem_enter.rs` diagnoses the same artifact at `FUN_801F1278`.
 
-`FUN_801F159C` is the family's dispatcher: the resume / close half of the field VM's op-`0x49` submode, whose enter half is `FUN_801F1278` ([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)). The family is ported as `engine-vm::baka_hub_actors`, hosted by `engine-core::field_submode_screen`.
+`FUN_801F159C` is the family's dispatcher: the resume / close half of the field VM's op-`0x49` submode, whose enter half is `FUN_801F1278` ([`script-vm.md`](script-vm.md#the-op-0x49-party-cursor-submode-fun_801f1278--fun_801f159c)). The family is ported as `engine-field::submode_hub_actors`, hosted by `engine-core::field_submode_screen`.
 
 <a id="the-two-tables"></a>
 **Handler table.** `PTR_FUN_801F33B4` is the 52-slot table the dispatcher indexes by the actor's `+0x50` word:
@@ -1028,7 +1028,7 @@ The statically extracted Baka Fighter overlay stops at `0x801DC818` and cannot h
 | `13` / `14` | `3` | name-entry renderer `FUN_801E6B34` / `FUN_801E6984` |
 | `15` / `16` | `3` | `FUN_801F1AB0` / `FUN_801F1B64` |
 
-Not `0x801F2C0C` with the painter at `+0x14`: the records are periodic, so that frame lands on every painter but starts four records late. Port indices: `engine-vm::baka_hub_actors::window`.
+Not `0x801F2C0C` with the painter at `+0x14`: the records are periodic, so that frame lands on every painter but starts four records late. Port indices: `engine-field::submode_hub_actors::window`.
 
 Every handler shares one shape. It reads its sub-state `+0x54`, installs its panel, and - where it takes input - hands the actor back on a confirm: write `-1` into the cursor context's `+0x2E`, stash `+0x50` into its `+0x40`, then re-arm `+0x50` to `0x1A` and `+0x54` to `0`. Most confirm tests are `_DAT_8007BB80 == 0 && (pad_edge & (_DAT_800846D0 | _DAT_800846D4)) != 0`; the coin counter tests the two masks separately.
 
@@ -1053,7 +1053,7 @@ coin_bank(0x800845a4) += n          ; the credit is COINS
 gold(0x8008459c)      -= n * 100    ; the debit is GOLD
 ```
 
-Port `engine-vm::baka_hub_actors::coin_exchange`, whose `HubAction::BuyCoins` carries the two deltas separately.
+Port `engine-field::submode_hub_actors::coin_exchange`, whose `HubAction::BuyCoins` carries the two deltas separately.
 
 ### Other `0x801F` helpers
 

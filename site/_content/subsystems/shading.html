@@ -126,7 +126,7 @@
     <dt>Palette maps</dt><dd><code>legaia_asset::tim_palette_context</code> (which cell draws which texel; what the boot VRAM holds)</dd>
     <dt>VRAM + palette decode</dt><dd><code>engine-render</code> (1024&times;512 R16Uint texture, decode in the fragment shader)</dd>
     <dt>Multiply, cue, blend, dither</dt><dd><code>psx_modulate</code> / <code>psx_depth_cue</code> / <code>psx_blend</code> / <code>psx_dither</code> in the shader prelude, CPU mirror <code>psx_light</code></dd>
-    <dt>Light-source rows</dt><dd><code>engine-vm::field_light</code>, <code>engine-core::field_lit_mesh</code></dd>
+    <dt>Light-source rows</dt><dd><code>render-kernels::field_light</code>, <code>engine-core::field_lit_mesh</code></dd>
     <dt>Battle colour</dt><dd><code>engine-vm::battle_ground_grid</code>, <code>battle_actor_tint</code></dd>
     <dt>Animated palettes</dt><dd><code>engine-core::clut_cell_fx</code>, <code>legaia_asset::clut_walk</code></dd>
   </dl>

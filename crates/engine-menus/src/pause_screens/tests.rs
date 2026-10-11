@@ -988,8 +988,8 @@ fn menu_stat_block_sums_five_equip_slots_not_eight() {
 /// the candidate step's compare is window 25, so the block is empty there.
 #[test]
 fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
-    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use crate::equip_session::{EquipInput, EquipSession};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     let mut inv = crate::item_bag::ItemBag::new();
     inv.insert(1, 1);
     let mut session = EquipSession::new(
@@ -1022,8 +1022,8 @@ fn the_main_window_compare_block_belongs_to_the_best_equipment_row() {
 
 #[test]
 fn compare_slot_row_is_the_retail_browse_row_not_the_engine_slot() {
-    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
     use crate::equip_session::{EquipInput, EquipSession, EquipState};
+    use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
 
     // Engine slot -> the row retail's browse column would be on. Rows
     // `>= 4` are the three Goods rows, the only ones that resolve a

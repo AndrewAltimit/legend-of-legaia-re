@@ -13,7 +13,6 @@
 
 #![forbid(unsafe_code)]
 
-
 pub mod card_request;
 pub mod minigame_entry;
 pub mod mode;

@@ -488,10 +488,13 @@ impl PauseItemsSession {
                         // The applier's `+0x40` lands on the live window at
                         // once, and the Use list the route returns to greys
                         // the row off that word (`FUN_80046898`).
-                        self.incense_window =
-                            legaia_engine_field::incense_window::top_up_cooldown(self.incense_window);
+                        self.incense_window = legaia_engine_field::incense_window::top_up_cooldown(
+                            self.incense_window,
+                        );
                         self.incense_blocked =
-                            !legaia_engine_battle_vm::battle_action::item_count_gate(self.incense_window);
+                            !legaia_engine_battle_vm::battle_action::item_count_gate(
+                                self.incense_window,
+                            );
                         if let Some(id) = consumed {
                             self.take_one_copy(id);
                         }

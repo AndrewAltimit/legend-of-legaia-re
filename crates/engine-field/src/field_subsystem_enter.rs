@@ -417,12 +417,17 @@ mod tests {
             "a pair takes the outers"
         );
         assert_eq!(
-            legaia_engine_battle_vm::battle_party_panel::panel_anchors(1).unwrap().1,
+            legaia_engine_battle_vm::battle_party_panel::panel_anchors(1)
+                .unwrap()
+                .1,
             None,
             "solo positions one panel"
         );
         assert!(
-            legaia_engine_battle_vm::battle_party_panel::panel_anchors(2).unwrap().1.is_some(),
+            legaia_engine_battle_vm::battle_party_panel::panel_anchors(2)
+                .unwrap()
+                .1
+                .is_some(),
             "a pair positions two"
         );
     }

@@ -31,7 +31,8 @@ impl Camera {
         // primer `route_camera_events` already names in its op-`0x46` arm.
         // Both hosts reach this through their scene-entry reset.
         self.zone.view_window = {
-            let (x0, z0, x1, z1) = legaia_engine_system::mode_entry_init::field_draw_context().view_window;
+            let (x0, z0, x1, z1) =
+                legaia_engine_system::mode_entry_init::field_draw_context().view_window;
             [x0, z0, x1, z1]
         };
         // The shake jitter pair lives in the scene control block (`+0x18` /
@@ -87,8 +88,10 @@ impl Camera {
     /// so an active cutscene's own beats keep their configured yaw. No-op
     /// outside free-roam field (world map / battle / menu / cutscene).
     pub fn reset_for_free_roam<W: CameraWorld + ?Sized>(&mut self, world: &W) {
-        if matches!(world.scene_mode(), legaia_engine_mode::mode::SceneMode::Field)
-            && !world.cutscene_timeline_active()
+        if matches!(
+            world.scene_mode(),
+            legaia_engine_mode::mode::SceneMode::Field
+        ) && !world.cutscene_timeline_active()
         {
             self.mode = CameraMode::Follow;
             self.yaw = 0.0;

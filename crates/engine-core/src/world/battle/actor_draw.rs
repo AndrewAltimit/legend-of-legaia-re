@@ -424,8 +424,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::battle_actor_draw::RotLimbTable;
     use legaia_engine_battle_vm::status_effects::StatusKind;
+    use legaia_engine_vm::battle_actor_draw::RotLimbTable;
 
     fn world_with_table() -> World {
         let mut world = World::default();

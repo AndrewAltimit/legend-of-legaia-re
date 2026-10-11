@@ -207,7 +207,8 @@ impl SceneHost {
             return;
         }
         let tile = (tx as u8, tz as u8);
-        let locked = actor.move_state.flags & legaia_engine_field::field_warp_tile::MOVEMENT_LOCK != 0;
+        let locked =
+            actor.move_state.flags & legaia_engine_field::field_warp_tile::MOVEMENT_LOCK != 0;
         let repoll = crate::world::WALK_ON_REPOLL_FLAG;
         if self.last_trigger_tile == Some(tile) {
             // Same tile as last tick: triggers fire on crossings, except

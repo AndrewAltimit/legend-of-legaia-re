@@ -141,7 +141,9 @@ pub(super) fn panel_seats(count: usize) -> &'static [i32] {
 /// against the same kernel.
 pub fn party_panel_stage_x(count: usize, ordinal: usize) -> i32 {
     let size = count.clamp(1, 3) as u8;
-    if let Some((primary, secondary)) = legaia_engine_battle_vm::battle_party_panel::panel_anchors(size) {
+    if let Some((primary, secondary)) =
+        legaia_engine_battle_vm::battle_party_panel::panel_anchors(size)
+    {
         if ordinal == 0 {
             return i32::from(primary);
         }

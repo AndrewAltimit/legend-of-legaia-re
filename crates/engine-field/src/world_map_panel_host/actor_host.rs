@@ -396,9 +396,7 @@ impl PanelActorHost {
     /// only while the input lock `_DAT_8007BB80` is down
     /// (`0x801F2184..0x801F21A0`) - so a locked frame keeps the actor up.
     fn tick_close_tick(&mut self, frame: &mut PanelFrame) {
-        use crate::submode_hub_actors::{
-            self as hub, HubAction, HubActor, HubEnv, HubGrid,
-        };
+        use crate::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
         let mut actor = HubActor {
             state: self.handler_id,
             sub: self.phase,
@@ -536,9 +534,13 @@ impl PanelActorHost {
                 }
                 // `jal 0x80035BD0` at `0x801ED65C`: the confirm overwrites
                 // the last-written ring slot rather than pushing.
-                SubListEffect::PlaySfx(s) => frame
-                    .sfx
-                    .push(legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(s as i16)),
+                SubListEffect::PlaySfx(s) => {
+                    frame
+                        .sfx
+                        .push(legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(
+                            s as i16,
+                        ))
+                }
                 SubListEffect::ClearWindowDescriptor => {
                     self.flag_desc = FlagWindowDescriptor::default()
                 }
@@ -642,13 +644,15 @@ impl PanelActorHost {
             match e {
                 // `FUN_80035BD0(0)` (`0x801EE9AC`) then `FUN_80035B50(0x25)`
                 // (`0x801EE9B4`): the move cue overwrites, the restore pushes.
-                TextBoxEffect::PlaySfx(s) => frame.sfx.push(
-                    if s == crate::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
-                        legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(s as i16)
-                    } else {
-                        legaia_engine_system::sound_state::SfxRingOp::Push(s as i16)
-                    },
-                ),
+                TextBoxEffect::PlaySfx(s) => {
+                    frame
+                        .sfx
+                        .push(if s == crate::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
+                            legaia_engine_system::sound_state::SfxRingOp::ReplaceLast(s as i16)
+                        } else {
+                            legaia_engine_system::sound_state::SfxRingOp::Push(s as i16)
+                        })
+                }
                 TextBoxEffect::RestoreParty => frame.restore_party = true,
                 TextBoxEffect::RunPanelScript(va) => {
                     self.windows.run_script(va);

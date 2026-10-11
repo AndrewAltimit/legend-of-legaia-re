@@ -109,9 +109,12 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             if operand + 9 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let zoom_x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]) as i16;
-            let zoom_y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]) as i16;
-            let zoom_z = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 5..]) as i16;
+            let zoom_x =
+                crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]) as i16;
+            let zoom_y =
+                crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]) as i16;
+            let zoom_z =
+                crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 5..]) as i16;
             let mode = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 7..]) as i16;
             host.op4c_n_e_sub_8_camera_zoom(zoom_x, zoom_y, zoom_z, mode);
             StepResult::Advance {
@@ -241,7 +244,8 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             match host.op4c_n_e_sub_b_actor_jump(actor_id) {
                 Some(()) => StepResult::Advance { next_pc },
                 None => {
-                    let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]) as i16;
+                    let skip =
+                        crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]) as i16;
                     let target = next_pc as isize + isize::from(skip) - 2;
                     if target < 0 {
                         return StepResult::Unknown { opcode, pc };

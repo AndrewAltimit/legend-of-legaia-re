@@ -237,7 +237,7 @@ calls it indirectly (`lw v0,0x28(s4); beq v0,zero,..; jalr v0; move a0,s4` at
 `0x80031E30..0x80031E44`). A `0` is a renderer-less list window.
 
 The port mirrors that step in
-[`engine-ui::ui_menu_window_dispatch`](../../crates/engine-ui/src/menu/window_dispatch.rs):
+[`engine-ui::menu::window_dispatch`](../../crates/engine-ui/src/menu/window_dispatch.rs):
 `painter_for_renderer_va` maps a renderer VA to its painter, `painter_at`
 resolves one id through a parsed table and refuses a descriptor whose renderer
 is not the painter the caller expected, and `menu_window_painters` reports
@@ -339,7 +339,7 @@ save point carries no text, so its interaction record is installed by
 The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 (`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
-[`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
+[`engine-ui::menu::window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
 (windows 25 and 41 in `ui_equip_stat_compare`). Every window painter
 is reached by a screen on both hosts. The port keeps the pen arithmetic and the
 state-word rules and drops two globals every painter touches - the ink word
@@ -900,8 +900,8 @@ wrap, page flip) and `engine-menus::menu_list_rows` - the allocator
 (`list_alloc`), row-entry bit constants, row-name resolver (`row_name_source`,
 `FUN_8002FF8C`), content-builder cases (below) and the live-window upsert
 (`LiveWindowSet`, `FUN_80032434`). The description dispatcher is
-`engine-ui::ui_menu_window_painters::description_source`. Row and header draws
-are in `engine-ui::ui_menu::pause_lists`.
+`engine-ui::menu::window_painters::description_source`. Row and header draws
+are in `engine-ui::menu::screens::pause_lists`.
 
 ### Use-list row build (content id 3, `FUN_80030628`)
 
@@ -1520,7 +1520,7 @@ its `j` targets print correctly - see
   re-ordered before a routine that indexes in retail's space walks it
   (`field_submode_screen::hub_panel_slots`).
 - **Commit**: `EquipSession::commit` runs
-  `engine-vm::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
+  `engine-field::dev_equip_commit::commit_equip` (the `FUN_801E5A08` body) over
   `world_map_overlay::resolve_equip_slot`, staging the record's `+0x196`
   window in retail order; `retail_destination_slot` exposes the routing.
 - **Candidate lists**: Goods slots use
@@ -1791,7 +1791,7 @@ Small sub-screen ticks on the same phase protocol:
 - **`FUN_801DD310`** only pumps the window engine `FUN_80031D00`.
 
 Port: `engine-minigames::prize_exchange` (the `FUN_801DC1CC` session) drawn by
-`engine-ui::ui_prize_exchange::prize_exchange_draws_for` on both hosts.
+`engine-ui::prize_exchange::prize_exchange_draws_for` on both hosts.
 
 ## Two more descriptor-table renderers (windows 34 and 46)
 

@@ -694,8 +694,8 @@ fn fold_battle_event_pushes_status_into_tracker() {
     use legaia_art::power::PowerByte;
     use legaia_art::queue::{ActionConstant, Character};
     use legaia_art::record::EnemyEffect;
-    use legaia_engine_vm::battle_action::ArtStrikeInfo;
     use legaia_engine_battle_vm::status_effects::StatusKind;
+    use legaia_engine_vm::battle_action::ArtStrikeInfo;
 
     let mut world = World::new();
     world.party.party_count = 4;

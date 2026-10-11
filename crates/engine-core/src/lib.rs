@@ -17,11 +17,11 @@ pub use legaia_engine_battle::{
     tactical_arts_editor,
 };
 pub mod actor_alloc_host;
+pub use legaia_engine_battle::anim_cue;
 pub use legaia_engine_battle::arts_command_input;
 pub use legaia_engine_battle::battle_arts;
 pub use legaia_engine_field::actor_handler;
 pub use legaia_engine_field::actor_look;
-pub use legaia_engine_battle::anim_cue;
 pub mod battle_cam_inputs;
 pub mod battle_flow;
 pub mod battle_hud;
@@ -50,8 +50,8 @@ pub mod coplanar_draws;
 pub use legaia_engine_system::movie::cutscene;
 pub mod cutscene_caption;
 pub use legaia_engine_field::cutscene_narration;
-pub use legaia_engine_field::plain_template_actors as cutscene_script_elements;
 pub use legaia_engine_field::cutscene_timeline;
+pub use legaia_engine_field::plain_template_actors as cutscene_script_elements;
 pub mod dance;
 pub mod dance_cast_scene;
 pub mod dance_venue;
@@ -106,12 +106,12 @@ pub use legaia_engine_menus::menu_glyph_atlas;
 pub use legaia_engine_menus::menu_item_category;
 pub use legaia_engine_menus::menu_list_rows;
 pub use legaia_engine_menus::menu_open_sequence;
-pub use legaia_engine_system::movie::mdec_dma_sync;
 pub use legaia_engine_system::menu_input;
+pub use legaia_engine_system::movie::mdec_dma_sync;
 pub mod menu_runtime;
 pub mod menu_validator;
-pub use legaia_engine_mode::minigame_entry;
 pub use legaia_engine_menus::menu_widget;
+pub use legaia_engine_mode::minigame_entry;
 pub mod minigame_status;
 pub mod mode;
 pub mod model_bank;
@@ -567,10 +567,10 @@ mod tests {
     }
 }
 
+pub use legaia_engine_battle_vm::camera_rel_glide;
 pub use legaia_engine_field::field_save_screen_actor;
 pub use legaia_engine_field::morph_weight_apply;
 pub use legaia_engine_field::scene_transition_actor;
-pub use legaia_engine_battle_vm::camera_rel_glide;
 
 // The minigame rules engines live in `legaia-engine-minigames`; re-exported
 // here so every host and test keeps its `legaia_engine_core::<module>` path.

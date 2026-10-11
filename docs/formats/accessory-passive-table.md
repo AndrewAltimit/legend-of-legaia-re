@@ -112,7 +112,7 @@ gauge, which is how that offset is pinned as the 0..100 AP gauge.
 
 Bit assignments, priorities and the HUD element each drives are in
 [`save-record.md`](save-record.md#0x12e-is-the-battle-status-word) and
-mirrored at `engine-vm::status_effects::display_flags`.
+mirrored at `engine-battle-vm::status_effects::display_flags`.
 
 ## The 64 passive indices
 

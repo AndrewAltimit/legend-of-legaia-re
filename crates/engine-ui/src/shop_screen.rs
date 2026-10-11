@@ -631,9 +631,7 @@ pub fn prize_screen_draws(
     marks: &[PainterSprite],
     pictogram: Option<PainterPictogram>,
 ) -> ShopScreenDraws {
-    use crate::prize_exchange::{
-        WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST,
-    };
+    use crate::prize_exchange::{WIN_COIN_COUNTER, WIN_CONFIRM, WIN_EXCHANGE_TAB, WIN_PRIZE_LIST};
     let mut windows = vec![WIN_EXCHANGE_TAB, WIN_PRIZE_LIST, WIN_COIN_COUNTER];
     if confirming {
         windows.push(WIN_CONFIRM);

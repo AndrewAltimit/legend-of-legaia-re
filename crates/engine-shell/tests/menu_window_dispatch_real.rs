@@ -1,6 +1,6 @@
 //! Disc oracle for the menu-window `renderer_va` -> painter dispatch.
 //!
-//! `engine-ui::ui_menu_window_dispatch` maps a descriptor's content-renderer VA
+//! `engine-ui::menu::window_dispatch` maps a descriptor's content-renderer VA
 //! to the painter that draws it - the port of the indirect call the retail
 //! window walker makes (`FUN_80031D00`, `jalr` on the live window's `+0x28`,
 //! copied there from the descriptor's `+0xC`). Its unit tests build synthetic

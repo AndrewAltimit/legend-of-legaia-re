@@ -4,8 +4,7 @@ The engine's menu, title and memory-card front end, minus `World`: the item
 and equipment catalogs, the inventory-use and spell-menu sessions, the SCUS
 list-row model every pause-menu list window shares, the menu overlay's widget
 choreography and tables, the title and boot screens, the card write flow and
-`bu` I/O layer. The field dialog pager and the spawned script contexts'
-state sit one crate down, in
+`bu` I/O layer. The field dialog pager sits one crate down, in
 [`legaia-engine-dialog`](../engine-dialog/README.md), and are re-exported
 here at their old paths. Free of
 wgpu, winit and cpal, so it builds for native and `wasm32` alike.
@@ -91,6 +90,19 @@ link into a dependent crate.
   engine-core's `World`, which holds the field host borrow.
 - **Inn** - `inn` (the rest confirmation and HP / MP restore session; see
   [`docs/subsystems/inn.md`](../../docs/subsystems/inn.md)).
+
+## Moved in from `legaia-engine-vm`
+
+- `title_overlay` - the title-screen tick `FUN_801DD35C` (the sub-mode
+  dispatcher, its menu and transitions) and `title_overlay::title_draw_list`,
+  the sub-mode -> screen selector both hosts ask.
+- `title_prim` - the SCUS-side GPU primitive helpers the title overlay calls.
+- `gameover_banner` - the game-over banner letter stager `FUN_801CE844`.
+- `menu` - the engine's pause / shop / inn menu state machine.
+
+`muscle_dome_session` is the Muscle Dome match session (the deal, the commit
+and the ring) over this crate's battle-input and arts-input models; the
+World-free ladder and contest tables are `legaia_engine_minigames::muscle_dome`.
 
 ## See also
 

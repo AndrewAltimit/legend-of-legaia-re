@@ -26,14 +26,14 @@ same surface on both hosts from one shared builder.
 | Sprite emitters | `FUN_8002C488` (one sprite), `FUN_8002C69C` (sized widget), `FUN_8002BDC4` (window fill) |
 | Retained handle list | `ctx[+0x1074]`, forty handles; glide slots `ctx[+0x11B4 + slot * 0xC]` |
 | Art | resident system-UI TIM `PROT.DAT` `0x18E0` -> VRAM page `(896, 256)`, CLUT row 511; menu-glyph atlas page `(896, 0)`, CLUT row 510 |
-| Port | model `engine-core::battle_hud`, draw builder `engine-ui::ui_overlay::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
+| Port | model `engine-core::battle_hud`, draw builder `engine-ui::battle_hud::battle_hud_draws_for`, pins `engine-ui::battle_chrome` |
 
 Every HUD element, with its art, placement record, retail draw routine and port module:
 
 | Element | Art / widget record | Placement record | Retail draw | Port |
 |---|---|---|---|---|
 | Actor-name plaque | gold plate run, widget `0x02` | 68 (`0x44`); 26 (`0x1A`) behind the `Begin` tab | `FUN_801D8DE8` from the action seed `FUN_801E6D84` | `battle_chrome::name_plaque`, `battle_hud::battle_active_actor` |
-| Roster panels | 102x48 marbled plate, chains `0x07` and `0x33..0x35` | 6, 78, 79 (`0x06` / `0x4E` / `0x4F`) | sub-draw steps; seats from `FUN_801D84C0` | `battle_hud::battle_panels_visible`, `engine-vm::battle_party_panel` |
+| Roster panels | 102x48 marbled plate, chains `0x07` and `0x33..0x35` | 6, 78, 79 (`0x06` / `0x4E` / `0x4F`) | sub-draw steps; seats from `FUN_801D84C0` | `battle_hud::battle_panels_visible`, `engine-battle-vm::battle_party_panel` |
 | Active-actor bar | blue plate run, chain `0x2B` | 7 | sub-draw step 1, action-SM openers | `battle_hud::battle_readout_bar_slot` |
 | Status badge | 48x16 word cells, widgets `0x18..=0x20` | none (drawn off the panel pen) | `FUN_8002C2E4` -> `FUN_8002C488` | `BattleSlotHud::status_element`, `battle_hud_chrome` |
 | Element badge | 20x12 cells, widgets `0x8B..=0x92` | none (markup in the name string) | text engine icon escape | `battle_hud::battle_plaque_element_badge` |
@@ -247,7 +247,7 @@ glides that arm's chip onto the trail as a third tab abutting the plaque, at
 Both `0x0D` and `0x0E` carry interior `w = 0x30`; the `arts_bar_*` captures
 read `Begin | Vahn | Attack` over the direction chips. Port:
 `engine-core::battle_hud::battle_breadcrumb_third_tab`, drawn by
-`engine-ui::ui_overlay` on both hosts.
+`engine-ui::battle_hud` on both hosts.
 
 <a id="the-party-status-readout---and-it-has-no-gauge"></a>
 ### The party status readout
@@ -376,7 +376,7 @@ which survive even Master Guard's clear - have no writer anywhere in the dumped
 corpus and stay unassigned.
 
 Port: `BattleSlotHud::status_display_flags` packs the engine's typed status set
-into the retail word (mirrored at `engine-vm::status_effects::display_flags`)
+into the retail word (mirrored at `engine-battle-vm::status_effects::display_flags`)
 and `status_element` runs the ladder. The no-ailment arm is the level, drawn as
 a panel row - the `LV` label cell at the panel's `(64, 6)` with its digits at
 `(88, 4)`. The ladder is exclusive, so any set bit (or zero HP) replaces that
@@ -829,7 +829,7 @@ Those are the framebuffer coordinates of the four load-screen TIMs at
 `PROT.DAT[0x1AC90]` and `[0x1AED0]` - the three party-member face portraits and
 the empty-cell frame the save-slot grid draws
 (`title_pak::OVERLAY_LOAD_PORTRAIT_TIM_OFFSET`, port
-`engine-ui::ui_title_save::slot_grid`). One asset, two consumers.
+`engine-ui::title_save::slot_grid`). One asset, two consumers.
 
 ## Message and intro banners
 
@@ -1333,7 +1333,7 @@ see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-
 [`engine-core::battle_hud`](../../crates/engine-core/src/battle_hud.rs) is the
 renderer-agnostic UI state for the in-battle screen: per-slot HP / MP / AP and
 status state plus a queue of damage popups and battle-event log lines.
-`engine-ui::ui_overlay::battle_hud_draws_for` turns one `BattleHudFrame` into
+`engine-ui::battle_hud::battle_hud_draws_for` turns one `BattleHudFrame` into
 draw lists. The native window folds the live actor table into the model each
 tick in `engine-shell`'s `window/battle.rs::sync_battle_hud_rows`; the browser
 play page runs the same fold in `web-viewer`'s `play_battle.rs`.

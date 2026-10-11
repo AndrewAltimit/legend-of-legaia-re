@@ -185,7 +185,10 @@ impl World {
         // The player tick drains the post-warp hold before any of its gates
         // (`FUN_801D1344` at `0x801D1618..0x801D1630`).
         let ratio = self.move_vm.ramp_ratio.max(1);
-        legaia_engine_field::field_warp_tile::drain_post_warp_hold(&mut self.locomotion.warp, ratio);
+        legaia_engine_field::field_warp_tile::drain_post_warp_hold(
+            &mut self.locomotion.warp,
+            ratio,
+        );
         // BOTH dialogue channels, through the shared predicate. The ordinary
         // NPC talk runs the field-VM inline runner, which holds a box open
         // without a `current_dialog` whenever the record selects its segment
@@ -786,7 +789,8 @@ impl World {
         // the actor actually walked this frame - and on the warp pair: no
         // warp in flight, no post-warp hold (`0x801D1C6C..0x801D1C88`).
         let (dx, dz) = self.locomotion.step_delta;
-        let warp_quiet = !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp);
+        let warp_quiet =
+            !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp);
         if hop_allowed && warp_quiet && (dx != 0 || dz != 0) && self.try_field_ledge_hop(slot) {
             // A frame that starts a hop returns before the tail
             // (`j 0x801D1EB0` at `0x801D1CC0`).
@@ -910,7 +914,9 @@ impl World {
         self.locomotion.clip_base = base;
         let flag = self.locomotion.player_party_bank;
         let pick = legaia_engine_field::field_player_clip::SettleClipPick {
-            clip: base.wrapping_add(leader.wrapping_mul(legaia_engine_field::field_player_clip::BANK_STRIDE)),
+            clip: base.wrapping_add(
+                leader.wrapping_mul(legaia_engine_field::field_player_clip::BANK_STRIDE),
+            ),
             party_flag: flag,
             binds: true,
             bind_party_flag: flag,
@@ -1018,7 +1024,8 @@ impl World {
         &self,
         pick: &legaia_engine_field::field_player_clip::SettleClipPick,
     ) -> Option<u8> {
-        let Some((legaia_engine_field::field_player_clip::ClipBank::Scene, _)) = pick.bound() else {
+        let Some((legaia_engine_field::field_player_clip::ClipBank::Scene, _)) = pick.bound()
+        else {
             return None;
         };
         u8::try_from(pick.clip).ok().filter(|&id| id > 2)

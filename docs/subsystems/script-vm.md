@@ -1503,7 +1503,7 @@ land the player's `+0x4C` anim pointer on the scene ANM bundle's records
 47/48 (`record = move_id - 1`, the same record space as op-`0x4B` NPC
 cues) for one playthrough each before the walk-out moves resume the
 locomotion clips. Engine port: `engine-core::name_entry` (SM),
-`engine-ui::ui_menu::name_entry` (draw builders + traced constants), and
+`engine-ui::menu::screens::name_entry` (draw builders + traced constants), and
 the scripted-clip queue `World::locomotion.player_move_cues`.
 
 #### `0x4E` INVENTORY_CMP
@@ -2201,7 +2201,7 @@ Behaviour worth knowing beyond the signatures:
 - **`load_u16_le` / `load_u24_le` / `load_u32_le`** assemble little-endian values from sequential bytes and return 0 for missing bytes. The 24-bit form pairs with `sign_extend_24(value)` for the opcodes that take a signed 24-bit immediate (`0x4C nE sub-5`).
 - **`tile_center(b)`** is the grid-byte to world-coordinate conversion: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. Retail inlines it in nine dispatcher arms (`0x4C nE sub-3/4`, `MOVE_TO` at op `0x23`, the scene-change entry tile at op `0x3F`, the position-broadcast `0x4C nC sub-F`, ...).
 
-Unit tests sit beside the ports in `field_helpers.rs`.
+Unit tests sit beside the ports in `field/dispatch_leaves.rs`.
 
 ## Overlay-0897 command / submenu support functions
 
@@ -2433,7 +2433,7 @@ function. `see ghidra/scripts/funcs/overlay_0897_801da0f0.txt`.
 are the command ring's chip cross-out mark and the battle message box's open
 half (the "party-name panel" reading is
 [falsified](../reference/re-do-not-re-walk.md#battle--arts--level-up)), ported as
-`engine-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
+`engine-battle-vm::battle_party_panel` ([`functions/battle.md`](../reference/functions/battle.md)).
 What is not real is the *routine the `overlay_0897_*` dumps print at those
 addresses*. Resolved from the bytes, that listing is stitched out of two
 different PROT entries and neither piece is a field-VM entry:
@@ -2506,7 +2506,7 @@ drawing per-member numerics through `func_0x80034B78` and screen-projecting
 cell anchors through the GTE wrapper `func_0x800195A8`. It builds GPU
 primitives, so its packet half is **render-track** - but the routine is
 **ported**, split across the two crates that own its halves:
-`engine-vm::world_map_panel_actors::HudDecision` carries the
+`engine-field::world_map_panel_actors::HudDecision` carries the
 suppress / rearm / count-down / draw decision, and
 `engine-ui::field_party_hud::field_party_hud_draws_for` carries the layout.
 (`locate-entry-image.py 801d0d38` confirms the entry is PROT 0897's, so the

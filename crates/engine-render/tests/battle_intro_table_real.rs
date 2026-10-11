@@ -18,14 +18,14 @@
 //! Skips and passes with `LEGAIA_DISC_BIN` unset. No disc bytes are asserted
 //! literally; every expectation is a decoded property.
 
-use legaia_engine_render::battle_intro::{
-    INTRO_QUAD_TABLE_LEN, INTRO_QUAD_TABLE_VA, IntroQuadTable,
-};
-use legaia_engine_render::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS};
 use legaia_engine_battle_vm::battle_intro_styles::{
     CURTAIN_COL_DESC, CURTAIN_COL_TPAGE_LEFT, CURTAIN_COL_TPAGE_RIGHT, CURTAIN_LEFT_W,
     CURTAIN_RIGHT_W, CURTAIN_ROW_DESC, CURTAIN_ROW_TPAGE_LEFT, CURTAIN_ROW_TPAGE_RIGHT,
 };
+use legaia_engine_render::battle_intro::{
+    INTRO_QUAD_TABLE_LEN, INTRO_QUAD_TABLE_VA, IntroQuadTable,
+};
+use legaia_engine_render::vram_capture::{FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS};
 
 /// PROT index of the field-to-battle transition overlay.
 const INTRO_OVERLAY_PROT: u32 = 979;

@@ -278,7 +278,9 @@ mod tests {
             "sentinel cleared on the landing tick"
         );
         // The hold keeps the pad off after the landing.
-        assert!(legaia_engine_field::field_warp_tile::pad_suppressed(&w.locomotion.warp));
+        assert!(legaia_engine_field::field_warp_tile::pad_suppressed(
+            &w.locomotion.warp
+        ));
     }
 
     #[test]

@@ -824,12 +824,10 @@ impl LegaiaViewer {
                 f.env_tmds.len()
             )));
         };
-        let light = f
-            .live
-            .as_ref()
-            .map_or(legaia_render_kernels::field_light::FieldLight::SCENE_LOAD, |l| {
-                l.host.world.presentation.field_light
-            });
+        let light = f.live.as_ref().map_or(
+            legaia_render_kernels::field_light::FieldLight::SCENE_LOAD,
+            |l| l.host.world.presentation.field_light,
+        );
         let rtmd = &f.res.tmds[res_idx];
         let offsets = (anim_id != 0)
             .then(|| {

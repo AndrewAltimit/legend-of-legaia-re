@@ -58,6 +58,22 @@ native and `wasm32` alike.
 - `cast_theeder` - PROT 0904's (Theeder, spell `0x82`) beam packets: the
   four packet builders its tick body calls, as screen primitives.
 
+## Draw-prep kernels moved in from the VM and rules crates
+
+- `gte::divide` - the GTE's Unsigned Newton-Raphson perspective divide.
+- `field_light` - the field's GTE light matrix, colour matrix and back colour.
+- `world_map_sky` - the overworld sky band (`FUN_801F73E4`).
+- `prim_dispatch` - the per-prim renderer dispatch `FUN_80043390`.
+- `sprite_arm` - the move-VM actor's draw words: `ColourWord` and the
+  `0x4000` sprite arm's quad (`FUN_8002A5A4`).
+- `shutter_bars` - the shutter blackout's two quads.
+- `display_mirror` - the PSX display environment's screen-X mirror
+  (`FUN_800597C8`, replaced by the single-orientation surface).
+
+This crate depends on `legaia-engine-battle-vm` (battle camera and HUD
+kernels) and `legaia-engine-vm` (`move_ext_strip`, `field_actor_billboard`
+and the move-VM `ActorState`), and on nothing above them.
+
 ## See also
 
 - [`docs/subsystems/renderer.md`](../../docs/subsystems/renderer.md)

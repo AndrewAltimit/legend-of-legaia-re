@@ -803,7 +803,9 @@ fn prim_bbox(f: &crate::battle_intro::IntroFrame) -> (i16, i16, i16, i16) {
 /// transition and asserts the box **grows past the sheet on every side**.
 #[test]
 fn the_tile_sheet_breaks_apart_over_a_retail_length_transition() {
-    use legaia_engine_battle_vm::battle_intro_styles::{INTRO_DURATION_FRAMES, intro_duration_frames};
+    use legaia_engine_battle_vm::battle_intro_styles::{
+        INTRO_DURATION_FRAMES, intro_duration_frames,
+    };
 
     let total = intro_duration_frames(IntroStyle::TileShatter);
     assert_eq!(total, INTRO_DURATION_FRAMES);

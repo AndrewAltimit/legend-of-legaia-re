@@ -16,12 +16,12 @@
 //! bytes' shape rather than a screenshot, which is what makes it runnable
 //! without a GPU on either side.
 
+use legaia_engine_battle_vm::battle_value_readout as vr;
 use legaia_engine_ui::battle_numerals as bn;
 use legaia_engine_ui::screen_prim::{
     BlendClass, FLAG_TEXTURED, PSX_DISPLAY_H, PSX_DISPLAY_W, SCREEN_VERTEX_OFF_CBA_TSB,
     SCREEN_VERTEX_OFF_FLAGS, SCREEN_VERTEX_STRIDE, build_geometry,
 };
-use legaia_engine_battle_vm::battle_value_readout as vr;
 
 /// One frame's worth of readout: a three-hit combo cluster plus a floating
 /// numeral over an actor that projected to `(160, 120)`.

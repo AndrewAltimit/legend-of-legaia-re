@@ -92,7 +92,10 @@ impl BuyRecipientSession {
     }
 
     /// Drive one frame from the menu nav-button edges.
-    pub fn tick(&mut self, buttons: legaia_engine_system::menu_input::NavButtons) -> BuyRecipientEvent {
+    pub fn tick(
+        &mut self,
+        buttons: legaia_engine_system::menu_input::NavButtons,
+    ) -> BuyRecipientEvent {
         use legaia_engine_system::menu_input::CursorNav;
         match self.phase {
             BuyRecipientPhase::Init => {
@@ -102,7 +105,12 @@ impl BuyRecipientSession {
             }
             BuyRecipientPhase::Interactive => {
                 let rows = self.can_equip.len() as u32 + 1;
-                match legaia_engine_system::menu_input::menu_cursor_nav(&mut self.cursor, rows, true, buttons) {
+                match legaia_engine_system::menu_input::menu_cursor_nav(
+                    &mut self.cursor,
+                    rows,
+                    true,
+                    buttons,
+                ) {
                     CursorNav::Confirm => {
                         let row = self.cursor & 0xFFF;
                         let point_credit = if self.point_card_held {

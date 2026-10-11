@@ -460,7 +460,7 @@ texel - and a face square to it takes `0x90`.
 Evidence:
 
 - The `cave01_attached_light` state holds exactly the scene-load trio, back
-  colour and matrix (`engine-vm::field_light`'s test pins the matrix element
+  colour and matrix (`render-kernels::field_light`'s test pins the matrix element
   for element). Shaded this way, the port's frame of that state matches
   retail's to within the image channel's noise.
 - Exec breakpoints (`autorun_w4d_light_kind_hits.lua`,
@@ -472,7 +472,7 @@ Evidence:
 **Port.** Both hosts run one kernel,
 [`field_lit_mesh`](../../crates/engine-field/src/field_lit_mesh.rs)
 (re-exported as `engine-core::field_lit_mesh`), over the light state in
-[`engine-vm::field_light`](../../crates/render-kernels/src/field_light.rs). The
+[`render-kernels::field_light`](../../crates/render-kernels/src/field_light.rs). The
 mesh builder keeps each lit vertex's normal and object colour
 (`legaia_tmd::mesh::LitVertex`). Because the intensity depends on the draw's
 rotation, a lit mesh gets one shaded copy per `(mesh, rotation)`:

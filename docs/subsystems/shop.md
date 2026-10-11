@@ -393,7 +393,7 @@ two. The unit price appears once, in the running total right-packed at
 `999` / `9999` giving 4..7 columns), so the number stays aligned as the
 quantity climbs. A currency pictogram labels it at `(WX + 0x58, WY + 0x24)`.
 
-Ported as `engine-ui::ui_menu_window_painters::buy_quantity_draws_for`,
+Ported as `engine-ui::menu::window_painters::buy_quantity_draws_for`,
 beside its sell-side sibling, so one builder serves both hosts per window.
 Window 37's total packs the other way - its pens move left as the field
 widens, keeping the number's right edge on the box.
@@ -439,7 +439,7 @@ why the port's mirror of the column is row-keyed.
 
 Both hosts compose the gold shop through
 `legaia_engine_screens::gold_shop_screen` using these constants;
-`engine-ui::ui_overlay::shop_draws_for` draws only the inn and Seru-trade
+`engine-ui::battle_hud::shop_draws_for` draws only the inn and Seru-trade
 fallback panels.
 
 ## Point Card
@@ -591,7 +591,7 @@ either - the accrual is the sub-screen's, one phase earlier.
 
 ### State-machine routing
 
-The menu state machine (`engine-vm::menu`) owns the per-screen transition graph
+The menu state machine (`engine-menus::menu`) owns the per-screen transition graph
 (`commit_route` for Cross, `back_route` for Triangle); the `MenuHost` commit
 hooks only apply side effects. The graph still carries a `ShopConfirm` node,
 but the live flow leaves `ShopQuantity` through the stepper's own commit and

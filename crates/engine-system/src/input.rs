@@ -13,10 +13,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
 /// The raw PSX pad-bit layout; lives in `crate::pad` so the
 /// minigame crate shares it.
 pub use crate::pad::PadButton;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// Host-side latch for key **taps** shorter than a display frame.

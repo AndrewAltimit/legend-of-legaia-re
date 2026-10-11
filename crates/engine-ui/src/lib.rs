@@ -102,17 +102,17 @@ mod tile_board_prompt;
 mod title_save;
 pub use legaia_render_kernels::vram_capture;
 
+pub use battle_hud::*;
 pub use battle_timed_fight_strip::*;
 pub use battle_tutorial_box::*;
 pub use dialog_reading_box::*;
-pub use incense_notice_box::*;
-pub use text_balloon_box::*;
-pub use tile_board_prompt::*;
-pub use battle_hud::*;
 pub use fishing::hud::*;
+pub use incense_notice_box::*;
 pub use menu::equip_stat_compare::*;
 pub use menu::screens::*;
 pub use menu::window_dispatch::*;
+pub use text_balloon_box::*;
+pub use tile_board_prompt::*;
 pub use title_save::*;
 
 // Former `ui_`-prefixed and disc-path module names, kept until the

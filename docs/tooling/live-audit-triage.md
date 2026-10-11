@@ -177,7 +177,7 @@ manufactures edges, an alias erases them.
   is unreached, but `route_camera_events` calls `.arm(` on a `CameraMover` and
   receiver types are not inferred, so the audit reads it live. The verdict
   stands on hand evidence.
-- **Collision-prone names.** `new` in `scus_core_helpers.rs` resolves through
+- **Collision-prone names.** `new` in `actor_node_pool.rs` resolves through
   any `new`; the receiver gate clears it
   ([`stale-not-wired-triage.md`](stale-not-wired-triage.md#how-the-recorded-rows-were-closed)).
 - <a id="a-latent-duplicate-free-function-name-landmine-defused"></a>**Duplicate free-function names are a defect before they produce a row.** Two
@@ -419,7 +419,7 @@ section.
   stores `ctx[+0x50] = next_handler`. `ActorExit::apply` performs those stores
   and `PanelActorHost::retire` calls it.
 - The id dispatcher `FUN_801F159C` is ported as
-  [`baka_hub_actors::hub_dispatch`](../subsystems/world-map.md#the-panel-actor-state-machines).
+  [`submode_hub_actors::hub_dispatch`](../subsystems/world-map.md#the-panel-actor-state-machines).
   It takes `PTR_FUN_801F33B4[state]` as a caller-supplied closure, and seven of
   the 52 slots are read out. The sub-list, text-box and flag-window exits hand
   back to `0x1A`, which is one of the seven; the fade / flash exits pick `0x29`
@@ -546,7 +546,7 @@ Facts the re-read established, owned by
   the title TIM (PROT 0890), live as `engine-ui::title_strip_rows`
   ([`save-screen.md`](../subsystems/save-screen.md#the-title-strips-behind-the-load-window)).
 
-### The op-`0x49` submode actor family (`baka_hub_actors`)
+### The op-`0x49` submode actor family (`submode_hub_actors`)
 
 The engine has the field system-actor pool these rows were said to lack:
 `World::man_load_actor_reset` spawns an `ActorHandler::SubmodeDriver` actor on
@@ -766,7 +766,7 @@ as disclosed), `effect_ribbon` (`FUN_8001ADA4` case 4, as disclosed),
 `cutscene::sprite_stack_pop` (`FUN_801D629C` at `0x801D648C`), `gameover_banner`
 (caller live, mode 18 never entered), `title_prim`, `overlay_loader`,
 `chunk_install`, `cd_dma`, `input`, `scene_name_sync`, `mode_entry_init`,
-`move_no_effect_guard`, `spawn_move_actor`, `scus_core_helpers`,
+`move_no_effect_guard`, `spawn_move_actor`, `actor_node_pool`,
 `monster_archive::animation`, `new_game`, `player_anm`, `strv2_decode` and
 `seq_events`. `mode::other_warp_init_stage` is honest with a sharper edge: it
 has **no `jal` anywhere**, and its one reference is the mode-table slot
@@ -958,7 +958,7 @@ is the whole point of sweeping five reference forms rather than one.
 
 ### The SCUS battle-kernel block: one wire, and where its reach really ends
 
-`scus_battle_helpers` disclosed four arithmetic kernels behind four different
+`battle_arith_cores` disclosed four arithmetic kernels behind four different
 missing halves. One of the four closed, and it is worth recording as a shape
 rather than as a row, because the clause that gave way was not the one the
 disclosure leaned hardest on.
@@ -996,8 +996,8 @@ The wire's own limits, stated so the next reader does not re-derive them:
 
 One sweep over the disclosed-inert rows of `cd_dma`, `stream_file`,
 `overlay_loader`, `card_bu_io`, `card_flow`, `mdec_dma_sync`, `float_tween`,
-`menu_list_rows`, `mode_entry_init`, `scus_core_helpers`, `title_prim`,
-`menu_actor_seed`, `vram_rect_copy`, `panel_backread_loader`, `fade_ramp`,
+`menu_list_rows`, `mode_entry_init`, `actor_node_pool`, `title_prim`,
+`pooled_actor_seed`, `vram_rect_copy`, `panel_backread_loader`, `fade_ramp`,
 `camera_ease`, `mode` and `save_subscreen`. The point of the sweep was the
 class, not the wiring: most of these disclosures were already precise about
 their blocker and wrong only about what *kind* of thing that blocker is.
@@ -1007,7 +1007,7 @@ their blocker and wrong only about what *kind* of thing that blocker is.
 Two files carry both classes, and a file-level reading gets each of them
 backwards in one direction:
 
-- `engine-vm::scus_core_helpers` - all three classes are `REPLACE` now: the
+- `engine-vm::actor_node_pool` - all three classes are `REPLACE` now: the
   actor node pool (`Vec`-backed generational pool), `copy_blocks_32`
   (borrow-in-place chunk walk in `legaia_asset::parse_streaming_with`), and
   `list_append_u16`, which is `engine-core::cutscene::sprite_stack_push`'s
@@ -1026,7 +1026,7 @@ backwards in one direction:
 | `card_bu_io`, `card_flow` | `REPLACE` | `legaia_save::emu::CardView` + `legaia_save::card`, driven synchronously by `web-viewer::cards::write_session_into_card` |
 | `mdec_dma_sync` | `REPLACE` | the `legaia_mdec` software decoder; a decoded frame is finished when the call returns |
 | `float_tween`, `title_prim` | `REPLACE` | the `engine-ui` draw-list builders, which rebuild screen state each frame instead of tweening or queueing GPU packets |
-| `menu_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
+| `pooled_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
 | `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
 | `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
 | `camera_ease` | `DISCLOSE`, since closed as `WIRE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks were no-op defaults. They are implemented now, so the offset is posted and stepped - see the camera-ease block below |
@@ -1084,8 +1084,8 @@ and the only thing that can be stale is a marker that exists.
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
 | `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
-| `scus_battle_helpers::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
-| `scus_battle_helpers::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
+| `battle_arith_cores::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
+| `battle_arith_cores::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |
 
 Two neighbours were checked against the same bar and stay `DISCLOSE`.
@@ -1428,7 +1428,7 @@ withdrawn claim is only useful with its refutation attached.
 | `801d6e5c` | Said the duel draws no fighter clip. The browser host plays both sides' clips; the native window stages none. That is an undisclosed per-host split, and neither host is the blocker - the action record's per-sub-keyframe `+0x26` column is undecoded, so the `frame_indices` slice cannot be built at all. |
 | `801da59c` | Said no engine-side chain slot exists to write back into. The port holds saved chains (`legaia_save::SavedChainRecord`, `World::party.saved_chains`, persisted and editable). The blocker is a mapping: `legaia_save`'s retail `0x414` record model declares no accessor at record-relative `+0x1A7` / `+0x1B7`. |
 | `801e2524` | Named `resolve_arts_input_entry` in the battle command flow as the raiser's engine-side home. No such function exists. The live chain matchers are in `World::build_battle_arts_rows`. |
-| `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `battle_chrome`'s own functions (then in `engine-vm`, now `engine-ui`) have no caller outside test blocks. `engine-ui::ui_overlay::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
+| `801d32bc` / `801d57e8` / `801d5778` / `801d9ae8` | One sentence of the shared module blanket said `battle_chrome`'s own functions (then in `engine-vm`, now `engine-ui`) have no caller outside test blocks. `engine-ui::battle_hud::party_panel_stage_x` calls `battle_chrome::panel_seats` and reads `PANEL_TEXT_INSET` in production. The blanket's load-bearing claim - that no live path reads a *parsed* record, so the disc table reaches no pixel - is unaffected. |
 
 #### The ones that were replacements wearing the wrong marker
 

@@ -232,7 +232,9 @@ impl MinigameSubId {
     pub fn bgm_id(self) -> Option<u16> {
         match self {
             MinigameSubId::BakaFighter => Some(BAKA_FIGHTER_BGM_ID),
-            MinigameSubId::MuscleDome => Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID),
+            MinigameSubId::MuscleDome => {
+                Some(legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID)
+            }
             MinigameSubId::Dance
             | MinigameSubId::Fishing
             | MinigameSubId::SlotMachine

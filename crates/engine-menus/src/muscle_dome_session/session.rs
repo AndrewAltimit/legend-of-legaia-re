@@ -310,7 +310,10 @@ impl MuscleDomeSession {
         &self,
         char_id: u8,
     ) -> legaia_engine_battle_vm::battle_cast_dispatch::RewardBanner {
-        legaia_engine_battle_vm::battle_cast_dispatch::reward_banner(char_id, self.reward_seru_index)
+        legaia_engine_battle_vm::battle_cast_dispatch::reward_banner(
+            char_id,
+            self.reward_seru_index,
+        )
     }
 
     /// Whether the leg is over. A KO either way - there is no other way for a

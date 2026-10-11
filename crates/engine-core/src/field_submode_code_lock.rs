@@ -37,8 +37,10 @@
 //! have no system-UI sprite pass for those records, so a cell is drawn as the
 //! button's letter.
 
-use legaia_engine_field::submode_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot, window};
 use legaia_engine_field::code_lock_actor::{CODE_LEN, CodeLockActor};
+use legaia_engine_field::submode_hub_actors::{
+    HubAction, HubActor, HubFrame, HubGrid, slot, window,
+};
 
 use crate::field_submode_flag_window::{FIELD_OVERLAY_BASE, FlagWindowLine, FlagWrite};
 

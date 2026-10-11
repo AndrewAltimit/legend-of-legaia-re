@@ -15,6 +15,7 @@ name the same paths they always did.
 | `fishing_chrome` | The venue chrome: the float actor, splash and ripple spawn geometry, the reel cadence ring. |
 | `fishing_hub` | The hub screen a venue's idle shore opens. |
 | `minigame_floor` | The venue floor grid: ground height, the polar tables, the water tile class. |
+| `dance_marker` | The step-marker flipbook every marker tile actor on a venue floor runs (the Sol dance floor and the pond). |
 
 All of it is documented in
 [`minigame-fishing.md`](../../docs/subsystems/minigame-fishing.md).
@@ -22,8 +23,10 @@ All of it is documented in
 ## The split line
 
 The five modules name each other, the disc-parsed fishing tables in
-`legaia-asset`, the field-region, pad and projection kernels in
-`legaia-engine-vm` and the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one
+`legaia-asset`, the field-region queries in `legaia-engine-field`, pad input
+and the BIOS `rand` in `legaia-engine-system`, the GTE divide in
+`legaia-render-kernels`, the vertex-morph stager in `legaia-engine-vm` and
+the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one
 game in the overlay band that separates as a leaf: the dance, the Baka
 Fighter duel, the slot machine and the Muscle Dome ladder share the band's
 overlay chrome and effect-spawn types with each other.

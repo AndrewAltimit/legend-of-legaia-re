@@ -228,9 +228,11 @@ fn vera_runs_its_fades_beside_the_band_flash() {
         world.actors[i].battle.hp = 9000;
         world.actors[i].battle.max_hp = 9000;
     }
-    world.presentation.fade = Some(crate::fade::FadeState::load(&legaia_engine_vm::battle_action::summon_fade_template(
-        &legaia_engine_vm::battle_action::SUMMON_FLASH_OUT,
-    )));
+    world.presentation.fade = Some(crate::fade::FadeState::load(
+        &legaia_engine_vm::battle_action::summon_fade_template(
+            &legaia_engine_vm::battle_action::SUMMON_FLASH_OUT,
+        ),
+    ));
     world.arm_summon_stager(0, 0x83);
     let mut rise = false;
     let mut pair = false;

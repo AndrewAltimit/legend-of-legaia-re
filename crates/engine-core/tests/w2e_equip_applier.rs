@@ -16,7 +16,9 @@ use legaia_engine_core::equip_session::{
     RETAIL_WEAPON_EQUIP_BYTE, retail_slot_row_for_engine_slot,
 };
 use legaia_engine_core::equipment::{DiscEquipEntry, DiscEquipInfo};
-use legaia_engine_field::dev_equip_commit::{BAG_MISS, EQUIP_SFX_CUE, EquipCommitHost, commit_equip};
+use legaia_engine_field::dev_equip_commit::{
+    BAG_MISS, EQUIP_SFX_CUE, EquipCommitHost, commit_equip,
+};
 use legaia_engine_field::dev_menu_leaves::resolve_equip_slot;
 use std::collections::HashMap;
 

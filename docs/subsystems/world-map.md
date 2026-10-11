@@ -774,7 +774,7 @@ Rows step `0x0E`, or `0x0D` while the op-`0x49` descriptor cell
 
 Port: `legaia_engine_field::dev_menu_leaves::equip_stat_panel` is the whole
 sub-draw, composing `aggregate_slot_stats` (twice), `can_equip`,
-`resolve_equip_slot` and `stat_deltas`. `baka_hub_actors::entry_list` calls it
+`resolve_equip_slot` and `stat_deltas`. `submode_hub_actors::entry_list` calls it
 where the `jal` sits and splices its rows in as `HubDraw::EntrySubPanel`. The
 painter dispatch is `World::tick_submode_screen` -> `HubPainter::for_window`
 -> `EntryList`; which record index that dispatch gets is covered on
@@ -964,8 +964,8 @@ More `+0x54`-keyed actor state machines share the band (`ctx[+0x54]` = phase,
 |---|---|---|---|
 | `FUN_801E5338` | `801e5338.txt` | Sparkle emitter: up to 8 `SPRT` particles at `rand()` offsets (`FUN_80056798`) around `ctx[+0x14/+0x16]`, each through a 10-frame sprite anim, posted via `AddPrim`; phase `2` waits for all to retire, then sets bit `0x8`. | None - [retail never runs it](#the-sparkle-burst-has-no-spawner) |
 | `FUN_801EA9B0` | `overlay_cutscene_dialogue_801ea9b0.txt` | Dev-menu row-action dispatcher ([above](#fun_801ea9b0---dev-menu-row-action-dispatcher-1000-bytes)). | `world_map_panel::dev_menu_action` |
-| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, count `_DAT_8007B806`, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"`. | `engine-vm::travel_art_actor` |
-| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80`. | `engine-vm::travel_art_actor` |
+| `FUN_801EE094` | `801ee094.txt` | **Riremito** travel-art actor (string `"ON RIREMITO"`): scans the CDNAME define table (`0x80088758`, count `_DAT_8007B806`, `0x10` stride, `s16` define number at `+0xC`) for the TOC index `_DAT_80084628`; a miss parks phase `99` and prints `"UNFIND MAP NUMBER %d"`. | `engine-field::travel_art_actor` |
+| `FUN_801EE328` | `801ee328.txt` | **Rula** travel-art actor (string `"ON RULA"`): same define-table search; phase 2 raises the halt bit on `_DAT_8007C364[+0x10]`, scrolls `_DAT_8007C364[+0x16]` and spawns a hold-at-black fade via `FUN_80024E80`. | `engine-field::travel_art_actor` |
 | `FUN_801EF014` | `801ef014.txt` | Flag-window picker over the tile descriptor `_DAT_8007B450`: counts selectable cells (`+1`), drives `FUN_801E9DC8`, commits the pick into `_DAT_8007BB88`, exits via `ctx[+0x50] = 0x1A`. | `flag_window_tick` |
 | `FUN_801E3E00` | `overlay_world_map_walk_801e3e00.txt` | The attached light's keyframe script, a subroutine of `FUN_801E4470` ([below](#the-fog-rgb-script-is-the-attached-lights)). | `attached_sprite_script_tick` |
 

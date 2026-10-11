@@ -136,7 +136,9 @@ fn the_close_tick_default_unparks_instead_of_hanging() {
 #[test]
 fn the_soft_reset_slides_records_in_then_hands_off_to_the_title() {
     use crate::input::PadButton;
-    use legaia_engine_field::world_map_panel_actors::{SOFT_RESET_SLIDE_REST, SOFT_RESET_SLIDE_START};
+    use legaia_engine_field::world_map_panel_actors::{
+        SOFT_RESET_SLIDE_REST, SOFT_RESET_SLIDE_START,
+    };
     assert_eq!(slot_for_op49_sub_op(0x0C), Some(SOFT_RESET_SLOT));
     let mut w = world_with_driver();
     w.open_field_submode_screen(SOFT_RESET_SLOT, None);

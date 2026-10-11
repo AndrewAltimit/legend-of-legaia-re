@@ -670,10 +670,7 @@ impl MarkerFloor {
     }
 
     /// Build a pool from explicit tiles (hosts with no `.MAP`, and tests).
-    pub fn from_tiles(
-        tiles: Vec<MarkerTile>,
-        script: crate::dance_marker::MarkerScript,
-    ) -> Self {
+    pub fn from_tiles(tiles: Vec<MarkerTile>, script: crate::dance_marker::MarkerScript) -> Self {
         MarkerFloor { tiles, script }
     }
 
