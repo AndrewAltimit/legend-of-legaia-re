@@ -266,3 +266,497 @@ pub(super) fn arm_requested_battle(session: &mut BootSession, spec: &str) {
         world.encounters.rng_hold = None;
     }
 }
+
+/// `--seed-party`: seed the New Game starting party (Vahn from the SCUS
+/// template) so the pause menu's Status / party screens render real content
+/// rather than an empty roster. Runs after field entry; `begin_new_game`
+/// only resets story/money/inventory + sets mode=Field, leaving the loaded
+/// scene intact.
+///
+/// A `--world-map` entry keeps its mode: `begin_new_game`'s `mode = Field`
+/// is the New Game boot's field launch, and letting it stand turned the
+/// overworld into a field scene - the field fog pool (the kingdom MAN's
+/// fog bit) then drew its sheets across the terrain through the field
+/// camera, and the terrain took the field draw path, neither of which the
+/// world map runs.
+pub(super) fn seed_new_game_party(session: &mut BootSession) {
+    let entered = session.host.world.mode;
+    session.begin_new_game();
+    if entered == legaia_engine_mode::mode::SceneMode::WorldMap {
+        session.host.world.mode = entered;
+    }
+    let seeded = session.host.world.party.roster.members.len();
+    log::info!("play-window: --seed-party seeded {seeded} roster member(s)");
+}
+
+/// Debug seat: `LEGAIA_SEAT=X,Z` puts the player on raw world `(X, Z)`
+/// (floor-sampled Y) and re-arms the zone camera's arrival snap - the
+/// frame-pairing aid for comparing this host against a retail save state
+/// at that state's own player position. The play page's twin is
+/// `play_debug_seat`.
+pub(super) fn apply_debug_seat_env(session: &mut BootSession) {
+    if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
+        let xz: Vec<i16> = seat
+            .split(',')
+            .filter_map(|v| v.trim().parse::<i16>().ok())
+            .collect();
+        if let [x, z] = xz[..]
+            && session.host.debug_seat_standing(x, z)
+        {
+            // `LEGAIA_SEAT_CAMERA_BLOCK` (the retail-compare image channel):
+            // the snap composes from the retail state's own camera
+            // parameter block instead of a tile re-query.
+            match std::env::var("LEGAIA_SEAT_CAMERA_BLOCK")
+                .ok()
+                .and_then(|b| legaia_parity::retail_compare::camera_block_from_env(&b))
+            {
+                Some(block) => session.camera.zone.arm_arrival_over(block),
+                None => session.camera.zone.arm_arrival(),
+            }
+            // `LEGAIA_SEAT_FOCUS=FX,FZ` (stored form, X / Z negated): a
+            // retail state's focus pair when it is not on the player - the
+            // snap lands it instead of pinning the player, and the follow
+            // ease leaves it there until the player moves, as retail's does.
+            if let Some([fx, fz]) = std::env::var("LEGAIA_SEAT_FOCUS").ok().and_then(|f| {
+                let v: Vec<i32> = f
+                    .split(',')
+                    .filter_map(|v| v.trim().parse::<i32>().ok())
+                    .collect();
+                <[i32; 2]>::try_from(v).ok()
+            }) {
+                session.camera.zone.seat_focus_after_snap([fx, fz]);
+            }
+            // `LEGAIA_SEAT_HEADING=H` (retail space, `0` = -Z): stand the
+            // seated player in the state's own heading, which is walk
+            // history like the position - as the arrival facing too, so an
+            // entry script's `4C 3A` hands over the same heading.
+            if let Some(h) = std::env::var("LEGAIA_SEAT_HEADING")
+                .ok()
+                .and_then(|h| h.trim().parse::<i16>().ok())
+            {
+                session.host.world.locomotion.arrival_facing = h;
+                session.host.world.apply_arrival_facing();
+            }
+            log::info!("play-window: LEGAIA_SEAT seated the player at ({x}, {z})");
+        } else {
+            log::warn!("play-window: LEGAIA_SEAT='{seat}' not applied (want X,Z and a player)");
+        }
+    }
+}
+
+/// The retail-compare image channel's palette seeds: a retail state's live
+/// CLUT-cell cycler snapshots (`LEGAIA_SEAT_CLUT_FX`) and its scroller rects
+/// with their captured texels (`LEGAIA_SEAT_VRAM_RECTS=<file>`).
+pub(super) fn apply_capture_palette_seeds(session: &mut BootSession) {
+    // `LEGAIA_SEAT_CLUT_FX` (the retail-compare image channel): a retail
+    // state's live CLUT-cell cycler snapshots, written over the matching
+    // cycled cells so the frame shows the captured palette phase
+    // (`AmbientFxState::cell_fx_seed`).
+    if let Ok(fx) = std::env::var("LEGAIA_SEAT_CLUT_FX") {
+        session.host.world.ambient.cell_fx_seed =
+            legaia_parity::retail_compare::cell_fx_from_env(&fx);
+    }
+
+    // `LEGAIA_SEAT_VRAM_RECTS=<file>` (the retail-compare image channel): a
+    // retail state's scroller rects with their captured texels, written over
+    // the engine's after every field VRAM pass
+    // (`AmbientFxState::vram_rect_seed`).
+    if let Some(bytes) =
+        std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
+    {
+        session.host.world.ambient.vram_rect_seed =
+            legaia_parity::retail_compare::vram_rects_from_file(&bytes);
+    }
+}
+
+/// Debug learn path: `--learn-spell 0x81` (repeatable) or the older
+/// `LEGAIA_LEARN_SPELLS=0x81,0x9e` prepends those spell ids (level 1) onto
+/// the lead character's record, so a seeded New Game party can reach the
+/// Magic arm and cast - the cast-presentation screenshot harness. A
+/// development aid for the parity sweeps, not a player surface.
+pub(super) fn teach_debug_spells(
+    session: &mut BootSession,
+    debug_seeds: &super::super::DebugSeeds,
+) {
+    let parse = |s: &str| {
+        let s = s.trim();
+        s.strip_prefix("0x")
+            .or_else(|| s.strip_prefix("0X"))
+            .map_or_else(|| s.parse::<u8>().ok(), |h| u8::from_str_radix(h, 16).ok())
+    };
+    let from_env: Vec<u8> = std::env::var("LEGAIA_LEARN_SPELLS")
+        .ok()
+        .map(|list| list.split(',').filter_map(parse).collect())
+        .unwrap_or_default();
+    let mut learned = 0usize;
+    for id in debug_seeds.learn_spells.iter().copied().chain(from_env) {
+        if let Some(lead) = session.host.world.party.roster.members.first_mut() {
+            legaia_engine_battle::magic_xp::learn_spell_prepend(lead, id);
+            learned += 1;
+        }
+    }
+    if learned > 0 {
+        log::info!("play-window: taught the lead {learned} debug spell(s)");
+    } else if !debug_seeds.learn_spells.is_empty() {
+        log::warn!(
+            "play-window: --learn-spell had no lead party member to teach \
+                 (pass --seed-party, or --boot-ui and start a game, first)"
+        );
+    }
+}
+
+/// Debug RNG seed override: `LEGAIA_RNG_SEED=<u32>` (decimal or `0x` hex)
+/// replaces the world's boot seed, so a sweep can be re-rolled onto a
+/// different deterministic stream - the way to reach an AI branch (a
+/// monster cast) the default seed never picks. A development aid for the
+/// parity sweeps, not a player surface.
+pub(super) fn apply_rng_seed_env(session: &mut BootSession) {
+    if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
+        let spec = spec.trim();
+        let seed = spec
+            .strip_prefix("0x")
+            .or_else(|| spec.strip_prefix("0X"))
+            .map_or_else(
+                || spec.parse::<u32>().ok(),
+                |h| u32::from_str_radix(h, 16).ok(),
+            );
+        if let Some(seed) = seed {
+            session.host.world.rng_state = seed;
+            log::info!("play-window: LEGAIA_RNG_SEED reseeded the world RNG to {seed:#010x}");
+        }
+    }
+}
+
+/// Debug start-position override: `LEGAIA_START_TILE=X,Z` seats the player
+/// at that tile's centre after boot (tile*128+0x40, the op-0x3F entry-tile
+/// mapping). Useful for parking on the overworld continent - a direct
+/// `--world-map` boot has no door warp to seat the player, and the ocean
+/// is unwalkable, so the (0,0) default strands the marker at sea. E.g.
+/// Rim Elm's retail map01 arrival is `LEGAIA_START_TILE=96,25`.
+pub(super) fn apply_start_tile_env(session: &mut BootSession) {
+    if let Ok(spec) = std::env::var("LEGAIA_START_TILE") {
+        let parts: Vec<i32> = spec
+            .split(',')
+            .filter_map(|p| p.trim().parse().ok())
+            .collect();
+        if let [tx, tz] = parts[..] {
+            let (cx, cz) = (tx.clamp(0, 255) as u8, tz.clamp(0, 255) as u8);
+            session.host.world.seat_player_at_tile_rescued(cx, cz);
+            log::info!("play-window: LEGAIA_START_TILE seated player at tile ({cx},{cz})");
+        } else {
+            log::warn!("play-window: LEGAIA_START_TILE ignored (want \"X,Z\"): {spec:?}");
+        }
+    }
+}
+
+/// Log the battle chip / banner labels the boot read off the disc.
+pub(super) fn log_battle_ui_labels(session: &BootSession) {
+    // Battle chip / banner labels off the user's own disc: the `Ambushed!` and
+    // `surprised the enemy` lines, `Spirit`, `Escape` and the per-character
+    // Ra-Seru magic-command name, both halves installed at boot (`boot.rs`,
+    // the builder the browser page shares). Empty on a partial extraction, in
+    // which case the port's own wording draws instead of nothing.
+    //
+    // The party cast trigger's per-spell anim-pair lists are installed by
+    // `BootSession::open` for every session (`boot.rs`), auto-battles
+    // included.
+    {
+        let n = session.host.world.battle.ui_strings.len();
+        log::info!("play-window: battle UI labels read off the disc ({n} string(s))");
+    }
+}
+
+/// `LEGAIA_BATTLE_TUTORIAL`: a one-shot poke at the sparring tutorial's arm
+/// flag, for a player-driven session.
+pub(super) fn apply_battle_tutorial_env(session: &mut BootSession) {
+    // Sparring tutorial: nothing to gate here.
+    //
+    // The prompt corpus (stage overlay 967) is installed by scene entry for
+    // every host, and the arming is the disc's own one-shot system-flag test
+    // consumed in `World::enter_battle` - the port of the entity SM's
+    // battle-entry tail (`FUN_801DA51C`, `0x801DA698..0x801DA6B0`). The flag
+    // is raised by town01's Tetsu record executing `50 19` two ops before its
+    // battle-entry op, so the tutorial fires in the fight retail fires it in
+    // and in no other, with no host cooperation at all.
+    //
+    // What used to be here - a `--player-battle` flag AND `scene == "town01"`
+    // AND an env var - was a development shim standing in for that condition,
+    // and it was one-host: nothing equivalent existed on the browser page, so
+    // the page drew tutorial boxes it could never be given.
+    //
+    // `LEGAIA_BATTLE_TUTORIAL` survives as a pure debug affordance, and each
+    // arm is a one-shot poke at the same flag rather than a mode:
+    //   `=0`     drop an arm the boot scene's script already raised,
+    //   `=1`     raise it, so the next battle in any scene is the tutorial,
+    //   `=now`   raise it AND drop straight into a fight.
+    // `=0` cannot stop a *later* script SET - suppressing that would mean
+    // adding a knob retail has no equivalent of.
+    match std::env::var("LEGAIA_BATTLE_TUTORIAL").ok().as_deref() {
+        Some("0") => {
+            // Drop the arm the field script may already have raised.
+            session
+                .host
+                .world
+                .system_flag_clear(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+            log::info!("play-window: LEGAIA_BATTLE_TUTORIAL=0 suppressed the sparring arm");
+        }
+        Some(forced) => {
+            session
+                .host
+                .world
+                .system_flag_set(legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG);
+            let n = session.host.world.battle.tutorial_script.len();
+            log::info!(
+                "play-window: LEGAIA_BATTLE_TUTORIAL forced the sparring arm for the next \
+                     battle ({n} prompt(s) off the disc)"
+            );
+            // `=now` drops straight into the sparring fight instead of
+            // waiting for a step-driven encounter, so the prompt boxes are
+            // reachable in one run. Retail reaches this fight through the
+            // town01 story script.
+            if forced == "now" {
+                let world = &mut session.host.world;
+                let pc = world.party.party_count.clamp(1, 3);
+                world.enter_battle(pc, 1);
+                // Seed only the combatant slots - the field scene's other
+                // actors keep whatever the scene gave them.
+                for a in world.actors.iter_mut().take(pc as usize + 1) {
+                    if a.battle.max_hp == 0 {
+                        a.battle.max_hp = 100;
+                        a.battle.hp = 100;
+                    }
+                }
+                // Tag the monster seat with an id. `enter_battle` only seats
+                // actors; the id is what a step-driven encounter would have
+                // written from its resolved formation, and the whole battle
+                // RENDER path keys on it - `battle_monster_slots()` is empty
+                // without it, so `enter_battle_render` returns before it
+                // builds the stage backdrop or the ground grid. Without this
+                // the forced fight showed the field scene behind its HUD.
+                // `LEGAIA_BATTLE_TUTORIAL_MONSTER` picks the id.
+                let mid: u16 = std::env::var("LEGAIA_BATTLE_TUTORIAL_MONSTER")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1);
+                if let Some(a) = world.actors.get_mut(pc as usize) {
+                    a.battle_monster_id = Some(mid);
+                }
+                log::info!(
+                    "play-window: LEGAIA_BATTLE_TUTORIAL=now entered the sparring fight \
+                         (monster id {mid})"
+                );
+            }
+        }
+        None => {}
+    }
+}
+
+/// Play-window demo seeding (NOT part of the shared field-live core): two
+/// demo items, two saved chains per character and a one-command demo art
+/// written over every character's `Art1B` record, so the Item / Arts
+/// submenus are exercisable by hand on an empty boot save. Opt-in
+/// (`LEGAIA_DEMO_BATTLE_SEED=1`): it used to ride the default-on
+/// player-battle flag, so every native session that booted without a save
+/// played with free items and a fabricated art the browser page never
+/// had - the same engine, two different parties.
+pub(super) fn seed_demo_battle(session: &mut BootSession, player_battle: bool) {
+    let demo_seed = std::env::var("LEGAIA_DEMO_BATTLE_SEED").is_ok_and(|v| v == "1");
+    if player_battle && demo_seed {
+        log::info!("play-window: LEGAIA_DEMO_BATTLE_SEED=1 - seeding demo items / chains / art");
+        let world = &mut session.host.world;
+        if world.party.inventory.is_empty() {
+            world.party.inventory.insert(0x01, 5); // Healing Leaf
+            world.party.inventory.insert(0x13, 3); // Bomb (offensive)
+        }
+        if world.party.saved_chains.is_empty() {
+            use legaia_save::SavedChainRecord;
+            for slot in 0u8..3 {
+                world.party.saved_chains.push(SavedChainRecord {
+                    char_slot: slot,
+                    name: "Quick".into(),
+                    sequence: vec![1, 2],
+                });
+                world.party.saved_chains.push(SavedChainRecord {
+                    char_slot: slot,
+                    name: "Combo".into(),
+                    sequence: vec![1, 2, 3, 4],
+                });
+            }
+            // Stage a demo art record per character so the "Combo" chain
+            // (it ends in Up) resolves through the real art-power path -
+            // two damage strikes that burn the target. "Quick" has no
+            // matching record and falls back to the synthetic profile.
+            use legaia_art::power::PowerByte;
+            use legaia_art::queue::{ActionConstant, Command};
+            use legaia_art::record::EnemyEffect;
+            for character in legaia_art::Character::all() {
+                world.set_art_record(
+                    character,
+                    ActionConstant::Art1B,
+                    legaia_art::ArtRecord {
+                        action: ActionConstant::Art1B,
+                        commands: vec![Command::Up],
+                        anim_index: 0,
+                        anim_extra: vec![],
+                        name: None,
+                        power: vec![PowerByte::from_byte(0x18), PowerByte::from_byte(0x1D)],
+                        dmg_timing: vec![],
+                        effect_cues: Default::default(),
+                        hit_cues: vec![],
+                        identifier: 0,
+                        anim_speed: 0,
+                        enemy_effect: EnemyEffect::Toxic,
+                        repeat_frames: Default::default(),
+                        background: 0,
+                        runtime_address: None,
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// Install the requested present-party composition (after the roster +
+/// cheats have settled, so the actor reseed reads final records). The
+/// flag overrides whatever composition the boot save carried.
+pub(super) fn install_party_spec(session: &mut BootSession, spec: &str) -> Result<()> {
+    let slots = parse_party_spec(spec)?;
+    // Seed the roster slots the spec names before installing the
+    // composition. `--seed-party` seeds retail's New Game roster, which is
+    // Vahn alone (correct for the early game), so a `--party vahn,noa,gala`
+    // asked three battle ordinals to resolve to roster slots 1 and 2 that
+    // did not exist: both HUD panels read `P2 0/0` / `P3 0/0` and neither
+    // actor got a live HP / SPD mirror. Fill them from the same SCUS
+    // template rows retail seeds those characters from when they join.
+    // Records already carrying stats (a loaded save) are left alone.
+    if let Some(starting) = session.starting_party.clone() {
+        let seeded = session
+            .host
+            .world
+            .seed_party_members(&starting, &slots.clone());
+        if seeded > 0 {
+            log::info!(
+                "play-window: --party seeded {seeded} roster slot(s) from the SCUS \
+                     new-game template"
+            );
+        }
+    } else {
+        log::warn!(
+            "play-window: --party cannot seed absent roster slots - the SCUS \
+                 starting-party template was not readable from this boot source"
+        );
+    }
+    let world = &mut session.host.world;
+    world.set_active_party(slots.clone());
+    if world.party.active_party.len() != slots.len() {
+        log::warn!(
+            "play-window: --party {spec}: kept the first {} of {slots:?} \
+                 (3 on-screen positions)",
+            world.party.active_party.len()
+        );
+    }
+    // Fold the freshly-seeded records into the battle stat mirrors
+    // (attack / defence split / SPD / AP base). `set_active_party` copies
+    // HP / MP only; without this the new members fight at zero attack.
+    world.seed_party_battle_stats();
+    // The MP ceiling the battle HUD draws is the only one the world
+    // carries and nothing else seeds it from a record.
+    for member in 0..world.party.active_party.len() {
+        let rslot = world.party_roster_slot(member);
+        let mp_max = world
+            .party
+            .roster
+            .members
+            .get(rslot)
+            .map(|r| r.hp_mp_sp().mp_max)
+            .unwrap_or(0);
+        world.set_character_max_mp(member as u8, mp_max);
+    }
+    log::info!(
+        "play-window: present party = {:?} (roster slots, battle order)",
+        world.party.active_party
+    );
+    Ok(())
+}
+
+/// `--cheat-*`: after the roster and the present party have settled, so
+/// the level cheat grows the members that will actually fight.
+pub(super) fn apply_debug_cheats(
+    session: &mut BootSession,
+    debug_seeds: &super::super::DebugSeeds,
+) {
+    let templates = session
+        .host
+        .new_game_defaults
+        .as_ref()
+        .map(|d| d.party.clone());
+    debug_seeds
+        .cheats
+        .apply(&mut session.host.world, templates.as_ref());
+}
+
+/// `--battle <ROW|first>`: arm a deterministic fight. Last of the world
+/// setup, so the party / cheats / New Game reset have all settled and the
+/// combatants entering the battle are the ones the run configured.
+pub(super) fn arm_launch_battle(
+    session: &mut BootSession,
+    spec: &str,
+    boot_ui: bool,
+    party: Option<&str>,
+) {
+    if boot_ui {
+        // The title / save-select flow enters its own scene afterwards and
+        // would reset the session under the armed fight.
+        log::warn!("play-window: --battle ignored under --boot-ui (the boot flow re-enters)");
+    } else if session.host.world.mode == legaia_engine_mode::mode::SceneMode::Battle {
+        log::warn!("play-window: --battle skipped - a battle is already open");
+    } else {
+        // `LEGAIA_BATTLE_SETTLE=N`: tick the landed field N frames with
+        // no input before the fight is armed - the retail comparison
+        // corpus's headless seed enters every battle from a field that
+        // settled `retail_compare::SETTLE_TICKS` first, and seeds the
+        // world stream after it. Armed at boot instead, the encounter
+        // transition owned the very first tick, so the scene's entry
+        // scripts (the overworld's ambient-particle gate among them)
+        // never ran and the two sides entered the same fight on
+        // different `rand()` streams. The ticks run here, before the
+        // window loop, with the session draining its own queues and
+        // running the fog pool's render step as the headless seed does.
+        if let Some(n) = std::env::var("LEGAIA_BATTLE_SETTLE")
+            .ok()
+            .and_then(|s| s.trim().parse::<u32>().ok())
+        {
+            session.set_host_drains_queues(false);
+            for _ in 0..n {
+                if let Err(e) = session.tick() {
+                    log::error!("play-window: LEGAIA_BATTLE_SETTLE tick: {e:#}");
+                    break;
+                }
+                session.fog_render_tick();
+            }
+            session.set_host_drains_queues(true);
+            // `LEGAIA_BATTLE_LATCHES=23c,19` (hex): the system flags the
+            // fight's own record raised on its way into the entry op.
+            // The corpus lands the save without them and raises them
+            // here, after the settle, where retail's record did
+            // (`retail_compare_battle::entry_latches`).
+            if let Ok(v) = std::env::var("LEGAIA_BATTLE_LATCHES") {
+                for idx in v
+                    .split(',')
+                    .filter_map(|f| u16::from_str_radix(f.trim(), 16).ok())
+                {
+                    session.host.world.system_flag_set(idx);
+                }
+            }
+            // The settle can run a script that re-seats the present
+            // party (a scripted duel's entry); the headless seed installs
+            // the fight's roster after its settle, so the child does too.
+            if let Some(slots) = party.and_then(|p| parse_party_spec(p).ok())
+                && slots != session.host.world.party.active_party
+            {
+                session.host.world.set_active_party(slots);
+            }
+        }
+        arm_requested_battle(session, spec);
+    }
+}

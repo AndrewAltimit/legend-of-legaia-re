@@ -40,6 +40,9 @@ NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/boot/frame_tick.rs"
 NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/boot/scene_entry.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_rack_disk.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
+# The actor stage of the scene asset upload (`upload_assets`): the player's
+# rig and the MAN-placed field NPCs.
+NATIVE_ASSETS_ACTORS = "crates/engine-shell/src/window/assets/actor_binding.rs"
 # The Muscle Dome session enter / exit / tick methods of the frame tick.
 NATIVE_MINIGAME_SESSIONS = (
     "crates/engine-core/src/world/frame_tick/minigame_sessions/muscle_dome.rs"
@@ -62,6 +65,17 @@ NATIVE_REDRAW_PASSES = (
 NATIVE_CAMERA_MOD = "crates/engine-shell/src/window/camera.rs"
 WEB_PLAY_CAMERA = "crates/web-viewer/src/play_camera.rs"
 NATIVE_KEYBOARD = "crates/engine-shell/src/window/event_handler/keyboard.rs"
+# `handle_key`'s arms, one method per key, by family.
+NATIVE_KEYBOARD_DEBUG_SPAWN = (
+    "crates/engine-shell/src/window/event_handler/keyboard/debug_spawn_keys.rs"
+)
+NATIVE_KEYBOARD_MINIGAME = (
+    "crates/engine-shell/src/window/event_handler/keyboard/minigame_keys.rs"
+)
+NATIVE_KEYBOARD_OPTION = (
+    "crates/engine-shell/src/window/event_handler/keyboard/option_keys.rs"
+)
+NATIVE_RUN = "crates/engine-shell/src/window/run.rs"
 NATIVE_BATTLE = "crates/engine-shell/src/window/battle.rs"
 WEB_PLAY_ARENA = "crates/web-viewer/src/play_minigame_arena.rs"
 WEB_PLAY_FISHING = "crates/web-viewer/src/play_fishing.rs"

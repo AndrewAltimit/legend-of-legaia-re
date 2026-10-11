@@ -5,13 +5,14 @@ Analysis: `ui_host_drift.tiers.sim_pairs`.
 """
 
 from ui_host_drift.rows.host_files import (
-    NATIVE_ASSETS,
+    NATIVE_ASSETS_ACTORS,
     NATIVE_BOOT_CUTSCENE,
     NATIVE_BOOT_FRAME_TICK,
     NATIVE_BOOT_SCENE_ENTRY,
     NATIVE_DEV_MENU,
     NATIVE_GEOMETRY,
-    NATIVE_KEYBOARD,
+    NATIVE_KEYBOARD_OPTION,
+    NATIVE_RUN,
     NATIVE_MINIGAME_SESSIONS,
     NATIVE_REDRAW,
     NATIVE_REDRAW_PASSES,
@@ -226,7 +227,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "it on its CLI picker entry only; arming it shadows retail's L1 map "
         "display. Both entries ask `World::arm_picker_world_map_debug`",
         "sites": {
-            "native": ("crates/engine-shell/src/window/run.rs", "cmd_play_window_with_record"),
+            "native": (NATIVE_RUN, "enter_launch_scene"),
             "web": ("crates/web-viewer/src/runtime/scene_setup.rs", "enter_field_core"),
         },
         "mode": "symbols_all",
@@ -472,7 +473,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "apply and never persisted. The page's export did exactly that (and "
         "had no caller). Both sites must step the option",
         "sites": {
-            "native": (NATIVE_KEYBOARD, "handle_key"),
+            "native": (NATIVE_KEYBOARD_OPTION, "key_camera_distance"),
             "web": (WEB_PLAY_CAMERA, "play_camera_cycle_distance"),
         },
         "mode": "symbols_all",
@@ -932,7 +933,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "magic scan blind to a TMD inside an LZS bundle descriptor - which is "
         "where the four scenes that script a re-bind keep all of their models",
         "sites": {
-            "native": (NATIVE_ASSETS, "upload_assets"),
+            "native": (NATIVE_ASSETS_ACTORS, "upload_field_npc"),
             # The page's actor layer (`web-viewer::field_actors`, shared
             # with the map viewer) is the body that reads the world field;
             # `play_npc_live_model` and the mesh build both go through it.

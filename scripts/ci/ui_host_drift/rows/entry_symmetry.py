@@ -39,6 +39,9 @@ from ui_host_drift.roots import REPO
 # through these same handlers, which is why they are the tier's denominator.
 HOTKEY_SOURCES = [
     "crates/engine-shell/src/window/event_handler/keyboard.rs",
+    "crates/engine-shell/src/window/event_handler/keyboard/debug_spawn_keys.rs",
+    "crates/engine-shell/src/window/event_handler/keyboard/minigame_keys.rs",
+    "crates/engine-shell/src/window/event_handler/keyboard/option_keys.rs",
     "crates/engine-shell/src/window/minigames.rs",
     "crates/engine-shell/src/window/minigames/baka_fighter.rs",
     "crates/engine-shell/src/window/minigames/dance.rs",

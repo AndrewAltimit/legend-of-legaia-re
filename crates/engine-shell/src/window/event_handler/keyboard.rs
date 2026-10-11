@@ -1,7 +1,15 @@
-//! `KeyboardInput` window-event handler, extracted from `event_handler.rs`
-//! (mechanical split; behavior-preserving).
+//! `KeyboardInput` window-event handler: the `Escape` quit, then
+//! [`PlayWindowApp::handle_key`]'s ordered key arms, ending in the pad
+//! mapping.
 
 use super::super::*;
+
+#[path = "keyboard/debug_spawn_keys.rs"]
+mod debug_spawn_keys;
+#[path = "keyboard/minigame_keys.rs"]
+mod minigame_keys;
+#[path = "keyboard/option_keys.rs"]
+mod option_keys;
 
 impl PlayWindowApp {
     pub(super) fn handle_keyboard(
@@ -32,12 +40,30 @@ impl PlayWindowApp {
     /// minigame entries, the fishing prize exchange, the dialogue option
     /// picker - is therefore scriptable, which `--pad-script` alone cannot do
     /// (it writes the pad word and this function never runs).
+    ///
+    /// The arms run in this order and the first to consume the key ends the
+    /// dispatch: an arm returns before the pad lookup, so a window arm
+    /// sitting on a bound key deletes that button from the keyboard (see
+    /// `keycode_to_name`).
     pub(super) fn handle_key(&mut self, code: KeyCode, state: ElementState) {
-        // One latched key name per physical press, for the pause menu's Key
-        // Config screen. Held keys repeat as a stream of `Pressed` events, so
-        // the set below collapses each stream to its leading edge - without
-        // it, holding the confirm key would rebind the highlighted row to
-        // that key the moment the screen opened.
+        self.latch_key_name(code, state);
+        if self.debug_spawn_key(code, state)
+            || self.minigame_key(code, state)
+            || self.option_key(code, state)
+            || self.key_name_entry(code, state)
+            || self.key_dialog_picker(code, state)
+        {
+            return;
+        }
+        self.key_pad_button(code, state);
+    }
+
+    /// One latched key name per physical press, for the pause menu's Key
+    /// Config screen. Held keys repeat as a stream of `Pressed` events, so
+    /// the set below collapses each stream to its leading edge - without
+    /// it, holding the confirm key would rebind the highlighted row to
+    /// that key the moment the screen opened.
+    fn latch_key_name(&mut self, code: KeyCode, state: ElementState) {
         match state {
             ElementState::Pressed => {
                 if self.keys_down.insert(code) {
@@ -51,800 +77,33 @@ impl PlayWindowApp {
                 self.keys_down.remove(&code);
             }
         }
-        // Dev affordance: spawn a debug effect marker at the player so
-        // the effect-pool render bridge can be exercised by hand
-        // before the runtime effect catalog is wired into battle-enter.
-        //
-        // On `F5`, not on `E`, and the rest of this family (`F`/`G`/`H`/`J`)
-        // stays on letters: `E` is bound to R1 in the engine's default pad
-        // table, and an arm here returns before the pad lookup, so a window
-        // arm sitting on a bound key silently deletes that button from the
-        // keyboard. See `keycode_to_name`.
-        if matches!(code, KeyCode::F5)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            let pos = self
-                .session
-                .host
-                .world
-                .actors
-                .iter()
-                .find(|a| a.active)
-                .map(|a| {
-                    [
-                        a.move_state.world_x as f32,
-                        a.move_state.world_y as f32,
-                        a.move_state.world_z as f32,
-                    ]
-                })
-                .unwrap_or([0.0, 0.0, 0.0]);
-            self.session.host.world.spawn_debug_effect(pos);
-            return;
-        }
-        // `F`: seat a synthetic *Tail Fire* effect carrying its `etmd`
-        // 3D model (global TMD pool index 4, textured by the resident
-        // `etim` texels) at the first active actor, exercising the
-        // model render path with a fixed model index. The data-driven
-        // effect-id -> etmd-model selection is decoded (move-power
-        // record `+0x12`/`+0x16` effect-id lists -> the `0x801F6324`
-        // prototype table -> record `model_sel` -> `global_tmd_pool
-        // [model_sel + 3]`; `legaia_game_tables::move_power::EffectListEntry`
-        // + `World::spawn_move_fx`, exercised by the `H` key); `F` is
-        // just the simpler fixed-model dev hand-spawn.
-        if matches!(code, KeyCode::KeyF)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            let pos = self
-                .session
-                .host
-                .world
-                .actors
-                .iter()
-                .find(|a| a.active)
-                .map(|a| {
-                    [
-                        a.move_state.world_x as f32,
-                        a.move_state.world_y as f32,
-                        a.move_state.world_z as f32,
-                    ]
-                })
-                .unwrap_or([0.0, 0.0, 0.0]);
-            // Prefer the real Gimard *Tail Fire* mesh from the PROT
-            // 0871 effect-model library when it's resident; fall back
-            // to the PROT 0874 §0 preview stand-in otherwise.
-            let model_index = if self
-                .session
-                .host
-                .world
-                .global_tmd(legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX as i16)
-                .is_some()
-            {
-                legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX
-            } else {
-                legaia_engine_core::scene_host::ETMD_TAIL_FIRE_MODEL_INDEX
-            };
-            self.session
-                .host
-                .world
-                .spawn_debug_effect_model(pos, model_index);
-            return;
-        }
-        // `G`: debug-spawn the Gimard *Burning Attack* summon scene-
-        // graph (extraction PROT 0903). Loads the stager overlay, parses
-        // records, and seats a `SummonScene` at the first active actor;
-        // it then animates each frame via `tick_summon` (the move VM)
-        // and renders through the summon-part draw block below. Not the
-        // production cast-band trigger (state 0x29) -- a hand-spawn to
-        // exercise the driver, like the `F`-key static effect spawn.
-        if matches!(code, KeyCode::KeyG)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            // In battle, debug-spawn the faithful summon creature
-            // (Gimard, 0x81) through the battle-creature render path.
-            if self.session.host.world.mode == SceneMode::Battle {
-                self.spawn_summon_creature(0x81);
-                return;
-            }
-            const PROT_GIMARD_SUMMON_STAGER: u32 = 903;
-            let origin = self
-                .session
-                .host
-                .world
-                .actors
-                .iter()
-                .find(|a| a.active)
-                .map(|a| {
-                    [
-                        a.move_state.world_x,
-                        a.move_state.world_y,
-                        a.move_state.world_z,
-                    ]
-                })
-                .unwrap_or([0, 0, 0]);
-            // Read the stager's TOC-gap LBA footprint, not the
-            // indexed sub-region: the stager `.BIN`s over-read into
-            // the next entry, so the spawn-site pointer table must be
-            // parsed against the trimmed window (mirrors the disc-gated
-            // `summon_overlay_real` test's `unique_content_len` trim).
-            match self
-                .session
-                .host
-                .index
-                .entry_bytes_lba_footprint(PROT_GIMARD_SUMMON_STAGER)
-            {
-                Ok(bytes) => {
-                    let overlay = legaia_overlay_images::summon_overlay::parse(
-                        &bytes,
-                        legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE,
-                    );
-                    self.session.host.world.spawn_summon(
-                        &overlay,
-                        &bytes,
-                        legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX,
-                        origin,
-                    );
-                    log::info!(
-                        "spawned Gimard summon: {} parts at {origin:?}",
-                        overlay.parts.len()
-                    );
-                }
-                Err(e) => log::warn!("summon spawn: read summon stager PROT entry: {e:#}"),
-            }
-            return;
-        }
-        // `H`: debug-spawn a battle move's effect-FX scene-graph (the
-        // move-power `0x801f6324` prototype records, summon-format
-        // move-VM parts spawned through `FUN_80021B04`). Battle only -
-        // the move-power table + overlay are battle-context. Move id
-        // 0x06 is the worked example with library-mesh Spawn entries
-        // (0x27 / 0x28); its parts resolve into the effect-model library
-        // `global_tmd_pool[model_sel + 3]` and animate via `tick_move_fx`,
-        // rendered by the move-FX draw block below.
-        if matches!(code, KeyCode::KeyH)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode != SceneMode::Battle {
-                log::info!("move-FX spawn (H) is battle-only");
-                return;
-            }
-            // Enumerate every move the parsed move-power table can render
-            // as a 3D scene-graph and cycle through them across presses
-            // (data-driven, so the preview reflects the real overlay
-            // rather than one hard-coded id). The 0x06 worked example -
-            // library-mesh Spawn entries 0x27/0x28 resolving into
-            // `global_tmd_pool[model_sel + 3]` - is the starting point
-            // when present.
-            let spawnable = self
-                .session
-                .host
-                .world
-                .tables
-                .move_power
-                .as_ref()
-                .map(|c| c.spawnable_move_ids())
-                .unwrap_or_default();
-            if spawnable.is_empty() {
-                log::info!(
-                    "move-FX spawn (H): move-power table not installed / no spawnable moves"
-                );
-                return;
-            }
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static MOVE_FX_CYCLE: AtomicUsize = AtomicUsize::new(0);
-            let start = spawnable.iter().position(|&id| id == 0x06).unwrap_or(0);
-            let n = MOVE_FX_CYCLE.fetch_add(1, Ordering::Relaxed);
-            let slot = (start + n) % spawnable.len();
-            let move_fx_id = spawnable[slot];
-            log::info!(
-                "move-FX preview {}/{}: move {move_fx_id:#04x} (spawnable {:#04x?})",
-                slot + 1,
-                spawnable.len(),
-                spawnable
-            );
-            let origin = self
-                .session
-                .host
-                .world
-                .actors
-                .iter()
-                .find(|a| a.active)
-                .map(|a| {
-                    [
-                        a.move_state.world_x,
-                        a.move_state.world_y,
-                        a.move_state.world_z,
-                    ]
-                })
-                .unwrap_or([0, 0, 0]);
-            if self.session.host.world.spawn_move_fx(move_fx_id, origin) {
-                log::info!(
-                    "spawned move-FX for move {move_fx_id:#04x}: {} mesh parts at {origin:?}",
-                    self.session.host.world.active_move_fx_part_draws().len()
-                );
-                // Consume the surfaced presentation fields: the trail
-                // texpage (render layer's streak pass) and the sound cue
-                // (routed through the FUN_8004fcc8 dispatch decode). The
-                // host has no battle SFX bank wired yet, so the cue is
-                // resolved + logged rather than fired through the SPU.
-                if let Some(trail) = self.session.host.world.active_move_fx_trail_texpage() {
-                    log::info!("  move-FX trail texpage = {trail:#06x}");
-                }
-                if let Some(cue) = self.session.host.world.take_pending_move_fx_cue() {
-                    let dispatch = legaia_engine_audio::classify_cue(cue as u32);
-                    log::info!("  move-FX sound cue {cue:#04x} -> {dispatch:?}");
-                }
-            } else {
-                log::info!(
-                    "move-FX spawn for move {move_fx_id:#04x} produced no parts \
-                     (table not installed / no spawnable entries)"
-                );
-            }
-            return;
-        }
-        // `J`: debug-spawn one field move-VM scene-graph effect from the
-        // current scene's prescript stager table (the op-0x34-sub-3 /
-        // `FUN_800252EC` path), cycling through the table across presses.
-        // Exercises the field-FX tick/draw wiring without waiting for the
-        // field VM to execute an op-0x34-sub-3; the production trigger is
-        // `FieldHostImpl::effect_anim_trigger`.
-        if matches!(code, KeyCode::KeyJ)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            let count = self.session.host.world.props.stagers.len();
-            if count == 0 {
-                log::info!("field-FX spawn (J): no prescript stager table for this scene");
-                return;
-            }
-            let origin = self
-                .session
-                .host
-                .world
-                .actors
-                .iter()
-                .find(|a| a.active)
-                .map(|a| {
-                    [
-                        a.move_state.world_x,
-                        a.move_state.world_y,
-                        a.move_state.world_z,
-                    ]
-                })
-                .unwrap_or([0, 0, 0]);
-            use std::sync::atomic::{AtomicUsize, Ordering};
-            static FIELD_FX_CYCLE: AtomicUsize = AtomicUsize::new(0);
-            let id = FIELD_FX_CYCLE.fetch_add(1, Ordering::Relaxed) % count;
-            // Debug ergonomics: isolate one record per press (the
-            // production op-0x34-sub-3 path lets them stack).
-            self.session.host.world.props.active_fx.clear();
-            if self.session.host.world.spawn_field_stager(id, origin) {
-                let mesh: Vec<usize> = self
-                    .session
-                    .host
-                    .world
-                    .active_field_fx_part_draws()
-                    .iter()
-                    .map(|d| d.model_index)
-                    .collect();
-                let nodes: Vec<_> = self
-                    .session
-                    .host
-                    .world
-                    .active_field_fx_render_nodes()
-                    .iter()
-                    .map(|n| n.mode)
-                    .collect();
-                log::info!(
-                    "field-FX spawn {}/{count} at {origin:?}: {} mesh parts (model_index {mesh:?}), {} render-mode nodes {nodes:?}",
-                    id + 1,
-                    mesh.len(),
-                    nodes.len(),
-                );
-            }
-            return;
-        }
-        // `K`: toggle the Noa dance (rhythm) minigame. Loads the dance
-        // overlay (PROT 0980), suspends the current scene, and runs the
-        // beat clock + hit judge; the three judged buttons are the retail
-        // ones - Square / Circle / Triangle.
-        // Pressing K again aborts and logs the final score. The song
-        // also ends itself after its length limit (see below).
-        if matches!(code, KeyCode::KeyK)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode == SceneMode::Dance {
-                // Covers the pre-song count-in too: the world holds it, so
-                // leaving the mode drops it (and re-queues the hall's own
-                // track through `World::restore_minigame_bgm`).
-                if let Some(g) = self.session.host.world.exit_dance() {
-                    log::info!(
-                        "dance: aborted at score {} (pass={})",
-                        g.score(),
-                        g.passed()
-                    );
-                }
-                // A door-entered hall closes its mode-24 round trip here as
-                // the Start escape does (a no-op for a `K`-launched one).
-                self.session.host.world.close_minigame_round_trip();
-            } else if self.start_dance_minigame(false) {
-                log::info!(
-                    "dance: count-in - Square/Circle are the arrows, Triangle spends a groovy move, K to quit"
-                );
-            }
-            return;
-        }
-        // `U`: the how-to dance (retail's setumei mode) with the Disco King
-        // tutorial actor running beside the session - the opening prompt,
-        // the caption steps and the two practice gates, with placeholder
-        // caption text (the overlay's strings are Sony rodata).
-        if matches!(code, KeyCode::KeyU)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-            && self.session.host.world.mode != SceneMode::Dance
-        {
-            // The tutorial actor is installed by `World::enter_dance` when the
-            // parsed run is a how-to one, so it reaches the browser play page
-            // from the same call.
-            if self
-                .start_dance_minigame_mode(legaia_engine_minigames::dance::DanceMode::HowTo, false)
-            {
-                log::info!("dance: how-to started - face buttons advance the tutorial");
-            }
-            return;
-        }
-        // `L`: toggle the fishing minigame. Loads the fishing overlay
-        // (PROT 0972), suspends the current scene, and runs the cast /
-        // fight / score loop; Cross locks the cast and reels (reel A),
-        // Square is reel B. Pressing L again leaves and logs the points.
-        if matches!(code, KeyCode::KeyL)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode == SceneMode::Fishing {
-                if let Some(s) = self.session.host.world.exit_fishing() {
-                    log::info!(
-                        "fishing: left with {} points (best {})",
-                        s.record.points,
-                        s.record.best_points
-                    );
-                }
-                self.session.host.world.close_minigame_round_trip();
-            } else if self.start_fishing_minigame() {
-                log::info!(
-                    "fishing: started - Circle casts/locks, Cross reels(A), Square reels(B), L to quit, P = prize exchange"
-                );
-            }
-            return;
-        }
-        // `P` (while fishing): toggle the point-exchange prize list
-        // decoded from the fishing overlay's per-venue tables. While
-        // open: Up/Down move, Left/Right switch venue, Enter buys one.
-        if self.session.host.world.mode == SceneMode::Fishing
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            use legaia_engine_core::fishing_exchange_input::{ExchangeInput, ExchangeOutcome};
-            let world = &mut self.session.host.world;
-            let open = world.minigames.fishing_exchange.is_some();
-            // The key -> input map is this host's; what each input DOES
-            // (the points bank on open, the cursor floor, the venue flip, the
-            // buy at the cursor) is the shared engine kernel the browser
-            // play page's exchange panel drives too.
-            let input = match code {
-                KeyCode::KeyP => Some(ExchangeInput::Toggle),
-                KeyCode::ArrowUp if open => Some(ExchangeInput::Up),
-                KeyCode::ArrowDown if open => Some(ExchangeInput::Down),
-                KeyCode::ArrowLeft | KeyCode::ArrowRight if open => {
-                    Some(ExchangeInput::SwitchVenue)
-                }
-                KeyCode::Enter if open => Some(ExchangeInput::Buy),
-                _ => None,
-            };
-            if let Some(input) = input {
-                // Decoded by the shared fishing entry, so a session walked
-                // into through the venue door has them too.
-                match world.minigames.fishing_prize_venues.clone() {
-                    Some(venues) => match world.fishing_exchange_input(&venues, input) {
-                        ExchangeOutcome::Bought(p) => log::info!(
-                            "fishing exchange: bought item {:#04x} x{} for {} points ({} left)",
-                            p.item_id,
-                            p.qty,
-                            p.cost,
-                            world.minigames.fishing_points
-                        ),
-                        ExchangeOutcome::Refused if input == ExchangeInput::Buy => {
-                            log::info!("fishing exchange: row unavailable (points/limit/one-time)")
-                        }
-                        _ => {}
-                    },
-                    None => log::info!("fishing: no exchange tables decoded (disc-free run?)"),
-                }
-                return;
-            }
-        }
-        // `O`: toggle the casino slot-machine minigame. The launch is the
-        // mode-24 door warp itself (`World::request_minigame_warp` with
-        // sub-id 3, drained by the scene host next tick), as `B` / `M` and
-        // the browser page's `play_mg_debug_warp` are: the session is the
-        // one a cabinet installs, its balance assigned from the casino coin
-        // bank (`FUN_801CEC94`). A thin bank is the machine's own state-1
-        // gate (fewer than 3 coins cannot spin); the cabinet record's
-        // coin-bank compare that refuses an empty bank at the door is the
-        // walked door's script, which the field VM runs on both hosts.
-        // Cross spins / collects, Square / Cross / Circle stop reels 0 / 1 / 2;
-        // pressing O again cashes the
-        // balance out into the coin bank and leaves.
-        if matches!(code, KeyCode::KeyO)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode == SceneMode::SlotMachine {
-                if let Some(m) = self.session.host.world.exit_slot_machine() {
-                    log::info!(
-                        "slots: cashed out {} coins into the bank (now {})",
-                        m.balance(),
-                        self.session.host.world.minigames.casino_coins
-                    );
-                }
-                self.session.host.world.close_minigame_round_trip();
-            } else {
-                self.session.host.world.request_minigame_warp(
-                    legaia_engine_mode::minigame_entry::MinigameSubId::SlotMachine.sub_id(),
-                );
-                log::info!(
-                    "slots: door warp armed (bank {} coins) - Cross spins/collects, Square/Cross/Circle stop reels 0/1/2, O to cash out",
-                    self.session.host.world.minigames.casino_coins
-                );
-            }
-            return;
-        }
-        // `M`: toggle the Muscle Dome contest (an ordinary battle, fought to
-        // a KO - nothing bounds it by turns). The selection is the battle's
-        // command flow: the ring (Left = Attack, Right = Ra-Seru, Down =
-        // Spirit), Auto | Command, the direction entry (Triangle pages the
-        // arts list), the review and Begin | Reselect. Pressing M again
-        // aborts (no reward on an abort).
-        //
-        // The launch is the mode-24 door warp itself
-        // (`World::request_minigame_warp`, drained by the scene host next
-        // tick), so the hotkey enters the session the arena door enters -
-        // the lead's own art catalog, the battle-theme swap through
-        // `swap_to_minigame_bgm`, the return warp on the way out. It used to
-        // build its own session, start the track through the director
-        // directly and install Vahn's arts whoever led.
-        if matches!(code, KeyCode::KeyM)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode == SceneMode::MuscleDome {
-                // `World::leave_muscle_dome` is the escape both hosts share:
-                // it reports the leg (a leg left undecided is the arena's
-                // run / give-up path, retail's `_DAT_80084448 = 4` arm) and
-                // settles a contest that has run out.
-                if let Some(s) = self.session.host.world.leave_muscle_dome() {
-                    use legaia_engine_menus::muscle_dome_session::MusclePhase;
-                    let phase = s.phase();
-                    match phase {
-                        MusclePhase::Won => log::info!("muscle: leg won"),
-                        MusclePhase::Lost => log::info!("muscle: leg lost"),
-                        _ => log::info!(
-                            "muscle: leg abandoned after {} turns - opponent left on {}% HP",
-                            s.turn(),
-                            s.hp_left()
-                        ),
-                    }
-                }
-                // The round trip restores the field's music with the scene.
-                self.session.host.world.close_minigame_round_trip();
-            } else {
-                self.session.host.world.request_minigame_warp(
-                    legaia_engine_mode::minigame_entry::MinigameSubId::MuscleDome.sub_id(),
-                );
-                log::info!(
-                    "muscle: door warp armed - fight to a KO, arrows enter directions, Cross confirms, M to leave"
-                );
-            }
-            return;
-        }
-        // `B`: toggle the Baka Fighter duel minigame - Square / Circle /
-        // Cross throw the three attacks (`World::tick_baka_fighter`; the
-        // special is retail's auto-finisher, no button); after a decided match the
-        // cabinet takes Left / Right (NEXT GAME / PAY OUT) and Cross.
-        // Pressing B again aborts (no coins on an abort). Launched
-        // through the mode-24 door warp like `M` above, so the overture swap
-        // and the return warp are the door's own.
-        if matches!(code, KeyCode::KeyB)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            if self.session.host.world.mode == SceneMode::BakaFighter {
-                // `exit_baka_fighter` runs the round trip, and its music
-                // restore, itself.
-                if let Some(f) = self.session.host.world.exit_baka_fighter() {
-                    match f.winner() {
-                        Some(0) => log::info!(
-                            "baka: match WON - {} coins banked (bank now {})",
-                            f.gold_reward(),
-                            self.session.host.world.minigames.casino_coins
-                        ),
-                        Some(_) => log::info!("baka: match lost"),
-                        None => log::info!("baka: match aborted"),
-                    }
-                }
-            } else {
-                self.session.host.world.request_minigame_warp(
-                    legaia_engine_mode::minigame_entry::MinigameSubId::BakaFighter.sub_id(),
-                );
-                log::info!("baka: door warp armed - Square/Circle/Cross attack, B to leave");
-            }
-            return;
-        }
-        // `F2`: master audio mute toggle. Flips the engine-only `muted`
-        // options knob, pushes it into the mixer's master gate (output
-        // silenced; sequencer + SPU keep ticking so unmute stays in sync),
-        // and persists it to the options config file. The HUD status line
-        // reflects the state ("audio muted").
-        //
-        // It used to be `V`, which is **Square** in the engine's default pad
-        // table - so the native window had no Square at all, and the dance
-        // minigame's third judged button, the fishing reel B and the
-        // three-actor talk's leader switch were all unpressable.
-        if matches!(code, KeyCode::F2) && state == ElementState::Pressed {
-            self.options_state.muted = !self.options_state.muted;
-            self.persist_and_apply_options();
-            log::info!(
-                "audio: {}",
-                if self.options_state.muted {
-                    "muted (F2 to unmute)"
-                } else {
-                    "unmuted"
-                }
-            );
-            return;
-        }
-        // `I`: toggle the enhanced-lighting enhancement (the persisted
-        // `enhanced_lighting` option, default on; `--dynamic-lighting` /
-        // `--no-dynamic-lighting` force it per session). NON-RETAIL: the
-        // field path has no light source, so OFF is the faithful
-        // pixel-identical render; ON shades under the scene mood with the
-        // derived lamp lights, emissive surfaces and their glow.
-        // Pure renderer state - no world/sim effect, replays unaffected.
-        if matches!(code, KeyCode::KeyI) && state == ElementState::Pressed {
-            self.dynamic_lighting = !self.dynamic_lighting;
-            if let Some(r) = self.win.renderer.as_ref() {
-                r.set_dynamic_lighting(self.dynamic_lighting);
-            }
-            self.options_state.enhanced_lighting = self.dynamic_lighting;
-            self.persist_and_apply_options();
-            log::info!(
-                "render: enhanced lighting {}",
-                if self.dynamic_lighting {
-                    "ON (enhancement - not retail)"
-                } else {
-                    "off (faithful baked shading)"
-                }
-            );
-            return;
-        }
-        // `F8`: cycle the time of day enhanced lighting lights scenes under
-        // (auto -> day -> dusk -> night). Persisted; inert while the
-        // enhancement is off.
-        if matches!(code, KeyCode::F8) && state == ElementState::Pressed {
-            use legaia_render_kernels::scene_lighting::TimeOfDay;
-            let next = TimeOfDay::from_name(&self.options_state.lighting_time_of_day)
-                .unwrap_or_default()
-                .next();
-            self.options_state.lighting_time_of_day = next.name().to_string();
-            self.persist_and_apply_options();
-            log::info!(
-                "render: time of day {}{}",
-                next.name(),
-                if self.dynamic_lighting {
-                    ""
-                } else {
-                    " (inert until enhanced lighting is on - press I)"
-                }
-            );
-            return;
-        }
-        // `Y`: toggle the shadows the dynamic-lighting enhancement's point
-        // lights cast (the `--no-dyn-shadows` flag's runtime twin). Shadows
-        // only - the lamps keep lighting the scene, unshadowed, which is
-        // what the play page's "Lamp shadows" box does too. Only visible
-        // while dynamic lighting (`I`) is on. Pure renderer state, like `I`.
-        if matches!(code, KeyCode::KeyY) && state == ElementState::Pressed {
-            self.dyn_shadows = !self.dyn_shadows;
-            if let Some(r) = self.win.renderer.as_ref() {
-                r.set_dyn_shadows(self.dyn_shadows);
-            }
-            log::info!(
-                "render: scene light-source shadows {}{}",
-                if self.dyn_shadows { "ON" } else { "off" },
-                if self.dynamic_lighting {
-                    ""
-                } else {
-                    " (inert until dynamic lighting is on - press I)"
-                }
-            );
-            return;
-        }
-        // `F4`: toggle the camera-occlusion fade enhancement (the
-        // `--no-occlusion-fade` flag's runtime twin). Default ON: field
-        // walls / roofs / props between the camera and the player dissolve
-        // to a screen-door dither around the character so it stays
-        // visible. Pure renderer state - no world/sim effect, replays
-        // unaffected. OFF is the retail behaviour (authored framing only).
-        //
-        // Not `D`, and for a sharper reason than `F2`-not-`V`: `D` is a
-        // **pad-bindable key name** (`KEY_NAME_DOM_CODES` carries it, and the
-        // browser layout spends it on Right), so a player who binds
-        // `D = Right` on the desktop build could not walk right - this arm
-        // consumes the event and returns before the pad mapping runs. `F4`
-        // has no entry in the shell's binding parser, so nothing can ever be
-        // bound to it.
-        if matches!(code, KeyCode::F4) && state == ElementState::Pressed {
-            self.occlusion_fade = !self.occlusion_fade;
-            if let Some(r) = self.win.renderer.as_ref() {
-                r.set_occlusion_fade(self.occlusion_fade);
-            }
-            log::info!(
-                "render: camera-occlusion fade {}",
-                if self.occlusion_fade {
-                    "ON (see-through walls - enhancement)"
-                } else {
-                    "off (retail authored framing)"
-                }
-            );
-            return;
-        }
-        // `F9`: toggle the volumetric ground-fog enhancement (the
-        // `--no-volumetric-fog` flag's runtime twin, the play page's "Ground
-        // fog" box). Default ON: misty / night scenes carry a drifting mist
-        // bank the characters part. The setting is the engine's option
-        // (`OptionsState::volumetric_fog` -> `WorldToggles::volumetric_fog`),
-        // persisted like `R`; off resets the bank and draws the frame
-        // without it. Like `F4`, an F-key so no pad binding can shadow it.
-        if matches!(code, KeyCode::F9) && state == ElementState::Pressed {
-            let on = !self.options_state.volumetric_fog;
-            self.options_state.volumetric_fog = on;
-            self.session.host.world.toggles.volumetric_fog = on;
-            self.persist_and_apply_options();
-            log::info!(
-                "render: volumetric ground fog {}",
-                if on {
-                    "ON (enhancement - not retail)"
-                } else {
-                    "off (retail fog puffs only)"
-                }
-            );
-            return;
-        }
-        // `F6`: cheat - fill the party's AP (Spirit) gauge (the play page's
-        // Cheats -> Max AP). `F7`: cheat - random encounters on / off (the
-        // play page's "No encounters", `--no-live-loop` at launch). F-keys,
-        // like `F4`, because nothing can be bound to them.
-        if matches!(code, KeyCode::F6) && state == ElementState::Pressed {
-            let line = self
-                .session
-                .host
-                .world
-                .apply_cheat(&legaia_engine_core::cheats::PlayerCheat::MaxAp, None);
-            log::info!("cheat: {line}");
-            return;
-        }
-        if matches!(code, KeyCode::F7) && state == ElementState::Pressed {
-            let world = &mut self.session.host.world;
-            let on = !world.toggles.live_gameplay_loop;
-            world.apply_cheat(
-                &legaia_engine_core::cheats::PlayerCheat::RandomEncounters(on),
-                None,
-            );
-            // The choice outlives this scene: the live-loop arming a card
-            // Load / New Game / door entry runs (`World::arm_live_loop`
-            // through `field_live_opts`) re-raised the roll, so `F7` off
-            // lasted only until the next Load. The play page's "No
-            // encounters" is a session flag its every entry reads
-            // (`LegaiaRuntime::live_battles`); this is the same flag here.
-            self.field_live_opts.live_loop = on;
-            log::info!("cheat: random encounters {}", if on { "ON" } else { "off" });
-            return;
-        }
-        // `F1`: toggle the shell's diagnostic text rows (scene / frame /
-        // mesh count, the camera + audio status line, the world-map camera
-        // readout, the no-encounter hint). Off by default - retail draws no
-        // text there, and the seat is the party readout's
-        // (`field_party_hud_draws`). `LEGAIA_DIAG_HUD` starts them on, the
-        // same variable the battle diagnostics read.
-        if matches!(code, KeyCode::F1) && state == ElementState::Pressed {
-            self.diag_rows = !self.diag_rows;
-            log::info!(
-                "hud: diagnostic rows {}",
-                if self.diag_rows { "ON" } else { "off" }
-            );
-            return;
-        }
-        // `F3`: toggle the field camera between the retail follow view
-        // (savestate-pinned pitch/yaw/H, player-anchored - the
-        // faithful framing) and the wide debug orbit vantage (better
-        // for eyeballing scene completeness). Moved off `C` for the same
-        // reason `F2` is not `V`: `C` is Triangle.
-        if matches!(code, KeyCode::F3)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            self.field_debug_camera = !self.field_debug_camera;
-            log::info!(
-                "camera: field vantage = {}",
-                if self.field_debug_camera {
-                    "debug orbit"
-                } else {
-                    "retail follow"
-                }
-            );
-            return;
-        }
-        // `T`: cycle the field camera-distance preset (retail -> far ->
-        // farther). A pure framing knob on the follow / debug-orbit
-        // cameras - it never feeds the world simulation. Persisted to the
-        // options config file; the interactive default is `far`.
-        if matches!(code, KeyCode::KeyT)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            let next = self.options_state.cycle_camera_distance();
-            self.session.camera.distance = next;
-            self.persist_and_apply_options();
-            log::info!("camera: distance = {} (T cycles)", next.label());
-            return;
-        }
-        // `R`: toggle precise movement (opt-in, NON-RETAIL): free-angle
-        // camera-relative locomotion instead of retail's 4/8-way
-        // quantisation - key diagonals walk true 45-degree vectors and an
-        // analog stick's angle passes through continuously. Persisted to
-        // the options config file; default off (the faithful remap).
-        if matches!(code, KeyCode::KeyR)
-            && state == ElementState::Pressed
-            && !self.boot_ui.is_active()
-        {
-            let on = !self.options_state.precise_movement;
-            self.options_state.precise_movement = on;
-            self.session.host.world.locomotion.precise_movement = on;
-            self.persist_and_apply_options();
-            log::info!(
-                "movement: precise {}",
-                if on {
-                    "ON (free-angle - not retail)"
-                } else {
-                    "off (retail 8-way remap)"
-                }
-            );
-            return;
-        }
-        // `N`: open the name-entry overlay for the lead character. The
-        // NEW GAME flow opens it automatically when the `town01` opening
-        // timeline reaches its op-`0x49` STATE_RESUME (P2[3] body
-        // `0x02c6`); this key is a dev hand-trigger to exercise the
-        // ported overlay outside that flow.
+    }
+
+    /// `N`: open the name-entry overlay for the lead character. The
+    /// NEW GAME flow opens it automatically when the `town01` opening
+    /// timeline reaches its op-`0x49` STATE_RESUME (P2[3] body
+    /// `0x02c6`); this key is a dev hand-trigger to exercise the
+    /// ported overlay outside that flow.
+    fn key_name_entry(&mut self, code: KeyCode, state: ElementState) -> bool {
         if matches!(code, KeyCode::KeyN)
             && state == ElementState::Pressed
             && !self.boot_ui.is_active()
             && !self.session.host.world.name_entry_active()
         {
             self.session.host.world.open_name_entry(0);
-            return;
+            return true;
         }
-        // Menu input: while the active dialog box is a multiple-choice
-        // menu (a picker decoded from the inline interaction script),
-        // Up/Down move the option cursor and a confirm button applies
-        // the chosen option's relative jump (`FUN_80038050`) instead of
-        // driving movement / dismissing the box. Resolve the key->button
-        // first so the immutable `mapping` borrow ends before the
-        // mutable `active_dialog` borrow.
+        false
+    }
+
+    /// Menu input: while the active dialog box is a multiple-choice
+    /// menu (a picker decoded from the inline interaction script),
+    /// Up/Down move the option cursor and a confirm button applies
+    /// the chosen option's relative jump (`FUN_80038050`) instead of
+    /// driving movement / dismissing the box. Resolve the key->button
+    /// first so the immutable `mapping` borrow ends before the
+    /// mutable `active_dialog` borrow.
+    fn key_dialog_picker(&mut self, code: KeyCode, state: ElementState) -> bool {
         if state == ElementState::Pressed {
             let is_confirm = matches!(
                 self.mapping.pad_button_for_key(keycode_to_name(code)),
@@ -858,18 +117,24 @@ impl PlayWindowApp {
             {
                 if matches!(code, KeyCode::ArrowUp) {
                     panel.move_picker_cursor(-1);
-                    return;
+                    return true;
                 }
                 if matches!(code, KeyCode::ArrowDown) {
                     panel.move_picker_cursor(1);
-                    return;
+                    return true;
                 }
                 if is_confirm {
                     panel.confirm_menu();
-                    return;
+                    return true;
                 }
             }
         }
+        false
+    }
+
+    /// The pad mapping: a key bound to a pad button holds or releases its
+    /// bit, and a transition is recorded for a replay.
+    fn key_pad_button(&mut self, code: KeyCode, state: ElementState) {
         let key_name = keycode_to_name(code);
         if let Some(button) = self.mapping.pad_button_for_key(key_name) {
             let prev = self.pad;
