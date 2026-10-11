@@ -743,8 +743,26 @@ pub fn run_until_break<H: MoveHost + ?Sized>(
     bytecode: &[u16],
     budget: usize,
 ) -> StepResult {
+    run_until_break_with(host, state, bytecode, budget, |_, _| {})
+}
+
+/// [`run_until_break`] with a callback after every opcode, handed the host
+/// and the state that opcode left.
+///
+/// A host that keeps its own copy of the stepping actor (so its queries can
+/// answer for that actor without aliasing `state`) refreshes the copy here;
+/// its queries then see the actor as of the last opcode boundary.
+pub fn run_until_break_with<H: MoveHost + ?Sized>(
+    host: &mut H,
+    state: &mut ActorState,
+    bytecode: &[u16],
+    budget: usize,
+    mut after_step: impl FnMut(&mut H, &ActorState),
+) -> StepResult {
     for _ in 0..budget {
-        match step(host, state, bytecode) {
+        let result = step(host, state, bytecode);
+        after_step(host, state);
+        match result {
             StepResult::Advance => continue,
             other => return other,
         }
@@ -804,13 +822,24 @@ pub fn actor_tick<H: MoveHost + ?Sized>(
     bytecode: &[u16],
     budget: usize,
 ) -> ActorTickOutcome {
+    actor_tick_with(host, state, bytecode, budget, |_, _| {})
+}
+
+/// [`actor_tick`] with [`run_until_break_with`]'s per-opcode callback.
+pub fn actor_tick_with<H: MoveHost + ?Sized>(
+    host: &mut H,
+    state: &mut ActorState,
+    bytecode: &[u16],
+    budget: usize,
+    after_step: impl FnMut(&mut H, &ActorState),
+) -> ActorTickOutcome {
     // Move-VM gate. Retail: `bgez wait_timer, skip-vm`. We branch on the
     // signed value: only step when timer is strictly negative.
     if state.wait_timer >= 0 {
         return ActorTickOutcome::Waiting;
     }
 
-    let result = run_until_break(host, state, bytecode, budget);
+    let result = run_until_break_with(host, state, bytecode, budget, after_step);
 
     // Post-call flag check. Retail: `andi v0, flags, 0x8; bne v0, zero,
     // halt-handler`. The HALT opcode already sets `flags |= 0x8` inside

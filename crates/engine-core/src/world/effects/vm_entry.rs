@@ -233,14 +233,11 @@ impl World {
             field_record_words: None,
             child_spawns: Vec::new(),
         };
-        let actor_state = unsafe {
-            // SAFETY: the host borrows `world.actors[slot]` only through
-            // queries that don't read this slot's `move_state`. The host
-            // implementation never touches `actors[slot].move_state`; it
-            // only reads sin/cos LUTs and other engine-side data.
-            &mut *(&mut host.world.actors[slot].move_state as *mut MoveActorState)
-        };
-        let result = vm::move_vm::step(&mut host, actor_state, bytecode);
+        // The VM steps a copy: the host answers position queries out of
+        // `world.actors`, and the stepping actor can be the one asked about.
+        let mut actor_state = host.world.actors[slot].move_state.clone();
+        let result = vm::move_vm::step(&mut host, &mut actor_state, bytecode);
+        host.world.actors[slot].move_state = actor_state;
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
             && let Some(buf) = self.move_vm.bytecode.get_mut(slot)

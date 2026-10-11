@@ -561,11 +561,19 @@ impl World {
             field_record_words: None,
             child_spawns: Vec::new(),
         };
-        let actor_state = unsafe {
-            // SAFETY: same disjoint-field justification as `step_move_vm`.
-            &mut *(&mut host.world.actors[slot].move_state as *mut MoveActorState)
-        };
-        let outcome = vm::move_vm::actor_tick(&mut host, actor_state, bytecode, budget);
+        // The VM steps a copy, and the world's copy is refreshed after every
+        // opcode: the host answers position queries out of `world.actors`,
+        // and the stepping actor can be the one asked about (the player
+        // running its own move script).
+        let mut actor_state = host.world.actors[slot].move_state.clone();
+        let outcome = vm::move_vm::actor_tick_with(
+            &mut host,
+            &mut actor_state,
+            bytecode,
+            budget,
+            |host, state| host.world.actors[slot].move_state.clone_from(state),
+        );
+        host.world.actors[slot].move_state = actor_state;
         let writes = std::mem::take(&mut host.deferred_writes);
         if !writes.is_empty()
             && let Some(buf) = self.move_vm.bytecode.get_mut(slot)

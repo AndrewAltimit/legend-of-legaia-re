@@ -784,18 +784,24 @@ impl World {
             self.field_pc = next_pc;
             return Some(FieldStepResult::Advance { next_pc });
         }
-        let ctx_ptr: *mut FieldCtx = &mut self.field_ctx;
-        let bc_ptr: *const Vec<u8> = &self.field_bytecode;
+        // The context and the script buffer leave the world for the step, so
+        // the host's `&mut World` aliases neither. No host method reaches
+        // `world.field_ctx` or `world.field_bytecode`; one that did would
+        // see the emptied value, and the assert below names it.
+        let mut ctx = std::mem::take(&mut self.field_ctx);
+        let bc = std::mem::take(&mut self.field_bytecode);
         let pc = self.field_pc;
         let mut host = FieldHostImpl { world: self };
-        // SAFETY: FieldHostImpl never borrows `world.field_ctx` or
-        // `world.field_bytecode` through the borrow.
-        let ctx = unsafe { &mut *ctx_ptr };
-        let bc: &[u8] = unsafe { (*bc_ptr).as_slice() };
         // A player-aimed `+0x72` write (every kingdom map's entry script
         // opens with `CC F8 40 00 0C 00 00`) lands on the player, not on the
         // system context: `field_step_routed`.
-        let res = field_step_routed(&mut host, ctx, bc, pc);
+        let res = field_step_routed(&mut host, &mut ctx, &bc, pc);
+        debug_assert!(
+            self.field_bytecode.is_empty(),
+            "a field-host method installed a script mid-step"
+        );
+        self.field_ctx = ctx;
+        self.field_bytecode = bc;
         match &res {
             FieldStepResult::Advance { next_pc } => self.field_pc = *next_pc,
             FieldStepResult::Yield { resume_pc } => self.field_pc = *resume_pc,
