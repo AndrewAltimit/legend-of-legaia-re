@@ -59,11 +59,7 @@ tempfile.workspace = true
 legaia-arts-patch.workspace = true
 legaia-disc-patch.workspace = true
 legaia-patcher.workspace = true
-legaia-actor-formats.workspace = true
-legaia-tmd.workspace = true
 legaia-ui-formats.workspace = true
-legaia-iso.workspace = true
-legaia-render-kernels.workspace = true
 legaia-lzs.workspace = true
 legaia-engine-vm.workspace = true
 

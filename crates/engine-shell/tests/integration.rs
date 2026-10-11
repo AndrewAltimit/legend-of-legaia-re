@@ -5,6 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-shell --test integration <name>::`.
 
+mod arts_swing_ladder;
 mod av_decode_oracle;
 mod battle_depth_replay;
 mod boss_approach_disc;
@@ -25,14 +26,13 @@ mod menu_window_dispatch_real;
 mod minigame_replay;
 mod mode_seat_host_parity;
 mod native_card_import;
+mod native_minigame_ladder;
 mod ocean_anim_real;
+mod pause_learned_content_ladder;
 mod retail_compare_corpus;
 mod ropeway_gondola_walk_off_disc;
 mod scenarios;
 mod soak_harness;
 mod tower_lift_arrival_disc;
 mod v0_1_playthrough;
-mod arts_swing_ladder;
-mod native_minigame_ladder;
-mod pause_learned_content_ladder;
 mod world_map_camera_remap;

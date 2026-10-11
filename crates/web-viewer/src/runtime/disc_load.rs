@@ -125,7 +125,7 @@ impl LegaiaRuntime {
             // The three Goods rows browse a class-2 id space the equipment
             // stat table does not hold; without this index they offer no
             // candidates at all. Twin of the native boot's install in
-            // `legaia_engine_shell::boot`.
+            // `legaia_engine_session::native`.
             if let Some(effects) = scus
                 .as_ref()
                 .and_then(|s| legaia_game_tables::item_effect::ItemEffectTable::from_scus(s))

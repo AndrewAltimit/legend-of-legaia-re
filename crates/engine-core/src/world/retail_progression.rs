@@ -2,7 +2,7 @@
 //! through one entry point so every play host boots the same game.
 //!
 //! These six tables were installed by the native window's boot
-//! (`legaia_engine_shell::boot`) one read at a time, and the browser play page's
+//! (`legaia_engine_session::native`) one read at a time, and the browser play page's
 //! `load_disc` installed none of them. Nothing failed: each consumer has a
 //! disc-free fallback, so the page quietly ran a different game - the flat
 //! 10/5 placeholder growth, no Noa / Gala threshold correction, summon spells

@@ -81,7 +81,7 @@ sim-tick clip cadence, and the opening-chain staging below.
 ## Scene BGM (`runtime`)
 
 The play page plays its music and sound effects through the native window's
-own director, `legaia_engine_session::AudioBgmDirector`, over the browser's
+own director, `legaia_engine_session::AudioDirector`, over the browser's
 audio output (`play_sfx::PageDirector`). `audio_init()` opens a
 `legaia_engine_audio::WebAudioOut` (must run inside a user gesture - browser
 autoplay policy), builds the director over it and stages the resident SFX
