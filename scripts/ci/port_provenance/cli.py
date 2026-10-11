@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 from port_provenance import paths
 from port_provenance.call_sites import images
 from port_provenance.dumps import load_corpus
+from port_provenance.path_check import check_declared_paths
 from port_provenance.paths import DEFAULT_EXTRACTED, DEFAULT_FUNCS, WAIVERS
 from port_provenance.rows import IMAGE_ENTRY_ACCEPTED, SITE_ACCEPTED
 from port_provenance.signals.absent_citations import find_absent_citations
@@ -85,6 +87,20 @@ def main() -> int:
 
     paths.FUNCS_DIR = Path(args.funcs).expanduser()
     paths.EXTRACTED = Path(args.extracted).expanduser()
+
+    # The rows are checked before the corpus is: a row that names nothing
+    # changes which module every tag under it belongs to, so the report below
+    # would be about a different grouping than the one the rows declare.
+    stale_rows = check_declared_paths()
+    if stale_rows:
+        print(
+            f"check-port-provenance: {len(stale_rows)} declared row(s) in "
+            "scripts/ci/port_provenance/rows.py name a path that is not on disk:",
+            file=sys.stderr,
+        )
+        for line in stale_rows:
+            print(f"  - {line}", file=sys.stderr)
+        return 1
 
     if not paths.FUNCS_DIR.exists() or not any(paths.FUNCS_DIR.glob("*.txt")):
         # An empty corpus makes every port look unimpeachable. Say so instead of

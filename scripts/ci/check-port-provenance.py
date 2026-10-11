@@ -8,6 +8,7 @@ beside it:
     port_provenance/paths.py             crates, the two corpora, the waiver file
     port_provenance/rows.py              `SPLIT_MODULES`, `DEFINING_DOC_ROOTS`
                                          and the accepted-exception lists
+    port_provenance/path_check.py        do the paths rows.py names exist?
     port_provenance/thresholds.py        the numbers each signal is tuned by
     port_provenance/tags.py              `// PORT:` tags and their module
     port_provenance/dumps.py             the dump corpus

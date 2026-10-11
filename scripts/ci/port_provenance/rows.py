@@ -2,7 +2,8 @@
 
 `SPLIT_MODULES` names Rust directories that are one module split across
 files, and `DEFINING_DOC_ROOTS` the doc trees whose rows define a function.
-A moved directory is one edit here.
+A moved directory is one edit here; `port_provenance.path_check` stops the
+sweep when a path named here is not on disk.
 """
 
 from __future__ import annotations
