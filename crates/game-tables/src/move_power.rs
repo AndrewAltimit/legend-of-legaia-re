@@ -175,7 +175,8 @@
 //!   tiers with empty name strings").
 
 /// CDNAME / PROT index of the battle-action overlay holding the table.
-pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize = 898;
+pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
+    legaia_overlay_images::static_overlay::BATTLE_ACTION_OVERLAY_PROT as usize;
 
 /// Runtime virtual address the table is loaded to (the `FUN_801dd0ac` base).
 ///
@@ -200,6 +201,9 @@ pub const MOVE_POWER_TABLE_FILE_OFFSET: usize = 0x26744;
 /// overlay maps to a raw-entry file offset as `va − BATTLE_OVERLAY_BASE`. Derived
 /// from the table's own VA / file-offset pin (`0x801F4F5C − 0x26744`).
 pub const BATTLE_OVERLAY_BASE: u32 = MOVE_POWER_TABLE_VA - MOVE_POWER_TABLE_FILE_OFFSET as u32;
+
+// The table's own pin and the image-level base agree.
+const _: () = assert!(BATTLE_OVERLAY_BASE == legaia_overlay_images::static_overlay::SLOT_A_BASE);
 
 /// Per-record stride (the `26*param_1` index math in `FUN_801dd0ac`).
 pub const MOVE_POWER_RECORD_STRIDE: usize = 26;

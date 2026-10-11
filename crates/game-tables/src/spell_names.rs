@@ -380,7 +380,8 @@ pub const CAPTURE_CLASS: u8 = 0x63;
 /// `FUN_8003EC70(k + 0x28)` and the loader resolves extraction `param + 0x37F`,
 /// so sub-id `k`'s module is extraction entry `935 + k`
 /// (`0x28 + 0x37F = 0x3A7 = 935`). See `docs/formats/spell-table.md`.
-pub const CAPTURE_MODULE_PROT_BASE: u32 = 935;
+pub const CAPTURE_MODULE_PROT_BASE: u32 =
+    legaia_overlay_images::cast_effect_pool::CAPTURE_MODULE_PROT_FIRST;
 
 /// Extraction PROT entry hosting capture-class sub-id `k`'s cast module.
 pub fn capture_module_prot(k: u8) -> u32 {

@@ -60,9 +60,9 @@ use anyhow::{Result, anyhow, bail};
 use legaia_bytes::{i16_le, u8_at, u16_le, u32_le};
 
 /// PROT entry (extraction index) of the menu overlay hosting the table.
-pub const MENU_OVERLAY_PROT_INDEX: usize = 899;
+pub const MENU_OVERLAY_PROT_INDEX: usize = legaia_overlay_images::static_overlay::MENU_OVERLAY_PROT as usize;
 /// Menu-overlay link base.
-pub const MENU_OVERLAY_BASE_VA: u32 = 0x801C_E818;
+pub const MENU_OVERLAY_BASE_VA: u32 = legaia_overlay_images::static_overlay::SLOT_A_BASE;
 /// VA of the window-descriptor table inside the resident overlay (the base
 /// `FUN_801D6628` indexes; see the module doc on the `+4`-skewed decompiler
 /// rendering of the same address math).

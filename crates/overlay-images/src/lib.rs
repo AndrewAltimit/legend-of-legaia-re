@@ -1,15 +1,19 @@
-//! The code-overlay image formats: how a PROT entry is recognised as MIPS
-//! code, where each runtime overlay loads, and how a slot-B cast / summon
-//! module is laid out. Data tables resident in an overlay live in
-//! `legaia-game-tables`.
+//! Code images: how a PROT entry is recognised as MIPS code, which entry
+//! each loader picks and where it loads, and how a slot-B cast / summon
+//! module image is laid out band by band.
 //!
-//! Every module here reads an overlay image handed to it as bytes and names
-//! only its siblings, `legaia-bytes` and `legaia-lzs` - none of the asset
-//! dispatcher, the pack / bundle formats or the scene formats - so the crate
-//! sits below `legaia-asset`, which re-exports each module at its old path.
-//! Doc links that pointed up at a dependent crate are plain code spans, since
-//! rustdoc cannot resolve a link into a dependent crate. See the crate README
-//! for the module map.
+//! The rule against `legaia-game-tables`: this crate describes the image, that
+//! one decodes the data tables found in an image (`SCUS_942.54` or an
+//! overlay). The dependency runs one way - `legaia-game-tables` takes an
+//! overlay's PROT index, load base and window bounds from here; nothing here
+//! names a table. [`summon_overlay`] and [`cast_effect_pool`] stay on this
+//! side because they are bands of the slot-B layout: [`slot_b_module`] and
+//! [`summon_overlay`] call each other.
+//!
+//! Every module reads an image handed to it as bytes and names only its
+//! siblings, `legaia-bytes` and `legaia-lzs`. A doc reference to a crate that
+//! depends on this one is a plain code span, since rustdoc cannot resolve a
+//! link upward. See the crate README for the module map.
 
 #![forbid(unsafe_code)]
 
