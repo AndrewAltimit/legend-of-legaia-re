@@ -527,7 +527,7 @@ body is fingerprinted at plan time - its prologue words and its own `jr ra` -
 and a fragment that would overrun its body refuses, so a differing build, a
 body some later mod has claimed, or a second application all fail closed. The
 hosts are code, not zero padding: the
-["zero is not dead"](../../crates/patcher/README.md#region-placement---zero-is-not-dead-three-times)
+["zero is not dead"](patcher-modules.md#region-placement---zero-is-not-dead-three-times)
 trap does not apply, and the evidence is the reference scan, not the bytes. No
 arena byte is claimed, so `--enemy-hp-bar` composes with every other code hook.
 

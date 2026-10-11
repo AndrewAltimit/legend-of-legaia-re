@@ -116,6 +116,8 @@ How the runtime engine works.
 | [`boot.md`](docs/subsystems/boot.md) | Boot sequence; PROT TOC into `0x801C70F0`. |
 | [`asset-loader.md`](docs/subsystems/asset-loader.md) | LBA resolver + sub-asset chain. |
 | [`renderer.md`](docs/subsystems/renderer.md) | TMD renderer at `FUN_8002735c` (60 GTE ops). No culling of the port's own: what drops geometry is retail's (visible-tile crop at retail framing, actor cull, per-prim rejects); the clip volume holds the whole scene (`SCENE_FAR`). |
+| [`renderer-port.md`](docs/subsystems/renderer-port.md) | The port's wgpu renderer pass by pass: PSX-mode rasterisation, the enhancement passes, the screen-space overlay, VRAM capture, the battle HUD and menu pipelines, the frame profiler. |
+| [`browser-host.md`](docs/subsystems/browser-host.md) | The browser host module by module: what `web-viewer` exports for the play page, the minigames page, the viewer pages and the ROM patcher. |
 | [`shading.md`](docs/subsystems/shading.md) | How a pixel gets its colour: texel index -> CLUT read from **VRAM** (not the file) -> `texel * colour / 128` -> depth cue -> blend -> dither. No light source. Why exported palettes look wrong. |
 | [`vr-mode.md`](docs/subsystems/vr-mode.md) | WebXR `immersive-vr` on the site's 3D pages: the flat renderer stays the geometry source, only the framebuffer and view-projection fork per eye. |
 | [`audio.md`](docs/subsystems/audio.md) | PsyQ libsnd / libspu stack, SsAPI sequencer, SPU DMA engine; the cold scene-entry sequence every host owes, and how BGM parity is measured against a save state. |
@@ -192,6 +194,7 @@ How the runtime engine works.
 | [`vrchat-world-export.md`](docs/tooling/vrchat-world-export.md) | `legaia-engine export-glb`: per-scene textured world / NPC / animated-prop `.glb`s + placement manifest for Unity/VRChat world building, `--items` for every equipment item, `--party` for Vahn/Noa/Gala's field forms; Unity kit in `scripts/vrchat-world/`. Output is Sony-derived, gitignored. |
 | [`randomizer.md`](docs/tooling/randomizer.md) | `legaia-patcher` for a user-supplied `.bin`: what each randomizer, slider and mod does, with the full flag reference. Entry page for the two below. |
 | [`randomizer-internals.md`](docs/tooling/randomizer-internals.md) | The patcher's write path (LZS re-pack, in-place PROT edit, EDC/ECC re-encode, PPF), the injected-code arenas, each MIPS hook's design, and the test catalogue. |
+| [`patcher-modules.md`](docs/tooling/patcher-modules.md) | The patcher family's library side, module by module: what each feature reads, writes and guarantees, the `apply` orchestration, the CLI and the test catalogue. |
 | [`randomizer-delilas.md`](docs/tooling/randomizer-delilas.md) | The Delilas Challenge dome course, the custom items and the Delilas party swap (model, moveset, voice and cast-route rebuilds). |
 | [`releases.md`](docs/tooling/releases.md) | Tagged-release pipeline: a `v*` tag builds per-target archives + `SHA256SUMS` onto its GitHub release. The runner is **arm64**, so x86_64 builds are cross-compiles. Never game data. |
 | [`shell-observer-traps.md`](docs/tooling/shell-observer-traps.md) | Three shell defects where the observer sits inside the thing it observes: pipe exit status read off the wrong stage, `pkill`/`pgrep -f` matching the caller's own command line, `grep`'s no-match exit 1 read as failure. Gate `check-shell-observer-traps.py`; helpers `scripts/lib/proc.sh`. |
@@ -297,7 +300,7 @@ The edges among the engine's kernel crates are a committed table (`scripts/ci/cr
 | [`crates/parity`](crates/parity/README.md) | - | The engine measured against retail: the VRAM / mode / audio / PCM oracles, the recomp differential's `sim_trace`, and the retail comparison corpus (`retail_compare*`). Drives the native `BootSession`; tool code no play host links. |
 | [`crates/engine-shell`](crates/engine-shell/README.md) | `legaia-engine` | Top-level native driver: `play` / `play-window`, `save` / `load`, `play-str`, `record` / `replay`, `config`, and the parity-oracle subcommands; `--help` groups every one. |
 | [`crates/asset-viewer`](crates/asset-viewer/README.md) | `asset-viewer` | Combined viewer: TIM, TMD, VAB, SEQ, stage geometry, PROT browser, scene-bundle presets, `save-icons` sheet, dialog box, field-VM scene runner with dialog rendering, battle-scene SM driver, and `world` (the `engine-core` composite ticking over a CDNAME scene). |
-| [`crates/web-viewer`](crates/web-viewer/README.md) | - | WASM target: disc browser, TIM / TMD / MES / SEQ / VAB inspectors, full-map field scenes, the client-side ROM patcher (nothing is uploaded), equipment model assembly, `.glb` export. |
+| [`crates/web-viewer`](crates/web-viewer/README.md) | - | WASM target serving three products: the asset inspectors (disc browser, viewers, `.glb` export), the play / minigames runtime (the browser hosts of the port), and the client-side ROM patcher (nothing is uploaded). |
 
 ### Ghidra-side scripts - [`ghidra/scripts/`](ghidra/scripts/)
 

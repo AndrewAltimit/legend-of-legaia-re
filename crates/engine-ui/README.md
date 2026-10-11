@@ -190,4 +190,4 @@ read its prose.
 What the gate cannot see is drift *inside* a shared builder's inputs - two
 hosts calling the same function with different models. The gaps of that
 shape found by reading the hosts side by side are recorded in the
-[web-viewer README](../web-viewer/README.md#platform-drift-against-the-native-window).
+[web-viewer README](../../docs/subsystems/browser-host.md#platform-drift-against-the-native-window).

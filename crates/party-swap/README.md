@@ -1,7 +1,7 @@
 # legaia-party-swap
 
 The Party <-> Delilas battle-model swap kernels behind the patcher's
-[Delilas party swap family](../patcher/README.md#delilas-party-swap-delilas_party-module-family):
+[Delilas party swap family](../../docs/tooling/patcher-modules.md#delilas-party-swap-delilas_party-module-family):
 a playable character's assembled battle model rebuilt on a Delilas monster
 rig, and a Delilas model on a player rig. Both animation systems pose parts
 by index, so a swap reduces to an anatomy permutation, an extras merge and a

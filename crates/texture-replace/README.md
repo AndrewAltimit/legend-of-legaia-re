@@ -13,7 +13,7 @@ crates, and on no other patcher crate.
 viewer name its modules directly (`legaia_texture_replace::texture`,
 `legaia_texture_replace::save_icon`, ...). The per-module
 write-ups stay in the patcher README's
-[texture replacement](../patcher/README.md#texture-replacement-texture-module)
+[texture replacement](../../docs/tooling/patcher-modules.md#texture-replacement-texture-module)
 sections.
 
 - `texture` - swap any TIM on the disc (raw and deep catalogs), with the

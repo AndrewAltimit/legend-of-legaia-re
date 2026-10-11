@@ -204,7 +204,7 @@ The armed-wash pair reaches the same emitter: `FUN_8004695C(rgb)` only sets
 calls `FUN_80024EE4(otlen - 1, 2, rgb)`: farthest bucket, subtractive.
 
 Port: `legaia_engine_battle_vm::battle_intro_styles::{IntroFade, intro_fade}` and
-`legaia_engine_render::battle_intro::{fade_quad, wash_prim}`. See
+`legaia_render_kernels::battle_intro::{fade_quad, wash_prim}`. See
 [`cutscene.md`](../../subsystems/cutscene.md#the-fades-second-argument-is-a-blend-mode-not-a-depth).
 
 `see ghidra/scripts/funcs/80024ee4.txt`, `8004695c.txt`, `80046978.txt`.

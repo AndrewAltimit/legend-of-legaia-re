@@ -32,7 +32,7 @@ Three things it is **not**:
 | Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
 | Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
-Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_core::muscle_dome::X`.
+Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_minigames::muscle_dome::X`; the leg session is `legaia_engine_menus::muscle_dome_session`.
 
 ```mermaid
 flowchart TD
