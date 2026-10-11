@@ -215,7 +215,7 @@ them: mednafen writes `<title>.<hash>.mc{0..9}`, PCSX-Redux writes
 `SCUS94254.sstate{0..9}`, and capture runs drop `autosave_a/b` pairs plus
 scene-tagged `snap_*` files. The sweep answers it from the bytes instead -
 both `mednafen-state identify` and `pcsxr-state identify` read the same
-anchors (`legaia_mednafen::game_anchors`: scene name `0x8007050C`, game mode
+anchors (`legaia_ram_image::game_anchors`: scene name `0x8007050C`, game mode
 `0x8007B83C`, player position off `*0x8007C364`), so the two emulators' corpora
 index into **one** table. "Is there a state inside scene X?" becomes a lookup
 rather than a play session, which is what gates every display-list read.

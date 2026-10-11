@@ -224,7 +224,7 @@ composes them.
   block.
 - `accessory_passives` - accessory ("Goods") passive-effect catalog
   (item id → 64-slot passive index + party-wide scope, decoded from
-  `SCUS_942.54` via `legaia_asset::accessory_passive`). Feeds
+  `SCUS_942.54` via `legaia_game_tables::accessory_passive`). Feeds
   `World::refresh_party_ability_bits` (per-member `+0xF4` bitfield rebuild +
   the `DAT_80074358` global-mask mirror, bit-tested by
   `World::party_has_ability`), so an equipped MP-saver reaches the MP-cost
@@ -237,7 +237,7 @@ composes them.
   models the faithful consumable subset (HP/MP restore, cure, revive,
   field escape); effect *amounts* are the curated walkthrough values,
   byte-confirmed against the static `SCUS_942.54` heal-amount table
-  (`0x8007655C`, `legaia_asset::item_effect`) by the disc-gated
+  (`0x8007655C`, `legaia_game_tables::item_effect`) by the disc-gated
   `item_effect_real` test.
 - `shop` / `shop_catalog` - shop session state (buy/sell cursor,
   quantity, gold/inventory delta; the kernels live in `legaia-engine-menus`,
@@ -245,7 +245,7 @@ composes them.
   `party_compare_members`) plus the disc-sourced **gold-shop
   stock catalog**: `ShopItemData::from_scus` reads per-id buy prices
   (the sellable mask), and `shop_catalog::scene_shops` decodes a
-  scene MAN's op-`0x49` stock records (`legaia_asset::shop_stock`) into
+  scene MAN's op-`0x49` stock records (`legaia_scene_formats::shop_stock`) into
   a priced `ShopInventory`. `SceneHost::enter_field_scene` parks them on
   `World::shops.scene_shops`; `World::scene_shop_session(idx)` opens one. The **live
   trigger** is the field VM's op `0x49` sub-0: `World::try_arm_field_shop`
@@ -262,9 +262,9 @@ composes them.
   Trade / Exit picker (`MenuState::ShopMenu` → `ShopTrade` → `ShopTradeConfirm`,
   driven by `menu_runtime`; the dynamic Trade row resolves via the menu-VM's
   `commit_route_override` hook). `try_arm_field_shop` stamps a stable per-vendor
-  id (`legaia_asset::seru_trade::vendor_id_from_shop`, from the shop's name + stock) onto the
+  id (`legaia_game_tables::seru_trade::vendor_id_from_shop`, from the shop's name + stock) onto the
   `ShopSession`, so each merchant reseeds independently. Offers come from the
-  shared `legaia_asset::seru_trade` kernel, so the engine and the randomizer
+  shared `legaia_game_tables::seru_trade` kernel, so the engine and the randomizer
   preview always agree.
 - `battle_round` - per-round orchestrator. `BattleRound::begin` resets
   AP, recomputes equipment-aware stats, writes attack / UDF / LDF into
@@ -310,7 +310,7 @@ composes them.
   AP / status icons, a queue of `DamagePopup`s with fade timers, and a
   ringed log column. Engines feed it from `BattleEvent::ApplyArtStrike`
   (popups), `StatusEvent` (icons), and `BattleRound::begin` / `end`
-  (slot rows). `engine-render::battle_hud_draws_for` turns it into the
+  (slot rows). `engine-ui::battle_hud_draws_for` turns it into the
   drawn surface. Also the two labels the drawn surface needs off the
   live world: `battle_active_actor` (the `(slot, name)` pair behind the
   top-left plaque, and the port's whole monster readout - retail draws no
@@ -350,7 +350,7 @@ composes them.
 - `man_field_scripts` - opcode-aware walk of a scene MAN's partition-1
   field-VM scripts (record 0 = scene-entry system script, records 1.. =
   per-actor interaction scripts). `walk_partition1_scripts` bounds each
-  record to its own bytes, runs the `legaia_engine_vm::field_disasm`
+  record to its own bytes, runs the `legaia_scene_formats::field_disasm`
   linear walker from each record's `1 + N*2 + 4` first-opcode offset, and
   reports every `Yield` site with the inline encounter-record
   (`[reserved×3][count][ids]`) decoded from its trailing window.
@@ -573,7 +573,7 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   are, plus the matrix each host uploads (`frame_vp`) and the world-space lens
   the occlusion gate ray-casts from (`frame_eye`). The pinned follow constants
   live here, so a host never spells an angle, a depth or a focal length out
-  again; the projection itself is `legaia_engine_vm::psx_camera`. See
+  again; the projection itself is `legaia_engine_battle_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`
   (re-exported from `legaia-engine-field`).

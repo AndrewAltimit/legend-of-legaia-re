@@ -113,7 +113,7 @@ bytecode arrives as MAN tail-section 1 rather than through the actor tick's own
 buffer, so a *static* decode of the same bytes exists alongside the running VM.
 The two are not rival ports:
 
-- **The interpreter** is `legaia_engine_vm::ambient_motion`, whose loop reaches
+- **The interpreter** is `legaia_engine_motion_vm::ambient_motion`, whose loop reaches
   all twenty-four case bodies the table's twenty-six defined op bytes select.
   The bodies are split across two files for length only - the facing ramps, the
   walk ops, the waits and the ramp scheduler in `ambient_motion.rs`, the rest in
@@ -231,7 +231,7 @@ Live, and worth knowing why:
 - **Actor / sprite VM** (`legaia_engine_vm::run`). Its programs are data
   resident in the menu overlay
   ([`window-script.md`](../formats/window-script.md), parser
-  `legaia_asset::widget_script`). `MenuRuntime::tick` runs the shop open /
+  `legaia_game_tables::widget_script`). `MenuRuntime::tick` runs the shop open /
   Sell slide-away programs through the interpreter over `MenuWidgetState`
   (`engine-menus::menu_widget`) on the transitions retail's `FUN_801DAFD4`
   drives. Triage:

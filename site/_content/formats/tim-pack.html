@@ -7,10 +7,10 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>What it really is</dt><dd>chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> + an <a href="pack.html">asset::pack</a> of TIMs</dd>
+    <dt>What it really is</dt><dd>chunk header <code>(0x01 &lt;&lt; 24) | payload_len</code> + an <a href="pack.html">container-formats::pack</a> of TIMs</dd>
     <dt>Where on disc</dt><dd>each scene's texture pack at raw-TOC <code>+4</code> of its CDNAME block; raw TOC entries 0 and 1 (the boot-UI bundle)</dd>
     <dt>Offset math</dt><dd><code>byte_offset = word_index * 4 + 4</code></dd>
-    <dt>Parser</dt><dd><code>legaia_prot::timpack</code> (<code>is_tim_pack</code>, <code>detected_ext</code>); boot bundle <code>legaia_asset::system_ui_bundle</code></dd>
+    <dt>Parser</dt><dd><code>legaia_prot::timpack</code> (<code>is_tim_pack</code>, <code>detected_ext</code>); boot bundle <code>legaia_ui_formats::system_ui_bundle</code></dd>
     <dt>Confidence</dt><dd>Confirmed - retail uploader traced, layout pinned on the real disc</dd>
     <dt>Used by</dt><dd><a href="../subsystems/boot.html">boot sequence</a>, <a href="../subsystems/field-menu.html">pause menu</a> glyphs, <a href="../viewer.html">asset viewer</a></dd>
   </dl>
@@ -45,7 +45,7 @@
       <tr><td><code>0x018E0</code></td><td>system-UI sprite sheet</td><td>image <code>(896,256)</code> 64&times;192</td></tr>
       <tr><td><code>0x07B00</code>, <code>0x07F40</code></td><td>UI elements</td><td>-</td></tr>
       <tr><td>-</td><td>four small TIMs</td><td>CLUTs at <code>(896, 498..=501)</code></td></tr>
-      <tr><td><code>0x11218</code></td><td><strong>menu-glyph / interior-page atlas</strong> (extractors <code>legaia_asset::interior_page</code> / <code>menu_glyph_atlas</code>)</td><td>image <code>(960,256)</code> 64&times;256, declared CLUT <code>(0,510,16,16)</code></td></tr>
+      <tr><td><code>0x11218</code></td><td><strong>menu-glyph / interior-page atlas</strong> (extractors <code>legaia_ui_formats::interior_page</code> / <code>menu_glyph_atlas</code>)</td><td>image <code>(960,256)</code> 64&times;256, declared CLUT <code>(0,510,16,16)</code></td></tr>
       <tr><td><code>0x19438</code></td><td>UI sprite strip</td><td>image <code>(960,400)</code> 60&times;24</td></tr>
       <tr><td><code>0x1A018..0x1AA7C</code></td><td>six bare row-patch members (<a href="#deviating-shapes">below</a>)</td><td>rows 456..462 of the atlas</td></tr>
       <tr><td><code>0x1AC90..0x1AED0</code></td><td>four cursor-part TIMs</td><td>images at <code>(976,256..)</code></td></tr>
@@ -77,7 +77,7 @@
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="pack.html">asset::pack</a>
+    <a href="pack.html">container-formats::pack</a>
     <a href="field-pack.html">field-pack</a>
     <a href="prot.html">PROT.DAT TOC</a>
     <a href="tim.html">TIM</a>

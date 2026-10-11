@@ -46,7 +46,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `data_field_streaming` 34 → **49**. The 15 new members are the
     // chunk-headered scene carriers at raw TOC `+4` of a CDNAME block: a
     // `(type << 24) | size` DATA_FIELD chunk header wrapping one
-    // `asset::pack`, which is a single-chunk stream and is what retail reads
+    // `container-formats::pack`, which is a single-chunk stream and is what retail reads
     // with `FUN_8002541C` mode `0x14`. They used to scatter across three
     // classes by their chunk TYPE BYTE - `0x01` satisfied the `tim_pack`
     // heuristic, `0x02` fell through to `lzs_container`, and town01 alone was
@@ -56,7 +56,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // `data_field_truncated` **0**. Its detector no longer runs. The three
     // entries its doc named (`0157`, `0228`, `0373`) are ordinary four-chunk
     // bundles that terminate cleanly against their own sectors, and its one
-    // real hit, `0892`, is an `asset::pack` of two whole TIMs whose header
+    // real hit, `0892`, is an `container-formats::pack` of two whole TIMs whose header
     // words the streaming reader took for chunk headers. Pinned at 0 so a
     // reappearance is a regression.
     ("data_field_truncated", 0),

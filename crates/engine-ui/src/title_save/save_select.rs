@@ -1,7 +1,7 @@
 use crate::*;
 
 /// One slot row passed into [`save_select_draws_for`]. Plain-data view
-/// so the renderer doesn't depend on `engine-core::save_select`.
+/// so the renderer doesn't depend on `engine-menus::save_select`.
 pub struct SaveSelectRow<'a> {
     pub label: &'a str,
     pub present: bool,

@@ -8,7 +8,7 @@
 //! `other1` scene name on teardown - the string literal lives in this
 //! overlay and nowhere else, which is what pins the venue to fishing rather
 //! than to the dance hall (`other7`); see the note on
-//! `engine-core::dance::DANCE_SCENE_BLOCK_BASE`
+//! `engine-minigames::dance::DANCE_SCENE_BLOCK_BASE`
 //! and `docs/subsystems/minigame-fishing.md`). The pond, the wooden pier, the
 //! shore props and the water sheets are that scene's environment mesh pack
 //! instanced by its `.MAP` placement + terrain layers - the same

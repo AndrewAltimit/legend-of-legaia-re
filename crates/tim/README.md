@@ -48,7 +48,7 @@ Pixel widths in real pixels:
   TIM detector: no reserved flag bits, pmode 0..=3, exact block lengths,
   nonzero dims, in-VRAM-bounds image rectangle (CLUT intentionally not
   bounds-checked - NPC palettes sit at the framebuffer's bottom edge). Used to
-  build the flat `PROT.DAT` TIM catalog in `legaia-asset::tim_catalog`.
+  build the flat `PROT.DAT` TIM catalog in `legaia-disc-audit::tim_catalog`.
 - `Tim::byte_extent` / `Tim::palette_count` - on-disc footprint + CLUT count.
 - `decode_rgba8(tim, clut_idx)` - palette-resolve one CLUT row to RGBA8 for
   PNG; `write_png` is the encoder beside it.

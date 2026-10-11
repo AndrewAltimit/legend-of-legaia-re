@@ -35,7 +35,7 @@ portrait sheet on [`save-icon.md`](../formats/save-icon.md).
 | Drawing | `FUN_801E1C1C`, `FUN_801E36C4`, `FUN_801E06C0`, `FUN_801E08D8` | `engine-ui::title_save` (`save_select_overlay_draws`) |
 
 The `engine-menus` modules named on this page are re-exported by `engine-core`
-at their old paths (`legaia_engine_core::save_select`, `save_screen`,
+at their old paths (`legaia_engine_menus::save_select`, `save_screen`,
 `save_subscreen`, `card_flow`, `card_bu_io`, `list_order`, `pause_screens`).
 
 ```mermaid
@@ -212,7 +212,7 @@ script through `FUN_801D6628`, then wait for `_DAT_8007BB80 == 0`.
 
 Only `0x18` and `0x19` are card screens. The Items, Magic, Equip, shop and
 casino rows are documented on [field-menu.md](field-menu.md),
-[shop.md](shop.md) and, for `0x20`, `engine-core::prize_exchange`; they are
+[shop.md](shop.md) and, for `0x20`, `engine-minigames::prize_exchange`; they are
 listed here because they share the table.
 
 ### How the port splits the same 33 ids
@@ -262,7 +262,7 @@ loaded game or abandoned silently.
 
 `_DAT_8007B6A8` is the "Save Anywhere" cheat's target, seeded at scene load
 from the MAN header's `[0x01] & 1`
-(`legaia_asset::man_section::ManHeader::low_flag`). Across the disc the bit is
+(`legaia_scene_formats::man_section::ManHeader::low_flag`). Across the disc the bit is
 set on the three kingdom world maps (`map01` / `map02` / `map03`) and clear on
 every town, field and dungeon. A field save is reached the other way: a save
 point's script issues `49 01`, a scripted menu-button press whose kind byte
@@ -480,7 +480,7 @@ the lines. engine-ui draws it: `card_banner_draws_for`,
 `confirm_dialog_badge_draws_for`, `slot_info_panel_draws_for`, the damaged box
 at `CARD_DAMAGED_Y`, and `save_select_overlay_draws` for the composition. The
 three sprite records and the fill texel are baked into the shared save-menu
-atlas (`legaia_asset::title_pak::SAVE_MENU_ATLAS_*`). The darkening quad is
+atlas (`legaia_ui_formats::title_pak::SAVE_MENU_ATLAS_*`). The darkening quad is
 `SaveScreenDarken`, a white texel tinted `grey / 255`, with the grey also
 subtracted from the ink of text already emitted (both hosts draw text after
 sprites); the native window blends it through its ABR-2 overlay span, the
@@ -1066,7 +1066,7 @@ on the dimmed title art.
 | Element | Source | Notes |
 |---|---|---|
 | Title art behind | PROT 0890 title TIM (`0x14228`), VRAM `(512, 256)` 8bpp, CLUT `(0, 491)` | Laid out by the menu overlay's own drawer `FUN_801E0418` ([below](#the-title-strips-behind-the-load-window)). |
-| `Load` panel TIM + CLUT | `PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2 | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(0, 511)`; row 2 lands at `(32, 511)`. Constants `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
+| `Load` panel TIM + CLUT | `PROT.DAT[0x018E0]` system-UI sprite sheet, CLUT row 2 | 4bpp 256x192 TIM in the unindexed pre-`init_data` PROT.DAT gap. CLUT block uploads to VRAM `(0, 511)`; row 2 lands at `(32, 511)`. Constants `legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. |
 | Panel 9-slice | 14 textured sprites (GP0 `0x64`) composing the 81x29 panel at `(6, 4)` | [Rects below](#pinned-9-slice-tile-rects-system-ui-tim-clut-row-2). |
 | Panel interior | 3 gouraud textured quads (GP0 `0x3C`) | Sample the sheet's 32x29 marbled region at `(128, 0)` under a vertical grey gradient `rgb(64,64,64) -> rgb(136,136,136)`: two 32-wide copies + a 17-wide remainder. Constants `OVERLAY_SYSTEM_UI_PANEL_INTERIOR` / `_TOP_RGB` / `_BOT_RGB`. |
 | `Load` text | the dialog font | See below. |
@@ -1104,7 +1104,7 @@ mode-derived (`Load` / `Save` from `SaveSelectMode`, as retail toggles on
 ### Pinned 9-slice tile rects (system-UI TIM CLUT row 2)
 
 Rects are `(u, v, w, h)` in the 256x192 sheet; exported as
-`legaia_asset::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
+`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`.
 
 | Tile | dst | src |
 |---|---|---|
@@ -1175,7 +1175,7 @@ triangle-wave pulse computation.
 
 All six records read tpage `0x0098` and CLUT `0x7AC0`: the 8bpp page at VRAM
 `(512, 256)` with its palette at `(0, 491)`, which is where the title TIM
-(PROT 0890 at `0x14228`, `legaia_asset::title_pak`) uploads. In the
+(PROT 0890 at `0x14228`, `legaia_ui_formats::title_pak`) uploads. In the
 `save_select_idle` state the page and the CLUT row are byte-equal to that TIM,
 and both catalogued states on this screen (`title_menu_idle`,
 `save_select_idle`) hold `_DAT_8007B820 = 1` and `_DAT_8007BB00 = 1`. These

@@ -59,8 +59,8 @@ The PSX TIM spec allows a 4bpp TIM's CLUT block to contain multiple CLUT rows (e
 
 | Source TIM | Layout | CLUT-row usage |
 |---|---|---|
-| **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap - not reachable through the per-PROT-entry walker. Constants in `legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
-| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_asset::menu_glyph_atlas`. | Rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. The load screen's "Load" title is **not** here, in row 13 or any other; it is drawn with the dialog font ([`save-screen.md`](../subsystems/save-screen.md)). |
+| **System-UI sprite sheet** at `PROT.DAT[0x018E0]` (4bpp, 256×192, 16×16 CLUT block) | Lives in the unindexed pre-`init_data` gap - not reachable through the per-PROT-entry walker. Constants in `legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_*`. | **Row 2** = the load-screen panel chrome (gold-bronze 9-slice border + dark-blue marbled interior region). **Row 7** = the pointing-finger cursor (white ink + grey shadow). Other rows render HP/MP/money panels, battle chrome, equipment frames, etc. |
+| **Menu-glyph atlas** at `PROT.DAT[0x11218]` (4bpp, 256×256, multi-row CLUT block) | Same pre-`init_data` gap. See `legaia_ui_formats::menu_glyph_atlas`. | Rows render NEW GAME / CONTINUE / OPTIONS strings + smaller menu labels. The load screen's "Load" title is **not** here, in row 13 or any other; it is drawn with the dialog font ([`save-screen.md`](../subsystems/save-screen.md)). |
 
 Both TIMs are byte-confirmed against retail VRAM dumps; see [`subsystems/save-screen.md`](../subsystems/save-screen.md#sprite-asset-sources-continue--load-screen) for the pinning method (PCSX-Redux save state → `extract_vram_from_sstate.py` → CLUT-row byte cross-reference against `PROT.DAT`).
 
@@ -72,7 +72,7 @@ Browse them in the asset viewer with `asset-viewer tim extracted/PROT.DAT --offs
 whole image (rather than per-TOC-entry) catches every standard TIM regardless
 of which addressing layer hosts it - including the TIMs in the unindexed
 system-UI gap before the first entry (the menu-glyph atlas and load-screen
-chrome above). `legaia_asset::tim_catalog` does this and maps each hit back to
+chrome above). `legaia_disc_audit::tim_catalog` does this and maps each hit back to
 its owning PROT entry + byte offset (or the gap), producing a per-TIM catalog
 keyed by a stable id:
 
@@ -109,7 +109,7 @@ origin, not the declared rect (which would overflow the framebuffer):
 
 - The **field-character atlas** palettes (PROT 0874 §2 entries 1/2/3): each
   declared block lands as a strip on **row 478**
-  (`legaia_asset::field_char_textures::upload_to_vram`).
+  (`legaia_actor_formats::field_char_textures::upload_to_vram`).
 - The **shared interior page** (the 256×256 4bpp TIM at image `(960,256)`):
   its declared 16×16 CLUT block at `(0,510)` lands as a 256-entry strip on
   **row 510** - byte-identical to VRAM row 510 in every captured field
@@ -119,7 +119,7 @@ origin, not the declared rect (which would overflow the framebuffer):
   the same unindexed region as the system-UI TIMs below), so no per-entry
   read can source it. Town env meshes reference mid-strip CBAs (e.g.
   town01's `(64,510)` = strip entry 64) with texpages inside the
-  `(960,256)` image. Parser + uploader: `legaia_asset::interior_page`.
+  `(960,256)` image. Parser + uploader: `legaia_ui_formats::interior_page`.
 
 A renderer placing these blocks at their declared rects clips/wraps the
 rows past `y = 512` and leaves the strip cells unpopulated - the meshes
@@ -146,7 +146,7 @@ id with its CLUT variants.
 The flat catalog - like the reference decoder - scans only **raw** bytes, so
 any TIM stored inside an [LZS-compressed](lzs.md) `PROT.DAT` section is
 invisible to it, and most character and scene textures are compressed.
-`legaia_asset::tim_deep_catalog` recovers them as a **separate tier**: it walks
+`legaia_disc_audit::tim_deep_catalog` recovers them as a **separate tier**: it walks
 every PROT entry, LZS-decompresses it with `legaia_lzs::decompress_container`
 (the same decode path [`tim_scan`](../../crates/container-formats/src/tim_scan.rs) uses),
 and strict-parses every TIM in each decoded section.
@@ -177,7 +177,7 @@ distinct "compressed textures" grid below the raw catalog.
 ### Semantic labels
 
 The catalog records *where* each texture lives, not *what* it is.
-`legaia_asset::tim_labels` is a curated label table that answers the "what" for
+`legaia_disc_audit::tim_labels` is a curated label table that answers the "what" for
 identified textures. It is keyed by **content fingerprint** - the FNV-1a-64 the
 catalogs already record - so a single label propagates to every catalog id that
 shares those bytes (duplicate textures, and textures aliased across overlapping
@@ -282,7 +282,7 @@ often do not:
   (`texel * colour / 128`) and the depth cue sit on top of the palette, so a
   correctly exported texture still reads darker or brighter than in game.
 
-`legaia_asset::tim_palette_context` resolves the first two from the disc: the
+`legaia_ui_formats::tim_palette_context` resolves the first two from the disc: the
 boot-VRAM CLUT state (`BootClutVram`), a per-rectangle palette map of the
 system-UI page from the SCUS widget table (`sheet_palette_regions`), the one
 per-texel attribution of it (`texel_palettes`), and an "as drawn" composite

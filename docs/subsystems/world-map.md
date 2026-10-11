@@ -401,7 +401,7 @@ The renderer-free dev-menu leaves live in
   `resolve_equip_slot` / `stat_deltas`, from `FUN_801E5B4C`).
 
 The cursor step is named `dev_menu_cursor_step` rather than `cursor_step`
-because `legaia_engine_core::baka_cabinet` has a free function of that name
+because `legaia_engine_minigames::baka_cabinet` has a free function of that name
 and the port catalog's reachability pass identifies free functions by name
 ([`stale-not-wired-triage.md`](../tooling/stale-not-wired-triage.md)).
 
@@ -537,7 +537,7 @@ linear flow. It is the same body.
 `FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound, park-phase
 and constant-return contract. The cheat arms' global pokes are not modelled.
 
-`legaia_engine_core::world_map_panel_host::PanelWindowHost` owns the
+`legaia_engine_field::world_map_panel_host::PanelWindowHost` owns the
 `0x801F2B98` descriptor array and one window object per slot; `run_script`
 decodes a script through `run_panel_script` and applies every effect.
 `dev_menu_action` is hosted by the dev-menu screen's cancel leg.
@@ -682,7 +682,7 @@ phase-transition kernels: `fade_flash_tick`, `sub_list_tick`,
 retail calls (post the fill primitive, capture or restore the tint triple, run
 a panel script, set a story flag); the host applies them.
 
-The host is `legaia_engine_core::world_map_panel_host::PanelActorHost`, on
+The host is `legaia_engine_field::world_map_panel_host::PanelActorHost`, on
 `WorldMapController::panels`, stepped once a frame by `World::tick_world_map`.
 It owns the state the phases read - the brightness accumulator and flash
 counter, the shared cursor, the records slide, the tint triple and its saved
@@ -894,7 +894,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   `FUN_8003CE34`) and runs `FUN_801E9DC8` over the rows: a numbered choice
   list used by the `kor` / `kor3` / `kor4` scripts only
   (`asset field-op-census --only "49 04"`). Port:
-  `legaia_engine_core::field_submode::submode_panel_rows` (layout) and
+  `legaia_engine_field::field_submode::submode_panel_rows` (layout) and
   `flag_window_tick` (handler), hosted on the field path by
   `engine-core::field_submode_flag_window` and drawn on both hosts.
 - **`FUN_801E6B34`** (1084 bytes) - the **name-entry renderer**: the `6 x 17`
@@ -1925,7 +1925,7 @@ evolved-Cort boss fight) whose tail fades, stops the BGM and fires the
 FMV-trigger op `4C E2 08`. `fmv_id 8` plays `MOV/MV6.STR` and returns to
 `town0e` with door word `0x2E5`
 ([`str-fmv-table.md`](../formats/str-fmv-table.md#authoritative-runtime-mapping));
-port `engine-core::cutscene::fmv_post_play_handoff`.
+port `engine-system::movie::cutscene::fmv_post_play_handoff`.
 
 **Decoding notes.** Every exit here is a `P2` record, and three sit `0x124C`,
 `0x1A8F` and `0x2034` bytes into their bodies past kilobytes of `0x1F` text,
@@ -1999,7 +1999,7 @@ and overview pools are mutually exclusive sets.
 selects `SceneLoadKind::WorldMap`, and
 `SceneResources::build_targeted_with_options` decodes the scene's
 kingdom-bundle slot 1 (Drake 40, Sebucus 36, Karisto 56 TMDs; via
-`legaia_asset::kingdom_bundle` + `legaia_asset::pack`) into the TMD pool and
+`legaia_scene_formats::kingdom_bundle` + `legaia_container_formats::pack`) into the TMD pool and
 slot 0 into the VRAM upload set, instead of the generic raw/LZS `tmd_scan`
 sweep, which cannot follow the LZS-compressed descriptor table. Only the
 scene's primary kingdom entry contributes; sibling sub-area entries are
@@ -2097,7 +2097,7 @@ actor+0x64 = *(s16*)(_DAT_1f8003ec + (actor+0x60)*0x20 + 0x10) + DAT_8007b6f8
            = .MAP_record[obj_idx].+0x10 (model) + prefix          (prefix = 5)
 ```
 
-The port's `legaia_asset::field_objects::pack_mesh_index` plus
+The port's `legaia_scene_formats::field_objects::pack_mesh_index` plus
 `FIELD_ACTOR_PACK_BIAS` is that rule. A live `map01` render-list walk (head
 `*(0x8007C354) = 0x80083BCC`, live `.MAP` buffer `_DAT_1F8003EC =
 0x80139530`) matches 14 of 14 actors: records `414 / 430 / 349 / 411 / 474`
@@ -2218,7 +2218,7 @@ The field sibling `FUN_801F7088` (PROT 0900, the town static-object pass,
 body `0x801F7668..0x801F76E0`) is instruction-identical over this cell kernel.
 Sampling only the cell's own nibble instead of the corner mean snaps edge
 cells a whole tier and shears a terraced town (Vidna / `balden`). Port:
-`legaia_asset::field_objects` carries the corner block on each terrain
+`legaia_scene_formats::field_objects` carries the corner block on each terrain
 `Placement`, `engine-core::field_env` applies the mean, and
 `parse_walk_decorations` is the sweep.
 
@@ -2262,7 +2262,7 @@ the coast leaves the top of the frame open.
 
 Port: `legaia_render_kernels::world_map_sky` (the packets),
 `legaia_engine_core::world_map_sky` (the gate both hosts call), and
-`legaia_engine_ui::screen_prim::sky_band_prims`, which depth-tests each quad
+`legaia_render_kernels::screen_prim::sky_band_prims`, which depth-tests each quad
 at the far plane so it lands only where the scene drew nothing.
 `engine_screens::screen_layers::compose_screen_prims` puts the band first in
 the under-text list, so the party HUD draws over it.
@@ -2270,7 +2270,7 @@ the under-text list, so the party HUD draws over it.
 #### What the port draws
 
 - **Ground**: `Scene::walk_heightfield` ->
-  `legaia_asset::field_objects::build_ground_heightfield` emits one quad per
+  `legaia_scene_formats::field_objects::build_ground_heightfield` emits one quad per
   cell (on the overworld every cell with a terrain record; in a field scene
   the `0x1000` cells), each corner's Y from the `+0x4000` nibble grid through
   the floor LUT. The baked corner height is `-lut[nibble]`, already the world
@@ -2284,7 +2284,7 @@ the under-text list, so the party HUD draws over it.
 - **Overview terrain**: `Scene::field_terrain_tiles` ->
   `resolve_world_map_terrain_draws`, the `0x2000` cells of the *within-block*
   `.MAP` with mesh from `+0x10`
-  (`legaia_asset::field_objects::parse_terrain_tiles`). That entry is the next
+  (`legaia_scene_formats::field_objects::parse_terrain_tiles`). That entry is the next
   scene's map, not the kingdom's (for `map01` it is `garmel`'s, 970 visible
   cells), and it targets the overview pack; against the 40-mesh walk pool the
   high indices resolve to no mesh.
@@ -2363,7 +2363,7 @@ A PCSX-Redux capture on `karisto_sol_pre_encounter`
 676 and climb to about `0x9F9F9F` by bucket 950 (a bucket keys the farthest
 corner while `IR0` reads `(x1, z0)`, so bucket fits read low).
 
-Port: `engine-core::overworld_ground_cue` holds the arithmetic and the capture
+Port: `engine-field::overworld_ground_cue` holds the arithmetic and the capture
 rows; the mesh vertex stages apply it per cell from the flat-depth corner
 references (`overworld_ground_cue` in `engine-render`'s VRAM-mesh WGSL,
 `overworldGroundCue` in the play page's GLSL).
@@ -2393,7 +2393,7 @@ byte, which makes the dispatcher OR `1` into `a2` (`0x800433C0..0x800433CC`) -
 under one colour step, and not modelled. Placed landmarks are not this sweep's
 and take no cue from it.
 
-Port: `engine-core::overworld_ground_cue::decoration_draw_cue` turns the draw
+Port: `engine-field::overworld_ground_cue::decoration_draw_cue` turns the draw
 origin's clip `w` (times the frame's `clip.w`-to-`SZ` factor) into a far
 colour and `IR0`; each host stages it as a per-draw constant on the
 decoration draws only - the native window from `world_map_deco_start`, the
@@ -2438,7 +2438,7 @@ seven more shoreline / terrain shimmer cells. The operand source is the
 kingdom bundle's **slot 5** (the type-byte `0x06` slot of PROT 0086 / 0245 /
 0392): an LZS-compressed 516-byte **CLUT-walk animation table**,
 byte-identical across the three kingdoms. Format (parser
-`legaia_asset::clut_walk`):
+`legaia_scene_formats::clut_walk`):
 
 ```text
 [u32 count = 8][u32 entry_offsets[8]]
@@ -2493,7 +2493,7 @@ the scene's own bundle lacks. All eight entries run as independent
 accumulators with the retail semantics, clocked in retail vsync units (a game
 tick every `World::clock.frame_step` vsyncs); each fire is a CPU-VRAM 16x1
 `move_image` and re-upload. A single-cell ocean-head cycle
-(`legaia_asset::ocean`) is the fallback for a bundle without a parseable
+(`legaia_scene_formats::ocean`) is the fallback for a bundle without a parseable
 slot 5, which no retail bundle is. The VRAM parity oracle excludes the
 destination cells for world-map scenes
 (`vram_oracle::WORLD_MAP_CLUT_CYCLE_CELLS`).
@@ -2521,7 +2521,7 @@ The row-498 park-cell fades are a separate family: event-triggered MAN
   destination, frees the scratch, and clears the spawning script context's
   halt bit (`*(ctx+0x94)+0x10 &= ~0x400`).
 
-Port: `legaia_engine_core::clut_fx` (arithmetic) + `World::step_clut_fx` (the
+Port: `legaia_engine_field::clut_fx` (arithmetic) + `World::step_clut_fx` (the
 VRAM driver), fed by the `op4c_n6_sub_61_emitter` field-VM host hook.
 
 `map01`'s field MAN holds exactly eight `4C 61` ops, all on row 498: four
@@ -2593,7 +2593,7 @@ rigid transforms ([`world-map-overlay.md`](../formats/world-map-overlay.md)).
 It carries no geometry. It is decoded onto `SceneResources::world_map_slot4`
 for every `SceneLoadKind::WorldMap` scene. With `LEGAIA_WORLDMAP_SLOT4=1`,
 `play-window` draws
-`legaia_asset::world_map_overlay::translation_path_segments` - one polyline
+`legaia_scene_formats::world_map_overlay::translation_path_segments` - one polyline
 per (clip, part) through the decoded 12-bit translations - as a debug line
 list about the world origin (the paths are object-local).
 `wireframe_segments_3d` plots raw `i16` field pairs straddling the entries'
@@ -2617,7 +2617,7 @@ reach the render tick:
 
 | Address | Mode-table role | Tick call |
 |---|---|---|
-| `FUN_80025EEC` | Default per-frame handler (used by 12 of the 14 per-frame modes - not world-map-specific; disc-confirmed by `legaia_asset::mode_table`). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
+| `FUN_80025EEC` | Default per-frame handler (used by 12 of the 14 per-frame modes - not world-map-specific; disc-confirmed by `legaia_game_tables::mode_table`). | `FUN_8001698C` → `FUN_80016444(1)` → `FUN_80016B6C`. |
 | `FUN_80025F2C` | Mode 13 (MAPDSIP MODE) - field/world-map display per-frame handler. | `FUN_8001698C` → `func_0x801CE850` (overlay entry) → `FUN_80016444(0)`. |
 
 `a0` controls whether `FUN_80016444` skips its early `FUN_8005FB84` block
@@ -2822,7 +2822,7 @@ character / NPC mesh chains in `_DAT_8007C354` and siblings.
 `mednafen-state prim-dispatch-table <save>` decodes both tables out of a save
 state's main RAM; `--overlay-targets-only` emits the eight addresses for a
 Ghidra `dump_funcs.py` `TARGETS` list
-([`legaia_mednafen::prim_dispatch`](../../crates/ram-image/src/prim_dispatch.rs)).
+([`legaia_ram_image::prim_dispatch`](../../crates/ram-image/src/prim_dispatch.rs)).
 
 #### Per-slot delta vs SCUS sibling
 
@@ -2910,7 +2910,7 @@ overworld test.
     `0x3C` / `0x9`) when `(param_2 >> 3) & 7 == 0`, otherwise a shorter
     semi-transparent gouraud quad (GP0 `0x22`, 6-word stride, `0x2C`); colour
     from record `+0xC..+0x12`. Ends by zeroing a `0x14`-word tail. Port:
-    `engine-core::effect_sprite_arm::sprite_arm_draws` (the `PORT:` tag sits
+    `engine-effects::effect_sprite_arm::sprite_arm_draws` (the `PORT:` tag sits
     on `engine-minigames::baka_impact_fx`).
   - bit `0x2000` -> `FUN_801CFA48`, a function entry (`addiu sp,sp,-0x70`) in
     the **battle-action** overlay PROT 0898 and in no other image. It is the
@@ -2985,8 +2985,8 @@ most of it under the party HUD.
 
 **Port.** Both hosts draw the kind-4 list on the overworld
 (`World::active_effect_kind4_draws`), one quad per posed part
-(`engine-core::effect_sprite_arm::sprite_arm_draws`). The ambient tick runs
-the part tick's motion block (`engine-core::part_motion`, `FUN_80021DF4`
+(`engine-effects::effect_sprite_arm::sprite_arm_draws`). The ambient tick runs
+the part tick's motion block (`engine-effects::part_motion`, `FUN_80021DF4`
 `0x800228A0..0x80022B90`), which reproduces the population: six to eight live
 sprite-arm nodes, half of them drifting. Pin:
 `crates/engine-core/tests/overworld_puff_column_disc.rs`. The hosts' other FX

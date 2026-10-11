@@ -2,7 +2,7 @@
 //!
 //! **There is no field-pack format.** These entries are ordinary
 //! [DATA_FIELD streaming](legaia_container_formats::parse_streaming) files whose single chunk is
-//! an [`asset::pack`](legaia_container_formats::pack) of PSX TIMs or Legaia TMDs. The word
+//! an [`container-formats::pack`](legaia_container_formats::pack) of PSX TIMs or Legaia TMDs. The word
 //! [`MAGIC`] (`0x01059B84`) that named the format is that chunk's
 //! `(type << 24) | size` header - `type = 0x01` (`TIM_LIST`),
 //! `size = 0x059B84` = the payload's byte length - so it is not a magic at
@@ -161,7 +161,7 @@ pub fn iter_canonical_slots() -> impl Iterator<Item = (usize, SlotKind, u32, Opt
 /// A scene's streamed asset pack - the corrected reading of a "field-pack"
 /// carrier.
 ///
-/// Two on-disc forms, both an [`asset::pack`](legaia_container_formats::pack):
+/// Two on-disc forms, both an [`container-formats::pack`](legaia_container_formats::pack):
 ///
 /// - **chunk-headered** - a 4-byte `(type << 24) | size` DATA_FIELD chunk
 ///   header at offset 0, pack immediately after it. `chunk_header` is `Some`.

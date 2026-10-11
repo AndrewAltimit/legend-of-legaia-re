@@ -130,7 +130,7 @@ pub struct TransitionGlobals {
 /// stored as halfwords.
 ///
 /// `_DAT_8007B6D8` is **slot 0 of the 4-slot pending SFX ring** the battle
-/// funnel `FUN_8004FE5C` appends into (`engine-core::sfx_cue`), so the value
+/// funnel `FUN_8004FE5C` appends into (`engine-battle::sfx_cue`), so the value
 /// is already in the drainer's resolved ring-id space - which for ids below
 /// `0x64` is the static SFX descriptor table index itself
 /// (`docs/formats/sfx-table.md`; both `0x1F` and `0x4D` are populated

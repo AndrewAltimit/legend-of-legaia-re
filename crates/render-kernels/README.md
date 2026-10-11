@@ -2,7 +2,7 @@
 
 The wgpu-free render kernels both play hosts share, split out of
 [`legaia-engine-ui`](../engine-ui/README.md), which re-exports every module
-here at its old path (`legaia_engine_ui::gte`, ...); `legaia-engine-render`
+here at its old path (`legaia_render_kernels::gte`, ...); `legaia-engine-render`
 re-exports them again at its crate root, so native callers see no
 difference. Like engine-ui it links no wgpu, winit or cpal, so it builds for
 native and `wasm32` alike.

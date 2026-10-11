@@ -2,7 +2,7 @@
 //! through it (the level-up stat jitter, the minigame rules engines).
 //!
 //! It lives here, below `engine-core`, so the minigame crate can draw from
-//! the same generator `engine-core::levelup` re-exports without depending on
+//! the same generator `engine-battle::levelup` re-exports without depending on
 //! the simulation crate. [`bios_rand_shape`] is the
 //! stateless one-step form of the same recurrence.
 

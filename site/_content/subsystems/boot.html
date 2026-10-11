@@ -13,7 +13,7 @@
     <dt>Overlay window</dt><dd>Slot A at <code>0x801CE818</code> holds one of field / battle / menu / cutscene / minigame code at a time</dd>
     <dt>Title screen</dt><dd>Has no mode of its own: it runs under <code>CARD</code> (modes 22/23), the same pair as the pause menu, from code at the tail of PROT 0899</dd>
     <dt>NEW GAME</dt><dd>Writes mode 2 (field) and opens the prologue scene <code>opdeene</code>; name entry comes later, in <code>town01</code></dd>
-    <dt>In the port</dt><dd><code>engine-session::BootSession</code> runs the per-frame order; <code>engine-core::mode::ModeSeat</code> holds the mode word; <code>engine-menus::title_overlay</code> is the title tick</dd>
+    <dt>In the port</dt><dd><code>engine-session::BootSession</code> runs the per-frame order; <code>engine-mode::mode::ModeSeat</code> holds the mode word; <code>engine-menus::title_overlay</code> is the title tick</dd>
     <dt>Confidence</dt><dd>Confirmed - mode table read off the disc; title tick and launch write pinned by live watchpoints</dd>
   </dl>
 </section>

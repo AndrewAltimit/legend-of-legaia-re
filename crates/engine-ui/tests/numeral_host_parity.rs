@@ -1,7 +1,7 @@
 //! The battle value readout's **draw** half, pinned at the byte stream both
 //! hosts upload.
 //!
-//! The layout was always shared (`engine-vm::battle_value_readout`) and the
+//! The layout was always shared (`engine-battle-vm::battle_value_readout`) and the
 //! two hosts still drew different pixels from it: the native window sampled
 //! retail's 24x24 cells out of VRAM through a mesh of its own, and the browser
 //! play page restyled the same digits in the dialog font. A shared *layout* is

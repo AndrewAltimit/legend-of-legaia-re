@@ -58,7 +58,7 @@ with, so the export matches the on-screen pages:
   whose object bind names a clip are posed at **frame 0** (the native
   play-window's static bake). Sky shells are dropped by the site's
   `isSkyMesh` heuristic unless `--include-sky`. Baking is
-  `legaia_asset::scene_gltf`: one VRAM-derived RGBA atlas, NEAREST
+  `legaia_actor_formats::scene_gltf`: one VRAM-derived RGBA atlas, NEAREST
   samplers, packet colours on `COLOR_0` (sRGB-linearized so a
   linear-colour-space importer - glTFast under VRChat's mandated Linear
   setting included - reproduces retail's display-space `texel * colour/128`
@@ -75,7 +75,7 @@ with, so the export matches the on-screen pages:
   blended queue's depth-write skip is also what keeps retail's coincident
   water scroll layers from z-fighting in depth-buffered engines.
 - **NPC glbs** - `engine-core::npc_catalog` (the MAN partition-1 placement
-  walk shared with the NPC browser page) + `legaia_asset::character_gltf`:
+  walk shared with the NPC browser page) + `legaia_actor_formats::character_gltf`:
   the scene TMD with its spawn clip first and every other
   bone-count-matching scene-ANM record baked as a named glTF animation
   (`record_N`). Spawn transforms live in the manifest, not the file.
@@ -84,7 +84,7 @@ with, so the export matches the on-screen pages:
   clip, plus every placement transform in the manifest. The world glb
   keeps their frame-0 static twins, so these are opt-in upgrades.
 - **Baked ambient vertex morphs** - when the scene arms the engine's
-  scene-entry VDF pulse (`engine-core::vdf_pulse` - opt-in per scene:
+  scene-entry VDF pulse (`engine-field::vdf_pulse` - opt-in per scene:
   the jou family and Rim Elm's shoreline, the flagship), the world glb carries one glTF **morph target** per envelope
   lane on the affected meshes (Unity blendshapes, named
   `vdf_lane_<n>` via `extras.targetNames`) plus a looping `vdf_pulse`
@@ -115,7 +115,7 @@ four characters' weapons, Ra-Seru, armour, headgear and footwear - into
 Both carry the character's battle action bank and the weapon's spliced
 direction swings as named clips, so the piece moves the way it does in
 hand. This is the **same kernel the site's characters-page equipment
-viewer runs** - `legaia_asset::battle_char_assembly::loadout`, hoisted out
+viewer runs** - `legaia_actor_formats::battle_char_assembly::loadout`, hoisted out
 of the wasm session so both hosts share one implementation - and the
 manifest repeats each record's honesty tags (`class`, `complete`,
 `isolation_mode`, `curated`, `grip_bridges`) so a heuristic cut is

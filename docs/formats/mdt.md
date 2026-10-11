@@ -79,7 +79,7 @@ The `+0x04` u32 in the scene_asset_table header is the sum of the descriptors' d
 `scene_asset_table::move_descriptor` exposes the slot lookup as a typed accessor:
 
 ```rust
-let s = legaia_asset::scene_asset_table::detect(&prot_bytes)?;
+let s = legaia_scene_formats::scene_asset_table::detect(&prot_bytes)?;
 let move_descriptor = s.move_descriptor()?; // type_byte = 0x05
 ```
 

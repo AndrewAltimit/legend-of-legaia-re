@@ -4,7 +4,7 @@ The minigame **rules engines** of the engine port, split out of
 `legaia-engine-core`: each is a headless state machine driven by disc-parsed
 tables, with no `World`, no scene loading and no renderer. `engine-core`
 depends on this crate, never the other way round, and re-exports every module
-at its old path (`legaia_engine_core::dance`, `legaia_engine_core::slot_machine`,
+at its old path (`legaia_engine_core::dance`, `legaia_engine_minigames::slot_machine`,
 ...), so hosts and tests name the same paths they always did.
 
 ## What lives here

@@ -90,7 +90,7 @@ pub const MENU_STRING_LINE_PITCH: i32 = 0xE;
 /// one row per `0x7C` line, and the corner cursor.
 ///
 /// `FUN_801DCD58` refills the template's two operand bytes (ported as
-/// `engine-core::pause_screens::notify_window_operands`, which the caller's
+/// `engine-menus::pause_screens::notify_window_operands`, which the caller's
 /// composition runs), draws the string in ink `7` at `(WX, WY)` and puts the
 /// hand sprite (kind 1, mode 1) at `(WX + 0xE6, WY + 0xD)` - the same pens as
 /// window 7's [`char_prompt_draws_for`]. The lines arrive expanded: the string

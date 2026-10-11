@@ -11,7 +11,7 @@
     <dt>Scripts come from</dt><dd>Each scene's <strong>MAN</strong>, the script-and-data bundle shipped with the scene. Nothing about a town's behaviour is in the main executable.</dd>
     <dt>Opcodes</dt><dd>43 opcodes <code>0x21</code>-<code>0x4F</code> (gap <code>0x27</code>-<code>0x2A</code>) over a byte stream, plus every byte <code>0x50</code>-<code>0x7F</code> as a story-flag op. Bit <code>0x80</code> on any opcode aims it at another actor.</dd>
     <dt>Dialogue</dt><dd>Has <strong>no opcode</strong>: talking resumes the NPC's own script, and its text sits inline in that script (<a href="#dialogue">below</a>).</dd>
-    <dt>In the port</dt><dd><code>engine-vm::field</code> (executing VM); <code>legaia_asset::field_disasm</code> (side-effect-free disassembler, CLI <code>asset field-disasm</code>).</dd>
+    <dt>In the port</dt><dd><code>engine-vm::field</code> (executing VM); <code>legaia_scene_formats::field_disasm</code> (side-effect-free disassembler, CLI <code>asset field-disasm</code>).</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly of the overlay plus live captures (<a href="#how-we-know">how we know</a>).</dd>
   </dl>
 </section>

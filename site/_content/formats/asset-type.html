@@ -109,8 +109,8 @@
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong><code>0x05 MOVE</code></strong> is where the per-scene player ANM bundle lives on disc: a canonical ANM container with <code>marker_1 = 0x080C</code> records (<a href="anm.html">ANM</a>). Its arm allocates with the <code>move_malloc_err</code> string into <code>_DAT_8007B888</code>, the buffer the clip driver <code>FUN_800204F8</code> binds clips from.</li>
-        <li><strong><code>0x06 ANM</code></strong> carries the CLUT-walk <code>MoveImage</code> walker table despite its <code>anm_malloc_err</code> label: case 6 installs it at <code>DAT_8007B7C8</code>, <code>FUN_80024CFC</code> spawns one walker actor per entry (state <code>0xB</code>), and <code>FUN_8001ADA4</code> case <code>0xB</code> steps it. Populated in 12 bundles - the 3 kingdoms plus 9 water / waterfall field scenes - and a 4-byte <code>count = 0</code> placeholder everywhere else. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md">field ambient FX</a>; parser <code>legaia_asset::clut_walk::from_scene_bundle</code>.</li>
-        <li><strong><code>0x07 VDF</code></strong> is installed at <code>DAT_8007B7DC</code> and post-processed by <code>FUN_8001FBCC</code> per sub-entry (pointer table <code>0x80083E58</code>). Populated in 61 scene bundles; parser <code>legaia_asset::scene_vdf</code>.</li>
+        <li><strong><code>0x06 ANM</code></strong> carries the CLUT-walk <code>MoveImage</code> walker table despite its <code>anm_malloc_err</code> label: case 6 installs it at <code>DAT_8007B7C8</code>, <code>FUN_80024CFC</code> spawns one walker actor per entry (state <code>0xB</code>), and <code>FUN_8001ADA4</code> case <code>0xB</code> steps it. Populated in 12 bundles - the 3 kingdoms plus 9 water / waterfall field scenes - and a 4-byte <code>count = 0</code> placeholder everywhere else. See <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/field-ambient-fx.md">field ambient FX</a>; parser <code>legaia_scene_formats::clut_walk::from_scene_bundle</code>.</li>
+        <li><strong><code>0x07 VDF</code></strong> is installed at <code>DAT_8007B7DC</code> and post-processed by <code>FUN_8001FBCC</code> per sub-entry (pointer table <code>0x80083E58</code>). Populated in 61 scene bundles; parser <code>legaia_scene_formats::scene_vdf</code>.</li>
       </ul>
     </div>
   </details>
@@ -129,7 +129,7 @@
 
 <section class="doc-section" id="assettype-rust-enum">
   <h2>In the port</h2>
-  <p><code>legaia_asset::AssetType</code> mirrors the table one variant per type byte, with <code>Flag(u8)</code> for the three markers and <code>Unknown(u8)</code> for everything else - the same silent no-op the retail dispatcher performs (below).</p>
+  <p><code>legaia_container_formats::AssetType</code> mirrors the table one variant per type byte, with <code>Flag(u8)</code> for the three markers and <code>Unknown(u8)</code> for everything else - the same silent no-op the retail dispatcher performs (below).</p>
 </section>
 
 <section class="doc-section" id="where-the-dispatcher-actually-gets-called">
@@ -177,7 +177,7 @@
     <span class="see-also-label">Reference</span>
     <a href="asset-descriptor.html">Asset descriptor</a>
     <a href="data-field.html">DATA_FIELD streaming</a>
-    <a href="pack.html">asset::pack</a>
+    <a href="pack.html">container-formats::pack</a>
     <a href="lzs.html">LZS compression</a>
     <a href="anm.html">ANM</a>
     <a href="../subsystems/asset-loader.html">Asset loader</a>

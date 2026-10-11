@@ -9,7 +9,7 @@ cpal, so it builds for native and `wasm32` alike.
 `legaia-engine-core` owns the composition - `World`'s cast / move-FX scene
 graph, the field VM's screen-effect ops and the battle animation tick - and
 re-exports every module here at its old path, so
-`legaia_engine_core::summon` and `legaia_engine_effects::summon` name the same
+`legaia_engine_effects::summon` and `legaia_engine_effects::summon` name the same
 module.
 
 ## What belongs here

@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>The specialised code behind cutscenes, the world map, menu screens and minigames - loaded when that mode starts, gone when it ends. Every loading pause between modes is an overlay swap.</dd>
     <dt>Magic / marker</dt><dd>No header - the blob begins with a MIPS function prologue (<code>addiu sp, sp, -X</code> = <code>0x27BDFFxx</code>)</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0901..=0969</code> range (extraction index), 14-37 KB each; loads into the overlay window <code>0x801C0000..0x80200000</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::mips_overlay::detect</code> (<code>crates/overlay-images/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
+    <dt>Parser</dt><dd><code>legaia_overlay_images::mips_overlay::detect</code> (<code>crates/overlay-images/src/mips_overlay.rs</code>); category <code>mips_overlay</code> in the categorize pipeline</dd>
     <dt>Confidence</dt><dd>Inferred - a shape heuristic with zero false positives over the corpus, not a loader trace; each blob's load base comes from the asset chain that pulls it in.</dd>
     <dt>Used by</dt><dd><a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a>, <a href="../tooling/overlay-capture.html">Overlay capture</a></dd>
   </dl>
@@ -45,7 +45,7 @@
     <li><code>(u32_le[0] &amp; 0xFF) ∈ [0x80, 0xF8]</code> - only accept reasonable stack adjustments (8 to 128 bytes).</li>
     <li><code>u32_le[1]</code>'s 6-bit MIPS opcode field is one of the common function-prologue follow-ups (<code>sw</code>, <code>addiu</code>, <code>lui</code>, <code>lw</code>, R-type, ldc/sdc).</li>
   </ol>
-<pre><code>use legaia_asset::mips_overlay;
+<pre><code>use legaia_overlay_images::mips_overlay;
 
 if let Some(m) = mips_overlay::detect(buf) {
     println!("MIPS overlay: stack frame = {} bytes; second op = {:#04x}",

@@ -84,7 +84,7 @@ import slot_b_band  # noqa: E402
 
 # The band's structure has ONE implementation on the host side
 # (`scripts/ghidra-analysis/slot_b_band.py`), mirroring the authority
-# `legaia_asset::slot_b_module`. This file used to carry its own copy of the
+# `legaia_overlay_images::slot_b_module`. This file used to carry its own copy of the
 # frame scan and the record walk, which is how the shape and the attribution
 # sweep came to answer differently about the same image.
 spawn_record_band = slot_b_band.spawn_record_band
@@ -350,7 +350,7 @@ RAM_PAGE_LO, RAM_PAGE_HI = 0x8001, 0x801F
 # `lui`/`addiu` pair and passes it in `$a2` to a `jal` into one of the two
 # spawn helpers, so the record's start is an address the module computes and
 # its end is the address the module computes for the next one. That is the
-# `spawn_record_band` shape, and `legaia_asset::slot_b_module` is the parser
+# `spawn_record_band` shape, and `legaia_overlay_images::slot_b_module` is the parser
 # that names it - see docs/formats/slot-b-module-layout.md. The walk itself
 # lives in `scripts/ghidra-analysis/slot_b_band.py`.
 
@@ -558,7 +558,7 @@ def gap_shape(image, base_va, a, b, floor=None, data_seg=None, tail=None):
     # `spawn_record_band`: the run is one of the slot-B module band's spawn
     # records, both of whose ends the module's own code computes. This is the
     # one shape below `padding` that is named by a PARSER rather than by a
-    # property of MIPS - `legaia_asset::slot_b_module` - so it is tested above
+    # property of MIPS - `legaia_overlay_images::slot_b_module` - so it is tested above
     # every statistic and below the shapes that are exact by construction.
     if in_record_band(image, base_va, a, b):
         return "spawn_record_band"
@@ -967,7 +967,7 @@ def overlay_reports(extracted, extents, attrib=None):
     # one buffer for the whole of PROT.DAT in TOC order, so it also cuts the
     # images whose donor is not an overlay (PROT 0898 / 0895, donor 0894) and
     # the one the sibling gate stops short on (PROT 0901). The byte account
-    # applies the same rule (`legaia_asset::inherited_tail::tails_in`).
+    # applies the same rule (`legaia_disc_audit::inherited_tail::tails_in`).
     by_index = inherited_tail.tail_cuts(
         [t for t in tail_inputs if t[0] is not None],
         lambda _key, base, data: slot_b_band.content_end(data, base),
@@ -1242,7 +1242,7 @@ GAP_SHAPE_TEXT = {
                          "`[i16 model_sel][u16 reserved][move-VM bytecode]`, both "
                          "of whose ends the module's own code computes and "
                          "hands to `FUN_80021B04` / `FUN_80050ED4` in `$a2`. "
-                         "Named by a parser (`legaia_asset::slot_b_module`), "
+                         "Named by a parser (`legaia_overlay_images::slot_b_module`), "
                          "not by a statistic. Outside the code denominator",
     "no_exit": "1024 bytes or more containing no `jr ra`: every MIPS body ends "
                "in one and known code carries one per ~500-750 bytes, so a run "

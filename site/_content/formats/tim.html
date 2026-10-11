@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Every texture: character skins, floors and walls, the world map, UI panels and cursors, menu glyphs and the dialog font.</dd>
     <dt>Magic</dt><dd><code>0x00000010</code> as the first u32</dd>
     <dt>Lives in</dt><dd>Inside <a href="prot.html">PROT.DAT</a> entries (usually behind <a href="lzs.html">LZS</a>), inside <a href="pack.html">packs</a> - bare, or behind the <a href="field-pack.html">chunk header</a> the <a href="tim-pack.html">TIM-pack reader</a> steps past - and two in the unindexed head gap of <code>PROT.DAT</code> before the first entry (<code>0x018E0</code>, <code>0x11218</code>)</dd>
-    <dt>Parser</dt><dd><code>crates/tim</code> (<code>parse</code>, <code>parse_strict</code>, PNG export, <code>encode</code> PNG-to-TIM); catalogs <code>legaia_asset::tim_catalog</code> / <code>tim_deep_catalog</code> / <code>tim_labels</code></dd>
+    <dt>Parser</dt><dd><code>crates/tim</code> (<code>parse</code>, <code>parse_strict</code>, PNG export, <code>encode</code> PNG-to-TIM); catalogs <code>legaia_disc_audit::tim_catalog</code> / <code>tim_deep_catalog</code> / <code>tim_labels</code></dd>
     <dt>Confidence</dt><dd>Confirmed - public format; Legaia's upload habits byte-checked against retail VRAM dumps.</dd>
     <dt>Used by</dt><dd><a href="../subsystems/renderer.html">Renderer</a>, <a href="../viewer.html">Asset viewer</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a></dd>
   </dl>
@@ -83,8 +83,8 @@
   <table>
     <thead><tr><th>Sheet</th><th>Where</th><th>Rows</th></tr></thead>
     <tbody>
-      <tr><td>System-UI sprite sheet (4bpp, 256&times;192, 16&times;16 CLUT)</td><td><code>PROT.DAT[0x018E0]</code>, head gap; constants <code>legaia_asset::title_pak::OVERLAY_SYSTEM_UI_TIM_*</code></td><td>Row 2 = load-screen panel chrome; row 7 = pointing-finger cursor; others = HP/MP/money panels, battle chrome, equipment frames</td></tr>
-      <tr><td>Menu-glyph / interior atlas (4bpp, 256&times;256, multi-row CLUT)</td><td><code>PROT.DAT[0x11218]</code>, head gap; <code>legaia_asset::menu_glyph_atlas</code></td><td>Rows render NEW GAME / CONTINUE / OPTIONS and smaller menu labels; also the shared interior page (below)</td></tr>
+      <tr><td>System-UI sprite sheet (4bpp, 256&times;192, 16&times;16 CLUT)</td><td><code>PROT.DAT[0x018E0]</code>, head gap; constants <code>legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_TIM_*</code></td><td>Row 2 = load-screen panel chrome; row 7 = pointing-finger cursor; others = HP/MP/money panels, battle chrome, equipment frames</td></tr>
+      <tr><td>Menu-glyph / interior atlas (4bpp, 256&times;256, multi-row CLUT)</td><td><code>PROT.DAT[0x11218]</code>, head gap; <code>legaia_ui_formats::menu_glyph_atlas</code></td><td>Rows render NEW GAME / CONTINUE / OPTIONS and smaller menu labels; also the shared interior page (below)</td></tr>
     </tbody>
   </table>
   <div class="cli"><code>asset-viewer tim extracted/PROT.DAT --offset 0x018E0 --clut 2</code></div>
@@ -97,8 +97,8 @@
   <table>
     <thead><tr><th>Family</th><th>Declared</th><th>Uploaded as</th><th>Uploader</th></tr></thead>
     <tbody>
-      <tr><td>Field-character atlas palettes (PROT 0874 &sect;2, entries 1..3)</td><td>multi-row block</td><td>one strip on row 478</td><td><code>legaia_asset::field_char_textures::upload_to_vram</code></td></tr>
-      <tr><td>Shared interior page (256&times;256 4bpp, image at <code>(960, 256)</code>)</td><td>16&times;16 block at <code>(0, 510)</code></td><td>256-entry strip on row 510</td><td><code>legaia_asset::interior_page</code></td></tr>
+      <tr><td>Field-character atlas palettes (PROT 0874 &sect;2, entries 1..3)</td><td>multi-row block</td><td>one strip on row 478</td><td><code>legaia_actor_formats::field_char_textures::upload_to_vram</code></td></tr>
+      <tr><td>Shared interior page (256&times;256 4bpp, image at <code>(960, 256)</code>)</td><td>16&times;16 block at <code>(0, 510)</code></td><td>256-entry strip on row 510</td><td><code>legaia_ui_formats::interior_page</code></td></tr>
     </tbody>
   </table>
   <p>Town meshes address cells mid-strip (town01 uses <code>(64, 510)</code> = strip entry 64) with texture pages inside the <code>(960, 256)</code> image. A renderer that honours the declared rectangle clips the rows past <code>y = 512</code>, leaves the strip empty, and the meshes sampling it render black or drop - even though every byte is on the disc. Row 510 in every captured field save is byte-identical to the strip upload.</p>
@@ -110,9 +110,9 @@
   <table>
     <thead><tr><th>Tier</th><th>Module</th><th>Finds</th><th>Command</th></tr></thead>
     <tbody>
-      <tr><td>Flat</td><td><code>legaia_asset::tim_catalog</code></td><td>Raw TIMs, mapped back to owning entry + offset (or the gap); item-for-item identical to an independent reference decoder</td><td><code>asset tim-catalog extracted/PROT.DAT --out catalog.tsv</code></td></tr>
-      <tr><td>Deep</td><td><code>legaia_asset::tim_deep_catalog</code></td><td>TIMs inside LZS-compressed sections (most character and scene textures), keyed by <code>(entry, section, offset)</code></td><td><code>asset tim-deep-catalog extracted/PROT.DAT --out deep.tsv</code></td></tr>
-      <tr><td>Labels</td><td><code>legaia_asset::tim_labels</code></td><td>Content-fingerprint (FNV-1a-64) keyed names - a coarse category or a pinned role - shared by both tiers and shown in the viewer</td><td><code>--rollup</code> on either command for count + digest</td></tr>
+      <tr><td>Flat</td><td><code>legaia_disc_audit::tim_catalog</code></td><td>Raw TIMs, mapped back to owning entry + offset (or the gap); item-for-item identical to an independent reference decoder</td><td><code>asset tim-catalog extracted/PROT.DAT --out catalog.tsv</code></td></tr>
+      <tr><td>Deep</td><td><code>legaia_disc_audit::tim_deep_catalog</code></td><td>TIMs inside LZS-compressed sections (most character and scene textures), keyed by <code>(entry, section, offset)</code></td><td><code>asset tim-deep-catalog extracted/PROT.DAT --out deep.tsv</code></td></tr>
+      <tr><td>Labels</td><td><code>legaia_disc_audit::tim_labels</code></td><td>Content-fingerprint (FNV-1a-64) keyed names - a coarse category or a pinned role - shared by both tiers and shown in the viewer</td><td><code>--rollup</code> on either command for count + digest</td></tr>
     </tbody>
   </table>
   <p>Both tiers admit a hit only through <code>parse_strict</code>: no reserved flag bits, pixel mode 0..3, block sizes exactly <code>12 + w*h*2</code>, non-zero dimensions, image rectangle inside VRAM. The CLUT rectangle is deliberately <em>not</em> bounds-checked - the <a href="npc-palette.html">row-479 palette band</a> parks legitimate blocks at rows 510..511 with heights up to 16. The deep tier additionally requires the decoded bytes to render to RGBA, because <a href="lzs.html">LZS decompresses anything without error</a>. The <a href="../viewer.html#tim-catalog">asset viewer</a> builds both catalogs live from a user-supplied disc.</p>
@@ -153,7 +153,7 @@
     <li><strong>The draw names a VRAM cell, not a file.</strong> A sprite can take a palette another TIM uploaded (the system-UI sheet's status badges use the CLUT-only TIM at <code>PROT.DAT[0x1858]</code>), and a later upload can overwrite a TIM's own palette before anything draws it (the battle font's <code>(0, 510)</code> strip is covered by the menu-glyph atlas at boot).</li>
     <li><strong>The screen multiplies the texel.</strong> The primitive's colour word (<code>texel * colour / 128</code>) and the depth cue sit on top of the palette.</li>
   </ul>
-  <p><code>legaia_asset::tim_palette_context</code> resolves the first two from the disc - boot-time CLUT state, a per-rectangle palette map of the system-UI page, and an &ldquo;as drawn&rdquo; composite - and the viewer and ROM patcher read it. The whole colour chain is on <a href="../subsystems/shading.html">shading</a>.</p>
+  <p><code>legaia_ui_formats::tim_palette_context</code> resolves the first two from the disc - boot-time CLUT state, a per-rectangle palette map of the system-UI page, and an &ldquo;as drawn&rdquo; composite - and the viewer and ROM patcher read it. The whole colour chain is on <a href="../subsystems/shading.html">shading</a>.</p>
 </section>
 
 <section class="doc-section" id="vram-emulation-in-the-engine-port">

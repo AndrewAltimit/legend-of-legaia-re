@@ -367,7 +367,7 @@ case -> index -> entry map is in
 
 `engine-core::scene::seed_effect_model_library_from_etmd` reads extraction
 0871 (`etmd.dat`, raw index `0x369`) at scene entry: an uncompressed 30-entry
-`asset::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
+`container-formats::pack` of Legaia TMDs spanning the entry's *extended* footprint. It
 registers all 30 into `World::global_tmd_pool[3..=32]`, the same
 `DAT_8007C018[3..=32]` window retail fills at battle init (`FUN_800520F0` ->
 `FUN_80026B4C`), overwriting the two trailing slots of the field character
@@ -580,7 +580,7 @@ move-VM scene-graph.
 - **Measured rates.** `scripts/pcsx-redux/autorun_enemy_move_render_path.lua` on the catalogued `gimard_burning_attack` state (400 vsyncs): `FUN_80048A08` = 213, `FUN_8004998C` = 213, `FUN_80023070` = 11, `FUN_801F7088` = 0. The draw never exceeds **2** per rendered frame (Vahn solo against one monster); the same probe reads 6 per frame in a 3-vs-3 (`rim_elm_queen_bee_battle`) and 2 in a 1-vs-1 (`rim_elm_gimard_victory`): one call per live actor.
 - **Not `FUN_801F7088`.** That address is the world-map top-view tile renderer aliasing the same `0x801Fxxxx` band.
 - **The flame motion is geometric, not palette.** Two animation-distinct Tail Fire frames have a **byte-identical** CLUT band (VRAM rows 470..499) while the framebuffer differs ~21%. The static flame renders with the baked row-478 CLUT.
-- **The stager overlays hold real move-VM part records.** Extraction PROT 903..913, recovered under the link base `0x801F69D8` by `legaia_asset::summon_overlay`. The `jal 0x80023070` that runs them lives in the SCUS stager `FUN_80021B04`, not inside the overlay. The engine drives them as a **stand-in** (`summon::SummonScene`).
+- **The stager overlays hold real move-VM part records.** Extraction PROT 903..913, recovered under the link base `0x801F69D8` by `legaia_overlay_images::summon_overlay`. The `jal 0x80023070` that runs them lives in the SCUS stager `FUN_80021B04`, not inside the overlay. The engine drives them as a **stand-in** (`summon::SummonScene`).
 - **The enemy move is a different move.** The player summon `0x81` performs *Burning Attack*; the enemy Gimard's boss move is *Tail Fire*, spell id `0x27` in the SCUS spell table. It seats the move-FX module PROT 0900 in slot B and renders as a single move-VM part actor in `DAT_801C90F0` ticked by `FUN_80021DF4` -> `FUN_80023070`. In both captures above `FUN_80023070`'s per-frame hits equal the part pool's live-slot count, with `FUN_80021DF4` 1:1 beside it. See [`battle-action-helpers.md`](battle-action-helpers.md#enemy-fire-tail---move-vm-part-not-the-widget-path).
 
 Full reconciliation:
@@ -630,7 +630,7 @@ array of `0x10800`-byte slots (103 / 78) carrying per-special-attack CLUT rows
 + 4bpp texture pages and summon-creature actor records, byte-verified RAM to
 disc and VRAM to disc in a mid-cast save state. Format:
 [`summon-readef.md`](../formats/summon-readef.md); parser
-`legaia_asset::summon_readef`.
+`legaia_actor_formats::summon_readef`.
 
 ## See also
 

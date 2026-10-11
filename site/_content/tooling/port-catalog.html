@@ -104,7 +104,7 @@
       <ul class="bullets">
         <li>Plain mentions of <code>FUN_&lt;addr&gt;</code> in comments are ignored - they show up in many contexts that don't imply a port and would noisily inflate the column.</li>
         <li>Address must be lowercase hex in the SCUS / overlay code range (SCUS <code>0x80010000-0x8006FFFF</code>, overlays <code>0x801C0000-0x8020FFFF</code>). Match is line-local.</li>
-        <li>One retail function can be ported into more than one crate (a formula shared between <code>engine-vm::battle_formulas</code> and an <code>engine-core</code> helper); the catalog lists every crate that tags the address.</li>
+        <li>One retail function can be ported into more than one crate (a formula shared between <code>engine-battle-vm::battle_formulas</code> and an <code>engine-core</code> helper); the catalog lists every crate that tags the address.</li>
         <li>Add the tag once, on the Rust function that <em>implements</em> the behaviour. Don't tag every caller.</li>
         <li><strong>Prefer a <code>///</code> tag on the function to a <code>//!</code> tag on the module.</strong> A module tag anchors the address to the whole file, which is coarse enough to report the address wired on the strength of any other function in the same file. Same for a plain data struct: tag the function that computes the value, and let the struct carry a <code>REF:</code>.</li>
         <li><code>// REF:</code> takes the same comment shapes and multi-address syntax as <code>PORT:</code>.</li>

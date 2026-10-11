@@ -19,7 +19,7 @@ camera's eye-space translation trio. Angles are 12-bit: `4096` is a full turn.
 
 | What | Retail | Port |
 |---|---|---|
-| Ground grid emitter | `func_0x801d02c0` (battle overlay), the sole draw call of the mode-`0x15` render `FUN_80026F50` | `legaia_asset::battle_backdrop`, `battle_ground_grid` |
+| Ground grid emitter | `func_0x801d02c0` (battle overlay), the sole draw call of the mode-`0x15` render `FUN_80026F50` | `legaia_scene_formats::battle_backdrop`, `battle_ground_grid` |
 | Stage colour / depth-cue pass | `FUN_80050120` (ambient `0x8007B7B0`, far colour `0x8007BB48`) | `battle_ground_grid::ambient_base_step` / `backdrop_cue_step`, `World::tick_battle_ambient` |
 | Stage stream selection | chunk walker `FUN_8001FE70` -> `_DAT_8007B864` | `ProtIndex::battle_stage_entry_for_scene` |
 | Shell registration + second copy | `FUN_800513F0`; tables `DAT_80078B50` (mirror) and `DAT_80078C1C` (outdoor) | `battle_backdrop::MirrorXTable`, `SecondCopy`, `drawn_objects_tmd` |
@@ -518,7 +518,7 @@ slot 1 as one unbaked copy, twice a frame, under that basis
 
 #### Port
 
-`legaia_asset::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
+`legaia_scene_formats::battle_backdrop` is the shared kernel: `MirrorXTable::from_scus`
 parses the table, `drawn_objects_tmd` applies the object-1 drop, and
 `SecondCopy::scale` / `flips_winding` give the second copy's transform (exact
 integer diagonals). `Mesh::append_scaled` / `VramMesh::append_scaled` in
@@ -1239,7 +1239,7 @@ needs ~84 frames just to finish starting.
 
 The simulation kernels are in `crates/engine-battle-vm`. The packet builders
 are `crates/render-kernels/src/battle_intro.rs`, re-exported as
-`engine-ui::battle_intro` and `engine-render::battle_intro`. `BattleIntro`
+`render-kernels::battle_intro` and `engine-render::battle_intro`. `BattleIntro`
 holds the style's working set between frames and synchronises its clock from
 the live transition entity. The one-shot field frame capture lands the drawn
 field in the texture pages each style's packets name (`Renderer::capture_rgba`

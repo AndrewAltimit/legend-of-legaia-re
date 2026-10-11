@@ -3,7 +3,7 @@
 The language-pack pipeline behind `legaia-patcher translate`: a user-supplied
 disc's text out to an editable YAML pack, and a filled pack back in as an
 in-place reimport. [`legaia-patcher`](../patcher/README.md) keeps the CLI and
-re-exports this crate as `legaia_patcher::translation` for consumers outside
+re-exports this crate as `legaia_translate` for consumers outside
 the patcher family.
 
 The crate root is the pipeline (`legaia_translate::lift`,

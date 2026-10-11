@@ -193,7 +193,7 @@
     <li>Two continuation forms exist: a dispatch byte before the labels (the <code>izumi</code> book menu) or the first label's <code>0x1F</code> directly (Rim Elm's spar menu). The parser accepts both.</li>
     <li><code>0x2A</code> is a real 2-option picker whose cursor clamps instead of wrapping. Every inn's Yes / No offer is one (<a href="../subsystems/inn.html#trigger">inn</a>); a decoder that stops at <code>0x29</code> finds no inn menus.</li>
   </ul>
-  <p>In the port: <code>legaia_mes::picker</code> decodes the menus; <code>engine-core::inline_dialogue</code> runs the whole interaction script through the field VM (flag tests, scene changes) and pauses only at each <code>0x1F</code> segment, applying the picked jump on confirm.</p>
+  <p>In the port: <code>legaia_mes::picker</code> decodes the menus; <code>engine-field::inline_dialogue</code> runs the whole interaction script through the field VM (flag tests, scene changes) and pauses only at each <code>0x1F</code> segment, applying the picked jump on confirm.</p>
   <details class="disclosure">
     <summary>Box geometry and render</summary>
     <div class="disclosure-body">

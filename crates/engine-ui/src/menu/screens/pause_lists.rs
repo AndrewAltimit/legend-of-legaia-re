@@ -27,7 +27,7 @@
 //! sprite `0x76`, digits `0x7A..0x83`, slash `0x79`) and the blink-gated
 //! page triangles (ICO `0x27`/`0x28`). This module keeps the
 //! capture-pinned pen positions; the kernel's navigation half is ported at
-//! `engine-core::pause_screens::list_kernel_navigate`. See
+//! `engine-menus::pause_screens::list_kernel_navigate`. See
 //! `docs/subsystems/field-menu.md` for the traced kernel.
 
 use super::{MENU_TEXT_GOLD, MENU_TEXT_WHITE, menu_mp_ink, num_field_draws};

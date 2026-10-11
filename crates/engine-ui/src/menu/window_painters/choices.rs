@@ -97,14 +97,14 @@ fn choice_marker_sprites(rows: &[ChoiceRow; 2], flags: ChoiceFlags) -> Vec<Paint
 ///
 /// PORT: FUN_801D603C
 /// REF: FUN_801d5de0 - window 44's content renderer, the prize list this
-/// confirm sits over. Ported as `engine-core::shop::shop_stock_row_ink`.
+/// confirm sits over. Ported as `engine-menus::shop::shop_stock_row_ink`.
 /// REF: FUN_801d688c - the shared picker that maintains the cursor word the
-/// `flags` argument carries. Ported as `engine-core::shop::shop_cursor_mode`.
+/// `flags` argument carries. Ported as `engine-menus::shop::shop_cursor_mode`.
 ///
 /// The sub-screen-`0x20` host this painter waited on exists now: the
 /// op-`0x49` sub-op-7 arm (`World::try_arm_prize_exchange`, over the PROT
 /// 0899 file `0x15D00` block table read beside `menu_windows::parse`)
-/// stages an `engine-core::prize_exchange::PrizeExchangeSession`, the menu
+/// stages an `engine-minigames::prize_exchange::PrizeExchangeSession`, the menu
 /// runtime drives it, and both hosts draw it through
 /// [`crate::prize_exchange::prize_exchange_draws_for`] - which calls
 /// this painter for window 46 whenever the session's Yes/No phase is up.

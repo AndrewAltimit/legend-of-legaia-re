@@ -6,8 +6,8 @@ slide, and the text balloon. The state of the script contexts that drive the
 pager (`inline_dialogue`, `cutscene_timeline`) is field-VM context and lives
 in `legaia-engine-field`. `engine-menus` depends on this crate, never the other way
 round, and re-exports every module at its old path
-(`legaia_engine_menus::dialog`, and through `engine-core`,
-`legaia_engine_core::dialog`), so hosts and tests name the same paths they
+(`legaia_engine_dialog::dialog`, and through `engine-core`,
+`legaia_engine_dialog::dialog`), so hosts and tests name the same paths they
 always did.
 
 ## What lives here

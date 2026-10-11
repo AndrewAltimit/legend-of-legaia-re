@@ -112,7 +112,7 @@ The in-RAM copy is **raw `PROT.DAT` from byte 0**: `FUN_8003E4E8` reads the firs
 
 So `resolver idx = extraction index + 2`: a PROT index recovered from a `FUN_8003E8A8` argument must subtract 2 to land in extraction space. The battle side-band files byte-verify it - TOC indices `0x37F` / `0x380` resolve to extraction entries 893 / 894 ([`summon-readef.md`](summon-readef.md)).
 
-Raw-TOC entries 0 and 1 cover the boot-UI region (LBA 3..120) that extraction indexing leaves unindexed. They are two TIM packs holding the boot-resident **system-UI bundle** (menu-glyph atlas, sprite sheets, cursor parts), uploaded once at boot by `FUN_800198E0` with flat-strip CLUT semantics; parser `legaia_asset::system_ui_bundle`, layout in [`tim-pack.md`](tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
+Raw-TOC entries 0 and 1 cover the boot-UI region (LBA 3..120) that extraction indexing leaves unindexed. They are two TIM packs holding the boot-resident **system-UI bundle** (menu-glyph atlas, sprite sheets, cursor parts), uploaded once at boot by `FUN_800198E0` with flat-strip CLUT semantics; parser `legaia_ui_formats::system_ui_bundle`, layout in [`tim-pack.md`](tim-pack.md#boot-resident-system-ui-instance-raw-toc-entries-0-and-1).
 
 Because `CDNAME.TXT` is authored in raw-TOC space, the extractor's filename labels are shifted +2 relative to the content the defines name. [`cdname.md` § numbering space](cdname.md#numbering-space) has the evidence and the relabelings that follow.
 

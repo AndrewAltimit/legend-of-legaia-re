@@ -215,7 +215,7 @@ pub enum HandlerKernel {
     /// `legaia_engine_dialog::text_balloon::TextBalloon` - same shape as
     /// [`Self::NarrationRoller`]: ported, but hosted off the actor pool.
     TextBalloon,
-    /// `engine-vm::camera_mover::CameraMover`, driven by
+    /// `engine-battle-vm::camera_mover::CameraMover`, driven by
     /// `legaia_engine_core::camera`.
     CameraMover,
     /// One of the four `legaia_engine_effects::screen_fx` widget handlers.

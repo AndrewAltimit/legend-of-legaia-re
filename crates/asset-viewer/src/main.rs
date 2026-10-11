@@ -264,7 +264,7 @@ enum Cmd {
     },
     /// Boot a CDNAME scene as a playable field-mode demo: opens a window,
     /// uploads the scene's TMDs as actors, wires keyboard / gamepad input
-    /// through `engine-core::input`, and overlays HUD text rendered via the
+    /// through `engine-system::input`, and overlays HUD text rendered via the
     /// extracted dialog font. When the scene carries an event-script PROT
     /// entry (`SceneEventScripts` or `SceneScriptedAssetTable`), the field
     /// VM is wired to drive its records - the HUD shows VM PC, last

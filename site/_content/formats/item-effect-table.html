@@ -15,7 +15,7 @@
     <dt>Magic / marker</dt><dd>none - a fixed table in <code>SCUS_942.54</code></dd>
     <dt>Lives in</dt><dd>SCUS VA <code>DAT_800752C0</code> (file <code>0x65AC0</code>), 130 &times; 4-byte records, ending where the <a href="spell-table.html">spell table</a> begins; heal amounts at <code>0x8007655C</code></dd>
     <dt>Retail readers</dt><dd>menu-usability gate, field list builder, apply handler (<a href="#how-we-know">how we know</a>)</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::item_effect::ItemEffectTable</code> (<code>from_scus</code>, <code>heal_amounts</code>, <code>restore_amount</code>, <code>stat_effect</code>)</dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::item_effect::ItemEffectTable</code> (<code>from_scus</code>, <code>heal_amounts</code>, <code>restore_amount</code>, <code>stat_effect</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - Ghidra-traced readers; the parsed bytes cross-check against each item's on-disc description string</dd>
   </dl>
 </section>
@@ -171,7 +171,7 @@
 
 <section class="doc-section" id="parser">
   <h2>In the port</h2>
-  <p><code>legaia_asset::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image; <code>engine-core::items::ItemCatalog</code> installs the usability and all-party flags and seeds the stat-up, buff and Fury Boost items from it, and <code>engine-core::inventory_use</code> mirrors the retail menu-usability gate (a heal greys out when nobody would benefit). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
+  <p><code>legaia_game_tables::item_effect::ItemEffectTable::from_scus</code> resolves both tables from a <code>SCUS_942.54</code> image; <code>engine-menus::items::ItemCatalog</code> installs the usability and all-party flags and seeds the stat-up, buff and Fury Boost items from it, and <code>engine-menus::inventory_use</code> mirrors the retail menu-usability gate (a heal greys out when nobody would benefit). Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/item-effect-table.md" target="_blank" rel="noopener"><code>docs/formats/item-effect-table.md</code></a>.</p>
 </section>
 
 <section class="doc-section" id="see-also">

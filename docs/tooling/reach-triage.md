@@ -310,7 +310,7 @@ behaviour. Retail's `0x800161B8..0x80016200` runs a fixed sequence on every
 transition: the CD read-wait poll `FUN_8003DE7C`, an overlay wait
 `FUN_8003ED04`, the mode-transition routine `FUN_80016230`
 (`engine-render::mode_transition`), `FUN_80058104(0)`, the pad-report
-re-publish `FUN_8001822C` (`engine-core::input::set_pad_reports`), and clears
+re-publish `FUN_8001822C` (`engine-system::input::set_pad_reports`), and clears
 of `gp+0x3D8` (the frame-begin-skip flag), `gp+0x538`, `0x8007B938` and
 `gp+0x55C`. The seat performs the two pad clears - through
 `InputState::clear_edges`, so the button that caused a transition is not
@@ -556,7 +556,7 @@ about the cells that outlived their own fixtures.
 |---|---|---|---|
 | `screen_fx.rs` | 10 | `801de4c8` `801f8d4c` `801f811c` `801f8004` `801f7a9c` `801f88fc` `801f8e6c` `801f849c` `801f8f28` `801f8a34` | Closed: `chapter1_frontier_ladder` enters all ten - a scene whose script spawns an iris mask, letterbox or image panel is exactly what its scene walk drives. |
 | `fishing/` (session kernels) | 6 | `801d5298` `801d0474` `801d0f5c` `801d26cc` `801d3db4` `801d746c` | Closed: `w1f1_fishing_pond_ladder` casts, matches the reel cadence and lands a catch (the point credit, the band roll, the species spawn, the cadence), and `w1g_fishing_tackle_pick_ladder` adds the two picker screens it could not reach - see the note below on why a second ladder was the only way |
-| `muscle_dome/` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome/hub.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
+| `muscle_dome/` | 4 | `801cf074` `801d1184` `801d1510` `801d9bbc` | Closed, and `801d9bbc` closed **elsewhere**: the export enters it through its second anchor, `engine-battle-vm::battle_value_readout`'s per-handle step, which the battle numerals now run on both hosts. Its `muscle_dome/hub.rs` anchor still has no producer, and an address-level verdict cannot say so - see the anchor note above |
 | `baka_fighter*.rs` (tally + intro) | 4 | `801d6710` `801d239c` `801d2a28` `801d59d4` | Closed: `w1b_baka_duel_ladder` plays the duel from its intro card to a player **win** and drains the tally. The door entry is a separate rung and still arms neither |
 | `pause_screens.rs` (special Use) | 4 | `801d7e50` `801d8a58` `801d8b90` `801d8d94` | Closed: `w1f1_pause_special_use_ladder` seeds the bag (no `debug_` helper grants `0x88` / `0x89` / `0x8A`) and drives Door of Light's confirm and Door of Wind's destination pick to their commits |
 | `other_game_overlay.rs` | 1 | `801d14b0` | Closed by delegation: `baka_fighter::tally_drain_step` (`801d6710`) **is** `other_game_overlay::step_scale`, one routine linked twice, so the duel ladder's tally drain enters the anchor. The arena's own driver is still one call away |
@@ -798,7 +798,7 @@ the magnitude.
 **The class byte steers two decisions, not one.** The routed half reaches the
 fold 21 frames later than the shared half, because the record's `+0x00` class is
 read by `is_capture_class_move` *and* by the action-seed band pick
-(`legaia_engine_vm::battle_action`'s `action_seed`, which compares the same byte
+(`legaia_engine_battle_vm::battle_action`'s `action_seed`, which compares the same byte
 against `0x14`). Installing the table moves the whole Magic band, so a contrast
 of this shape must not require the two halves to land on the same frame.
 
@@ -1280,10 +1280,10 @@ overlay itself** (PROT 0899 - a program table in the overlay's data segment,
 [`window-script.md`](../formats/window-script.md)), which also dissolves the
 "per-scene lookup" framing: the carrier is per-boot overlay data, and what
 selects a program is the menu code path, not a field-VM or scene-entry
-event. The wired chain: `legaia_asset::widget_script` parses + scans the
+event. The wired chain: `legaia_game_tables::widget_script` parses + scans the
 programs, `World::install_menu_overlay_tables` (both hosts call it with the
 real overlay bytes) resolves them, and `MenuRuntime::tick` feeds them into
-`legaia_engine_vm::run` over the `engine-core::menu_widget` window-list host
+`legaia_engine_vm::run` over the `engine-menus::menu_widget` window-list host
 on the shop picker entry / Sell transition edges - the transitions retail's
 `FUN_801DAFD4` drives. Disc-gated pins:
 `crates/engine-core/tests/menu_widget_scripts_real.rs`.
@@ -1588,7 +1588,7 @@ the field pushes were produced and nothing drew them. The arm's reach row
 would have closed with the feature still invisible to a player, which is the
 distinction between this page's question and
 [`host-drift.md`](host-drift.md)'s. Both hosts now composite the frame's
-pushes through `legaia_engine_ui::screen_prim::screen_effect_push_prims`, and
+pushes through `legaia_render_kernels::screen_prim::screen_effect_push_prims`, and
 the ladder that says so is a **draw-list** assertion rather than a pool one:
 `crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` enters a shipped
 scene whose entry script issues the instruction and reads the page's uploaded
@@ -1909,7 +1909,7 @@ page's other gates did - `w7_pause_learned_content_ladder` writes the one
 learned spell a capture would leave, and the pad does the rest. The two rows
 it held before that are gone too, and they went different ways.
 
-**slot-bonus was stale, not open.** Its five `legaia_asset::minigame_slot_scene`
+**slot-bonus was stale, not open.** Its five `legaia_minigame_formats::minigame_slot_scene`
 kernels (`801cec94` `801cfff0` `801d069c` `801d0fa8` `801d3230`) are entered -
 a coverage export over the full union measures every one of them - and the pair
 of ladders that does it, `w1l4_slot_bonus_marquee` (the disc-data half, which

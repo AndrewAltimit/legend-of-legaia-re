@@ -106,7 +106,7 @@
   <h2>Asset descriptor walker</h2>
   <p>Once the bundle is in RAM, one loop turns it into live assets - and its one surprise is that there is nothing clever in it. The walker reads a count word, then for each slot hands <code>base + data_offset</code> to the dispatcher, which splits the descriptor word into <code>type = word &gt;&gt; 24</code> and <code>size = word &amp; 0xFF_FFFF</code> and jumps through the handler table.</p>
   <p>The walk is also <strong>what fills the mesh pool</strong>: two dispatcher cases (type <code>0x02</code> TMD pack, type <code>0x09</code> bare mesh) register meshes into the runtime pointer table in walk order, past the resident 5-mesh head (the party). A magic-byte sweep of a scene block is <em>not</em> equivalent - see <a href="../formats/scene-bundles.html">scene bundles</a>.</p>
-  <p>The walker has zero static callers in the main executable; its sole caller lives in the field <em>overlay</em> (code streamed into RAM on demand), at the start of every field session. The port&rsquo;s reader is <code>legaia_asset::scene_asset_table</code>, checked against every classified entry on the disc.</p>
+  <p>The walker has zero static callers in the main executable; its sole caller lives in the field <em>overlay</em> (code streamed into RAM on demand), at the start of every field session. The port&rsquo;s reader is <code>legaia_scene_formats::scene_asset_table</code>, checked against every classified entry on the disc.</p>
 </section>
 
 <section class="doc-section" id="warp-flow">
@@ -197,7 +197,7 @@
     <li><strong>Global id (&ge; 2000):</strong> the change test and the load both use <code>music_01_base + (id &minus; 2000)</code>.</li>
     <li><strong>Scene-local id (&lt; 2000):</strong> the change test compares <code>scene_block + 6 + id</code>, but the load index is overwritten with global slot 2 (<code>0x800245A4..0x800245BC</code> in <code>FUN_800243F0</code>), so no scene bank is ever staged as music.</li>
   </ul>
-  <p>Global id <code>2000+i</code> is sound-test track <code>i</code>, but the <code>music_01</code> bank is <strong>piecewise</strong> in extraction space (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057) - not a flat base. Resolver: <code>engine-core::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
+  <p>Global id <code>2000+i</code> is sound-test track <code>i</code>, but the <code>music_01</code> bank is <strong>piecewise</strong> in extraction space (<code>988+i</code> for <code>i &le; 67</code>, <code>990+i</code> for <code>i &ge; 68</code>, gap at 1056/1057) - not a flat base. Resolver: <code>engine-system::music_labels</code>; the full cue list is on <a href="../reference/music-tracks.html">music tracks</a>.</p>
 </section>
 
 <section class="doc-section" id="sound-loaders">

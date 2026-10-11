@@ -64,8 +64,8 @@
 //!
 //! The mid-battle VRAM re-stamps - the per-tick facial animation
 //! (`tick_battle_face_stamps`), the status CLUT recolour
-//! (`engine-core::battle_status_clut`, `FUN_8004CE2C` pass 4) and the effect
-//! CLUT stage (`engine-core::battle_effect_clut`, `FUN_801DEA50`'s palette
+//! (`engine-battle::battle_status_clut`, `FUN_8004CE2C` pass 4) and the effect
+//! CLUT stage (`engine-battle::battle_effect_clut`, `FUN_801DEA50`'s palette
 //! arm) - run here through [`crate::play_battle_vram`] against the
 //! [`BattleRender::vram`] copy, and the page re-uploads it on
 //! [`LegaiaRuntime::play_battle_vram_take_dirty`]. The party build below

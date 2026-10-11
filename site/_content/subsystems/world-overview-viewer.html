@@ -66,7 +66,7 @@
 <section class="doc-section" id="walk-heightfield">
   <h2>Continent ground heightfield</h2>
   <p>The green-and-brown ground is not a mesh on the disc. It is generated from the walkability map's floor heights, one cell at a time, exactly as the game builds it on entry to the overworld: a heightfield in the <code>col &times; 128</code> world frame, textured per cell from a terrain-type-keyed atlas (grass, mountain, water, forest). The floor-height LUT is 16 signed halfwords at the start of the kingdom's MAN; the surface math is the engine's bilinear floor sampler, shared with the native world-map render.</p>
-  <p>Code: <code>legaia_asset::field_objects::build_walk_heightfield</code>, wrapped for the browser by <code>legaia_web_viewer::build_walk_ground</code>. The model and per-cell texturing are pinned on <a href="world-map.html">world map</a>.</p>
+  <p>Code: <code>legaia_scene_formats::field_objects::build_walk_heightfield</code>, wrapped for the browser by <code>legaia_web_viewer::build_walk_ground</code>. The model and per-cell texturing are pinned on <a href="world-map.html">world map</a>.</p>
 </section>
 
 <section class="doc-section" id="walk-placements">
@@ -182,7 +182,7 @@
 
 <section class="doc-section" id="glb-export">
   <h2>Continent <code>.glb</code> export</h2>
-  <p>"Download .glb" bakes the assembled view - heightfield plus every stamp on screen - into one binary glTF through the shared <code>scene_export</code> session (bake in <code>legaia_asset::scene_gltf</code>). The exporter receives the same mesh buffers and <code>(translation, rotY, scale)</code> triples the page renders with, so the file matches the screen. The PSX VRAM + CLUT indirection is baked into one RGBA atlas, a 256 &times; 256 tile per distinct <code>(cba, page)</code> pair, nearest-sampled, with alpha for the cutout rule. The ocean is a screen effect and is excluded. The asset viewer's town export rides the same session; the monster export is the sibling <code>monster_gltf</code>, which also carries animations.</p>
+  <p>"Download .glb" bakes the assembled view - heightfield plus every stamp on screen - into one binary glTF through the shared <code>scene_export</code> session (bake in <code>legaia_actor_formats::scene_gltf</code>). The exporter receives the same mesh buffers and <code>(translation, rotY, scale)</code> triples the page renders with, so the file matches the screen. The PSX VRAM + CLUT indirection is baked into one RGBA atlas, a 256 &times; 256 tile per distinct <code>(cba, page)</code> pair, nearest-sampled, with alpha for the cutout rule. The ocean is a screen effect and is excluded. The asset viewer's town export rides the same session; the monster export is the sibling <code>monster_gltf</code>, which also carries animations.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
@@ -196,7 +196,7 @@
       <tr><td>Pure-Y rotation</td><td><code>FUN_80026988</code></td><td>Yaw sense (local <code>+Z</code> to <code>(sin, 0, cos)</code>)</td><td><code>80026988.txt</code></td></tr>
       <tr><td>Fog LUT apply</td><td>overlay <code>0x801F7644..0x801F8690</code></td><td>Per-vertex scalar nudge from the 2048-entry LUT at <code>gp&minus;0x2BC</code></td><td>world-map overlay dump</td></tr>
       <tr><td>Far colour</td><td><code>FUN_8005B7D8</code> at <code>0x801F729C</code> / <code>FUN_80043390</code></td><td>The literal <code>SetFarColor(0x100, 0x100, 0x100)</code> the ground is cued toward; a mesh's own colour word as far colour when its depth argument is non-zero</td><td>PROT 0901 disassembly; <code>autorun_overworld_ground_far_colour.lua</code></td></tr>
-      <tr><td>Ocean CLUT step</td><td>slot-5 CLUT-walk table</td><td>16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs</td><td><code>legaia_asset::clut_walk</code>; prim-trace <code>clut=0x7E80</code> cluster</td></tr>
+      <tr><td>Ocean CLUT step</td><td>slot-5 CLUT-walk table</td><td>16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs</td><td><code>legaia_scene_formats::clut_walk</code>; prim-trace <code>clut=0x7E80</code> cluster</td></tr>
       <tr><td>Camera origin</td><td><code>_DAT_80089118</code> / <code>_DAT_80089120</code></td><td>Spawn anchor per kingdom</td><td><code>mednafen-state world-map-camera</code></td></tr>
     </tbody>
   </table>

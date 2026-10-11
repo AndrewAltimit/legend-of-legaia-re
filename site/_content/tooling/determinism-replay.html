@@ -69,7 +69,7 @@ active_scene = "town01"</code></pre>
       <tr><td></td><td></td><td>Right</td><td><code>0x0020</code></td></tr>
     </tbody>
   </table>
-  <p>Pad bits match <code>legaia_engine_core::input::PadButton::mask</code>, stored as a plain <code>u16</code> so the on-disk form stays byte-readable. The dense per-frame stream is reconstructed by <code>ReplayFile::expand_pad_stream</code> - the mask in slot N is the mask in force on frame N. <code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code>; writers emit events in frame-ascending order, readers don't sort.</p>
+  <p>Pad bits match <code>legaia_engine_system::input::PadButton::mask</code>, stored as a plain <code>u16</code> so the on-disk form stays byte-readable. The dense per-frame stream is reconstructed by <code>ReplayFile::expand_pad_stream</code> - the mask in slot N is the mask in force on frame N. <code>ReplayFile::validate</code> rejects schema mismatches, out-of-order events, and frame indices past <code>meta.frames</code>; writers emit events in frame-ascending order, readers don't sort.</p>
 </section>
 
 <section class="doc-section" id="subcommands">

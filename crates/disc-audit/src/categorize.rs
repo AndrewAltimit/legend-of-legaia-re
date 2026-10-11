@@ -39,7 +39,7 @@ pub enum Class {
     /// `MAN / MES / MOVE / VDF` bundles that terminate cleanly against their
     /// own sectors - they overran only while the superseded
     /// `toc[p+5] - toc[p+3] + 4` span cut the buffer short. Its one real hit,
-    /// extraction `0892`, is an [`asset::pack`](legaia_container_formats::pack) of two whole TIMs
+    /// extraction `0892`, is an [`container-formats::pack`](legaia_container_formats::pack) of two whole TIMs
     /// that the streaming reader mistook for chunk headers: the pack's
     /// `count = 2` and `word_offsets = [3, 0x208B]` read as three chunks of
     /// type `0x00`. See [`docs/formats/data-field.md`].
@@ -62,7 +62,7 @@ pub enum Class {
     /// nothing needs a class of its own for it. Kept so the shape stays named
     /// and a detector-order regression that re-steals a carrier is visible.
     TimPack,
-    /// Bare [`asset::pack`](legaia_container_formats::pack) - `[u32 count][u32 word_offset[count]]`
+    /// Bare [`container-formats::pack`](legaia_container_formats::pack) - `[u32 count][u32 word_offset[count]]`
     /// at offset 0, members packed back-to-back, every member carrying the
     /// same magic (PSX TIM or Legaia TMD). This is the form retail walks with
     /// `FUN_8002541C` mode `0x0A` (`count = base[0]`, then `FUN_800198E0` per
@@ -512,7 +512,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     }
 
     // A scene's streamed asset pack (`docs/formats/field-pack.md`) - one
-    // `asset::pack` of PSX TIMs or Legaia TMDs, in the two forms retail reads
+    // `container-formats::pack` of PSX TIMs or Legaia TMDs, in the two forms retail reads
     // it: behind a `(type << 24) | size` DATA_FIELD chunk header (mode `0x14`,
     // a single-chunk stream) or bare (mode `0x0A`). Both are gated on the
     // pack's own anchor plus every member carrying one magic that agrees with

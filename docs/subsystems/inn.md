@@ -16,7 +16,7 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What marks a dialogue as an inn? | Nothing. The option picker's Yes jump simply lands on the gate. |
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
-| Cost scanner | `legaia_asset::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
+| Cost scanner | `legaia_scene_formats::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
 | Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
 
 ```mermaid
@@ -162,7 +162,7 @@ and can't-afford branches.
 
 ### The cost scanner
 
-The shared scanner is [`legaia_asset::inn_costs`]: a byte scan (robust to the
+The shared scanner is [`legaia_scene_formats::inn_costs`]: a byte scan (robust to the
 dialogue-picker jump tables that desync a linear walk) for a gold compare
 whose literal reappears as the magnitude of a negative `ADD_MONEY` within a
 few ops of the gate (retail sites sit 7..~16 bytes apart). Swept disc-wide
@@ -188,7 +188,7 @@ are not covered by an oracle.
 
 ## The engine-side `InnSession` prompt
 
-`engine-menus::inn` (re-exported as `engine-core::inn`) also carries a
+`engine-menus::inn` (re-exported as `engine-menus::inn`) also carries a
 menu-style prompt with its own cost window. **Retail has no such screen and no
 play host opens it**: the reachable stay is the field-VM record above, and
 routing a host into the prompt would replace the innkeeper's real dialogue

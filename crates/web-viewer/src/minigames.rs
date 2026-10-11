@@ -102,7 +102,7 @@ pub struct LegaiaMinigames {
     /// frame count a cabinet's RNG seed folds in - the play hosts fold in the
     /// world frame the same way.
     sim_frames: u32,
-    /// The duel's 3D surface (`engine-core::baka_duel_scene`) - the same
+    /// The duel's 3D surface (`engine-minigame-scenes::baka_duel_scene`) - the same
     /// per-host cache the native window and the play page pose the duel
     /// through, here over this page's own fight.
     baka_surface: legaia_engine_minigame_scenes::baka_duel_scene::BakaDuelSurface,

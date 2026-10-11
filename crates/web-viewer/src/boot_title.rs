@@ -11,7 +11,7 @@
 //! which seeds the retail new-game defaults and enters the opening scene.
 //!
 //! **The mode word is held here too.** `engine-shell`'s `BootSession` holds
-//! the port's seat at the retail mode table (`engine-core::mode::ModeSeat`)
+//! the port's seat at the retail mode table (`engine-mode::mode::ModeSeat`)
 //! and carries `_DAT_8007B83C` through the boot chain; this page holds one on
 //! [`LegaiaRuntime`] (its host slot's `seat()`), reconciled once per frame by
 //! `LegaiaRuntime::tick_mode_seat` through the same two seat entry points -

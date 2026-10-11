@@ -400,7 +400,7 @@ impl BattleHud {
     }
 
     /// Build a sequence of plain [`SlotView`]s suitable for handing to
-    /// `engine-render::battle_hud_draws_for`. Owned data - engines that
+    /// `engine-ui::battle_hud_draws_for`. Owned data - engines that
     /// want zero-copy can iterate `iter_active()` and build their own
     /// view structs.
     pub fn slot_views(&self) -> Vec<SlotView> {

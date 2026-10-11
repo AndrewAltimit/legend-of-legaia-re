@@ -13,7 +13,7 @@ pub fn apply_alpha(color: [f32; 4], alpha: f32) -> [f32; 4] {
 
 /// One laid-out digit of a floating battle value readout.
 ///
-/// Hosts fill these from `engine-vm::battle_value_readout::value_cells`, which
+/// Hosts fill these from `engine-battle-vm::battle_value_readout::value_cells`, which
 /// is where the geometry is pinned. The type is a mirror of that kernel's
 /// output shape, not an import - a deliberate seam, not a crate-graph
 /// constraint (`engine-ui` depends on `legaia-engine-vm` and could import
@@ -35,7 +35,7 @@ pub struct ValueCellView {
 pub const VALUE_READOUT_FALLBACK_COLOR: [f32; 4] = [1.0, 0.78, 0.24, 1.0];
 
 /// One label of the combo counter cluster, as the fallback builder draws
-/// it: the word and its stage seat (`engine-vm::battle_value_readout::
+/// it: the word and its stage seat (`engine-battle-vm::battle_value_readout::
 /// ComboLabel`, minus the texel rect a VRAM-sampling host uses instead).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ComboLabelView<'a> {
@@ -47,7 +47,7 @@ pub struct ComboLabelView<'a> {
 /// Fallback draw list for the combo counter cluster - `N HIT` / `TOTAL x`
 /// or `DAMAGE x` - for a host without the battle effect atlas resident.
 ///
-/// The **layout is retail's** (`engine-vm::battle_value_readout::
+/// The **layout is retail's** (`engine-battle-vm::battle_value_readout::
 /// combo_cluster`: the label seats, the right-aligned 16-px value cells,
 /// the 24-px hit count, and the anchor's 16-frame glide in from the right)
 /// and only the letterforms differ: the sheet's `HIT` / `TOTAL` / `DAMAGE`

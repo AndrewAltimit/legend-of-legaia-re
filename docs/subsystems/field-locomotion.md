@@ -386,7 +386,7 @@ Before the wall probes, `FUN_801cfe4c` makes three calls to `FUN_801cfc40` with 
 | `0x801F2214` | `0x239FC` | 4 | leading-edge wall probes | `0x801CFEE8`, `0x801CFFC0`, `0x801D009C` |
 | `0x801F2254` | `0x23A3C` | 8 points | interact facing compass, `+-64` | `0x801D0834` |
 
-The last ends at `0x801F2274`, a `lw` / `sw` scalar. The bases are pinned in [`legaia_asset::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs), each re-derived from its `lui` pairs.
+The last ends at `0x801F2274`, a `lw` / `sw` scalar. The bases are pinned in [`legaia_disc_audit::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs), each re-derived from its `lui` pairs.
 
 `FUN_801cfc40(actor, scene, dx, dz, ex, ez)` walks the **collision candidate table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor:
 
@@ -465,7 +465,7 @@ The port's collision is the same per-axis stepper over the same tables. What eac
 - With `leading_edge_wall_probes` set, the engine stepper over each capture's live grid reproduces the retail rest **byte-exactly** (`*_engine_rest_matches_retail`), and so does a real `BootSession::enter_field_live` scene entry walked through the pad path (`*_full_scene_rest_matches_retail`). The candidate-centre fallback demonstrably walks deeper.
 - **`rimelm_npc_press_tetsu`** pins the NPC class: with the player pressed into the sparring partner, the mutual `+0x98` link is live both ways and Tetsu's `+0x10 = 0x08020884` carries the `0x20000` moving-class bit. Village NPCs take the bit-1 arm. `npc_press_pins_moving_actor_arm` asserts the link, the class, and the rest; the captured press-rest position also talks to Tetsu through the interact probe (`interaction_probe_matches_tetsu_capture_geometry` in `engine-core`'s world tests).
 
-**Placed props.** `Scene::field_object_placements` returns exactly the collision-actor spawns (the placed flag `0x4` is the spawn gate; flag `0x11` / `0x12` / `0x13` records are the terrain layer), each with its `collider_x` / `collider_z` box centre (`legaia_asset::field_objects::collision_footprint_offset`).
+**Placed props.** `Scene::field_object_placements` returns exactly the collision-actor spawns (the placed flag `0x4` is the spawn gate; flag `0x11` / `0x12` / `0x13` records are the terrain layer), each with its `collider_x` / `collider_z` box centre (`legaia_scene_formats::field_objects::collision_footprint_offset`).
 
 Each row is classed by its bind record's spawn-prologue `0x31` ops (`interact` / `moving_box` / born-exempt). A placement the **window sweep** creates (anchor cell without `CELL_BIND_OWNED`) is built non-solid: `FUN_801D7B50` puts it on the `+0x24` list, which no collision routine reads, so retail walks through it. Octam's gondola is one - `ropeway` `P2[6]` seats the player on its footprint.
 
@@ -695,7 +695,7 @@ Each tile's `u16` at `+0x8000 + tile_z*0x100 + tile_x*2`:
 | `0x4000` | terrain slow - the tile flag the controller halves speed on (a collision byte has no such bit) | `.MAP` |
 | `0x8000` | per-tile depth-sort flag on the ground quad (port `CELL_GROUND_DEPTH_SORTED`) | `.MAP` |
 
-The grid-prep refresh **`FUN_80017bec`** (called from `FUN_801D6704`) is the one writer of the derived bits: it decays flags bit 0 of any object descriptor whose `+0x16` countdown reached zero, mirrors each cell's owning-descriptor flags bits 0 / 1 into `0x1000` / `0x2000`, and stamps `0x200 << kind` on every tile named by the kind-0 / 1 / 2 sub-tables. That is where the walk-on dispatch's `cell & 0x600` fast gate and the `0x800` marker come from. Port: `legaia_engine_core::field_regions::refresh_object_grid_marks` (derived from the static-recomp instruction stream; the Ghidra dump for this function carries no disassembly).
+The grid-prep refresh **`FUN_80017bec`** (called from `FUN_801D6704`) is the one writer of the derived bits: it decays flags bit 0 of any object descriptor whose `+0x16` countdown reached zero, mirrors each cell's owning-descriptor flags bits 0 / 1 into `0x1000` / `0x2000`, and stamps `0x200 << kind` on every tile named by the kind-0 / 1 / 2 sub-tables. That is where the walk-on dispatch's `cell & 0x600` fast gate and the `0x800` marker come from. Port: `legaia_engine_field::field_regions::refresh_object_grid_marks` (derived from the static-recomp instruction stream; the Ghidra dump for this function carries no disassembly).
 
 `FUN_8003aeb0` is the field / town scene-entry map init (it carries `town_mode` / `baria_mode` debug strings). It ORs `0x400` in from the fallback window's kind-1 records (offset / count at `+0x12006` / `+0x12008`, 4-byte records). The on-disc `.MAP` already carries the bit: a live town field buffer is byte-identical to the disc bytes here.
 
@@ -879,7 +879,7 @@ That builder reads three angles at `a0+0x00` / `+0x02` / `+0x04` (`lhu` at `0x80
 
 NPCs and event triggers ride a sibling path (`FUN_8003a1e4`, partition-1 records, the `0x7F,0x7F` parked-sentinel decode). The actor pool they draw from holds **143 slots** of `0xD8` stride (`FUN_800203EC` seeds the free stack `0x8E` down to `0` inclusive; list heads `0x8007C34C..0x36C`) - see [`field-ambient-fx.md`](field-ambient-fx.md).
 
-Parser: [`legaia_asset::field_objects`](../../crates/scene-formats/src/field_objects.rs) (`parse_placements` + `pack_mesh_index`); the engine reads it via `Scene::field_object_placements`.
+Parser: [`legaia_scene_formats::field_objects`](../../crates/scene-formats/src/field_objects.rs) (`parse_placements` + `pack_mesh_index`); the engine reads it via `Scene::field_object_placements`.
 
 ### The object bind: which sweep owns the object, and its rest pose
 
@@ -894,7 +894,7 @@ A placed record becomes an actor through **one of two sweeps**, never both.
 
 A partition-0 record's header is `[u8 n][n*2 name bytes][u8 anim_id]`.
 
-The window sweep differs in four more ways, all mirrored by the port `legaia_engine_core::field_regions::window_rebuild_spawns_resident`:
+The window sweep differs in four more ways, all mirrored by the port `legaia_engine_field::field_regions::window_rebuild_spawns_resident`:
 
 - **It is bounded.** Both loops run over the scratchpad region box `0x1F800384..0x1F800387` (`[x0, z0, x1, z1]`, latched by `FUN_800180EC`), half-open (`while t < limit`), so an empty or inverted box spawns nothing.
 - **It frees first.** It walks the whole `+0x24` list and releases each entry, including the mesh buffer of any actor whose `+0x10` carries bit `0x800`.
@@ -1050,7 +1050,7 @@ Provenance: `ghidra/scripts/funcs/overlay_dialog_mc4_801d6704.txt` (the base-`0x
 
 ### The port's cold seat
 
-`legaia_engine_core::mode_entry_init::field_spawn` ports the initializer's seat logic, applied in `SceneHost::enter_field_scene`. Its `FIELD_COLD_SPAWN` (= `world::FIELD_COLD_SPAWN_XZ`, `0xA40`) is retail's **ambient emitter** seat. The engine also keeps it as a *player* fallback, because its scene picker can enter a scene with no door operand, which retail never does. `0xA40` is `tile 20 * 128 + 0x40`.
+`legaia_engine_system::mode_entry_init::field_spawn` ports the initializer's seat logic, applied in `SceneHost::enter_field_scene`. Its `FIELD_COLD_SPAWN` (= `world::FIELD_COLD_SPAWN_XZ`, `0xA40`) is retail's **ambient emitter** seat. The engine also keeps it as a *player* fallback, because its scene picker can enter a scene with no door operand, which retail never does. `0xA40` is `tile 20 * 128 + 0x40`.
 
 `World::resolve_cold_field_spawn` synthesises a seat for that case. It keeps `0xA40` when that coordinate is standable, inside the scene's **main region**, not on a kind-0 teleport pad, and a seat the player can walk off; otherwise it falls back to a kind-0 door-arrival anchor and then to the main region's centroid. A scene whose grids record no floor keeps the constant.
 
@@ -1439,7 +1439,7 @@ Per-mesh world placement is the [object-record table](#object-record-format-0x00
 
 On entry the engine runs the scene's **scene-entry system script** (context channel `0xFB`), not event-script record 0, which is a trigger / dispatch table that halts the VM at pc 0.
 
-The retail per-frame driver `FUN_8003ab2c` builds the system script from the MAN's partition 1, first record; `Scene::field_man_entry_script` mirrors that (`legaia_asset::man_section::ManFile::scene_entry_script` -> `(start, pc0)`), and `SceneHost::enter_field_scene` loads the MAN slice from `start` with the VM PC at `pc0` (`World::load_field_script_at`). Slicing from the script start keeps the VM's 16-bit-wrapping relative jumps anchored at the slice base, as retail's `buffer_base = script_start` does.
+The retail per-frame driver `FUN_8003ab2c` builds the system script from the MAN's partition 1, first record; `Scene::field_man_entry_script` mirrors that (`legaia_scene_formats::man_section::ManFile::scene_entry_script` -> `(start, pc0)`), and `SceneHost::enter_field_scene` loads the MAN slice from `start` with the VM PC at `pc0` (`World::load_field_script_at`). Slicing from the script start keeps the VM's 16-bit-wrapping relative jumps anchored at the slice base, as retail's `buffer_base = script_start` does.
 
 Every field / town scene carries its MAN in a [`scene_asset_table`](../formats/scene-bundles.md): kingdom-bundle scenes use the `count = 7` form, and the early standalone towns (`town01`, `town0c`, ...) a `count = 6` form in their block's 2nd PROT entry (`town01` = entry 4, MAN at descriptor 1). `find_bundle` resolves both. The MAN source is pinned by a runtime write-watchpoint on `_DAT_8007B898`: the dispatcher `FUN_8001F05C` case 3 mallocs the buffer and LZS-decodes it from the table descriptor. Disc-gated coverage asserts the field VM advances past pc 0 (`town01`: 65, `map03`: 61 distinct PCs, settling into a per-frame loop).
 

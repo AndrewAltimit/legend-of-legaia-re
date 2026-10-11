@@ -2,7 +2,7 @@
 
 A DATA_FIELD stream is a run of typed chunks: a 4-byte header naming the chunk's asset type and length, the raw bytes, then the next header, until a header with a zero length ends the run. It is the uncompressed sibling of the [asset descriptor table](asset-descriptor.md) - same type bytes, same dispatcher, but the assets are stored inline and in order instead of behind an offset table. The battle-form party meshes and atlases, a set of scene bundles and the boot `init_data` entry are all stored this way.
 
-Retail walks the stream in `FUN_8002541C`, on its `0x14` (DATA_FIELD) branch, and passes every chunk through the [asset-type dispatcher](asset-type.md) with `copy_only = 1`, so chunks are always uncompressed. Implementation: `legaia_asset::parse_streaming` in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs).
+Retail walks the stream in `FUN_8002541C`, on its `0x14` (DATA_FIELD) branch, and passes every chunk through the [asset-type dispatcher](asset-type.md) with `copy_only = 1`, so chunks are always uncompressed. Implementation: `legaia_container_formats::parse_streaming` in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs).
 
 This page covers the typed-chunk shape only. What a whole per-scene CDNAME block carries is a wider question, summarised under [Per-scene field bundles](#per-scene-field-bundles).
 
@@ -63,12 +63,12 @@ Some entries contain bytes past the streaming terminator. `asset extract` preser
 - The [scene-TMD-prefixed streaming](scene-bundles.md) shape is structurally similar but the leading chunk has no `[u32 type_size]` header and the inner content is a bare TMD instead of a TIM.
 - The [scene-VAB-prefixed streaming](scene-bundles.md) shape uses the same chunk0-header trick but with VAB content.
 - [Pack format](pack.md) lives *inside* TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.
-- One entry (extraction `0892`) matches the `data_field_truncated` detector (`crates/container-formats/src/data_field_truncated.rs`) - three clean leading chunks and an over-large fourth header. It is **not** a streaming carrier: the runtime reads it as an [`asset::pack`](pack.md), and the "chunks" are that pack's own header words. See [below](#entry-0892-card_data-is-a-pack-not-a-truncated-stream).
+- One entry (extraction `0892`) matches the `data_field_truncated` detector (`crates/container-formats/src/data_field_truncated.rs`) - three clean leading chunks and an over-large fourth header. It is **not** a streaming carrier: the runtime reads it as an [`container-formats::pack`](pack.md), and the "chunks" are that pack's own header words. See [below](#entry-0892-card_data-is-a-pack-not-a-truncated-stream).
 - `0157_rikuroa`, `0228_station` and `0373_taiku` are **not** truncated streams. Each is one of the four-chunk `MAN / MES / MOVE / VDF` bundles above and terminates cleanly inside its own sectors. They only look truncated through the `toc[p+5] - toc[p+3] + 4` span, which falls *short* of the real entry for all three (`0157`: 163840 bytes against a real 186368; the other two short by 69632 and 8192). See [`prot.md`](prot.md#tocp5---tocp3--4-is-not-an-entrys-size).
 
 ## Entry 0892 (`card_data`) is a pack, not a truncated stream
 
-Extraction entry `0892` is the only retail hit for the `data_field_truncated` class, and the hit is an artefact. The entry's first three words are an [`asset::pack`](pack.md) header - `count = 2`, `word_offsets = [3, 0x208B]` - and the streaming reader takes those three words for chunk headers of type `0x00` and sizes 2, 3 and 8331, which walks it to `+0x2094`, inside the first member's pixel data, where the next word declares a body far past the entry. Nothing in the entry is a `[u32 type_size]` chunk. The entry is 33 sectors, 67,584 bytes; the `toc[p+5] - toc[p+3] + 4` expression gives 5977 sectors for it, which is where a "12 MB" reading comes from.
+Extraction entry `0892` is the only retail hit for the `data_field_truncated` class, and the hit is an artefact. The entry's first three words are an [`container-formats::pack`](pack.md) header - `count = 2`, `word_offsets = [3, 0x208B]` - and the streaming reader takes those three words for chunk headers of type `0x00` and sizes 2, 3 and 8331, which walks it to `+0x2094`, inside the first member's pixel data, where the next word declares a body far past the entry. Nothing in the entry is a `[u32 type_size]` chunk. The entry is 33 sectors, 67,584 bytes; the `toc[p+5] - toc[p+3] + 4` expression gives 5977 sectors for it, which is where a "12 MB" reading comes from.
 
 ### What the runtime does
 
@@ -149,6 +149,6 @@ Every PROT entry classifies to *something* under `categorize`, and about 95% of 
 
 ## See also
 
-- [asset::pack](pack.md) - the pack format carried inside DATA_FIELD chunks.
+- [container-formats::pack](pack.md) - the pack format carried inside DATA_FIELD chunks.
 - [Asset-type dispatch](asset-type.md) - the type byte that opens each chunk.
 - [Asset descriptor](asset-descriptor.md) - the descriptor layout the chunks reference.

@@ -105,8 +105,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Ambient render-mode 4 - what the op-`0x1E` seat animates | resolved | `disassembly` | A **cyclic VRAM-rect scroller**, and it is what makes waterfalls fall. Per fired period (`+0xC6` drained by the frame step alone, no speed scalar) the render tail rotates the seated rect `+0xD0..+0xD6` left by `+0xCC * frame_step` and up by `+0xCE * frame_step`, each axis as StoreImage / MoveImage / LoadImage over a bump-allocated strip (`80021df4.txt` `0x80022CB8..0x80022EE0`). Seventeen scenes carry one at plain entry; sixteen scroll upward over a texture-band rect, `tunnelc`'s second seat scrolls a CLUT row sideways. Ported as `engine-core::world::ambient::vram_scroll`. [details ↓](#ambient-render-mode-4---the-vram-rect-scroller) |
 | Master ambient record 0 - what reads the 8-byte rows | resolved (it is not a stager record at all) | `disassembly` | The **per-scene sound-effect descriptor bank** for cue ids `>= 0x200`. Both SFX readers resolve those ids as `*(u32*)0x8007B8D0 + offsets[0] + (id - 0x200)*8` - i.e. record 0 of whatever bundle is installed at `0x8007B8D0`, which in field mode is the scene prescript bundle (`field_asset_loader` `0x8001F850..0x8001F864` stores scene buffer + `0x12800`). `offsets[0]` is the identical word `FUN_800252EC` reads for stager id 0. Rows are the 8-byte descriptor of [`sfx-table.md`](../../formats/sfx-table.md), category 3 (a variable VAB slot). [details ↓](#master-ambient-record-0---the-per-scene-sfx-descriptor-bank) |
 | town0e's morph-record installer | resolved (partition-1 placement 29) | `disassembly` | The install is the ordinary `0x34` sub-3 arg 0 (stager record 1), carried by **partition-1 placement 29** - a full placed actor with dialogue - as that record's second instruction, ahead of its `SysFlag.Test 0x1A` park/seat branch. A census keyed on script *shape* misses it; the entry-slice rule in the next row finds it. The pre-run loop (`0x8003B8BC..0x8003B8EC`) covers every placement `1..count-1` unfiltered, gated on a MAN having been dispatched in the load (`0x801D6D98` tests the MAN arm's `ori s4,s4,4`), which town0e's bundle carries. [details](../../subsystems/field-ambient-fx.md#town0es-installer-is-a-placed-actor-not-an-effect-actor) |
-| Which op-`0x34` sub-3 installs fire at **scene entry** | resolved | `disassembly` | The ones the placement spawn-prologue slice (`FUN_8003A1E4`) executes - not a distinguished kind of script. The pre-run is gated on the record's first opcode being `0x24`/`0x25`, and the slice breaks after an opcode whose full byte is `0x21`; both nops, only one ends the slice. Ported as `engine-core::man_field_scripts::scene_entry_ambient_installs`. [details ↓](#which-op-0x34-sub-3-installs-fire-at-scene-entry) |
-| Scene bundle type-7 slot content (VDF) | resolved | `disassembly` | The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries), installed at `DAT_8007B7DC` via `FUN_8001FBCC`, consumed by the morph stager `FUN_8001C604`. Parser `legaia_asset::scene_vdf`; format in [`field-ambient-fx.md`](../../subsystems/field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs). |
+| Which op-`0x34` sub-3 installs fire at **scene entry** | resolved | `disassembly` | The ones the placement spawn-prologue slice (`FUN_8003A1E4`) executes - not a distinguished kind of script. The pre-run is gated on the record's first opcode being `0x24`/`0x25`, and the slice breaks after an opcode whose full byte is `0x21`; both nops, only one ends the slice. Ported as `engine-field::man_field_scripts::scene_entry_ambient_installs`. [details ↓](#which-op-0x34-sub-3-installs-fire-at-scene-entry) |
+| Scene bundle type-7 slot content (VDF) | resolved | `disassembly` | The scene's vertex-morph delta pack (61 bundles populated; jou = 17 sub-entries), installed at `DAT_8007B7DC` via `FUN_8001FBCC`, consumed by the morph stager `FUN_8001C604`. Parser `legaia_scene_formats::scene_vdf`; format in [`field-ambient-fx.md`](../../subsystems/field-ambient-fx.md#mechanism-3---strip-cycling-and-vertex-morphs). |
 | VDF morph render substitution - what draws the staged vertices, and what arms the lanes | resolved | `disassembly` | Per drawn group of a part whose flags carry op-`0x0A`'s bit `0x1000`, `FUN_8001ADA4` (`0x8001B424..`) calls `FUN_8001C604` (scratch copy + weighted-delta blend + group vertex-pointer retarget) and restores the pointer after the draw. Arming = op-`0x0A` **mesh** stager parts in the ambient tree (`pack slot = model_sel - 5`; rikuroa 69/70 behind flags `0x281`/`0x282`, town0e 10/11, jagaroom 20/21); weights ramp via `FUN_80020740` steered by op-`0x32` envelope flags. jou arms nothing at entry (cutscene op `0x1F` only). Ported to all three render surfaces; details in [`field-ambient-fx.md`](../../subsystems/field-ambient-fx.md#the-vdf-vertex-morph-chain). |
 | What opens an inn stay in retail? | resolved (nothing - there is no inn session) | `capture` | Retail composes a stay inline in the scene MAN out of generic ops (dialogue, an MES picker, an op-`0x4E` gold gate, op-`0x3A` `ADD_MONEY`, fades) and then one `4C 82 <slot>` per member - the only inn-specific opcode in the engine. Charge and restore are decoupled, so free rests are the same tail minus the gate. Port `op4c_n8_sub2_restore_party_slot`. [details](../../subsystems/field-menu.md#inn-stay-there-is-no-inn-screen) |
 | Field collision-map source | resolved (the `.MAP` supplies the base grid) | `disassembly` | [details ↓](#field-collision-map-source) |
@@ -207,7 +207,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Does any beat take op `0x34` sub-0's forked arm? | resolved (**no** writer of the gate bit executes) | `disassembly` + `capture` | The arm forks on `_DAT_1F800394 & 0x800000` (`lui v1, 0x80` at `0x801DFD1C` and `0x801DFEB0` in PROT 0897; set -> `FUN_80024E80`, clear -> `FUN_801DE2B0`). A writer census of bit 23 over SCUS, every mapped overlay and every scene carrier finds no store the disc executes (`scratch_global_bit_writers_real`, and the field-op census), so the forked arm is never taken on retail. A block copy into the scratchpad is not excluded by a store census. |
 | Does any MAN author motion-VM ops `0x10` / `0x11`? | resolved (no) | `disassembly` | Zero of the 573 section-1 stream variants carry either, so the `b1 & 0xC0 == 0xC0` assert arm that stores `0x3039` into `0x8007B828` has no shipped driver. |
 | What does `FUN_8001FA00`'s one caller seed? | resolved (the **fog-particle pool's** free stack) | `disassembly` | Its only `jal` is at `0x801D7384` in MAIN INIT (PROT 0897), passing `(pool, pool + 4, 0x50)`: an identity list of eighty slots under a one-based top index. Not a cutscene sprite list. Port `engine-core::scus_leaf_kernels`, seeding `FogPool::reset`. |
-| Is the 192-byte block at `0x801F21B4` one twelve-row probe table? | resolved (**three** tables) | `disassembly` | Three consumers form three bases: the actor-collision probes at `0x801F21B4` (six rows; `lui`/`addiu` at `0x801CFE74` and `0x801D5A70`), the leading-edge wall probes at `0x801F2214` (four rows; `0x801CFEE8`, `0x801CFFC0`, `0x801D009C`) and the interact facing compass at `0x801F2254` (eight `±64` points; `0x801D0834`). The wall and compass tables are not caller-less rows of the first. [`field-locomotion.md`](../../subsystems/field-locomotion.md), `legaia_asset::field_probe_tables`. |
+| Is the 192-byte block at `0x801F21B4` one twelve-row probe table? | resolved (**three** tables) | `disassembly` | Three consumers form three bases: the actor-collision probes at `0x801F21B4` (six rows; `lui`/`addiu` at `0x801CFE74` and `0x801D5A70`), the leading-edge wall probes at `0x801F2214` (four rows; `0x801CFEE8`, `0x801CFFC0`, `0x801D009C`) and the interact facing compass at `0x801F2254` (eight `±64` points; `0x801D0834`). The wall and compass tables are not caller-less rows of the first. [`field-locomotion.md`](../../subsystems/field-locomotion.md), `legaia_disc_audit::field_probe_tables`. |
 | What clears the two halt bits an inn acquire sets? | resolved (the acquire's own FaceTarget leg in the walk kernel) | `capture` + `disassembly` | `FUN_8003BC08` runs the dialog SM and then, on `+0x10 & 0x400`, `FUN_8003774C` (`0x8003BD50`), which reads the acquire's `CC F8 85 14 00 33` as a `0x14`-frame player FaceTarget on bind `0x33`; its terminal frame clears the player's bit at `0x80038004` and its own actor's at `0x80038028`. A PCSX-Redux watch on `retock_innkeeper_talk_open` sees set at `0x801E21A4` / `0x801E21CC` and both cleared 18 vsyncs later, the box already open ([`script-vm.md`](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)). |
 | Whom does a talk acquire's FaceTarget turn toward? | resolved (the actor its bind names) | `disassembly` + disc census | The kernel resolves the bind at op `+3` like any cross-context id (`0x80037E00..0x80037EA8`): `0xF8` the player, `0xFB` the world-map entity, else the `_DAT_8007C354` node whose `+0x50` matches. Of the disc's `CC F8 85\|8E\|8F` acquires, 40 of the 146 in placement records bind another actor, and the 24 in object records and 861 in cutscene records have no own actor ([`script-vm.md`](../../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)). |
 | What does op `0x42` mode 1 test? | resolved (the held pad against a compass) | `disassembly` | `0x801DFBDC..0x801DFC9C` tests `_DAT_8007B850`, the packed held pad: `& 0xF000` against the compass word `0x801F28D0[op1 * 4]` for `op1 < 8`, Circle / Cross / Square / Triangle for `8..11`, and `op1 >= 0xC` takes the jump untested ([`script-vm.md`](../../subsystems/script-vm.md#0x37-0x42-yield-sound-rpg-state-dialog-jump)). |
@@ -386,7 +386,7 @@ ISO identifiers are upper case.
 - 40+ distinct upper-case destination names appear across the 99 scene MANs (`MAP01/02/03`, `KOR*`,
   `DREAM`, `RETOCK*`, `ROPEWAY`, `NILBOA`, the `ED*` ending chain), every one a CDNAME label. The disc
   carries **no** mixed-case `0x3F` name run.
-- `legaia_asset::field_disasm::clean_scene_name` accepts a uniformly-cased 3..=12-byte alphanumeric
+- `legaia_scene_formats::field_disasm::clean_scene_name` accepts a uniformly-cased 3..=12-byte alphanumeric
   label and folds it. With the fold the `town01` closure is 68 scenes with 20 kingdom-boundary edges.
 
 ### The count-5 asset tables
@@ -517,7 +517,7 @@ at entry exactly when it sits inside that slice.
 
 Port: the scene-entry prologue pre-run executes the slice itself, so each install fires once at its
 context's position. The static census
-`engine-core::man_field_scripts::scene_entry_ambient_installs` takes the **unconditional prefix** of
+`engine-field::man_field_scripts::scene_entry_ambient_installs` takes the **unconditional prefix** of
 the slice for tests and the `.glb` export - a deliberate under-approximation, since a flag-gated
 install deeper in a record (`nilboa` P1[3], `suimon` P1[4]) depends on runtime state. Disc-gated
 coverage `crates/engine-core/tests/ambient_entry_install_census_disc.rs`.
@@ -730,7 +730,7 @@ under mode `0x17` (23, the CARD pair).
   free-movement controller on `map03` both hold `0x03`. All six menu-open library captures
   (equipment / status / options, field `map01` + town `town01`) hold `0x17`.
 - **Handler map.** The index -> handler / param / name map is read off the disc by
-  [`legaia_asset::mode_table`](../../../crates/game-tables/src/mode_table.rs) (`asset mode-table`;
+  [`legaia_game_tables::mode_table`](../../../crates/game-tables/src/mode_table.rs) (`asset mode-table`;
   disc-gated `mode_table_real`). Field / town is modes 2 / 3 MAIN; `MAPDSIP` (12 / 13) is the
   **world-map display** mode, not the field. 12 of the 14 per-frame modes share the generic per-frame
   handler `0x80025EEC`; only mode 13 (world map) and mode 23 (memory card) carry their own.
@@ -821,7 +821,7 @@ The chain, each link byte-verified against live RAM and the disc:
   upload, which the engine mirrors by parking the byte-identical Drake complement.
 
 Owning page: [`world-map.md`](../../subsystems/world-map.md) "Ocean animation"; parser
-`legaia_asset::clut_walk`.
+`legaia_scene_formats::clut_walk`.
 
 ### `init_data` UI-tile pages - journey-dependent residency (resolved); map03 texture column (resolved - "not uploaded" premise falsified)
 
@@ -852,7 +852,7 @@ The `map03` terrain rect is `map03`'s own content, and the engine pre-pass write
 
 ### CLUT row 510 population (boot-resident system-UI strip band)
 
-*Status:* resolved (source + upload semantics + retail residency pinned; engine pre-pass uploads the bundle - `legaia_asset::system_ui_bundle`); residue = the exact boot-time walker call site only
+*Status:* resolved (source + upload semantics + retail residency pinned; engine pre-pass uploads the bundle - `legaia_ui_formats::system_ui_bundle`); residue = the exact boot-time walker call site only
 
 CLUT rows 510 / 511 are the **flat-strip CLUT band of the boot-resident system-UI TIM bundle**, so the
 prims that sample them are validly textured in retail. The prims in question: `town01` env-pack slots
@@ -877,7 +877,7 @@ TIM uploads row 510.
   `y=456..458` / `460..462` are bare row-patch members of the same pack: raw-entry-0 members 10..15 at
   `PROT.DAT 0x1A018..0x1AA7C`, a `[u32, u32]` preamble + TIM-style `[u32 bnum][u16 x,y,w,h]` block
   declaring `(960, y, 256, 1)`, byte-exact against live captures (`RowPatch` in
-  `legaia_asset::system_ui_bundle`).
+  `legaia_ui_formats::system_ui_bundle`).
 - **What the prims sample.** CBA `(64,510)` = atlas strip entries 64..79; UVs (u `0..2`, v `240..242`)
   hit a constant mid-grey texel patch - a flat material through the textured pipeline.
 - **Not** scene-loaded or a runtime targeted upload (it is resident before the title screen), and not
@@ -905,7 +905,7 @@ destination scene name inline and is selected by partition-2 slot, never by abso
   absolute-reference ops at or after any destination op.
 - **Consequence.** Variable-length door editing is safe: resizing a destination name is a
   partition-table + section-offset + intra-record-jump-delta + descriptor-size fixup, implemented in
-  `legaia_asset::man_edit` and shipped as the door randomizer
+  `legaia_scene_formats::man_edit` and shipped as the door randomizer
   ([`man-relocation.md`](../../formats/man-relocation.md)).
 - **The `0x3E` door warp** (7-id `map_id`) is SCUS-resident end to end: `FUN_80025980` (mode-24 OTHER
   INIT entry), `FUN_80026018` (exit). It carries no destination name; the sub-id selects a minigame
@@ -979,7 +979,7 @@ from the field `.MAP`.
 - **Not** a positional "field-actor band" (`obj_idx - 5`, ids `93..=118`): that rule swaps ten town
   meshes per Rim Elm map, drops the terrain slab south-east of the spawn and leaves a clear-colour
   hole in the ground.
-- **Port.** Parser `legaia_asset::field_objects`; `Scene::field_object_placements`; `play-window`
+- **Port.** Parser `legaia_scene_formats::field_objects`; `Scene::field_object_placements`; `play-window`
   renders the town via `resolve_field_placement_draws`.
 
 All 46 `town01` placements draw, on two pipelines (disc-gated
@@ -1019,7 +1019,7 @@ Every field scene's MAN carries one **partition-2 record** per cutscene or story
 Regional progression is expressed almost entirely through these header gates. They are not inline
 `0x50` / `0x60` / `0x70` opcodes, so the inline flag census (`man-scripts --system-flag-census`) cannot
 see them, and a flag read only by a header gate looks write-only there.
-`legaia_engine_core::man_field_scripts::partition2_record_gates` decodes them; the anchor tests named
+`legaia_engine_field::man_field_scripts::partition2_record_gates` decodes them; the anchor tests named
 below pin each region's exact lists.
 
 **Self-latches.** A record that both sets a flag and lists it as its own C1 gate.

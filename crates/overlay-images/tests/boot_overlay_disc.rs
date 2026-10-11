@@ -6,7 +6,7 @@
 //! filename labels inherit forward and routinely name a neighbouring block, so
 //! a label match would prove nothing; this asserts the *content* instead:
 //!
-//!  - the CARD-mode TIM pack entry parses as an `asset::pack` whose members
+//!  - the CARD-mode TIM pack entry parses as an `container-formats::pack` whose members
 //!    carry the PSX TIM magic;
 //!  - the effect-module entry carries the effect-test dev strings;
 //!  - the mode-table overlay params land on entries that exist and are large
@@ -37,7 +37,7 @@ fn read(archive: &mut Archive, idx: u32) -> Vec<u8> {
     buf
 }
 
-/// `true` when `data` is an `asset::pack` whose first members all begin with the
+/// `true` when `data` is an `container-formats::pack` whose first members all begin with the
 /// PSX TIM magic (`0x00000010`).
 fn is_tim_pack(data: &[u8]) -> bool {
     let Ok(entries) = legaia_container_formats::pack::parse_pack(data) else {

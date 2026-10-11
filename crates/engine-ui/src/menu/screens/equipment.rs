@@ -52,7 +52,7 @@ pub struct EquipStatRow<'a> {
 }
 
 /// Phase tag for [`equip_screen_draws_for`]. Mirrors
-/// `engine-core::equip_session::EquipState` without naming the enum so
+/// `engine-menus::equip_session::EquipState` without naming the enum so
 /// the renderer doesn't pull engine-core in as a dependency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EquipDrawPhase {
@@ -89,7 +89,7 @@ pub struct EquipScreenView<'a> {
     /// not a slot index: row `0` is the "Best Equipment" header line and
     /// row `n` is `slots[n - 1]`. That is retail's own row space - the
     /// header is cursor row 0 of `DAT_801E46C0` - and it is what
-    /// `engine-core::equip_session::EquipState::SlotPicker` carries.
+    /// `engine-menus::equip_session::EquipState::SlotPicker` carries.
     pub cursor: u16,
     /// Active slot index when in `ItemPicker` / `Confirm`.
     pub active_slot: u8,
@@ -257,7 +257,7 @@ pub fn equip_screen_draws_for(
             str_at(&mut out, "(no items)", lx + 10, ly, dim);
         }
         // Row 0 is retail's **Remove** row (class `0x4000`, payload `0`) when
-        // `engine-core::equip_session::EquipSession::items_for_slot` put one
+        // `engine-menus::equip_session::EquipSession::items_for_slot` put one
         // there: on an occupied armament slot, and on every Goods slot (the
         // Goods builder always leads with it). It carries no item, so its bag
         // count is `0` where every bag row's is at least `1` - that is the

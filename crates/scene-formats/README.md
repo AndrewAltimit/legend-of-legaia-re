@@ -29,13 +29,13 @@ Entry points, CLI subcommands (`asset ...` is the binary in
 | Module | Covers |
 |---|---|
 | `field_map` | Per-scene `DATA\FIELD\<scene>.MAP` - the fixed `0x12000`-byte slot 0 of every scene block. Region map + trigger-block header; detected on the trigger block's sub-table chain, not on the footprint (111 entries share it, 101 are maps). See [`docs/formats/field-map.md`](../../docs/formats/field-map.md). |
-| `field_pack` | **Not a format** - kept as the reader for the scene texture packs at raw-TOC `+4` of a CDNAME block (`scene_pack` / `ScenePack`). The `0x01059B84` word is town01's DATA_FIELD `TIM_LIST` chunk header, `(type << 24) \| payload_len`, over an ordinary `asset::pack`; chunk-headered carriers classify `data_field_streaming`, bare ones `pack`. See [`docs/formats/field-pack.md`](../../docs/formats/field-pack.md). |
+| `field_pack` | **Not a format** - kept as the reader for the scene texture packs at raw-TOC `+4` of a CDNAME block (`scene_pack` / `ScenePack`). The `0x01059B84` word is town01's DATA_FIELD `TIM_LIST` chunk header, `(type << 24) \| payload_len`, over an ordinary `container-formats::pack`; chunk-headered carriers classify `data_field_streaming`, bare ones `pack`. See [`docs/formats/field-pack.md`](../../docs/formats/field-pack.md). |
 | `stage_geom` | Stage geometry: 12-byte prefix + 8-byte u16 quad records. |
 | `scene_tmd_stream` | `[u32 chunk0][bare TMD][streaming chunks]`. `sub_streams` enumerates the concatenated, `0x800`-aligned `[TMD][TIM chunks][terminator]` blocks (the entry holds N, not one continuation list). |
 | `scene_asset_table` | Per-scene asset slot table (CDNAME block layout). `resolve` / `slots` / `payload_range` walk the positional slot->payload mapping (the descriptor's `data_offset` IS the indirection - no separate table), unifying the bare and prescript-prefixed variants. Plus `SceneAssetTable::size_word_offset` / `encode_size_word` for rewriting a descriptor's decompressed-size word after a variable-length asset edit. |
 | `scene_v12_table` | Variant of the per-scene table. |
 | `scene_vdf` | Scene bundle type-7 slot: the vertex-morph delta pack (`[u32 count][u32 offsets]` + morph-record sub-entries) the morph stager `FUN_8001C604` consumes. 61 bundles populated. See [`docs/subsystems/field-ambient-fx.md`](../../docs/subsystems/field-ambient-fx.md). |
-| `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_patcher::shop`) and the engine shop catalog (`legaia_engine_core::shop_catalog`). |
+| `shop_stock` | Town gold-shop stock records inside a scene MAN (field-VM op `0x49` sub-op `0` = `[count][item_ids][name]`). `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`ShopRecord`]s. Shared read side for the randomizer (`legaia_patcher::shop`) and the engine shop catalog (`legaia_engine_menus::shop_catalog`). |
 | `inn_costs` | Scripted gold charges (inn stays, tours, rides, casino coin buys) inside a scene MAN: op `0x4E` gold-gate (sub-3 u16 / sub-10 u32 literal vs `_DAT_8008459C`) paired with a negative op `0x3A` `ADD_MONEY` debit. `scan` byte-scans a decompressed MAN; `locate` decompresses a bundle entry's MAN and returns its [`GoldCharge`]s. Retail has no inn cost table - the costs are these script literals (`docs/subsystems/inn.md`). |
 | `scene_scripted_asset_table` | Composite shape pairing a `[u16 count][u16 offsets[count]]` prescript with a canonical 7-asset table at the next sector boundary. |
 | `scene_event_scripts` | The `[u16 count][u16 offsets]` prescript entry a scene block seats at slot 2. Two tiers: `detect` (shape + frame-opener rate) and `detect_structural` (shape only). Records are move-VM stager records, NOT field-VM bytecode. |
@@ -53,7 +53,7 @@ Side-effect-free disassembler for the field/event-VM bytecode (the opcode
 stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
 `LinearWalker`. Lives here (next to the MAN/scene parsers that carry the
 bytecode) so disc tooling can walk scripts without the engine; the executing
-VM re-exports it as `legaia_engine_vm::field_disasm`. CLI: `asset field-disasm
+VM re-exports it as `legaia_scene_formats::field_disasm`. CLI: `asset field-disasm
 file|scene-event-scripts|scan-prot`; `asset field-op-census` is the disc-wide
 opcode census built on it ([`docs/tooling/field-op-census.md`](../../docs/tooling/field-op-census.md)).
 

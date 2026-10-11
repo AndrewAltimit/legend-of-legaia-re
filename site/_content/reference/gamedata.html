@@ -244,7 +244,7 @@ for entry in db.shop_inventory("Rim Elm", "Variety Shop").unwrap() {
       <tr><td>Ability bitfield writer</td><td><code>FUN_80042558</code></td><td>Accessory passive index &rarr; bit in <code>char+0xF4</code></td></tr>
       <tr><td>Steal table</td><td><code>DAT_80077828</code></td><td><code>steal_chance</code> column is byte-exact</td></tr>
       <tr><td>Art records</td><td>PROT <code>0x05C4</code>; runtime tables <code>0x80160EFC / 0x80176998 / 0x8018BA54</code></td><td>Direction-byte prefix the <code>directions</code> array mirrors</td></tr>
-      <tr><td>Shop stock records</td><td>scene MAN op <code>0x49</code> sub-op 0 (<code>legaia_asset::shop_stock</code>)</td><td>Per-shop inventory join</td></tr>
+      <tr><td>Shop stock records</td><td>scene MAN op <code>0x49</code> sub-op 0 (<code>legaia_scene_formats::shop_stock</code>)</td><td>Per-shop inventory join</td></tr>
       <tr><td>Casino exchange</td><td>PROT 0899 (<code>legaia_patcher::casino::CasinoExchange</code>)</td><td>Prize-counter join</td></tr>
     </tbody>
   </table>

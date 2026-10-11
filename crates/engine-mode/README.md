@@ -4,7 +4,7 @@ The game-mode seat of the engine, as a `World`-free crate.
 
 Retail drives the whole game off one master mode word (`_DAT_8007B83C`): 28
 modes, each an `(init, frame)` handler pair in the mode table
-(`legaia_asset::mode_table`). This crate holds the port of that seat and the
+(`legaia_game_tables::mode_table`). This crate holds the port of that seat and the
 pieces that only make sense next to it.
 
 | Module | Scope |

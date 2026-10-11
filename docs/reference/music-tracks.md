@@ -91,7 +91,7 @@ Scenes carry **no local SEQ data** - every SEQ stream on the disc lives in
 this bank + the `sound_data2` banks (+ the `monster_test` dev bank and
 `teien`'s scene-local copy of `M01`) - so the scene-local id space
 (`< 2000`) is the rare exception. The engine's resolver is
-`legaia_engine_core::music_labels` (`prot_entry_for_bgm_id` /
+`legaia_engine_system::music_labels` (`prot_entry_for_bgm_id` /
 `label_for_bgm_id` / `label_for_prot_entry`), which owns the piecewise map;
 the play-window HUD names the playing track and the asset-viewer `seq`
 command names a bank slot's file.

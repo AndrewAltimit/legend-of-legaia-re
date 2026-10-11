@@ -10,7 +10,7 @@
 //! the top `224` rows of the display crop are the drawn frame and the rest
 //! is the unused tail of the `240`-line display. The engine renders the PSX
 //! screen at an integer scale with the retail viewport map
-//! (`ndc.y = 1 - 2 * screen_y / 240`, `engine-vm::battle_cam_script`), so
+//! (`ndc.y = 1 - 2 * screen_y / 240`, `engine-battle-vm::battle_cam_script`), so
 //! engine row `s * y` is retail row `y`: the comparison takes the engine
 //! capture's top `224 * s` rows and box-filters them down by `s`.
 //!

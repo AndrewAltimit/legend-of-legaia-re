@@ -166,6 +166,6 @@ consumer rather than off the data.
 **Rejection.** Four corners through `RTPT`, an off-screen test against the
 `0xF0` / `0x140` framebuffer window, `NCLIP` for backfacing, and a `0x28`-byte
 packet linked into the OT. The engine covers all of it with
-`legaia_asset::field_objects::build_walk_heightfield` plus
+`legaia_scene_formats::field_objects::build_walk_heightfield` plus
 `Placement::world_y` and its own wgpu renderer, so the row sits in
 `[prim_builder]` in `scripts/ci/port-catalog-ignore.toml`.

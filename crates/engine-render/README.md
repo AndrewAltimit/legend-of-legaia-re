@@ -176,7 +176,7 @@ it off).
 
 The derivation - which prims glow, the light list, the moods, the glow
 geometry, and the CPU mirror of the shading law - lives in the shared
-`legaia_engine_ui::scene_lighting` kernel (re-exported here as
+`legaia_render_kernels::scene_lighting` kernel (re-exported here as
 `scene_lighting`), so the browser play page lights from the same values.
 This crate keeps the WGSL twin (`dyn_light` / `scene_point_gain` in
 `shaders.rs`, held to the mirror by the `dyn_light` module's tests) and the

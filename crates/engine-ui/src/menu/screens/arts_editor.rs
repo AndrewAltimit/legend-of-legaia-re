@@ -9,7 +9,7 @@ pub struct ArtsChainRow<'a> {
 }
 
 /// Phase tag for [`tactical_arts_editor_draws_for`]. Mirrors
-/// `engine-core::tactical_arts_editor::EditorPhase` without depending on
+/// `engine-battle::tactical_arts_editor::EditorPhase` without depending on
 /// the enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArtsEditorPhase {

@@ -829,9 +829,9 @@ impl World {
     /// 16-step budget, or a pose without the trigger's control points.
     /// A sweep below two steps draws nothing (`FUN_80048310`'s
     /// `slti 0x2` gate).
-    // PORT: FUN_8005112C (trigger; table in `engine-vm::battle_trail`)
+    // PORT: FUN_8005112C (trigger; table in `engine-battle-vm::battle_trail`)
     // REF: FUN_80048310 (sweep capture - the ring sampling here replaces
-    // the rewound re-decode; see `engine-vm::battle_trail` module docs)
+    // the rewound re-decode; see `engine-battle-vm::battle_trail` module docs)
     pub fn battle_weapon_trail_draws(&self) -> Vec<BattleWeaponTrailDraw> {
         use legaia_engine_battle_vm::battle_trail as wt;
         let mut out = Vec::new();

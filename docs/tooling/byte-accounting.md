@@ -11,7 +11,7 @@ already has that applies to the entry's class, collects the byte ranges those pa
 reports the complement - classified by shape, largest run first. The result is a worklist: a large
 run of bytes that no parser claims and that does not look like padding is a format nobody has walked.
 
-Module `legaia_asset::byte_account`; CLI `asset account`.
+Module `legaia_disc_audit::byte_account`; CLI `asset account`.
 
 ```mermaid
 flowchart LR
@@ -45,7 +45,7 @@ asset account 0086 --depth 2 --json > kingdom.json
 
 ## Method
 
-1. Classify the buffer with `legaia_asset::categorize`, then pick a walker. Two selections are keyed
+1. Classify the buffer with `legaia_disc_audit::categorize`, then pick a walker. Two selections are keyed
    on the extraction index instead of the class: the monster archive (whose head is a `dec_size`
    word, so no detector fires on it) and any entry with a row in
    [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) plus a dump directory.
@@ -73,7 +73,7 @@ that a sub-asset is *there*, not that anything walked to it. The report prints `
 ## Owner vocabulary
 
 An owner says what kind of thing consumes the bytes, not which module claimed them; the per-claim
-`detail` names the instance. `legaia_asset::byte_account::OWNERS` carries the same list in code.
+`detail` names the instance. `legaia_disc_audit::byte_account::OWNERS` carries the same list in code.
 
 | Owner | Bytes it names |
 |---|---|
@@ -287,7 +287,7 @@ also a container - the class walker's claims simply vanish, and precisely when a
 sweep runs, because a sweep is when `--funcs` is given.
 
 `init.pak` (PROT `0895`) is the case on this disc. It is a boot overlay with a
-map row *and* the four-TIM publisher-logo pack `legaia_asset::init_pak` already
+map row *and* the four-TIM publisher-logo pack `legaia_ui_formats::init_pak` already
 parses at fixed offsets. Under the override its logo claims were dropped and
 its TIM pixel data - over half the entry - read as unwalked `ascii_text`, which
 is the shape indexed pixel data takes (see the NUL note above). The walker now
@@ -309,9 +309,9 @@ workspace already reads at a named constant.
 
 The menu overlay (PROT `0899`) carried both of the disc's two largest remaining
 sweep-found claims, and both are pinned: the save-menu UI atlas at
-`legaia_asset::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET` and the
+`legaia_ui_formats::title_pak::OVERLAY_SAVE_MENU_TIM_OFFSET` and the
 [save-slot icon sheet](../formats/save-icon.md) at
-`legaia_asset::save_icon::PROT_ENTRY_OFFSET`. The overlay walker now claims
+`legaia_ui_formats::save_icon::PROT_ENTRY_OFFSET`. The overlay walker now claims
 both from those constants, with the extent taken from each TIM's own header
 rather than from a table here, so the entry's `scan` share goes to zero and its
 structural share carries the two atlases.
@@ -437,7 +437,7 @@ the stream terminator and the sector slack. `scan_bytes` is zero across the
 entry. The `pBAV` magic gates the class and is never a claim boundary - the
 distinction matters here because the previous account of this entry *was* the
 magic sweep, at 96 % accounted and 0 % structural. Walker `vab_multi_bank`;
-parser [`legaia_asset::vab_multi_bank`](../formats/vab.md#the-multi-bank-archive-monstersnd).
+parser [`legaia_container_formats::vab_multi_bank`](../formats/vab.md#the-multi-bank-archive-monstersnd).
 
 The sector slack is claimed as `pad` rather than left as residue, and the reason
 is the same one the filler slots use: the bank's extent is declared (by the next
@@ -583,7 +583,7 @@ and the reciprocal divide at `801cee2c`..`801cee54` wraps the cursor `mod 81`,
 which is the record count. Ten rows are drawn per page. The loop is inside
 `FUN_801CED68`
 (`see ghidra/scripts/funcs/overlay_other3_dev_0974_801ced68.txt`). Parser
-[`legaia_asset::other3_roster`](../../crates/disc-audit/src/other3_roster.rs);
+[`legaia_disc_audit::other3_roster`](../../crates/disc-audit/src/other3_roster.rs);
 `claim_other3_roster` claims each record at the stride, padding included, because
 the stride is what the loop advances by.
 
@@ -615,7 +615,7 @@ it.
 | `0980` | `0x5C28` and `0x5CB4`, claimed | the dance overlay's first step-index list (eighteen `u32`, `-1` last; `FUN_801CF470` picks it or its sibling at `0x801D4488` on `_DAT_801D514C`) and four `0x80`-byte motion-script rows of `(clip, frames)` halfword pairs (`FUN_801D0640`, row `actor[+0x50] << 7`) | each runs to the next formed address in whole elements |
 | `0976` | `0xCF94` and `0x88AC`, claimed | the Baka Fighter developer dump's seventeen sixteen-byte fighter labels and `FUN_801D2A28`'s twenty per-index score words | the dump keeps its label pointer in a stack slot (`sp+0x32C`), which the pointer-bump rule cannot follow; its pass count is `sltiu v0,s7,0x11` at `0x801D5754`. The score index is clamped by `slti v0,a3,0x14` |
 | `0976` | `0x8D44`, 128 B; `0x891C` and `0xD44C`, short runs | eight sixteen-byte dev-menu value labels (`STAND`, `ATACK1`, ...) reached only through a word in a dev-menu row at `0x801DBD18`; `FUN_801D2A28`'s halfword score table at `0x801D711C`, indexed by a timer divided by 320 with an equality test, not a bound, on the cap | a word reference is not a consumer instruction, and the timer index has no stated ceiling |
-| `0972` | `0x2FA` and `0x9D78` up, claimed | the species names the species table's `+0x00` pointers name, and the twenty-nine HUD sprite records `legaia_asset::fishing_sprites` already decoded | the pool had no claim of its own: the species table and the sprite parser were both bound, their bytes were not |
+| `0972` | `0x2FA` and `0x9D78` up, claimed | the species names the species table's `+0x00` pointers name, and the twenty-nine HUD sprite records `legaia_minigame_formats::fishing_sprites` already decoded | the pool had no claim of its own: the species table and the sprite parser were both bound, their bytes were not |
 | `0977` | `0x3048` and `0x3108`, and the head label pool, claimed | the arena's course ladder: the score table at `0x801D1860` (three rows of sixteen `i32` cells, formed at `0x801D10E8` / `0x801D1234`), the twenty-nine `{ label_va, monster_id }` round records at `0x801D1920`, and the opponent names at the head of the image | no instruction forms an address in the round records because none needs to: the descriptor table at `0x801D1A08` holds a `first_round` pointer per course and `FUN_801D1510` walks from it. The names are reached only through those records ([a pointer table is not its pool](#a-pointer-table-is-not-its-pool)) |
 | `0975` | `0x4E18`, 80 B, and `0x4D90`, 112 B, claimed | the slot machine's landing-line table at `0x801D3630` (five 16-byte rows, one per `rand % 5`, read by `FUN_801d2440`), and seven 16-byte developer labels below it | the table's row index is `DAT_801d4134 = rand % 5`, whose only writer is `FUN_801d258c`, so the domain closes it. The labels have no reference in any form either address scan covers and are claimed shape-checked as dead data |
 | `0977` | `0x31F0`, `0x3220` and `0x3254`, claimed | the arena's three course descriptors themselves, the between-leg outcome table at `0x801D1A5C` (four `i32`, `FUN_801D1184` clamps the outcome to `3`), and ten percentage words around it no instruction reaches | the descriptors were walked for their pointees only; the dead words have no reference in any form either address scan covers |
@@ -639,7 +639,7 @@ the same way: nothing copies into it. `0x6000_0000` at `0x801D0DDC` and the
 matrix behind it at `0x801D0DE0` are static initialised data, and the same
 routine's second `FUN_801CFFDC` call (`a1 = 0x20` again, at `0x801CFD58`) sends
 them as linked. Both are claimed off
-`legaia_asset::fmv_dispatch::MDEC_*_PACKET_VA`, each after its header word
+`legaia_game_tables::fmv_dispatch::MDEC_*_PACKET_VA`, each after its header word
 checks.
 
 The `0897` row's head is claimed now. Its first 192 bytes are **three**
@@ -650,7 +650,7 @@ formed at `0x801CFEE8`, `0x801CFFC0`, `0x801D009C`) and the interact facing
 compass at `0x801F2254` (eight points, formed at `0x801D0834`); each extent
 runs to the next formed base, and the last ends at the `lw`/`sw` scalar
 `0x801F2274`. The bases are
-[`legaia_asset::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs)
+[`legaia_disc_audit::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs)
 consts, claimed only when `check` re-derives each from its `lui` pairs.
 
 Three rows left this table on one rule each. `0898`'s 3512-byte head is
@@ -725,7 +725,7 @@ is the next table's base or a zero pad word below it. `0x801CF1CC` (179 arms,
 index `lbu(0x8007BD0C + $s7) - 4`, `jr` at `0x801EA9FC`) and `0x801CF49C` (5
 arms, the battle context's `+0x28A` phase byte) are two of them; the other
 twenty, and the seven head strings whose addresses the overlay forms, are
-`pub const` rows in [`legaia_asset::battle_jump_tables`](../../crates/disc-audit/src/battle_jump_tables.rs),
+`pub const` rows in [`legaia_disc_audit::battle_jump_tables`](../../crates/disc-audit/src/battle_jump_tables.rs),
 each carrying its base-forming site, its `jr` and its index expression.
 
 The rows are claimed only when `battle_jump_tables::check` re-derives every one
@@ -748,7 +748,7 @@ switch-table rule finds all twenty-four.
 ### A switch table is read off its dispatch
 
 The `0898` idiom is the compiler's, not the overlay's, so it is also a rule:
-[`legaia_asset::switch_tables`](../../crates/disc-audit/src/switch_tables.rs) walks
+[`legaia_disc_audit::switch_tables`](../../crates/disc-audit/src/switch_tables.rs) walks
 back from every `jr` that is not `$ra` to the `lw` that loads its target, the
 `addu` that forms the slot, and the two operands of that `addu` - a `lui`
 (`+ addiu`, or the `lw`'s own displacement) for the base, an `sll` by two (or
@@ -1098,7 +1098,7 @@ the longer module left there. The run is a mid-function slice of the fishing
 overlay, which is exactly why it has no entry and no exit.
 
 Both instruments cut those bytes now, and they cut them by the same
-measurement. `legaia_asset::inherited_tail` is the Rust side of
+measurement. `legaia_disc_audit::inherited_tail` is the Rust side of
 `scripts/ghidra-analysis/inherited_tail.py`: the same suffix comparison, the
 same `0x40` minimum, the same gated equal-extent leg and the same
 cut / own-content fixpoint, run over the images named by
@@ -1224,7 +1224,7 @@ recovers are each resolved by comparing a word against that base, so the base is
 what makes the walk apply; the structural regions come out of the image itself,
 so `asset account 0923` walks them with or without `--funcs` (it delegates to
 the overlay-code walker when one is given). Walker `slot_b_module`; parser
-[`legaia_asset::slot_b_module`](../formats/slot-b-module-layout.md),
+[`legaia_overlay_images::slot_b_module`](../formats/slot-b-module-layout.md),
 predicate `is_slot_b_image`.
 
 Seventy mapped images sit at that base. Sixty-four are the cast / summon band
@@ -1363,7 +1363,7 @@ read the per-class verdict column before starting work on a row.
 | `pochi_filler`, 266 entries | One 1927-byte dev fill file plus 121 bytes of the mastering buffer's previous contents ([`pochi.md`](../formats/pochi.md)). | A shape rule. The fill is text-shaped and its line is 52 bytes long, so `repeated_fill`'s period-1/2/4/8/16 test never fires and 266 sectors of filler ranked as work. |
 | `other5` / `other6`, 2 entries | Four `320x64` 16bpp band uploads to VRAM `(384, 0)` ([`ringside-still.md`](../formats/ringside-still.md)). | A walker. The rectangle was already recovered from the consumer's immediates. |
 | `vab_multi_bank`, 1 entry | 206 VAB banks on a sector index the entry's own head carries, each a two-chunk stream ([`vab.md`](../formats/vab.md#the-multi-bank-archive-monstersnd)). | A walker. The detector already read the count and the sector table - it just never claimed anything with them. |
-| `init_pak`, 1 entry | The boot overlay's four publisher-logo TIMs, at offsets `legaia_asset::init_pak` already knew. | Nothing about the format: a **dispatch** rule dropped the walker. See below. |
+| `init_pak`, 1 entry | The boot overlay's four publisher-logo TIMs, at offsets `legaia_ui_formats::init_pak` already knew. | Nothing about the format: a **dispatch** rule dropped the walker. See below. |
 
 ### Two ways the headline number lies, both visible in the sweep
 

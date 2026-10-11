@@ -219,7 +219,7 @@ fn classify_dispatch(buf: &[u8], idx: usize) -> Dispatch {
 // PORT: FUN_80039B7C
 //
 // The engine runtime types whole pages instead ([`pack_page`], in
-// `engine-core::dialog` over the `dialog_window` row window). The hosts of
+// `engine-dialog::dialog` over the `dialog_window` row window). The hosts of
 // this window-sized grouping are the disc-gated `field_dialog_boxpack_disc`
 // oracle and the `mes boxes` subcommand, which is the view a MAN dialog
 // editor needs - which lines share the window at once, and what the pager

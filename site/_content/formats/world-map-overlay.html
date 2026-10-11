@@ -11,7 +11,7 @@
     <dt>Magic</dt><dd>None. Every sub-body carries the constant marker <code>0x080C</code> at <code>+4</code>.</dd>
     <dt>Size</dt><dd>15-16 clips per kingdom; 24-32 KB decoded; 8 bytes per (frame, part) entry.</dd>
     <dt>In RAM</dt><dd>Loaded verbatim (LZS-decoded, no fixup) at the type-<code>0x05</code> buffer pointer <code>_DAT_8007B888</code>, so the base differs per kingdom - see <a href="#ram-layout">RAM layout</a>.</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::world_map_overlay</code>.</dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::world_map_overlay</code>.</dd>
     <dt>Confidence</dt><dd>Confirmed - container and RAM placement byte-verified, every header and entry field pinned to the instruction that reads it, clip lookup checked against a live <code>map01</code> state.</dd>
     <dt>Used by</dt><dd><a href="../subsystems/world-map.html">World map</a>, <a href="../subsystems/world-overview-viewer.html">World-overview viewer</a></dd>
   </dl>
@@ -227,7 +227,7 @@
 
 <section class="doc-section" id="tooling">
   <h2>In the port</h2>
-  <p><code>legaia_asset::world_map_overlay</code> parses a kingdom&#39;s slot 4 (<code>parse</code>, the clip header accessors, <code>Slot4Record::transform</code> for the decoded pose). The bank is the same container every scene&#39;s type-<code>0x05</code> section uses, so the generic <a href="anm.html">ANM</a> reader handles it too.</p>
+  <p><code>legaia_scene_formats::world_map_overlay</code> parses a kingdom&#39;s slot 4 (<code>parse</code>, the clip header accessors, <code>Slot4Record::transform</code> for the decoded pose). The bank is the same container every scene&#39;s type-<code>0x05</code> section uses, so the generic <a href="anm.html">ANM</a> reader handles it too.</p>
   <div class="cli"><code>asset kingdom-slot &lt;PROT&gt;.BIN --slot 4</code></div>
   <div class="cli"><code>asset player-anm &lt;PROT&gt;.BIN --desc-count 7</code></div>
   <p>The first dumps each clip&#39;s parts / frames / rate / blend flag; the second is the generic animation-bank detector, which reports a kingdom bundle exactly as it reports a town.</p>

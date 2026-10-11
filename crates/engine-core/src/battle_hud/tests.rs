@@ -494,7 +494,7 @@ fn log_accent_color_distinct_per_variant() {
 }
 
 /// The drawn-bar fill index follows retail's whole-gauge precedence
-/// (FUN_80046A20 via `engine-vm::battle_gauge`): death first, then the
+/// (FUN_80046A20 via `engine-battle-vm::battle_gauge`): death first, then the
 /// status override, then per-bar fill bands.
 #[test]
 fn gauge_fill_indices_follow_the_retail_precedence() {

@@ -50,7 +50,7 @@ pub const TARGET_PANEL_MEMBER_PITCH: i32 = 0x3e;
 
 /// Preview shape of the target panel - the retail preview word
 /// `DAT_801E46CC`, derived from the picked item by `FUN_801D6A54`
-/// (`engine-core::pause_screens::target_panel_mode`).
+/// (`engine-menus::pause_screens::target_panel_mode`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TargetPanelMode {
     /// Mode 0: plain `HP cur/max` + `MP cur/max` rows (every

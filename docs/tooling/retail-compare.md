@@ -1547,7 +1547,7 @@ The retail side of a per-draw comparison needs no emulator: a state's RAM
 holds the frame's packets on its ordering tables
 (`mednafen-state display-list --json`, `scripts/mednafen/display-list.py`
 for a PCSX-Redux state), each with its CLUT, tpage, screen corners and
-colour. The engine side is the draw census (`legaia_engine_core::draw_census`):
+colour. The engine side is the draw census (`legaia_engine_system::draw_census`):
 with `LEGAIA_DIAG_DRAWS=<path>` set, `play-window` keeps a census beside every
 uploaded field mesh (scene meshes, the lit-row and morph copies, the ground
 crop) and writes each frame's textured draws, folded through the draw's own

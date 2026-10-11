@@ -13,7 +13,7 @@ native and `wasm32` alike.
 `legaia-engine-core` owns the composition - `World`'s field frame, the
 `FieldHost` the field VM runs against, the camera resolver and the battle
 actor tick that drains the cue routers - and re-exports every module here at
-its old path, so `legaia_engine_core::camera_zone` and
+its old path, so `legaia_engine_field::camera_zone` and
 `legaia_engine_field::camera_zone` name the same module.
 
 ## What belongs here

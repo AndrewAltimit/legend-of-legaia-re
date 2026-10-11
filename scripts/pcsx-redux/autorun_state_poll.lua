@@ -182,7 +182,7 @@ local FMV_ID      = 0x8007BA78  -- s16
 local WM_ROT      = 0x8007B790  -- s16[3] pitch / yaw / roll
 local WM_H        = 0x8007B6F4  -- u16 GTE projection H (walk-view 0x170)
 -- Eye-space translation trio: three 32-bit accumulator words; the camera
--- consumes the LOW s16 half of each (engine-vm::battle_camera "low halves
+-- consumes the LOW s16 half of each (engine-battle-vm::battle_camera "low halves
 -- of the accumulator words"; every pinned TR anchor fits s16).
 local WM_TR       = 0x800840B8  -- word stride 4; value = low s16
 local WM_VIEWMODE = 0x801F2B94  -- u8 0=walk 1=top-view (overlay 0897)

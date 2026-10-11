@@ -484,7 +484,7 @@ pub struct BattleActor {
     /// `+0x3C` / `+0x40` - the actor's **body** position pair. The battle
     /// setup stamps the authored formation seat here and copies it into the
     /// live pair `+0x34`/`+0x38` (`FUN_800513F0`; see
-    /// `engine-core::battle_seats`) - hence the field name - but from then on
+    /// `engine-battle::battle_seats`) - hence the field name - but from then on
     /// the pose decoder re-derives it on every drawn frame as the live pair
     /// plus the facing-rotated pose centroid (`FUN_8004998C`
     /// `0x8004A3DC..0x8004A5F8`), so it is not a fixed seat. The range law

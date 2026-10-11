@@ -650,7 +650,7 @@ impl FieldMenuSession {
 }
 
 /// Plain-data view for the renderer. Engines call [`FieldMenuSession::view`]
-/// once per frame and feed the result into `engine-render::field_menu_draws_for`.
+/// once per frame and feed the result into `engine-ui::field_menu_draws_for`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FieldMenuView {
     pub rows: [FieldMenuRowView; 7],

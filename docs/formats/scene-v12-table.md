@@ -2,7 +2,7 @@
 
 Each field scene ships a small **walk-on tile-trigger file**, dev filename `DATA\FIELD\<scene>.PCH`. It lists tiles that fire a scripted event when the player steps on them, and it extends the trigger block inside the scene's `.MAP` file: same header shape, same record forms, consulted second. Every one of the 97 retail files is exactly one `0x800`-byte sector and populates a single record kind.
 
-Parser: [`crates/scene-formats/src/scene_v12_table.rs`](../../crates/scene-formats/src/scene_v12_table.rs) (`legaia_asset::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
+Parser: [`crates/scene-formats/src/scene_v12_table.rs`](../../crates/scene-formats/src/scene_v12_table.rs) (`legaia_scene_formats::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
 
 ## At a glance
 
@@ -113,7 +113,7 @@ Across the 1233-entry PROT corpus this matches **97** entries with zero false po
 
 ## Event-script prescript - the next PROT entry
 
-The prescript is the next TOC row: extraction `define` (the `.PCH` is `define - 1`, the `.LZS` `scene_asset_table` bundle `define + 1`). `0x800` is one past the `.PCH`'s end, not an offset inside it. Parser: `legaia_asset::scene_v12_table::parse_prescript_entry`, which takes the **next entry's** bytes.
+The prescript is the next TOC row: extraction `define` (the `.PCH` is `define - 1`, the `.LZS` `scene_asset_table` bundle `define + 1`). `0x800` is one past the `.PCH`'s end, not an offset inside it. Parser: `legaia_scene_formats::scene_v12_table::parse_prescript_entry`, which takes the **next entry's** bytes.
 
 It has the same shape as the standalone [scene_event_scripts](scene-bundles.md#scene_event_scripts---prescript-only) format:
 
@@ -207,7 +207,7 @@ So the raw scene block layout is `n+0` `.MAP` (`0x12000` footprint), `n+1` `.PCH
 ## Reading the parsed structure
 
 ```rust
-use legaia_asset::scene_v12_table;
+use legaia_scene_formats::scene_v12_table;
 
 let buf = std::fs::read("extracted/PROT/0093_map01.BIN")?;       // garmel's .PCH
 let next = std::fs::read("extracted/PROT/0094_garmel.BIN")?;     // its prescript

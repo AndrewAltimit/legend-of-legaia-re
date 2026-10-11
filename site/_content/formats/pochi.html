@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Never loaded. Reserved slots a scene's asset block set aside and never filled.</dd>
     <dt>Magic / marker</dt><dd>ASCII <code>pochi</code> at offset 0 and a DOS end-of-file byte <code>0x1A</code> at <code>+0x786</code></dd>
     <dt>Lives in</dt><dd>266 <a href="prot.html">PROT.DAT</a> entries, each exactly one 2048-byte sector, clustered at fixed positions inside scene <a href="cdname.html">CDNAME</a> blocks</dd>
-    <dt>Parser</dt><dd>Detection class <code>pochi_filler</code> (<code>legaia_asset::categorize::is_pochi_filler</code>)</dd>
+    <dt>Parser</dt><dd>Detection class <code>pochi_filler</code> (<code>legaia_disc_audit::categorize::is_pochi_filler</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - measured over the whole corpus: every slot is one sector, none carries a parseable TIM.</dd>
   </dl>
 </section>

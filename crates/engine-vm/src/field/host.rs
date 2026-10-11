@@ -804,7 +804,7 @@ pub trait FieldHost {
     ///
     /// 21-byte instruction. The original calls `FUN_801F8004(operand + 1)` -
     /// the PROT-0900 sprite-widget spawner with its inline 19-byte record
-    /// (`engine-core::screen_fx::SpriteRecord`). PC += 21. `payload` runs
+    /// (`engine-effects::screen_fx::SpriteRecord`). PC += 21. `payload` runs
     /// from the record to the end of the script: the widget's own script
     /// starts at record `+0x13`, on the bytes after this instruction.
     fn op43_widget_sprite_spawn(&mut self, payload: &[u8]) {
@@ -815,7 +815,7 @@ pub trait FieldHost {
     ///
     /// 12-byte instruction; reads 5 u16s and calls
     /// `FUN_801F8D4C(l, t, r, b, dur)` - the PROT-0900 mask (iris) widget
-    /// control API (`engine-core::screen_fx::MaskWidget`). PC += 12.
+    /// control API (`engine-effects::screen_fx::MaskWidget`). PC += 12.
     fn op43_widget_mask_rect(&mut self, words: [u16; 5]) {
         let _ = words;
     }
@@ -824,7 +824,7 @@ pub trait FieldHost {
     ///
     /// 14-byte instruction. The original calls `FUN_801F8F28(operand + 1)` -
     /// the PROT-0900 letterbox widget's six-i16 config
-    /// (`engine-core::screen_fx::Letterbox`). PC += 14.
+    /// (`engine-effects::screen_fx::Letterbox`). PC += 14.
     fn op43_widget_letterbox(&mut self, payload: &[u8]) {
         let _ = payload;
     }
@@ -869,7 +869,7 @@ pub trait FieldHost {
     /// 14-byte instruction `[43, 0x13, ...12 bytes]`. The original calls
     /// `FUN_801F88FC(operand)` - the PROT-0900 image-panel widget spawner,
     /// reading its `[x][y][w][h][tex_x][tex_y]` record past the sub-op byte
-    /// (`engine-core::screen_fx::PanelWidget`). PC += 14.
+    /// (`engine-effects::screen_fx::PanelWidget`). PC += 14.
     fn op43_widget_panel_spawn(&mut self, payload: &[u8; 13]) {
         let _ = payload;
     }

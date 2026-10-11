@@ -663,7 +663,7 @@ pub fn check_and_learn_art(
 /// so. The list it scans - count at `0x80084140 + char*0x414 + 0x704`, ids
 /// from `+0x705` - is the **spell** list: `FUN_801E92DC` prepends there
 /// (`sb v1,0x705(v0)` at `0x801E93AC`, ported as
-/// `engine-core::magic_xp::learn_spell_prepend`), and the ids it holds are
+/// `engine-battle::magic_xp::learn_spell_prepend`), and the ids it holds are
 /// full `0x8x` spell ids, which is why the compare subtracts `0x80`
 /// (`addiu v0,v0,-0x80` at `0x801E92B0`). The token is monster record `+0x3E`,
 /// the Seru a killing blow can absorb. Its one caller is the arts resolver

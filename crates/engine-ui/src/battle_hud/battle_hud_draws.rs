@@ -1095,7 +1095,7 @@ pub fn battle_hud_draws_for(
     // Retail's landed-hit numeral is not a HUD widget. It is a run of 24x24
     // cells off the battle effect atlas, thrown over the **struck actor** and
     // rising to a fixed screen row - laid out by
-    // `engine-vm::battle_value_readout::value_cells` and drawn by the host,
+    // `engine-battle-vm::battle_value_readout::value_cells` and drawn by the host,
     // which is the only layer that knows where the actor projects. Anchoring a
     // number to a party panel (or, for a monster, to the diagnostic pen in the
     // top-left corner) put every damage figure somewhere retail never draws

@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Where</dt><dd><code>SCUS_942.54</code>, RAM <code>DAT_800754C8</code>; the name pointers are read through the shifted base <code>DAT_800754D0</code> (= stats base + 8)</dd>
     <dt>Size</dt><dd>190 records (ids <code>0x00..=0xBD</code>), 12 bytes each. Ends exactly where the description-pointer table <code>0x80075DB0</code> begins</dd>
-    <dt>In the port</dt><dd><code>legaia_asset::spell_names</code> (<code>SPELL_COUNT = 190</code>); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>; engine mirror <code>engine-core::retail_magic</code></dd>
+    <dt>In the port</dt><dd><code>legaia_game_tables::spell_names</code> (<code>SPELL_COUNT = 190</code>); CLI <code>asset spell-names &lt;SCUS&gt; [--json]</code>; engine mirror <code>engine-battle::retail_magic</code></dd>
     <dt>Confidence</dt><dd>Confirmed - readers traced in the battle and menu overlays; the curated magic chart joins byte-exact on MP</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle-action SM</a> (cast + banner), <a href="../subsystems/field-menu.html">field menu</a> (descriptions), <a href="../tooling/randomizer.html#spell-cost">spell-cost slider</a>, <a href="../magic.html">Magic viewer</a></dd>
   </dl>
@@ -193,7 +193,7 @@
   <h2>Where the damage comes from</h2>
   <p>The table carries <strong>no power field</strong>. The cast state reads only MP, the class byte and the name pointer; the static attack-vs-defence kernel is melee / arts only. Magnitude is computed at cast time by whichever overlay runs the spell:</p>
   <ul class="bullets">
-    <li><strong>Damage summons</strong> (PROT 0903 / 0904 / 0906 / 0908 / 0909 / 0910 / 0912 / 0913, plus 0914 and one arm of 0915) roll <code>rand % (summon AGL + 1) + summon HP + caster AGL &times; 2</code> against a defender roll, then apply element affinity, status weakening and the 9999 cap - the kernels on the <a href="../subsystems/battle-formulas.html">battle-formulas</a> page, ported in <code>engine-vm::battle_formulas</code>.</li>
+    <li><strong>Damage summons</strong> (PROT 0903 / 0904 / 0906 / 0908 / 0909 / 0910 / 0912 / 0913, plus 0914 and one arm of 0915) roll <code>rand % (summon AGL + 1) + summon HP + caster AGL &times; 2</code> against a defender roll, then apply element affinity, status weakening and the 9999 cap - the kernels on the <a href="../subsystems/battle-formulas.html">battle-formulas</a> page, ported in <code>engine-battle-vm::battle_formulas</code>.</li>
     <li><strong>Heal summons</strong> are just <strong>two</strong> of the eleven, and their formulas differ: Vera (PROT 0905) restores <code>level &times; 0x20 + 0xE0</code> on one ally, Orb (PROT 0911) restores <code>(level &lt;&lt; 6) + 0x1C0</code> across the party and cleanses status from level 3. Both read the caster's per-magic <em>level</em> byte out of the character record, not a power byte.</li>
     <li><strong>Neither</strong>: Nighto (PROT 0907) computes no amount at all - a kill roll zeroes the target's HP outright, otherwise it sets the confuse bits.</li>
     <li><strong>Capture-class casts</strong> carry baked constants in their <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cast-module.md" target="_blank" rel="noopener">cast module</a>.</li>

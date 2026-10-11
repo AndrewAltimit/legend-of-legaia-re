@@ -252,7 +252,7 @@ pub(super) fn walk_tim_pack(buf: &[u8], sink: &mut Sink) {
     }
 }
 
-/// `asset::pack` whose members are whole TIMs, claimed at their own extent
+/// `container-formats::pack` whose members are whole TIMs, claimed at their own extent
 /// rather than out to the next member.
 ///
 /// [`walk_pack`] ends the last member at the buffer end, which would swallow

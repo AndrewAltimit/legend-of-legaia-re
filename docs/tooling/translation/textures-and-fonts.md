@@ -25,11 +25,11 @@ The text-bearing textures on the retail disc:
 
 | Texture | Where | Baked text | Footprint / notes |
 |---|---|---|---|
-| Title wordmark | PROT 0888 (dup 0889 / 0890), `legaia_asset::title_pak` | "Legend of Legaia" logo, `PRESS START BUTTON`, TM / (C) copyright bands; an unused `<DEMO>` band retail never samples | Bands are sub-rects of one 256x256 TIM (`TITLE_BAND_*`). The logo is title art (a proper noun); `PRESS START BUTTON` is a candidate for a same-footprint band swap. Copyright bands must stay. |
+| Title wordmark | PROT 0888 (dup 0889 / 0890), `legaia_ui_formats::title_pak` | "Legend of Legaia" logo, `PRESS START BUTTON`, TM / (C) copyright bands; an unused `<DEMO>` band retail never samples | Bands are sub-rects of one 256x256 TIM (`TITLE_BAND_*`). The logo is title art (a proper noun); `PRESS START BUTTON` is a candidate for a same-footprint band swap. Copyright bands must stay. |
 | Title menu `NEW GAME` / `CONTINUE` | title overlay (inside PROT entry 0899 at `+0xEB44`) | rendered at runtime from the **dialog-font glyph atlas**, not a baked band (retail ignores the embedded footer band) | So this is *text*, but it lives in the title overlay code region the pipeline does not address by coordinate. Follow-up: pin the two label strings' VA window like a `ui_menu` pool. |
 | Save/Load UI | PROT 0899 `+0x16908` (`SLOT n` pill) + the pre-`init_data` `PROT.DAT` gap (`Load` panel TIM) + the title-overlay memcard atlas `0x801E5120` | baked `SLOT 1..` pill label, the `Load` panel wordmark, and Japanese memcard strings in the atlas | Small 4bpp TIMs at fixed offsets; a same-footprint pill/panel swap is feasible. See [`save-screen.md`](../../subsystems/save-screen.md). |
 | Config-screen TIMs | PROT 0899 `+0x169DC` / `+0x1F91C` | small option-screen chrome TIMs that sit after the config **string** pool (the strings are the `ui_menu` menu labels, already translatable) | Chrome art; only replace if a label is baked rather than drawn from the string pool. |
-| Boot / publisher logos | PROT 0895 `init.pak` (`legaia_asset::init_pak`) - PROKION, SCEA / Sony | brand logos ("licensed by", studio marks) | **Do not alter** - trademark art, not localizable text. Listed only so a sweep does not mistake them for translatable UI. |
+| Boot / publisher logos | PROT 0895 `init.pak` (`legaia_ui_formats::init_pak`) - PROKION, SCEA / Sony | brand logos ("licensed by", studio marks) | **Do not alter** - trademark art, not localizable text. Listed only so a sweep does not mistake them for translatable UI. |
 | Opening prologue caption | opening-sequence baked caption TIM (the narration **crawl** itself is `0x1F`-framed text and *is* covered via the dialog corpus) | a baked caption still shows English under the crawl | The crawl narration translates through `scene_dialog` / `inline_text`; only the baked caption TIM would need an art swap. |
 
 ## Multi-palette textures
@@ -89,10 +89,10 @@ sheet's sixteen palettes are sub-palettes 0..15 of VRAM row 511). The
 mechanism - which draw arm samples which rectangle, how the byte becomes a
 CLUT cell, which record wins an overlap - is stated once in
 [`shading.md`](../../subsystems/shading.md#which-palette-draws-which-region),
-and one kernel implements it (`legaia_asset::tim_palette_context::texel_palettes`).
+and one kernel implements it (`legaia_ui_formats::tim_palette_context::texel_palettes`).
 The editor's map, `tim-palette-map` and the asset viewer's **As the game
 draws it** view all read that kernel, so what the viewer shows is what the
-editor edits. `legaia_patcher::texture_palettes` only turns its CLUT cells
+editor edits. `legaia_texture_replace::texture_palettes` only turns its CLUT cells
 into this texture's palette numbers.
 
 What that means when editing:

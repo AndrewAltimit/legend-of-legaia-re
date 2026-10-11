@@ -123,12 +123,12 @@
   <h2>In the port</h2>
   <p>The renderer's two halves point opposite ways. <strong>Shading defaults to retail</strong>: the baked colour word, the depth cue and the light-source rows, with no synthetic light on any game path (the play hosts layer the optional enhanced lighting over it). <strong>Rasterisation defaults to clean</strong>: vertex snap and the 15-bit dither are behind <code>set_psx_mode</code>. Affine UVs are not gated - they are always on, because they are the faithful behaviour.</p>
   <dl class="kv">
-    <dt>Palette maps</dt><dd><code>legaia_asset::tim_palette_context</code> (which cell draws which texel; what the boot VRAM holds)</dd>
+    <dt>Palette maps</dt><dd><code>legaia_ui_formats::tim_palette_context</code> (which cell draws which texel; what the boot VRAM holds)</dd>
     <dt>VRAM + palette decode</dt><dd><code>engine-render</code> (1024&times;512 R16Uint texture, decode in the fragment shader)</dd>
     <dt>Multiply, cue, blend, dither</dt><dd><code>psx_modulate</code> / <code>psx_depth_cue</code> / <code>psx_blend</code> / <code>psx_dither</code> in the shader prelude, CPU mirror <code>psx_light</code></dd>
-    <dt>Light-source rows</dt><dd><code>render-kernels::field_light</code>, <code>engine-core::field_lit_mesh</code></dd>
-    <dt>Battle colour</dt><dd><code>engine-vm::battle_ground_grid</code>, <code>battle_actor_tint</code></dd>
-    <dt>Animated palettes</dt><dd><code>engine-core::clut_cell_fx</code>, <code>legaia_asset::clut_walk</code></dd>
+    <dt>Light-source rows</dt><dd><code>render-kernels::field_light</code>, <code>engine-field::field_lit_mesh</code></dd>
+    <dt>Battle colour</dt><dd><code>engine-battle-vm::battle_ground_grid</code>, <code>battle_actor_tint</code></dd>
+    <dt>Animated palettes</dt><dd><code>engine-field::clut_cell_fx</code>, <code>legaia_scene_formats::clut_walk</code></dd>
   </dl>
 </section>
 

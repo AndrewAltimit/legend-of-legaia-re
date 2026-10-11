@@ -5,7 +5,7 @@ browser.
 
 Auto-detects the input form: a full Mode2/2352 `.bin` disc, a raw
 `PROT.DAT`, or a single `.tim`. After loading a disc, classifies every
-PROT entry via `legaia_asset::categorize` and pre-scans for embedded
+PROT entry via `legaia_disc_audit::categorize` and pre-scans for embedded
 TIMs, so the UI shows a filtered, browsable list of viewable entries
 instead of every raw entry.
 
@@ -48,7 +48,7 @@ The split is deliberate:
   live dialogue box). The page tells the session what it does itself (the
   pause menu, the field CD-XA lane, the per-tick queue drains; see the
   [`engine-session` README](../engine-session/README.md)). The session holds
-  the port's seat at retail's **mode table** (`engine-core::mode::ModeSeat`),
+  the port's seat at retail's **mode table** (`engine-mode::mode::ModeSeat`),
   reconciled once per frame, plus the two INIT modes a host enters by hand
   (`MAIN INIT` at field entry, `CARD INIT` on the pause-menu open). `mode_state_json()` reports the word, its table name,
   the front-end entry word and the seat's edge count; the cross-host oracle is
@@ -177,7 +177,7 @@ and
 (`play_fmv_audio_start` - the native window's `play_xa`, so the movie sits
 behind the same master trim and volume slider as every other sound), draws
 the frames over the GL view paced by `play_fmv_due_frame` (the shared
-`engine-core::cutscene::MovieClock`), then
+`engine-system::movie::cutscene::MovieClock`), then
 `play_fmv_finish` applies the same post-movie scene hand-off.
 The retail skip rule is engine-side (`fmv_id 0` only, on the packed
 face-button mask). A page that never declares support still auto-finishes the
@@ -241,7 +241,7 @@ lists (`play_menu_draws_json`):
   extraction, with no `extracted/` artifacts needed.
 
 Window geometry is the disc-parsed descriptor table
-(`legaia_asset::menu_windows`) with the native window's pinned fallback.
+(`legaia_game_tables::menu_windows`) with the native window's pinned fallback.
 
 The two atlases upload once (`play_menu_font_rgba` / `play_menu_chrome_rgba`);
 the page's `AtlasBlitter` (an `image-rendering: pixelated` overlay `<canvas>`
@@ -290,7 +290,7 @@ text - into `play_overlay_draws_json`, in surface pixels. Disc-gated oracle:
 `tests/battle_overlay_parity.rs`.
 
 It also arms the **field-to-battle intro emitter** - the same
-`legaia_engine_ui::battle_intro::BattleIntro` the native window ticks, so all
+`legaia_render_kernels::battle_intro::BattleIntro` the native window ticks, so all
 five retail transition styles (tile shatter, both particle fields, curtain,
 swirl) draw in the browser. `tick_battle_intro` tracks the encounter session's
 `Transition` phase and caches the frame's ordered geometry for the page's
@@ -320,14 +320,14 @@ On the `Field -> Battle` edge it builds a **battle VRAM** (the scene rebuilt
 with `SceneLoadKind::Battle` so the stage dome + its textures are resident,
 plus the PROT 870 flame atlas, per-slot monster texture injection and the
 party texture bands) and the meshes the page draws while the fight runs: the
-stage **backdrop** (`legaia_asset::battle_backdrop::drawn_objects_tmd`
+stage **backdrop** (`legaia_scene_formats::battle_backdrop::drawn_objects_tmd`
 object-list edit, drawn twice - the second copy pre-appended under the SCUS
 `DAT_80078B50` mirror-table transform with `append_scaled`'s winding flip),
 the **ground grid** (`build_ground_grid` + the `DAT_80078C1C` depth-cue far
 colour, attached as a per-draw cue so the browser grid fogs like the native
 one),
 **monster meshes** (`monster_archive::battle_render_mesh`) and the
-**assembled party battle forms** (`legaia_asset::battle_char_assembly`, real
+**assembled party battle forms** (`legaia_actor_formats::battle_char_assembly`, real
 texture pools + battle palette; PROT 1204 mesh + PROT 1203 rest pose as the
 fallback ladder). The engine builds and installs the party forms' idle /
 action / swing / art-bank clips at battle entry
@@ -335,7 +335,7 @@ action / swing / art-bank clips at battle entry
 writes into its battle VRAM and installs only each monster's texture slot and
 idle, so the engine's own battle SM poses every actor; the page reads
 `play_battle_actor_pose` per frame and re-poses positions in place. The
-camera runs the **shared** phase script (`engine-vm::battle_cam_script`) that
+camera runs the **shared** phase script (`engine-battle-vm::battle_cam_script`) that
 the native window runs - dialogue / menu-with-orbit / submenu close-up /
 action framing - and the page consumes a ready view-projection built by the
 retail GTE model rather than re-deriving one. The per-tick VRAM re-stamps
@@ -346,7 +346,7 @@ three drains the native window runs - and the page re-uploads the texture on
 guard). Battle exit drops the state and the page restores the untouched
 field VRAM. The damage numerals, the `N HIT` / `TOTAL` combo cluster and the
 `<word> ARTS!!` banner draw in retail's 24x24 cells off the resident battle
-effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
+effect atlas through the shared `legaia_render_kernels::battle_numerals` builder the
 native window emits through; the font-atlas layout is only the fallback for
 frames before the battle VRAM exists.
 
@@ -420,7 +420,7 @@ through the static-overlay map and hands it to
 `SceneHost::enter_fishing_from_overlay` - the door warp's own entry, which the
 native window's `L` launcher calls too. That decodes the species, spawn and
 cadence tables, runs the rod and lure ownership scans, and installs a
-`legaia_engine_core::fishing::PondSession` seeded from the persistent fishing
+`legaia_engine_fishing::fishing::PondSession` seeded from the persistent fishing
 words on `World::minigames` - the same mode-suspend contract the native window
 uses, so the field scene stays intact underneath and comes back on exit with
 the words banked. The two point-exchange venue pages decode alongside. `play_fishing_hud_json` serves the
@@ -607,7 +607,7 @@ font stand in. Drawing two of them would double-render the rows.
 The last screen of the New Game flow: the opening `town01` naming prompt, at
 the retail-traced geometry, through the shared `name_entry_draws_for` +
 `name_entry_chrome_sprite_draws_for` builders. The state machine is
-`engine-core::name_entry` - the page owns no name logic, only the pad-edge
+`engine-menus::name_entry` - the page owns no name logic, only the pad-edge
 bridge (`name_entry_input`) and the draw-list JSON (`name_entry_draws_json`,
 the same two-layer chrome+font shape the pause menu uses).
 
@@ -628,7 +628,7 @@ A `scene_tmd_stream` entry is a battle-stage shell, and retail does not draw it
 the way the file lays it out: object **1** never draws, and the shell is drawn
 **twice**, the second copy under a per-stage transform that closes the
 authored half. `build_current_vram_mesh` places it that way through
-`legaia_asset::battle_backdrop`, and `tmd_note` labels the entry with the
+`legaia_scene_formats::battle_backdrop`, and `tmd_note` labels the entry with the
 transform it resolved.
 
 The transform comes from the stage table in `SCUS_942.54`, decoded during
@@ -781,7 +781,7 @@ fully resolvable, so they *are* listed - flagged `conditional`.
 `LegaiaArts` drives `site/arts.html`'s interactive half: click an art card,
 watch the character perform it. Per character it assembles the battle mesh
 from the player battle file's equipment sections
-(`legaia_asset::battle_char_assembly`, PROT 863..866), textures it from the
+(`legaia_actor_formats::battle_char_assembly`, PROT 863..866), textures it from the
 same file's pools + decoded battle palette into a runtime VRAM image, and
 decodes the record[0] idle loop plus the whole art-animation bank through
 the `readef.DAT` `"ME"` archives (PROT 894) - every clip pre-expanded per
@@ -791,12 +791,12 @@ demuxed off the disc, each art mapped to a real member of its
 `FUN_8004C140` candidate channel pool.
 
 `export_character_glb` bakes the current character + its **entire**
-animation bank into one `.glb` (`legaia_asset::character_gltf`): one node
+animation bank into one `.glb` (`legaia_actor_formats::character_gltf`): one node
 per rigid TMD object, each decoded bank record a named glTF TRS animation
 ("battle idle" first; art names where the record carries one, else the
 `anim_id` in hex), textured from the same VRAM via a baked tile atlas and
 shaded by the same per-vertex packet colour the canvas modulates with
-(`COLOR_0`; see `legaia_asset::gltf_color`). The page's download button
+(`COLOR_0`; see `legaia_actor_formats::gltf_color`). The page's download button
 hands it out client-side - nothing is uploaded.
 
 The page's tinted after-image trail (the retail arts ghosting; per-character
@@ -898,7 +898,7 @@ single-item build per `(character, section, id)`, cached on the viewer so the
 three calls share it. The JSON carries the name, the palette-cut class, the
 item-alone decision (`mode` / `curated` / `note`), what it kept and what the
 grip repair added; the pixels are the item alone at the character's rest
-stance, drawn by `legaia_asset::mesh_raster` (software, so forty cards do
+stance, drawn by `legaia_actor_formats::mesh_raster` (software, so forty cards do
 not need forty GL contexts) - a stick-shaped piece stood on its long axis
 with the rest-pose-higher end up, a compact one left as worn and yawed to
 show its wide side - over a transparent background; the glb is the alone / with-limb
@@ -939,17 +939,17 @@ press) and `displayed` (the display half's held-sequence substitution); see
 `tests/minigames_wasm_api.rs`.
 
 `minigames_fishing.rs` and `minigames_muscle.rs` are the fishing / Muscle
-Dome shells. Fishing drives [`legaia_engine_core::fishing::PondSession`] -
+Dome shells. Fishing drives [`legaia_engine_fishing::fishing::PondSession`] -
 the one session all three hosts run - directly, with no `World`, seeded from
 the persistent words the page reads off the visitor's memory card, and
 resolves species names against the loaded PROT 0972 overlay image; the
 cast-meter sweep rate and the flight / reel-down / snap glue are the module's
 engine-side reconstruction (`docs/subsystems/minigame-fishing.md`). Muscle Dome drives
-[`legaia_engine_core::muscle_dome::MuscleDomeSession`] on the disc's dealt
+[`legaia_engine_menus::muscle_dome_session::MuscleDomeSession`] on the disc's dealt
 hand with the native launcher's flat favored per-card cost (the browser has
 no player battle file for the per-command `+0x74` swing bytes) and a
 battle-path damage stand-in matching the native `tick_muscle_dome`
-constants, and [`legaia_engine_core::muscle_dome::DomeContest`] for the
+constants, and [`legaia_engine_minigames::muscle_dome::DomeContest`] for the
 ladder above the leg (`docs/subsystems/minigame-muscle-dome.md`). Having no
 save file to read a flag bank out of, the page passes the course-unlock and
 Master-gate flags it wants open and the shared kernel applies the same rule
@@ -1050,7 +1050,7 @@ or roll goes through the `_euler` entry with its three raw angles, which
 writes the same `Rx * Ry * Rz` node rotation the native `export-glb` writes
 (`scene_assembly::placement_rotation_quat`), so a tilted record is not stood
 upright in the file. The bake
-(`legaia_asset::scene_gltf::build_scene_glb`) renders every distinct
+(`legaia_actor_formats::scene_gltf::build_scene_glb`) renders every distinct
 `(cba, tsb-page)` pair the vertices sample into a 256x256 tile of one RGBA
 atlas (the PSX VRAM+CLUT indirection has no glTF equivalent), remaps UVs,
 and carries the `flat_rgba` packet stream into `COLOR_0` - untextured
@@ -1125,11 +1125,11 @@ writer. Save-slot portraits are tiles of a shared sheet addressed by slot, with
 their own writer. The summon / readef pages (PROT 893/894) are not TIMs at all -
 no TIM scan reaches them - and are listed and exportable but read-only, because
 this build has a decoder for that format and no encoder. The battle character
-art (PROT 863..866, `legaia_asset::battle_texture_catalog`) is likewise
+art (PROT 863..866, `legaia_actor_formats::battle_texture_catalog`) is likewise
 headerless and likewise invisible to a TIM scan, but does have an encoder, so
 it is replaceable - against its record's own slot allocation rather than a
 stream length, which is a budget that can genuinely be missed. The monster
-battle skins (PROT 867, `legaia_asset::monster_archive::MonsterPage`) are a
+battle skins (PROT 867, `legaia_actor_formats::monster_archive::MonsterPage`) are a
 third headerless family, one page per enemy inside its own compressed archive
 slot, and they carry the registry's only per-texel decode: a monster page has
 no single colouring, so each texel renders through the palette of the polygon
@@ -1199,7 +1199,7 @@ reference TIMs sitting in other PROT entries.
 | [`sentinel_placements`](src/sentinel_placements.rs) | Cross-references a save state's live world-map actors against the disc's MAN placement records. |
 | [`prot_locate`](src/prot_locate.rs) | `PROT.DAT` offset to owning-entry lookup, the browser twin of `prot-extract locate`. |
 | [`player_anm`](src/player_anm.rs) | Player-ANM corpus + record decode exports. |
-| [`packet_color`](src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-core::packet_color`. |
+| [`packet_color`](src/packet_color.rs) | Per-vertex packet-colour streams for the WebGL renderer, over `engine-field::packet_color`. |
 | [`pad_bindings`](src/pad_bindings.rs) | The keyboard-to-pad binding table, read from the engine rather than typed into each page. |
 | [`summon_view`](src/summon_view.rs) | `LegaiaSummons` - the Seru-magic summon viewer. |
 | [`translate_workbench`](src/translate_workbench.rs) | `Workbench` - the in-browser language-pack editor over the visitor's own disc. |

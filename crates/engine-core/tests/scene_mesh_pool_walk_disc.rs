@@ -3,7 +3,7 @@
 //! entry's bytes for TMD magic.
 //!
 //! `FUN_80020224` walks the bundle's `count` descriptors and dispatches each
-//! through `FUN_8001F05C`; case `0x02` LZS-decodes an `asset::pack` of meshes
+//! through `FUN_8001F05C`; case `0x02` LZS-decodes an `container-formats::pack` of meshes
 //! and calls `FUN_80026B4C` once per member, case `0x09` registers one bare
 //! mesh. The pool is those registrations and nothing else.
 //!

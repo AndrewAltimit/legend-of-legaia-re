@@ -2426,7 +2426,7 @@ def _selftest_sim_case(mode: str, a: str, b: str, extra: object) -> bool:
 SELFTEST_CONSTANTS: list[tuple[str, str, str, bool]] = [
     (
         "formatting and import aliasing are noise",
-        "{ use legaia_asset::menu_windows::window_ids as w;\n"
+        "{ use legaia_game_tables::menu_windows::window_ids as w;\n"
         "  [ (w::TAB_ITEMS, (16, 12, 60, 12)),\n"
         "    (w::TAB_MAGIC, (16, 12, 60, 12)) ] }",
         "{use foo::bar as w; [(w::TAB_ITEMS,(16,12,60,12)),(w::TAB_MAGIC,(16,12,60,12)),]}",
@@ -2620,7 +2620,7 @@ def run_selftest() -> int:
 # --------------------------------------------------------------------------
 #
 # The three hosts share one keyboard layout, served out of the engine by
-# `pad_bindings_json` (`legaia_engine_core::input::Mapping::web_default`).
+# `pad_bindings_json` (`legaia_engine_system::input::Mapping::web_default`).
 # The whole point of serving it is that a page cannot write a second one down
 # - and a page that writes one down does not look like a table: it looks like
 # a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.
@@ -3080,7 +3080,7 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
             "crates/web-viewer/src/scene_geom.rs":
                 "world-map WALK placements, whose records carry rot_x = "
                 "rot_z = 0 across the retail corpus (see the "
-                "`legaia_asset::field_objects::Placement::rot_x` doc) - the "
+                "`legaia_scene_formats::field_objects::Placement::rot_x` doc) - the "
                 "yaw-only path is not a shortcut there, it is the data",
             "site/js/world-overview-app.js":
                 "consumer of the same walk-placement accessors; see above",
@@ -3090,12 +3090,12 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "kernel": "shared value layout -> shared quad emitter",
         "why": "a shared LAYOUT is not a shared DRAW. The battle damage "
         "numerals and the `N HIT` / `TOTAL` counter resolved through one "
-        "kernel (`engine-vm::battle_value_readout`) while the native window "
+        "kernel (`engine-battle-vm::battle_value_readout`) while the native window "
         "sampled retail's 24x24 cells out of VRAM and the browser restyled "
         "the same digits in the dialog font - one model, two letterforms, "
         "and every tier green because both hosts named the kernel. A surface "
         "that resolves the layout must emit through the shared quad builder "
-        "(`engine-ui::battle_numerals`), leaving a font path as an explicit "
+        "(`render-kernels::battle_numerals`), leaving a font path as an explicit "
         "before-the-atlas fallback rather than as the draw",
         "trigger": r"\bbattle_value_readout\b",
         "requires": [
@@ -3860,7 +3860,7 @@ SELFTEST_OWNERSHIP: list[tuple[str, str, str, bool]] = [
     ("a construction is ownership", "let c = Camera::new();", "Camera", True),
     ("a `::default()` construction is ownership",
      "Self { camera: Camera::default() }", "Camera", True),
-    ("a `use` line is not ownership", "use legaia_engine_core::camera::Camera;", "Camera", False),
+    ("a `use` line is not ownership", "use legaia_engine_field::camera::Camera;", "Camera", False),
     ("a match arm is not ownership", "match m { Camera => 1, _ => 0 }", "Camera", False),
     ("a by-reference parameter is not ownership",
      "fn frame(cam: &Camera) -> u8 { 0 }", "Camera", False),

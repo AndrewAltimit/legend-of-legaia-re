@@ -10,7 +10,7 @@
     <dt>Where</dt><dd>PROT extraction entries <strong>0863..0866</strong> (Vahn / Noa / Gala / Terra); in-RAM TOC index <code>char_id + 0x360</code>. The <code>edstati3</code> filename labels on 0863/0864 are the <a href="cdname.html#numbering-space">CDNAME +2 label shift</a>.</dd>
     <dt>Size</dt><dd>338 / 303 / 222 / 47 sectors. Header 16 bytes, descriptor entries 12 bytes, slot region from file offset <code>0x8000</code>.</dd>
     <dt>Magic</dt><dd>None - detected by shape (header words ordered <code>clut_a &lt; clut_b &lt; budget</code>, descriptor chain contiguous).</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::battle_data_pack</code> (walker), <code>::battle_char_palette</code> (palette chain), <code>::battle_char_assembly</code> (splice, poses, uploads), editing in <code>legaia_patcher::equip_transplant</code>.</dd>
+    <dt>Parser</dt><dd><code>legaia_actor_formats::battle_data_pack</code> (walker), <code>::battle_char_palette</code> (palette chain), <code>::battle_char_assembly</code> (splice, poses, uploads), editing in <code>legaia_patcher::equip_transplant</code>.</dd>
     <dt>Confidence</dt><dd>Confirmed - loader disassembly plus byte-exact captures of the assembled mesh, VRAM bands and palette.</dd>
     <dt>Used by</dt><dd><a href="character-mesh.html">Character meshes</a>, <a href="../characters.html">characters page</a>, <a href="../tooling/randomizer.html">patcher equipment editor</a>, <a href="../subsystems/battle.html">battle scene</a>.</dd>
   </dl>
@@ -255,14 +255,14 @@
   <details class="disclosure">
     <summary>Sizes and the annex allocator</summary>
     <div class="disclosure-body">
-      <p>Vahn's Astral Sword record for Noa comes out at 7 sectors. Retail files tile their footprints exactly; the optimal LZS parse frees 4 / 2 / 5 sectors in Vahn's / Noa's / Gala's files and none in Terra's, and the patcher moves the boundaries between entries 863..865 before falling back to the annex. <code>legaia_asset::player_file_annex</code> recognises an annexed table (chain starts at a non-zero sector-aligned offset) and materialises the retail-shaped file for every parser; <code>DiscPatcher::{annex_player_file, read_player_file, patch_player_file}</code> are the disc side, with a bump allocator whose <code>LGAX</code> marker lives in <code>DMY.DAT</code>'s last sector.</p>
+      <p>Vahn's Astral Sword record for Noa comes out at 7 sectors. Retail files tile their footprints exactly; the optimal LZS parse frees 4 / 2 / 5 sectors in Vahn's / Noa's / Gala's files and none in Terra's, and the patcher moves the boundaries between entries 863..865 before falling back to the annex. <code>legaia_actor_formats::player_file_annex</code> recognises an annexed table (chain starts at a non-zero sector-aligned offset) and materialises the retail-shaped file for every parser; <code>DiscPatcher::{annex_player_file, read_player_file, patch_player_file}</code> are the disc side, with a bump allocator whose <code>LGAX</code> marker lives in <code>DMY.DAT</code>'s last sector.</p>
     </div>
   </details>
 </section>
 
 <section class="doc-section" id="not-the-monster-archive">
   <h2>Not the monster archive</h2>
-  <p>The monster stat archive (extraction 0867, <code>legaia_asset::monster_archive</code>) shares the <code>[dec_size][LZS] &rarr; mesh + texture pool</code> shape but nothing else:</p>
+  <p>The monster stat archive (extraction 0867, <code>legaia_actor_formats::monster_archive</code>) shares the <code>[dec_size][LZS] &rarr; mesh + texture pool</code> shape but nothing else:</p>
   <table>
     <thead><tr><th></th><th>Player files</th><th>Monster archive</th></tr></thead>
     <tbody>

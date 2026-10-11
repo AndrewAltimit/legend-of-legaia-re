@@ -59,7 +59,7 @@ nibble-packed translation plus three byte angles, decoded as the retail sampler 
 - **Not this layout:** `FUN_80021DF4`'s `+0x5A == 6` block uses a separate 24-byte-per-bone
   keyframe layout.
 
-Port: `legaia_asset::player_anm` - `BoneTransform::decode` (one entry, pinned by
+Port: `legaia_actor_formats::player_anm` - `BoneTransform::decode` (one entry, pinned by
 `bone_transform_decode_signed_12bit` on town01 record 17) and `PlayerAnmBundle::sample_bone` (the
 two-frame blend); the size invariant is the disc-gated `crates/actor-formats/tests/player_anm_real.rs`.
 The site characters page runs the same `(t, r)` pipeline.

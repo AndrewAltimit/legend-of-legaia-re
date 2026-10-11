@@ -59,7 +59,7 @@ pub(crate) const GLOBAL_TMD_POOL_HEAD_COUNT: usize = 5;
 pub const ETMD_TAIL_FIRE_MODEL_INDEX: usize = 4;
 
 /// PROT entry holding the battle effect-model library (`etmd.dat`): a 30-entry
-/// `asset::pack` of Legaia TMDs (`word[0]=30`, every entry magic `0x80000002`),
+/// `container-formats::pack` of Legaia TMDs (`word[0]=30`, every entry magic `0x80000002`),
 /// stored uncompressed. Retail registers all 30 verbatim into
 /// `DAT_8007C018[3..=32]` at battle init (`FUN_800520F0` debug index `0x367` ->
 /// `FUN_80026B4C`); the dev-path name is `h:\prot\battle\etmd.dat`. The CDNAME

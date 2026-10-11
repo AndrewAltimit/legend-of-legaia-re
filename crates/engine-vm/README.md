@@ -44,7 +44,7 @@ it lives at the **crate root** (`run` + the `Host` trait), not in a submodule.
 Historically called the "actor / sprite VM"; it is really the **menu
 overlay's window-widget script interpreter** (PROT 0899, slot-A base
 `0x801CE818`, dispatch jump table at `0x801CED70`), and `operand_b` is a
-window id into the menu window-descriptor table (`legaia_asset::menu_windows`)
+window id into the menu window-descriptor table (`legaia_game_tables::menu_windows`)
 rather than a field actor. Small (612 bytes, 13 opcodes) and well-bounded -
 the smallest target we have for a runtime-faithful port. Its programs are data
 resident in the menu overlay itself; see
@@ -123,8 +123,8 @@ Retail carries **two** per-actor motion VMs and both are ported: `motion_vm`
 (`FUN_80038158`, the scripted-motion VM over MAN tail-section 1). They live in
 [`legaia-engine-motion-vm`](../engine-motion-vm/README.md), a crate below this
 one, and are re-exported here at their old paths
-(`legaia_engine_vm::motion_vm`, `legaia_engine_vm::ambient_motion`,
-`legaia_engine_vm::ambient_motion_ops`).
+(`legaia_engine_motion_vm::motion_vm`, `legaia_engine_motion_vm::ambient_motion`,
+`legaia_engine_motion_vm::ambient_motion_ops`).
 
 ## `actor_tick` - `FUN_80021DF4`
 
@@ -162,9 +162,9 @@ path's pre-increment u16 append (`FUN_8001FA68`), which indexes at the
 Neither is called, and neither is owed a call: both carry a `REPLACED-BY:`
 tag. The pool is replaced by the engine's `Vec`-backed actor pool with
 generational slots; the append is the same routine ported a second time as
-`legaia_engine_core::cutscene::sprite_stack_push`, which is live on both
+`legaia_engine_system::movie::cutscene::sprite_stack_push`, which is live on both
 hosts. The module's `copy_blocks_32` is likewise replaced, by the in-place
-chunk walk in `legaia_asset::parse_streaming_with`.
+chunk walk in `legaia_container_formats::parse_streaming_with`.
 
 ## Battle-overlay leaves outside the action SM
 
@@ -207,7 +207,7 @@ the battle camera script, `psx_camera`, the cast-module ticks and most
 battle-overlay leaves live in
 [`legaia-engine-battle-vm`](../engine-battle-vm/README.md), a crate below
 this one. Every module there is re-exported here at its old path
-(`legaia_engine_vm::battle_action`, ...), so callers may name either.
+(`legaia_engine_battle_vm::battle_action`, ...), so callers may name either.
 
 ## See also
 

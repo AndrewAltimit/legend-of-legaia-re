@@ -275,7 +275,7 @@ The record itself stays reachable through the pointer table `0x801C9348`, which 
 
 ### Monster-record source layout
 
-`param_1` is the in-RAM record after the loader's offset-to-pointer fixups. Parser: `legaia_asset::monster_archive::MonsterRecord`.
+`param_1` is the in-RAM record after the loader's offset-to-pointer fixups. Parser: `legaia_actor_formats::monster_archive::MonsterRecord`.
 
 | Offset | Type | Meaning |
 |---|---|---|
@@ -379,7 +379,7 @@ The archive is **extraction PROT entry `0867_battle_data`** - the 15.9 MB body s
 
 Pinned by a PCSX-Redux watchpoint during the Rim Elm scripted battles (`scripts/pcsx-redux/autorun_monster_record_source.lua`): the relative seek `(id - 1) * 40` sectors plus the read's CdlLOC resolve to PROT.DAT offset `0x38AF000` = entry 867, and three decoded records match the live actors (Gimard id 10 = HP 99 / MP 20, Killer Bee 62 = 288 / 288, Queen Bee 63 = 888 / 888). town01's formations resolve to Gobu Gobu 4, Green Slime 7, Gimard 10, Hornet 61, Killer Bee 62, Queen Bee 63 and Tetsu 79 (the 999 / 999 sparring partner).
 
-Parser: [`legaia_asset::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_core::monster_catalog::catalog_from_monster_archive`, merged by `SceneHost::enter_field_scene` for the scene's encounter ids.
+Parser: [`legaia_actor_formats::monster_archive`](../../crates/asset/README.md) (`record(entry, id)` / `records(entry)`; CLI `asset monster-archive`). Engine bridge: `legaia_engine_battle::monster_catalog::catalog_from_monster_archive`, merged by `SceneHost::enter_field_scene` for the scene's encounter ids.
 
 ## Battle archive loaders (`FUN_80052FA0` / `FUN_800542C8`)
 
@@ -556,8 +556,8 @@ The same tint triple is what a landing hit stamps on the struck actor. The melee
 
 | Pass | Port |
 |---|---|
-| Clip-tag arms | `engine-vm::battle_impact_fx` (in `crates/engine-battle-vm`), applied by `World::tick_battle_impact_fx`. Every row of the table is ported. |
-| Tint decay | `engine-vm::battle_formulas::tint_sm_step`, driven by the same tick. |
+| Clip-tag arms | `engine-battle-vm::battle_impact_fx` (in `crates/engine-battle-vm`), applied by `World::tick_battle_impact_fx`. Every row of the table is ported. |
+| Tint decay | `engine-battle-vm::battle_formulas::tint_sm_step`, driven by the same tick. |
 | Landing-hit tint | `World::arm_impact_tint`, called from the basic-strike kernel, the `ApplyArtStrike` fold and the enemy status-proc arm; the class rides the clip as `MonsterAnimation::impact_class`. |
 | Stone recolour | `engine-battle::battle_status_clut::StatusClutState` holds the palette copy, the `+0x220` latch and the staged row. The latch arms from `BattleHud::sync_status` on the Stone edge; the pass greys the pristine copy through `battle_arith_cores::bgr555_to_grey` and rewrites row `481 + slot` in the host's battle VRAM. The copy is snapshotted off that VRAM row, which differs from the disc palette only in bit 15, so a second fire re-greys the original instead of compounding. Reachable in play through `World::apply_enemy_agl_status` (the port of `FUN_800402F4`'s class-9 / class-10 arms, [`battle-formulas.md`](battle-formulas.md#status-application-the-art--move-record-status-byte)). |
 | Blue-tint arm | **Not ported**: the per-character index window `DAT_80078630` has no parser in any crate. |
@@ -577,7 +577,7 @@ The same tint triple is what a landing hit stamps on the struck actor. The melee
 
 The two Gala tint-only arms are open-ended: `slti v0,v0,0x20` / `0x40` at `0x8004D14C` / `0x8004D168` gate the start and nothing gates the end. Noa's arm needs a landed hit (acting `+0x1F4 != 0`), an ordinary fight (`ctx[+0x287] == 0`), an even `rand()` (`0x8004D0EC`) and a first monster other than `0xA7` (the byte read is `gp+0x9F4` = `0x8007BD0C`). The pass spans `0x8004D01C..0x8004D32C`.
 
-The tag-`0x67` ribbon call is surfaced as `ClipImpactWrite::effect_at_target`, staged on `World::battle.clip_ribbon` and drawn on both hosts by `engine-ui::streak_pass::clip_ribbon_quads`.
+The tag-`0x67` ribbon call is surfaced as `ClipImpactWrite::effect_at_target`, staged on `World::battle.clip_ribbon` and drawn on both hosts by `render-kernels::streak_pass::clip_ribbon_quads`.
 
 ## Runtime residency windows
 
@@ -615,16 +615,16 @@ Small `SCUS_942.54` routines the battle tick and scene init reach through the ac
 | `FUN_80055B6C` | Battle scene initialiser: clears the actor / effect pools, resolves the party-slot composition from `DAT_8007BD0C..`, sizes the LZS scratch, allocates the `0x7A34` context / object arena at `_DAT_801C9370`, programs the display / draw environment. | - |
 | `FUN_80055B20` | Seeds the fallback party-slot id table `DAT_8007BD10 = {1, 2, 3}`; `FUN_80055B6C` overwrites it from the live party. Slot bytes index character records as `(id-1)*0x414`. | - |
 | `FUN_80054A6C` | Party-file loader: builds the `data\battle\` filename (`s_data_battle_800153B8`) and streams each live member's player battle file at stride `(id-1)*0x14000`. Dual-mode on `_DAT_8007B8C2` (ISO9660 `FUN_800608F0` / `FUN_80060920` / `FUN_80060944` vs PROT-TOC `FUN_8003E8A8` / `FUN_8003E964` / `FUN_8003E800`, entry `0x365`); bumps the loaded count `DAT_8007B649`. | The port streams the same four files through `SceneAssets` from the disc image. |
-| `FUN_800480D8` | Per-actor draw tick, called by the render dispatcher's mode-2 arm on bodies at view depth `>= 0xA1`. The first body each frame runs the per-frame global passes (effect-VM walker `FUN_801E0080`, cast census, damage popup, effect-node sweep) off the latch `ctx[+0x272]`; then the tint pass and the zero-colour / lone-monster grey gate decide how the body draws. | `engine-vm::battle_actor_tick` ([details](battle-actor-rendering.md#the-distance-fade)) |
-| `FUN_8004A908` | Actor tint pass: writes colour word `+0x74` and blend weight `+0x78` from view depth against half the body radius (the distance fade), with the `+0x16E` status colours, the outdoor-stage invert on `DAT_8007BDA8` and the cursor-dim arm. | `engine-vm::battle_actor_tint`, both hosts; capture-matched 258 / 266 |
+| `FUN_800480D8` | Per-actor draw tick, called by the render dispatcher's mode-2 arm on bodies at view depth `>= 0xA1`. The first body each frame runs the per-frame global passes (effect-VM walker `FUN_801E0080`, cast census, damage popup, effect-node sweep) off the latch `ctx[+0x272]`; then the tint pass and the zero-colour / lone-monster grey gate decide how the body draws. | `engine-battle-vm::battle_actor_tick` ([details](battle-actor-rendering.md#the-distance-fade)) |
+| `FUN_8004A908` | Actor tint pass: writes colour word `+0x74` and blend weight `+0x78` from view depth against half the body radius (the distance fade), with the `+0x16E` status colours, the outdoor-stage invert on `DAT_8007BDA8` and the cursor-dim arm. | `engine-battle-vm::battle_actor_tint`, both hosts; capture-matched 258 / 266 |
 | `FUN_80046A20` | The battle-scene per-frame tick (see [At a glance](#at-a-glance)). Its one self-contained kernel is the HP / MP gauge-fill colour selector keyed on `+0x172` / `+0x174` against `+0x14E >> 1` / `>> 2` and `+0x16E`. | `battle_gauge::gauge_colors` |
-| `FUN_8004DC68` | Near-camera ghost pass: sets / clears mode bits `0x83000000` at `+0x8` on bodies within `dist / 4` of the camera's view point, and on a caster's allies during a cast. | `engine-vm::battle_action::camera_ghost_pass` ([details](battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)) |
+| `FUN_8004DC68` | Near-camera ghost pass: sets / clears mode bits `0x83000000` at `+0x8` on bodies within `dist / 4` of the camera's view point, and on a caster's allies during a cast. | `engine-battle-vm::battle_action::camera_ghost_pass` ([details](battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)) |
 | `FUN_8004C650` | **Move-name** banner placement (records 76 / 77; captured as `Poisonous Sting` at `(117, 148)`). Measures the string (`FUN_80035F04`) and centres four banner X coords around `0xA0`, with `0xCF` / `0xC1` leading-byte nudges. The enemy-name banner is composed by `FUN_801D9D3C`. | [`battle-hud.md`](battle-hud.md) |
 | `FUN_8004CCD4` | Per-command display resolver: for each of the actor's up-to-2 command slots, tests a threshold against the `+0xA4` range pairs and writes the `+0x1034` (hit) or `+0x1030` (fallback) display pointer. | - |
 | `FUN_80046978` | Screen-flash colour submit: when trigger `gp[0x9D4]` is set, scales stored colour `gp[0x9D0]` by scratch byte `0x1F800393` and submits through `FUN_80024EE4`. | `battle_arith_cores::scale_rgb24` (the scale kernel) |
-| `FUN_80050120` | Per-actor presentation tick: skips actors with no `+0x22C` sub-struct and dispatches on `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, drains `+0x0C`, then clears `+0x21F`; arms `1` / `3` / `4` / `6..=10` ease toward fixed colours (dim, red, blue, magenta, soft red, green, yellow, white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. | `engine-vm::battle_formulas::tint_sm_step` |
+| `FUN_80050120` | Per-actor presentation tick: skips actors with no `+0x22C` sub-struct and dispatches on `+0x21C` (11-entry jump table at `0x8001532C`). Arm 0 eases `+0x04` to neutral, drains `+0x0C`, then clears `+0x21F`; arms `1` / `3` / `4` / `6..=10` ease toward fixed colours (dim, red, blue, magenta, soft red, green, yellow, white) with `+0x0C = 0x1000`; arm 2 is the defeat / capture fade to black. | `engine-battle-vm::battle_formulas::tint_sm_step` |
 | `FUN_80050F30` | 3 x 10-bit packed approach step: eases each channel of a packed `u32` toward an 8-bit target (widened `<< 2`) by at most `step_scale * DAT_1F800393 * 8`, clamping without overshoot; only differing channels are rewritten. | `battle_formulas::packed3_approach_target` / `approach_channel_clamped` |
-| `FUN_80050BB8` | Pairwise separation: reads two actors' radii (`+0x22C -> +0x58`) and body pairs `+0x3C` / `+0x40`, projects the gap onto the angle from `FUN_80019B28` through the sin / cos tables `_DAT_8007B81C` / `DAT_8007B7F8`, and if the gap is below `(r1+r2)/6` nudges both **live** pairs `+0x34` / `+0x38` apart by `sin/cos >> 10`. | `engine-vm::battle_separation::push_apart`, driven by `World::tick_battle_separation` right after the action-SM step |
+| `FUN_80050BB8` | Pairwise separation: reads two actors' radii (`+0x22C -> +0x58`) and body pairs `+0x3C` / `+0x40`, projects the gap onto the angle from `FUN_80019B28` through the sin / cos tables `_DAT_8007B81C` / `DAT_8007B7F8`, and if the gap is below `(r1+r2)/6` nudges both **live** pairs `+0x34` / `+0x38` apart by `sin/cos >> 10`. | `engine-battle-vm::battle_separation::push_apart`, driven by `World::tick_battle_separation` right after the action-SM step |
 | `FUN_80051078` | Separation driver: a 7 x 7 loop calling `FUN_80050BB8(i, j)` for every ordered pair of living actors (`i != j`, both `+4 != 0`). `FUN_80046A20` runs it every battle frame directly after the action SM (`jal 0x801E295C` then `jal 0x80051078`). | same |
 | `FUN_8005133C` | Per-actor status-marker spawn: allocates a primitive on the ordered list `_DAT_1F8003A0` (type tag `0x1E1 + slot`, size `0xF0`, priority 1), fills it from `gp[0xA0C] + slot*0x1E0 + 0x894` through `FUN_800583C8`, then sets `+0x220..+0x223 = 1`. | The primitive is a wgpu draw; the markers ride the actor's status flags. |
 

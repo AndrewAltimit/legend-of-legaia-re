@@ -717,7 +717,7 @@
   let recoveryTimes = [];
 
   /* The scene the disc's new-game table names as the opening (Rim Elm). Kept in
-   * sync with `legaia_asset::new_game::OPENING_SCENE`. */
+   * sync with `legaia_game_tables::new_game::OPENING_SCENE`. */
   const OPENING_SCENE = 'town01';
 
   /* Only categories whose scenes are actually walkable are offered: towns,
@@ -1030,7 +1030,7 @@
    * was Circle here and Square in the native window, `S` walked down here and
    * pressed Circle there, and Select / L1 / R1 / L2 / R2 existed in neither
    * page table. The title loop now shares the one table play-app.js reads out
-   * of the engine (`legaia_engine_core::input::Mapping::default` via
+   * of the engine (`legaia_engine_system::input::Mapping::default` via
    * `pad_bindings_json`), so a rebind reaches the title card too. */
   function runBootTitle(then) {
     if (!runtime) { then('new_game'); return; }

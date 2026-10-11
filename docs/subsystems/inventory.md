@@ -205,9 +205,9 @@ The item-use applier `FUN_800402F4` dispatches on the descriptor's **class** byt
 - **The shipped descriptors carry flag byte `0x83`**: field-usable, not battle-usable.
 - **The out-of-battle leg raises a "learned" notification** (`jal 0x80035C00`), skipped when the mode word `0x8007B83C` reads `0x15`. The engine surfaces it as the `ItemOutcome::ArtLearned` it returns.
 
-Ports: `legaia_engine_vm::battle_action::selector_insert_displayed_skill` for the insert, `World::use_item` for the seat. The record-side capture and the menu reader are on [level-up.md](level-up.md#arts-book-skill-list).
+Ports: `legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill` for the insert, `World::use_item` for the seat. The record-side capture and the menu reader are on [level-up.md](level-up.md#arts-book-skill-list).
 
-**The Point Card strike** (class `14`, arm `0x8004209C`) spends `min(bank, 0x270F)` of the Point Card counter `_DAT_800845B4` and applies it as HP damage with the cast band's usual kill-capable clamp. No retail item row resolves to the class: decoding all 256 static item rows through the effect descriptors finds zero class-`14` descriptors. On the shipped disc it is reachable code over unreachable data, and only an edited effect table opens it. The engine's catalog seeder therefore sweeps the id space for the class rather than naming ids. Port: `legaia_engine_vm::battle_action::selector_point_card` against `World::minigames.point_card`, the same purse a shop buy credits ([`shop.md`](shop.md)).
+**The Point Card strike** (class `14`, arm `0x8004209C`) spends `min(bank, 0x270F)` of the Point Card counter `_DAT_800845B4` and applies it as HP damage with the cast band's usual kill-capable clamp. No retail item row resolves to the class: decoding all 256 static item rows through the effect descriptors finds zero class-`14` descriptors. On the shipped disc it is reachable code over unreachable data, and only an edited effect table opens it. The engine's catalog seeder therefore sweeps the id space for the class rather than naming ids. Port: `legaia_engine_battle_vm::battle_action::selector_point_card` against `World::minigames.point_card`, the same purse a shop buy credits ([`shop.md`](shop.md)).
 
 ## What the port does
 

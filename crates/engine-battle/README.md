@@ -8,7 +8,7 @@ The stateful half stays in `legaia-engine-core`: `World`'s battle state and
 the `world::battle` submodules (the round loop driver, command flow, cast
 band, monster turn picker, victory and teardown) own the composition and call
 down into this crate. `engine-core` re-exports every module here at its old
-path, so `legaia_engine_core::monster_ai` and `legaia_engine_battle::monster_ai`
+path, so `legaia_engine_battle::monster_ai` and `legaia_engine_battle::monster_ai`
 name the same module.
 
 ## What belongs here

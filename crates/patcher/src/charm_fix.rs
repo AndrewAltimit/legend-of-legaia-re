@@ -29,7 +29,7 @@
 //!
 //! ## The fix (mirrors the engine `victory_pose_fixup`)
 //!
-//! The engine port (`engine-vm::battle_action`) already carries the corrected
+//! The engine port (`engine-battle-vm::battle_action`) already carries the corrected
 //! invariant: keep the acting slot only when it is a **living party slot**;
 //! otherwise re-pick a valid party slot. Retail already has the re-pick machinery:
 //! the dead-acting-actor path at `0x801E66A4..0x801E6724` rolls `rand % party_count`

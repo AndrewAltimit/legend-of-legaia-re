@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Where</dt><dd>The monster archive, extraction PROT 0867 (CDNAME block <code>monster_data</code>), one block per enemy; per-action entries reached through the monster record's <code>+0x4C</code> offset array. The <a href="battle-data-pack.html">player battle files</a> carry the same entry family</dd>
     <dt>Size</dt><dd>Entry head <code>0x8C</code> bytes, then <code>[parts][frames]</code> + <code>frames &times; parts</code> 9-byte keyframe records</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::monster_archive</code> (<code>animations</code>, <code>idle_animation</code>, <code>action_tags</code>, <code>juggle_windows</code>, <code>animation_cue_tracks</code>); playback <code>engine-core::battle_anim</code>; export <code>monster_gltf</code></dd>
+    <dt>Parser</dt><dd><code>legaia_actor_formats::monster_archive</code> (<code>animations</code>, <code>idle_animation</code>, <code>action_tags</code>, <code>juggle_windows</code>, <code>animation_cue_tracks</code>); playback <code>engine-battle::battle_anim</code>; export <code>monster_gltf</code></dd>
     <dt>Confidence</dt><dd>Confirmed - decoder, draw, installer and commit routines all traced; the "contact" reading of the event-frame list is Inferred</dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (idle loops + glb export), <a href="../subsystems/battle.html">battle scene</a>, <a href="../subsystems/battle-action.html">battle action SM</a>, <a href="../subsystems/battle-formulas.html">battle formulas</a> (juggle window)</dd>
   </dl>
@@ -152,7 +152,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
       <tr><td><code>+2</code>, <code>+4</code>, <code>+6</code></td><td>i16 &times; 3</td><td><code>off_x/y/z</code></td><td>Actor-local offsets scaled by the render node's mesh scale and rotated by its facing; Y is subtracted</td></tr>
     </tbody>
   </table>
-  <p>Port <code>engine-core::action_effect_script::step_effect_script</code>.</p>
+  <p>Port <code>engine-effects::action_effect_script::step_effect_script</code>.</p>
   <h3 id="sound-cues">Sound cues (<code>+0x54..+0x73</code>)</h3>
   <p>Eight <code>[u16 frame][u16 cue]</code> pairs, truncated at the first zero cue - footsteps, swing whooshes, the per-punch impacts of the Delilas flurries. The per-frame player resumes at the actor's cue cursor and hands each cue to the sound ring (layout on <a href="sfx-table.html">sfx-table</a>); cue ids <code>&ge; 0x100</code> bypass the ring for the XA player. Reader <code>monster_archive::animation_cue_tracks</code>.</p>
 </section>
@@ -163,7 +163,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
   <p>On the last frame of a clip the decoder cross-blends toward frame 0 of the <em>queued</em> entry, so transitions tween rather than snap. A clip with a loop window (<code>+0x85..+0x86</code>) parks or replays inside it before the natural-end test runs; the hold is a finite budget seeded from <code>+0x84</code>, and a cast module can end a park early - timing choreography, not a terminal hold. The decoder also leaves the pose <strong>centroid</strong> on the actor: the average part translation, rotated by the facing and scaled, is added to the live position to give the body position the range checks measure.</p>
   <h3 id="end-step">The end-of-clip step (<code>+0x0E</code>)</h3>
   <p>A lunge ends one step forward without a snap. The decoder adds <code>+0x0E</code> to the Z delta of the last frame's blend into the queued frame 0, carrying the body forward in model space; at the natural end the anim tick moves the actor by the same step along its facing (<code>+0x34 += sin &middot; step &gt;&gt; 12</code>, <code>+0x38 += cos &middot; step &gt;&gt; 12</code>) and the pose snaps back to frame 0 at the new position. An event-cut clip moves it pro-rated by <code>frame / frames</code>. The tick skips the move while the root latch is up or a dead actor has no Seru staged.</p>
-  <p class="caption">In the port: <code>engine-core::battle_anim::MonsterAnimPlayer</code> (blend kernel <code>engine-vm::battle_pose_blend</code>), end-step kernels <code>engine-vm::battle_action::motion</code>.</p>
+  <p class="caption">In the port: <code>engine-battle::battle_anim::MonsterAnimPlayer</code> (blend kernel <code>engine-battle-vm::battle_pose_blend</code>), end-step kernels <code>engine-battle-vm::battle_action::motion</code>.</p>
   <details class="disclosure">
     <summary>Vertex-blend variants</summary>
     <div class="disclosure-body">
@@ -179,7 +179,7 @@ ry = b6 | (b8 &amp; 0x0f) &lt;&lt; 8      rz = b7 | (b8 &amp; 0xf0) &lt;&lt; 4</
 
 <section class="doc-section" id="export">
   <h2>Export (glTF)</h2>
-  <p><code>legaia_asset::monster_gltf::export_glb</code> packs mesh, baked texture and <strong>every</strong> action into one <code>.glb</code>. The rigid-per-object model maps straight onto glTF node animation: each TMD object becomes a node, the keyframe translation and Euler rotation (recomposed as a quaternion in <code>Rz&middot;Ry&middot;Rx</code> order) drive its channels, and a root node rotates the rig 180&deg; about X for glTF's Y-up. The per-primitive palettes are baked into a vertical atlas with each vertex's V remapped into its band.</p>
+  <p><code>legaia_actor_formats::monster_gltf::export_glb</code> packs mesh, baked texture and <strong>every</strong> action into one <code>.glb</code>. The rigid-per-object model maps straight onto glTF node animation: each TMD object becomes a node, the keyframe translation and Euler rotation (recomposed as a quaternion in <code>Rz&middot;Ry&middot;Rx</code> order) drive its channels, and a root node rotates the rig 180&deg; about X for glTF's Y-up. The per-primitive palettes are baked into a vertical atlas with each vertex's V remapped into its band.</p>
   <div class="cli"><code>asset monster-archive &hellip; --id N --glb enemy.glb</code></div>
   <p class="caption">The <a href="../monsters.html">enemy table</a> exposes the same export as a per-enemy download button.</p>
 </section>

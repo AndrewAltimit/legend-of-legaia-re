@@ -17,8 +17,8 @@ same surface on both hosts from one shared builder.
 
 | Thing | Where |
 |---|---|
-| Screen-element placement table | `SCUS_942.54` `0x80076C10`, `0x18`-byte records, 103 initialised; parser `legaia_asset::screen_elements` |
-| Widget-class table | `SCUS_942.54` `0x800732A4`, `0x0C`-byte records, `0x9D` records; parser `legaia_asset::ui_widgets` |
+| Screen-element placement table | `SCUS_942.54` `0x80076C10`, `0x18`-byte records, 103 initialised; parser `legaia_ui_formats::screen_elements` |
+| Widget-class table | `SCUS_942.54` `0x800732A4`, `0x0C`-byte records, `0x9D` records; parser `legaia_ui_formats::ui_widgets` |
 | Frame tile-set pool | `0x80073A00` (9-slice sets), cap pairs viewed at `0x80073A60` |
 | Sub-draw script table | `PTR_DAT_801F4D34`, battle overlay (PROT 0898) rodata, fifty steps |
 | Element raiser | `FUN_801D8DE8(record, mode)` (PROT 0898) |
@@ -41,12 +41,12 @@ Every HUD element, with its art, placement record, retail draw routine and port 
 | Target-select plaque | blue plate run | 41 (`0x29`), outgoing copy 42 (`0x2A`) | `FUN_801D5854` target arm | `BattleHudFrame::target_select`, `battle_chrome::target_select_plaque_x` |
 | Action target plaque | blue plate run | 81 (`0x51`) | `FUN_801E6D84` | `battle_hud::battle_target_plaque` |
 | Move name | plain glyphs, no plate | 76 / 77 (`0x4C` / `0x4D`) | SCUS `0x8004AF44..0x8004AF88` | `battle_hud::battle_move_name` |
-| Combo cluster (`HIT` / `TOTAL`) | value-readout sheet | 80 (`0x50`) | `FUN_801E805C` | `engine-vm::battle_value_readout`, `battle_hud::battle_combo_style` |
+| Combo cluster (`HIT` / `TOTAL`) | value-readout sheet | 80 (`0x50`) | `FUN_801E805C` | `engine-battle-vm::battle_value_readout`, `battle_hud::battle_combo_style` |
 | AP plate | blue plate | 82 (`0x52`); arts AP bar 15 | sub-draw steps 1 / 9 | `battle_hud::battle_ring_ap_plate_value` |
 | Message banner | class-0 window, widget `0x03` | `0x45..=0x4B`, `0x59`, `0x65`, `0x66`; formation line 67 | `FUN_8002C69C` + `FUN_8002BDC4` | `engine-ui::battle_hud_chrome` |
 | Intro enemy names | class-0 window, widget `0x03` | none (immediate geometry) | `FUN_801D9D3C` | `battle_hud::battle_intro_names` |
 | Item window | window-skin 9-slice, hand cursor | step `0x05`; target strip = record 7 | state `0x3C` / `0x64` | `engine-ui::battle_item_ui` |
-| Arts banner | value-readout sheet, tpage `(448, 0)` | none | `FUN_801E2524` / `FUN_801E2650` | `engine-vm::battle_action::flash_ramp`, `battle_numerals::arts_banner_prims` |
+| Arts banner | value-readout sheet, tpage `(448, 0)` | none | `FUN_801E2524` / `FUN_801E2650` | `engine-battle-vm::battle_action::flash_ramp`, `battle_numerals::arts_banner_prims` |
 
 ### Screen layout
 
@@ -528,7 +528,7 @@ at `(16, 192)` and the move name, and no cluster record). Port:
 The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in
-`engine-vm::battle_value_readout`.
+`engine-battle-vm::battle_value_readout`.
 
 **Every landed hit restarts the cluster slide.** The melee kernel's HP write
 raises `DAT_8007B64C = 0x78` and stores the hit's damage in `DAT_8007BD14`
@@ -613,7 +613,7 @@ Every sprite the chrome draws comes out of one array: the widget-class table at
 `SCUS_942.54` VA `0x800732A4`, `0x0C` bytes per record, `0x9D` records. The
 run's end is structural: `0x800732A4 + 0x9D * 0x0C` is exactly `0x80073A00`,
 the frame tile-set pool the class arms read next. Parser
-`legaia_asset::ui_widgets`; disc-gated oracle
+`legaia_ui_formats::ui_widgets`; disc-gated oracle
 `crates/ui-formats/tests/ui_widgets_real.rs`.
 
 A placement record's two frame-style bytes are indices into this table. Style
@@ -807,7 +807,7 @@ text), where the text engine carries the leading `^X` as the `0xCE` icon escape
 the geometry and palette decode are disc-read. Both plaques that carry a badge -
 the top-left actor plaque (`battle_hud::battle_plaque_element_badge`) and the
 bottom-right target plaque (`battle_hud::battle_target_plaque`) - read the caret
-letter `legaia_asset::monster_archive` lifts off the name
+letter `legaia_actor_formats::monster_archive` lifts off the name
 (`MonsterDef::plaque_badge`), never the `+0x1D` element byte. Reading the
 element byte would give Fire Gimard (element `2`) strip cell `2`, the green
 Wind badge, and would badge every unescaped monster where retail draws
@@ -1074,7 +1074,7 @@ initialised records, indexed directly by `FUN_801D8DE8`'s record argument. It
 is one table that three subsystems name differently
 ([`memory-map.md`](../reference/memory-map.md#0x80076c10---one-table-three-names));
 "pose-slot table" is not it - that name belongs to the actor's animation-pose
-index in [`battle.md`](battle.md). Parser `legaia_asset::screen_elements`.
+index in [`battle.md`](battle.md). Parser `legaia_ui_formats::screen_elements`.
 
 <a id="what-each-halfword-is-read-off-the-draw-site"></a>
 ### Placement record layout
@@ -1318,14 +1318,14 @@ through the `5..=8` band.
 
 The cue bank is documented in `legaia_art::hyper_fanfare`.
 
-**Port.** `engine-vm::battle_action::flash_ramp` (`step_flash_ramp` +
+**Port.** `engine-battle-vm::battle_action::flash_ramp` (`step_flash_ramp` +
 `flash_quads`), with the raiser and the cancel as `banner_on_starter_commit` /
 `banner_cancel_on_commit`, called from the engine's own commit
 (`World::commit_staged_battle_anim_at_boundary`, beside the slow-motion arms -
 see [Arts presentation](battle-actor-rendering.md#arts-presentation-slow-motion-and-after-image-ghosts)).
 `World::tick_arts_banner` steps the clock once per battle frame and
 `World::battle_arts_banner_quads` is the read both hosts draw through
-(`legaia_engine_ui::battle_numerals::arts_banner_prims`).
+(`legaia_render_kernels::battle_numerals::arts_banner_prims`).
 
 <a id="battle-hud-model"></a>
 ## Engine port: the battle HUD model
@@ -1404,7 +1404,7 @@ ramp `FUN_80047430` so damage drains over frames:
 - **Numerals** take the readout-tint law (`hp_bar_color_index` /
   `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead
   member's whole row dims.
-- **Bar fills** take the whole-gauge law (`engine-vm::battle_gauge::gauge_colors`,
+- **Bar fills** take the whole-gauge law (`engine-battle-vm::battle_gauge::gauge_colors`,
   port of `FUN_80046A20`): death greys the whole track, an active status forces
   both fills to the override colour, otherwise each bar bands independently on
   its floored half / quarter thresholds. Only the diagnostic rows draw bars.

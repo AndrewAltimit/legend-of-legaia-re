@@ -105,13 +105,13 @@
     <li>The <a href="scene-bundles.html">scene-TMD-prefixed streaming</a> shape is structurally similar but the leading chunk has no <code>[u32 type_size]</code> header and the inner content is a bare TMD instead of a TIM.</li>
     <li>The <a href="scene-bundles.html">scene-VAB-prefixed streaming</a> shape uses the same chunk0-header trick but with VAB content.</li>
     <li><a href="pack.html">Pack format</a> lives <em>inside</em> TIM_LIST / TMD chunks when the chunk's data is a pack rather than a single asset.</li>
-    <li>One entry (extraction <code>0892</code>) matches the <code>data_field_truncated</code> detector - three clean leading chunks, then an over-large fourth header - and the match is an artefact. The entry is an <a href="pack.html">asset::pack</a> (<code>count = 2</code>, word offsets <code>[3, 0x208B]</code>), and those "chunks" are the pack's own header words read as chunk headers. Mode-22 <code>CARD INIT</code> (<code>FUN_8002574C</code>) walks it as a pack and uploads each member through <code>FUN_800198E0</code>. See <a href="#card-font-pack">the card font pack</a>.</li>
+    <li>One entry (extraction <code>0892</code>) matches the <code>data_field_truncated</code> detector - three clean leading chunks, then an over-large fourth header - and the match is an artefact. The entry is an <a href="pack.html">container-formats::pack</a> (<code>count = 2</code>, word offsets <code>[3, 0x208B]</code>), and those "chunks" are the pack's own header words read as chunk headers. Mode-22 <code>CARD INIT</code> (<code>FUN_8002574C</code>) walks it as a pack and uploads each member through <code>FUN_800198E0</code>. See <a href="#card-font-pack">the card font pack</a>.</li>
   </ul>
 </section>
 
 <section class="doc-section" id="card-font-pack">
   <h2>Entry 0892 (<code>card_data</code>) is a pack, not a truncated stream</h2>
-  <p>Extraction entry <code>0892</code> is a two-member <a href="pack.html">asset::pack</a> of 4bpp TIMs, loaded once per memory-card-screen entry. The "12 MB LZS container" figure that once stood against it came from the superseded declared span (<code>toc[p+5] - toc[p+3] + 4</code> = 5977 sectors); the entry is 33 sectors, 67,584 bytes.</p>
+  <p>Extraction entry <code>0892</code> is a two-member <a href="pack.html">container-formats::pack</a> of 4bpp TIMs, loaded once per memory-card-screen entry. The "12 MB LZS container" figure that once stood against it came from the superseded declared span (<code>toc[p+5] - toc[p+3] + 4</code> = 5977 sectors); the entry is 33 sectors, 67,584 bytes.</p>
   <h3>What the runtime does</h3>
   <table>
     <thead><tr><th>Address</th><th>What it does</th></tr></thead>
@@ -185,7 +185,7 @@
   <h2>See also</h2>
   <div class="see-also">
     <span class="see-also-label">Reference</span>
-    <a href="pack.html">asset::pack</a>
+    <a href="pack.html">container-formats::pack</a>
     <a href="asset-type.html">Asset-type dispatch</a>
     <a href="asset-descriptor.html">Asset descriptor</a>
     <a href="scene-bundles.html">Scene bundles</a>

@@ -7,7 +7,7 @@ scripts/pcsx-redux/autorun_field_pack_projection.lua) against the
 on-disc PROT bytes for the same scene's field-pack entry.
 
 The entries this walks are the scene texture packs at raw-TOC +4 of a
-CDNAME block - an asset::pack behind a DATA_FIELD chunk header, NOT a
+CDNAME block - an container-formats::pack behind a DATA_FIELD chunk header, NOT a
 distinct format (docs/formats/field-pack.md records the dissolved reading). The
 loader (FUN_8001F7C0) transforms the on-disc preamble into a runtime
 structure that mixes GP0-shaped GPU primitive packets, the asset

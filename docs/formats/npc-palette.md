@@ -50,7 +50,7 @@ attempt to parse the payload as a `[count + offsets + TIMs]` pack,
 which fails (the first payload u32 is the TIM magic `0x10` = 16
 which would be read as a 16-entry pack count).
 
-`legaia_asset::tim_scan` detects these via the inner TIM magic at
+`legaia_container_formats::tim_scan` detects these via the inner TIM magic at
 offset +4 from the chunk header; it does not need to interpret the
 `FUN_8001FE70` wrapper. The structured walker that *does* recognise
 the wrapper is
@@ -171,9 +171,9 @@ boot, never evicted, never scene-touched. This is why field/dungeon
 env-pack meshes can reference CBA cells on row 510 (`town01` env slots
 21/26/74, `rikuroa` slots 50/51/63: CBA `(64,510)` = atlas strip
 entries 64..79, texpage `(960,256)`) even though **no scene TIM ever
-uploads that row**. Parser `legaia_asset::system_ui_bundle` reads both
+uploads that row**. Parser `legaia_ui_formats::system_ui_bundle` reads both
 raw-entry packs straight out of `PROT.DAT` and reproduces the full
-upload (`legaia_asset::interior_page` remains the atlas-only reader).
+upload (`legaia_ui_formats::interior_page` remains the atlas-only reader).
 The pack's six 532-byte non-TIM members are bare **row patches** -
 `[u32, u32]` preamble + TIM-style `[u32 bnum][u16 x,y,w,h]` blocks
 declaring `(960, 456..458/460..462, 256, 1)` - that overlay the atlas

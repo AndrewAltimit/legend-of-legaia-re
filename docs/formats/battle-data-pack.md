@@ -149,7 +149,7 @@ stub entry 0861 at window offset `0x1000` (entries 0859..0862 are 1-sector stubs
 ## Not the monster archive
 
 This format is distinct from the [monster stat archive](monster-animation.md) (extraction
-**0867**, retail `monster_data` = define 869, parser `legaia_asset::monster_archive`), the
+**0867**, retail `monster_data` = define 869, parser `legaia_actor_formats::monster_archive`), the
 [TIM-pack](tim-pack.md) reader, the [DATA_FIELD streaming format](data-field.md), the
 [field-pack](field-pack.md) chunk and the [effect bundle](effect.md).
 
@@ -181,7 +181,7 @@ the retail disc:
 padding. It is **not** header-derived. `FUN_80052770` opens each file with a fixed 16-sector
 prologue read - `FUN_800559EC(…, 0x8000)` → `FUN_8003E800(dst, 0x10, 1)` loads the first `0x10`
 sectors (header + `record[0]` + descriptor table) before the slot region is streamed - so
-`0x8000` is a hardcoded loader constant. `legaia_asset::battle_data_pack` reaches the same base
+`0x8000` is a hardcoded loader constant. `legaia_actor_formats::battle_data_pack` reaches the same base
 by probing sector boundaries until every slot's `dec_size` prefix reads sane.
 
 ## Descriptor table
@@ -383,7 +383,7 @@ rule refuses three things:
 `crates/actor-formats/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
 inside the section's objects, the Great Axe closes). With `LEGAIA_EQUIP_SHEETS=<dir>` it writes a
 before / after contact sheet per character through the software rasteriser in
-`legaia_asset::mesh_raster`, the renderer that draws the site's per-item cards.
+`legaia_actor_formats::mesh_raster`, the renderer that draws the site's per-item cards.
 
 ### The `200+` surplus is a duplicate, except when it is not
 
@@ -477,7 +477,7 @@ the end of the disc. Every table offset is displaced by the byte distance from t
 base to the annexed region. The entry's old record sectors stay where they were and nothing reads
 them.
 
-- `legaia_asset::player_file_annex` tells an annexed table from a retail one (the chain starts at
+- `legaia_actor_formats::player_file_annex` tells an annexed table from a retail one (the chain starts at
   a non-zero sector-aligned offset), splits a retail-shaped rebuilt file into the two halves, and
   materialises the retail-shaped file back for every existing parser.
 - `DiscPatcher::{annex_player_file, read_player_file, patch_player_file}` are the disc side, with
@@ -553,7 +553,7 @@ The post-TMD pool has no PSX TIM image-block headers. It is one upload block in 
 The CLUT struct is the same `[base][count][colours]` shape the palette chain STP-copies to VRAM
 rows 481..483; that RAM-side path is decoded in
 [`character-mesh.md`](character-mesh.md#battle-render-load-time-tsbcba-relocation) and ported as
-`legaia_asset::battle_char_palette`. Placement:
+`legaia_actor_formats::battle_char_palette`. Placement:
 [Texture-pool VRAM placement](#texture-pool-vram-placement).
 
 ## Battle animations (record[0])
@@ -573,7 +573,7 @@ battle-palette chain. Its layout:
 **Only the region below `clut_a_off` is battle-persistent.** The member init decodes `record[0]`
 into a single `0x19000`-byte allocation, uploads the two image blocks, then LZS-decodes the five
 equip-section sub-records *sequentially into the same buffer starting at `clut_a_off`* (cursor
-advancing per section - the walk `legaia_asset::battle_char_palette::parse_record` mirrors).
+advancing per section - the walk `legaia_actor_formats::battle_char_palette::parse_record` mirrors).
 Everything from `clut_a_off` on is load-time scratch. Anything that must stay readable per frame
 lives below it, and an edit that adds such data must grow that region (shifting `clut_a_off` /
 `clut_b_off` / `budget` and the paired `+0x5C` word up), never borrow payload space above it.
@@ -658,10 +658,10 @@ loader rewrites the in-RAM action table to absolute pointers and points the entr
 RAM, and its banks are authored against PROT 1204's own object order (see
 [`character-mesh.md` § Assembly](character-mesh.md#assembly---object-local-pieces-posed-by-the-characters-own-battle-streams)).
 
-Parsers: `legaia_asset::battle_char_assembly::{decode_record0, battle_animations,
+Parsers: `legaia_actor_formats::battle_char_assembly::{decode_record0, battle_animations,
 idle_battle_animation, expand_animation_for_objects, swing_battle_animations, art_animation_bank,
-art_me_archive, art_animation}`. The stream decode is shared with `legaia_asset::monster_archive`;
-the `"ME"` archive and codec live in `legaia_asset::me_archive`.
+art_me_archive, art_animation}`. The stream decode is shared with `legaia_actor_formats::monster_archive`;
+the `"ME"` archive and codec live in `legaia_actor_formats::me_archive`.
 
 ### Two container encodings, one pose format
 
@@ -727,7 +727,7 @@ the copied bytes is relocated - it is a plain `memcpy` whose extent the two nest
 `pair_count` is doubled before the copy, so it counts **pairs**, not words. The helper returns the
 advanced destination pointer, which the caller uses as the bump allocator's new high-water mark.
 
-Parser: `legaia_asset::battle_char_assembly::swing_battle_animations` (slots `0xC..=0xF` for a
+Parser: `legaia_actor_formats::battle_char_assembly::swing_battle_animations` (slots `0xC..=0xF` for a
 given equipped-id set).
 
 ### Art-animation bank (record[0] +0x58)
@@ -772,7 +772,7 @@ Ids `> 0x1A` also drive the HUD art-name display from `+0x10` and `FUN_8004C650(
 Retail banks: Vahn 33 / Noa 35 / Gala 32 / Terra 9 records; the named band (records 11+) carries
 the Hyper/Miracle Art names (`Vahn Rondo`, `Fiery Miyawaki`, `Mirage Lancer`, …).
 
-Parser: `legaia_asset::battle_char_assembly::art_animation_bank` (+ `art_animation` to resolve a
+Parser: `legaia_actor_formats::battle_char_assembly::art_animation_bank` (+ `art_animation` to resolve a
 record's keyframe stream through its archive).
 
 ### "ME" stream archives (readef.DAT)
@@ -815,9 +815,9 @@ the **channel-delta codec** `FUN_8002A9CC` (`8002a9cc.txt`):
 output is validated across the full corpus: every stream is length-exact (`2 + parts*frames*9`)
 with `parts` == the character's skeleton bone count.
 
-Parsers: `legaia_asset::me_archive` (`parse` + `decode_channel_delta`) and
-`legaia_asset::battle_char_assembly::art_me_archive` (the readef slot slicing);
-`legaia_asset::summon_readef` classifies these slots as `SlotKind::MeArchive`.
+Parsers: `legaia_actor_formats::me_archive` (`parse` + `decode_channel_delta`) and
+`legaia_actor_formats::battle_char_assembly::art_me_archive` (the readef slot slicing);
+`legaia_actor_formats::summon_readef` classifies these slots as `SlotKind::MeArchive`.
 
 #### Which archive is resident
 
@@ -941,7 +941,7 @@ stages the win pose and still clamped at `0xFE`; its per-frame incrementer is no
 corpus. The record shape and mouth-frame indexing are unchanged. The retail rows only ever select
 non-neutral in-range mouth frames, some held to end `0xFF` - the win-quote mouth flap.
 
-**Port.** `legaia_asset::face_anim` carries:
+**Port.** `legaia_actor_formats::face_anim` carries:
 
 - the track parser (`FaceTracks` / `battle_face_tracks`; the swing entries' tracks ride on
   `battle_char_assembly::SwingAnimation::face`, the art-bank embedded entries' on
@@ -1026,7 +1026,7 @@ objects empty therefore deletes the attach bone's whole part whenever a window o
 variant is that bone's mesh again: byte-equal vertices and prims on Vahn / Gala / Terra, same
 topology with alternate vertices on Noa. The two tags need opposite treatment - a `0xFE` extra has
 a pose channel of its own and draws *alongside* the bone, so emptying that one is correct.
-`legaia_patcher::party_swap::playerize` mirrors the attach bone's geometry into the variant by
+`legaia_party_swap::playerize` mirrors the attach bone's geometry into the variant by
 aliasing its object-table entry, which costs nothing because both the retail splice and the port
 address the data purely through that entry.
 
@@ -1161,7 +1161,7 @@ rows) - the facial animator's current frame, see
 [Facial animation tracks](#facial-animation-tracks-entry-0x8c--0x98). A first-battle-frame
 capture, before the upload pass runs, still shows field texels in the band.
 
-Typed port: `legaia_asset::battle_char_assembly` - `SECTION_TEXTURE_RECTS` /
+Typed port: `legaia_actor_formats::battle_char_assembly` - `SECTION_TEXTURE_RECTS` /
 `RECORD0_TEXTURE_RECTS` / `parse_upload_block` / `section_texture_upload` /
 `record0_texture_uploads` / `character_texture_uploads`. The engine battle path uploads these
 blocks for each assembled member (PROT 1204's atlases remain the fallback approximation).
@@ -1194,7 +1194,7 @@ Two traps follow:
 
 ### The catalog tier
 
-[`legaia_asset::battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs)
+[`legaia_actor_formats::battle_texture_catalog`](../../crates/actor-formats/src/battle_texture_catalog.rs)
 is the third texture tier, alongside the raw and LZS TIM catalogs. It keys each block by
 `(PROT entry, record, section, pool offset)`, where `record = -1` marks the two header `record[0]`
 blocks and `section` then carries the block ordinal.
@@ -1231,7 +1231,7 @@ Because the descriptor ids are item ids, handing the builder an
 
 ### Replacing a block
 
-`legaia_patcher::battle_texture` writes one back. The fit budget is **different from the LZS
+`legaia_texture_replace::battle_texture` writes one back. The fit budget is **different from the LZS
 texture tier's**: a player file's records are addressed by the descriptor table, whose chain
 invariant pins every later record in place, so the edited record must recompress into its own slot
 allocation (`size - 4`, past the `dec_size` prefix) and nothing downstream may move. Retail leaves
@@ -1330,7 +1330,7 @@ asset battle-texture-catalog extracted/PROT.DAT --out /tmp/battle_textures.tsv
 ```
 
 Off a user's disc image, the same family is the `battle` tier of the texture-modding commands
-(`legaia_patcher::battle_texture`). It is keyed by `--entry` + `--battle-slot` rather than by
+(`legaia_texture_replace::battle_texture`). It is keyed by `--entry` + `--battle-slot` rather than by
 `--offset`, because the blocks have no magic word for an offset to be *of*:
 
 ```bash

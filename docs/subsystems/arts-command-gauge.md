@@ -18,7 +18,7 @@ A second, unrelated AP figure lives on this page too: the **Spirit** cost of a n
 | Disc source | weapon section `[+0x04] + 0x74` in the [player battle files](../formats/battle-data-pack.md) (extraction 863..865) |
 | Named-art Spirit cost | `FUN_801EED1C`, paid from `actor + 0x170` through the accumulator `actor + 0x224` |
 | Execution | `FUN_801EC3E4`, called from SCUS `0x800478A0` |
-| Parser | `legaia_asset::battle_char_assembly::swing_command_costs` (`crates/actor-formats`) |
+| Parser | `legaia_actor_formats::battle_char_assembly::swing_command_costs` (`crates/actor-formats`) |
 | Port | `crates/engine-battle/src/arts_command_input.rs` + `ap_gauge.rs` (re-exported by `engine-core`), drawn by `engine-ui::arts_input` on both hosts |
 | Mods | `--weapon-specialty`, the equipment editor's swing costs, `--arts-ap-grant` / `--arts-ap-cost` ([randomizer.md](../tooling/randomizer.md)) |
 
@@ -323,7 +323,7 @@ Live RAM agrees with the file: Gala + Nail Glove reads `0x2A` and Gala + Ra-Seru
 
 ### Reading it
 
-`legaia_asset::battle_char_assembly::swing_command_costs(buf, pack, equipped)` returns the four costs for one equipped set, in direction-command byte order (`Left, Right, Down, Up` = runtime action slots `0xC..=0xF`). It follows the splice path, not a descriptor-id lookup: `select_sections` matches an equipped id positionally inside its own section, so the equipment index that re-prices a swing is whichever section the file keys the weapon under. That differs per character:
+`legaia_actor_formats::battle_char_assembly::swing_command_costs(buf, pack, equipped)` returns the four costs for one equipped set, in direction-command byte order (`Left, Right, Down, Up` = runtime action slots `0xC..=0xF`). It follows the splice path, not a descriptor-id lookup: `select_sections` matches an equipped id positionally inside its own section, so the equipment index that re-prices a swing is whichever section the file keys the weapon under. That differs per character:
 
 | Character | Section 2 (slot `0xC`, Left) | Section 3 (slot `0xD`, Right) | Record `+0x196..` in a retail save |
 |---|---|---|---|
@@ -373,7 +373,7 @@ Each arm resolves one or more of the character record's five equipment slots (`+
 
 This is the counterpart to the battle-load asymmetry recorded in [`battle-formulas.md`](battle-formulas.md). The seeder `FUN_80053CB8` folds the equipment table's UDF / LDF / SPD bytes and folds neither INT nor ATK, so a weapon's attack bonus never reaches the actor's ATK **base** (`+0x15A`). It reaches ATK working here, per committed command. The seeder's omission is correct.
 
-Port: `legaia_engine_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits` (`crates/engine-battle-vm/src/battle_formulas/arms_fold.rs`). The live loop seeds a party slot's `battle.attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
+Port: `legaia_engine_battle_vm::battle_formulas::arms_command_equip_slots` / `arms_weapon_atk_fold` / `arms_resolver_admits` (`crates/engine-battle-vm/src/battle_formulas/arms_fold.rs`). The live loop seeds a party slot's `battle.attack` without the equipment sum and adds the halved slot per swing (`World::battle.equip_atk`). The player-facing formula is on [battle-formulas.md](battle-formulas.md#base-offense-value-base-atk-plus-half-of-one-equipment-slot).
 
 ## Restoring the animation rate after an action
 
@@ -472,7 +472,7 @@ The randomizer's **arts AP override** (`--arts-ap-grant` / `--arts-ap-cost`) det
 
 **Placement.** The battle overlay is packed: the move-power window `0x801F4E63..0x801F69D8` is the only large zero run and it is runtime-indexed. The detour routines go into the verified-dead SCUS arenas `arenas::ARENA1_VA` (guard + debit) and `ARENA2_VA` (refund), with the config table in the rodata gap `SCUS_GAP_VA`, all reached from the 0898 detours by `j`. The [shiny-Seru](../tooling/randomizer.md#shiny-seru) feature uses the same bytes, so the arts AP override and `--shiny-seru` are mutually exclusive, enforced in the CLI and the web patcher. All four site words plus the `t6` character read are byte-verified against the extracted 0898 image; an unrecognized build is refused.
 
-Port: [`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs).
+Port: [`legaia_arts_patch::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs).
 
 ## If the Astral Sword is forced onto another character
 
@@ -486,7 +486,7 @@ A modification that wants the penalty to travel with the sword must add an `0xBA
 
 ## The port's input session
 
-`arts_command_input` (`crates/engine-battle/src/arts_command_input.rs`, re-exported as `legaia_engine_core::arts_command_input`) is the retail flow:
+`arts_command_input` (`crates/engine-battle/src/arts_command_input.rs`, re-exported as `legaia_engine_battle::arts_command_input`) is the retail flow:
 
 1. The Arts command opens a per-press directional entry.
 2. Each press appends its command byte to the actor's buffer and debits that command's `+0x74` cost from the turn pool.

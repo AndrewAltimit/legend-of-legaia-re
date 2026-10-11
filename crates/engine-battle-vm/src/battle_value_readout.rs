@@ -68,7 +68,7 @@
 //! The rate is pinned too, by the renderer itself: `FUN_801DF6B8` grows a
 //! view-space square with the ring timer and rises it as it grows (see
 //! [`popup_cells`] and the section that introduces it). Both hosts seat their
-//! numerals through that kernel (`engine-ui::battle_numerals::
+//! numerals through that kernel (`render-kernels::battle_numerals::
 //! popup_value_cells`); [`value_cells`] is the older fixed-ramp layout,
 //! kept for the dialog-font fallback's tests, with [`POP_FRAMES`] and
 //! [`POP_START_CELL`] engine-chosen.
@@ -227,7 +227,7 @@ pub const DIGIT_CELL: u8 = 24;
 ///
 /// Zero: retail's pitch **is** the drawn width, because the drawn width is
 /// inclusive. A readout quad's far corner sits at `x + w - 1`
-/// (`engine-ui::battle_numerals::readout_quad`), so consecutive cells laid
+/// (`render-kernels::battle_numerals::readout_quad`), so consecutive cells laid
 /// `w` apart abut exactly. The two constants are one fact - a one-pixel gap
 /// here with an exclusive far corner there overlapped every pair of digits by
 /// a column and then spaced the run a column too wide.

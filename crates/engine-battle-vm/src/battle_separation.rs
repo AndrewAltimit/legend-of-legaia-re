@@ -28,7 +28,7 @@
 //! semantics. `+0x3C`/`+0x40` is the **seat** (anchor) pair the battle setup
 //! authors from the formation tables, and `+0x34`/`+0x38` is the **live**
 //! position it then copies the seat into (`FUN_800513F0`; see
-//! `engine-core::battle_seats`). Every positional consumer reads the live
+//! `engine-battle::battle_seats`). Every positional consumer reads the live
 //! pair directly - the range law `FUN_8004E2F0` (attacker side), the anim
 //! tick's root-motion drive `FUN_80047430`, the effect placement
 //! `FUN_801DEA50`, the facing recomputes - so the kernel's stores *are* the

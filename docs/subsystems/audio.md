@@ -107,7 +107,7 @@ Bulk scan finds 1191 `VABp` headers across 239 PROT entries. Multi-bank archives
 
 `actor[+0xac]` (sound ID) and `actor[+0xb0]` (voice) are written by move-VM and field-VM opcodes; the move-VM tick in `FUN_80021DF4` re-fires the SFX whenever the trigger flag at `actor[+0xb4]` is set.
 
-The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_asset::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, outside the port boundary.
+The static `&DAT_8006F198` table is **100 8-byte descriptors** (sound ids `0x00..=0x63`); the `< 0x200` runtime check is a bound, not the size (id `0x64` onward is the `\PSX.EXE` dev-path rodata). Besides `FUN_800250D4` above, the cue-ring drainer `FUN_80016B6C` reads it and programs each voice via `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue). Each entry decodes as `[+0 program][+1 tone/region base][+2 note-level][+3 voice-count + sustained bit 0x20][+4 channel]`; full layout + provenance on [`docs/formats/sfx-table.md`](../formats/sfx-table.md). Parser `legaia_game_tables::sfx_table` (disc-decoded, byte-exact vs live save-state RAM); the SPU programming itself is libsnd, outside the port boundary.
 
 ## VAB slots - one installer, twelve records
 
@@ -129,7 +129,7 @@ detached and closed (`FUN_800266E0` / `FUN_80026520`). On the disc every
 entry that carries a `pQES` score past offset 0 carries it as a type-`2`
 chunk - chunk order `(0, 1, 2)`, or `(0, 2, 1)` where the score precedes the
 VAG bodies. The engine's scene loader finds a stream's score the same way,
-walking the list with the port (`legaia_engine_core::chunk_install::seq_chunk_offset`)
+walking the list with the port (`legaia_engine_system::chunk_install::seq_chunk_offset`)
 rather than searching the bytes for the magic.
 
 | Slot | Bank | Installed by |
@@ -153,7 +153,7 @@ checks behind each pin: [`formats/sfx-table.md`](../formats/sfx-table.md#which-p
 
 The seeder and the reader are ported at opposite ends and never meet:
 `legaia_engine_core::scus_leaf_kernels::seed_boot_offset_table` writes the
-twelve-word image and `legaia_asset::sfx_table::spu_base_for_slot` answers the
+twelve-word image and `legaia_game_tables::sfx_table::spu_base_for_slot` answers the
 query the engine's audio host actually makes, returning the same values as
 literals. `crates/engine-core/tests/infra_boot_offset_table.rs` asserts the two
 agree slot by slot, including the one slot the seeder skips and the four
@@ -203,7 +203,7 @@ laws are readable at runtime: on a running retail image `0x8007BC64` holds
 below raw (the +2 filename skew, see [`../formats/cdname.md`](../formats/cdname.md)),
 so the bank's low range sits at extraction `988`; the engine maps a sound-test
 index to its extraction entry through the piecewise
-`legaia_engine_core::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
+`legaia_engine_system::music_labels::prot_entry_for_bgm_id` (a 2-entry gap at
 extraction `1056`/`1057` splits it, see [`../reference/music-tracks.md`](../reference/music-tracks.md)).
 
 #### A scene-local id loads a fallback track, not a scene bank
@@ -466,7 +466,7 @@ slot the same way (`0x801DFB74`) before master mode 2 brings the field up.
 
 **Port.** Both hosts decode a movie's XA onto the mixer the BGM plays through,
 so the layering is one engine-side policy
-(`legaia_engine_core::movie_audio::MovieScore`) the native window and the
+(`legaia_engine_system::movie::movie_audio::MovieScore`) the native window and the
 browser page both consult:
 
 - The attract stops the score when it is armed and restarts the title theme
@@ -673,7 +673,7 @@ space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
 `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
 uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
 rather than the scene VAB the field path stages. Every owned-VAB staging
-(`AudioBgmDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-core::chunk_install::owned_bank_offsets` - the
+(`AudioBgmDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-system::chunk_install::owned_bank_offsets` - the
 installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
@@ -1549,7 +1549,7 @@ Not modelled:
 
 Maps battle / field cue IDs (the `kind` byte the art-record `HitCue` / overlay scripts emit) to per-cue `SfxEntry` descriptors that describe how to fire a one-shot through the SPU. Engines populate the catalog at startup, then forward `ScheduledCue`-like requests through `SfxScheduler` which queues each request with its retail timing offset and dispatches when the per-frame tick reaches the firing frame.
 
-`SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_asset::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
+`SfxBank::from_descriptors` builds the catalog straight from the disc-decoded static SFX table (`legaia_game_tables::sfx_table`): each active descriptor's `program` becomes the `program_index` and its `note` the `key`, so the cue ids `0x00..=0x63` resolve to the retail program/tone instead of a hand-authored stand-in.
 
 **The bank those programs index is named by the cue itself.** `FUN_80065034`
 calls `FUN_80068b98(vab_id, program)` *before* the program lookup, and that
@@ -1813,7 +1813,7 @@ u16 cue)` pairs, terminated by `cue == 0` - which `FUN_800508DC` walks once per
 animation frame, resuming from a persistent cursor in the battle actor at
 `+0x1F6`. Each call fires every cue whose trigger frame the clip has reached and
 parks on the first it has not. Everything it fires goes out through the cue router
-`FUN_8004FE5C`. Port: `legaia_engine_core::anim_cue` (`walk_anim_cues`),
+`FUN_8004FE5C`. Port: `legaia_engine_battle::anim_cue` (`walk_anim_cues`),
 called per animation frame by `World::step_actor_anim_cues` beside the
 effect-script stepper - retail's `FUN_80047430` makes the two calls with the
 same `(slot, entry, frame)` arguments (`0x800478B8` / `0x800478E4`).
@@ -1923,7 +1923,7 @@ descriptor word copied into the CD-read staging window):
 A Seru cast's voice is the paged slot-B module's own `FUN_8004FCC8` head cue
 ([`cast-module.md`](cast-module.md#the-casts-own-cd-xa-voice)). The engine
 scans it off the module's bytes at the arming seam
-(`legaia_engine_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
+(`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`), runs the dispatcher's
 CD-XA arm with its two gates (`admit_voice_cue`; the `ctx[+0x276]` side-band
 stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
 `AudioState::battle_xa_busy_frames`) and raises the starter triple on

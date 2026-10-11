@@ -17,7 +17,7 @@
     <dt>Where</dt><dd>Name / description / scope table at <code>0x8007625C</code> (file <code>0x66A5C</code>), 64 &times; 12 bytes; the index bytes ride the <a href="item-effect-table.html">item-effect descriptors</a> (<code>+3</code>) and <a href="equipment-table.html">equip rows</a> (<code>+5</code>)</dd>
     <dt>Index space</dt><dd><code>0x00..=0x3F</code>; index = bit position in the character's ability bitfield at record <code>+0xF4</code></dd>
     <dt>Sentinels</dt><dd><code>0x40</code> (equipment rows) / <code>0x41</code> (consumable rows) = no passive</dd>
-    <dt>Parser / engine</dt><dd><code>legaia_asset::accessory_passive</code>; <code>engine-core::accessory_passives</code></dd>
+    <dt>Parser / engine</dt><dd><code>legaia_game_tables::accessory_passive</code>; <code>engine-battle::accessory_passives</code></dd>
     <dt>Confidence</dt><dd>Confirmed - all appliers traced (<a href="#how-we-know">how we know</a>); assignments byte-verified against the curated accessory table</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-formulas.html">Battle formulas</a>, <a href="../subsystems/field-menu.html">Pause menu (Goods panel)</a>, <a href="../shops.html">Shops page</a></dd>
   </dl>
@@ -167,7 +167,7 @@ if index &lt; 0x40:
   </table>
     </div>
   </details>
-  <p><strong>In the port:</strong> parser <code>legaia_asset::accessory_passive</code> (CLI <code>asset accessory-passive</code>); engine <code>engine-core::accessory_passives</code> - item id &rarr; index + scope, the per-frame bitfield rebuild, the party mask test, and the percent boosts under the retail clamp block.
+  <p><strong>In the port:</strong> parser <code>legaia_game_tables::accessory_passive</code> (CLI <code>asset accessory-passive</code>); engine <code>engine-battle::accessory_passives</code> - item id &rarr; index + scope, the per-frame bitfield rebuild, the party mask test, and the percent boosts under the retail clamp block.
   Source of record: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/formats/accessory-passive-table.md" target="_blank" rel="noopener"><code>docs/formats/accessory-passive-table.md</code></a>.</p>
 </section>
 

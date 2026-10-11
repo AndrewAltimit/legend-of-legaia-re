@@ -13,7 +13,7 @@ Most helpers are resident in the **battle overlay**, PROT entry 0898 (extraction
 | slot B | The second overlay slot at `0x801F69D8`, above the resident battle overlay, where cast / summon modules page in. |
 | GTE | The PlayStation geometry coprocessor. |
 
-Port module names are given as `crate::module`. The battle kernels live in `engine-battle-vm` and are re-exported by `engine-vm` at their old paths, so `legaia_engine_vm::battle_action` and `engine-battle-vm::battle_action` name the same code.
+Port module names are given as `crate::module`. The battle kernels live in `engine-battle-vm` and are re-exported by `engine-vm` at their old paths, so `legaia_engine_battle_vm::battle_action` and `engine-battle-vm::battle_action` name the same code.
 
 ## Helper index
 
@@ -91,7 +91,7 @@ return 0 if in_range else (i16)d
 - `DAT_80078870` = `{256, 384, 1024}`, the small-class thresholds.
 - `DAT_80078878` = per-character reach offsets `{+43, 0, -53, -100}` for roster ids `1..=4`. They are **added to the distance**, so a positive value is a shorter reach.
 
-Port: `legaia_engine_vm::battle_action::motion::range_metric`, assembled from live state by `World::battle_range_metric` (`engine-core::world::battle::locomotion`).
+Port: `legaia_engine_battle_vm::battle_action::motion::range_metric`, assembled from live state by `World::battle_range_metric` (`engine-core::world::battle::locomotion`).
 
 ### `FUN_80042558` - per-frame stat aggregator
 
@@ -151,7 +151,7 @@ Its sibling **`FUN_801F3D3C`** is the installer that seeds the latch the guard r
 - Three shapes bypass the roll: `ctx[+0x287] == 0`, an acting element of `5`, and a `rand()` divisible by five.
 - An acting element below `7` then dispatches through the seven-entry per-element jump table at `0x801CFA2C` instead of reaching the installer tail.
 
-Port: `legaia_engine_vm::move_no_effect_guard`. State `0x36`'s settle body calls it (`battle_action::summon`) with the caster's spell list from `BattleActionHost::caster_spell_list`, which `World` answers from the character record. Every player Seru cast writes the `0x801F6960` / `0x801F6964` latch pair it reads. The debuff magnitudes are in [battle-formulas.md](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
+Port: `legaia_engine_battle_vm::move_no_effect_guard`. State `0x36`'s settle body calls it (`battle_action::summon`) with the caster's spell list from `BattleActionHost::caster_spell_list`, which `World` answers from the character record. Every player Seru cast writes the `0x801F6960` / `0x801F6964` latch pair it reads. The debuff magnitudes are in [battle-formulas.md](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
 
 <a id="the-0x16e-status-word---one-bit-map-two-port-representations"></a>
 ### The `+0x16E` status word
@@ -278,7 +278,7 @@ The physical arm (`0x801EEF2C..0x801EF024`), in draw order:
 4. On `+0x1E == 2` the stream is the single command `0x0E` and no further draw happens (`0x801EF028`).
 5. Otherwise `+0x1DF` and `+0x1E0` each take an independent `rand() % 2 + 0x0C`, so the stream is exactly two commands, each `0x0C` or `0x0D`.
 
-Port: `legaia_engine_vm::battle_action::ai_companion_pick`, wired from `World::arm_party_physical` for the party slot whose roster id is `4`. The port bounds the redraw at `AI_COMPANION_MAX_TARGET_DRAWS` and stands by instead of spinning.
+Port: `legaia_engine_battle_vm::battle_action::ai_companion_pick`, wired from `World::arm_party_physical` for the party slot whose roster id is `4`. The port bounds the redraw at `AI_COMPANION_MAX_TARGET_DRAWS` and stands by instead of spinning.
 
 #### `FUN_801F0450` - the auto arts-combo assembler
 
@@ -359,7 +359,7 @@ So an agile enemy takes several strikes per turn, the same "wide gauge = more co
 
 Both sides of the budget are disc data: the AGL seed is the record's `+0x0E` halfword and each candidate's price is its entry's `+0x74` byte in the monster archive (PROT 867). The per-turn hit count is therefore a randomizer target. The patcher's `--enemy-attack-count` multiplier rescales the affordable attack entries' cost bytes in place ([randomizer.md § Enemy attack count](../tooling/randomizer.md#enemy-attack-count)).
 
-Port: `engine-battle::monster_ai` (re-exported as `engine-core::monster_ai`).
+Port: `engine-battle::monster_ai` (re-exported as `engine-battle::monster_ai`).
 
 ### `FUN_801EED1C` / `FUN_801E7320` - state-`0x0C` setup hooks
 
@@ -432,7 +432,7 @@ Both render the same string. The result-message builder `FUN_801D84C0` points ea
 
 Who writes the buffer differs:
 
-- **`0x59`.** The spawner's own `0x59` arm composes it on a raise only (`bne s5,zero` at `0x801D914C`): `strcpy(ctx + 0x1F9, prefix[char - 1])`, then the Seru's spell name (`0x800754C8[(ctx[+0x269] + 0x80) * 12 + 8]`), then a suffix (`0x801D9154..0x801D91D0`). The prefix table `0x801F4DFC` is indexed by character and names that character's Ra-Seru (parser `legaia_asset::absorb_caption`).
+- **`0x59`.** The spawner's own `0x59` arm composes it on a raise only (`bne s5,zero` at `0x801D914C`): `strcpy(ctx + 0x1F9, prefix[char - 1])`, then the Seru's spell name (`0x800754C8[(ctx[+0x269] + 0x80) * 12 + 8]`), then a suffix (`0x801D9154..0x801D91D0`). The prefix table `0x801F4DFC` is indexed by character and names that character's Ra-Seru (parser `legaia_game_tables::absorb_caption`).
 - **`0x65`.** `FUN_801F452C` composes the line before its raise.
 
 Port: the line lives on `World::battle.message_banner` from the raise to the matching unload (`world::battle::message_banner`). Both play hosts draw it through `engine-core::battle_hud::battle_banner_message` into the top banner widget.
@@ -504,7 +504,7 @@ The file analysed here is extraction 905, the spell-`0x83` slot. PROT 903 (Gimar
 
 **No geometry in the overlay.** A summon overlay carries no embedded TMD (no `0x80000002` magic). The meshes are the separately loaded `DAT_8007C018` model library:
 
-- **PROT 871** (`etmd.dat`) is a 30-entry `asset::pack` of Legaia TMDs. The battle scene loader `FUN_800520F0` pulls it at battle init (raw TOC index `0x369`, dev path `h:\prot\battle\etmd.dat`) and registers it via `FUN_80026B4C`, populating `DAT_8007C018[3..32]`. `[0..2]` are the party battle meshes.
+- **PROT 871** (`etmd.dat`) is a 30-entry `container-formats::pack` of Legaia TMDs. The battle scene loader `FUN_800520F0` pulls it at battle init (raw TOC index `0x369`, dev path `h:\prot\battle\etmd.dat`) and registers it via `FUN_80026B4C`, populating `DAT_8007C018[3..32]`. `[0..2]` are the party battle meshes.
 - Despite its CDNAME label `sound_data`, PROT 871 is the effect-model library. Its texture sibling PROT 870 (a 256x256 flame-frame atlas, also labelled `sound_data`) is loaded by a separate path.
 
 **Spawning parts.** Decompiled with `ghidra/scripts/dump_summon_overlay.py`:
@@ -514,7 +514,7 @@ The file analysed here is extraction 905, the spell-`0x83` slot. PROT 903 (Gimar
 - The same stagers flush what they seated through **`FUN_80050E74`**. See [`functions/game-modes.md`](../reference/functions/game-modes.md#move--animation-subsystem) for the per-slot writes and why it is not the same walk as the battle-teardown loop in `FUN_800480D8`.
 - Three staging functions drive the spawn: **`FUN_801F16A0`**, **`FUN_801F36A0`**, **`FUN_801F4DD0`**. `FUN_801F16A0` phase 0 is a `do { FUN_80021B04(...) } while(< 8)` loop spawning **8** flame parts with `rand()`-seeded actor params (`actor[+0x84]`, `actor[+0xb4] = rng%15 + 16`, `actor[+0xb6] = rng%255 + 512`, `actor[+0x28]`); phase 1 spawns 1 more part. Per-frame motion is the standard actor tick consuming those fields.
 
-**Part records.** Each `FUN_80021B04` call's record pointer resolves, under link base `0x801F69D8`, to PROT 905 file `0x180C..0x1E00`: a contiguous table of records recovered by `legaia_asset::summon_overlay` (disc-gated `summon_overlay_real`). A file imported at base `0x801F0000` resolves these pointers to the wrong place.
+**Part records.** Each `FUN_80021B04` call's record pointer resolves, under link base `0x801F69D8`, to PROT 905 file `0x180C..0x1E00`: a contiguous table of records recovered by `legaia_overlay_images::summon_overlay` (disc-gated `summon_overlay_real`). A file imported at base `0x801F0000` resolves these pointers to the wrong place.
 
 | Field | Meaning |
 |---|---|
@@ -711,13 +711,13 @@ Draws a scaling decimal number sprite for one actor's accumulated damage `ctx[+0
 - The rect is widened to at least `clamp(timer >> 5, 1, 12)` and cut to 24 px, clamped to `y >= 32`, `x <= 280` and `x >= 8 + 32 * extra digits`.
 - The value is zeroed once the timer passes `0x240` (37 frames).
 
-Port: `engine-battle-vm::battle_value_readout::popup_cells` (layout) and `engine-ui::battle_numerals::popup_value_cells` (anchor + projection), which both hosts seat their numerals through.
+Port: `engine-battle-vm::battle_value_readout::popup_cells` (layout) and `render-kernels::battle_numerals::popup_value_cells` (anchor + projection), which both hosts seat their numerals through.
 
 #### `FUN_8005112C` - per-character signature effect trigger
 
 SCUS-resident (`8005112c.txt`), gated on `actor[+0x68] != 0 && actor[+0x5A] < 3` (a party slot). It reads the roster id `DAT_8007BD10[actor[+0x5A]]`. When the actor's current anim id (`*(actor[+0x4C]) + 0x77`) hits that character's hard-coded frame value (`0x29` / `0x1E` / `0x2A` / `0x64`), it fires `FUN_80048310(actor, effect_id, 3, rgb)` with a per-character effect id and RGB tint. The accent is the weapon trail.
 
-Port: `engine-battle-vm::battle_trail` carries the trigger's per-character identity-byte table together with `FUN_80048310`'s sweep schedule and band colour ladder. The projected quad emission is render-track (`engine-ui::battle_trail`).
+Port: `engine-battle-vm::battle_trail` carries the trigger's per-character identity-byte table together with `FUN_80048310`'s sweep schedule and band colour ladder. The projected quad emission is render-track (`render-kernels::battle_trail`).
 
 #### `FUN_801F17F8` - summon / readef side-band streamer
 
@@ -781,7 +781,7 @@ Called as `FUN_801D5854(actor_slot, 0)` from `FUN_801D388C`. Every component is 
 | duration | `0xC` = 12 frames | 6 camera steps x 2 vsyncs |
 
 - The battle actor pointer table is `0x801C9370`, indexed by slot (sibling of the `0x801C9360` arts-gauge table).
-- **TR.y keys on character identity**, not on seat. `char_id = DAT_8007BD10[slot]`, and the table holds one entry per playable character (Vahn / Noa / Gala / Terra). It is static overlay data, parsed off the disc by `legaia_asset::battle_camera_table` and installed on the world at scene entry. Vahn's entry is `0x480` = 1152, the value a solo-Vahn camera trace observes.
+- **TR.y keys on character identity**, not on seat. `char_id = DAT_8007BD10[slot]`, and the table holds one entry per playable character (Vahn / Noa / Gala / Terra). It is static overlay data, parsed off the disc by `legaia_game_tables::battle_camera_table` and installed on the world at scene entry. Vahn's entry is `0x480` = 1152, the value a solo-Vahn camera trace observes.
 - **Yaw is facing-relative.** A yaw of `2288` measured on a solo-Vahn fight is `0x8F0` with Vahn's battle facing of `0` subtracted; `FUN_801E7824` resets `actor[+0x46] = 0`.
 - **Per-seat variation lives in the focus trio** (`0x80089118/1C/20`): the camera orbits about whichever actor is acting. With one party member that is indistinguishable from a constant.
 - `TR.z` is the one prescaled slot; see [`FUN_801D829C`](#fun_801d829c---camera-angle-tween-prescale).
@@ -819,7 +819,7 @@ It rewrites **slot 5 only**, `TR.z`, as `(z << 8) / 0xA0`. That converts a world
 
 The fourth argument is a **frame count**, not a speed. The stored word is the per-frame increment and the tween lasts that many vsyncs. The submenu call passes `0xC`; the action-camera sites pass `1` (instant cut) and `0x30`.
 
-Port: the framing rules are `legaia_engine_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
+Port: the framing rules are `legaia_engine_battle_vm::battle_cam_script` (`BattleCamActor::submenu_pose` for case `0`, `menu_framing` for case `9`), which the native window (`crates/engine-shell/src/window/battle_cam.rs`) and the browser play page both consume. The fixed-point tween kernel is `legaia_engine_battle_vm::battle_camera`. The port tweens the focus trio on the same clock as the rotation and translation trios and uses it as the look-at target, so a non-Vahn seat frames on the acting member.
 
 ### `0x801F0348` - target-size camera framing
 

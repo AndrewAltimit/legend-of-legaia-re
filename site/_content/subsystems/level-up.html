@@ -10,7 +10,7 @@
     <dt>Applier</dt><dd><code>FUN_801E9504</code> in the battle overlay (PROT <code>0898</code>) - XP, stat growth and the level bump in one routine, called once per surviving party member.</dd>
     <dt>Tables</dt><dd>Three static tables in <code>SCUS_942.54</code>: per-level XP deltas, three growth curves, and a per-character parameter block (<a href="#how-we-know">addresses</a>).</dd>
     <dt>Record fields</dt><dd>Cumulative XP <code>+0x004</code>, stat window <code>+0x11C..+0x12D</code>, displayed level <code>+0x130</code> in the 0x414-byte <a href="../formats/save-record.html">character record</a>.</dd>
-    <dt>In the port</dt><dd><code>legaia_asset::level_up_tables</code> reads the tables from the user's executable at boot; <code>engine-core::levelup::LevelUpTracker</code> applies them.</dd>
+    <dt>In the port</dt><dd><code>legaia_game_tables::level_up_tables</code> reads the tables from the user's executable at boot; <code>engine-battle::levelup::LevelUpTracker</code> applies them.</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly, byte-exact against a single-level capture.</dd>
     <dt>Used by</dt><dd><a href="battle.html">Battle</a>, <a href="field-menu.html">Status screen</a>, <a href="../tooling/rom-patcher.html">ROM patcher</a> (starting level, EXP scale).</dd>
   </dl>
@@ -99,7 +99,7 @@
 
 <section class="doc-section" id="engine-wiring">
   <h2>In the port</h2>
-  <p><code>legaia_asset::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-battle::levelup::LevelUpTracker</code> (re-exported under <code>engine-core::levelup</code>) applies them: the XP share is the 3/4-scaled pool ceiling-divided among survivors (<code>battle_formulas::victory_exp_per_member</code>), a multi-level jump collapses into one result, the first character to level takes the banner and any others queue behind it, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
+  <p><code>legaia_game_tables::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-battle::levelup::LevelUpTracker</code> (re-exported under <code>engine-battle::levelup</code>) applies them: the XP share is the 3/4-scaled pool ceiling-divided among survivors (<code>battle_formulas::victory_exp_per_member</code>), a multi-level jump collapses into one result, the first character to level takes the banner and any others queue behind it, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

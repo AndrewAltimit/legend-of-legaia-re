@@ -77,7 +77,7 @@ would rasterise as solid `CLUT[0]` over correctly-textured geometry.
 per-axis-scaled instance of a mesh to itself. A negative-determinant scale
 reverses triangle winding, so the appended indices go in reversed corner order
 and the copied normals flip - which is what lets a caller place a mesh retail
-draws more than once (see `legaia_asset::battle_backdrop`, where the
+draws more than once (see `legaia_scene_formats::battle_backdrop`, where the
 battle-stage backdrop's second copy is either `diag(-1, 1, -1)` or
 `diag(-1, 1, 1)`).
 
@@ -104,7 +104,7 @@ unsound and dropped real geometry (`docs/subsystems/renderer.md`).
 Both route through `FUN_80026b4c`. The wrapping differs:
 
 - `TMD` (case 2): payload is a *pack* - `[count, off0, off1, …]` followed
-  by `count` independent TMD blobs. Use `legaia_asset::pack` to walk.
+  by `count` independent TMD blobs. Use `legaia_container_formats::pack` to walk.
 - `TMD2` (case 9): payload is a single bare TMD - pass it directly to
   `parse`. **No pack header.**
 

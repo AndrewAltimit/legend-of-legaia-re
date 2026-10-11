@@ -10,7 +10,7 @@
     <dt>Dispatcher</dt><dd><code>FUN_801DE840(buffer, pc, ctx)</code> in PROT 0897, returns the new PC. Dump <code>ghidra/scripts/funcs/overlay_0897_801de840.txt</code>.</dd>
     <dt>Three exits</dt><dd><strong>Advance</strong> (add the op's width), <strong>halt at PC</strong> (return the PC unchanged, so the op re-runs next frame - how every wait works), <strong>halt-acquire</strong> (freeze another actor by setting its halt bit and parking its resume pointer).</dd>
     <dt>PC</dt><dd>A signed 16-bit halfword at <code>ctx+0x9E</code>: every relative jump is <code>(base + delta) mod 0x10000</code>, so <code>0xFFFE</code> is "back 2".</dd>
-    <dt>In the port</dt><dd><code>engine-vm::field</code> (<code>step.rs</code> per opcode), <code>engine-vm::field::dispatch_leaves</code> (the pure leaf helpers), <code>legaia_asset::field_disasm</code> (widths for every opcode and every <code>0x4C</code> nibble).</dd>
+    <dt>In the port</dt><dd><code>engine-vm::field</code> (<code>step.rs</code> per opcode), <code>engine-vm::field::dispatch_leaves</code> (the pure leaf helpers), <code>legaia_scene_formats::field_disasm</code> (widths for every opcode and every <code>0x4C</code> nibble).</dd>
   </dl>
 </section>
 

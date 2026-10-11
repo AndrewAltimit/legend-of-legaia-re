@@ -4,7 +4,7 @@
  * visitor's disc at runtime by `LegaiaMinigames`
  * (crates/web-viewer/src/minigames_fishing.rs + minigames_fishing_scene.rs):
  *
- *   - the RULES are the ported retail loop (engine-core::fishing): the
+ *   - the RULES are the ported retail loop (engine-fishing::fishing): the
  *     casting-power oscillator, the per-frame band roll and its cutoffs, the
  *     four reel-cadence gesture templates read out of the overlay rodata
  *     (a match stores its template id AS the cast band and fires the
@@ -619,7 +619,7 @@ window.MgFishing = (function () {
     }
 
     /* Placeholder letterform per effect-part sprite id. The ids and the
-     * table are the engine's (legaia_engine_core::minigame_fx); the overlay's
+     * table are the engine's (legaia_engine_minigames::minigame_fx); the overlay's
      * own sprite page is not staged on this page, so a part draws as its
      * glyph the same way it does on the other two hosts. */
     const FX_GLYPH = { 11: 'GOOD!', 22: '*', 256: '~', 257: 'o', 258: '*' };

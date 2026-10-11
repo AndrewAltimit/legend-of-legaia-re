@@ -67,7 +67,7 @@ pub fn dance_widgets_with_abr(
 }
 
 /// PROT entry carrying the dance hall's own TIM set - the last slot of the
-/// `other7` scene block, an `asset::pack` of 31 TIMs behind a `TIM_LIST` chunk
+/// `other7` scene block, an `container-formats::pack` of 31 TIMs behind a `TIM_LIST` chunk
 /// header.
 ///
 /// The HUD's texture page is one of them: the widget table's `tpage` resolves

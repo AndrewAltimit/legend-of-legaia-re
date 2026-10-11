@@ -39,12 +39,12 @@ at the window origin and the `+8` string (staged CLUT 7) one text row below
 [`../subsystems/field-menu.md`](../subsystems/field-menu.md#items-screen).
 Consumables carry an effect sentence, accessories their class word, and many
 equipment ids share an empty / `Best:`-class slot. Descriptions use the MES `0x7C`
-line-break token; `legaia_asset::item_names` decodes it to `'\n'`.
+line-break token; `legaia_game_tables::item_names` decodes it to `'\n'`.
 
 The shop price at `+2` is decisive (verified live: War God Band = 21000, Healing
 Leaf = 100, the Ra-Seru / quest items = 0). The shop randomizer reads it to drop
 quest items from the for-sale pool and to give the chest-found equipment a value
-(`legaia_asset::item_names::price_slot` / `legaia_patcher::item_price`).
+(`legaia_game_tables::item_names::price_slot` / `legaia_patcher::item_price`).
 
 The table's extent is found by reading until the `name_ptr` words leave the
 PSX-EXE data segment (the words past `id 0xFF` are no longer valid pointers).
@@ -61,7 +61,7 @@ have empty names - reserved / gap slots; `id 0` is "no item".
 
 `PTR_DAT_8007436C` and the `*3`-word index form are read straight from the MES
 `0xC2`/`0xC4` substitution dispatch (`docs/formats/mes.md`). The
-`legaia_asset::item_names::ItemNameTable` parser resolves the table from a
+`legaia_game_tables::item_names::ItemNameTable` parser resolves the table from a
 `SCUS_942.54` image at runtime (PSX-EXE `t_addr` → file-offset map, identical
 to the [arts-name table](art-data.md#arts-name-table-dat_80075ec4) resolver in
 `legaia_art::arts_table`). The web viewer's enemy table uses it to show drop

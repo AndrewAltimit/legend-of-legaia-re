@@ -256,7 +256,7 @@ fn a_cabinet_run_banks_the_rung_prize_on_pay_out() {
 }
 
 /// The duel page's widget geometry comes from the **ported** POLY_GT4 emitter
-/// (`engine-core::baka_fighter::hud_widget_quad`, `FUN_801d5ed0`) through
+/// (`engine-minigames::baka_fighter::hud_widget_quad`, `FUN_801d5ed0`) through
 /// `baka_hud_quad_json`, not from page-side arithmetic. Pin the two properties
 /// the page cannot get right on its own: the half-extent truncates twice, and
 /// the `size` argument scales it.

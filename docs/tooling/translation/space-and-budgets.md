@@ -78,7 +78,7 @@ Moved strings start 4-byte aligned, as every retail name does.
 
 ## Monster names
 
-A monster's name lives in its own record (`legaia_asset::monster_archive`,
+A monster's name lives in its own record (`legaia_actor_formats::monster_archive`,
 PROT 867): the decoded block's `+0x00` word is the block-relative offset of
 the name, and the battle loader `FUN_80054CB0` copies the whole string into
 the actor's name buffer, from which the plaque and the battle lines read it.
@@ -217,7 +217,7 @@ the others ([`place-names.md`](../../formats/place-names.md)), and
 Mods need spare bytes too: every hand-assembled code hook in the randomizer
 writes a routine into a region the retail game never reads
 ([`randomizer.md`](../randomizer.md#the-injected-code-arena-budget)). One table,
-`legaia_patcher::space_ledger::REGIONS`, lists every such region once with its
+`legaia_disc_patch::space_ledger::REGIONS`, lists every such region once with its
 owner, and the two owners never share one:
 
 - a **mod** region is written only by the flags that claim it, each of which

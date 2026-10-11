@@ -10,7 +10,7 @@
     <dt>Magic</dt><dd>none - static data in <code>SCUS_942.54</code></dd>
     <dt>Where</dt><dd><code>DAT_80074368</code>, 12-byte stride, 256 ids; name pointers read as <code>PTR_DAT_8007436C[id*3]</code></dd>
     <dt>Id range</dt><dd><code>0x00..=0xFF</code>; <code>id 0</code> = "no item"</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::item_names::ItemNameTable</code></dd>
+    <dt>Parser</dt><dd><code>legaia_game_tables::item_names::ItemNameTable</code></dd>
     <dt>Confidence</dt><dd>Confirmed - index form read off the MES substitution dispatch; prices verified live against the shop UI</dd>
     <dt>Used by</dt><dd><a href="../monsters.html">Enemy table</a> (drop / steal names), <a href="../shops.html">Shops page</a>, <a href="../subsystems/shop.html">Shop subsystem</a>, <a href="../subsystems/inventory.html">Inventory</a></dd>
   </dl>
@@ -64,7 +64,7 @@
   </table>
     </div>
   </details>
-  <p><strong>In the port:</strong> <code>legaia_asset::item_names::ItemNameTable</code> resolves the table from the executable through its PSX-EXE <code>t_addr</code> &rarr; file-offset map. Consumers: the web viewer's enemy table joins drop ids to names through the parser; the shop randomizer reads the price slot (<code>legaia_asset::item_names::price_slot</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
+  <p><strong>In the port:</strong> <code>legaia_game_tables::item_names::ItemNameTable</code> resolves the table from the executable through its PSX-EXE <code>t_addr</code> &rarr; file-offset map. Consumers: the web viewer's enemy table joins drop ids to names through the parser; the shop randomizer reads the price slot (<code>legaia_game_tables::item_names::price_slot</code> / <code>legaia_patcher::item_price</code>) to drop quest items from the for-sale pool and price chest-found equipment.</p>
 </section>
 
 <section class="doc-section" id="see-also">

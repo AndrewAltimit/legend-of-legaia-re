@@ -11,7 +11,7 @@ This crate sits strictly **below** `legaia-engine-vm`: every module's whole
 dependency closure inside the engine is in this crate (plus `legaia-asset` /
 `legaia-art` and `legaia-engine-system`, for the BIOS `rand` and the fade
 template the summon flash converts into), and `legaia-engine-vm` re-exports each module at its old path,
-so `legaia_engine_vm::battle_action` and `legaia_engine_battle_vm::battle_action`
+so `legaia_engine_battle_vm::battle_action` and `legaia_engine_battle_vm::battle_action`
 name the same module. Free of wgpu, winit and cpal, so it builds for native
 and `wasm32` alike.
 
@@ -63,7 +63,7 @@ overwrite from the resident Miracle row at `0x801F64F4`), `clear_queue_msb`
 `apply_super_tail_replace` (`FUN_801EF9E4`, first-matching-row tail replace
 from `0x801F6524` / `0x801F65E8`), plus `preseed_action_queue` /
 `save_action_queue` (called from `engine-core`'s auto-command path) and
-`check_and_learn_art` (called from `engine-core::tactical_arts`). (`learned_seru_position`, the
+`check_and_learn_art` (called from `engine-battle::tactical_arts`). (`learned_seru_position`, the
 `FUN_801E91E8` port beside them, is not a queue routine: it is the
 already-learned check of the killing-blow Seru absorb, and it is live.)
 `resolve_action_queue` - the entry point `engine-core` calls once per committed
@@ -157,7 +157,7 @@ More `0898` bodies whose kernels are ported here, each reached from
 |---|---|---|
 | `battle_ground_grid` | `FUN_801D02C0` | The procedural battle floor's CPU side: grid origin, the three-valued per-cell depth class, the `3x3` projection lattice, the four-corner screen reject and the 2x2 sub-tile UVs. |
 | `battle_arts_auto_combo` | `FUN_801F0450` | The AI-side Arts assembler's two arms - the learned-arts auto-fill and the weighted candidate pool with its AP-gauge spend loop. |
-| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_asset::battle_attack_camera_table`. |
+| `battle_attack_camera` | `FUN_801D71B8` | The per-art attack camera: gate, pose seed, character / art dispatch and animation-frame push. Dispatch is three per-character jump tables (17 / 20 / 17 slots) reaching 13 distinct arms; the row folds come from `legaia_game_tables::battle_attack_camera_table`. |
 | `battle_value_readout` | `FUN_801E805C` | The battle value readout: the landed-hit numeral's sheet, cells and pop/rise envelope, plus the multi-cast half's decimal split, teardown pairing, slot-to-widget indirection and label quad. |
 | `battle_approach` | `FUN_801DF570` | The attack-approach distance clamp: the projected attacker/target separation and the `[3d/4, d]` band a requested step is clamped into. |
 | `battle_party_panel` | `FUN_801DBB8C`, `FUN_801DBC30`, `FUN_801DBD04`, `FUN_801DBDDC`, `FUN_801DBEC4`, `FUN_801D84C0` | The label-actor open (`FUN_801DBB8C`, handle at `0x801F4E0C`), the cross-out mark blit (`FUN_801DBC30`), the command ring's Rot stamp / Curse plate and the arts-entry Rot stamp (`RingMarks`), the per-party-size anchors, and `FUN_801D84C0`'s battle-result message buffers (victory with spoils, defeat, escaped, escape failed) - not party-name panels. |
@@ -221,7 +221,7 @@ The crate's remaining modules are leaf kernels; by family:
 - **Battle transition** - `battle_intro_transition` (+ `battle_intro_styles`
   / `battle_intro_tiles` / `battle_intro_swirl` / `battle_intro_particles`):
   the field-to-battle overlay's state machine and per-style kernels;
-  `engine-ui::battle_intro` is its draw half.
+  `render-kernels::battle_intro` is its draw half.
 - **Battle presentation** - `battle_actor_draw` (`FUN_80048A08`'s per-object decisions),
   `battle_pose_blend`, `battle_anim_rate` (arts slow-motion),
   `battle_impact_fx`, `battle_trail` (the weapon trail's schedule),

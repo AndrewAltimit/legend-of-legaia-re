@@ -672,7 +672,7 @@
 
       /* Screen-space PSX primitives over the finished 3D frame: the
        * field-to-battle transition's five style bodies + backdrop + fade,
-       * emitted by the shared `legaia_engine_ui::battle_intro` and ordered by
+       * emitted by the shared `legaia_render_kernels::battle_intro` and ordered by
        * the shared `screen_prim` builder. Outside the try/catch above
        * only in the sense that it has its own: a shader link failure on some
        * driver must not take the whole play loop down with it. */
@@ -708,7 +708,7 @@
      *
      * The engine builds the whole draw list - the ordering-table sort and the
      * NDC vertex stream both come out of the shared
-     * `legaia_engine_ui::screen_prim` builder, so this method has nothing to
+     * `legaia_render_kernels::screen_prim` builder, so this method has nothing to
      * order and nothing to project. It asks how many primitives the frame
      * carries, early-outs on none (every frame outside a transition), and
      * otherwise uploads three arrays and lets `ScreenPrimPass` draw the runs.

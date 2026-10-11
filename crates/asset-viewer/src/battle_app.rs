@@ -104,7 +104,7 @@ pub(crate) fn run_battle_scene(extracted_root: &Path, queued_action: u8) -> Resu
         meshes: Vec::new(),
         world,
         // Bound the retail seat extent (X to +-900, Z to +-1400 - see
-        // engine-core::battle_seats).
+        // engine-battle::battle_seats).
         scene_aabb: ([-1000.0, -200.0, -1500.0], [1000.0, 600.0, 1500.0]),
         input: InputState::new(),
         last_dt_ms: 16,

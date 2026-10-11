@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Never. No retail code path opens the file.</dd>
     <dt>Magic / marker</dt><dd>None - a small offset table at the start, then fixtures.</dd>
     <dt>Lives in</dt><dd>Disc root, next to <code>PROT.DAT</code>: 18,054 Form 1 sectors at the end of the disc (LBA 180228 on the USA image).</dd>
-    <dt>Parser</dt><dd>None needed; <code>crates/prot</code> walks its TOC, the categorize pipeline skips its contents. Patcher side: <code>legaia_patcher::disc::DiscPatcher::annex_blob</code>.</dd>
+    <dt>Parser</dt><dd>None needed; <code>crates/prot</code> walks its TOC, the categorize pipeline skips its contents. Patcher side: <code>legaia_disc_patch::disc::DiscPatcher::annex_blob</code>.</dd>
     <dt>Confidence</dt><dd>Confirmed - no reference to the file exists in <code>SCUS_942.54</code> or any overlay, and the fixture patterns are visible in the bytes.</dd>
   </dl>
 </section>

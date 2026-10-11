@@ -2,7 +2,7 @@
 
 The 64 PROT entries `0903..=0966` are code overlays: the per-spell summon stagers and capture-class cast modules that take turns in the second overlay window ("slot B") at link base `0x801F69D8`. All 64 share one file layout - a jump table, MIPS code, then a band of spawn records that describe the effect parts the module puts on screen. This page is the *file* page: which bytes of an image are what, and how each region is recovered from the image alone. [`cast-module.md`](../subsystems/cast-module.md) is the *behaviour* page (the entry tables in PROT 0898, the `ctx+0x279` phase machine, the damage shape).
 
-Parser `legaia_asset::slot_b_module` (crate `overlay-images`). The spawn records it names are the same records [`cast_effect_pool`](../subsystems/cast-module.md#what-the-port-runs) stages, at a granularity the pool does not carry.
+Parser `legaia_overlay_images::slot_b_module` (crate `overlay-images`). The spawn records it names are the same records [`cast_effect_pool`](../subsystems/cast-module.md#what-the-port-runs) stages, at a granularity the pool does not carry.
 
 | Fact | Value | Confidence |
 |---|---|---|
@@ -67,7 +67,7 @@ residue, not a second code region of the image's own.
 A body opens at `addiu sp, sp, -F` and closes at the first `jr ra` whose delay
 slot is `addiu sp, sp, +F` for the same `F`. This is the partition
 `ghidra/scripts/dump_static_overlay.py` drives its dumps from, and
-`legaia_asset::slot_b_module::framed_functions` reproduces its committed
+`legaia_overlay_images::slot_b_module::framed_functions` reproduces its committed
 `RANGES` rows. It survives the three shapes that break a count-and-interleave
 rule: a frameless leaf, an early `jr ra` inside a body, and a `jr ra` word that
 is data in the image's tail.
@@ -135,8 +135,8 @@ properties of the *record shape*, not of the band, so the rename covers every
 carrier of it: the summon stagers, the cast band, the PROT 0898 effect
 prototypes, the per-scene prescript stagers and the battle-overlay burst
 records. The four Rust structs that carry the halfword
-(`legaia_asset::summon_overlay::SummonPart`,
-`legaia_engine_core::summon::SummonPartRuntime`,
+(`legaia_overlay_images::summon_overlay::SummonPart`,
+`legaia_engine_effects::summon::SummonPartRuntime`,
 `legaia_engine_core::world::ambient::AmbientPart`,
 `legaia_engine_vm::battle_burst::BurstRecord`) name it `reserved` too.
 
@@ -332,7 +332,7 @@ The band's own pointers settle it: **no pointer-credited record on the disc
 opens with eight zero bytes**, and twelve chained ones did, across PROT 0919,
 0932, 0933, 0934, 0944, 0947, 0948, 0950, 0957 and 0960 - every one of them
 the gap between an image's last record and its tail. So the chain stops at
-eight zero bytes, in both walkers (`legaia_asset::slot_b_module::parse_with_tail`
+eight zero bytes, in both walkers (`legaia_overlay_images::slot_b_module::parse_with_tail`
 and `scripts/ghidra-analysis/slot_b_band.py`, which carries the same
 forever-`WAIT` fallback). PROT 0944 is the worked case: its top record
 ends at `0x1988` on a `0x09 0x0FFF`, zeros run to `0x199C`, and from there to

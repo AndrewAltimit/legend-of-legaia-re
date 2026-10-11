@@ -66,7 +66,7 @@
 //! is served by the static-site viewer, and the engine `world_map`
 //! module is the controller/simulation, not a mesh renderer). The GTE
 //! `nccs`/`ncct` kernels *are* implemented in
-//! `engine-render::gte::lighting` and exercised by the parity oracle
+//! `render-kernels::gte::lighting` and exercised by the parity oracle
 //! `gte_trace`. Wiring them is **low priority**: retail itself is not
 //! observed dispatching to the NCC handlers at runtime (GTE-op sampling of
 //! battle / summon / the `map01` world map shows zero `NCC*` - the world map

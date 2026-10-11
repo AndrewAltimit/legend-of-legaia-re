@@ -24,7 +24,7 @@ reference:
 
 Implementation: [`crates/translate/src/`](../../../crates/translate/src/)
 (the module docs cover the internals). Writes go through
-[`legaia_patcher::disc::DiscPatcher`](../randomizer.md): every touched sector's
+[`legaia_disc_patch::disc::DiscPatcher`](../randomizer.md): every touched sector's
 EDC/ECC is re-encoded. No LBA moves unless you opt into the whole-sector
 relayout ([`dialog-import.md`](dialog-import.md#disc-relayout---allow-relayout)).
 

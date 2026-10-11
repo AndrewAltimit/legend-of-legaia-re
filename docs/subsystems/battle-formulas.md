@@ -6,7 +6,7 @@ order, fleeing, poison ticks, MP costs, spoils, the RNG). Every kernel on this
 page is read from the game's own code - mostly the battle overlay (PROT `0898`,
 link base `0x801CE818`) and `SCUS_942.54` - and mirrored as a pure Rust function
 in `crates/engine-battle-vm/src/battle_formulas/`, which `engine-vm` re-exports
-as `legaia_engine_vm::battle_formulas`.
+as `legaia_engine_battle_vm::battle_formulas`.
 
 Each kernel is presented the same way: a formula block with explicit integer
 semantics, an inputs table (input -> where it comes from), provenance, and the
@@ -169,7 +169,7 @@ partition when it asks whether anything left in the action can still connect
 never strands a total. Monster attackers never take this gate.
 
 **Provenance.** `overlay_0898_801ec3e4.txt`, `0x801EC488..0x801EC554`.
-**Port.** `legaia_engine_vm::battle_action::limb_misses`, tested by
+**Port.** `legaia_engine_battle_vm::battle_action::limb_misses`, tested by
 `World::resolve_hit_event` before the fold and the roll;
 `World::consume_effect_skip_strobe` applies the `ctx[+0x263]` skip to the
 attacker at once, because the engine walks the effect script earlier in the
@@ -354,7 +354,7 @@ draw and the chip-floor draw only when those arms fire. `damage_finish`'s post
 stages (equipment resists, the zeroed-hit floor, the cap) run on top by
 default; `--no-damage-finish` keeps the flat path, and the finisher supplies no
 guard halve because the Spirit stance is already the Defense triple. The
-`legaia_asset::monster_archive` accessors (`attack()` / `defense_high()` /
+`legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /
 UDF / LDF binding. Regressions: `engine-vm/tests/battle_physical_predamage.rs`,
 `engine-core/tests/battle_physical_damage.rs`.
@@ -411,7 +411,7 @@ Across the roster the beat runs `1..16` at rate `2` (a few `1`). Monster id
 whole clip. Party members use the same mechanic: the player battle files'
 flinch entries carry the same list at the same offset. `legaia-patcher
 monster-stats` prints the `juggle` column (`f<beat>/<rate>` and the ticks) for
-every monster; reader `legaia_asset::monster_archive::light_flinch_window`.
+every monster; reader `legaia_actor_formats::monster_archive::light_flinch_window`.
 
 **Provenance.** `80047430.txt`. A word-wise scan of `SCUS_942.54` and every
 image in `extracted/overlays/` finds exactly two stores to `+0x1F7`: `sb
@@ -637,7 +637,7 @@ def` unchecked, so only an element byte of `8` or more could reach the block.
 The PAL and Japanese battle overlays carry the same block.
 
 **Port.** `apply_element_affinity`, `apply_status_weaken`, `apply_magic_power`.
-Parser `legaia_asset::element_affinity` (CLI `asset element-affinity
+Parser `legaia_game_tables::element_affinity` (CLI `asset element-affinity
 <0898.BIN>`), loaded onto `World::tables.element_affinity`.
 `World::enemy_affinity_pct` supplies `matrix[enemy_element][party_member_element]`
 (`MonsterDef::element`; the engine models `char_id == party slot + 1`);
@@ -795,8 +795,8 @@ Notes on the census:
 Module anatomy (paging, phase machine, the seat-0-hardcoded apply sites) is on
 [cast-module.md](cast-module.md).
 
-**Port.** `engine-vm::battle_damage_wrappers` models both stat sets. The class
-byte is `stats +0` of the `DAT_800754C8` record (`legaia_asset::spell_names`,
+**Port.** `engine-battle-vm::battle_damage_wrappers` models both stat sets. The class
+byte is `stats +0` of the `DAT_800754C8` record (`legaia_game_tables::spell_names`,
 `SpellEntry::class` / `capture_class_records`); `World::capture_respect_predamage`
 routes on it, checking the six bypass ids first because the class byte cannot
 separate two ticks of one module. The finisher gate is
@@ -958,15 +958,15 @@ the installed stat block read off mednafen / PCSX-Redux battle states via
 INT 247` from record `288/222/200/220` with flag `4`; a world-map Gobu Gobu `ATK
 17 UDF 25 LDF 24 INT 12` from `17/15/14/10` with flag `0`.
 
-**Port.** Parser `legaia_asset::seru_side_effect` (CLI `asset
+**Port.** Parser `legaia_game_tables::seru_side_effect` (CLI `asset
 seru-side-effect`); per-record verdict `Susceptibility::for_record`, which the
 site's enemy table renders per row by fight class
-(`legaia_asset::formation_census`, CLI `asset formation-census`). Both halves
+(`legaia_disc_audit::formation_census`, CLI `asset formation-census`). Both halves
 run in the live loop: `engine-battle-vm::seru_side_effect::stage_side_effect` once per
 player cast through `World::stage_seru_side_effect`, for exactly the ids whose
 module calls it (`summon::module_stages_side_effect`); `apply_hit` per damaged
 target through `World::apply_seru_side_effect`; the banner pass is
-`engine-vm::move_no_effect_guard`, live from state `0x36`. Three pieces of
+`engine-battle-vm::move_no_effect_guard`, live from state `0x36`. Three pieces of
 state carry it:
 
 - **Base halfwords.** `BattleState::attack_base` / `defense_base` /
@@ -1004,7 +1004,7 @@ command-gauge pool the arts entry spends
 and the round boundary restores a Spirit-charged actor's `+0x154` to the same
 value. State `0x3E`'s item class 5 stages the same `min(base*7/5 + 8, 0x120)`
 shape off the target. See [battle-action.md](battle-action.md) states `0x46` and
-`0x3E`. **Port.** `engine-vm::battle_action`; `spirit_damage` is the shape as a
+`0x3E`. **Port.** `engine-battle-vm::battle_action`; `spirit_damage` is the shape as a
 pure function.
 
 ### The battle AP gauge - every writer
@@ -1036,7 +1036,7 @@ Consequences:
 These behaviours were first reported by the_rabidsquirel (save-state testing on
 retail); the sites above are the disassembly behind them.
 
-**Port.** `engine-vm::battle_action::done` (`done_cleanup`) for the accrual,
+**Port.** `engine-battle-vm::battle_action::done` (`done_cleanup`) for the accrual,
 `spirit_gauge_fill` for the damage fill, `cast_seru_ticks_a::cure_tier4_ap` for
 the doubling (run by the Vera and Orb ticks and by
 `cast_seru_ticks_b::spoon_cure_sweep`). The cure tier is the side-effect
@@ -1242,7 +1242,7 @@ spell only when `cost != 0xFF` and `+0x154 >= cost`, then subtracts it (lines
 slots - the prefix `0,1,2,4,5,0x0B` at cost 0, `0x0D @ 28`, `0x0F @ 32` and the
 `0x23` special; Hornet (id 61, AGL 88) has `0x0C @ 88` and `0x13 @ 88`.
 
-**Port.** `legaia_asset::monster_archive::MonsterRecord::spells` (`MonsterSpell
+**Port.** `legaia_actor_formats::monster_archive::MonsterRecord::spells` (`MonsterSpell
 { id, agl_cost, offset, effect_offset, aux_offset }`, `is_castable()`).
 
 ## Applicator - `FUN_800402F4`
@@ -1363,7 +1363,7 @@ buff:  stat = min(0xFFFF, stat + stat / 5)        // x6/5, both halfwords of the
 ```
 
 Selector 7's `sub_index` is the item's descriptor `tier` byte
-(`legaia_asset::item_effect`); `800402f4.txt` `case 7`, lines 2473-2639:
+(`legaia_game_tables::item_effect`); `800402f4.txt` `case 7`, lines 2473-2639:
 
 | `sub_index` (= tier) | Actor pairs raised | Stat(s) | Item |
 |---|---|---|---|
@@ -1376,7 +1376,7 @@ Selector 6 (field use: Life / Power / Guardian / Swift / Wisdom / Magic Water,
 plus the all-stats Honey / Miracle Water) adds a flat increment to the
 **character record**, `tier` selecting the stat. Full taxonomy and item ids:
 [item-effect-table.md](../formats/item-effect-table.md#stat-up--buff-items-class-567);
-parser `legaia_asset::item_effect::stat_item_effect` /
+parser `legaia_game_tables::item_effect::stat_item_effect` /
 `ItemEffectTable::stat_effect`.
 
 **Port.** `buff_ramp`. `World::apply_battle_buff` routes a positive-magnitude
@@ -1594,7 +1594,7 @@ refused arms. The `0x400` waker is `status_0x400_wakes`
 `FUN_8004E568` walks the dead enemies through the per-enemy record-pointer
 table `0x801C9348` (populated by the loader `FUN_800542C8`) and reads the reward
 fields inline in each monster record
-([`legaia_asset::monster_archive`](../formats/monster-animation.md),
+([`legaia_actor_formats::monster_archive`](../formats/monster-animation.md),
 [battle.md](battle.md)).
 
 ```text
@@ -1815,7 +1815,7 @@ its return for both the compare and the debit:
 
 So a Spirit Jewel or Spirit Talisman discounts a menu heal exactly as a battle
 cast, and a caster below the raw price but at the discounted one can cast.
-**Port.** One kernel, `legaia_engine_core::spells::caster_mp_cost` (re-exported
+**Port.** One kernel, `legaia_engine_battle::spells::caster_mp_cost` (re-exported
 from `engine-battle`), serves the Magic list, the confirm gate, the shared
 `cast_spell` affordability test, the field debit
 (`field_menu_dispatch::apply_spell_outcome`), the battle list, the battle fold
@@ -1893,14 +1893,14 @@ it (a preview, the standalone minigame page) keeps its own copy, and the
 engine's own step tracker (`encounter::EncounterTracker::on_step`), which is not
 a retail port, splits one raw word into a low trigger byte and a high pick half.
 
-## Engine-side mirror - `engine-vm::battle_formulas`
+## Engine-side mirror - `engine-battle-vm::battle_formulas`
 
 The module lives at `crates/engine-battle-vm/src/battle_formulas.rs` plus the
 `battle_formulas/` directory; `engine-vm` re-exports it
-(`legaia_engine_vm::battle_formulas`). Everything is a pure function with unit
+(`legaia_engine_battle_vm::battle_formulas`). Everything is a pure function with unit
 tests pinning the documented arithmetic. `FUN_800402F4`'s selector dispatch is
 not reproduced as a whole; the state machine lives in
-`engine-vm::battle_action`.
+`engine-battle-vm::battle_action`.
 
 | File | Functions | Retail source |
 |---|---|---|
@@ -1930,7 +1930,7 @@ not reproduced as a whole; the state machine lives in
 
 Kernels that live elsewhere: `engine-battle-vm::status_effects` (`toxic_tick_damage`,
 `venom_tick_damage`, `agl_status_inflict_roll`), `engine-battle-vm::seru_side_effect`,
-`engine-vm::battle_damage_wrappers`, `engine-vm::battle_action` (`limb_misses`,
+`engine-battle-vm::battle_damage_wrappers`, `engine-battle-vm::battle_action` (`limb_misses`,
 `done`), `engine-battle::magic_xp`, `engine-battle::spells`.
 
 ## What's still open

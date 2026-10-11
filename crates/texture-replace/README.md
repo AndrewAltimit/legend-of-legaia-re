@@ -10,8 +10,8 @@ edit that does not fit before it writes anything.
 It depends on [`legaia-disc-patch`](../disc-patch/README.md) and the parser
 crates, and on no other patcher crate.
 [`legaia-patcher`](../patcher/README.md) re-exports every module at
-`legaia_patcher::<module>` (`legaia_patcher::texture`,
-`legaia_patcher::save_icon`, ...) for the web viewer. The per-module
+`legaia_patcher::<module>` (`legaia_texture_replace::texture`,
+`legaia_texture_replace::save_icon`, ...) for the web viewer. The per-module
 write-ups stay in the patcher README's
 [texture replacement](../patcher/README.md#texture-replacement-texture-module)
 sections.

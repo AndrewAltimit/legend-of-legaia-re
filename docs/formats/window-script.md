@@ -8,10 +8,10 @@ save-UI windows. They are **data resident in the menu overlay itself**
 overlay's data segment, not a scene MAN section, effect bundle, or actor
 spawn record.
 
-Parser + `jal`-site scanner: `legaia_asset::widget_script`. Disc pins in
+Parser + `jal`-site scanner: `legaia_game_tables::widget_script`. Disc pins in
 `crates/game-tables/tests/widget_script_real.rs`. Interpreter port:
 `legaia_engine_vm::run`; engine host + trigger wiring:
-`legaia_engine_core::menu_widget` (see
+`legaia_engine_menus::menu_widget` (see
 [actor-vm.md](../subsystems/actor-vm.md#where-the-programs-live)).
 
 Confidence: **Confirmed** (disassembly of the interpreter and callers,
@@ -40,7 +40,7 @@ The menu overlay's callers materialise a program pointer with a
 `lui`/`addiu` pair (or forward one through a saved register) and call
 `FUN_801D6628(&program)`. The referenced programs cluster in one data
 region of the image (file `0x16260..0x16740`, VA `0x801E4A78..0x801E4F58`).
-`legaia_asset::widget_script::scan` recovers them structurally: decode every
+`legaia_game_tables::widget_script::scan` recovers them structurally: decode every
 `jal 0x801D6628` word in the image, resolve each site's `a0`
 materialisation, and keep the targets that parse as terminated programs
 with in-range opcodes and window ids. Register-forwarded call sites (the
@@ -55,7 +55,7 @@ whenever the menu overlay is (pause menu, shop, save UI - every scene).
 
 Byte-verified on the disc image; the shop pair is additionally pinned by
 the randomizer's seru-trading vendor, which reuses exactly these scripts
-(`legaia_patcher::seru_overlay::consts`, [shop.md](../subsystems/shop.md)):
+(`legaia_code_hooks::seru_overlay::consts`, [shop.md](../subsystems/shop.md)):
 
 | VA | File offset | Program | Caller |
 |---|---|---|---|

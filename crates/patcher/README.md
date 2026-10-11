@@ -23,7 +23,7 @@ This crate is the top of the family; the rule for what lives where:
 Code inside the family names the owning crate. The `pub use` lines in this
 crate's root keep the modules outside consumers use (the browser patcher,
 the engine's runtime oracles) reachable at `legaia_patcher::<module>`,
-including `legaia_patcher::translation` and `legaia_patcher::party_swap` for
+including `legaia_translate` and `legaia_party_swap` for
 those two whole crates. The module names used through the rest of this page
 are those paths.
 
@@ -172,7 +172,7 @@ pinned by a test).
 
 ### `items`
 
-The valid item-id pool from the SCUS item-name table (`legaia_asset::item_names`),
+The valid item-id pool from the SCUS item-name table (`legaia_game_tables::item_names`),
 so a randomized drop is always an item the game has a name and handler for.
 
 - `valid_item_pool` - the pool builder.
@@ -488,7 +488,7 @@ first. See
 
 `--fishing-price ITEM=POINTS` sets the fishing-point cost of a fishing-exchange
 prize. The prize rows are 12-byte `[u32 limit][u32 price][u32 item_id]` records
-in the raw fishing overlay (PROT 972, `legaia_asset::fishing_exchange`); the
+in the raw fishing overlay (PROT 972, `legaia_minigame_formats::fishing_exchange`); the
 edit rewrites the `price` u32 of every row (Buma / Vidna) granting `ITEM` -
 same-size, no recompression (972 is raw). The price doubles as the "prize
 appears once you can afford it" gate, so lowering it also reveals the prize
@@ -506,8 +506,8 @@ them stale:
 
 | Site | Display | Carrier |
 |---|---|---|
-| 1 | quick-travel / Door-of-Wind list | `SCUS_942.54` `0x80073B18`, 16 × 32-byte NUL-padded cells (`legaia_asset::worldmap_menu`) |
-| 2 | the label over the world map at the place's map position | the 29-record location table trailing every kingdom MAN (`legaia_asset::place_names`) |
+| 1 | quick-travel / Door-of-Wind list | `SCUS_942.54` `0x80073B18`, 16 × 32-byte NUL-padded cells (`legaia_game_tables::worldmap_menu`) |
+| 2 | the label over the world map at the place's map position | the 29-record location table trailing every kingdom MAN (`legaia_scene_formats::place_names`) |
 | 3 | the banner on entering the scene, and the save-screen location row | that scene MAN's section-2 display name (same module) |
 
 `TARGET` is a landmark cell index or the place's current name; the latter reaches
@@ -608,7 +608,7 @@ player swaps a party member's learned Seru-magic for a different one, at a level
 shown up front. The offer is **time-bucketed** (rotates as play continues) and
 fully **deterministic from the seed**.
 
-- **Offer math (`legaia_asset::seru_trade`, shared with the engine).** Each of 64
+- **Offer math (`legaia_game_tables::seru_trade`, shared with the engine).** Each of 64
   buckets holds one `(want, give, give_level)` preference. The level roll is
   curved toward low levels (`roll_give_level`): band `1..=3` common (70%),
   `4..=6` rare (25%), `7..=9` very rare (5%). `bucket_offers` derives the
@@ -847,7 +847,7 @@ piece of gear.
   unequippable (zero) mask.
 - The apply path (`apply::randomize_equip_masks`) emits a same-size in-place SCUS
   patch via `patch_named_file`. The engine reads the same `+6` byte
-  (`engine-core::equipment::DiscEquipInfo::can_equip`), so a patched disc re-gates
+  (`engine-menus::equipment::DiscEquipInfo::can_equip`), so a patched disc re-gates
   each character's equip picker. `legaia-patcher equip-bonuses` lists the current
   mask (`V/N/G` / `any`) beside each row.
 
@@ -1173,7 +1173,7 @@ reached via the partition-2 record-offset table (see
 [`man-relocation.md`](../../docs/formats/man-relocation.md)).
 
 - `SceneDoors::locate` enumerates a scene's door sites
-  (`legaia_asset::man_edit::scene_change_sites`).
+  (`legaia_scene_formats::man_edit::scene_change_sites`).
 - `classify_sites` gates the shuffle pool (`DoorSiteClass`): only
   **walk-through doors** shuffle - partition-2 records referenced by a `.MAP`
   kind-1 **gate-1** walk trigger (primary `+0x10000` block or the `+0x12000`
@@ -1280,7 +1280,7 @@ New-game starting-inventory randomizer (`starting_items` module).
 
 There is no static starting-inventory table - the new-game data-init `FUN_80034A6C`
 code-builds the bag, writing one slot (Healing Leaf `0x77` ×5) into the live
-consumable inventory (see [`legaia_asset::new_game::StartingInventory`]). So this
+consumable inventory (see [`legaia_game_tables::new_game::StartingInventory`]). So this
 rewrites the **seed code**: the reclaimable 40-byte region at `0x80034b04` (the
 original seed + a redundant inline zero-loop both callers already cover with their
 `SC`-block `memset`).
@@ -1329,7 +1329,7 @@ The reclaimable seed code can't grow, so anything past the seven-slot direct cap
 ops** (`0x39`) - the same op a treasure chest uses - spliced into the opening scene
 `town01`'s entry script, wrapped in a **once-only guard** on a persistent SC
 story flag (the `0x50` SET / `0x70` TEST bank at `0x80085758`). The block is emitted
-by `starting_bag::guarded_grant_block` (round-tripped through `legaia_asset::field_disasm`)
+by `starting_bag::guarded_grant_block` (round-tripped through `legaia_scene_formats::field_disasm`)
 and inserted **after the entry script's BGM op** via `man_edit::apply_insertions`
 (variable-length MAN insert with partition / jump-delta fixups; injecting before the
 BGM made the silent gives run before the sound bank loaded and flashed a stray
@@ -1474,7 +1474,7 @@ overflow; `--dry-run` validates only; `--output`/`--patch` as everywhere
 else). `replace_texture_png` / `export_texture_png` add the multi-palette
 shapes (composite, palette strip, indexed PNG, per-region in-game view), and
 `texture_palettes` turns the per-texel palette map of the menu / battle UI
-sheet (`legaia_asset::tim_palette_context::texel_palettes`, the same kernel
+sheet (`legaia_ui_formats::tim_palette_context::texel_palettes`, the same kernel
 the asset viewer's in-game view reads) into this texture's palette numbers
 (`tim-palette-map` prints it). Full reference:
 [`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#texture-replacement);
@@ -1821,7 +1821,7 @@ in the same `LEGAIA_POKES` form.
   battle grunt voices resample from the siblings' voice banks in place
   (`delilas_voice`); the hero XA arts shouts follow `--delilas-arts-voice`
   (below). Seedless, not in any
-  preset - the swap machinery lives in `legaia_patcher::party_swap`, the
+  preset - the swap machinery lives in `legaia_party_swap`, the
   disc apply in `delilas_party`. See `docs/tooling/randomizer.md`
   § Delilas party swap.
 - `--delilas-arts-voice original|removed|adjusted` (default `original`)

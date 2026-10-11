@@ -356,7 +356,7 @@
      * dims the crawl with the scene; the GL pass already washed the scene,
      * but this canvas sits above it. The engine resolves which pushes those
      * are and their colours (`play_text_layer_washes_json`); the equations
-     * are the PSX ABR modes `legaia_engine_ui::screen_prim::wash_channel`
+     * are the PSX ABR modes `legaia_render_kernels::screen_prim::wash_channel`
      * names. Only called right after a branch repainted the canvas, so a
      * wash never compounds across frames. */
     _applyTextWash(ctx, ov) {

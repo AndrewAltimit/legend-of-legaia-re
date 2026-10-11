@@ -7,7 +7,7 @@
 -- partition-2 record, whose `0x3F` does the scene change. So a probe that
 -- writes the player object's `+0x14`/`+0x18` to a trigger tile crosses the
 -- door on the next frame, and the tiles come off the disc
--- (`legaia_engine_core::field_regions::parse_tile_triggers` over the
+-- (`legaia_engine_field::field_regions::parse_tile_triggers` over the
 -- `.MAP` `+0x10000` primary and `+0x12000` fallback blocks) rather than
 -- out of a hand-calibrated input sequence. Two scenes deep, a pad ladder
 -- costs an hour of wall clock and breaks on any encounter; this costs one

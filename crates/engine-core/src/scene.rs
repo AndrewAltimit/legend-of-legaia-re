@@ -3,7 +3,7 @@
 //! `0x35` opcode chain in [`docs/subsystems/script-vm.md`].
 //!
 //! Built on top of `legaia-prot` (TOC walker + CDNAME map) and the asset
-//! categorizer (`legaia-asset::categorize`). Engines call:
+//! categorizer (`legaia-disc-audit::categorize`). Engines call:
 //!
 //! 1. [`ProtIndex::open_extracted`] once at startup.
 //! 2. [`Scene::load`] when the scene name changes (resolves the CDNAME block

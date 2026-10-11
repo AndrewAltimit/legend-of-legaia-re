@@ -105,7 +105,7 @@ const CASES: &[(u32, f64, &str)] = &[
     // the magic sweep instead.
     (1062, 99.9, "stream"),
     // The entry the retired `data_field_truncated` detector used to match. It
-    // is not a stream: the runtime walks it as an `asset::pack` of two whole
+    // is not a stream: the runtime walks it as an `container-formats::pack` of two whole
     // TIMs (it now classifies as `pack`), so the walker is selected by index
     // and the accounting is structural. The shortfall is the 948-byte tail the
     // pack does not reference.

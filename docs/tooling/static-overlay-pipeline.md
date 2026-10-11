@@ -11,7 +11,7 @@ from `PROT.DAT` and disassembling it at its load base, with identity attached
 from the first byte. It **complements** the dynamic captures; it does not
 replace them (see [Scope + limits](#scope--limits)).
 
-Implementation: [`legaia_asset::static_overlay`](../../crates/overlay-images/src/static_overlay.rs);
+Implementation: [`legaia_overlay_images::static_overlay`](../../crates/overlay-images/src/static_overlay.rs);
 CLI `asset overlay …`; committed map
 [`crates/asset/data/static-overlays.toml`](../../crates/asset/data/static-overlays.toml).
 

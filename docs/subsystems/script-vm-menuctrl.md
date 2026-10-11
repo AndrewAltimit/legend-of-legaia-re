@@ -38,7 +38,7 @@ The instruction is `[4C, op0, operands...]`. The **outer high nibble** of
 `0x801E0C44`, bound `sltiu v0,v1,0x10` at `0x801E0C48`, base pair at
 `0x801E0C50`/`0x801E0C54` in `FUN_801DE840`). Most arms then index a second
 table on the low nibble, and each sub-op has its own width - so a linear walk
-of a script must know every width (the disassembler `legaia_asset::field_disasm`
+of a script must know every width (the disassembler `legaia_scene_formats::field_disasm`
 carries them for all sixteen nibbles).
 
 Three exits recur on this page:
@@ -980,7 +980,7 @@ casino counter clerk's is turned `Y = -512`. The op is common - the
 [field-op census](../tooling/field-op-census.md) finds it in most town and
 dungeon scenes.
 
-Port: [`engine-core::actor_look`](../../crates/engine-field/src/actor_look.rs)
+Port: [`engine-field::actor_look`](../../crates/engine-field/src/actor_look.rs)
 holds each actor's look and its ramps (ticked at the frame step, reset on a
 scene entry); `CC F8 45 ..` lands on the player through the same stand-in
 context `CC F8 40` / `CC F8 C2` use. `World::actor_look` answers per actor,

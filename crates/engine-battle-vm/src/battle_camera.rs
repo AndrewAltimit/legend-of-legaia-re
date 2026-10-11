@@ -11,7 +11,7 @@
 //! `0x80089118/1C/20`. The ports below lift the global reads/writes into
 //! caller-owned parameters so the kernels are side-effect-free.
 //!
-//! REF: `engine-render::window::CutsceneCameraInterp` approximates the *field
+//! REF: `engine-battle-vm::psx_camera::CutsceneCameraInterp` approximates the *field
 //! cutscene* camera ease (`FUN_801DB510`) with float lerps toward op-`0x45`
 //! keyframe targets. The retail battle tween here is a different mechanism:
 //! table-driven fixed-point stepping - `FUN_801D829C` precomputes a 9-record

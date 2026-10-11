@@ -995,7 +995,7 @@ stager returns before staging, the latch holds `0`, and each module's own
 `sltiu v0,v0,0x3` skips the ladder too. The table is on
 [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
 
-Parser: [`legaia_asset::seru_side_effect`](../../crates/game-tables/src/seru_side_effect.rs).
+Parser: [`legaia_game_tables::seru_side_effect`](../../crates/game-tables/src/seru_side_effect.rs).
 Masks and constants are in `cast_seru_ticks_a`; the latch is
 `BattleActionCtx::follow_up_pending`, and `World::cure_selector` feeds the
 ported ticks.
@@ -1389,7 +1389,7 @@ The packet arms are drawn:
 | 13 | `FUN_801F8B84` | the same fan without the core, dropping the count by one a pass until empty |
 
 Port: `cast_seru_ticks_a::theeder_tick` with `TheederFx`, sampled once per
-retail pass; both hosts build the primitives with `engine-ui::cast_theeder`
+retail pass; both hosts build the primitives with `render-kernels::cast_theeder`
 (`crates/render-kernels/src/cast_theeder.rs`) from `World::theeder_draw`. The
 prong cells come from a per-cast counter rather than the battle RNG. The
 module's camera arms are not ported: its director passes every arm and case 6
@@ -1459,7 +1459,7 @@ swept up from the bottom corners along
 `(sin[16 i] / 12, 0xE0 - sin[12 i] / 32)`, each a red-to-yellow head and a
 trail of core, glow and flare quads that dims by `2` per segment, the right
 beam the left's mirror run `0x20` steps behind, all under ABR 1.
-`World::cross_beam_draw` carries the counter and `legaia_engine_ui::cast_beam`
+`World::cross_beam_draw` carries the counter and `legaia_render_kernels::cast_beam`
 builds the packets for both hosts.
 
 ### PROT 0954 (Fatal Decision)
@@ -1926,7 +1926,7 @@ through one `World` seam, so a live cast reaches every routine below.
 
 | Piece | Where | What it does |
 |---|---|---|
-| Spawn pool | `legaia_asset::cast_effect_pool` (`crates/overlay-images`) | indexes all 64 entries by PROT number; parses each image's spawn records with `summon_overlay::parse`, which scans `jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each `a2`. Built once by the scene host (`ensure_cast_effect_pool`); a host with no disc holds none |
+| Spawn pool | `legaia_overlay_images::cast_effect_pool` (`crates/overlay-images`) | indexes all 64 entries by PROT number; parses each image's spawn records with `summon_overlay::parse`, which scans `jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each `a2`. Built once by the scene host (`ensure_cast_effect_pool`); a host with no disc holds none |
 | Dispatch key | `battle_cast_dispatch` | the two dispatchers answer with the emitter VA and band entry: `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`, `FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for` picks on the record's `+0` class byte |
 | Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) at the two seams retail uses: the capture band's pager (`load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
 | Code | `cast_module_ticks`, `cast_arm_ticks`, `cast_seru_ticks_a` / `_b`, `cast_fatal_decision` | one function per VA: dispatch bound, simulation-state writes, damage step (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction stage, anim-rate write) and phase advance. `World::run_cast_module_code` drives them from the stager tick the action SM calls at states `0x34` / `0x35` / `0x36`, and from the capture band's `0x70` |
@@ -2295,6 +2295,6 @@ step of 32).
 - Natural-cast playouts captured per frame under PCSX-Redux
   (`autorun_delilas_enemy_cast_watch.lua`) pin the staging walks, the loop
   counter and the phase-5 confirm gate.
-- Patcher mirror: `legaia_patcher::delilas_cast` (expect-verified word edits
+- Patcher mirror: `legaia_delilas_party::delilas_cast` (expect-verified word edits
   against these images); staged player rows
-  `legaia_patcher::party_swap::cast_stage`.
+  `legaia_party_swap::cast_stage`.

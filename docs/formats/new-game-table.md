@@ -100,7 +100,7 @@ seed the Door of Wind / Incense consumables and the Speed Chain / Chicken Heart 
 Good Luck Bell accessories through this same array (see
 [`randomizer.md`](../tooling/randomizer.md#starting-bag-convenience-toggles)).
 
-`legaia_asset::new_game::StartingInventory` decodes this region by replaying its
+`legaia_game_tables::new_game::StartingInventory` decodes this region by replaying its
 `$v0`-source byte/halfword stores into an `SC`-offset → byte map and reading
 `(id, count)` slots from `0x1818`, so it reads back either the vanilla `sb` pair
 or the randomizer's packed `sh` halfword store (slot = `id | (count << 8)` in one
@@ -221,7 +221,7 @@ so it lands on region type 7 and sets `0x1A2` - the bit the cold-boot
 (op `0x46`). The opening record then moves the player on.
 
 The port arms the seat in `World::begin_new_game`
-(`legaia_asset::new_game::NEW_GAME_ENTRY_SEAT`); the next field entry takes it
+(`legaia_game_tables::new_game::NEW_GAME_ENTRY_SEAT`); the next field entry takes it
 and seats the player on it when that entry is `opdeene`. A host-armed operand
 (a resume or a capture seed) is the later write and wins. The disc-gated
 `new_game_seed_disc::new_game_entry_seat_matches_the_routines_absolute_stores`
@@ -236,7 +236,7 @@ range, which is why any warp preset has to be applied *after* the clear.
 **Widths come from the opcodes, not from Ghidra's naming.** The decompiled body
 renders these as `DAT_` / `_DAT_` globals, and that prefix is a Ghidra heuristic
 with no width meaning - it also hides that the two starting-item stores are
-`$s0`-relative rather than absolute. `legaia_asset::new_game::new_game_seed_words`
+`$s0`-relative rather than absolute. `legaia_game_tables::new_game::new_game_seed_words`
 mirrors the table above, and the disc-gated
 `new_game_seed_disc::world_state_seed_matches_the_routines_stores` re-decodes the
 routine out of the user's own `SCUS_942.54` and fails on any offset, value or
@@ -247,7 +247,7 @@ width the port gets wrong.
 The table base + stride are pinned by byte-search of `SCUS_942.54` for Vahn's
 stat run (`18 00 10 00 0c 00 13 00 09 00` = ATK..INT) followed by the `"Vahn"`
 name, with every field cross-validated against the live per-character record at
-`0x80084708` lifted from an early `town01` save state. `legaia_asset::new_game::StartingParty`
+`0x80084708` lifted from an early `town01` save state. `legaia_game_tables::new_game::StartingParty`
 parses the table from a `SCUS_942.54` image at runtime (PSX-EXE `t_addr` →
 file-offset map, identical to the [item-name table](item-table.md) resolver), so
 the engine can seed a faithful New Game from the user's own disc without
@@ -255,7 +255,7 @@ committing any Sony bytes. The disc-gated `new_game_real` test pins the four
 rows against the real executable. CLI: `asset new-game <SCUS> [--json]` (dumps
 the party template + the code-built starting inventory).
 
-`legaia_asset::new_game::seed_live_records` ports the seed routine's halfword
+`legaia_game_tables::new_game::seed_live_records` ports the seed routine's halfword
 stores, and the engine's record builder
 (`legaia_engine_core::new_game::starting_record`) applies them rather than
 restating the template-field → live-cell mapping, so the two cannot drift.

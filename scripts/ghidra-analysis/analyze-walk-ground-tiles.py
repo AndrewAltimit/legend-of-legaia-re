@@ -39,7 +39,7 @@ This script confirms that structure directly from the data:
                  `+0x16..+0x18` - i.e. it re-derives the rule from scratch.
 
 The engine bakes the same per-cell tile + page + palette in
-`legaia_asset::field_objects::build_walk_heightfield`
+`legaia_scene_formats::field_objects::build_walk_heightfield`
 (`WalkHeightfield::uvs` + `::cba_tsb`).
 
 USAGE
@@ -58,7 +58,7 @@ from collections import Counter, defaultdict
 
 import gpu_packets  # shared PSX GPU primitive decode (scripts/ghidra-analysis/gpu_packets.py)
 
-# Field-map layout (mirrors legaia_asset::field_objects).
+# Field-map layout (mirrors legaia_scene_formats::field_objects).
 GRID_DIM = 0x80
 OBJECT_GRID_OFFSET = 0x8000
 OBJECT_RECORD_STRIDE = 0x20

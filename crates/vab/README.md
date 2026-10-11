@@ -56,7 +56,7 @@ is in hand. Layout + the six entries with a larger skew:
 
 Exactly one entry holds more than one bank: extraction 0891 (`monster.snd`),
 206 banks addressed by a sector index in its own first sector
-([`legaia_asset::vab_multi_bank`](../asset/README.md)).
+([`legaia_container_formats::vab_multi_bank`](../asset/README.md)).
 
 ## VAG body (SPU ADPCM)
 

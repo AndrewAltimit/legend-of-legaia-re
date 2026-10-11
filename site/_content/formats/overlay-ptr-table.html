@@ -10,7 +10,7 @@
     <dt>In the game</dt><dd>Per-attack code for summons and special attacks (the slot-B "stagers"), plus other mode-specific modules that expose an entry-point or dispatch table.</dd>
     <dt>Magic / marker</dt><dd>No header - the first u32 is a pointer into the overlay window <code>0x801C0000..=0x801FFFFF</code>, followed by 3..63 more</dd>
     <dt>Lives in</dt><dd><a href="prot.html">PROT.DAT</a> entries in the <code>0900..=0968</code> range (extraction index), 42 entries, 14-160 KB; the attack stagers load at slot-B base <code>0x801F69D8</code></dd>
-    <dt>Parser</dt><dd><code>legaia_asset::overlay_ptr_table::detect</code>; load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
+    <dt>Parser</dt><dd><code>legaia_overlay_images::overlay_ptr_table::detect</code>; load bases in <code>crates/asset/data/static-overlays.toml</code></dd>
     <dt>Confidence</dt><dd>Inferred as a detector (a shape heuristic with zero overlap against named formats); the individual attack-stager identities are capture-pinned.</dd>
     <dt>Used by</dt><dd><a href="summon-readef.html">summon.dat / readef.DAT</a>, <a href="../tooling/static-overlay-pipeline.html">Static overlay pipeline</a></dd>
   </dl>
@@ -76,7 +76,7 @@
     <li>The run of consecutive overlay-pointer u32s is between 4 and 64 long.</li>
   </ol>
   <p>Monotonicity is <strong>not</strong> required - switch dispatch tables legitimately repeat handler addresses.</p>
-<p>In the port: <code>legaia_asset::overlay_ptr_table::detect</code> returns the run's length and its first and last pointers; the recovered load bases live in <code>crates/asset/data/static-overlays.toml</code>.</p>
+<p>In the port: <code>legaia_overlay_images::overlay_ptr_table::detect</code> returns the run's length and its first and last pointers; the recovered load bases live in <code>crates/asset/data/static-overlays.toml</code>.</p>
   <p>Once the load address is known (the pointer values bound it from above: base <code>&lt;= min_ptr</code>), the entry can be imported into Ghidra via <a href="../tooling/overlay-capture.html"><code>scripts/ghidra-analysis/bulk-import-overlays.sh</code></a>.</p>
 </section>
 

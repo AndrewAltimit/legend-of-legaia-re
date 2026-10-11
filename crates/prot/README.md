@@ -54,7 +54,7 @@ random blobs).
   implementation. The module also pins the `+2` word skew between the RAM
   word array and `Archive::toc`.
 
-- `timpack` - reader for an `asset::pack` of TIMs sitting behind a
+- `timpack` - reader for an `container-formats::pack` of TIMs sitting behind a
   DATA_FIELD `TIM_LIST` chunk header (`(TIM_LIST << 24) | payload_len`), as in
   `tim.dat`. Not a container of its own: the `marker == 0x01` it tests is the
   chunk header's type byte, and `byte_offset = word_index * 4 + 4` is the pack's

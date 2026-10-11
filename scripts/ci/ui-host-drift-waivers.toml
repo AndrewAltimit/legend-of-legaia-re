@@ -53,7 +53,7 @@
 # waiver named its blocking capability precisely - "a **menu route**": the
 # options screen had no row that opened a sub-screen, `OptionsSession` carried
 # no binding-edit state for one to drive, and the only caller of
-# `engine-core::key_rebind::KeyRebindSession` was a test. All three exist now.
+# `engine-menus::key_rebind::KeyRebindSession` was a test. All three exist now.
 # `OPTIONS_KEY_CONFIG_ROW` is an engine-only eleventh display row carrying an
 # `OptionsRowAction` rather than a config word (so the retail ten stay the
 # default set, and a headless host that arms no binding table never sees it);
@@ -101,7 +101,7 @@
 # checkbox, which starts unchecked on every load, is never persisted and is
 # never read from the URL (`crates/web-viewer/src/play_dev_menu.rs`). Both
 # hosts now drive the same `DevMenuSession` off the same packed pad words
-# (shared `engine-core::dev_menu::retail_packed`), commit the EQUIP row
+# (shared `engine-system::pad::retail_packed`), commit the EQUIP row
 # through the same `WorldEquipHost`, and draw both pages at the paired pens -
 # the tick and records-model injection sites are `SIM_PAIRS` rows and the
 # pens + heading strings are `CONSTANT_PAIRS` rows, so the two hosts cannot

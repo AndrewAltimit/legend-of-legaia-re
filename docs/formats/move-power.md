@@ -7,9 +7,9 @@ contact. A 128-byte map translates a battle move id to a record index. Party
 Tactical Arts and basic attacks do not use this table. The same data band also
 holds the effect-prototype, CLUT-source and cue-group tables the records index.
 
-Parser: `legaia_asset::move_power` (`crates/game-tables/src/move_power.rs`).
+Parser: `legaia_game_tables::move_power` (`crates/game-tables/src/move_power.rs`).
 CLI: `asset move-power <raw PROT 0898 entry>` (`--effect-index` for the inverse
-map). Engine: `engine-core::move_power::MovePowerCatalog`, loaded onto
+map). Engine: `engine-battle::move_power::MovePowerCatalog`, loaded onto
 `World::tables.move_power` from PROT 0898.
 
 ## At a glance
@@ -220,7 +220,7 @@ happens.
 The roll is then scaled by the element-affinity matrix (`FUN_801dd864`), a
 sibling table in the same overlay:
 [battle-formulas.md § Element-affinity matrix](../subsystems/battle-formulas.md#element-affinity-matrix-fun_801dd864-0x801f53e8)
-(parser `legaia_asset::element_affinity`).
+(parser `legaia_game_tables::element_affinity`).
 
 ## Effect lists
 
@@ -242,7 +242,7 @@ Ids `0x0A`, `0x2D` and `0x2E` also latch the spawned handle into `ctx+0x1028`
 and seed the per-frame delta triple at `ctx+0x1184`, which makes their effect
 follow the actor.
 
-Engine: `engine-core::move_power::EffectListEntry::classify` - `Spawn`
+Engine: `engine-battle::move_power::EffectListEntry::classify` - `Spawn`
 (`0x01..=0x63`), `AltEffect` (bit 7), `FixedFlash` (`0x64`), `Skip`,
 `Terminator`.
 
@@ -272,7 +272,7 @@ Both lists index the same tables, which follow the power table in PROT 0898:
   ([art-data.md](art-data.md#the-cue-tables)).
 - **`0x801f6470`** - the cue-group table, below.
 
-`legaia_asset::move_power::EffectAuxTables` parses all three.
+`legaia_game_tables::move_power::EffectAuxTables` parses all three.
 
 ### The cue-group table `0x801F6470`
 
@@ -303,7 +303,7 @@ tables are reached from five sites each, always in pairs.
 The caller is the damage-application primitive `FUN_800402F4`, which reaches
 `jal 0x801e22c8` from eleven branches: eight literal group ids (`5..0xC`), two
 computed, one forwarding its own `param_2`. Port:
-`legaia_engine_vm::battle_cue_group::expand_cue_group`; `cue_group_for` maps
+`legaia_engine_battle_vm::battle_cue_group::expand_cue_group`; `cue_group_for` maps
 the committed `(class, tier)` to the branch site, and the battle-action applier
 (`battle_action::spirit`) places the group once on the target, or once per
 occupied slot on the class-`1` arm.
@@ -317,7 +317,7 @@ disc alone. Walk every mapped record, classify each `+0x12` / `+0x16` byte,
 and invert. The key is `(space, id)`: `Proto3D(id)`, `Efect2D(id)` or `Flash`.
 The `+0x0a` impact selector is a separate `1..5` config index and is not part
 of the key space. There is no symbolic effect-name table, so an effect is
-named only by its key. `legaia_asset::move_power::effect_trigger_index` builds
+named only by its key. `legaia_game_tables::move_power::effect_trigger_index` builds
 the map; `asset move-power --effect-index` prints it.
 
 ## Effect-prototype records - the spawn path
@@ -346,7 +346,7 @@ at. `FUN_801e09f8` calls
 
 This is the summon part-record format, with the same stager, move VM and
 `DAT_8007C018` TMD-pool bridge
-([`legaia_asset::summon_overlay`](../../crates/overlay-images/src/summon_overlay.rs)).
+([`legaia_overlay_images::summon_overlay`](../../crates/overlay-images/src/summon_overlay.rs)).
 `move_power::parse_effect_proto_records` decodes the table to part records (VA
 → file offset via `BATTLE_OVERLAY_BASE` /
 `EffectAuxTables::proto_record_offset`). All 54 unique records run through the
@@ -408,7 +408,7 @@ x.
   stages.
 - **Trail.** `+0x0b` surfaces as `World::active_move_fx_trail_texpage()`.
   `FUN_801e1ab0` is ported as
-  `legaia_engine_ui::afterimage::build_afterimage_quad` (the jittered
+  `legaia_render_kernels::afterimage::build_afterimage_quad` (the jittered
   semi-transparent `POLY_FT4`); the GTE projection of its corners stays
   caller-side.
 - **Sound cue.** `+0x0d` surfaces as `World::take_pending_move_fx_cue()`,

@@ -19,8 +19,8 @@ commit**, which is why the same swing frames from two visibly different
 angles on successive turns. `FUN_801D5854` forces the column to `0` when the
 acting character id is `3` (`0x801D6A5C`).
 
-Parser: `legaia_asset::battle_attack_camera_table`. Engine side:
-`legaia-engine-vm::battle_attack_camera`.
+Parser: `legaia_game_tables::battle_attack_camera_table`. Engine side:
+`legaia-engine-battle-vm::battle_attack_camera`.
 
 | Property | Value | Confidence |
 |---|---|---|
@@ -235,7 +235,7 @@ every such arm the ramp is read **after** the reset, so the crossing frame
 contributes nothing.
 
 Both counters and the latch are ported
-(`legaia-engine-vm::battle_attack_camera::AttackCamCtx`), so the arms carry
+(`legaia-engine-battle-vm::battle_attack_camera::AttackCamCtx`), so the arms carry
 their literals and ramps rather than only their table folds.
 
 `actor[+0x22C][+0x68]` is the animation cursor in **sixteenths of a keyframe**:

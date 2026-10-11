@@ -1,6 +1,6 @@
 # Pochi-filler placeholder slots
 
-**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_asset::categorize::is_pochi_filler` in `crates/disc-audit/src/categorize.rs`.
+**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_disc_audit::categorize::is_pochi_filler` in `crates/disc-audit/src/categorize.rs`.
 
 ## Layout
 
@@ -14,7 +14,7 @@
 `pochi` (Japanese `ポチ`) is a generic dog name common in Japanese dev fill - uninitialised memory shows up obviously in a debugger this way.
 
 Detection: `buf.starts_with(b"pochi") && buf[0x786] == 0x1A`. Parser
-`legaia_asset::categorize::is_pochi_filler`; the file length is
+`legaia_disc_audit::categorize::is_pochi_filler`; the file length is
 `POCHI_FILL_LEN`.
 
 `0x786 = 37 * 52 + 2`: the two bytes before the EOF marker are the empty

@@ -88,7 +88,7 @@ PNG so collisions are obvious without firing up the GUI.
 ### `stage` - wireframe stage geometry
 
 Renders the 12-byte-prefix + 8-byte u16 quad records identified by
-`legaia_asset::stage_geom`, through `legaia-engine-render`'s `Lines`
+`legaia_scene_formats::stage_geom`, through `legaia-engine-render`'s `Lines`
 pipeline. `stage-scan` (in the `asset` CLI)
 finds candidate entries; this viewer renders one. OBJ export is
 supported via `asset stage` proper.
@@ -101,7 +101,7 @@ naming each entry from `CDNAME.TXT`.
 
 A `scene_tmd_stream` entry is previewed the way retail *places* it rather than
 drawn raw: object 1 dropped, and a second copy under the stage's transform
-(`legaia_asset::battle_backdrop`). The transform comes from `SCUS_942.54`,
+(`legaia_scene_formats::battle_backdrop`). The transform comes from `SCUS_942.54`,
 found beside `PROT.DAT` or named with `--scus`; without it the preview uses
 retail's default and the status line says the transform is unresolved.
 

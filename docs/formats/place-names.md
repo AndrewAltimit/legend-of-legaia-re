@@ -6,8 +6,8 @@ There is no single name table. Editing one carrier changes exactly one display,
 which is why a rename that only rewrites the well-known `SCUS_942.54` table
 leaves the world map and the entry banner still saying the old name.
 
-Parsers: `legaia_asset::worldmap_menu` (site 1),
-`legaia_asset::place_names` (sites 2 and 3). Modding path:
+Parsers: `legaia_game_tables::worldmap_menu` (site 1),
+`legaia_scene_formats::place_names` (sites 2 and 3). Modding path:
 `legaia_patcher::location_name` + `legaia-patcher --rename-location`, which
 edits all three together. Disc pins in `crates/patcher/tests/place_names_real.rs`.
 
@@ -123,7 +123,7 @@ with the spawner `FUN_8003C764` inlined, one difference apart: the parent-link
 word `+0x94` is stored zero. With no link, the balloon's handshake reads a new
 engagement as its cue to end early, so talking to someone during the banner
 dismisses it. See [`cutscene.md`](../subsystems/cutscene.md) and
-`engine-core::text_balloon` for the balloon itself.
+`engine-dialog::text_balloon` for the balloon itself.
 
 The gate is **system flag `2`** (`0x80085758` bit `0x20`), a one-shot the
 loader clears whether or not a banner spawned. Nothing sets it with a literal
@@ -233,7 +233,7 @@ live RAM on a patched disc.
 
 ## See also
 
-- [`worldmap-menu`](../subsystems/field-menu.md) / `legaia_asset::worldmap_menu` - site 1's table and its placement records.
+- [`worldmap-menu`](../subsystems/field-menu.md) / `legaia_game_tables::worldmap_menu` - site 1's table and its placement records.
 - [`man_section`](../../crates/scene-formats/src/man_section.rs) - the section chain both MAN-resident carriers hang off.
 - [`world-map.md`](../subsystems/world-map.md) - the world-map band the label pass belongs to.
 - [`randomizer.md`](../tooling/randomizer.md#location-names) - the `--rename-location` editor.

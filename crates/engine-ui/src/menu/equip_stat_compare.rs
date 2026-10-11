@@ -128,7 +128,7 @@ impl EquipStatBlock {
     /// `None` when the slice is too short to hold the last field.
     ///
     /// PORT: FUN_801cf5d0
-    /// REPLACED-BY: `engine-core::pause_screens::menu_stat_block`, which
+    /// REPLACED-BY: `engine-menus::pause_screens::menu_stat_block`, which
     /// seeds the same eight words off the character record and sums the
     /// first five equip bytes (`FUN_801CF650`) in one step; the Equip
     /// screen's window 25 and the shop's window 41
@@ -156,7 +156,7 @@ impl EquipStatBlock {
 
     /// Wrap eight already-resolved block words, in the retail block's own
     /// order. The seam a host uses when the block was aggregated upstream
-    /// (`engine-core::pause_screens::menu_stat_block`) rather than read off
+    /// (`engine-menus::pause_screens::menu_stat_block`) rather than read off
     /// a record here.
     pub fn from_words(w: &[i32; 8]) -> Self {
         Self {
@@ -281,7 +281,7 @@ pub struct CompareCategoryInputs {
 /// accessory row still keys its rows off what is already worn. The table
 /// lookup the guards gate - item class byte, then the equipment row's `+5`
 /// or the item-effect row's `+3` - is
-/// `engine-core::pause_screens::compare_category_for_item`, because it wants
+/// `engine-menus::pause_screens::compare_category_for_item`, because it wants
 /// disc tables this crate deliberately does not depend on.
 pub fn active_compare_category(inp: CompareCategoryInputs) -> u8 {
     let mut category = CATEGORY_DEFAULT;
@@ -416,7 +416,7 @@ pub struct EquipComparePanelView<'a> {
 /// previously hold: the live and trial-equip blocks (`0x801EF080` /
 /// `0x801EF0A0`), the record's own HP / MP maxima - the HP and MP rows print
 /// the record halfword and leave the block word to the delta column - and
-/// the compare category. `engine-core::pause_screens::EquipCompareModel`
+/// the compare category. `engine-menus::pause_screens::EquipCompareModel`
 /// publishes all three.
 pub fn equip_compare_panel_fields(
     view: &EquipComparePanelView<'_>,

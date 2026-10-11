@@ -1,7 +1,7 @@
 use crate::*;
 
 /// One row in the inventory item-use list. Plain-data view so the
-/// renderer doesn't depend on `engine-core::inventory_use`.
+/// renderer doesn't depend on `engine-menus::inventory_use`.
 pub struct InventoryItemRow<'a> {
     pub name: &'a str,
     pub count: u8,

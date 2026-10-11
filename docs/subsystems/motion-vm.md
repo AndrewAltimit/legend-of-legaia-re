@@ -22,7 +22,7 @@ solid in the port as they are in retail.
 | Dispatch | 22-slot jump table `0x80010EE0`, index `(op & 0x7F) - 0x37` | 32-slot jump table `0x80010FE8`, ops `0x01..=0x20` |
 | Bytecode source | the payload pointer a field-VM halt-acquire writes to `+0x94` | MAN tail-section 1, read at `*(actor+0x80) + *(u16*)(actor+0x84)` |
 | Opcode table | [Opcodes](#opcodes) | [The op table](#the-op-table) |
-| Port | [`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
+| Port | [`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) | [`ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs) + [`ambient_motion_ops`](../../crates/engine-motion-vm/src/ambient_motion_ops.rs) |
 
 ```mermaid
 flowchart TD
@@ -63,7 +63,7 @@ Three things that catch people out:
 The per-actor tick that gates and dispatches both VMs is itself two
 independently-gated halves (see `ghidra/scripts/funcs/8003bc08.txt`; ported
 as `field_actor_plan` in
-[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
+[`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs)).
 
 **Height arm** - runs only when the actor is live (`+0x5C >= 0`, which also
 gates the `FUN_801D79E8` pre-update) and not culled (`+0x10 & 2` clear).
@@ -391,7 +391,7 @@ scripted `0x3E` interact get the same behaviour.
 
 ## From-scratch port
 
-[`legaia_engine_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
+[`legaia_engine_motion_vm::motion_vm`](../../crates/engine-motion-vm/src/motion_vm.rs) is the from-scratch port. All six opcodes are implemented: `0x37` `CompassWalkFast`, `0x38` `RotateToAngle`, `0x41` `CompassWalkSlow`, `0x43` `NoOp`, `0x47` `MoveTowardTarget`, `0x4C` `FaceTarget`. Each step returns `StepResult::Yield` (budget consumed, resume next tick) or `StepResult::Done` (terminal op / default arm); there is no fallback path.
 
 The facing law above is `heading_lut_engine` (the eight compass entries, carried in the engine's `0` = +Z space), `walk_facing_index` / `walk_facing_yaw` (the `0x47` sign-to-index table), and `rotate_step` (the shared ramp arithmetic, widened to 32-bit so a large speed cannot overflow the increment, raw wrapping write-back). `engine-core`'s `facing_index_to_engine_heading` delegates to the same LUT, so the spawn-prologue facings and the runtime ones cannot drift apart. `MotionState` carries the once-per-leg walk-facing latch (`walk_facing`) and a per-step `yaw_written` signal; engine hosts gate their render-heading mirror on the latter, so a heading another writer posed (the interact bearing) is not clobbered by an idle leg's stale VM yaw.
 
@@ -473,7 +473,7 @@ story-flag bank `DAT_80085758` directly: op-`7` `[07, lo, hi]` **sets** flag
 ### Disc carrier - MAN tail-section 1
 
 The only disc source of this bytecode is **MAN tail-section 1** (parser
-`legaia_asset::man_motion`):
+`legaia_scene_formats::man_motion`):
 
 - `FUN_8003AEB0` (scene-entry map-init) computes `tail_base = MAN + 0x2B +
   3*(N0+N1+N2) + u24_at_0x28`, walks the u24-length-prefixed section chain,
@@ -709,7 +709,7 @@ PC; a blocked wander drops back to the pick phase.
 
 #### From-scratch port + wiring
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes all four walk ops alongside the facing ones, plus `0x17`. The
 collision service is the `AmbientBlocking` trait the host supplies, and
 `engine-core`'s implementation is the player box test above.
@@ -900,7 +900,7 @@ backwards when he walks back; the actor never finishes. What clears these is
 the scene MAN loader's second inlined retire sweep (`FUN_8003AEB0` at
 `0x8003B414`), which is keyed on this VA - see
 [`script-vm.md`](script-vm.md). Ported as
-`legaia_engine_vm::ambient_motion::zone_ramp_tick`.
+`legaia_engine_motion_vm::ambient_motion::zone_ramp_tick`.
 
 Its **spawner** is `FUN_8003C6A4`, i.e. field-VM op `0x43` sub-3..6
 ([`script-vm.md`](script-vm.md#0x43-sub-36---the-camera-register-zone-ramp)):
@@ -909,12 +909,12 @@ op fills in exactly the `+0x80..+0xCA` fields read above. So the
 "destination pointer" is never arbitrary - it is one of four named field
 camera-configuration registers, and the routine is the mechanism behind a
 camera parameter that tracks the player across an authored zone. The engine's
-spawn side is `legaia_engine_core::register_ramp`; `World::tick_register_ramps`
+spawn side is `legaia_engine_field::register_ramp`; `World::tick_register_ramps`
 runs this tick per frame and `Camera::tick_globals` consumes the result.
 
 #### From-scratch port
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 executes both ops plus the `0x05` wait, the `0x01` restart, the `0x17`
 default-move write and the four [walk ops](#the-walk-half---the-directional-steps-and-the-aabb-wander),
 and carries the scheduler as `RampScheduler`; the other seventeen case bodies are in
@@ -1048,7 +1048,7 @@ without ever waking a script waiting on a touch. The mailbox keeps its
 previous contents in that case; the post is dropped, not cleared.
 
 Retail does no bounds check on the index. The port
-(`legaia_engine_vm::motion_vm::post_touch`) returns "no post" for an
+(`legaia_engine_motion_vm::motion_vm::post_touch`) returns "no post" for an
 out-of-range index rather than reading past the table, which is the safe
 reading of the same outcome.
 
@@ -1062,7 +1062,7 @@ expires the wait on that frame, then stores the `0xFF` sentinel back
 (`sw a0,0x3f1c(a1)` at `0x8003887C`).
 
 Both halves are wired. `AmbientMotion::take_touch_wake`
-(`legaia_engine_vm::ambient_motion`) is the head, replaying retail's three
+(`legaia_engine_motion_vm::ambient_motion`) is the head, replaying retail's three
 gates in retail's order, and `AmbientMotion::pending_touch` is the mailbox -
 a per-channel `Option` rather than one global word, which carries the same
 information because every actor's arm tests the word against its own `+0x50`
@@ -1329,7 +1329,7 @@ in this repo's docs are both right about one field with two consumers.
 
 ### The whole table has one executing home
 
-[`legaia_engine_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
+[`legaia_engine_motion_vm::ambient_motion`](../../crates/engine-motion-vm/src/ambient_motion.rs)
 runs all twenty-four case bodies. They are split across two files for length
 only - the facing ramps, the walk ops, the waits, the restart and the ramp
 scheduler in `ambient_motion.rs`; `0x02`, `0x06`..`0x0C` and `0x0E`..`0x16` in

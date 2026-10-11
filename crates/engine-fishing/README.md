@@ -2,8 +2,8 @@
 
 The fishing minigame's rules engine, split out of `legaia-engine-minigames`.
 `engine-minigames` depends on this crate, never the other way round, and
-re-exports every module at its old path (`legaia_engine_minigames::fishing`,
-and through `engine-core`, `legaia_engine_core::fishing`), so hosts and tests
+re-exports every module at its old path (`legaia_engine_fishing::fishing`,
+and through `engine-core`, `legaia_engine_fishing::fishing`), so hosts and tests
 name the same paths they always did.
 
 ## What lives here

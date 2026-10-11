@@ -34,7 +34,7 @@ if index < 0x40:
 
 - `char +0xF4..+0x103` is the per-character 4×u32 **ability bitfield** (the
   word the MP-cost ability bits `0x10`/`0x20` = indices `0x04`/`0x05` live
-  in - see `engine-vm::battle_formulas::mp_cost_after_ability_bits`).
+  in - see `engine-battle-vm::battle_formulas::mp_cost_after_ability_bits`).
 - The aggregator then ORs all three members' bitfields into the **global**
   4×u32 mask at `DAT_80074358..0x80074368` (bit-tested by `FUN_800431D0`),
   which is how the party-wide passives are consumed.
@@ -57,7 +57,7 @@ elements 0..=2 land in `+0xF4` bits 29..31 and elements 3..=6 in `+0xF8` bits
 0..3), `+0xF8 & 0x10` is the All-Guard (`0x24`) 3/4-scale gate, and
 `+0xF8 & 0x100`/`0x200` (AP Boost 1/2, `0x28`/`0x29`) accelerate the
 defender's spirit-gauge fill. Engine mirror:
-`engine-vm::battle_formulas::DefenderResist` +
+`engine-battle-vm::battle_formulas::DefenderResist` +
 `engine-core World::defender_resist`. See
 [battle-formulas](../subsystems/battle-formulas.md).
 
@@ -239,7 +239,7 @@ arm, not a passive index.
 
 ## Provenance + parser
 
-`legaia_asset::accessory_passive::AccessoryPassiveTable::from_scus` resolves
+`legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus` resolves
 the property / descriptor / equip-bonus index bytes and the `0x8007625C`
 records from a `SCUS_942.54` image (`t_addr -> file-offset` map, identical to
 the [item-name table](item-table.md) resolver); `stat_boosts(index)` mirrors
@@ -253,7 +253,7 @@ curated accessory effect class against its decoded index. CLI:
 ## Engine consumers
 
 The from-scratch engine consumes the table through
-`legaia_engine_core::accessory_passives::AccessoryPassives` (item id →
+`legaia_engine_battle::accessory_passives::AccessoryPassives` (item id →
 passive index + party-wide scope flags, built from the same parse at boot).
 `World::refresh_party_ability_bits` is the port of the aggregator's bitfield
 pass: each party member's record `+0xF4` field is rebuilt from the eight

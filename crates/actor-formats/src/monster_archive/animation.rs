@@ -759,7 +759,7 @@ pub const REACTION_TAGS: [u8; 5] = [2, 3, 4, 5, 0x0B];
 /// consumer is the open work, not the map.
 ///
 /// PORT: FUN_80054cb0 (the `+0x1EF..+0x1F3` tag-map half; the stat-block copy
-/// and battle-load stat boost live in `engine-vm::battle_formulas`)
+/// and battle-load stat boost live in `engine-battle-vm::battle_formulas`)
 pub fn reaction_map(tags: &[u8]) -> [Option<u8>; 5] {
     let mut map: [Option<u8>; 5] = [None; 5];
     // Single forward pass, last write wins - retail's loop has no `break`.

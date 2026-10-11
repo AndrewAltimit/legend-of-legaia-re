@@ -80,7 +80,7 @@
   <p>Each tail chunk is <code>[u32 header][payload]</code>: type <code>0x01</code> uploads <strong>one bare TIM</strong>, type <code>0x02</code> or size 0 stops, anything else is skipped. Zero padding runs to the entry's sector-aligned end.</p>
   <p>An entry holds <strong>exactly one</strong> stream: the walker returns past the terminator and its single caller (battle init) calls it once. The type-<code>0x01</code> meaning differs from the standard dispatcher, where <code>0x01</code> is a TIM <em>list</em> - the crash trap in the lede. These TIMs (including the row-479 <a href="npc-palette.html">NPC palettes</a>) are battle-only; a field loader skips them.</p>
   <h3 id="half-shell">The leading TMD is a half shell, drawn twice</h3>
-  <p>Rendered raw, one of these meshes looks like half a bowl - sky dome, mountain ring and far ground cut along a plane through the origin. That is what the entry authors: battle init registers the TMD once but links <strong>two</strong> background actors to it, the second under a per-stage transform that closes the circle. Object 0 is the shell; object 1 never draws. In all 182 entries the open side is <code>-X</code> (129), <code>-Z</code> (49) or <code>+X</code> (4) - never <code>+Z</code>, where the party sits. Placement lives in <code>legaia_asset::battle_backdrop</code> (<a href="../subsystems/battle.html">battle</a>); <code>scene_tmd_stream::shell_shape</code> returns the object-0 box plus its open side.</p>
+  <p>Rendered raw, one of these meshes looks like half a bowl - sky dome, mountain ring and far ground cut along a plane through the origin. That is what the entry authors: battle init registers the TMD once but links <strong>two</strong> background actors to it, the second under a per-stage transform that closes the circle. Object 0 is the shell; object 1 never draws. In all 182 entries the open side is <code>-X</code> (129), <code>-Z</code> (49) or <code>+X</code> (4) - never <code>+Z</code>, where the party sits. Placement lives in <code>legaia_scene_formats::battle_backdrop</code> (<a href="../subsystems/battle.html">battle</a>); <code>scene_tmd_stream::shell_shape</code> returns the object-0 box plus its open side.</p>
   <details class="disclosure">
     <summary>Detection rules and reading code</summary>
     <div class="disclosure-body">
@@ -89,7 +89,7 @@
         <li>Chunk0 type byte is 0; its size is 4-aligned, at least <code>12 + nobj * 28</code>, and <code>4 + size &lt;= buf.len()</code>.</li>
         <li>The tail at <code>4 + size</code> walks at least one valid chunk header or a terminator.</li>
       </ol>
-<pre><code>use legaia_asset::scene_tmd_stream;
+<pre><code>use legaia_scene_formats::scene_tmd_stream;
 if let Some(s) = scene_tmd_stream::detect(&amp;buf) {
     let tmd = legaia_tmd::parse(&amp;buf[s.tmd_range()])?;  // bare TMD, no wrapper
     for chunk in &amp;s.tail_chunks { /* (type, size, payload) */ }
@@ -190,7 +190,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
   <code>Flag</code> reserve the slot with a <a href="pochi.html">pochi filler</a>. Details:
   <a href="field-pack.html">field-pack</a>.</p>
   <h3 id="mesh-pool-descriptor-walk">The mesh pool is the descriptor walk</h3>
-  <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>asset::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. A <code>Flag(0x14)</code> table's meshes also include its streamed <code>.pac</code>: the mode-<code>0x14</code> stream registers any TMD-pack chunk's members behind the table's own, and ten scenes with no mesh slot (e.g. <code>chitei2</code>, <code>balden</code>, <code>bubu1</code>) get their whole environment that way. Parser <code>scene_asset_table::mesh_pool</code> / <code>pac_mesh_pool</code>.</p>
+  <p>The <code>Tmd</code> descriptor is an <a href="pack.html"><code>container-formats::pack</code></a> of every static mesh in the scene (<code>town01</code>: 121 meshes). The runtime mesh pool gains one slot per pack member, in pack order, after the five resident party / save-point meshes - Rim Elm is 5 + 114 = 119 slots. Placement of those meshes comes from the field map object table (<a href="../subsystems/field-locomotion.html">field locomotion</a>). A byte sweep for TMD magic is <em>not</em> a substitute: a scene block's bytes carry meshes the walk never registers. A <code>Flag(0x14)</code> table's meshes also include its streamed <code>.pac</code>: the mode-<code>0x14</code> stream registers any TMD-pack chunk's members behind the table's own, and ten scenes with no mesh slot (e.g. <code>chitei2</code>, <code>balden</code>, <code>bubu1</code>) get their whole environment that way. Parser <code>scene_asset_table::mesh_pool</code> / <code>pac_mesh_pool</code>.</p>
   <details class="disclosure">
     <summary>Extended footprint, v12-embedded tables, and the kingdom bundles</summary>
     <div class="disclosure-body">
@@ -231,7 +231,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <div class="bm-cell" style="--w:8"><span class="bm-off"></span><span class="bm-name">records 1..</span><span class="bm-size"></span></div>
   </div>
   <p><code>offsets[0] = 2 + count*2</code>, non-decreasing, in-bounds. Each record is a 16-bit-word-aligned move-VM stager: <code>[i16 model_sel][u16 reserved][bytecode]</code>; most open <code>0xFFFF 0x0000</code> (a transform node) and end with the <code>0x0008</code> Halt word.</p>
-  <p class="hint"><strong>These records are not field-VM bytecode</strong>, however natural that looks. They are the per-scene sibling of the per-summon stagers (<code>legaia_asset::summon_overlay</code>): same record format, same consumer. Record 0 on towns is the scene's <em>master ambient stager</em> - a fixed 768-byte run of 8-byte spawn rows. The scene's field-VM scripts live in the MAN.</p>
+  <p class="hint"><strong>These records are not field-VM bytecode</strong>, however natural that looks. They are the per-scene sibling of the per-summon stagers (<code>legaia_overlay_images::summon_overlay</code>): same record format, same consumer. Record 0 on towns is the scene's <em>master ambient stager</em> - a fixed 768-byte run of 8-byte spawn rows. The scene's field-VM scripts live in the MAN.</p>
   <p>The runtime chain: a MAN script installs a record by id through the stager installer, which reads <code>base + 2 + id*2</code> from the bundle relocated to RAM; the part-stager attaches it to an actor; the move VM runs <code>record + 4</code> each frame. Walking every scene MAN for the install op shows this is the bundle's <strong>only</strong> consumer: partition-1 effect actors install record 0 on entry, partition-2 cutscene timelines install per-shot ids.</p>
   <details class="disclosure">
     <summary>Detection tiers and evidence</summary>
@@ -266,7 +266,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <span class="see-also-label">Reference</span>
     <a href="scene-v12-table.html">Scene v12 table</a>
     <a href="field-pack.html">Field-pack</a>
-    <a href="pack.html">asset::pack</a>
+    <a href="pack.html">container-formats::pack</a>
     <a href="../subsystems/asset-loader.html">Asset loader</a>
     <a href="prot.html">PROT.DAT TOC</a>
     <a href="data-field.html">DATA_FIELD streaming</a>

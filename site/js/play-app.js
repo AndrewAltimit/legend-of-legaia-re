@@ -53,7 +53,7 @@
   /* The 2D half of the PSX GPU, which this page did not have.
    *
    * The engine hands over a vertex/index/run triple built by the SHARED
-   * `legaia_engine_ui::screen_prim` builder - the same code the native window
+   * `legaia_render_kernels::screen_prim` builder - the same code the native window
    * feeds to wgpu. Positions arrive already in NDC and the triangles already
    * in ordering-table order (farthest OT bucket first, LIFO within a bucket),
    * so there is nothing here to project and nothing here to sort: this class
@@ -177,7 +177,7 @@ uint fetch_vram_word(vec2 uv, uint cba, uint tsb) {
 }
 
 /* The PSX texture blend at the framebuffer's 5-bit depth - the twin of
- * engine-render's psx_texture_blend (legaia_engine_ui::screen_prim::
+ * engine-render's psx_texture_blend (legaia_render_kernels::screen_prim::
  * psx_texture_blend): (t5 * c8) >> 7, saturated at 31, so a dim packet
  * colour drops a faint texel to zero. Exact at the neutral 0x80. It is what
  * keeps the additive overworld fog sheets sparse. */
@@ -201,7 +201,7 @@ void main() {
 }
 `;
 
-  /* Byte layout of `legaia_engine_ui::screen_prim::ScreenVertex`. Pinned on
+  /* Byte layout of `legaia_render_kernels::screen_prim::ScreenVertex`. Pinned on
    * the Rust side by `the_vertex_field_offsets_match_the_layout_hosts_read_as_bytes`
    * so a field reorder fails a test rather than a shader. */
   const SCREEN_VERTEX_STRIDE = 48;

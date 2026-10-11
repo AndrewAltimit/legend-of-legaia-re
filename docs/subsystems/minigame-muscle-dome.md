@@ -30,7 +30,7 @@ Three things it is **not**:
 | Ladder + score tables | PROT 0977: roster `0x801D1920`, course descriptors `0x801D1A08`, score table `0x801D1860` |
 | Ringside still loader | `FUN_801F6B24`, PROT 0978 (`field_back_read`, slot-B base `0x801F69D8`) |
 | Port | [Engine port](#engine-port): `engine-minigames::muscle_dome`, `engine-menus::muscle_dome_session`, `engine-core::muscle_ringside`, `engine-minigame-scenes::muscle_dome_scene`, `web-viewer::minigames_muscle` |
-| Disc parsers | `legaia_asset::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
+| Disc parsers | `legaia_minigame_formats::muscle_dome` (deck tables), `muscle_dome::parse_course_ladder` / `parse_score_table` |
 
 Throughout, "ctx" is the shared battle context at `_DAT_8007BD24` and "actor" is a battle actor record reached through `&DAT_801C9370`. Port paths written `muscle_dome::X` resolve as `legaia_engine_core::muscle_dome::X`.
 
@@ -337,7 +337,7 @@ Both ids are `>= 0x200`, so the drainer resolves them against the current-bundle
 
 Category `3` is VAB slot 3, which the same init fills with extraction **1157** (`vab_01 + 0x57`, one program of six tones). Only `0x202` and `0x203` have a writer in the arena image.
 
-Port: the scene host stages the bundle on the warp (`legaia_asset::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
+Port: the scene host stages the bundle on the warp (`legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
 
 <a id="the-arenas-per-frame-voice-cue-fun_801d1288"></a>
 
@@ -552,14 +552,14 @@ A knockout, and nothing else. The arena has no battle loop of its own to bound.
 
 ### Direction commands (the "deck")
 
-The fighter's four selectable actions are its four direction commands, laid out by `FUN_801D388C` case `9` / `0x2C`. Tables in the battle-overlay rodata (parser `legaia_asset::muscle_dome`: `hand_command_ids` / `hand_sprite_ids` / `victory_message_count`; disc-gated `muscle_dome_real`):
+The fighter's four selectable actions are its four direction commands, laid out by `FUN_801D388C` case `9` / `0x2C`. Tables in the battle-overlay rodata (parser `legaia_minigame_formats::muscle_dome`: `hand_command_ids` / `hand_sprite_ids` / `victory_message_count`; disc-gated `muscle_dome_real`):
 
 | Table | Content |
 |---|---|
 | `DAT_801F4B8C[0..4]` | the four command ids `0xC..=0xF` (the weapon-swing runtime slots); the commit path appends the id verbatim into `actor+0x1DF` |
 | `DAT_801F4B94[0..4]` | per-slot chip sprite ids `[0D 10 11 0C]`, with a `+2` "unlearned" face variant gated on the character record's per-move flag at `record+0x18C+move_id` |
 | `DAT_801F4B84[move_id]` | per-move display lookup used by the sub-draw path |
-| `DAT_801C9360[char][cmd]+0x74` | the command's **AP cost** - the byte the Arts gauge reads as the arm width, copied at battle load from the equipment sections' swing records (`FUN_800557B8`; `legaia_asset::battle_char_assembly::SwingAnimation::cost`). Retail values: favored `0x1E` / off-class `0x2A` / far `0x36` |
+| `DAT_801C9360[char][cmd]+0x74` | the command's **AP cost** - the byte the Arts gauge reads as the arm width, copied at battle load from the equipment sections' swing records (`FUN_800557B8`; `legaia_actor_formats::battle_char_assembly::SwingAnimation::cost`). Retail values: favored `0x1E` / off-class `0x2A` / far `0x36` |
 
 - The deal is a four-iteration loop (`uVar17 < 4`); each slot's cost byte is cached in `ctx[slot + 0x14]` and normalised against a `0x1E` baseline to size the chip. The per-slot screen layout is read from a parallel table walked at stride 6.
 - For party character index `2` slots `0` and `3` exchange (the layout is mirrored for that fighter).
@@ -743,7 +743,7 @@ The array's `+0` halfword goes to the record's seat A `x` (`sh v0,0x2(a1)` at `0
 
 Inferred, not measured: the bar's record is anchored at seat-B `y = 194` and the pennant lands on `192`, so with the captured `BAR_Y = 188` the pennant top edge should be 186. Confirming it (and off-class widths) wants a placement-table read on `arts_bar_offclass_gala_nail` / `arts_bar_astral_sword_vahn` diffed against `arts_bar_ideal_gala_club`.
 
-Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_asset::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
+Port: `engine-ui::arts_input` (`ArtsInputFrame::chip_anchor` / `chip_w` / `pennant_w`, `CHIP_WIDEN_K`, `COST_WIDTH_BIAS`), fed the per-(character, weapon) cost row both hosts resolve through `legaia_actor_formats::battle_char_assembly::swing_command_costs` ([`arts-command-gauge.md`](arts-command-gauge.md#reading-it)).
 
 <a id="the-auto-arm-reloads-a-saved-string-and-the-round-rebuilds-it"></a>
 
@@ -1038,7 +1038,7 @@ The port models the same two layers and shares every rule between the native `pl
 
 <a id="the-leg-is-filmed-by-the-battle-camera"></a>
 
-**Camera.** A leg's camera is the battle camera director `FUN_801D5854`. `MuscleDomeSurface` seats the fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)` (`engine-minigame-scenes::battle_seats`, facings `0` / `0x800`) at the battle world scale and steps the shared `engine-battle-vm::battle_cam_script` once a frame:
+**Camera.** A leg's camera is the battle camera director `FUN_801D5854`. `MuscleDomeSurface` seats the fighter and the monster on the lone formation seats `(0, -800)` / `(0, 800)` (`engine-battle::battle_seats`, facings `0` / `0x800`) at the battle world scale and steps the shared `engine-battle-vm::battle_cam_script` once a frame:
 
 | Dome moment | Battle state | Framing |
 |---|---|---|

@@ -111,7 +111,7 @@ fn the_play_page_frames_the_field_with_the_engine_camera() {
 
     // ---- rung 2: its inputs are the engine camera's own live angles - the
     // zone-driven follow camera composed from town01's camera-region record
-    // (`engine-core::camera_zone`), which is what the native window frames
+    // (`engine-field::camera_zone`), which is what the native window frames
     // with. The pinned constants are only the terrain-less fallback: at this
     // entry seat the record's floor-height coupling tilts the pitch off the
     // anchor value (the seat stands on an elevated tier) and the yaw is the

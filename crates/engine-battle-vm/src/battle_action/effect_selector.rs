@@ -164,12 +164,12 @@ pub const DISPLAYED_SKILL_CAP: usize = 16;
 /// PORT: FUN_800402F4 (selectors `0x0B`..`0x0D`, `0x80041FB4..0x80042098`)
 ///
 /// Wired: `World::use_item` runs this for a Hyper-Art **book**
-/// (`engine-core::items::ItemEffect::ArtsBook`, the class-`11`/`12`/`13`
+/// (`engine-menus::items::ItemEffect::ArtsBook`, the class-`11`/`12`/`13`
 /// descriptors on item ids `0x8F..=0x97`), writing the `+0x185`/`+0x186` list
 /// of roster slot `class - 11`. That list is not inert on the engine side
 /// either: `WorldFieldHost::learned_arts` reads it back for the battle AI's
 /// auto-fill queue. The separate **spell** list at `+0x13D`
-/// (`engine-core::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) is a
+/// (`engine-battle::magic_xp::learn_spell_prepend`, `FUN_801E92DC`) is a
 /// different list with a different writer, which is what the earlier reading
 /// of this row conflated.
 pub fn selector_insert_displayed_skill(list: &mut [u8], count: &mut u8, id: u8) -> Option<usize> {

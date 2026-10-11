@@ -9,7 +9,7 @@
 #
 # Six of the seven are PROT 0977 (arena_init / "other_game", the Muscle
 # Dome hub) functions ported in engine-core::muscle_dome and
-# engine-ui::other_game_hud; they must be dumped from the slot-A-based
+# engine-ui::muscle_dome_hud; they must be dumped from the slot-A-based
 # 0977 import, NOT from the overlay_muscle_dome capture (whose slot A
 # holds the battle-action overlay 0898 - VA aliasing, see
 # docs/tooling/dump-corpus-integrity.md). The seventh is the
@@ -44,7 +44,7 @@ PROGRAM_TARGETS = {
         "801d1610",  # callee cited by the 801d00f8 dump
     ]),
     # Field->battle transition capture; the style-selection block of the
-    # transition init (engine-vm::battle_intro_styles::select_intro_style).
+    # transition init (engine-battle-vm::battle_intro_styles::select_intro_style).
     # The historical name FUN_801CE8C0 is mis-rounded: in the static 0979
     # image 0x801CE8C0..0x801CE8C8 are three data words (1, 0x11, 0x12) and
     # the one prologue before the 0x801CE97C style block is at 0x801CE8CC.

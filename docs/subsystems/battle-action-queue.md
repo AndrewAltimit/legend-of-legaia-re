@@ -2,7 +2,7 @@
 
 Every battle action is a short byte string: the **action queue** at `actor[+0x1DF..+0x1F2]`. For an attack, the player's arrows go in as swing bytes, the queue builder rewrites recognised combos into art constants, and the [action state machine](battle-action.md) plays one byte per swing while the animation's hit events apply the damage. This page documents the queue's alphabet, how `FUN_801EED1C` builds it (Tactical Arts, Miracle and Super Arts, the no-input basic attack), how it is consumed, and the action validator `FUN_8003FB10`.
 
-The port builds byte-identical queues (`legaia_art::tokenize` plus the byte appliers in `legaia_engine_vm::battle_action`) and resolves damage from the animation's hit events exactly as retail does.
+The port builds byte-identical queues (`legaia_art::tokenize` plus the byte appliers in `legaia_engine_battle_vm::battle_action`) and resolves damage from the animation's hit events exactly as retail does.
 
 ## At a glance
 
@@ -81,7 +81,7 @@ The port builds the same stream. `World::build_arts_action_queue`
 `legaia_art::tokenize` (leading arrows kept, the starter over the last matched
 arrow, the constant inserted after it), the learn-on-use verdict per accepted
 art (`0x1A` for a newly learned one), and the Miracle / MSB-clear / Super finish
-(`legaia_engine_vm::battle_action::finish_action_queue`), so a three-direction art is two swings plus the art on both sides.
+(`legaia_engine_battle_vm::battle_action::finish_action_queue`), so a three-direction art is two swings plus the art on both sides.
 
 A second commit path exists at `0x801EF5BC..0x801EF644`, gated on
 `ctx[+0x25F + slot] != 0`, which writes `0x1A` at the *start* of the match and
@@ -130,7 +130,7 @@ load-bearing. The build loop writes `1` at each art it accepts
 is the one starter the second pass leaves alone, and the War God Icon's extra
 pass performs the Super again rather than a plain swing. The marks cannot be reconstructed from the finished queue bytes: both starters read `0x1A`.
 
-Port: `legaia_engine_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
+Port: `legaia_engine_battle_vm::battle_action`'s `attack_chain` (`attack_x2_refill`),
 with the counter on `BattleActionCtx::attack_x2_pass` and the marks carried
 from the builder on `BattleActor::starter_marks`
 (`BUILD_STARTER_MARK` / `SUPER_STARTER_MARK`).
@@ -263,7 +263,7 @@ Before `FUN_801E295C` reaches the inner-state machinery, the battle code resolve
 1. **Miracle Art match** - if the input command sequence equals the character's Miracle Art command string, the entire queue is replaced with the Miracle Art's replacement string (`L`/`R`/`D`/`U` × 4 → `SpecialStarter` → `art1, art2, ...`). The first 4 directional bytes carry the on-disc MSB-set quirk and are masked to `0x0C..=0x0F`.
 2. **Super Art find/replace at tail** - for each chained art the runtime walks all the character's Super Art `find` patterns and replaces the matched tail with a `replace` tail ending in the Super Art's finisher action constant. Triggers require: the last art of `find` is the last action in the queue, and all participating arts paid AP.
 
-Both passes are from-scratch ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`, applied together by `legaia_engine_vm::battle_action::resolve_action_queue`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
+Both passes are from-scratch ports in `legaia_art::MiracleMatcher` / `legaia_art::SuperMatcher`, applied together by `legaia_engine_battle_vm::battle_action::resolve_action_queue`. The engine-vm `BattleActionHost` exposes an `art_record(char_id, art_id)` callback so the SM can fetch the [art record](../formats/art-data.md) for power-byte resolution, hit timing, and status-effect application during the `0x14..0x20` Attack chain.
 
 ### The retail queue-builder (`FUN_801EED1C`) and Super applier (`FUN_801EF9E4`)
 
@@ -288,13 +288,13 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    empty head with **no** fallback (`beq` at `0x801DA4CC` lands on the `0x801DA51C` zero-fill,
    never on a `+0x76F` copy). The whole copy is gated on the stage byte `DAT_8007BD04`
    (zero → zero-fill, `0x801DA378`). Live pad edits during the Arts gauge then mutate the
-   same bytes in place. Byte-level port: `legaia_engine_vm::battle_action::preseed_action_queue`.
+   same bytes in place. Byte-level port: `legaia_engine_battle_vm::battle_action::preseed_action_queue`.
    The **write-back twin** is `FUN_801DA59C`: after an arts action (category `+0x1DE == 3`,
    live actor), it copies `actor[+0x1DF..+0x1EF]` back into the char record's chain slot -
    the same `[+0x156] < [+0x154]` predicate picks `+0x76F` vs `+0x77F` (`sb` loops at
    `0x801DA638`/`0x801DA69C`), with no head-byte fallback: exactly one slot is overwritten.
    That is what the next preseed replays. Port:
-   `legaia_engine_vm::battle_action::save_action_queue`.
+   `legaia_engine_battle_vm::battle_action::save_action_queue`.
 
    Both slots are record-relative `+0x1A7` / `+0x1B7`: the character record base
    `0x80084708 + slot*0x414` sits `0x5C8` bytes into the live-state window these
@@ -329,7 +329,7 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    and only when the learn gate opens: `actor[+0x266] == 0`, **or** a 1/512 roll
    (`FUN_80056798() & 0x1FF == 0` at `0x801EFCC4`), **or** the debug byte `DAT_8007BD0C == 'O'`
    (`0x801EFCD4`). Returns `1` when already known, `0` when unknown and not learnable.
-   Byte-level port: `legaia_engine_vm::battle_action::check_and_learn_art`.
+   Byte-level port: `legaia_engine_battle_vm::battle_action::check_and_learn_art`.
    The engine runs it: `engine-core`'s `TacticalArtsTracker` holds the `+0x74D` count and the
    `+0x74E..` ascending id list per character, and the queue builder
    `World::build_arts_action_queue` calls `World::notify_art_used` once per accepted art in the
@@ -366,7 +366,7 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    (`0x801EF69C..0x801EF6B0`, `0x801EF730..0x801EF744`). Two details a paraphrase loses: the outer
    bound is `0xF`, not `0x10` (`sltiu v0,v0,0xf` at `0x801EF960` - index `i` always reads
    `queue[i + 1]`), and the inner loop reloads both compared bytes every iteration.
-   Ports: `legaia_engine_vm::battle_action::clear_queue_msb`,
+   Ports: `legaia_engine_battle_vm::battle_action::clear_queue_msb`,
    `reorder_marked_starters` over `build_starter_marks`, both run by `finish_action_queue`
    between the Miracle copy and the Super applier.
 
@@ -391,14 +391,14 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    the first full match wins** (the match path exits the row loop by forcing the counter to 5),
    and the replace copy stops at the replace string's own terminator **without re-terminating
    the queue** - a replace longer than its find legally spills past byte 16 of the 19-byte
-   stream. Byte-level port: `legaia_engine_vm::battle_action::apply_super_tail_replace`
+   stream. Byte-level port: `legaia_engine_battle_vm::battle_action::apply_super_tail_replace`
    (equivalence with the structural `SuperMatcher` over the shipped tables is test-asserted).
    The applier is called **unconditionally**, including after a Miracle replacement - the
    Miracle row's tail matches no `find` row, so the two do not interact - and it applies at most
    one replace per builder invocation: the row loop exits on the first full match, and the
    builder calls it once.
 
-The engine's entry point `legaia_engine_vm::battle_action::resolve_action_queue` - what
+The engine's entry point `legaia_engine_battle_vm::battle_action::resolve_action_queue` - what
 `engine-core` calls once per committed arts input - runs steps 3, 4 and 5 in that order on a raw
 `ACTION_QUEUE_CAP`-wide byte window, so the live path is the byte applier's arithmetic rather
 than the structural `legaia_art` matchers'. Two retail laws that reach the simulation through
@@ -414,7 +414,7 @@ that pair - the slot the equip screen's row map never exposes, i.e. the Ra-Seru.
 saves agree: the gate byte is small and per-character-banded (Vahn `1` early, `7`/`9` at the end;
 Noa `15`/`17`; Gala `23`/`25`) while the paired weapon byte carries the ordinary shop ids, and it
 reads zero for a member who has not bonded with a Ra-Seru yet. Port
-`legaia_engine_vm::battle_action::miracle_marker_armed`, read at queue-build time by
+`legaia_engine_battle_vm::battle_action::miracle_marker_armed`, read at queue-build time by
 `World::miracle_marker_armed_for` (the byte cannot change between battle entry and an arts
 commit). The second half is the builder's own combo compare against the ordinal-`0` art record,
 for which the engine keeps its whole-string match against the character's Miracle command table.
@@ -472,7 +472,7 @@ against a target whose record `+0x1E` reads `2`. The `% 2` is retail's signed-sa
 already zeroed by the round-boundary clear, and `0x00` is what the attack band stops on.
 
 `+0x1E` sits between the record's element byte `+0x1D` and its size class `+0x1F`, and is parsed
-as `legaia_asset::monster_archive::MonsterRecord::swing_class`. It is not a rare byte: across the
+as `legaia_actor_formats::monster_archive::MonsterRecord::swing_class`. It is not a rare byte: across the
 186 decodable records of the archive it reads `0` for 127, `1` for one, **`2` for 52** and
 **`3` for six** - so both of the classes the two kernels branch on are ordinary enemies, and both
 arms are reachable in normal play. Two kernels read it, both
@@ -485,7 +485,7 @@ target connects only with power bytes in `0x01..=0x10` and a class-`3` target on
 `0x11..=0x15`. Together they read as the height / posture class behind retail's limb-vs-height
 "Miss"; the disassembly pins the effects, not the name.
 
-**Port.** `legaia_engine_vm::battle_action::basic_attack_queue`, byte-for-byte including the
+**Port.** `legaia_engine_battle_vm::battle_action::basic_attack_queue`, byte-for-byte including the
 two-draws / no-draws RNG split. `engine-core`'s `World::seed_basic_attack_queue` calls it from
 both party arming sites - the command menu's Attack confirm (and its no-valid-target fallback)
 and the auto / confused party turn `arm_party_physical`. The engine's Attack command is
@@ -504,13 +504,13 @@ State `0x1E` is a walk over the stream. An Attack that armed the band without se
 
 When the active actor's `chosen_art` is set and `art_record` returns a record, `attack_chain` (state `0x1A`) calls a second host hook `apply_art_strike(ArtStrikeInfo)` alongside the existing `apply_damage`. `ArtStrikeInfo` carries the strike-indexed power byte, dmg_timing, hit cue, and the art's flat status effect. Engines drive HP deduction, status application, sound-effect scheduling, and visual hit-cue dispatch off this struct; tests feed synthetic `ArtRecord` instances and assert the per-strike `(power, timing, effect, cue)` resolution rather than going through `apply_damage`'s legacy `(icon, page, target, slot)` parameter pack.
 
-The engine-side translator at `crates/engine-battle/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle.attack` and the right defense (UDF or LDF, picked from `World::battle.defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
+The engine-side translator at `crates/engine-battle/src/art_strike.rs` (`apply_art_strike(attack, defense, info) -> ArtStrikeOutcome`) folds an `ArtStrikeInfo` into a concrete HP delta + status flag + scheduled SFX cues using the `art_strike_damage` formula in `legaia_engine_battle_vm::battle_formulas`. The world's `BattleActionHost::apply_art_strike` impl resolves the per-slot weapon attack from `World::battle.attack` and the right defense (UDF or LDF, picked from `World::battle.defense_split`) before calling the translator, then emits a `BattleEvent::ApplyArtStrike` with the resolved `ArtStrikeOutcome`. Engines apply each strike's `damage` / `enemy_effect` / `cues` through whatever runtime they have for HP / status / SFX dispatch.
 
 `World::fold_battle_event` folds the `ApplyArtStrike` outcome: HP / status into the target, and the outcome's **sound cues** (`cue.is_sound()`, the `HitCue::kind` SfxBank ids - distinct from the move-power `+0x0d` `FUN_8004fcc8` namespace) into a per-frame `BattleSfxCue` queue the host drains via `World::drain_battle_sfx_cues` (the audio sibling of `drain_battle_hit_fx`). The host plays each through `SfxBank::play_one_shot` at the cue's `timing_frames` delay. The live battle loop wires this end to end: the SFX bank is decoded from the user's executable at boot and the cues key on through the per-scene VAB (see [`battle.md`](battle-round-loop.md#sfx-bank--scheduler)).
 
 ### Miracle / Super in the live player-driven Arts submenu
 
-Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle-round-loop.md#arts-command-input) hands `World::build_arts_action_queue` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_core::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands the same builder a stored `legaia_save::SavedChainRecord`'s directional string (`ArtRow::sequence`). Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
+Both matchers run against a flat **directional command string** with no connector bytes. The live path produces that string two ways: the retail per-press [Arts command input](battle-round-loop.md#arts-command-input) hands `World::build_arts_action_queue` the buffer the player typed, and the legacy saved-chain list (`legaia_engine_battle::battle_arts`, behind `LEGAIA_ARTS_SAVED_LIST=1`) hands the same builder a stored `legaia_save::SavedChainRecord`'s directional string (`ArtRow::sequence`). Everything below applies to both - "the chain" is whichever string reached the matcher. Two trigger paths interact with that model differently:
 
 - **Miracle Arts are wired.** A Miracle Art's trigger *is* an exact directional-string match (`MiracleMatcher::find`), so `battle_arts::miracle_for_chain` recognises a saved chain whose command string equals the caster's Miracle Art and flags the menu row (`ArtRow::miracle = Some(name)`). `World::build_battle_arts_rows` then resolves the row's per-strike profile from the Miracle's finisher-replacement queue via `resolve_action_queue`: each art constant in the replacement contributes its staged [`ArtRecord`](../formats/art-data.md) power bytes + status effect, or one tier-0 (`x12`) synthetic strike when that art's record isn't loaded (the same graceful-degradation fallback the no-disc-data path uses). The native `play-window` HUD shows the Miracle name on the row.
 - **Super Arts are wired, with the queue connectors abstracted.** A Super fires when the player chains several named arts ending on a known combination. `SuperMatcher`'s `find` patterns match the **tail** of a queue with the *interleaved* shape `Starter Art <dir> Starter Art <dir> Starter Art` (e.g. Vahn's Tri-Somersault `find` = `19 27 0F 19 1F 0E 19 27` = `Starter Somersault Up Starter Cyclone Down Starter Somersault`; see [art-data.md](../formats/art-data.md#super-arts) § Super Arts). The live submenu reaches that match in two steps:
@@ -555,7 +555,7 @@ The same three things, in the same seats:
   (`world/battle/loop_driver/hits.rs`) is the engine seat of the per-frame
   `FUN_801EC3E4` call. For every actor whose committed clip is in flight it
   runs the kernel's head guard chain
-  (`legaia_engine_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
+  (`legaia_engine_battle_vm::battle_action::hit_event_admits`: `ctx[7] != 0x5A`,
   `entry[0]` in `0x0C..=0x1F`, `+0x1F4 < 4`, `entry[0x10 + idx] != 0`,
   `frame + 1 >= entry[0x10 + idx]`) against the playing clip's own head bytes
   (`MonsterAnimPlayer::hit_source`), resolves an admitted hit with the entry's
@@ -567,7 +567,7 @@ The same three things, in the same seats:
   runs the tick's event-path commit (`event_commit_due`:
   `entry[0x10] + 2 < frame` with `entry[+0x76] == 0`), which is what chains
   one swing into the next mid-clip. Each resolved hit is surfaced as a
-  `BattleHitEvent` (`engine-core::battle_events`) carrying its index, power
+  `BattleHitEvent` (`engine-battle::battle_events`) carrying its index, power
   byte, damage and running total for the impact-FX and HIT / TOTAL layers.
 
 A direction swing's entry carries its own power byte at `+0x00` (Vahn's high
@@ -590,12 +590,12 @@ re-zero of `+0x1F4` (`MonsterAnimPlayer::take_loop_rewound`, read by
 `tick_battle_hit_events` under the same party / slot `0x11` / latched
 `>= 0x2B` gate). `World::hit_apply_mode` runs the look-ahead and the mode
 decision on every admitted hit
-(`legaia_engine_vm::battle_action::remaining_hit_class_bits` +
+(`legaia_engine_battle_vm::battle_action::remaining_hit_class_bits` +
 `apply_mode`), and `resolve_hit_event` routes on the result: `APPLY_MODE_EARLY`
 lands the total on this hit, `APPLY_MODE_CARRY` lands nothing, anything else
 keeps the cursor-parked / last-beat pair.
 
-The size-class byte the early arm needs is `legaia_asset::monster_archive::MonsterRecord::swing_class` (record `+0x1E`), projected into the catalog as `MonsterDef::swing_class`, which also fills the no-input attack queue's class input (`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
+The size-class byte the early arm needs is `legaia_actor_formats::monster_archive::MonsterRecord::swing_class` (record `+0x1E`), projected into the catalog as `MonsterDef::swing_class`, which also fills the no-input attack queue's class input (`World::attack_swing_class_of`). A synthetic catalog leaves it `0` - the class
 that connects with everything - so a disc-free session never takes the early arm. The `ctx[+0x16]` pair counter the carry arm reads is written by the strike
 loop's own Attack x2 refill and by the stage site's per-stage bump, both
 described in §2.
@@ -633,7 +633,7 @@ Still divergent:
 
 ### Spirit / Run in the live command menu
 
-The live player-driven command menu (`legaia_engine_core::battle_input::BattleCommand`) carries
+The live player-driven command menu (`legaia_engine_menus::battle_input::BattleCommand`) carries
 all six commands: Attack (target cursor + physical strike), Arts / Magic / Item (host-submenu
 hand-offs), **Spirit** and **Run**. Spirit resolves without a target: the live loop charges the
 caster's AP gauge (`ApGauge::charge_spirit`, the retail Square-press +5) and raises a per-slot
@@ -660,7 +660,7 @@ records `0x80084708 + slot*0x414` (`+0x106/+0x104/+0x10A/+0x108`, 3 slots) - and
 per-slot validity bit at `gp + 0x9A8`. Source:
 `ghidra/scripts/funcs/8003fb10.txt`.
 
-Arms (ported wholesale as `legaia_engine_vm::battle_action::validate_action` over the
+Arms (ported wholesale as `legaia_engine_battle_vm::battle_action::validate_action` over the
 `ActionValidatorHost` trait, with the `gp + 0x9A8` byte modelled as an explicit `validity_bits`
 parameter; the target-relevance arms are additionally re-implemented where they are consumed -
 liveness/kind gating in `legaia-engine-core`'s `target_picker`, item-benefit arms in

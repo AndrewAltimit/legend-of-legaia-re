@@ -18,7 +18,7 @@ cue ring that carries ids to the voice programmer.
 | Stride / count | 8 bytes, **100** descriptors (ids `0x00..=0x63`) |
 | Runtime rows | ids `>= 0x200`: record 0 of the bundle at `_DAT_8007B8D0` |
 | Readers | `FUN_800250D4` (per-actor trigger), `FUN_80016B6C` (cue-ring drainer) |
-| Parser | `legaia_asset::sfx_table` (`crates/game-tables/src/sfx_table.rs`) |
+| Parser | `legaia_game_tables::sfx_table` (`crates/game-tables/src/sfx_table.rs`) |
 | CLI | `asset sfx-table <SCUS> [--json]` |
 | Confidence | Confirmed - disc parse is byte-identical to the same window in live save-state RAM |
 
@@ -172,7 +172,7 @@ sub-`0` sites and 2 690 sub-`4` sites across 133 carriers. Static ids span
 `0x2D`, `0x2A` lead); runtime ids span `0x200..=0x25F`. `rugi` alone carries 587
 sites; `opdeene`'s cutscene timeline pushes `0x2A` and `0x29` with no input.
 
-Port: each call queues a `legaia_engine_core::world::SfxRingOp`
+Port: each call queues a `legaia_engine_system::sound_state::SfxRingOp`
 (`World::take_sfx_ring_ops`). The native `BootSession` and the browser play page
 replay the queue onto their `SfxScheduler`'s ring every tick. A ring id is the
 drainer's input, so it never goes through `classify_cue`. A runtime id keys the
@@ -607,7 +607,7 @@ tone 0 / note 67, and `0x4C` = program 3 / tone 8 (voice count 2).
 
 ## Parser
 
-`legaia_asset::sfx_table::SfxTable::from_scus` resolves the table from a
+`legaia_game_tables::sfx_table::SfxTable::from_scus` resolves the table from a
 `SCUS_942.54` image (PSX-EXE `t_addr` → file-offset map, as the
 [item-name table](item-table.md) resolver does); `from_table_bytes` parses a raw
 window out of save-state RAM. `SfxDescriptor` exposes the fields plus

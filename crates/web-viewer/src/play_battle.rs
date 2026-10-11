@@ -177,7 +177,7 @@ fn battle_hud_popup_views(hud: &BattleHud) -> Vec<HudPopupView> {
 
 /// The chip cluster the page projects for one frame: the owned `(label,
 /// enabled)` chips in seat order, the cursor index, and the cluster's phase
-/// (`engine-core::battle_hud::BattleCommandChips`, with the phase mapped
+/// (`engine-menus::battle_input::BattleCommandChips`, with the phase mapped
 /// onto the leaf crate's own enum).
 pub(crate) type CommandChips = (
     Vec<(String, bool)>,

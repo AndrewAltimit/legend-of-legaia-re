@@ -4,7 +4,7 @@ The minigames' **3D scene surfaces**, split out of `legaia-engine-core`: the
 kernels that turn a running minigame into posed vertex buffers and a camera,
 one per game, which every host draws. `engine-core` depends on this crate,
 never the other way round, and re-exports both modules at their old paths
-(`legaia_engine_core::baka_duel_scene`, `legaia_engine_core::muscle_dome_scene`),
+(`legaia_engine_minigame_scenes::baka_duel_scene`, `legaia_engine_minigame_scenes::muscle_dome_scene`),
 so hosts and tests name the same paths they always did.
 
 ## What lives here

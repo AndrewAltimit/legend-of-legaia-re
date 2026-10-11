@@ -20,13 +20,13 @@ indices unless marked "raw TOC" (raw = extraction + 2, see
 | | Field form | Battle form | Baka Fighter form |
 |---|---|---|---|
 | Source | PROT 0874 §0 (`player.lzs`) | `data\battle\PLAYER1..4` = PROT 0863..0866 | PROT 1204 (`other5`) + atlases in 1205 |
-| Stored as | LZS [`asset::pack`](pack.md) of 5 TMDs | per-equipment-id LZS sections, spliced at load | 5 raw TMD2 chunks (type `0x09`) |
+| Stored as | LZS [`container-formats::pack`](pack.md) of 5 TMDs | per-equipment-id LZS sections, spliced at load | 5 raw TMD2 chunks (type `0x09`) |
 | Objects (Vahn / Noa / Gala) | 12 on disc, capped to 10 live | 15 / 16 / 15 bones + 2 equipment extras | 15 / 16 / 15 |
 | Pool slots | `DAT_8007C018[0..=4]` | `DAT_8007C018[0..=2]` | loaded by the minigame overlay |
 | Textures | PROT 0874 §2 (8 TIMs) | the player file's own texture pools | PROT 1205 (8 TIMs) |
 | Palette rows (VRAM `y`) | 478 (+ 473 / 475 shared) | 481 / 482 / 483, one per party slot | 490..497 |
 | Pose source | PROT 0874 §1 locomotion ANM | `record[0]` action streams of the same file | PROT 1203 ANM banks |
-| Parser | [`legaia_asset::character_pack`](../../crates/actor-formats/src/character_pack.rs) | [`battle_char_assembly`](../../crates/actor-formats/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/actor-formats/src/battle_char_pack.rs) |
+| Parser | [`legaia_actor_formats::character_pack`](../../crates/actor-formats/src/character_pack.rs) | [`battle_char_assembly`](../../crates/actor-formats/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/actor-formats/src/battle_char_pack.rs) |
 | Confidence | Confirmed | Confirmed | Confirmed |
 
 ```mermaid
@@ -96,7 +96,7 @@ LZS container ([`asset-descriptor.md`](asset-descriptor.md),
 
 | Section | Decoded size | Content |
 |---|---|---|
-| §0 | `0xB49C` (46 236) | [`asset::pack`](pack.md) of five Legaia TMDs |
+| §0 | `0xB49C` (46 236) | [`container-formats::pack`](pack.md) of five Legaia TMDs |
 | §1 | `0x41E0` | party locomotion ANM bundle ([§ Field rest pose](#field-rest-pose---the-locomotion-bundle-prot-0874-1)) |
 | §2 | `0x1D524` | pack of eight TIMs ([§ Textures](#textures-field-form)) |
 
@@ -151,7 +151,7 @@ means one entry in each index space, which is how the two were once fused.
 **The editing contract.** A rebuilt PROT 0874 must keep its first four words
 (`meta[0]`, `meta[1]`, `type<<24|size0`, `offset0`) byte-exact *and* keep §0
 decoding to retail's 46 236 bytes - pad the pack tail; retail itself pads
-~19 KB in slot 4. `legaia_patcher::party_swap::fieldize` does this. A rebuild
+~19 KB in slot 4. `legaia_party_swap::fieldize` does this. A rebuild
 that changed §0's decoded size hung the next battle load with a wild read at
 `0x808425F8` under PCSX-Redux. The mechanism:
 
@@ -273,7 +273,7 @@ The swap is **binary**: one visible group toggles between two pre-baked
 variants. It never changes `nobj`, adds no object and uploads no mesh. Item
 identity on the field model is carried by the
 [texture atlas](#textures-field-form), not by geometry. The Rust equivalent is
-`legaia_asset::character_pack::equipment_swap::apply`.
+`legaia_actor_formats::character_pack::equipment_swap::apply`.
 
 **Open: Vahn's row.** Applied literally, patched group `0` is Vahn's largest
 group (77 vertices / 132 primitives - the head), while both templates are 12-
@@ -287,7 +287,7 @@ Vahn's patched index against a live capture before applying the swap to slot
 ## Textures (field form)
 
 Field textures are **PROT 0874 §2**, parser
-[`legaia_asset::field_char_textures`](../../crates/actor-formats/src/field_char_textures.rs).
+[`legaia_actor_formats::field_char_textures`](../../crates/actor-formats/src/field_char_textures.rs).
 (Not extraction 0876, whose `player_data` *filename label* is the +2 label
 shift; it is a VAB + empty TIM_LIST + SEQ stream.)
 
@@ -433,7 +433,7 @@ the pool TMD (`FUN_80024D78`: `count = *(tmd+8)`, object `i` at
 `count == record_bone_count` before drawing. That is why the cap matters: 12
 disc groups minus 2 templates leaves the 10 objects the 10-bone clips
 animate. Each 8-byte (bone, frame) entry decodes via `FUN_8001BE80`
-(`legaia_asset::player_anm::BoneTransform`) to a flat `R·v + T` about the
+(`legaia_actor_formats::player_anm::BoneTransform`) to a flat `R·v + T` about the
 group's local origin, composed onto the actor's facing matrix.
 
 ## Battle form - assembled from the player files

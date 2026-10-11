@@ -115,7 +115,7 @@ pub(super) fn npc_slot_source(
     let (member, idle_rec) = npc_coords(monster_id)
         .ok_or_else(|| anyhow::anyhow!("monster id {monster_id} has no field NPC coordinates"))?;
 
-    // The pack entry is a raw stream: [u32 (type<<24)|size][asset::pack].
+    // The pack entry is a raw stream: [u32 (type<<24)|size][container-formats::pack].
     let head = u32::from_le_bytes(
         npc_pack
             .get(0..4)

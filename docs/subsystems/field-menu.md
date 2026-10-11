@@ -19,7 +19,7 @@ draw builders; the remaining differences from retail are listed under
 
 | Thing | Where |
 |---|---|
-| Window descriptor table | VA `0x801E4738`, 52 records x `0x10` bytes (PROT 0899 file `0x15F20`); parser `legaia_asset::menu_windows` |
+| Window descriptor table | VA `0x801E4738`, 52 records x `0x10` bytes (PROT 0899 file `0x15F20`); parser `legaia_game_tables::menu_windows` |
 | Window creator / per-frame walker | SCUS `FUN_800326AC` / `FUN_80031D00` |
 | Window-script runner | `FUN_801D6628` (programs in [`window-script.md`](../formats/window-script.md), VM in [`actor-vm.md`](actor-vm.md)) |
 | Master menu tick + sub-screen table | `FUN_801DC6B4`, pointer table `0x801E4F40` (ids `0x00..=0x20`), selector `DAT_801E46A4` |
@@ -472,7 +472,7 @@ applies the same two gates in the same order, so no row draws white and then
 buzzes.
 
 `DAT_8007b6a8` is per-scene: the MAN header bit `[0x01] & 1`
-(`legaia_asset::man_section::ManHeader::low_flag`) seeds it. The bit is set on
+(`legaia_scene_formats::man_section::ManHeader::low_flag`) seeds it. The bit is set on
 the three kingdom world maps and clear on every field scene, so Save is grey
 everywhere but the overworld.
 
@@ -1102,7 +1102,7 @@ the kernel and saves the Use-list scroll (`_DAT_8007BB98/90 ->
 DAT_801EF070/74`, `801d8bd8..801d8bf8`); phase 1 zeroes the scroll and opens
 **window 11**, the destination list (same rect as list 15, content id
 `0x19`); phase 2 re-arms the kernel; phase 3 on a pick reads the 6-byte
-quick-travel record `0x80073A98 + slot*6` (`legaia_asset::worldmap_menu`) and
+quick-travel record `0x80073A98 + slot*6` (`legaia_game_tables::worldmap_menu`) and
 stages `+2 -> 0x80084628`, `+4 -> 0x80084624`, `+5 -> 0x8008462C`
 (`801d8c88..801d8ccc`), consumes one `0x89` and exits with code
 `_DAT_8007B43C = 5`, the world-map warp. Cancel restores the scroll -> 6.
@@ -1777,7 +1777,7 @@ drivers, and `0x801DB510` is interior to `FUN_801DB380`.
 starts at `_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count
 the record owns. For a shop record `[count][count x item_id][ASCII name]` that
 lands on the vendor name
-([`legaia_asset::shop_stock`](../../crates/scene-formats/src/shop_stock.rs)), which is
+([`legaia_scene_formats::shop_stock`](../../crates/scene-formats/src/shop_stock.rs)), which is
 why window 33 is the vendor plate in a shop and a prompt line here.
 
 Small sub-screen ticks on the same phase protocol:
@@ -1891,7 +1891,7 @@ from generic field-VM ops (dialogue, an option picker, the `0x4E` gold gate,
 The slot is a literal operand against the `0x80084708` records, one op per
 party member. Charge and restore are decoupled, so a free rest is the same
 tail without the gate, and the price is a script literal - there is no inn
-cost table. The full flow, the cost scanner (`legaia_asset::inn_costs`) and
+cost table. The full flow, the cost scanner (`legaia_scene_formats::inn_costs`) and
 the port (`op4c_n8_sub2_restore_party_slot`; `MenuRuntime::open_inn` is an
 engine-side convenience session, not a port of a retail screen) are on
 [`inn.md`](inn.md).
@@ -1991,7 +1991,7 @@ worklist row from that band falls in one of these buckets (vocabulary of
 The pause menu is fully playable on both hosts: all seven root rows, every
 sub-flow above, the scripted save-point and pre-battle entries, and the shop
 and prize counter that share the window pool. The table is parsed from the
-user's disc at boot (`legaia_asset::menu_windows`, with `MENU_WINDOW_FALLBACK`
+user's disc at boot (`legaia_game_tables::menu_windows`, with `MENU_WINDOW_FALLBACK`
 as a pinned mirror when no disc table is available) and each section above
 names its session and draw builders.
 

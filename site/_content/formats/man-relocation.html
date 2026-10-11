@@ -10,7 +10,7 @@
     <dt>Magic</dt><dd>none - operates on a decompressed scene MAN (header, three partition record-offset tables, record region, then the section chain)</dd>
     <dt>Where on disc</dt><dd>Every scene bundle's LZS-compressed MAN, described by the <a href="scene-bundles.html">scene_asset_table</a> descriptor word <code>(type&lt;&lt;24)|size</code></dd>
     <dt>Stride</dt><dd>u24LE record-offset entries from <code>0x2B</code>; the data region starts at <code>0x2B + 3 &times; total_records</code></dd>
-    <dt>Parser / editor</dt><dd><code>legaia_asset::man_edit</code> (<code>apply_dest_edits</code>, <code>apply_text_edits</code>, <code>rebuild_man</code>, <code>validate</code>)</dd>
+    <dt>Parser / editor</dt><dd><code>legaia_scene_formats::man_edit</code> (<code>apply_dest_edits</code>, <code>apply_text_edits</code>, <code>rebuild_man</code>, <code>validate</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - dispatch path pinned by a live PCSX-Redux trace plus a disc-wide corpus census; every rebuild is re-walked against the original (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../tooling/randomizer.html">Door randomizer</a>, <a href="../tooling/translation.html">Translation packs</a></dd>
   </dl>

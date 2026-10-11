@@ -3,7 +3,7 @@
 How to **resize** a field-VM `0x3F` named-scene-change ("door / exit")
 destination in a decompressed scene **MAN** and rebuild the buffer so every
 internal offset stays valid. This is what lets the [randomizer](../tooling/randomizer.md)
-re-point a door at a scene with a differently-sized name. Engine: `legaia_asset::man_edit`.
+re-point a door at a scene with a differently-sized name. Engine: `legaia_scene_formats::man_edit`.
 
 ## The destination table is the partition-2 record-offset table
 
@@ -93,7 +93,7 @@ fixups (all offsets per [`man_section`](../../crates/scene-formats/src/man_secti
 - **Identify the carrier, not the scene name.** An edit is keyed to the PROT
   entry the MAN actually lives in. A scene may have no MAN of its own, one
   bundle MAN, or a bundle MAN plus a streaming variant carrier
-  (`legaia_asset::man_section` parses all of them identically); the enumerator
+  (`legaia_scene_formats::man_section` parses all of them identically); the enumerator
   is `legaia_engine_core::man_field_scripts::scene_man_carriers`. Every carrier
   on the disc is byte-unique, so a name that appears to resolve the *same* MAN
   as another scene is a framing bug, not a shared asset - a CDNAME block whose
@@ -157,7 +157,7 @@ rest are residual sector-crossers whose deficit is under one 2048-byte sector;
 supplying that sector is a disc-level relayout (what the PAL discs did at
 mastering - see [pal-localizations.md](../tooling/pal-localizations.md)).
 
-## The same question for an `asset::pack`: growing a mesh member
+## The same question for an `container-formats::pack`: growing a mesh member
 
 A scene's TMD [pack](pack.md) poses the relocation question in its simplest
 form, and the answer is the opposite of the MAN's: **nothing outside the pack
@@ -182,7 +182,7 @@ different structure and each was checked:
 |---|---|---|
 | The pack's own `word_offsets[i]` | member start `/ 4` | yes - **internal** |
 | Mesh pool `DAT_8007C018` | one slot per member, in pack order (`FUN_8001F05C` loops `i in 0..count` calling `FUN_80026B4C(buf + offsets[i] * 4)`) | no - a runtime pointer rebuilt on every scene load |
-| Placement records (`legaia_asset::field_objects`) | pool slot = member index + `FIELD_ACTOR_PACK_BIAS` | no |
+| Placement records (`legaia_scene_formats::field_objects`) | pool slot = member index + `FIELD_ACTOR_PACK_BIAS` | no |
 | Scene ANM records | an ANM **record number**, paired to a member by the placement's anim byte | no |
 | The bundle's `scene_asset_table` descriptors | `data_offset` / `size` inside the **bundle entry** (`0638`) | no - the pack is a separate PROT entry |
 | The bundle header's `+0x04` word | `Σ descriptor.size`, and never read | no |
@@ -198,7 +198,7 @@ any of the 112 members' byte offsets.
 So the cost of growing a member is: rewrite `word_offsets[i..]` for every member
 at or after the grown one, rewrite the chunk header's declared length, and keep
 the result inside the entry's sector footprint. That is exactly what
-`legaia_patcher::party_swap::nivora_field` does when it re-emits members
+`legaia_party_swap::nivora_field` does when it re-emits members
 `106/107/108` (disc oracle `nivora_field_real`), and it is why the swap budgets
 the *contiguous span of the three retail members* rather than patching in place.
 

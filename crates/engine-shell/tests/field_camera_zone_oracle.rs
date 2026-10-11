@@ -1,5 +1,5 @@
 //! Retail oracle for the **zone-driven field follow camera**
-//! (`engine-core::camera_zone` + `Camera::zone`): for every walkable state in
+//! (`engine-field::camera_zone` + `Camera::zone`): for every walkable state in
 //! the save library, seat the engine on the state's scene and player tile
 //! and grade the port against what retail's own RAM holds.
 //!

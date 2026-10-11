@@ -126,7 +126,7 @@
 # and a scene can be legitimately silent on a fresh save and loud later
 # (`cave01` is gated on `0x0142` / `0x015E`) or silent in every reachable state
 # (the opening/ending stages, the Sol Tower sub-rooms, and `keikoku`).
-# `legaia_asset::man_section` carries the group model; `asset man
+# `legaia_scene_formats::man_section` carries the group model; `asset man
 # --with-encounter` prints regions under the group that owns them and marks the
 # live one.
 #

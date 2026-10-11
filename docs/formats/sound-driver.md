@@ -58,7 +58,7 @@ Empirically confirmed against the disc: PROT `0877` (`sound_data2`) walks cleanl
 
 `FUN_8001FA88`'s hardcoded `0x37A` load is **not** the `.dpk` and does not tie the filename to this block, though it does sit in it: raw TOC `0x37A` is extraction 888, which is `bse.dat`, and the load is on the **retail** branch. The `.dpk` is the routine's other load, `param_1 + 5`. See [`bse-dat.md`](bse-dat.md#which-entry-it-is-and-when-it-loads).
 
-The difference from the DATA_FIELD walker is **only the terminator**: `FUN_8001FE70` ends on a type-`0x02` chunk (whose `size` is non-zero), whereas `FUN_8002541C` ends on a zero-`size` header - so the DATA_FIELD parser mis-reads a `.dpk`. The walker is `legaia_asset::parse_streaming_with(buf, max, StreamTerminator::TypeTwo)`; the disc-gated `sound_pack_stream_real` test pins the clean type-2 walk of PROT `0877`.
+The difference from the DATA_FIELD walker is **only the terminator**: `FUN_8001FE70` ends on a type-`0x02` chunk (whose `size` is non-zero), whereas `FUN_8002541C` ends on a zero-`size` header - so the DATA_FIELD parser mis-reads a `.dpk`. The walker is `legaia_container_formats::parse_streaming_with(buf, max, StreamTerminator::TypeTwo)`; the disc-gated `sound_pack_stream_real` test pins the clean type-2 walk of PROT `0877`.
 
 ## The `.dpk` / `sound_data2` payload is a VAB + SEQ bundle
 
@@ -82,7 +82,7 @@ battle-init walk, `FUN_8001FE70`'s type-1 handler is the TIM/CLUT upload
 (`FUN_800198E0`), but a sound pack's type-1 chunk is not a TIM. The content shape is identical
 to the [`scene_vab_stream`](scene-bundles.md) BGM wrapper (VAB + SEQ), only the
 container differs (type-2-terminated streaming chunks vs the chunk0-prefixed
-form). Decoder: [`legaia_asset::sound_pack`](../../crates/container-formats/src/sound_pack.rs)
+form). Decoder: [`legaia_container_formats::sound_pack`](../../crates/container-formats/src/sound_pack.rs)
 (`extract` returns the reconstituted VAB + the SEQ); disc-gated
 `sound_pack_vab_seq_real` test. The `.dpk` is not a *bare* VAG-record
 container: the VAG samples are the type-1 section *of a VAB*, indexed by the

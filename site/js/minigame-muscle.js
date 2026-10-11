@@ -17,7 +17,7 @@
  *     it the player's ASSEMBLED BATTLE FORM - retail fields the party's
  *     normal fighter forms here, not the Baka pack: the player battle
  *     file's equipment-id sections assembled + band-0 relocated
- *     (legaia_asset::battle_char_assembly, `muscle_fighter_*`), posed from
+ *     (legaia_actor_formats::battle_char_assembly, `muscle_fighter_*`), posed from
  *     the file's own record[0] action streams and per-command swing
  *     records - versus a monster of the PROT 867 archive, its texture pool
  *     relocated to battle texture slot 0 exactly as the retail battle
@@ -76,7 +76,7 @@
  * (448,0), CLUT row 476), and the "Welcome to the Muscle Dome!" cursive +
  * INTERVAL/ROUND headings from the dome's own data file (extraction 1220)
  * through the PROT 0977 overlay's sprite descriptor table
- * (engine-ui::other_game_hud). Screen geometry comes from the SCUS-static
+ * (engine-ui::muscle_dome_hud). Screen geometry comes from the SCUS-static
  * screen-element placement table (0x80076C10) plus a live PCSX-Redux packet
  * capture of a dome match (command cluster, enemy art, player HYPER ARTS!!
  * playback - scripts/pcsx-redux/autorun_muscle_hud_capture.lua).
@@ -191,7 +191,7 @@ window.MgMuscle = (function () {
      * A leg is one battle and ends on a KO; the CONTEST is the ladder above
      * it - which (course, round) is staged, what a cleared leg banks, and
      * what the run finally pays. All of that lives in the shared engine
-     * kernel (legaia_engine_core::muscle_dome::DomeContest, PROT 0977's
+     * kernel (legaia_engine_minigames::muscle_dome::DomeContest, PROT 0977's
      * FUN_801CEA6C + FUN_801CF870); this page only drives it, exactly as the
      * native play-window does. Nothing here decides a rule.
      *
@@ -532,7 +532,7 @@ window.MgMuscle = (function () {
     /* --------------------------------------------------------- 3D scene
      *
      * The dome's 3D is the engine's own surface
-     * (legaia_engine_core::muscle_dome_scene::MuscleDomeSurface, through
+     * (legaia_engine_minigame_scenes::muscle_dome_scene::MuscleDomeSurface, through
      * muscle_surface_*): the fighter and the opponent on the battle
      * formation seats, the play-out choreography (the closing walk, the
      * swings, the flinch and the knockdown) and the battle camera script -
@@ -1592,7 +1592,7 @@ window.MgMuscle = (function () {
     /* The round TIME METER (FUN_801d3444): a 0..0xC counter that ramps while
      * the direction-ENTRY phase (`ctx+6 == 0x50`) runs and drains otherwise,
      * mapped to a 160-px bar (`counter * 160 / 12`). The counter comes from
-     * the port (`engine-core::muscle_dome::time_meter_step`, through
+     * the port (`engine-minigames::muscle_dome::time_meter_step`, through
      * `muscle_tick_time_meter`); only the screen placement is fitted. */
     function drawTimeMeter() {
       const hFull = 160;
@@ -1738,7 +1738,7 @@ window.MgMuscle = (function () {
 
     /* The retail play-out damage tally: the etim TOTAL word + the big
      * orange numerals, at the battle overlay's own combo-cluster seats
-     * (`legaia_engine_vm::battle_value_readout`: COMBO_TOTAL_LABEL_SEAT
+     * (`legaia_engine_battle_vm::battle_value_readout`: COMBO_TOTAL_LABEL_SEAT
      * (216, 170), 16-px value cells ending at x=304 on row 168 - the
      * frame-oracle-pinned seats every battle draws the cluster at; the
      * dome reuses the battle overlay wholesale). */

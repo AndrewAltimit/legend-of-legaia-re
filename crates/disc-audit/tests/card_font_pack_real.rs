@@ -161,8 +161,8 @@ fn card_font_pack_is_two_kanji_tims_or_skips() {
     };
 
     // The runtime's own walk: count then word offsets (FUN_8002574C).
-    let entries =
-        legaia_container_formats::pack::parse_pack(&buf).expect("0892 parses as asset::pack");
+    let entries = legaia_container_formats::pack::parse_pack(&buf)
+        .expect("0892 parses as container-formats::pack");
     assert_eq!(entries.len(), 2, "two members");
     assert_eq!(entries[0].byte_offset, 0x0C, "member 0 at word offset 3");
     assert_eq!(

@@ -275,7 +275,7 @@ uniform int u_fog_enable;    /* 0 = no fog; mirrors gp-0x2D1 & 0x10 gate */
 uniform float u_curve;
 
 /* Retail's per-primitive near reject - the GLSL twin of engine-render's
- * PRIM_NEAR_WGSL (legaia_engine_ui::prim_near_reject). Every TMD prim
+ * PRIM_NEAR_WGSL (legaia_render_kernels::prim_near_reject). Every TMD prim
  * handler behind FUN_80043390 drops a primitive whose OTZ (AVSZ3 / AVSZ4 of
  * the corners' saturated SZ, ZSF = 0x555 / 0x400 >> the OT shift) is below
  * the scratch floor 0x1F80037E; there is no near-plane clip on that path.
@@ -367,7 +367,7 @@ vec4 overworldCurve(vec4 clip) {
 }
 
 /* z = a * w + b of m's depth row over its w row, read the way
- * legaia_engine_core::overworld_draw_order::depth_affine reads it: the column
+ * legaia_engine_field::overworld_draw_order::depth_affine reads it: the column
  * with the largest w weight gives a, the translation column b. */
 vec2 depthAffine(mat4 m) {
   vec4 col = m[2];
@@ -420,7 +420,7 @@ vec4 overworldFlatDepth(vec4 clip, mat4 m, vec4 fa, vec4 fb) {
 }
 
 /* The continent ground's depth cue - the GLSL twin of engine-render's
- * overworld_ground_cue (legaia_engine_core::overworld_ground_cue). Retail's
+ * overworld_ground_cue (legaia_engine_field::overworld_ground_cue). Retail's
  * ground emitter (FUN_801F89B8) runs each cell's packet colour through DPCS
  * with IR0 = max(SZ1 - 0x5000, 0) >> 3, SZ1 the depth of the cell's corner
  * (x1, z0), toward the far colour 0x1000 its caller sets with the literal

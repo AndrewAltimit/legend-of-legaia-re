@@ -1,6 +1,6 @@
 //! Retail-frame oracles for two shared kernels the hosts draw through: the
-//! battle **value readout** (`engine-vm::battle_value_readout` /
-//! `engine-ui::battle_numerals`) and the **field follow camera**
+//! battle **value readout** (`engine-battle-vm::battle_value_readout` /
+//! `render-kernels::battle_numerals`) and the **field follow camera**
 //! (`engine-core::camera_view`).
 //!
 //! Both kernels were pinned from retail captures, and both are re-measured
@@ -34,7 +34,7 @@
 //! `H = 368`); the three field-follow fallbacks (`FIELD_H`,
 //! `FIELD_PITCH_UNITS`, `FIELD_FOLLOW_YAW_UNITS`) do not, and the test asserts
 //! the spread that makes a scene-invariant follow camera impossible. The
-//! per-scene camera the spread demands is `engine-core::camera_zone`; its
+//! per-scene camera the spread demands is `engine-field::camera_zone`; its
 //! per-state oracle is `field_camera_zone_oracle.rs` beside this file.
 //!
 //! Skips (passes) unless `scripts/scenarios.toml` and `saves/library` are both

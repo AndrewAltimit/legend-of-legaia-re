@@ -13,7 +13,7 @@
     <dt>Character record</dt><dd><code>0x414</code> bytes per member at <code>0x80084708 + n*0x414</code> (the save-file block)</dd>
     <dt>Monster record</dt><dd>Decoded archive slot (PROT 867), stat head at <code>+0x00</code>, mesh at <code>+0x04</code>, texture pool at <code>+0x08</code></dd>
     <dt>Heap</dt><dd>One ~1.23 MB best-fit heap; ~145 KB workable for distinct monster blocks</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::monster_archive</code> (monster records); engine mirrors in <code>engine-core</code> (<code>battle_seats</code>, <code>MonsterMesh</code>)</dd>
+    <dt>Parser</dt><dd><code>legaia_actor_formats::monster_archive</code> (monster records); engine mirrors in <code>engine-core</code> (<code>battle_seats</code>, <code>MonsterMesh</code>)</dd>
     <dt>Confidence</dt><dd>Roster, context cursors, seats, camera, heap ledger, wipe path: Confirmed. A few actor-struct fields (<code>+0x3C/+0x40</code> mid-battle role, status timers): Inferred</dd>
   </dl>
 </section>

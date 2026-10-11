@@ -14,7 +14,7 @@
 //! is the faithful, testable computation the retail routine repeats inline:
 //!
 //! - [`bgr555_to_grey`] - the desaturate step of the stone/petrify CLUT-fade
-//!   builder `FUN_8004ce2c`. **Wired**: `engine-core::battle_status_clut`
+//!   builder `FUN_8004ce2c`. **Wired**: `engine-battle::battle_status_clut`
 //!   calls it per latched party slot; see the note below.
 //!
 //! The two cores of the battle tint pass `FUN_8004a908` that used to live
@@ -37,7 +37,7 @@
 //! # NOT WIRED
 //!
 //! Two of the four rows below: [`scale_rgb24`] and [`copy_nested_records`].
-//! [`bgr555_to_grey`] is live through `engine-core::battle_status_clut`, and
+//! [`bgr555_to_grey`] is live through `engine-battle::battle_status_clut`, and
 //! the tint-pass cores are live in [`crate::battle_actor_tint`], which both
 //! play hosts reach per battle body per frame. The notes those three used to carry are kept
 //! below, rewritten, because *how* each got a consumer is the pattern the
@@ -56,9 +56,9 @@
 //! | Kernel | Retail caller | Call site | Port of the caller |
 //! |---|---|---|---|
 //! | [`scale_rgb24`] | `FUN_80016444` | `80016748` | `engine-core::world::frame_tick` |
-//! | the tint-pass cores (now [`crate::battle_actor_tint`]) | `FUN_80047430`, `FUN_800480D8` | `800476C8`; `800481B4`/`8004825C`/`800482E8` | `engine-vm::battle_hp_bar`; `engine-vm::battle_actor_tint` (live) |
+//! | the tint-pass cores (now [`crate::battle_actor_tint`]) | `FUN_80047430`, `FUN_800480D8` | `800476C8`; `800481B4`/`8004825C`/`800482E8` | `engine-battle-vm::battle_hp_bar`; `engine-battle-vm::battle_actor_tint` (live) |
 //! | [`bgr555_to_grey`] | `FUN_8004DA00` | `8004DC4C` | `engine-audio::battle_voice` |
-//! | [`copy_nested_records`] | `FUN_80052FA0` | `80053438`, `800534F4` | `asset::battle_char_palette` |
+//! | [`copy_nested_records`] | `FUN_80052FA0` | `80053438`, `800534F4` | `actor-formats::battle_char_palette` |
 //!
 //! So the shape is not "waiting for a caller" - it is that each ported caller
 //! reached the same outcome by a different route, over typed engine state
@@ -97,7 +97,7 @@
 //!
 //!   The three things listed here as missing between those ends - a per-actor
 //!   palette copy, the `actor[+0x220..=+0x223]` latch, and a mid-battle CLUT
-//!   re-upload path - now exist: `engine-core::battle_status_clut` holds the
+//!   re-upload path - now exist: `engine-battle::battle_status_clut` holds the
 //!   copy and the latch, `BattleHud::sync_status` arms it, and the native
 //!   window's `tick_battle_status_clut` runs the pass against the stashed
 //!   battle VRAM. The third clause was the one that was closest to already

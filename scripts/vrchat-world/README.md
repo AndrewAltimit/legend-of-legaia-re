@@ -88,7 +88,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCard.cs` | One playing card: pickup, hold + Use flips it (synced), spawn-kinematic until first drop, re-parked (dealt, revealed) by the deck and the game. The face flip and the dealt-card slide animate the `visual` child only - the root is always at the pose the caller passed, on that frame. |
 | `world-project/Assets/LegaiaWorld/Udon/LegaiaCardDeck.cs` | Deck controller: Shuffle (seeded Fisher-Yates) / Gather restack every card face-down at the anchor by taking ownership of each card. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSlotMachineBuilder.cs` | Editor menu `Legaia > Build Slot Machine...`: assembles the playable casino slot minigame directly onto a cabinet mesh's screen face from the `asset slot-art` export - retail reel drums, glass furniture, dot-matrix marquee, HUD, buttons. See "The casino slot machine" below. |
-| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-core::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, and the retail per-frame reel-drum face derivation. Owner-synced with synced RNG streams; reels animate locally on every client from the same deterministic strips. Spins and payouts move the seated player's purse. |
+| `world-project/Assets/LegaiaWorld/Udon/LegaiaSlotMachine.cs` | UdonSharp port of the engine's slot-machine rules kernel (`engine-minigames::slot_machine`): the retail LCG + reel strips, feature rolls, stop plans, five-payline evaluation, bonus rounds, and the retail per-frame reel-drum face derivation. Owner-synced with synced RNG streams; reels animate locally on every client from the same deterministic strips. Spins and payouts move the seated player's purse. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCardGameBuilder.cs` | Builds the card table's `game` child, the per-stool hand anchors, the five community-card spots across the felt centre, and the seat panel (world-space canvas on a post beside the table). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaPosters.cs` | Hangs the scene's `posters` on the world's own walls: a hand placement first, else a 24-ray wall search from the object each poster names. Owns the `LegaiaWorld.LegaiaPosters.Check` headless gate. See "Wall posters". |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaPortraits.cs` | Villager portraits for the seat panel: one orthographic head render per villager from its measured visible front, saved under `LegaiaGenerated/<scene>/portraits/`; a drawn silhouette when there is no graphics device. |
@@ -1985,7 +1985,7 @@ kit itself ships no third-party audio.
   a hut's door on the wrong side) while the overall layout is right: two
   separate causes, and each was fixed once - re-export with a current
   build and re-run a current builder before debugging further.
-  1. *Yaw sign in the bake* (`legaia_asset::scene_gltf`): the site's
+  1. *Yaw sign in the bake* (`legaia_actor_formats::scene_gltf`): the site's
      `placementModelScaledY` has a transposed inline rotation block, and
      the bake once emitted the unnegated param, facing every yawed
      instance backwards while leaving every position (and any layout

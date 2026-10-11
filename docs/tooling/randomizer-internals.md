@@ -35,7 +35,7 @@ flowchart TD
 |---|---|---|
 | LZS encoder | `legaia_lzs::compress` | produces a stream the retail decoder `FUN_8001A55C` accepts |
 | Sector write-back | `legaia_iso::write` | overwrites user data, recomputes EDC and P/Q ECC |
-| Disc bridge | `legaia_patcher::disc::DiscPatcher` ([`crates/disc-patch`](../../crates/disc-patch/README.md)) | maps a PROT-entry-relative edit to sectors; PPF writer; space ledger |
+| Disc bridge | `legaia_disc_patch::disc::DiscPatcher` ([`crates/disc-patch`](../../crates/disc-patch/README.md)) | maps a PROT-entry-relative edit to sectors; PPF writer; space ledger |
 | MIPS layer | [`crates/code-hooks`](../../crates/code-hooks/README.md) | instruction encoders, R3000 test simulator, injection arenas, hook mods |
 | Feature modules | `crates/patcher/src/*.rs` | one module per randomizer / hook, named in each section below |
 
@@ -56,7 +56,7 @@ extraction side (which only reads the disc) does not need:
    2048-byte user payload of a CD sector also requires recomputing its 4-byte
    EDC and 276-byte P/Q ECC, or the sector reads as corrupt. See
    [PSX disc geometry](../formats/disc.md).
-3. **A disc bridge** - `legaia_patcher::disc::DiscPatcher`, which ties the editing
+3. **A disc bridge** - `legaia_disc_patch::disc::DiscPatcher`, which ties the editing
    primitives to the sector write-back through the PROT.DAT TOC.
 
 ### Editing model: same-size in place, except doors
@@ -165,7 +165,7 @@ words) and claim no dead space at all.
 
 The instruction encoders and an R3000 simulator the tests run hooks under live
 in [`crates/code-hooks`](../../crates/code-hooks/README.md). Every region a hook
-may occupy is listed once, with its owner, in `legaia_patcher::space_ledger`.
+may occupy is listed once, with its owner, in `legaia_disc_patch::space_ledger`.
 
 ### Hooks at a glance
 
@@ -299,7 +299,7 @@ overlay has paged there. Scan:
 for `80031d00` (see [address-reference-scan.md](address-reference-scan.md)).
 
 **The ledger.** Every region above, and the menu overlay's, is listed once with
-its owner in `legaia_patcher::space_ledger`, the table language packs consult
+its owner in `legaia_disc_patch::space_ledger`, the table language packs consult
 too: a translation never writes a mod's region, and the one region reserved for
 relocated translation strings is never a mod's
 ([`space-and-budgets.md`](translation/space-and-budgets.md#sharing-room-with-mods-the-space-ledger)).
@@ -543,7 +543,7 @@ arena byte is claimed, so `--enemy-hp-bar` composes with every other code hook.
   geometry probe reads the routine's frame through the scratchpad reader.
 
 **Verified by** the module's interpreter tests
-([`legaia_patcher::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs));
+([`legaia_code_hooks::enemy_hp_bar`](../../crates/code-hooks/src/enemy_hp_bar.rs));
 the disc oracle `crates/patcher/tests/enemy_hp_bar_real.rs`; and the runtime
 probe
 [`autorun_enemy_hp_bar_inject.lua`](../../scripts/pcsx-redux/autorun_enemy_hp_bar_inject.lua),
@@ -606,7 +606,7 @@ the frontmost **capturable** enemy spawns as a rare *shiny* variant
   "+35% DMG!" caption shows one glyph line **below** the native "Magic effect:"
   box.
 
-It mirrors the engine implementation (`legaia_engine_core::seru_learning`'s
+It mirrors the engine implementation (`legaia_engine_battle::seru_learning`'s
 shiny set + `SHINY_DAMAGE_BONUS_PCT`). On by default in the web Full Chaos /
 Balanced presets. It applies to Seru captured *after* patching: the shiny byte
 is set at capture, so a Seru already owned is not retroactively shiny.
@@ -675,7 +675,7 @@ different one. The offer is time-bucketed and deterministic from the run's
 seed, so a preview and the game always agree. `--seru-trade-offers` caps the
 trades one vendor lists.
 
-**The offer model (`legaia_asset::seru_trade`, the kernel both hosts share).**
+**The offer model (`legaia_game_tables::seru_trade`, the kernel both hosts share).**
 
 - Each time bucket has one `(want, give, give_level)` preference: the vendor
   wants a seru *type* and hands back a different one at a fixed level, shown
@@ -948,7 +948,7 @@ Routines, names, the scratch record and the glyph buffer sit in the dead run
 (`0x801EB400..`). Both satisfy
 [where menu-overlay hooks may live](#where-menu-overlay-hooks-may-live). No SCUS
 bytes, so this half composes with everything. Module
-[`legaia_patcher::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
+[`legaia_arts_patch::super_art_menu`](../../crates/arts-patch/src/super_art_menu.rs).
 
 #### Placement + exclusivity
 
@@ -971,7 +971,7 @@ contents are correct.
 
 **Verified by** the disc oracle `crates/patcher/tests/super_art_list_real.rs`
 (module
-[`legaia_patcher::super_art_list`](../../crates/arts-patch/src/super_art_list.rs)),
+[`legaia_arts_patch::super_art_list`](../../crates/arts-patch/src/super_art_list.rs)),
 which also checks every derived input against the curated walkthrough table,
 and by PCSX-Redux probes:
 
@@ -1201,7 +1201,7 @@ replacing the value retail computes. Seedless targeted edit; no Sony bytes.
   features; enforced in the CLI and the web patcher.
 
 **Verification state.** Module
-[`legaia_patcher::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs);
+[`legaia_arts_patch::arts_ap_grant`](../../crates/arts-patch/src/arts_ap_grant.rs);
 disc oracle `crates/patcher/tests/arts_ap_grant_real.rs`. The disc oracle proves
 where the bytes land. A live battle playtest (a configured art grants or costs
 what it says, admits at the right AP level, clamps at 100, the refund is not
@@ -1256,7 +1256,7 @@ damage** slider in the Gameplay group.
 
 **Two copies, always both.** The retail scale lives in the spirit-gauge fill:
 `pct = max(1, damage * 100 / max_hp)` added into `actor[+0x170]` and clamped at
-100 (kernel mirror: `legaia_engine_vm::battle_formulas::spirit_gauge_fill`).
+100 (kernel mirror: `legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill`).
 Overlay 0898 carries **two inlined copies** of that kernel, and a hit reaches
 one or the other: `FUN_801DDB30`, the closed-form finisher, for magic / summon /
 special-attack hits, and `FUN_801EC3E4`, the arms execution resolver, for
@@ -1441,7 +1441,7 @@ counter stay zero on disc; the roll fills them per battle.
 **Verified by:**
 
 - unit tests in
-  [`legaia_patcher::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
+  [`legaia_arts_patch::oscillating_ap`](../../crates/arts-patch/src/oscillating_ap.rs)
   that execute every routine on the crate's R3000 model (guard, debit, list,
   roll against a fake `rand`, damage across every fall-through shape);
 - the disc oracle `crates/patcher/tests/oscillating_ap_real.rs` (independently

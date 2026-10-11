@@ -259,7 +259,7 @@ closing that work, not after the next audit.
 The module blanket is matched on any `//!` line whose text opens with
 `NOT WIRED` (leading `#`, `*` and whitespace allowed), so an indented bullet
 deep in a module doc counts exactly as much as a heading does.
-`engine-vm::ambient_motion` had one: a bullet reading `NOT WIRED: the
+`engine-motion-vm::ambient_motion` had one: a bullet reading `NOT WIRED: the
 stepped-over set, by op number, is ...`, which is a statement about which
 retail *opcodes* the port declines to execute, not about whether anything calls
 the module. The module is live - it is the idle-turn VM, ticked per frame from
@@ -275,7 +275,7 @@ original: a corrected tag that quotes the marker to explain why it was wrong
 re-discloses the anchor it just wired. Paraphrase the marker instead.
 
 **A leaf whose only caller is a sibling in the same file, reached from a CLI.**
-`legaia_asset::monster_archive::reaction_map` disclosed "no engine caller ...
+`legaia_actor_formats::monster_archive::reaction_map` disclosed "no engine caller ...
 its only consumers are the unit tests and the disc-gated archive oracles". Its
 sibling `light_flinch_window`, twenty lines above it in the same file, calls it
 in non-test code, and `legaia-patcher`'s `monster-block` command calls *that* -
@@ -344,7 +344,7 @@ recognisable: match the mechanism, apply the same fix.
 |---|---|---|---|
 | `801da6b4` | `engine-battle-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE | Module `PORT:` / `REPLACED-BY:` pair moved onto `target_cursor_highlight`; the module was live through the cursor constants and `cursor_cue`, which both battle hosts use and which are not the port. The replacement verdict stands. |
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
-| `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-core::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
+| `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-effects::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
 | `800198e0`, `80058298`, `80058490` | `engine-menus/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-battle-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |

@@ -12,7 +12,7 @@ wgpu, winit and cpal, so it builds for native and `wasm32` alike.
 `legaia-engine-core` owns the composition - `MenuRuntime`, the pause-menu
 dispatch, `World::use_item` and the stepping of the dialog and cutscene
 contexts - and re-exports every
-module here at its old path, so `legaia_engine_core::items` and
+module here at its old path, so `legaia_engine_menus::items` and
 `legaia_engine_menus::items` name the same module. Two are re-exported by
 glob from a thin engine-core module of the same name instead (`shop`,
 `pause_screens`): each screen here takes the slice of the world it reads

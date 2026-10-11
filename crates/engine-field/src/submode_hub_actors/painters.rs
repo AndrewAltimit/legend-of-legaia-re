@@ -297,7 +297,7 @@ pub fn two_line_panel(actor: &HubActor, env: &HubEnv) -> HubFrame {
 /// `_DAT_8008459C` and the casino coin bank `_DAT_800845A4`, both named
 /// separately in this module's globals list - and `0xFE` is the id the shop's
 /// buy commit tests with `FUN_80042F4C(0xFE)` before crediting that same
-/// counter (`engine-core::shop::POINT_CARD_ITEM_ID`).
+/// counter (`engine-menus::shop::POINT_CARD_ITEM_ID`).
 ///
 /// REF: FUN_80042F4C - the inventory-has query that gate uses; ported on the
 /// engine side as the shop session's Point Card check, not here.

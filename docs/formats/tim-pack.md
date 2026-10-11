@@ -38,13 +38,13 @@ The two entries in `PROT.DAT`'s TOC head - **raw TOC entries 0 and 1**, the regi
 extraction index space skips (extraction entry `p` = raw entry `p + 2`; see
 [prot.md](prot.md)) - are both TIM-packs. Together they are the **boot-resident
 system-UI bundle**: raw entry 0 (sectors 3..55) declares 20 members, raw entry 1 one.
-Parser: `legaia_asset::system_ui_bundle`; disc pins in `crates/ui-formats/tests/system_ui_bundle_real.rs`.
+Parser: `legaia_ui_formats::system_ui_bundle`; disc pins in `crates/ui-formats/tests/system_ui_bundle_real.rs`.
 
 Raw entry 0's members, in table order: the boot cursor (`PROT.DAT[0x01858]`), the
 system-UI sprite sheet (`0x018E0`, image `(896,256)` 64×192), UI elements
 (`0x07B00`, `0x07F40`), four small `(896, 498..=501)`-CLUT TIMs, the **menu-glyph /
 interior-page atlas** (`0x11218`, image `(960,256)` 64×256, declared CLUT
-`(0,510,16,16)`; extractors `legaia_asset::interior_page` / `menu_glyph_atlas`), the UI
+`(0,510,16,16)`; extractors `legaia_ui_formats::interior_page` / `menu_glyph_atlas`), the UI
 sprite strip (`0x19438`, image `(960,400)` 60×24), **six bare row-patch members**
 (`0x1A018..0x1AA7C`; see below), and four cursor-part TIMs (`0x1AC90..0x1AED0`, images
 at `(976,256..)`). Raw entry 1's single TIM is a UI page at image `(640,0)` with a
@@ -76,6 +76,6 @@ its scene VRAM pre-pass (`SceneResources::build_targeted_with_options` +
 
 ## See also
 
-- [asset::pack](pack.md) - the pack format this reader sees behind a chunk header.
+- [container-formats::pack](pack.md) - the pack format this reader sees behind a chunk header.
 - [PROT.DAT TOC](prot.md) - the index, and the two raw-TOC head entries read here.
 - [PSX TIM](tim.md) - the texture sub-asset bundled here.

@@ -116,16 +116,16 @@ from `0x80077A4C` + tail `0x8007B694` (loot taken from the party) or
 `ctx[+0x18]` already reads `0x5B`, the pointer is swapped for the whole-line
 `0x80077A70` caption instead (`0x8004B35C..0x8004B378`).
 
-The port runs both arms in `legaia_engine_core::battle_steal`, reached from
+The port runs both arms in `legaia_engine_battle::battle_steal`, reached from
 the knockdown-end commit both hosts tick; the templates are read off the
-user's executable through `legaia_asset::battle_ui_strings`. The disc-gated
+user's executable through `legaia_ui_formats::battle_ui_strings`. The disc-gated
 `steal_attack_round_disc` test drives a real Skeleton fight through the live
 round and asserts the item lands and the caption is raised, with a contrast
 pass that spends the attempt without the passive and grants nothing.
 
 ## Parser
 
-`legaia_asset::steal_table::StealTable::from_scus` resolves the table from a
+`legaia_game_tables::steal_table::StealTable::from_scus` resolves the table from a
 `SCUS_942.54` image (PSX-EXE `t_addr` → file-offset map, identical to the
 [item-name table](item-table.md) resolver). `entry(monster_id)` returns the
 `[chance, item]` pair; `steal_item(monster_id)` returns the item only when the

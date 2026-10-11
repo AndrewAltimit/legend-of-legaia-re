@@ -136,7 +136,7 @@ pub const GOLD_PER_COIN: i32 = 100;
 
 /// The item id whose caption arm prints a counter rather than an item.
 ///
-/// `0xFE` is the **Point Card** (`engine-core::shop::POINT_CARD_ITEM_ID`), and
+/// `0xFE` is the **Point Card** (`engine-menus::shop::POINT_CARD_ITEM_ID`), and
 /// the arm prints its bank `_DAT_800845B4`. It is not a money pseudo-item.
 pub const CAPTION_POINT_CARD_ID: i32 = 0xFE;
 

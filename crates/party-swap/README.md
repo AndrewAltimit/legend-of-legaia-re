@@ -29,7 +29,7 @@ the same kernels:
 - `enemy_anim` - the enemy-animation remap.
 
 [`legaia-patcher`](../patcher/README.md) re-exports this crate as
-`legaia_patcher::party_swap` for consumers outside the patcher family.
+`legaia_party_swap` for consumers outside the patcher family.
 
 ## See also
 

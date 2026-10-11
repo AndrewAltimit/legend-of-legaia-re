@@ -9,7 +9,7 @@ with every gate green - and `disc-coverage.py` would then count the wrong
 retail bytes as covered.
 
 The worked example, and the reason this file exists:
-`engine-core::shop::shop_stock_row_ink` carried `PORT: FUN_801D5DE0` while live
+`engine-menus::shop::shop_stock_row_ink` carried `PORT: FUN_801D5DE0` while live
 on both hosts. That routine is the **casino prize list's** row renderer - it
 forms the prize table `0x801E4518` and gates affordability on the coin bank
 `0x800845A4`. The mis-attribution came from the dump filename

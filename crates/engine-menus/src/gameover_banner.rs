@@ -80,13 +80,13 @@
 //!
 //! # Replaced, not pending
 //!
-//! REPLACED-BY: `engine-core::game_over` - the party wipe's mode-22 title hand-off, which is the path retail's own wipe takes; nothing on the disc dispatches mode 18, so no host is owed this stager.
+//! REPLACED-BY: `engine-menus::game_over` - the party wipe's mode-22 title hand-off, which is the path retail's own wipe takes; nothing on the disc dispatches mode 18, so no host is owed this stager.
 //!
 //! The four retail sites that end a lost game (`FUN_8003AEB0`'s
 //! back-from-battle arm, `FUN_8003C7EC`, `FUN_801D84B4` and the STR attract
-//! exit, tabulated in `engine-core::game_over`) all store game mode `0x16`
+//! exit, tabulated in `engine-menus::game_over`) all store game mode `0x16`
 //! (CARD INIT) and the title context `1`; none stores `0x12`. Mode 18
-//! (`engine-core::mode::GameMode::GameOverInit`, whose stage plan
+//! (`engine-mode::mode::GameMode::GameOverInit`, whose stage plan
 //! `mode_init_stage` ports the caller `FUN_80025B30`) is therefore a dev
 //! entry, and this overlay's `GAME OVER` letters are content no retail
 //! playthrough shows. The port keeps the stager for what it documents - the

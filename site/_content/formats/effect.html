@@ -14,7 +14,7 @@
     <dt>Where</dt><dd><code>efect.dat</code> = extraction PROT 0873, one of the four <code>befect_data</code> files 0870..0873 (<code>etim</code> / <code>etmd</code> / <code>vdf</code> / <code>efect</code>); the <code>0x02018B0C</code> bundle only in <code>0000_init_data</code></dd>
     <dt>Magic</dt><dd>2-pack: none - two absolute pack offsets behind an 8-byte header. Bundle: <code>0x02018B0C</code></dd>
     <dt>Runtime copy</dt><dd>post-init buffer at <code>_DAT_8007BD5C</code>, byte-identical to the disc entry; live pool at <code>_DAT_8007BD30</code> (5008 bytes)</dd>
-    <dt>Parser</dt><dd><code>engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes</code> (2-pack); <code>legaia_asset::effect_bundle</code> (bundle); <code>legaia_asset::befect_cluster</code> (the four files)</dd>
+    <dt>Parser</dt><dd><code>engine_vm::effect_vm::EffectCatalog::from_efect_dat_bytes</code> (2-pack); <code>legaia_container_formats::effect_bundle</code> (bundle); <code>legaia_actor_formats::befect_cluster</code> (the four files)</dd>
     <dt>Confidence</dt><dd>Confirmed - every record field read off its battle-overlay consumer; texel source pixel-verified against battle captures</dd>
     <dt>Used by</dt><dd><a href="../subsystems/effect-vm.html">Effect VM</a>, <a href="../subsystems/battle-action.html">Battle action SM</a>, <a href="move-power.html">move-power effect lists</a></dd>
   </dl>
@@ -70,7 +70,7 @@
 
 <section class="doc-section" id="runtime-effect-format-2-pack-wrapper">
   <h2>The runtime 2-pack (<code>efect.dat</code>)</h2>
-  <p>When a hit lands, the battle overlay looks up an <em>effect id</em>, spawns a handful of child sprites around the impact point, and animates each from a short frame list. Both packs are offset tables of <strong>absolute file offsets</strong> - not the <code>word*4</code> offsets of <a href="pack.html"><code>asset::pack</code></a>. The retail file holds 144 atlas entries, 14 animation batches and 33 scripts.</p>
+  <p>When a hit lands, the battle overlay looks up an <em>effect id</em>, spawns a handful of child sprites around the impact point, and animates each from a short frame list. Both packs are offset tables of <strong>absolute file offsets</strong> - not the <code>word*4</code> offsets of <a href="pack.html"><code>container-formats::pack</code></a>. The retail file holds 144 atlas entries, 14 animation batches and 33 scripts.</p>
   <div class="byte-map" role="img" aria-label="efect.dat file: two pack offsets, the sprite atlas, pack0 animation batches, pack1 effect scripts">
     <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0</span><span class="bm-name">pack0_offset</span><span class="bm-size">u32</span></div>
     <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+4</span><span class="bm-name">pack1_offset</span><span class="bm-size">u32</span></div>
@@ -130,7 +130,7 @@
     <thead><tr><th>Loader case</th><th>Dev name</th><th>Raw / extraction</th><th>Content (byte-checked)</th></tr></thead>
     <tbody>
       <tr><td><code>0x8</code></td><td><code>etim.dat</code></td><td><code>0x368</code> / 0870</td><td>3-TIM pack: three 64&times;256 4bpp pages at VRAM <code>(320,0)</code> / <code>(384,0)</code> / <code>(448,0)</code>, CLUTs at <code>(0, 474..476)</code>. The first TIM's flags word is <code>0x00010008</code> - strict TIM parsers reject it.</td></tr>
-      <tr><td><code>0xb</code></td><td><code>etmd.dat</code></td><td><code>0x369</code> / 0871</td><td>30-TMD <code>asset::pack</code> - the effect 3D-model library, registered into the mesh pool at battle init.</td></tr>
+      <tr><td><code>0xb</code></td><td><code>etmd.dat</code></td><td><code>0x369</code> / 0871</td><td>30-TMD <code>container-formats::pack</code> - the effect 3D-model library, registered into the mesh pool at battle init.</td></tr>
       <tr><td><code>0xb</code></td><td><code>vdf.dat</code></td><td><code>0x36A</code> / 0872</td><td>32-entry offset pack (~96 B records), asset type <code>0x07</code>.</td></tr>
       <tr><td><code>0xc</code></td><td><code>efect.dat</code></td><td><code>0x36B</code> / 0873</td><td>The 2-pack above: <code>pack0@0x488</code>, <code>pack1@0x900</code>.</td></tr>
       <tr><td><code>0x4</code></td><td>(battle-type conditional)</td><td><code>0x367</code> / 0869 or <code>0x36D</code> / 0875</td><td>Streaming <code>[VAB chunk][type-3 chunk]</code> files outside the block.</td></tr>
@@ -151,7 +151,7 @@
     <summary>The battle summon model: geometric, library at 0871</summary>
     <div class="disclosure-body">
       <p>A player Seru-magic cast pages in a per-summon code overlay (extraction PROT 903..913; Gimard <em>Burning Attack</em> <code>0x81</code> &rarr; 903) that supplies the spawn logic. The effect-model library is <code>etmd.dat</code> (0871): the 30-entry pack loads verbatim at <code>0x800CA25C</code> and registers into <code>DAT_8007C018[3..32]</code>. Gimard's flame is slot 26 (pack entry 23); the engine seeds the same slots at scene entry (<code>scene::seed_effect_model_library_from_etmd</code>, <code>GIMARD_TAIL_FIRE_MODEL_INDEX = 26</code>). None of 0874 &sect;0's field-character TMDs are resident mid-cast; its smallest TMD bakes a flame-like CLUT and survives only as a preview fallback.</p>
-      <p><strong>Animation is geometric, not CLUT cycling.</strong> Two animation-distinct capture frames share a byte-identical CLUT band (rows 470..499) while their framebuffers differ ~21%. A live trace of the player cast shows the per-actor draw firing once per live actor per frame through the rigid-TRS keyframe decoder, in exact lockstep with it, while the move VM stays at noise level - the player summon is drawn as an ordinary battle actor (engine path <code>engine-vm/anim_vm.rs</code>). The summon overlays do carry real move-VM part records (<code>legaia_asset::summon_overlay</code>, link base <code>0x801F69D8</code>), driven by the engine as a stand-in <code>summon::SummonScene</code>; the overlay's three conditional CLUT uploads target rows 481+, not the flame's row 478. The enemy Gimard's move is a different one - <em>Tail Fire</em>, spell id <code>0x27</code> - and it renders as a single move-VM part-actor over PROT 0900, not through the TRS path.</p>
+      <p><strong>Animation is geometric, not CLUT cycling.</strong> Two animation-distinct capture frames share a byte-identical CLUT band (rows 470..499) while their framebuffers differ ~21%. A live trace of the player cast shows the per-actor draw firing once per live actor per frame through the rigid-TRS keyframe decoder, in exact lockstep with it, while the move VM stays at noise level - the player summon is drawn as an ordinary battle actor (engine path <code>engine-vm/anim_vm.rs</code>). The summon overlays do carry real move-VM part records (<code>legaia_overlay_images::summon_overlay</code>, link base <code>0x801F69D8</code>), driven by the engine as a stand-in <code>summon::SummonScene</code>; the overlay's three conditional CLUT uploads target rows 481+, not the flame's row 478. The enemy Gimard's move is a different one - <em>Tail Fire</em>, spell id <code>0x27</code> - and it renders as a single move-VM part-actor over PROT 0900, not through the TRS path.</p>
     </div>
   </details>
 </section>
@@ -197,7 +197,7 @@
 
 <section class="doc-section" id="on-disc-effect-bundle-magic-0x02018b0c">
   <h2>On-disc effect bundle (magic <code>0x02018B0C</code>)</h2>
-  <p>A separate container carrying effect geometry, found only in <code>0000_init_data</code>. Its consumer is unreached, so this section is structural. Parser <code>legaia_asset::effect_bundle::detect</code>.</p>
+  <p>A separate container carrying effect geometry, found only in <code>0000_init_data</code>. Its consumer is unreached, so this section is structural. Parser <code>legaia_container_formats::effect_bundle::detect</code>.</p>
   <table class="layout">
     <thead><tr><th>Offset</th><th>Size</th><th>Field</th><th>Meaning</th></tr></thead>
     <tbody>

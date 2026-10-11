@@ -233,7 +233,7 @@ pub struct SpellEntry {
     /// non-Item category (`0x801E3B70..0x801E3CB0`). It selects which cue group
     /// an executing cast expands to; the Item leg reads the same pair off the
     /// item-effect table instead. See
-    /// `engine-vm::battle_cue_group` and `docs/subsystems/battle-action.md`.
+    /// `engine-battle-vm::battle_cue_group` and `docs/subsystems/battle-action.md`.
     pub sub_class: u8,
     /// Display name, or `None` for an empty / internal-tier slot.
     pub name: Option<String>,

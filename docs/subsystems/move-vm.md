@@ -55,8 +55,8 @@ is `-1` for a transform node, `0x4000` / `0x4001` for a render-mode node, and
 `>= 0` for a library mesh. Bytecode ends at op `0x08` Halt.
 
 1. **`FUN_800204F8`** - the `EXEC_MOVE` path: a per-actor move record from the runtime root (`_DAT_8007B888` MOVE / `_DAT_8007B840` MOVE2). Per-actor offsets are baked in at setup time.
-2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_asset::summon_overlay`).
-3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_asset::scene_event_scripts::move_stager_records`).
+2. **Per-summon stagers** - `FUN_80021B04` spawns parts from a stager overlay's records (see [`formats/effect.md`](../formats/effect.md), `legaia_overlay_images::summon_overlay`).
+3. **Per-scene prescript stager table** - the `scene_event_scripts` / `scene_v12_table` prescript: a `[u16 count][u16 offsets]` table of these records, loaded into `_DAT_8007b8d0`. The field VM installs a record by id via **`FUN_800252EC`** (`record = _DAT_8007b8d0 + offsets[id]`) -> `FUN_80021B04` -> this VM. See [`formats/scene-bundles.md`](../formats/scene-bundles.md#scene_event_scripts---prescript-only) (parser `legaia_scene_formats::scene_event_scripts::move_stager_records`).
 
 ## Fetch / dispatch loop
 
@@ -593,7 +593,7 @@ because its handlers share the slot-B address band and the tween helper with
 move-VM part records.
 
 **Port.** `crates/engine-effects/src/screen_fx.rs` (re-exported as
-`engine-core::screen_fx`), layout pinned on disc bytes by the disc-gated
+`engine-effects::screen_fx`), layout pinned on disc bytes by the disc-gated
 `screen_fx_disc` test. The field-VM op-`0x43` sub-op handlers route to
 `screen_fx::ScreenFxHost` on `World::presentation.fx`; one `tick` per Field /
 Cutscene frame publishes `World::presentation.fx_frame`.

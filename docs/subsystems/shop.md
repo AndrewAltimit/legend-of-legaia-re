@@ -186,7 +186,7 @@ global to `0` so **Sell renders dim when the bag is empty**.
 The scan sits *between* the Buy draw and the Sell draw, and nothing restores
 the global afterwards, so an empty bag greys **Sell and Quit together** - Buy
 is the only row that is always white. Ported as
-`engine-core::shop::shop_root_command_rows`, which both hosts consult for the
+`engine-menus::shop::shop_root_command_rows`, which both hosts consult for the
 Sell row's ink.
 
 After each row the cursor sprite `func_0x8002b994(0, mode, WX, rowY)` (the
@@ -204,7 +204,7 @@ cursor column as the buy list) is gated on the picker cursor word
 
 The stock list `FUN_801D5DE0` re-runs the identical four-way decode against
 its own word `_DAT_8007BB98`; the shared kernel is
-`engine-core::shop::shop_cursor_mode`.
+`engine-menus::shop::shop_cursor_mode`.
 
 Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
 `DAT_801E46AC`): the cursor clamp is a literal `li a1,0x3` at `0x801DB098`
@@ -213,8 +213,8 @@ Input lives in the picker dispatcher `FUN_801dafd4` (its sub-state var is
 at `0x801DB0E8`. The shop's window choreography is actor-VM widget scripts
 interpreted by `FUN_801d6628` over the window table
 ([format page](../formats/window-script.md); parser
-`legaia_asset::widget_script`; the engine runs the same disc programs on
-the same transitions via `engine-core::menu_widget`): the open script
+`legaia_game_tables::widget_script`; the engine runs the same disc programs on
+the same transitions via `engine-menus::menu_widget`): the open script
 `DAT_801E4E38` slides in windows `0x21` (vendor name) / `0x2A` (this picker)
 / `0x20` (gold) / `0x28` / `0x22`, and the Sell transition's close script
 `DAT_801E4E54` slides away `0x28` / `0x2A` / `0x22` while keeping the gold +
@@ -269,8 +269,8 @@ content builder's case `0x0B` (`0x80030D48..0x80030F98`; jump table
 `0x80010D38`, index `content_id - 2`). Its source is the field-VM
 entry-context record `_DAT_8007B450` **directly** - `[+2]` the id count,
 `[+3 + i]` the item ids - i.e. the same op-`0x49` sub-`0` stock record
-[`legaia_asset::shop_stock`] scans off the scene MAN. Port:
-`engine-core::menu_list_rows::{build_shop_buy_rows, shop_buy_row_order}`.
+[`legaia_scene_formats::shop_stock`] scans off the scene MAN. Port:
+`engine-menus::menu_list_rows::{build_shop_buy_rows, shop_buy_row_order}`.
 
 Each row word is `[class nibble][0x800 = dim][item id]`, and the dim bit is a
 plain OR of two tests - `_DAT_8008459C < price` (item record `+2`) or a held
@@ -279,7 +279,7 @@ kind-4 list kernel `FUN_80032A44` stages it in its shared `0x3000` / `0xA000`
 arm (`0x80033548..0x800335A0`), last rule wins - ink `7`; the dim bit makes it
 `0` unless the list is parked (`_DAT_8007BB94 == 4`); class `0xA000` then makes
 it `5` **even over a dim row**. Ink `5` is the teal pen (the CLUT row staging
-value 5 selects). Port: `engine-core::shop::shop_buy_row_ink` - not the casino
+value 5 selects). Port: `engine-menus::shop::shop_buy_row_ink` - not the casino
 renderer's `shop_stock_row_ink`, which has no class arm.
 
 #### The last rows come first
@@ -344,7 +344,7 @@ with class `0xA000`. With the bag slot cleared before the conversation (no
 party member wears one), the probe answers `0`, the walk is `10`, and the list
 is the first ten entries in record order, all class `0x3000`. The unit test
 `retock_items_shop_rows_match_the_retail_capture_with_and_without_the_card` in
-`engine-core::menu_list_rows` pins both word lists.
+`engine-menus::menu_list_rows` pins both word lists.
 
 Three readings this rules out: `0xFF` is an item, not an empty-slot marker;
 the probes are not "all but always satisfied" (the retail captures in the
@@ -352,7 +352,7 @@ save-state library hold no `0xFF` equipment byte in any party, so a card-less
 party fails both); and the band is not "new in this town" stock - the same
 `*` item appears in more than one town's band.
 
-Port: `engine-core::menu_list_rows::{shop_tail_rows_allowed,
+Port: `engine-menus::menu_list_rows::{shop_tail_rows_allowed,
 build_shop_buy_rows}`, reached through `ShopInventory::from_stock_record`.
 The field-VM merchant (`World::try_arm_field_shop`, the path both play hosts
 open through `take_pending_field_shop`) runs the live probe over the party;
@@ -530,14 +530,14 @@ sub-screen between them and the transaction.
   the commit runs Point Card accrual, bag add, gold debit
   `price * qty`, and - only when the Point Card toast was shown - waits
   for a button press before returning to the buy list. Port:
-  `engine-core::shop::BuyQuantitySession`.
+  `engine-menus::shop::BuyQuantitySession`.
 - **Sell** (`FUN_801DBD94`, sub-screen `0x1F`): `max` = the staged bag
   slot's count; the commit credits `(price * qty) >> 1` gold (purse cap
   `9,999,999`) and applies a sell-list scroll fix-up (selling the last
   row while it sits alone on the final page steps the selection and
   scroll back); a whole-stack sale that empties the bag runs a
   `0x11`-unit delay and exits to the shop root instead of the sell
-  list. Port: `engine-core::shop::SellQuantitySession` (+
+  list. Port: `engine-menus::shop::SellQuantitySession` (+
   `sell_credit` / `apply_sale_gold` / `sell_list_fixup`).
 
 The scroll fix-up repairs a paged list's persisted `(scroll_top, selected)`
@@ -556,7 +556,7 @@ buys one copy into the bag, a party row runs an equippability check
 `0x801E43F0[char]`; mismatch buzzes) and on a match buys **and equips
 immediately**, returning the replaced piece to the bag; the purchase
 itself never enters the bag. Same Point Card accrual and toast. Port:
-`engine-core::shop::BuyRecipientSession`.
+`engine-menus::shop::BuyRecipientSession`.
 
 Both prices are the **item table's** halfword (`0x80074368 + id*0xC +
 2`) - the retail item shop carries no per-shop gold price, which is
@@ -566,7 +566,7 @@ separate system with its own stock records.)
 
 Wiring: the **recipient picker is live**. `MenuRuntime`'s buy-list
 commit runs the retail state-2 dispatch
-(`engine-core::shop::buy_list_confirm_route`, `FUN_801DB21C` - the
+(`engine-menus::shop::buy_list_confirm_route`, `FUN_801DB21C` - the
 affordability refusal beat plus the item-record `+0` kind switch), and
 an equipment row opens `BuyRecipientSession` behind the
 `MenuRuntime::retail_equipment_buy` opt-in - both play hosts enable it and
@@ -620,11 +620,11 @@ in the scene's field-VM script** (the MAN, asset type `0x03`), as field-VM op
 `count` over-counts the purchasable stock by a trailing run of unsellable,
 price-`0` *template* ids (the `Ra-Seru Meta $N` placeholders `0x01/0x02/0x03`, or
 a lone `0x03`) that the on-screen shop skips - see the sellable-mask note below.
-The shared scanner [`legaia_asset::shop_stock`] (a byte-scan, independent of
+The shared scanner [`legaia_scene_formats::shop_stock`] (a byte-scan, independent of
 how the script reaches the op) locates these records - the largest, `rayman2`'s
 "Items Shop 1", declares seventeen ids (fourteen sellable plus the three-id
 template tail), so a scanner's record bound must be at least seventeen;
-[`legaia_engine_core::shop_catalog`] pairs them with item prices to build a priced
+[`legaia_engine_menus::shop_catalog`] pairs them with item prices to build a priced
 [`ShopInventory`]. `SceneHost::enter_field_scene` populates `World::shops.scene_shops`
 for the active scene, and `World::scene_shop_session(idx)` hands a host a
 ready-to-open [`ShopSession`].
@@ -672,7 +672,7 @@ the path is inert. `play-window` wires this end to end (it opens the menu-runtim
 shop on the pending signal and finishes on close).
 
 Buy **prices** come from the static `SCUS_942.54` item table - the `u16` at item
-record `+2` (`legaia_asset::item_names::item_price`, base `TABLE_BASE_VA`), the
+record `+2` (`legaia_game_tables::item_names::item_price`, base `TABLE_BASE_VA`), the
 same field the gold-debiting buy handler `FUN_801db380` reads (`_DAT_8008459C -=
 price[item_id]`). A price of `0` marks a quest / key / found-only / internal item
 the game never sells, so the price table doubles as a **sellable mask** (price

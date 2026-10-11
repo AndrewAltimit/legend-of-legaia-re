@@ -9,7 +9,7 @@
  * held two of the columns.
  *
  * So every page reads the binding table out of the engine instead
- * (`legaia_engine_core::input::Mapping::web_default` through
+ * (`legaia_engine_system::input::Mapping::web_default` through
  * `pad_bindings_json`). A rebind now lands on every host at once and a
  * disagreement can no longer be written down.
  *

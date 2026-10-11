@@ -323,7 +323,7 @@ The seed and the skip together make the tail a banner: `0x96 - 0x5B` = 59 frames
 
 The `0x801E6D3C` increment is a make-non-zero idiom, not element selection. `ActionSeed` has cleared the byte, so the result is `1` (or `0x66` after a level-up) - neither an element retail raises. The arm is a one-shot, gated on the first monster slot being dead **and** `first_monster_id == 0xB5` (`0x801E6CFC..0x801E6D0C`); its neighbours are `_DAT_8007B64A = 3` and `ctx[+0x07] = 0xFD`, a state byte outside the state machine's own range. What the arm gets from `ctx[+0x26]` is the long `0x96` hold plus the skip window; the unload that follows is `FUN_801D8DE8(1, 1)` on an element that was never raised.
 
-Port: `legaia_engine_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` / `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`. The id round-trips: raised with the element, carried through the `0x50` seed, unloaded by `done::done_band_ui_teardown`, cleared by the next `ActionSeed`.
+Port: `legaia_engine_battle_vm::battle_action::done`'s `DONE_LEVELUP_BANNER_FRAMES` / `DONE_BANNER_SKIP_BELOW`, over `BattleActionHost::pad_word`. The writer is `World::accrue_summon_spell_xp` (`engine-core`), the port of `FUN_801E70BC`. The id round-trips: raised with the element, carried through the `0x50` seed, unloaded by `done::done_band_ui_teardown`, cleared by the next `ActionSeed`.
 
 ### The `0x51` teardown block
 
@@ -505,7 +505,7 @@ Any action between the flinch and the melee gives the flinch time to end and con
 
 ### The disc patch
 
-`legaia-patcher --approach-softlock-fix` (`crates/code-hooks/src/approach_fix.rs`, re-exported as `legaia_patcher::approach_fix`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
+`legaia-patcher --approach-softlock-fix` (`crates/code-hooks/src/approach_fix.rs`, re-exported as `legaia_code_hooks::approach_fix`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
 
 Retail's own `0x14` arm then re-runs the staging next frame and the monster resumes walking. By the time the guard fires, the commit that killed the clip has consumed the stale bit, so the re-staged clip loops cleanly. The same bounce rescues a party attacker whose run clip dies. Healthy approaches never see a dead clip and are unaffected.
 

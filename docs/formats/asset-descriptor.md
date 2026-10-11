@@ -2,7 +2,7 @@
 
 An asset descriptor table is the header of a multi-asset bundle: a count, then one `(type_size, data_offset)` pair per asset. Each pair says what kind of asset it is, how big it is once unpacked, and where its (usually [LZS](lzs.md)-compressed) bytes start. Scene bundles, the `player.lzs`-style character / effect containers and the minigame art container all open with this header at offset 0 of their own PROT entry.
 
-Retail walks the table with `FUN_80020224`, which feeds every pair to the [asset-type dispatcher](asset-type.md). Implementation: `legaia_asset::parse_player_lzs` (parser) and `walk_descriptor_pairs` beside it in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs). The parser name is a leftover from `player.lzs`; the format is not player-specific.
+Retail walks the table with `FUN_80020224`, which feeds every pair to the [asset-type dispatcher](asset-type.md). Implementation: `legaia_container_formats::parse_player_lzs` (parser) and `walk_descriptor_pairs` beside it in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs). The parser name is a leftover from `player.lzs`; the format is not player-specific.
 
 ## Layout
 

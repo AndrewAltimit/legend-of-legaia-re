@@ -2,7 +2,7 @@
 
 `\data\battle\summon.dat` and `\data\battle\readef.DAT` are the two files the battle streams from disc *while a fight is running* (CDNAME block `bat_back_dat`). Each is a flat array of fixed `0x10800`-byte (33-sector) slots. A slot holds one of four things: a texture page with its palette rows, a summon creature's actor record, a big summon's raw palette + page + part pool, or a party member's art-animation `"ME"` archive. The action id of the cast or turn picks a group of three or four consecutive slots.
 
-Parser: `legaia_asset::summon_readef` (`crates/actor-formats/src/summon_readef.rs`). Confidence: **Confirmed** (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
+Parser: `legaia_actor_formats::summon_readef` (`crates/actor-formats/src/summon_readef.rs`). Confidence: **Confirmed** (byte-verified RAM↔disc and VRAM↔disc in a mid-cast battle save state).
 
 ## At a glance
 
@@ -415,9 +415,9 @@ spell → creature map (e.g. Gimard `0x81`→ archive id 10; the otherwise
 capture-less evolved legs `0x90`→ Kemaro 144, `0x91`→ Spoon 147). The texture
 pool is byte-identical too, so an evolved cast seats its own evolved body
 (Gola Gola, not Gimard), colours included. The map lives
-in `legaia_asset::summon_creatures` and is byte-validated by the disc-gated
+in `legaia_actor_formats::summon_creatures` and is byte-validated by the disc-gated
 `summon_creature_tmd_map_real`. Both play hosts seat the body through
-`engine-core::summon::summon_spawn_asset`: the archive twin where one exists,
+`engine-effects::summon::summon_spawn_asset`: the archive twin where one exists,
 the cast's own record (`parse_cast`) otherwise, which covers the high block
 `0x99..=0xA0`. The **big-summon block `0x9A..=0xA0`** instead
 carries a **bespoke mesh** - its actor-record TMD byte-matches no archive
@@ -435,7 +435,7 @@ inline ASCII attack name at `rec[0]`, and the element byte at `+0x1D`. Both
 agree with the curated summon table in
 [`gamedata.md`](../reference/gamedata.md), which is what makes the labelling a
 measurement rather than an ordering assumption. Mirrored at
-`engine-core::summon::BIG_SUMMONS`; asserted by `summon_view_real`.
+`engine-effects::summon::BIG_SUMMONS`; asserted by `summon_view_real`.
 
 | Spell id | Summon | Attack name (`rec[0]`) | Element (`+0x1D`) |
 |---|---|---|---|
@@ -468,7 +468,7 @@ hides the seven big summons from a reader who assumes one rule:
   pool** (`+0x81E0`), the "off-band fixup arm". Every offset in the corpus lands
   inside the pool's `0x8620` bytes and the streams tile it the same way.
 
-Parser: `legaia_asset::summon_readef::parse_cast`, which returns the cast's
+Parser: `legaia_actor_formats::summon_readef::parse_cast`, which returns the cast's
 mesh (as a `MonsterMesh`, so `battle_render_mesh` applies), its clips, its
 element, its attack name and the group's FX texture slots. The site's
 `magic.html` summon viewer is built on it.
@@ -486,7 +486,7 @@ codec `FUN_8002A9CC` into a packed
 `[u8 parts][u8 frames][9-byte TRS]` stream - the art-bank side is decoded
 in [`battle-data-pack.md` § "ME" stream
 archives](battle-data-pack.md#me-stream-archives-readefdat). Parser
-`legaia_asset::me_archive`; the side-band classifier reports these as
+`legaia_actor_formats::me_archive`; the side-band classifier reports these as
 `SlotKind::MeArchive`. Slot `3*char` is the group's non-ME (texture) slot.
 On every retail art slot the bytes between the archive's last body and the
 `0x10800` slot boundary are zero padding - the reader walks only the size
@@ -513,7 +513,7 @@ uploading anything:
 
 so the second texture upload runs for `0x0C <= base <= 0x36` and for
 `base >= 0x42`, and is skipped otherwise
-(`legaia_asset::summon_readef::aux_slot_is_texture_upload`). The file's own content agrees slot
+(`legaia_actor_formats::summon_readef::aux_slot_is_texture_upload`). The file's own content agrees slot
 for slot: every readef group inside the gate holds a texture in `base+1`;
 groups 0..3 (`base < 0x0C`) hold the character ME archives; and the three
 groups the gate excludes from above - `base = 0x39`, `0x3C`, `0x3F`, i.e.
@@ -543,7 +543,7 @@ unreachable through the enemy path.
 ### Which monsters name which readef group
 
 `readef.DAT`'s 78 slots are 26 three-slot groups, and a monster record's
-`+0x1C` is the group index (`legaia_asset::monster_archive::MonsterRecord::readef_group`;
+`+0x1C` is the group index (`legaia_actor_formats::monster_archive::MonsterRecord::readef_group`;
 disc-gated census in `crates/actor-formats/tests/monster_readef_group_real.rs`).
 Across the 186 populated records the byte never leaves `0..=25`, which is
 itself the check that the group reading is the right one - a base outside

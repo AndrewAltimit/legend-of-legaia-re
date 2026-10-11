@@ -47,7 +47,7 @@ pub fn parse_cabinet(entry: &[u8]) -> Result<SlotCabinetMesh> {
         .iter()
         .find(|d| d.type_byte == TYPE_TMD)
         .context("art entry carries no TMD descriptor")?;
-    // The descriptor LZS-decodes to a one-member `asset::pack` whose member is
+    // The descriptor LZS-decodes to a one-member `container-formats::pack` whose member is
     // the TMD (`[count = 1][word offset 2]`, magic at byte 8).
     let is_tmd = |b: &[u8]| b.len() >= 4 && b[0..4] == 0x8000_0002u32.to_le_bytes();
     let decoded =

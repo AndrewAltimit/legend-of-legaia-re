@@ -63,7 +63,7 @@
  */
 
 /* The overworld decoration cells' depth cue - the page twin of
- * legaia_engine_core::overworld_ground_cue::decoration_draw_cue. Retail's
+ * legaia_engine_field::overworld_ground_cue::decoration_draw_cue. Retail's
  * decoration sweep (FUN_801F69D8, PROT 0901) takes one IR0 per object from
  * the camera depth of its origin, IR0 = min(max(TRZ - 0x5000, 0) >> 3,
  * 0x1000), and hazes every prim of it toward the far colour 0xD0 (the

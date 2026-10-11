@@ -911,7 +911,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
 }
 
 /// Owned-string flavour of the Equip screen's inputs, as
-/// `engine-core::pause_screens::equip_screen_model` hands them over.
+/// `engine-menus::pause_screens::equip_screen_model` hands them over.
 ///
 /// The borrow from owned model to `EquipScreenView` was written out twice -
 /// once per host - so it lives here beside the composition instead. This
@@ -935,7 +935,7 @@ pub struct EquipInfoInput<'a> {
 /// blocks, the record's HP / MP maxima and the four values the compare
 /// category is resolved from.
 ///
-/// It mirrors `engine-core::pause_screens::EquipCompareModel` field for
+/// It mirrors `engine-menus::pause_screens::EquipCompareModel` field for
 /// field. The resolution itself stays here, in
 /// [`crate::active_compare_category`], because the two guards that decide it
 /// are part of the renderer's own control flow rather than of the model.

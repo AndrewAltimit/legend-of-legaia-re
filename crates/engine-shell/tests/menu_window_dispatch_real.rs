@@ -165,7 +165,7 @@ fn window_35_is_the_pens_only_buy_quantity_renderer_both_hosts_guard_on() {
 
 /// The same pairing for window 39, the sell list's detail panel. Its content
 /// renderer `FUN_801D5AE8` is likewise a pens-returning port
-/// (`engine-core::shop::shop_sell_detail_panel`), so both hosts guard the id on
+/// (`engine-menus::shop::shop_sell_detail_panel`), so both hosts guard the id on
 /// the descriptor's own `renderer_va`.
 ///
 /// Window 39 is the sell list's replacement for window 34, not an addition to

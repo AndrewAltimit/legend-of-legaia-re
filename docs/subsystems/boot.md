@@ -19,10 +19,10 @@ virtual address; **SCUS** is the main executable `SCUS_942.54`.
 |---|---|---|---|
 | Entry + init | `FUN_80026C28` → `main()` `FUN_80015E90` | SCUS | `engine-session`'s `BootSession` construction |
 | TOC load | `FUN_8003E4E8` → RAM `0x801C70F0` | SCUS | `legaia_prot` reads the disc image directly |
-| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-mode::mode` (`ModeSeat`, `GameMode`); parser `legaia_asset::mode_table` |
+| Mode dispatch | table at `0x8007078C`, word `_DAT_8007B83C` | SCUS | `engine-mode::mode` (`ModeSeat`, `GameMode`); parser `legaia_game_tables::mode_table` |
 | Publisher logos | `FUN_801CE9C0` + sequencer `FUN_801CEFD4` | PROT 0895 (`init.pak`) | `engine-menus::publisher_logos` |
 | Title screen | tick `FUN_801DD35C`, modes 22/23 | PROT 0899 (menu overlay) | `engine-menus::title` (`TitleSession`) over `engine-menus::title_overlay` |
-| New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_asset::new_game` |
+| New-game seed | `FUN_80034A6C` → `FUN_800560B4` | SCUS | `World::begin_new_game`, `legaia_game_tables::new_game` |
 | Field entry | mode 2 `FUN_80025B64` → `FUN_801D6704` | SCUS + PROT 0897 | `BootSession::enter_field_live` |
 | Opening chain | scene scripts; skip in `FUN_801D1344` | PROT 0897 + scene MANs | `engine-core` `world/narration.rs` |
 | Name entry | `FUN_801F03F0` / `FUN_801E6B34` | field/dialog overlay | `engine-menus::name_entry` |
@@ -178,7 +178,7 @@ The current mode is the halfword `_DAT_8007B83C`. See also
 
 <a id="full-handler-map-recovered-from-the-disc"></a>
 
-**The whole table**, as [`legaia_asset::mode_table`](../../crates/game-tables/src/mode_table.rs)
+**The whole table**, as [`legaia_game_tables::mode_table`](../../crates/game-tables/src/mode_table.rs)
 reads it out of `SCUS_942.54` (`asset mode-table SCUS_942.54`; disc-gated
 `mode_table_real`):
 
@@ -443,7 +443,7 @@ the boot mode initializer `FUN_8001DCF8`:
 - **Story flags.** A ~`0x200`-byte story-flag region is zeroed.
 - **Starting party.** `FUN_800560B4` expands a static SCUS template -
   `[8×u16 stats][10-byte name]` per record (Vahn, Noa, Gala, Terra), parsed by
-  [`legaia_asset::new_game`](../formats/new-game-table.md) - into the live
+  [`legaia_game_tables::new_game`](../formats/new-game-table.md) - into the live
   per-character records (stride `0x414`). Vahn's row (HP 180 / MP 20 / AGL 100 /
   ATK 24 / uDEF 16 / lDEF 12 / SPD 19 / INT 9) is byte-validated against an
   early `town01` save state.
@@ -453,7 +453,7 @@ the boot mode initializer `FUN_8001DCF8`:
   `_DAT_8007B8C2` is clear, which retail never is. The title's `LaunchGame` then
   overrides it with `opdeene` for a real New Game.
 
-**Record expansion** (ported as `legaia_asset::new_game::seed_live_records`).
+**Record expansion** (ported as `legaia_game_tables::new_game::seed_live_records`).
 Each template row fans into two stat blocks per live record: a current-stat
 block at `+0x104`, where HP and MP each occupy a current *and* a max cell so a
 New Game starts at full health, and a max-stat block at `+0x11C`. `+0x130` (the
@@ -699,14 +699,14 @@ each `li t2,0xB0; jr t2; _li t1,N`) are syscall shims with no game logic.
 #### Side-band loader constants
 
 Three boot-path call sites resolve an entry from a hardcoded constant rather
-than from a scene name. `legaia_asset::boot_overlay` ports the arithmetic. Each
+than from a scene name. `legaia_overlay_images::boot_overlay` ports the arithmetic. Each
 index is pinned by **content**, because CDNAME labels inherit forward and name a
 neighbouring block on two of the three.
 
 | Call site | Constant | Extraction entry | Pinned by |
 |---|---|---|---|
 | `FUN_8003E360` (effect data) | raw `0x3D5` | 979 | `efect init` / `battle bgm %d` at the entry's head |
-| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as an `asset::pack` of PSX TIMs |
+| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as an `container-formats::pack` of PSX TIMs |
 | `FUN_80025BA0` (slot-B default) | param `5` / `6` | 900 / 901 | the summon-render pair |
 
 Reading either raw constant *as* an extraction index lands two entries high on
@@ -779,7 +779,7 @@ to a stencil (pixel index 0 → transparent, 1..15 → opaque white) and applies
 `SpriteDraw::color` tint at draw time
 (`crates/engine-menus/src/menu_glyph_atlas.rs`).
 
-**Extraction.** `legaia_asset::menu_glyph_atlas::extract_from_prot_dat(&prot_dat)`
+**Extraction.** `legaia_ui_formats::menu_glyph_atlas::extract_from_prot_dat(&prot_dat)`
 returns the 33312-byte slice; the engine reads it through
 `ProtIndex::prot_dat_raw_bytes(byte_offset, len)`.
 
@@ -1113,7 +1113,7 @@ runs `BootSession::enter_field_live` on it.
   false skip. Disc-gated `opdeene_prologue_arm.rs` pins the `GFLAG_SET 26` at
   the partition-2 record-18 offset `0xA5E` and asserts `town01` carries no arm.
 - **The narration plays from the timeline records by execution.** Each leg's
-  inline subtitle pages (`legaia_asset::cutscene_text`) roll through the crawl
+  inline subtitle pages (`legaia_scene_formats::cutscene_text`) roll through the crawl
   roller (`FUN_80037174`; engine
   [`CutsceneNarration`](../../crates/engine-field/src/cutscene_narration.rs)) as
   a child context, so the parent timeline and its camera cuts keep running under
@@ -1338,7 +1338,7 @@ rather than blitting the full quad:
   colour-coded - bright for the cursor row, dim otherwise - with no arrow or
   cursor mark.
 
-**Port.** [`legaia_asset::title_pak`](../../crates/ui-formats/src/title_pak.rs)
+**Port.** [`legaia_ui_formats::title_pak`](../../crates/ui-formats/src/title_pak.rs)
 parses the entry: `extract_title_tim(&prot_0890_bytes, TITLE_TIM_OFFSET)`
 returns a zero-copy slice + decoded VRAM rects, and the `TITLE_BAND_*` constants
 pin the sub-rects above (disc-gated `extracts_real_title_tim_when_disc_extracted`).
@@ -1413,7 +1413,7 @@ CLUT and pixel data are byte-identical to live RAM after boot; only the `RECT`
 fields are rewritten at runtime. On disc each TIM has CLUT `fb=(0, 480+N)` and
 pixel `fb=(640..800, 0..256)`.
 
-Parser: [`legaia_asset::init_pak`](../../crates/ui-formats/src/init_pak.rs) -
+Parser: [`legaia_ui_formats::init_pak`](../../crates/ui-formats/src/init_pak.rs) -
 `parse(&prot_0895_bytes)` returns a struct view over the four logos (disc-gated
 `parses_real_init_pak_when_disc_extracted`).
 

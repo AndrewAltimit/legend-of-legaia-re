@@ -67,7 +67,7 @@ navigation logic depends on the GPU backend.
   layout, gauge bars, digit field and banner animators, plus
   `fishing_hud_draws_for`, the consumer that renders that draw list.
 - `fishing::line` - the fishing line (retail's `LINE_G2` packet, built and
-  clipped by `legaia_engine_core::fishing::PondSession::line_frame`) as the
+  clipped by `legaia_engine_fishing::fishing::PondSession::line_frame`) as the
   prim set's line kind with its two Gouraud end colours; both play hosts wrap
   the packet through it.
 - `menu::window_painters` (+ `menu::equip_stat_compare`) - content painters for the
@@ -91,7 +91,7 @@ navigation logic depends on the GPU backend.
 - `muscle_dome_hud` - the PROT 0977 arena overlay's HUD primitive layer: a
   table-driven textured-Gouraud-quad emitter plus the decimal readout on it.
 - `dialog_reading_box` - the field dialog reading box's text rows: the draw
-  half of `engine-core::dialog_window`'s row window, scroll and typing reveal.
+  half of `engine-dialog::dialog_window`'s row window, scroll and typing reveal.
 - `incense_notice_box` / `tile_board_prompt` - the Incense wear-off notice
   (`FUN_801F1E48` / `FUN_801F1B64`) and the tile board's quit prompt (walk-SM
   state `5`); geometry arrives from `engine-core::incense_notice` /

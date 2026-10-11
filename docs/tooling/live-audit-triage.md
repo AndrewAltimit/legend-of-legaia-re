@@ -388,7 +388,7 @@ The reason each row carries, in short form. The source tag is authoritative.
 - **`list_append_u16`** - `REPLACE`. Its retail caller `FUN_8003F3FC` is ported
   as the per-particle half of `fog_particles::FogPool::render_step`; the `jal`
   at `0x8003F800` is that port's free-slot return, through
-  `engine-core::cutscene::sprite_stack_push`.
+  `engine-system::movie::cutscene::sprite_stack_push`.
 - **`spawn_move_actor`** - `REPLACE`. The field and battle paths construct
   actors through the world's own pool (`impl MoveSpawnHost for World` exists for
   tests).
@@ -673,7 +673,7 @@ Remaining gaps, by prerequisite:
   rod-tip end, a projected point on an angler model the port does not spawn.
 - **Effect-part pool** - closed for the spawn wrappers. The dance's two feed
   `MinigameActorPool` through `DanceGame::spawn_sprite_part`; the splash and
-  ripple wrappers feed `engine-core::minigame_fx::MinigameFxPool`. Every host
+  ripple wrappers feed `engine-minigames::minigame_fx::MinigameFxPool`. Every host
   draws both.
 - **Actor records.** Closed for the dance (`minigame_actor::MinigameActor`).
   Open for fishing: `roll_wander_target`, `step_facing`, `fish_camera`,
@@ -699,7 +699,7 @@ Remaining gaps, by prerequisite:
   ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)).
 - The afterimage streak's projection inputs are battle-context words
   (`ctx[+0x1144]`, `ctx[+0x6C6]`) written by `FUN_801DEA50`, ported as
-  `engine-core::action_effect_script`. Its caller `FUN_80047430` is ported and
+  `engine-effects::action_effect_script`. Its caller `FUN_80047430` is ported and
   live; the effect-script block rides the disc action entries as
   `MonsterAnimation::effect_script` and `World::tick_battle_animations` drives
   the walk
@@ -724,7 +724,7 @@ to be the point of the exercise.
 #### Two anchors are retail-unreachable
 
 `FUN_801CFE20` and `FUN_801CFE5C` - the FMV overlay's `DecDCTinSync` /
-`DecDCToutSync`-shaped wrappers, ported as `engine-core::mdec_dma_sync` - have
+`DecDCToutSync`-shaped wrappers, ported as `engine-system::movie::mdec_dma_sync` - have
 **no reference of any form** across all 1234 images, including the raw bytes of
 every extracted PROT entry. The decode loop reaches the
 blocking waits through the DMA kick routines `FUN_801CFFDC` / `FUN_801D0070`
@@ -744,7 +744,7 @@ audit. They are listed with what the scan or a catalog lookup found instead.
 |---|---|---|
 | `801dea50` `action_effect_script` | the caller is the battle-action SM `FUN_801E295C` | no reference of any form inside that overlay image; both `jal`s are in the anim-node tick `FUN_80047430`, ported and live |
 | `800265e8` `seed_boot_offset_table` | nothing in the corpus indexes `0x800917B0` | `FUN_8002630C` indexes it by VAB slot for `SsVabOpenHead`; the words are the per-slot SPU bases, already ported |
-| `80020224` `walk_descriptor_pairs` | MAIN_INIT is documented but not ported | MAIN_INIT is ported, as `engine-core::mode_entry_init` |
+| `80020224` `walk_descriptor_pairs` | MAIN_INIT is documented but not ported | MAIN_INIT is ported, as `engine-system::mode_entry_init` |
 | `80031ae4` `float_tween` | the label emitter `FUN_80032434` is not ported | it is ported; and the sibling draw pass `FUN_80031D00` named alongside it is ported **and live** |
 | `801d841c` `save_screen_spawn` | nothing wants a flash element at all | it is not a flash element - descriptor `0x800706BC` names the save/load screen driver; and `FUN_801ED308` calls it, ported and live |
 | `801d5e20` `shift_primitive_colours` | no caller | the field VM's op `0x4C` nibble-E sub-6 arm, whose host hook has an empty body |
@@ -770,7 +770,7 @@ as disclosed), `effect_ribbon` (`FUN_8001ADA4` case 4, as disclosed),
 `monster_archive::animation`, `new_game`, `player_anm`, `strv2_decode` and
 `seq_events`. `mode::other_warp_init_stage` is honest with a sharper edge: it
 has **no `jal` anywhere**, and its one reference is the mode-table slot
-`mode_table[24] + 0x10` at `0x800709DC`, a table `legaia_asset::mode_table`
+`mode_table[24] + 0x10` at `0x800709DC`, a table `legaia_game_tables::mode_table`
 already parses from the disc.
 
 #### One `WIRE`, since closed
@@ -808,7 +808,7 @@ Three subsystems each disclosed the *same* gap as a different missing artefact:
 | Anchor | What its reason claimed was missing | What actually exists |
 |---|---|---|
 | `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
-| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_asset::dance_art` has both, run per frame by the browser dance page |
+| `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` has both, run per frame by the browser dance page |
 | the `other_game_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
 
 The single real blocker under all three is that every host consumes the *parsed
@@ -874,7 +874,7 @@ kernel's reading is never exercised, so a misreading survives:
   reel geometry both read it, and each multiplies the LSB by a radius - so it
   was wrong *output*, not just a wrong reading, and the engine-vm test that
   should have caught it was itself pinned to the port's rounded numbers rather
-  than to the disc. `engine-render::billboard::psx_sin` had the same table
+  than to the disc. `render-kernels::billboard::psx_sin` had the same table
   right the whole time: two reproductions of one table, one of them wrong, and
   nothing compared them. The disc-gated
   `minigame_polar_trig_tables_disc` oracle now checks the reproduction entry
@@ -892,7 +892,7 @@ kernel's reading is never exercised, so a misreading survives:
   *creates* the lure point the other two rows wait on. One gap, three rows.
 - **`marker_template`.** Its reason said the step-layer record lookup is not
   ported. `FUN_801D3EC0(1, x, z)` asks for sub-table kind **1** of the `.MAP`
-  region block - the same tile-trigger records `engine-core::field_regions`
+  region block - the same tile-trigger records `engine-field::field_regions`
   decodes - so only the tile-actor sink is missing.
 - **`project_segment` (`801d5c2c`) cannot be wired at all.** A five-form
   reference sweep finds zero references to it anywhere, and its band holds no
@@ -966,7 +966,7 @@ disclosure leaned hardest on.
 `bgr555_to_grey` (`8004ce2c`) named three prerequisites: no per-actor palette
 copy, no `actor[+0x220..=+0x223]` status latch, no mid-battle CLUT re-upload
 path. The first two were accurate and are now supplied by
-`engine-core::battle_status_clut` (the copy, the latch) armed from
+`engine-battle::battle_status_clut` (the copy, the latch) armed from
 `BattleHud::sync_status`, the one per-slot-per-frame call every host already
 makes with the tracker in hand. The third was already close to false when it
 was written: the native window's face-stamp pass had been mutating the stashed
@@ -1009,11 +1009,11 @@ backwards in one direction:
 
 - `engine-vm::actor_node_pool` - all three classes are `REPLACE` now: the
   actor node pool (`Vec`-backed generational pool), `copy_blocks_32`
-  (borrow-in-place chunk walk in `legaia_asset::parse_streaming_with`), and
-  `list_append_u16`, which is `engine-core::cutscene::sprite_stack_push`'s
+  (borrow-in-place chunk walk in `legaia_container_formats::parse_streaming_with`), and
+  `list_append_u16`, which is `engine-system::movie::cutscene::sprite_stack_push`'s
   address ported a second time. This file once read as the clean example of a
   mixed-class module, and the mixture was an error in one of the readings.
-- `engine-core::menu_list_rows` - three families. The module doc already split
+- `engine-menus::menu_list_rows` - three families. The module doc already split
   them three ways; what it did not do was say that the split is a split of
   *class*.
 
@@ -1084,8 +1084,8 @@ and the only thing that can be stale is a marker that exists.
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
 | `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
-| `battle_arith_cores::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_asset::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
-| `battle_arith_cores::scale_rgb24` (`80046978`) | `REPLACE` | `engine-ui::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
+| `battle_arith_cores::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_actor_formats::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
+| `battle_arith_cores::scale_rgb24` (`80046978`) | `REPLACE` | `render-kernels::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |
 
 Two neighbours were checked against the same bar and stay `DISCLOSE`.
@@ -1185,7 +1185,7 @@ Three anchors on `FUN_801DA390` plus the world-map horizon gate. Both closed as
 
 #### `FUN_801DA390` eases a height, not a camera yaw
 
-`engine-core::camera_ease` described `_DAT_8007BCAC` as a smoothed **camera
+`engine-field::camera_ease` described `_DAT_8007BCAC` as a smoothed **camera
 yaw**, its target as "the camera-zone record's angle", and the player slot it
 subtracts (`+0x16`) as "current facing" with `+0x1E` as "the facing's settle
 target". The arithmetic was right; the units were not.
@@ -1256,10 +1256,10 @@ decompiled body and only the disassembly separates them.
 
 | Anchor | Verdict | `REPLACED-BY:` mechanism |
 |---|---|---|
-| `battle_stream_slot::decode_request` (`801F17F8`) | `REPLACE` | `legaia_asset::summon_readef::stream_target`, which resolves file + slot from the action id directly. The request byte exists only to hand one `u8` across a frame boundary to a CD state machine. |
-| `battle_stream_slot::StreamSlotSm::arm` (`80055B4C`) | `REPLACE` | `legaia_asset::summon_readef::parse`, which owns the whole side-band file. Arming schedules a `0x10800`-byte libcd read; the port's equivalent is an already-resident slice. |
+| `battle_stream_slot::decode_request` (`801F17F8`) | `REPLACE` | `legaia_actor_formats::summon_readef::stream_target`, which resolves file + slot from the action id directly. The request byte exists only to hand one `u8` across a frame boundary to a CD state machine. |
+| `battle_stream_slot::StreamSlotSm::arm` (`80055B4C`) | `REPLACE` | `legaia_actor_formats::summon_readef::parse`, which owns the whole side-band file. Arming schedules a `0x10800`-byte libcd read; the port's equivalent is an already-resident slice. |
 | `battle_stream_slot::StreamSlotSm::step` (`801F17F8`) | `REPLACE` | the synchronous disc reader behind the same `parse`. Every stage is a libcd step - release, seek, start DMA, wait - and the port models no CD device. |
-| `battle_intro_styles::tick_particle_field` (`801CFDA0` / `801D0370`) | `REPLACE` | `engine-render::battle_intro::emit_particle_field`, which carries the same two PORT tags, steps each particle through `step_particle` and builds the `POLY_FT4` in the same pass. Superseded, not blocked. |
+| `battle_intro_styles::tick_particle_field` (`801CFDA0` / `801D0370`) | `REPLACE` | `render-kernels::battle_intro::emit_particle_field`, which carries the same two PORT tags, steps each particle through `step_particle` and builds the `POLY_FT4` in the same pass. Superseded, not blocked. |
 
 #### Rows re-read and left `DISCLOSE`, with what each is waiting on
 
@@ -1370,7 +1370,7 @@ what keeps a second host from getting a different edge for free.
 `0x801F6418` byte into `World::audio.battle_sfx_cues` as a cue id. The byte is a VRAM
 **x** and `FUN_80058490` is `MoveImage`, so the SFX scheduler was being handed
 palette columns to look up in a sound bank. The arm is now
-`engine-core::battle_effect_clut::stage_effect_clut` - a 16x1 copy from
+`engine-battle::battle_effect_clut::stage_effect_clut` - a 16x1 copy from
 `(map[code], 476)` onto `(224, 476)` - drained by the native window's
 `tick_battle_effect_clut` under the same mid-battle re-upload protocol as the
 status-CLUT recolour. The browser host has no mid-battle VRAM channel, so it
@@ -1423,7 +1423,7 @@ withdrawn claim is only useful with its refutation attached.
 | `801de2b0` | Named a host hook for field-VM op `0x34` sub-0 as missing. The hook exists and is live (`World::op34_sub0_color_intensity_setup`), and both retail call sites are in that op's sub-0 arm - `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the `_DAT_1F800394 & 0x800000` default side of the fork. The gap behind that was a representation conflict, since resolved in favour of the push: the op seats its tweens through `World::spawn_colour_tween` and the float ramp beside them is gone. |
 | `801cee80` | Named `FUN_80025980` at `0x80025AA0` as the retail caller, ported in `engine-core::mode`. That `jal` is one arm of a seven-way jump table (`sltiu v0,v1,0x7`, base `lui v0,0x8001; addiu v0,v0,0xae4`) dispatching per minigame sub-id into the **slot-A overlay's own** routine at this VA, which has a real prologue. The body ported here is different bytes - its dump opens `sh a1,0x16(v0)`, mid-function code storing through a register nothing in the window sets. So the port has no identified caller, and whether the VA is a function entry wants a re-dump. |
 | `8004c650` | Called the walked table a runtime table and made staging it the prerequisite. The walk is over the **static** SCUS arts-name table `DAT_80075EC4` (`lbu v1,0x5ec4(a2)` at `0x8004C664`, 20-byte stride, `0x63` sentinel); `0x80076C10` is only the placement block the X is written into. `legaia_art::arts_table::parse_from_scus` already decodes that table and is live. |
-| `801d4c50` | Made "the duel host must stage art at all" the prerequisite. The browser minigames host stages the duel's art in full - both fighters' meshes, both anim banks, the stage set and the duel VRAM - and still does not call this walk, because `legaia_asset::baka_opponents::parse_fighter_pack` walks the same chunk chain into typed sub-assets. |
+| `801d4c50` | Made "the duel host must stage art at all" the prerequisite. The browser minigames host stages the duel's art in full - both fighters' meshes, both anim banks, the stage set and the duel VRAM - and still does not call this walk, because `legaia_minigame_formats::baka_opponents::parse_fighter_pack` walks the same chunk chain into typed sub-assets. |
 | `801d57bc` / `801d58e0` | Asserted the keyframe-editor phase is one no shipping path enters. The Baka overlay's own dispatcher writes `400` into `DAT_801DBF44` at `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the selection word `0x801DBF90` holds `4` under the pad test at `0x801D194C`, and the dispatcher carries explicit `0x190` / `0x191` / `0x1F4` arms at `0x801CF654..0x801CF684`. |
 | `801d6e5c` | Said the duel draws no fighter clip. The browser host plays both sides' clips; the native window stages none. That is an undisclosed per-host split, and neither host is the blocker - the action record's per-sub-keyframe `+0x26` column is undecoded, so the `frame_indices` slice cannot be built at all. |
 | `801da59c` | Said no engine-side chain slot exists to write back into. The port holds saved chains (`legaia_save::SavedChainRecord`, `World::party.saved_chains`, persisted and editable). The blocker is a mapping: `legaia_save`'s retail `0x414` record model declares no accessor at record-relative `+0x1A7` / `+0x1B7`. |
@@ -1438,11 +1438,11 @@ replacement case in its own prose.
 
 | Anchor | Mechanism that does the routine's job |
 |---|---|
-| `80036c4c` | `legaia_engine_ui::screen_prim::ScreenPrim::gouraud` - per-corner modulation carried on the typed prim and folded into vertex colours by the geometry builder. The port emits no `POLY_G3` / `POLY_G4` byte packet, so there is no packed colour field for a spreader to fill. |
+| `80036c4c` | `legaia_render_kernels::screen_prim::ScreenPrim::gouraud` - per-corner modulation carried on the typed prim and folded into vertex colours by the geometry builder. The port emits no `POLY_G3` / `POLY_G4` byte packet, so there is no packed colour field for a spreader to fill. |
 | `80034a6c` | `legaia_engine_core::new_game` plus the world's new-game reset, which seed a typed `World` instead of writing SC-block cells. The table's job here is to be the disc-gated oracle that re-derives the routine's own store set. |
 | `800597c8` | The renderer's single fixed-orientation wgpu surface. The port programs no PSX display environment - the retail caller is ignore-listed libgpu - so the mirror's two globals have no counterpart and the identity arm is the only reachable one. |
 | `801d9ae8` (fn) | `engine-ui`'s per-frame battle draw-list builders. Retail tracks battle-UI widgets in a `0x28`-slot pool with explicit lifetimes; the port rebuilds every readout from `World` state each frame, so no widget outlives its draw. The module blanket stays `NOT WIRED` for the file's other three addresses. |
-| `801d4c50` | `legaia_asset::baka_opponents::parse_fighter_pack`, which walks the same `[u32 (type<<24)|size][payload]` chain into typed sub-asset bytes. Retail's transient `0x46000` buffer and its dev-vs-CD load fork have no analogue to host. |
+| `801d4c50` | `legaia_minigame_formats::baka_opponents::parse_fighter_pack`, which walks the same `[u32 (type<<24)|size][payload]` chain into typed sub-asset bytes. Retail's transient `0x46000` buffer and its dev-vs-CD load fork have no analogue to host. |
 | `801da6b4` | `World::apply_target_cursor_tint`, which stamps the same render-flag / colour / blend triple over the engine's *compacted* monster window. Retail's fixed actor-table slots `3..=6` are a property of retail's seating; run against the port's seating this kernel can only tint empty slots. |
 
 #### The rows that hold as written
@@ -1456,8 +1456,8 @@ checked.
 (both anchors), `80064090`, `801d32bc` (both
 anchors), `801d65f8`, `801d820c`, `801d9ae8` (module), `801dcc20`,
 `801e4140`, `801ddb30`, `801de37c`, `801e2650`, `801f81dc`. (`800480d8` is
-since live, as is `801d4df8` - the Baka impact pair, now seated and drawn through `engine-core::baka_impact_fx` - `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
-duplicate port is deleted in favour of the live effect-VM walker; `8001d088` is since live through the two-frame pose sampler `PlayerAnmBundle::sample_bone`; `80056208` is since live, the side-band kernel moved to `engine-core::battle_sideband` and run every battle frame by `World::tick_battle_sideband`, with the two Cort stage modules it drives ported beside it.)
+since live, as is `801d4df8` - the Baka impact pair, now seated and drawn through `engine-minigames::baka_impact_fx` - `801cf754` is `REPLACED-BY` the contact probes, and `801e0080`'s
+duplicate port is deleted in favour of the live effect-VM walker; `8001d088` is since live through the two-frame pose sampler `PlayerAnmBundle::sample_bone`; `80056208` is since live, the side-band kernel moved to `engine-battle::battle_sideband` and run every battle frame by `World::tick_battle_sideband`, with the two Cort stage modules it drives ported beside it.)
 
 Two of them are worth singling out. `8005126c` is a documented **negative**, not
 a gap: the five-form reference sweep found no reference to the on-screen test
@@ -1496,7 +1496,7 @@ hosts install at boot because the field-VM merchant-record scan needs it as a
 sellable mask.
 
 **The Throw Out list** (content id `0x22`) dims on the equipment record's `+7`
-flags byte. Both hosts parse `legaia_asset::equip_stats::EquipStatTable` at
+flags byte. Both hosts parse `legaia_game_tables::equip_stats::EquipStatTable` at
 boot and then keep only two *derived* views of it - the battle-stat modifier
 table and the equip restrictions - neither of which carries `+7`. The raw
 records now ride along on `World::tables.equip_stats`.
@@ -1570,9 +1570,9 @@ runs it from `begin_battle_round` and the ring's first cancel, focus shift
 included ([battle.md](../subsystems/battle.md#stage-seats-fun_800513f0-placement-tables)).
 The pool flag-word scrub waited on the one other writer of `actor+0x8`, the
 near-camera ghost pass `FUN_8004DC68`; with that ported
-(`engine-vm::battle_action::camera_ghost_pass`, run every battle frame) the
+(`engine-battle-vm::battle_action::camera_ghost_pass`, run every battle frame) the
 scrub runs from the pose hook's out-of-range guard in `vm_hosts.rs`, and both
-hosts draw the bits through `engine-core::battle_body_blend`.
+hosts draw the bits through `engine-battle::battle_body_blend`.
 
 ### The ringside still: one loader, three verdicts
 
@@ -1644,7 +1644,7 @@ reach the address; the verdict is what the call site supports.
 | `8001fa00` `init_identity_index_list` | live | MAIN_INIT's `jal` at `0x801D7384` seeds the fog-particle pool's free stack (`pool, pool + 4, 0x50`); `FogPool::reset` now seeds through it |
 | `800265e8` `seed_boot_offset_table` | `REPLACE` | boot `jal` at `0x8001601C`; the audio host keeps one flat `SpuRam`, no slot-indexed base map |
 | `8001d7f8` / `8001d424` scene-name sync | `REPLACE` | `0x8001FDC0` (the op-`0x3F` packet) and the dev-arm boot read at `0x80016024`; the port carries the destination as a label |
-| `8003cb54` `mes_append_escape` / `mes_string_end_offset` | live | its three sites compose the death-spoils captions; the knockdown-end commit now runs `FUN_8004AD80`'s arm (`engine-core::battle_steal`) and composes them the same way - see [steal-table.md](../formats/steal-table.md#the-steal-attack) |
+| `8003cb54` `mes_append_escape` / `mes_string_end_offset` | live | its three sites compose the death-spoils captions; the knockdown-end commit now runs `FUN_8004AD80`'s arm (`engine-battle::battle_steal`) and composes them the same way - see [steal-table.md](../formats/steal-table.md#the-steal-attack) |
 | `80050e74` `halt_part_actor` / `flush_part_actor_pool` | `REPLACE` | 89 `jal`s, all in the stager overlays PROT 0911..0969; `World::tick_summon` drops the whole `SummonScene` once it finishes, so no seat outlives the cast |
 | `801d0748` `timed_fight_turns_left` | held | the gate and the draw are one `FUN_8003541C` registration (key `1`, `288 x 12` at `(16, 14)`) plus two digit records; the actor's teardown and its precedence over the plaque on the same seat are not pinned, and no capture holds the Koru fight |
 | `8003bc08` `rotate_toward_clamped` | wired | every placement carries `0x20000`, so `FUN_8003BC08`'s height arm rewrites each visible placement's Y every tick; `World::tick_field_npc_heights` runs the glide arm through it, behind the visibility cull `world::field_npc_cull` (`FUN_801D79E8`) |

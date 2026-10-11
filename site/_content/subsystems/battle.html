@@ -187,7 +187,7 @@
   <h2>In the port</h2>
   <p>The engine keeps the battle simulation renderer-free - the action machine and formulas in <code>engine-battle-vm</code>, the <code>World</code>-free kernels (AI, catalogs, encounters, level-up, pickers) in <code>engine-battle</code>, the round loop and command flow on <code>World</code> in <code>engine-core</code>, which re-exports the other two at their old paths - and drives it from one per-frame <code>World::tick</code>, so walking, being ambushed, fighting and returning to the field all happen from a single call on both hosts. Where to look:</p>
   <ul class="bullets">
-    <li><strong>Encounters and entry:</strong> <code>engine-core::encounter</code>, <code>World::begin_encounter_battle</code>, <code>battle_seats</code>.</li>
+    <li><strong>Encounters and entry:</strong> <code>engine-battle::encounter</code>, <code>World::begin_encounter_battle</code>, <code>battle_seats</code>.</li>
     <li><strong>Menu half:</strong> <code>battle_input</code>, <code>battle_flow</code>, with the submenus in <code>battle_arts</code>, <code>battle_magic</code>, <code>inventory_use</code>, <code>target_picker</code>.</li>
     <li><strong>Action half:</strong> <code>battle_action</code> (the state machine) and <code>battle_formulas</code> (the arithmetic).</li>
     <li><strong>Monsters, spoils, wipe:</strong> <code>monster_ai</code>, <code>World::apply_battle_loot</code>, <code>LevelUpTracker</code>, <code>game_over::GameOverSession</code>.</li>

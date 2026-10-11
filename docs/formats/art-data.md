@@ -9,7 +9,7 @@ action-constant id space that links them, and the Miracle / Super Art trigger
 tables.
 
 Implementation: [`crates/art`](../../crates/art/README.md) (tables, tokenizer,
-matchers) and `legaia_patcher::arts_power` / `super_art_power` (record editors).
+matchers) and `legaia_arts_patch::arts_power` / `super_art_power` (record editors).
 
 ## At a glance
 
@@ -192,7 +192,7 @@ Every art in the SCUS arts-name table resolves to one `record0` record whose
 carry 1 byte, hyper / super arts 4 ascending bytes. The two Noa Hurricane-Kick
 holes and Gala's spirit-only Miracle (which carries no `+0x24` byte) reproduce.
 There is no display copy of the power. Editor:
-`legaia_patcher::arts_power` (CLI `legaia-patcher arts`,
+`legaia_arts_patch::arts_power` (CLI `legaia-patcher arts`,
 `--arts-power COMBO=VALUE`; see [randomizer.md](../tooling/randomizer.md)).
 
 ### Art records are indexed by action constant
@@ -224,8 +224,8 @@ records ahead of row 0.
   Noa's `0x2C` / `0x2D` carry named records with power bytes but have no
   arts-name-table row and no combo.
 
-Editors: `legaia_patcher::super_art_power` (locate + edit by constant,
-name-validated) and `legaia_patcher::arts_power` (combo-keyed).
+Editors: `legaia_arts_patch::super_art_power` (locate + edit by constant,
+name-validated) and `legaia_arts_patch::arts_power` (combo-keyed).
 
 ## Runtime cue playout
 
@@ -368,7 +368,7 @@ The same low-byte-first split feeds `cr13` / `cr14` / `cr15`
 (`RBK` / `GBK` / `BBK`) at `0x80043464..0x8004346C`. Move-VM op `0x0C` builds
 the same field the same way
 (`+0x74 = (v1<<24 | 0x40000000) + v2 + (v3<<8) + (v4<<16)`, `v2` red). Mirror:
-`engine-core::battle_afterimage::GHOST_COLOR_PARTY`.
+`engine-battle::battle_afterimage::GHOST_COLOR_PARTY`.
 
 Not the same field: `FUN_8005112c`'s ribbon literals are the fourth argument of
 the 2D streak builder `FUN_80048310`, which re-packs them unchanged

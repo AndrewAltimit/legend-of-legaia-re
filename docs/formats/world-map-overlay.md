@@ -31,7 +31,7 @@ the entries as geometry and are falsified; see
 | Clip selector + clock | `FUN_800204F8` |
 | Animated draw | `FUN_8001B964` (render mode `actor[+0x56] == 1`) |
 | Entry decoder | `FUN_8001BE80` |
-| Parser | `legaia_asset::world_map_overlay` ([source](../../crates/scene-formats/src/world_map_overlay.rs)) |
+| Parser | `legaia_scene_formats::world_map_overlay` ([source](../../crates/scene-formats/src/world_map_overlay.rs)) |
 | Confidence | Confirmed - every field pinned to the instruction that reads it, container byte-verified against live RAM |
 
 ```mermaid
@@ -76,7 +76,7 @@ Each kingdom block runs `[.MAP 36 sectors] [v12 header 1] [prescript 1..3]
 [bundle N]`, so the bundle is one entry past the prescript. The numbers
 `0085` / `0244` / `0391` name the prescript entries, not the bundles (the
 bundle table sits at offset 0 of the *next* entry). Constants:
-`legaia_asset::kingdom_bundle::BUNDLE_ENTRIES` and `PRESCRIPT_ENTRIES`.
+`legaia_scene_formats::kingdom_bundle::BUNDLE_ENTRIES` and `PRESCRIPT_ENTRIES`.
 
 The bundle is the standard `scene_asset_table` with type sequence
 `(1, 2, 3, 4, 5, 6, 7)`. Slot 4's type byte `0x05` is "MOVE" per
@@ -644,7 +644,7 @@ installer of a sound stream: it switches on the chunk type byte
 the VAB open + body transfer `FUN_8002630C` (cases 1 and 3), or a staging
 copy followed by `SsSeqOpen` through `FUN_80026410` (case 2; case 12 opens
 the fixed SEQ record `0x800705AC`). None of its arms decodes LZS. Port:
-`legaia_engine_core::chunk_install`. Neither writer carries slot-4
+`legaia_engine_system::chunk_install`. Neither writer carries slot-4
 pointers.
 
 <a id="cross-kingdom-hit-count-comparison"></a>
@@ -856,7 +856,7 @@ un-fixing the runtime's absolute group-descriptor pointers
   `nobj = 12`, and the live slot-3 descriptor sourced from disc group 11,
   are the runtime patches below.
 
-The parser `legaia_asset::character_pack` pins the same `nobj` values
+The parser `legaia_actor_formats::character_pack` pins the same `nobj` values
 (12 / 12 / 12 / 3 / 2) and runtime body sizes (13 220, 13 800, 11 656,
 6 488, 1 048).
 
@@ -930,8 +930,8 @@ fields and measures nothing.
 |---|---|
 | `asset kingdom-slot <PROT>.BIN --slot 4` | Per-body inventory (parts / frames / rate / flags). `--out` writes the decoded payload. |
 | `asset player-anm <PROT>.BIN --desc-count 7` | The generic ANM detector; reports a kingdom bundle like any scene's type-`0x05` section. |
-| `legaia_asset::world_map_overlay::{parse, Slot4Body, Slot4Transform, translation_path_segments}` | Rust API. `Slot4Record::transform()` decodes one entry; `translation_path_segments` emits each part's translation path across the clip. |
-| `legaia_asset::world_map_overlay::{top_down_lines, wireframe_segments_3d, record_points, body_axis_range}` | Raw `i16`-pair byte views. Byte-inspection aids only, never geometry. |
+| `legaia_scene_formats::world_map_overlay::{parse, Slot4Body, Slot4Transform, translation_path_segments}` | Rust API. `Slot4Record::transform()` decodes one entry; `translation_path_segments` emits each part's translation path across the clip. |
+| `legaia_scene_formats::world_map_overlay::{top_down_lines, wireframe_segments_3d, record_points, body_axis_range}` | Raw `i16`-pair byte views. Byte-inspection aids only, never geometry. |
 | `asset slot4-png --input <PROT>.BIN --out <png>` | PNG renderer over those byte views. `--style row\|col\|pairs\|grid\|points`, `--axes xz\|xy\|zy`, `--only-body N`, `--from-raw <bin>`. |
 | `scripts/pcsx-redux/autorun_dump_slot4.lua` (via `run_probe.sh`) | Loads a save state, dumps the live slot-4 RAM region, quits. |
 | `scripts/pcsx-redux/autorun_dump_full_ram.lua` / `autorun_dump_full_ram_hold.lua` | Full 2 MiB main-RAM dump; the `_hold` variant drives the warp first. |

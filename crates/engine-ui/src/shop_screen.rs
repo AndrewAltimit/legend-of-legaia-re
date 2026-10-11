@@ -7,7 +7,7 @@
 //! the caller and filled by its own content renderer (or, for the two
 //! renderer-less list windows, by the SCUS kind-4 list kernel
 //! `FUN_80032A44`). Which windows are up is the widget scripts' business -
-//! a host gets the set from `engine-core::shop::shop_screen_windows`. This
+//! a host gets the set from `engine-menus::shop::shop_screen_windows`. This
 //! module turns that set plus the live content into draws, so the native
 //! `play-window` and the browser play page draw one screen rather than two.
 //!
@@ -155,7 +155,7 @@ pub struct ShopCompareMember<'a> {
 /// Everything one shop frame shows.
 #[derive(Debug, Clone, Copy)]
 pub struct ShopScreenView<'a> {
-    /// The window set, in draw order (`engine-core::shop::shop_screen_windows`).
+    /// The window set, in draw order (`engine-menus::shop::shop_screen_windows`).
     pub windows: &'a [usize],
     pub picker: Option<ShopPickerView<'a>>,
     pub list: Option<ShopListView<'a>>,

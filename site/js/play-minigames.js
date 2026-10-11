@@ -430,7 +430,7 @@
   }
 
   /* ================================================================== */
-  /* Baka Fighter: the engine's duel surface (`engine-core::baka_duel_scene`
+  /* Baka Fighter: the engine's duel surface (`engine-minigame-scenes::baka_duel_scene`
    * through the `play_mg_baka_scene_*` exports) - the fighters posed by the
    * duel's own clip clocks, the special's afterimage ghosts, the four arena
    * walls and the floor grid, drawn under the arena camera's ready

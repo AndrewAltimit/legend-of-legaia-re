@@ -136,7 +136,7 @@ shifts both left by 11 (`see ghidra/scripts/funcs/8003e104.txt`). Its three
 callers pass `monster_id - 1`. The table is resident at `0x801C8980` because
 the boot image stages it: PROT `0895` reads one sector of raw TOC `0x37D`
 (= extraction 891) and `memcpy`s `0x400` bytes of it there. Parser
-`legaia_asset::vab_multi_bank`; the whole entry accounts structurally in
+`legaia_container_formats::vab_multi_bank`; the whole entry accounts structurally in
 [`byte-accounting.md`](../tooling/byte-accounting.md).
 
 ## Program slots vs packed tone pages

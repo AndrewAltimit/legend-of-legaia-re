@@ -217,7 +217,7 @@ its angles at `0x1F8002C8..0x1F8002CC`. It transforms the translation through
 position (`0x8001C2C8..0x8001C300`), and turns the matrix by the keyframe's
 `RotZ` / `RotY` / `RotX` (`0x8001C2FC..0x8001C328`).
 
-**Port.** `engine-core::object_effect` holds the table (boot seed, battle
+**Port.** `engine-effects::object_effect` holds the table (boot seed, battle
 re-seed, the four ext writes through the field `MoveHost`) and the clip
 math. `World::object_effect_clips` lists every raised context and
 `World::object_effect_mesh_clip` turns one into a mesh-space slab for a
@@ -338,7 +338,7 @@ offset = `VA - 0x80010000 + 0x800`).
 Port: `legaia_render_kernels::prim_dispatch` models the table - `slot_to_kind`
 (topology-correct `PolyKind`), `slot_lit` (`NccMode` for slots 8-11) and
 `RenderMode::applies_depth_cue` (the cued banks). The `NCCS` / `NCCT` kernels
-are `legaia_engine_ui::gte::lighting`, exercised by the `gte_trace` parity
+are `legaia_render_kernels::gte::lighting`, exercised by the `gte_trace` parity
 oracle.
 
 ## Per-primitive TMD render helpers (`FUN_8002735C` family)
@@ -471,7 +471,7 @@ Evidence:
 
 **Port.** Both hosts run one kernel,
 [`field_lit_mesh`](../../crates/engine-field/src/field_lit_mesh.rs)
-(re-exported as `engine-core::field_lit_mesh`), over the light state in
+(re-exported as `engine-field::field_lit_mesh`), over the light state in
 [`render-kernels::field_light`](../../crates/render-kernels/src/field_light.rs). The
 mesh builder keeps each lit vertex's normal and object colour
 (`legaia_tmd::mesh::LitVertex`). Because the intensity depends on the draw's
@@ -527,9 +527,9 @@ prologue's per-node pull is a view-depth `IR0` ramp
 ### The same shading in an exported `.glb`
 
 An export is one more surface the packet colour has to survive. The three
-exporters (`legaia_asset::monster_gltf` / `scene_gltf` / `character_gltf`)
+exporters (`legaia_actor_formats::monster_gltf` / `scene_gltf` / `character_gltf`)
 carry it as a **`COLOR_0` vertex attribute** under the one convention in
-`legaia_asset::gltf_color`:
+`legaia_actor_formats::gltf_color`:
 
 | prim | attribute | over |
 |---|---|---|
@@ -594,10 +594,10 @@ and carried as a scope row in `scripts/ci/port-catalog-ignore.toml`:
 
 | Routine | What it is | Port |
 |---|---|---|
-| `FUN_80028158` | Procedural ring / crown / fan builder: a Legaia TMD object of `GT4` packets ([`effect-vm.md`](effect-vm.md#the-default-arms-draw)) | **Ported and drawn** - `legaia_engine_core::effect_default_arm`, a byte-exact builder behind every default-arm node and every battle ground shadow |
+| `FUN_80028158` | Procedural ring / crown / fan builder: a Legaia TMD object of `GT4` packets ([`effect-vm.md`](effect-vm.md#the-default-arms-draw)) | **Ported and drawn** - `legaia_engine_effects::effect_default_arm`, a byte-exact builder behind every default-arm node and every battle ground shadow |
 | `FUN_8002A5A4` | One textured billboard quad into a caller buffer | Scope row (`render_pipeline`) |
-| `FUN_801CFA48` | Lightning effect-ribbon random walk ([`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290)) | **Ported and drawn** - `legaia_engine_core::effect_ribbon`, the geometry and the TMD packet chain it installs as the actor's model |
-| `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_core::clut_cell_fx`, live through `world::ambient` |
+| `FUN_801CFA48` | Lightning effect-ribbon random walk ([`battle-action.md`](battle-action.md#overlay-local-prng-fun_801d0290)) | **Ported and drawn** - `legaia_engine_effects::effect_ribbon`, the geometry and the TMD packet chain it installs as the actor's model |
+| `FUN_80019D50` | CLUT-cell HSV cycler ([`field-ambient-fx.md`](field-ambient-fx.md)) | **Ported** - `legaia_engine_field::clut_cell_fx`, live through `world::ambient` |
 | `FUN_800351C0` | Full-screen `320x224` backdrop quad (tag `0x08000000`) | Scope row (`render_pipeline`) |
 | `FUN_8001B73C` | On-screen visibility test, not an emitter ([probes](#on-screen-probes-two-tests-that-are-not-the-same-test)) | Scope row (`libgte`) |
 | `FUN_80029DD8` | 39-`cop2`-op 3D primitive emitter, sibling of `FUN_8002735C` / `FUN_80029888` | Scope row (`render_pipeline`) |
@@ -693,7 +693,7 @@ cliff mesh in front paints over it. `town01`'s cell `(30, 38)` is the worked
 case: three corners on the town floor, one on the plateau 384 units up.
 
 The port keeps the bit as `WalkHeightfield::far_bucket`
-(`legaia_asset::field_objects::CELL_GROUND_DEPTH_SORTED`, field ground only;
+(`legaia_scene_formats::field_objects::CELL_GROUND_DEPTH_SORTED`, field ground only;
 the overworld emitter keys every cell on its own corners). The shared kernel
 `legaia_engine_core::field_ground::flat_refs` marks cells in the per-vertex
 flat-depth references both hosts upload beside the ground, and the ground
@@ -770,7 +770,7 @@ them:
   clamps to `0`, the divide returns its saturated `0x1FFFF` quotient, and the
   corner lands near `OFX + 2 * IR1` - the classic behind-the-lens smear.
 
-Port: [`legaia_engine_ui::billboard`](../../crates/render-kernels/src/billboard.rs),
+Port: [`legaia_render_kernels::billboard`](../../crates/render-kernels/src/billboard.rs),
 on the same `gte_divide` / `saturate_sxy` kernels the `Camera::transform`
 COP2 oracle is pinned against.
 
@@ -871,7 +871,7 @@ a blend of `0xC00`, which the dispatcher stages as the GTE far colour and
 `IR0` - the limb's own packet colours pushed three quarters of the way toward
 a blue-black. No other per-object colour rule exists in the draw.
 
-Port: `legaia_engine_vm::battle_actor_draw` (`LimbDimPlan`), resolved by
+Port: `legaia_engine_battle_vm::battle_actor_draw` (`LimbDimPlan`), resolved by
 `World::battle_limb_dim_plan`. The native window applies it to the per-frame
 posed mesh; the browser play page re-uploads the actor's packet-colour stream
 when the plan's key changes (`web-viewer::play_battle_limb_dim`). One
@@ -908,7 +908,7 @@ the move VM's render mode `7` (`0x80048264..0x80048274`). A battle body's
 ghosts never do.
 
 Port: `battle_actor_draw::shadow_plan` models the numbers and
-`engine-core::effect_default_arm::ground_shadow_mesh` builds the disc; every
+`engine-effects::effect_default_arm::ground_shadow_mesh` builds the disc; every
 ground-shadow block in the capture library is reproduced byte for byte
 (`effect_default_arm_retail_capture.rs`). `World::battle_ground_shadows`
 lists one per battle body, gated on the same draw plan the host's actor pass
@@ -1069,8 +1069,8 @@ including frames where the staging trio differs from the live one;
 
 `FUN_80026988` forms the camera rotation in q3.12 from the truncating sin
 LUT, with every product shifted down on its own; the port's retail-exact
-rendition is `engine-ui::battle_intro::euler_rot_psx`. Both play hosts build
-the camera from the shared `engine-vm::psx_camera::camera_rotation` instead -
+rendition is `render-kernels::battle_intro::euler_rot_psx`. Both play hosts build
+the camera from the shared `engine-battle-vm::psx_camera::camera_rotation` instead -
 the same `Rx * Ry * Rz` product in `f32`. The two differ by at most about
 2.4/4096 in any element over the camera angle trios of the 98 catalogued
 mednafen states.
@@ -1163,7 +1163,7 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   native window's `build_summon_and_move_fx_part_draws` /
   `build_field_fx_part_draws`, the play page's `build_battle_fx` /
   `build_field_fx` - composes the part with
-  `engine-ui::gte::camera_relative_model_prefix` in place of its translation,
+  `render-kernels::gte::camera_relative_model_prefix` in place of its translation,
   through the one placement kernel `gte::part_model_place`. The hosts cannot
   branch around their view matrix, so the kernel expresses the retail result
   under it: the skip arm is the basis `(6 / S_b) * R^T * P` (`P` from the
@@ -1178,7 +1178,7 @@ forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
   part drawn through a host's own vantage (the debug orbits, the stage-less
   battle orbit, the overworld top view), where there is no retail rotation
   to undo.
-- *Summons.* `engine-core::summon` runs a camera-locked part through the
+- *Summons.* `engine-effects::summon` runs a camera-locked part through the
   motion block and leaves its position to its program; its translation
   glide, which snaps a part to `origin + anim bank`, is kept for world-space
   parts only (`summon_camera_locked_retail_capture` pins the three states
@@ -1293,7 +1293,7 @@ Both hosts append the second copy at build time (`VramMesh::append_scaled`
 under `SecondCopy`), so neither draws it as a second `SceneDraw`; the single
 `draws.push` in the battle branch is not evidence that the shell is drawn
 once. Retail draws it twice, and which transform the copy takes is per stage
-(`legaia_asset::battle_backdrop`).
+(`legaia_scene_formats::battle_backdrop`).
 
 The split is real, and the host-drift gate cannot see it because both hosts
 do reach a backdrop builder. It is not a shading divergence: both builders
@@ -1338,7 +1338,7 @@ dialog boxes, menu windows), authored in the space `OFY = 114` lives in. The
 projection puts the GTE origin on row 114 of the port's frame as well, as a
 constant `w`-scaled term on clip `y`, `GTE_OFY_NDC_BIAS = (120 - OFY) / 120`,
 which survives the perspective divide:
-`legaia_engine_vm::battle_cam_script::battle_vp` (shared by the play page)
+`legaia_engine_battle_vm::battle_cam_script::battle_vp` (shared by the play page)
 and `psx_camera_mvp` (native window). Guard:
 `the_projected_origin_lands_on_the_retail_screen_centre`, which reads the
 expected row from `GTE_OFY`, so a projection rebuilt on `240 / 2` fails it.
@@ -1483,7 +1483,7 @@ the house keeps its prims and that the row is packed past 256 pixels.
 path. It parses every TMD in a scene, collects the union of all prim-target
 rectangles (CLUT rows + texture-page UV bounding boxes), then walks every TIM
 and decides per block whether to write it. The TIM scan covers raw entry
-bytes and any LZS-decompressed sections (`legaia_asset::tim_scan::scan_entry`),
+bytes and any LZS-decompressed sections (`legaia_container_formats::tim_scan::scan_entry`),
 so bundles that pack their TIMs inside an LZS container need no fallback.
 `SceneHost::enter_field_scene` calls it with the field shared blocks by
 default; `SceneResources::build` / `build_with_shared` remain for tests and
@@ -1493,7 +1493,7 @@ unfiltered diagnostic uploads.
 boot-then-scene order:
 
 1. **The boot-resident system-UI bundle** - `prot::timpack` at raw PROT TOC
-   entry 0 (CDNAME `init_data`). `legaia_asset::system_ui_bundle` parses raw
+   entry 0 (CDNAME `init_data`). `legaia_ui_formats::system_ui_bundle` parses raw
    TOC entries 0/1 (20 + 1 members, including six bare
    `(960, 456..462, 256, 1)` row-patch members that overlay the atlas image)
    with the flat-strip CLUT semantics of the per-TIM uploader
@@ -1551,7 +1551,7 @@ Both hosts build the overworld VRAM through this kernel. Test:
 
 #### Field static-object placement (town01)
 
-The field static-object table (`FUN_8003A55C`, `legaia_asset::field_objects`)
+The field static-object table (`FUN_8003A55C`, `legaia_scene_formats::field_objects`)
 places 46 environment-pack meshes in `town01`. **45 draw** on the
 VRAM-textured path and **1** (pack 31 / obj 315) is untextured and draws on
 the colour pipeline; no placement drops for a missing CLUT. Pinned by
@@ -2028,7 +2028,7 @@ against a root-wall body that a per-pixel clip would stretch across the
 frame.
 
 Both hosts reproduce the cut in their mesh vertex stage through one kernel,
-`legaia_engine_ui::prim_near_reject`. Every vertex carries its primitive's
+`legaia_render_kernels::prim_near_reject`. Every vertex carries its primitive's
 corners (a split quad's two triangles share one record; a vertex two
 primitives weld is never rejected); the stage computes the same integer
 `OTZ` from the draw's matrix and parks a rejected primitive's corners outside
@@ -2275,7 +2275,7 @@ Three asymmetries are deliberate:
 A `.MAP` object record carries three authored angles (`+0x08` pitch, `+0x0A`
 yaw, `+0x0C` roll), and retail composes all three as `Rx * Ry * Rz`
 (`FUN_80026988`; the port's pinned copy is
-`legaia_engine_ui::battle_intro::placement_rotation`, the browser's is
+`legaia_render_kernels::battle_intro::placement_rotation`, the browser's is
 `placementModelEuler` in `site/js/webgl-math.js`).
 
 The yaw-only builders (`placementModelScaled*`) take a **negated** yaw,
@@ -2385,7 +2385,7 @@ baked colour before reading any lighting state. The renderer defaults off;
 `play-window` and the browser play page turn it on from the persisted
 `OptionsState::enhanced_lighting` option (default on).
 
-Both hosts light from `legaia_engine_ui::scene_lighting`
+Both hosts light from `legaia_render_kernels::scene_lighting`
 (`crates/render-kernels`): the light list, the emissive set, the mood and the
 glow sprites are derived there, and the two shader twins (`dyn_light` in
 `shaders.rs`, its GLSL copy in `site/js/webgl-shaders.js`) are mirrored on
@@ -2795,7 +2795,7 @@ reference `blend_apply` - unit-tested against the PSX equations.
 
 ## GTE math module
 
-`crates/render-kernels/src/gte.rs` (re-exported as `engine-ui::gte`) is a
+`crates/render-kernels/src/gte.rs` (re-exported as `render-kernels::gte`) is a
 fixed-point GTE math module in the retail accumulator shape: q3.12 rotation
 matrices, q19.12 translation vectors, i64-widened multiply-add. It exposes:
 

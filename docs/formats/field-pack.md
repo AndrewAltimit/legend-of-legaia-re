@@ -1,6 +1,6 @@
 # Field-pack - not a format
 
-**"Field-pack" is not a format.** The entries once given that name are ordinary [DATA_FIELD streaming](data-field.md) files whose single chunk is an [`asset::pack`](pack.md) of PSX TIMs or Legaia TMDs: one scene's streamed texture or mesh pack. The word `0x01059B84` is not a magic. It is town01's chunk header `(type << 24) | size`, with `type = 0x01` (`TIM_LIST`) and `size = 0x059B84`.
+**"Field-pack" is not a format.** The entries once given that name are ordinary [DATA_FIELD streaming](data-field.md) files whose single chunk is an [`container-formats::pack`](pack.md) of PSX TIMs or Legaia TMDs: one scene's streamed texture or mesh pack. The word `0x01059B84` is not a magic. It is town01's chunk header `(type << 24) | size`, with `type = 0x01` (`TIM_LIST`) and `size = 0x059B84`.
 
 This page stays because the slot is real and has a real loader: it records where the carriers sit, which retail routine reads them, and what in a scene's asset table selects that routine. The falsified format reading is recorded in [`re-do-not-re-walk.md`](../reference/re-do-not-re-walk.md).
 
@@ -11,7 +11,7 @@ This page stays because the slot is real and has a real loader: it records where
 | Forms | chunk-headered pack (18) or bare pack (5) |
 | Members | all PSX TIM under type `0x01`, all Legaia TMD under type `0x02` |
 | Loader | `FUN_800255B8` (file) then `FUN_8002541C` (dispatch on mode `0x0A` / `0x14`) |
-| Reader | `legaia_asset::field_pack::scene_pack` |
+| Reader | `legaia_scene_formats::field_pack::scene_pack` |
 
 ```mermaid
 flowchart LR
@@ -146,7 +146,7 @@ type `0x05` inside the bundle rather than a streamed file ([`mdt.md`](mdt.md)).
 ## Reading a carrier
 
 ```rust
-use legaia_asset::field_pack;
+use legaia_scene_formats::field_pack;
 
 // Handles both forms: `chunk_header` is None for the bare carriers.
 if let Some(p) = field_pack::scene_pack(&entry_bytes) {
@@ -256,7 +256,7 @@ asset field-pack-scan <DIR>            # find the chunk-headered carriers in a P
 
 ## See also
 
-- [asset::pack](pack.md) - the pack these carriers hold. This *is* that format.
+- [container-formats::pack](pack.md) - the pack these carriers hold. This *is* that format.
 - [DATA_FIELD streaming](data-field.md) - the chunk header the 18 chunk-headered carriers
   open with.
 - [Asset-type dispatch](asset-type.md) - what the `0x01` / `0x02` type byte selects.

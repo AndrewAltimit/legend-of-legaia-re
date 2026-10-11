@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Where</dt><dd><code>record[0]</code> of each <a href="battle-data-pack.html">player battle file</a> (PROT 0863 Vahn / 0864 Noa / 0865 Gala), resident in RAM at <code>0x80160EFC</code> / <code>0x80176998</code> / <code>0x8018BA54</code>. Display names, arrows and AP: the SCUS arts-name table at <code>DAT_80075EC4</code>.</dd>
     <dt>Stride</dt><dd><code>0xD0</code> bytes per record, indexed by action constant: <code>record = base + (c &minus; 0x10) &times; 0xD0</code>. Name-table rows are 20 bytes.</dd>
-    <dt>Parser</dt><dd><code>crates/art</code> (<code>parse_record</code>, <code>arts_table</code>, <code>tokenize</code>, Miracle / Super matchers); editors <code>legaia_patcher::arts_power</code> / <code>super_art_power</code>.</dd>
+    <dt>Parser</dt><dd><code>crates/art</code> (<code>parse_record</code>, <code>arts_table</code>, <code>tokenize</code>, Miracle / Super matchers); editors <code>legaia_arts_patch::arts_power</code> / <code>super_art_power</code>.</dd>
     <dt>Confidence</dt><dd>Command prefix, stride, power byte at <code>+0x24</code>, effect class at <code>+0x7A</code> and the name table are <strong>Confirmed</strong>; the variable-field tail offsets are <strong>Inferred</strong> from external RE work.</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle-action.html">Battle action SM</a>, <a href="../subsystems/arts-command-gauge.html">Arts gauge</a>, <a href="../arts.html">Arts page</a>, <a href="../tooling/randomizer.html">Randomizer (arts shuffle)</a>.</dd>
   </dl>
@@ -42,7 +42,7 @@
       <tr><td>action constant</td><td><code>0x1B..=0x32</code> (<a href="#action-constants">below</a>).</td></tr>
       <tr><td><code>anim_index</code>, <code>anim_extra</code></td><td>Primary animation slot; extras chain multi-stage arts (Noa's Hurricane Kick).</td></tr>
       <tr><td>name</td><td>Fixed-width name slot; populated for Super, Miracle and some Hyper Arts.</td></tr>
-      <tr><td>power run</td><td>Per-strike damage tier bytes (<a href="#power-encoding">encoding</a>). <strong>Confirmed</strong>; editor <code>legaia_patcher::arts_power</code>.</td></tr>
+      <tr><td>power run</td><td>Per-strike damage tier bytes (<a href="#power-encoding">encoding</a>). <strong>Confirmed</strong>; editor <code>legaia_arts_patch::arts_power</code>.</td></tr>
       <tr><td>impact-effect class</td><td><code>1..=5</code>, <code>0</code> = none. Selects the element spark and afterimage tint - this byte, not the cue script, makes an art read as its element.</td></tr>
     </tbody>
   </table>

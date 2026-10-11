@@ -257,7 +257,7 @@ sections:
       <tr><td>Markup codec</td><td><code>markup.rs</code></td><td>Byte-exact decode&harr;encode; per-character encodability errors.</td></tr>
       <tr><td>Carrier gate</td><td><code>segments.rs</code> (<code>is_dialog_carrier</code>), test <code>translation_carrier_gate_real.rs</code></td><td>Binary banks and real carriers separate on the retail disc.</td></tr>
       <tr><td>Overlay UI pools</td><td><code>ui.rs</code>, test <code>translation_ui_menu_real.rs</code></td><td>Menu / battle label windows at their disc coordinates.</td></tr>
-      <tr><td>MAN rewriter</td><td><code>legaia_asset::man_edit</code> (<code>apply_text_edits</code>, <code>text_edits_preserve_scripts</code>)</td><td>A grown line leaves the scene script identical when re-walked.</td></tr>
+      <tr><td>MAN rewriter</td><td><code>legaia_scene_formats::man_edit</code> (<code>apply_text_edits</code>, <code>text_edits_preserve_scripts</code>)</td><td>A grown line leaves the scene script identical when re-walked.</td></tr>
       <tr><td>PAL lift + fit</td><td><code>translation/{lift,diff,fit}.rs</code>, tests <code>translate_lift_official_real.rs</code>, <code>translate_relayout_import_real.rs</code></td><td>1:1 alignment; the fit numbers above.</td></tr>
       <tr><td>Shipped-pack hygiene</td><td>test <code>translation_shipped_packs.rs</code></td><td>No tracked pack carries <code>source:</code>.</td></tr>
     </tbody>

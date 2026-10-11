@@ -204,7 +204,7 @@ no `engine-ui` builder to be enumerated:
   the browser page alone, so a native-window buyer sized a stack with no held
   count, no unit price and no running total on screen.
 * window 39, the sell-list item detail
-  (`engine-core::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - likewise, so
+  (`engine-menus::shop::shop_sell_detail_panel`, `FUN_801D5AE8`) - likewise, so
   a native-window seller picked a row with no name, no description, no price
   and no accessory-passive lines beside it.
 
@@ -370,7 +370,7 @@ and reachability of it is the [port catalog's](port-catalog.md) question.
 
 The three hosts share one keyboard layout, served out of the engine by
 `pad_bindings_json`
-([`legaia_engine_core::input::Mapping::web_default`](../../crates/engine-system/src/input.rs)),
+([`legaia_engine_system::input::Mapping::web_default`](../../crates/engine-system/src/input.rs)),
 and the whole point of serving it is that a page cannot write a second one
 down. A page that does write one down never looks like a table: it looks like
 a `switch` on `e.key`, or an object literal indexed by `e.key.toLowerCase()`.
@@ -549,12 +549,12 @@ See [the section below](#the-version-of-this-tier-that-needs-no-rule).
 
 **A shared layout is not a shared draw.** The battle damage numerals and the
 `N HIT` / `TOTAL` counter resolved through one kernel
-(`engine-vm::battle_value_readout`) on both hosts - and the native window
+(`engine-battle-vm::battle_value_readout`) on both hosts - and the native window
 sampled retail's 24x24 cells out of VRAM while the browser restyled the same
 digits in the dialog font. Every tier saw one model, because both hosts named
 the kernel; what differed was the record family the resolved cells became. The
 rule closes the gap the layout kernel left: a surface that resolves the layout
-must also reach `engine-ui::battle_numerals` and one of its prim builders, so a
+must also reach `render-kernels::battle_numerals` and one of its prim builders, so a
 font path is an explicit before-the-atlas fallback rather than the draw.
 
 **The tilt rule earns its place on measured data, not on plausibility.** The
@@ -1125,7 +1125,7 @@ decidable per instance, not from a source pattern.
 
 | Shape | Worked case | Where the fix lives |
 |---|---|---|
-| **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `engine-ui::battle_numerals` + the fifth tier-7 rule. |
+| **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `render-kernels::battle_numerals` + the fifth tier-7 rule. |
 | **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioBgmDirector`. |
 | **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | Only a rendered frame from each host compares them. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
@@ -1249,10 +1249,10 @@ screens.
 
 | Decision | Kernel |
 |---|---|
-| retail GTE projection, cutscene glide, frame convention | `legaia_engine_vm::psx_camera` |
+| retail GTE projection, cutscene glide, frame convention | `legaia_engine_battle_vm::psx_camera` |
 | which camera owns the frame | `legaia_engine_core::camera_view::resolve_field_camera` + `frame_vp` (follow focus written back to `_DAT_80089118/20`) |
 | compass azimuth | `compass_azimuth_units` |
-| drag / wheel / double-click | `engine-core::camera::follow_knobs` |
+| drag / wheel / double-click | `engine-field::camera::follow_knobs` |
 | `F3` debug orbit | `Camera::debug_orbit_by` (un-gated by cutscenes, field-only) |
 | camera-distance preset | `OptionsState::cycle_camera_distance` |
 | snap-beat bank | on `Camera`, beside `route_camera_events` |
@@ -1306,11 +1306,11 @@ skips the picker's story baseline, which would otherwise clear system flags
 | walk ground | `field_ground::render_positions` / `render_indices` / `crop_indices` |
 | visible-tile crop | `field_view_window::field_view_cells`, `framing_is_retail`, `terrain_draw_visible` |
 | script arcs (op `0x43`), attached lights (op `0x34` sub-1) | `World::script_actors`; lights through `light_pool_prims` ([`script-vm.md`](../subsystems/script-vm.md#0x34-sub-1-is-an-attached-light)) |
-| CLUT-walk shimmer | `engine-core::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_asset::clut_walk` |
+| CLUT-walk shimmer | `engine-core::clut_walk_anim` (`ClutWalkAnim::install`); parser `legaia_scene_formats::clut_walk` |
 | occlusion fade | `field_occlusion::host_fade_armed`, `FadeRamp`, `player_body_centre` |
 | scene lights | `engine-screens::field_frame::field_scene_lights` |
 | clear colour | `engine-screens::field_frame::frame_clear_color`, `battle_stage_clear::scene_clear` |
-| prologue grade | `World::frame_grade`; lit-row restage `engine-core::fade::apply_prologue_lit_ambient` over `legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit` |
+| prologue grade | `World::frame_grade`; lit-row restage `engine-system::fade::apply_prologue_lit_ambient` over `legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit` |
 | object-effect clip (field-VM `4C C2 1`) | `World::object_effect_mesh_clip` ([`renderer.md`](../subsystems/renderer.md#what-a-raised-0x42-draws)) |
 | world-map markers | `legaia_engine_core::world_map_markers` + `screen_prim::world_map_marker_prim` |
 | narration crawl, title card | `cutscene_text_stage_draws` (stage pixels) |
@@ -1348,7 +1348,7 @@ descriptors. The port decodes it as `AmbientEffect::ModelSwap`
 
 No site names a model some placement already binds, so the bytes come out of
 the bank (`model_bank::SceneModelBank::tmd_bytes`). The `>= 0xF0` meshes live
-in PROT 0874 (`legaia_asset::character_pack`); no authored site takes that arm.
+in PROT 0874 (`legaia_actor_formats::character_pack`); no authored site takes that arm.
 Oracles: `crates/engine-core/tests/ambient_motion_op_census_disc.rs`,
 `model_rebind_live_disc.rs`.
 
@@ -1394,12 +1394,12 @@ remap dropped, and binds the four ABR equations through
 | Layer | Kernel | Notes |
 |---|---|---|
 | append order, under / over the HUD | `engine-screens::screen_layers::compose_screen_prims` over `HostScreenPrims` | A tie inside a bucket breaks by append order. Native draws `under_overlay` (fog, move strips, light pools) before its 2D overlays, so the HUD stays bright under a subtractive light mask, as retail's does. |
-| battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `engine-ui::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
+| battle transition (confetti, shatter, curtain, swirl, ring, backdrop, fade) | `render-kernels::battle_intro` | Per host: turning the drawn frame into RGBA (`Renderer::capture_rgba`; `gl.readPixels` into `play_intro_land_capture`). The page has one VRAM texture, so `field_vram_bytes` returns the captured clone while one is live. |
 | field fog sheets | `World::fog_render_step(&view)` + `screen_prim::fog_puff_prim` | Retail's `FUN_8003F348` ages and emits in the render pass. Both resolve the camera without the cutscene view; gate `World::fog.gate`. Depth through `World::field_fx_view` ([`field-ambient-fx.md`](../subsystems/field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)). |
 | screen-effect wash (op `0x34` sub-0) | `screen_prim::screen_effect_push_prims`, `_split` | `FUN_80024EE4(a0, a1, packed)`: `a0` is an OT bucket, `a1` an ABR equation, `packed` a GP0 colour word with red in the low byte. Glyphs sit at bucket `1`; a push at bucket `0` draws over them ([`cutscene.md`](../subsystems/cutscene.md#a-push-in-front-of-the-text-or-behind-it)). |
 | drop shadow | `engine-core::drop_shadow`, `World::field_drop_shadows`, `screen_prim::drop_shadow_prim` | `FUN_8001C394`, called from `FUN_8001B964`; matched to retail on three captured frames (`drop_shadow_retail_capture_disc.rs`). |
 | world-map markers | `marker_quads` + `world_map_marker_prim` | A port marker, not a retail draw; `MarkerQuad::depth` restores occlusion. |
-| battle numerals | `engine-vm::battle_value_readout` + `engine-ui::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
+| battle numerals | `engine-battle-vm::battle_value_readout` + `render-kernels::battle_numerals` | 24x24 cells off page `0x27` / CLUT `0x7703`; the font builders are the mutually exclusive before-the-atlas fallback on both hosts. |
 | effect billboards | `EffectSprite::packet_tsb` | Retail sends prim code `0x2E` (semi-transparency bit set); the port forces TSB bit 15. |
 | dance HUD | `ui_dance::dance_hud_prims`, `dance_countin_prims` | `DanceGame::hud_draw_quads` emits in `FUN_801d231c`'s order: digits, frames, gauges. |
 
@@ -1451,7 +1451,7 @@ and the ground cue's GLSL twin has a shape-matched host-free check
 (`overworld_ground_cue_glsl`). An edit to one shader is carried to the other by
 hand.
 
-**Enhanced lighting** is one source, `legaia_engine_ui::scene_lighting`: the
+**Enhanced lighting** is one source, `legaia_render_kernels::scene_lighting`: the
 same `tag_emissive_*` calls, emitter clustering, `nearest_lights` pick around
 `World::field_npc_live_anchor`, `TimeOfDay::mood` and `glow_vertices`; the page
 asks per frame through `play_lighting_frame`. The PCF shadow term is GPU work
@@ -1472,7 +1472,7 @@ Three more surfaces sit outside every tier:
   is 1.99) baked through the sRGB EOTF (`gltf_color::srgb_ratio_to_linear`),
   because a glTF viewer multiplies in linear light. Across the 32 summon casts
   the raw texel differs from `texel * colour / 128` by 12% of full scale on the
-  average vertex. Convention: `legaia_asset::gltf_color`.
+  average vertex. Convention: `legaia_actor_formats::gltf_color`.
 - **The world-map stamps.** `FUN_80043390` picks the per-prim renderer by the
   group's `flags >> 1`, and the untextured slots are populated in the world-map
   overlay's table as in the SCUS one ([`world-map.md`](../subsystems/world-map.md)).
@@ -1486,13 +1486,13 @@ Three more surfaces sit outside every tier:
 
 | Decision | Kernel |
 |---|---|
-| body blend | `engine-core::battle_body_blend` behind `BattleActorDrawPlan::apply_body_blend`; cue precedence `body_cue`, `tint_cue_applies` |
+| body blend | `engine-battle::battle_body_blend` behind `BattleActorDrawPlan::apply_body_blend`; cue precedence `body_cue`, `tint_cue_applies` |
 | target cursor cue | `battle_action::cursor_cue` |
 | monster action-tag clips | `SceneHost::install_battle_monster_action_clips` |
 | HUD frame | `battle_hud::battle_intro_names`, `battle_commit_log`, `battle_banner_message` (elements `0x59` / `0x65` share the string at `ctx + 0x1F9`; [`battle-action.md`](../subsystems/battle-action.md#the-battle-message-banner-elements-0x59-and-0x65)) |
 | effect spawns | `World::route_battle_effect_spawns`; a `ui_element` raise is a placement index for the HUD spawner `FUN_801D8DE8`, not an effect |
 | effect ribbon (move-VM op `0x42`, `FUN_801CFA48`) | `World::active_effect_ribbons` (`effect_ribbon`); in play the carrier is Gilium's summon (PROT 0923) |
-| ground shadow, default draw-kind-4 arm | `engine-core::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
+| ground shadow, default draw-kind-4 arm | `engine-effects::effect_default_arm` (`FUN_80028158`), `World::active_effect_kind4_draws`, `World::battle_ground_shadows` ([`effect-vm.md`](../subsystems/effect-vm.md#the-default-arms-draw)) |
 | move-FX spawn to sound | `engine-session::battle_fx::spawn_pending_move_fx` |
 | scene matrix for FX passes | `battle_scene_mvp`, at the stage's 4:3 |
 | labels | `battle_open::battle_ui_strings_for_disc`; `SCUS_LABELS` and `OVERLAY_LABELS` share no key |
@@ -1536,7 +1536,7 @@ output, and lay SPU RAM out through `legaia_engine_audio::spu_layout`.
 | BGM tail banks | `legaia_engine_audio::bgm_tail::BgmTail` ([`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)) |
 | scene-local BGM id | `SceneHost::route_bgm_events` -> `start_owned_vab` on `SCENE_LOCAL_BGM_FALLBACK_ID` |
 | battle duck | `legaia_engine_audio::duck::duck_apply` |
-| movies and the score | `legaia_engine_core::movie_audio::MovieScore` ([`audio.md`](../subsystems/audio.md#movies-and-the-score)) |
+| movies and the score | `legaia_engine_system::movie::movie_audio::MovieScore` ([`audio.md`](../subsystems/audio.md#movies-and-the-score)) |
 | pause latch | the output gate (`AudioOut::sequencer_paused`); the script's bit is mirrored as `AudioState::bgm_script_paused` |
 | direct entry restage | `BootSession::restage_audio_for_direct_entry` |
 | field CD-XA lines | `World::push_field_xa_cue`, `World::queue_xa_prestage`, `field_xa::scene_minigame_door_xa_prestage` |
@@ -1584,7 +1584,7 @@ Retail facts the audio rows rest on:
 
 **The cast-voice leg.** A Seru cast speaks on both hosts through one engine
 channel. The cast-audio dispatcher `FUN_801F3990`
-(`engine-vm::battle_cast_cue::cast_audio_cue`) emits a cue band - player leg
+(`engine-battle-vm::battle_cast_cue::cast_audio_cue`) emits a cue band - player leg
 `char_kind * 0x10 + 0xF8 ..`, enemy leg `0x20C..0x20E` - that neither measured
 retail cast raised (`capture`, N = 2;
 [`cast-module.md`](../subsystems/cast-module.md#the-casts-own-cd-xa-voice)), so
@@ -1668,10 +1668,10 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | fishing | `PondSession` (the only session) through `SceneHost::enter_fishing_from_overlay`; `fishing::FishingTables`, `venue_for_departure_scene`, `SceneHost::fishing_venue_map`; `World::tick_fishing` (events on `fishing_events`); `PondSession::catch_hud`, `status_rows`, `hub_step`; `fishing_actors::bite_pad_nudge`; venue pass `fishing_venue::tick_fishing_venue_on_host` returning `VenueCameraWrites` | The minigames page drives the session with no `World`. |
 | fishing hub (state `0x0C`) | `engine-core::fishing_hub` (`FishingHub::lines`, `FishingHubText::from_overlay`), `engine-ui::fishing::hub`, `World::tick_fishing_hub` | The `0xCE` button escapes draw no glyph and the cursor is a `>` stand-in on every host. |
 | slot machine | `SlotMachine::frame`, `slot_machine::projected_paylines` (`FUN_801D3380`), `engine-ui::slot_cabinet`, `ui_slot_paylines`, `SlotMarqueeClock::frame` | The minigames page rasterises the same list on the CPU (`screen_prim_raster`). |
-| Baka Fighter | `BakaFight::frame`; `baka_cabinet::BakaCabinet` (`FUN_801CF388`), `with_attract`, `cabinet_cells`, `install_rung`; `StrikeClock` (`FUN_801D6E5C`), `roster_clip_headers`; `engine-minigame-scenes::baka_duel_scene` (`BakaDuelSurface`, `DuelCamera::vp_raw`); labels `choice_sheet_labels`, `chrome_labels`, `glyph_u`, `hud_digit_placements`; `engine-core::baka_impact_fx` | Native resolves each glyph's cell rect without sampling it. |
+| Baka Fighter | `BakaFight::frame`; `baka_cabinet::BakaCabinet` (`FUN_801CF388`), `with_attract`, `cabinet_cells`, `install_rung`; `StrikeClock` (`FUN_801D6E5C`), `roster_clip_headers`; `engine-minigame-scenes::baka_duel_scene` (`BakaDuelSurface`, `DuelCamera::vp_raw`); labels `choice_sheet_labels`, `chrome_labels`, `glyph_u`, `hud_digit_placements`; `engine-minigames::baka_impact_fx` | Native resolves each glyph's cell rect without sampling it. |
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue`; `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate; `World::finish_dance_if_over` | Mesh build and instance transform. |
 | Muscle Dome | `MuscleDomeSession::select_input`; `muscle_dome_scene::MuscleDomeSurface` (`frame_at`, `sim_ticks`, `DomeCamera::vp_raw`); `muscle_ringside::HubTimers::tick`, `HubBackdrop`, `FirstVisitHub`; `ringside_backdrop::ringside_still_quads`, `first_visit_hub_draw`; `SceneHost::dome_lead_fighter`; `World::leave_muscle_dome` | The minigames page keeps its own dome panel (`minigame-muscle.js`). |
-| effect parts | `legaia_engine_core::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
+| effect parts | `legaia_engine_minigames::minigame_fx::MinigameFxPool` on `World::minigames.fx`, drawn by `engine-ui::minigame_fx::fx_part_draws` | The minigames page keeps its own instance of the type. |
 | status rows | `engine-core::minigame_status` + `ui_text_lines::status_row_draws_for` | each host's stage transform |
 
 <a id="the-fishing-point-exchange-sub-screen-one-session-on-two-hosts-a-query-on-the-third"></a>
@@ -1729,7 +1729,7 @@ them. The ones recorded here now draw on both hosts through one kernel each:
 | overworld curvature | `FUN_800271A8` builds a depth-indexed screen-Y table every overworld consumer adds to `SY` ([`renderer.md`](../subsystems/renderer.md#frame-setup--present)) | `overworld_curvature::frame_curve_scale`; `OVERWORLD_CURVE_WGSL` (`Renderer::set_overworld_curvature`) and `overworldCurve` (`play_render_curve_scale` -> `setOverworldCurve`), both closed-form (`curvature_closed_form`) |
 | object-effect clip on a raised `+0x42` | `FUN_8001C204` and `FUN_8002735C` | `World::object_effect_mesh_clip`; the player asks under `ActorTintKey::Player` |
 | field drop shadow | `FUN_8001C394` | `engine-core::drop_shadow` |
-| battle ground shadow, default draw-kind-4 arm | `FUN_80028158` | `engine-core::effect_default_arm` |
+| battle ground shadow, default draw-kind-4 arm | `FUN_80028158` | `engine-effects::effect_default_arm` |
 | scene-entry fade | `FUN_80024EE4` | `screen_prim::screen_effect_push_prims` |
 
 The port bends every overworld scene draw where retail's four SCUS lit rows

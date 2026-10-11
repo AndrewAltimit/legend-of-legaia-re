@@ -115,7 +115,7 @@ palette paints all nine in a single colour scheme. That is not a decode bug; it 
 
 For the system-UI page (VRAM `(896, 256)`: the menu / battle sheet at
 `PROT.DAT` `0x18E0` and the smaller TIMs uploaded beside it) the mapping is
-disc data, and one kernel reads it: `legaia_asset::tim_palette_context::texel_palettes`.
+disc data, and one kernel reads it: `legaia_ui_formats::tim_palette_context::texel_palettes`.
 The asset viewer's **As the game draws it** view and the ROM patcher's
 texture editor (region list, in-game view, `tim-palette-map`) both call it.
 
@@ -313,13 +313,13 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 
 | Chain step | Port |
 |---|---|
-| Palette resolution for exports | `legaia_asset::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
+| Palette resolution for exports | `legaia_ui_formats::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
 | VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `legaia_tim::Vram` |
 | Colour word + depth cue | `psx_modulate` / `psx_depth_cue` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
-| Battle ambient | `legaia_engine_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
-| Actor tint | `legaia_engine_vm::battle_actor_tint`, `battle_actor_draw` |
-| Animated palettes | `engine-core::clut_cell_fx`, `World::step_clut_fx`, `legaia_asset::clut_walk` |
-| Light-source rows | `engine-core::field_lit_mesh` over `render-kernels::field_light`; kernels `gte::lighting` |
+| Battle ambient | `legaia_engine_battle_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
+| Actor tint | `legaia_engine_battle_vm::battle_actor_tint`, `battle_actor_draw` |
+| Animated palettes | `engine-field::clut_cell_fx`, `World::step_clut_fx`, `legaia_scene_formats::clut_walk` |
+| Light-source rows | `engine-field::field_lit_mesh` over `render-kernels::field_light`; kernels `gte::lighting` |
 | Blend | `psx_blend` (`Renderer::set_semi_blend`, default on) |
 | Dither | `psx_dither` (`Renderer::set_psx_mode`, default off - the one step the port does not apply by default) |
 

@@ -85,7 +85,7 @@ pub const CORE_STATE_RESET: CoreStateReset = CoreStateReset {
 //                     dev harness only - no static writer of mode 18 exists)
 // REF: FUN_8003EBE4 (the slot-A loader the params feed)
 // REF: FUN_8002689C (the sound detach CONFIG INIT runs before staging;
-//                    ported at engine-core::sound_state::SoundDetachLatch)
+//                    ported at engine-system::sound_state::SoundDetachLatch)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModeInitStage {
     /// `FUN_8003EBE4` first argument (extraction PROT entry `param + 0x37F`).
