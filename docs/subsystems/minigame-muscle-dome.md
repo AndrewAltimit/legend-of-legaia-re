@@ -1022,7 +1022,7 @@ The port models the same two layers and shares every rule between the native `pl
 | Hub envelopes | `engine-minigames::muscle_dome` (`hub.rs`), `engine-core::muscle_ringside` | `HubScreen`, `HubTimers`, `HubBackdrop`, `FirstVisitHub` |
 | Leg session | `engine-menus::muscle_dome` (`session.rs`) | `MuscleDomeSession`: deal, budget-gated commit, queue, tokenizer, cast, KO-only ending |
 | Command flow | `engine-menus::muscle_dome` (`menu.rs`, `ring.rs`, `loadout.rs`) | `DomeMenu`, `DomeRing`, `ChipMark`, `DomeMagic`, `art_catalog_for`; world loadout via `engine-core::muscle_dome::magic_loadout_for` |
-| World | `engine-core` (`world/frame_tick/minigame_sessions.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
+| World | `engine-core` (`world/frame_tick/minigame_sessions/muscle_dome.rs`, `scene/host/minigame_warp.rs`) | `SceneMode::MuscleDome`, `World::enter_muscle_dome` / `tick_muscle_dome` / `leave_muscle_dome` / `report_muscle_leg` / `settle_muscle_contest` |
 | 3D surface | `engine-minigame-scenes::muscle_dome_scene` | `MuscleDomeSurface`, `arena_ring`, `DomeCamera`, `turn_timeline` |
 | Minigames page | `web-viewer::minigames_muscle` | `muscle_*` wasm bindings; `site/js/minigame-muscle.js` |
 

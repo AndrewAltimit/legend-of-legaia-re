@@ -872,7 +872,7 @@ SM's own `+0x1DA` store at `0x29` / `0x2A`.
 
 `FUN_801F1ED4` dispatches into the streamed per-summon stager (extraction
 PROT `903..=934` at slot B), overlay code the engine cannot run. The engine's
-`World::summon_stager_tick` (`world/battle/cast_band.rs`) answers the same
+`World::summon_stager_tick` (`world/battle/cast_band/summon_stager.rs`) answers the same
 seam with its own choreography and reports busy where retail reads the
 stager's return. The choreography is capture-pinned on the player Gimard cast
 (`gimard_summon_start` / `_visible` / `_burning_attack`, RAM of the PCSX-Redux
@@ -1511,7 +1511,7 @@ Engine port: kernel `action_effect_script` (in `crates/engine-effects`, re-expor
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct
-form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and scale (`action_fx_base_scale`: `0xC00` for code 4, `0x2000` for code 6, times the mesh-header `+0x72`) and the two twin records for codes `4..=6` (`engine-core` `world/effects.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
+form) / `World::spawn_action_table_effect` (table form), and the drain queues the table arm's `0x801F6418` CLUT stage under the retail `< 0x32` gate. The table spawn carries the arm's pose and scale (`action_fx_base_scale`: `0xC00` for code 4, `0x2000` for code 6, times the mesh-header `+0x72`) and the two twin records for codes `4..=6` (`engine-core` `world/effects/move_fx.rs`). The terminator's `ctx[+0x1014]` / `+0x1144` block is consumed by the afterimage streak (`action_effect_script::MoveFxStreak`) and the homing slots.
 
 Not modelled: the prologue's follow-the-actor re-seat (`BattleEffectSpawn` carries no raw-offset channel, and a staged scene is not identified back to its record).
 

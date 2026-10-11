@@ -231,7 +231,7 @@ verdicts; `engine-core` re-exports them.
 | `8001e54c` | `install_chunks` | `crates/engine-system/src/chunk_install.rs` | WIRE (wired) |
 | `80021b04` | `from_model_sel` | `crates/engine-effects/src/summon.rs` | FALSE INERT |
 | `80024e80` | `spawn_fade` | `crates/engine-system/src/fade.rs` | WIRE (wired) |
-| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions.rs` | WIRE (wired) |
+| `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions/round_trip.rs` | WIRE (wired) |
 | `80038050` | `confirm_menu` | `crates/engine-dialog/src/dialog.rs` | FALSE INERT |
 | `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs` | FALSE INERT |
 | `8003ebe4` / `8003ec70` | `load_overlay_a` / `load_overlay_b` + module | `crates/engine-core/src/overlay_loader.rs` | DISCLOSE |
@@ -239,7 +239,7 @@ verdicts; `engine-core` re-exports them.
 | `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/cutscene.rs` | WIRE (wired) |
 | `801cf0d8` | `build_strip` | `crates/engine-minigames/src/slot_machine.rs` | WIRE (wired) |
 | `801cf0d8` | `cash_out` | `crates/engine-minigames/src/slot_machine.rs` | FALSE INERT |
-| `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement.rs` | WIRE (wired) |
+| `801cfc40` | `field_actor_dir_blocked` | `crates/engine-core/src/world/field_movement/direction_probes.rs` | WIRE (wired) |
 | `801d06c8` | `buy` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |
 | `801d0748` | `hp_left` / `turns_left` | `crates/engine-menus/src/muscle_dome/session.rs` | FALSE INERT |
 | `801d092c` | `max_qty` | `crates/engine-fishing/src/fishing/prize.rs` | FALSE INERT |
@@ -252,11 +252,11 @@ verdicts; `engine-core` re-exports them.
 | `801da9f8` | `OptionsPhase` | `crates/engine-core/src/options.rs` | FALSE INERT |
 | `801dd0c0` | `category_check` | `crates/engine-menus/src/menu_item_category.rs` | WIRE (wired) |
 | `801e1208` | `classify_card_directory` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE (wired) |
-| `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai.rs` | WIRE (wired) |
+| `801e295c` | `advance_battle_mode` | `crates/engine-core/src/world/battle/monster_ai/action_pick.rs` | WIRE (wired) |
 | `801e3af0` | `card_directory_scan` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE (wired) |
 | `801e3ba0` | `card_free_blocks` | `crates/engine-menus/src/save_select/card_directory.rs` | WIRE (wired) |
-| `801e4794` | `step_clut_fx` | `crates/engine-core/src/world/effects.rs` | FALSE INERT |
-| `801e4c58` | `ClutCellFx` | `crates/engine-core/src/world/effects.rs` | FALSE INERT |
+| `801e4794` | `step_clut_fx` | `crates/engine-core/src/world/effects/clut_fx.rs` | FALSE INERT |
+| `801e4c58` | `ClutCellFx` | `crates/engine-core/src/world/effects/clut_fx.rs` | FALSE INERT |
 
 ### `engine-vm` anchors
 

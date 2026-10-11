@@ -1269,7 +1269,7 @@ Evidence (cold-boot probes in `scripts/pcsx-redux/`):
 [`cutscene_caption::decode_opdeene_caption`](../../crates/engine-core/src/cutscene_caption.rs)
 locates the TIM in PROT 0749's LZS sections and decodes it to RGBA (its background palette entry
 is `0x0000`, so `legaia_tim::decode_rgba8` gives it alpha 0), stored on
-`World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick.rs)
+`World::cutscene.caption`. [`World::tick`](../../crates/engine-core/src/world/frame_tick/mode_tick.rs)
 fades `caption_alpha` in after the first crawl block scrolls out
 (`World::cutscene.narration_seq == 1` and narration inactive) and back out after a ~2 s hold
 (`CAPTION_HOLD_FRAMES`) or when the second crawl opens, whichever comes first. The host uploads

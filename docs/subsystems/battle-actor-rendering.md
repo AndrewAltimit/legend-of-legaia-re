@@ -422,7 +422,7 @@ Differences from retail:
 - **Projection** is the engine camera's, not the GTE's. `project_streak_corners_mvp` takes the screen-space gradient of the battle MVP and fans the corners out along the screen axes - the operation `FUN_800195A8` performs in view space. The exact port `billboard::project_billboard` needs a GTE rotation / translation pair the engine's battle camera does not carry.
 - **Depth.** Retail links each packet at the projected billboard's own OT bucket, inside the scene. The hosts draw the streak over the actors, not interleaved with them.
 
-**When it draws.** The pass is gated on `World::active_move_fx_trail_texpage()`, which is set while a move-FX scene is staged: `World::spawn_move_fx` surfaces the move-power record's `+0x0b` trail id when it stages the record's Spawn prototypes, and drops it when the scene drains. The spawn is requested from the cast path (`World::request_move_fx_spawn`, `world/battle/casting.rs`). A plain weapon swing (the `0x0C..0x0F` bytes of the actor's `+0x1DF` action queue) stages no move-FX scene, so it draws the weapon-trail bands and no streak.
+**When it draws.** The pass is gated on `World::active_move_fx_trail_texpage()`, which is set while a move-FX scene is staged: `World::spawn_move_fx` surfaces the move-power record's `+0x0b` trail id when it stages the record's Spawn prototypes, and drops it when the scene drains. The spawn is requested from the cast path (`World::request_move_fx_spawn`, `world/battle/casting/spell_resolution.rs`). A plain weapon swing (the `0x0C..0x0F` bytes of the actor's `+0x1DF` action queue) stages no move-FX scene, so it draws the weapon-trail bands and no streak.
 
 <a id="the-streak-emitter-schedule-decoded-dispatcher"></a>
 

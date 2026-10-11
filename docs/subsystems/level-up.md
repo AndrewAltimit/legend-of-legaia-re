@@ -333,7 +333,7 @@ Kind `0` is jump-table slot `0` at `0x8002C800`, which outsets the caller's rect
 
 After a battle win with `BattleEndCause::MonsterWipe`:
 
-1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts.rs`).
+1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`).
 2. It enumerates the surviving party members (slots whose `BattleActor::hp > 0`), scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). Dead members receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.

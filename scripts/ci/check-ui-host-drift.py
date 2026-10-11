@@ -532,8 +532,10 @@ NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/boot/frame_tick.rs"
 NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/boot/scene_entry.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_rack_disk.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
-# The minigame session enter / exit / tick methods of the frame tick.
-NATIVE_MINIGAME_SESSIONS = "crates/engine-core/src/world/frame_tick/minigame_sessions.rs"
+# The Muscle Dome session enter / exit / tick methods of the frame tick.
+NATIVE_MINIGAME_SESSIONS = (
+    "crates/engine-core/src/world/frame_tick/minigame_sessions/muscle_dome.rs"
+)
 NATIVE_BOOT_CUTSCENE = "crates/engine-shell/src/window/boot_cutscene.rs"
 NATIVE_REDRAW = "crates/engine-shell/src/window/event_handler/redraw.rs"
 NATIVE_FIELD_RENDER = "crates/engine-shell/src/window/field_render.rs"

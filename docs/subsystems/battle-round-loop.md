@@ -114,7 +114,7 @@ So the formation is the scene's own MAN encounter-section row, selected by index
 
 **Carriers.** The garmel fights ride partition-2 beat records, spawned by the gated record dispatch. The Caruban op lives in a partition-1 boss-stager placement: `P1[3]` of the rikuroa streaming carrier is a parked special-model placement (SJIS locals ノア / Noa). Its record opens on a `SysFlag.Test 0x142` park gate, stations its actor at the nest tile via its own `0x4C 0x51` leg, self-suspends on a `4C 85` halt-acquire, and carries the beat body (`52 89` staged-marker SET -> `3E FF 11`). No script-side un-halt poke to the stager channel (`B2 10 0A`) exists in the MAN, so the resume is the engine-side approach dispatch: the locomotion touch (`FUN_801d5b5c`) or the interaction probe (`FUN_801cf9f4`) runs the placed actor's record.
 
-**Port.** `World::trigger_scripted_battle(row)` ([`world/encounters.rs`](../../crates/engine-core/src/world/encounters.rs)) is reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. 
+**Port.** `World::trigger_scripted_battle(row)` ([`world/encounters/scripted_battles.rs`](../../crates/engine-core/src/world/encounters/scripted_battles.rs)) is reached from the field-VM host's `scripted_battle` arm for `op0 == 0xFF` and every `op0 < 100`. 
 
 - The formation resolves against the rows `install_man_encounter` registered at scene entry, with the PROT 867 archive stats merged. The v12 dungeons resolve their encounter section from the streaming variant MAN, their only carrier.
 - The battle enters through the same immediate latch the field-carrier SM uses - no field step, no synthetic boss formation id.
@@ -346,7 +346,7 @@ Port: the two defeat pieces are read off PROT 0898 (`battle_party_panel::DefeatT
 
 ### Battle rewards composite
 
-`World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts.rs`) turns a defeated formation into its side-effects:
+`World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`) turns a defeated formation into its side-effects:
 
 - Sums each `MonsterDef::exp` and distributes it via `World::apply_battle_xp`: an equal split among surviving party members (integer divide, remainder dropped; dead members get zero), with per-character level-up checks against `LevelUpTracker::xp_table`.
 - Sums each `MonsterDef::gold` into `World::party.money` (saturating).
@@ -514,7 +514,7 @@ Kinds `1..5` additionally latch `actor[+0x21F] = kind` and stage the effect word
 
 **The two ladders differ in length.** The hit leg tests `4`, `< 5`, `3`, `5`, then `6` (`li v0,0x6` / `beq` at `0x801EE478..0x801EE47C`). The special leg stops at `5`: `0x801E1620` compares against `5` and otherwise jumps to the join at `0x801E178C`. An enemy special attack therefore cannot inflict Curse; only the physical / arts leg can. (The special leg's `3` comparison reuses register `a2`, which still holds the impact-phase byte the `bne` at `0x801E1574` proved equal to `3`.)
 
-**Port.** The special leg's ladder is `enemy_impact_status_proc` (`crates/engine-core/src/world/battle/monster_ai.rs`), driven by `World::apply_enemy_move_status` off the installed `MovePowerCatalog` at the end of a monster cast. The id -> index map is special-attack-only, so a monster's basic attack resolves to the all-zero record 0 and inflicts nothing.
+**Port.** The special leg's ladder is `enemy_impact_status_proc` (`crates/engine-core/src/world/battle/monster_ai/status_procs.rs`), driven by `World::apply_enemy_move_status` off the installed `MovePowerCatalog` at the end of a monster cast. The id -> index map is special-attack-only, so a monster's basic attack resolves to the all-zero record 0 and inflicts nothing.
 
 **Other setters.** `ori 0x4` at `0x80041CF4` / `0x80041DE4` and `ori 0x1000` at `0x80041EE8` / `0x80041F84` (SCUS band `0x80041...`); the each-frame delegation `ori 0x380` at `0x8004D118` (`FUN_8004CE2C`) and `0x80047F88` (`FUN_80047430`); and `ori 0x380` / `ori 0x1` copies of the same shapes in the slot-B battle-support images (PROT 0902 / 0903 / 0905 / 0907, e.g. `0x801F7F50` in 0907's image).
 
@@ -584,7 +584,7 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 
 | Port symbol | Retail piece |
 |---|---|
-| `World::pick_monster_action` (`engine-core/src/world/battle/monster_ai.rs`) | The picker's generic core: real RNG, real `magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`. |
+| `World::pick_monster_action` (`engine-core/src/world/battle/monster_ai/action_pick.rs`) | The picker's generic core: real RNG, real `magic_attacks`, spell-shape targeting through the catalog's `SpellTarget`. |
 | `monster_ai::decide` (`crates/engine-battle/src/monster_ai.rs`) | The per-monster-id `switch`: low-HP self-heal, MP-gated nukes, multi-phase boss scripts. |
 | `MonsterAiState` | Battle-scoped state: the `DAT_801C8FE0` cooldown latches, the `DAT_801C8FE4` phase counter, the recent-target ring. |
 | `monster_ai::apply_recent_target_ring` | The post-switch anti-repeat ring. |

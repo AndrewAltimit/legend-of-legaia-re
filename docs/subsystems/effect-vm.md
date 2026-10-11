@@ -29,7 +29,7 @@ the three procedural emitters behind the render dispatcher's draw kind 4
 | Input data | [`efect.dat`](../formats/effect.md) (PROT entry 873): pack1 = effect-id scripts, pack0 = frame-batch animations, plus the inline sprite atlas |
 | Dumps | `overlay_battle_801e0088.txt` (walker), `overlay_battle_801dfdf8.txt` (spawn), `overlay_battle_action_801e0080.txt` |
 | Port | [`legaia_engine_vm::effect_vm`](../../crates/engine-vm/src/effect_vm.rs): `Pool`, `EffectCatalog`, `EffectHost` |
-| Engine drive | `World::tick_effects`, `World::active_effect_sprites` (`crates/engine-core/src/world/effects.rs`) |
+| Engine drive | `World::tick_effects`, `World::active_effect_sprites` (`crates/engine-core/src/world/effects/effect_pool.rs`) |
 | Draw-kind-4 emitters | `engine-effects`: `effect_ribbon`, `effect_sprite_arm`, `effect_default_arm` |
 
 **Entry addresses.** Both the spawn API and the walker begin two words ahead

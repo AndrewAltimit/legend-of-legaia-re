@@ -77,7 +77,7 @@ one. Every direction before it stays in the stream and still executes as its own
 swing.
 
 The port builds the same stream. `World::build_arts_action_queue`
-(`engine-core`, `world/battle/command_flow.rs`) runs the entered arrows through
+(`engine-core`, `world/battle/command_flow/arts_action.rs`) runs the entered arrows through
 `legaia_art::tokenize` (leading arrows kept, the starter over the last matched
 arrow, the constant inserted after it), the learn-on-use verdict per accepted
 art (`0x1A` for a newly learned one), and the Miracle / MSB-clear / Super finish
