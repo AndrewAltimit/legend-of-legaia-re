@@ -66,8 +66,8 @@ unrelated name. For `FUN_801D5DE0` in `shop.rs` that second half reads
 `0x801E4518 is also formed by FUN_801dc1cc, PORT-tagged in prize_exchange.rs`.
 
 A "module" is a source file, with one exception: a module split into a
-directory for size (`foo.rs` plus `foo/*.rs`, listed in the checker's
-`SPLIT_MODULES`) stays one module. The split is a move, so its files keep one
+directory for size (`foo.rs` plus `foo/*.rs`, listed in `SPLIT_MODULES` in
+[`port_provenance/rows.py`](../../scripts/ci/port_provenance/rows.py)) stays one module. The split is a move, so its files keep one
 sibling set and the parent file's finding keys - otherwise each child file
 would be judged against a fraction of its siblings, and every waiver keyed on
 the old path would stop matching.
@@ -257,6 +257,33 @@ reading as evidence:
   contributes nothing rather than the wrong thing. `0x801F8E6C` is the worked
   case - six dumps agree at 47 instructions with a real prologue, and one
   48-instruction window opens on a bare `jal` mid-routine.
+
+## Where the code and the rows live
+
+`scripts/ci/check-port-provenance.py` is an entry point over the
+`port_provenance` package beside it.
+
+| Module | Holds |
+|---|---|
+| [`rows.py`](../../scripts/ci/port_provenance/rows.py) | what a contributor edits: `SPLIT_MODULES`, `DEFINING_DOC_ROOTS`, and the `SITE_ACCEPTED` / `IMAGE_ENTRY_ACCEPTED` accounting lists |
+| [`path_check.py`](../../scripts/ci/port_provenance/path_check.py) | the row self-check below |
+| [`paths.py`](../../scripts/ci/port_provenance/paths.py), [`thresholds.py`](../../scripts/ci/port_provenance/thresholds.py) | the corpora, crates and waiver file; the numbers each signal is tuned by |
+| [`tags.py`](../../scripts/ci/port_provenance/tags.py), [`dumps.py`](../../scripts/ci/port_provenance/dumps.py), [`dump_features.py`](../../scripts/ci/port_provenance/dump_features.py) | `// PORT:` tags and their module; the dump corpus and its consensus; what a dump is evidence of |
+| [`call_sites.py`](../../scripts/ci/port_provenance/call_sites.py), [`citation_support.py`](../../scripts/ci/port_provenance/citation_support.py) | the extracted images and the caller / branch-site test; cited addresses no dump carries |
+| [`signals/`](../../scripts/ci/port_provenance/signals/__init__.py) | one module per signal: `module_orphans`, `absent_citations`, `doc_citations` (also `dual-label`), `non_entry` |
+| [`waivers.py`](../../scripts/ci/port_provenance/waivers.py), [`cli.py`](../../scripts/ci/port_provenance/cli.py) | the waiver file and the live set; the command line and report |
+
+### A split-module row that names nothing regroups its tags silently
+
+`module_of` folds a file into its split module by string prefix. A
+`SPLIT_MODULES` row whose directory was renamed, or moved to another crate,
+matches no file: every child falls back to being a module of its own, each is
+judged against a fraction of its siblings, and the waivers keyed on the parent
+file stop matching. Nothing errors. `path_check.py` requires each row's
+directory and its parent `<row>.rs` to exist, and each `DEFINING_DOC_ROOTS`
+entry to be a directory; a miss prints the rows and exits 1 before the corpus
+is read, so it also fires in a worktree, which has no corpus. A module that
+moves is one edit in `rows.py`.
 
 ## Reading a report
 

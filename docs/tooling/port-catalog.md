@@ -315,6 +315,25 @@ Output goes to `target/port-catalog/` (gitignored):
 | `open-work.md` | The [dashboard](#open-work-dashboard). |
 | `live-audit.md` | The [audit](#the-audit), with `--live-audit`. |
 
+## Where the code lives
+
+`scripts/ci/port-catalog.py` is an entry point over the `port_catalog` package beside it. Other scripts (`update-progress-metrics.py`, `replay-port-coverage.py`, `pcsx-redux/build_gap_worklist.py`) load the entry file by path and read the catalog's functions off it, so it re-exports the package's public names.
+
+| Module | Holds |
+|---|---|
+| [`paths.py`](../../scripts/ci/port_catalog/paths.py) | the dump corpus (`FUNCS_DIR`, rebound by `--funcs`), `docs/`, `crates/`, the output directory, and the three data files |
+| [`citations.py`](../../scripts/ci/port_catalog/citations.py) | the address grammars and the collectors for dumps, dump citations, doc citations and `// PORT:` tags |
+| [`rust_source.py`](../../scripts/ci/port_catalog/rust_source.py), [`rust_graph.py`](../../scripts/ci/port_catalog/rust_graph.py) | one parsed Rust file and the host roots; the call graph (permissive and receiver-gated) and reachability |
+| [`disclosure.py`](../../scripts/ci/port_catalog/disclosure.py) | the `NOT WIRED` / `WIRED:` / `REPLACED-BY:` grammar |
+| [`anchors.py`](../../scripts/ci/port_catalog/anchors.py), [`live.py`](../../scripts/ci/port_catalog/live.py) | tag-to-item anchor resolution; the `live` verdict |
+| [`features.py`](../../scripts/ci/port_catalog/features.py) | feature views over `features.toml` |
+| [`rows.py`](../../scripts/ci/port_catalog/rows.py) | the catalog rows, the ignore list, the row filters |
+| [`render/`](../../scripts/ci/port_catalog/render/__init__.py) | one module per output: `catalog` (CSV / markdown), `summary`, `live_audit`, `dashboard` |
+| [`ratchet.py`](../../scripts/ci/port_catalog/ratchet.py) | `--check` / `--update-baseline` |
+| [`selftest.py`](../../scripts/ci/port_catalog/selftest.py), [`cli.py`](../../scripts/ci/port_catalog/cli.py) | `--selftest`; the command line |
+
+The catalog carries no table of Rust paths: every source it reads is discovered under `crates/`, so a moved file needs no edit here. The data a contributor edits is the three files beside the entry point (`features.toml`, `port-catalog-ignore.toml`, `port-catalog-baseline.json`).
+
 ## The ratchet
 
 The catalog's figures reach the site's landing page through `scripts/ci/progress-metrics.json`, so they are gated. `--check` compares against `scripts/ci/port-catalog-baseline.json` and is a hard pre-commit gate. The same step runs in CI but reports `SKIPPED` there, because the `dumped` column reads the gitignored Ghidra corpus. **The pre-commit hook is therefore the only place these figures are compared.**
@@ -448,7 +467,9 @@ Everything above is a static graph answering *could this be reached*. It cannot 
 
 ### The denominator is a union of ladders, not one binary
 
-`--json` is repeatable, and joining only one test binary is the trap. The repo drives a set of pad-only ladders, each its own test target: the world spine, the pause menu and save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder, and per-area ladders. The canonical membership is `CANONICAL_LADDERS` in the script, printed by `--list-ladders` as `<test> <package>` pairs; read it there, because a ladder absent from that constant is a ladder nobody exports.
+`--json` is repeatable, and joining only one test binary is the trap. The repo drives a set of pad-only ladders, each its own test target: the world spine, the pause menu and save UI, the minigame doors, the cold-boot field anchor, the browser draw-composition ladder, and per-area ladders. The canonical membership is `CANONICAL_LADDERS` in `scripts/ci/replay_port_coverage/ladders.py`, printed by `--list-ladders` as `<test> <package>` pairs; read it there, because a ladder absent from that constant is a ladder nobody exports.
+
+A row there has to name a test that exists: `replay_port_coverage/ladder_check.py` resolves each package to its crate and requires `tests/<test>.rs`, and both `--list-ladders` and the join stop with exit 1 on a miss, so a renamed test cannot turn into a union with a silent hole.
 
 Menus and minigames are among the largest clusters in `live-unentered`, so a join over the spine alone reports exactly the subsystems the other ladders walk as never-entered.
 

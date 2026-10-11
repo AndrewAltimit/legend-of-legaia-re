@@ -52,11 +52,57 @@ Tiers 1-3 and 5-14 live in
 [`check-trait-override-symmetry.py`](../../scripts/ci/check-trait-override-symmetry.py).
 Waivers are in
 [`ui-host-drift-waivers.toml`](../../scripts/ci/ui-host-drift-waivers.toml).
+The script is an entry point over the `ui_host_drift` package beside it; which
+file holds which table is [below](#where-the-rows-live).
 
 Related pages: [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md)
 (the bundle a host actually runs), [`port-catalog.md`](port-catalog.md)
 (whether a ported function is reached at all),
 [`reach-triage.md`](reach-triage.md) (whether a ladder executes it).
+
+## Where the rows live
+
+`scripts/ci/check-ui-host-drift.py` is an entry point: it calls the
+[`ui_host_drift`](../../scripts/ci/ui_host_drift/__init__.py) package, whose
+docstring is the text `--help` prints. The package keeps three things apart: the **rows** a contributor edits, the
+**analysis** that reads them, and the **report**.
+
+| File | Holds |
+|---|---|
+| [`roots.py`](../../scripts/ci/ui_host_drift/roots.py) | `REPO`, `UI_SRC` / `UI_SRCS`, `HOSTS` (each host's source roots), `SHARED_COMPOSERS`, `WAIVERS` |
+| [`rows/host_files.py`](../../scripts/ci/ui_host_drift/rows/host_files.py) | every `NATIVE_*` / `WEB_*` host source path the tier 2 and tier 3 rows cite |
+| [`rows/constant_pairs.py`](../../scripts/ci/ui_host_drift/rows/constant_pairs.py) | `CONSTANT_PAIRS` |
+| [`rows/sim_pairs.py`](../../scripts/ci/ui_host_drift/rows/sim_pairs.py) | `SIM_PAIRS`, `NATIVE_REDRAW_STEP_FILES` |
+| [`rows/page_keys.py`](../../scripts/ci/ui_host_drift/rows/page_keys.py) | `SITE_ROOT`, `PAD_HOST_MARKERS`, `NON_PAD_CODES` |
+| [`rows/diag_gates.py`](../../scripts/ci/ui_host_drift/rows/diag_gates.py) | `DIAG_GATES`, `DIAG_ROOTS` |
+| [`rows/render_kernels.py`](../../scripts/ci/ui_host_drift/rows/render_kernels.py) | `RENDER_ROOTS`, `RENDER_SURFACE_GROUPS`, `RENDER_KERNEL_RULES` |
+| [`rows/owned_types.py`](../../scripts/ci/ui_host_drift/rows/owned_types.py) | `OWNED_TYPES`, `SESSION_TYPE`, `SESSION_SRC` |
+| [`rows/enum_coverage.py`](../../scripts/ci/ui_host_drift/rows/enum_coverage.py) | `ENUM_COVERAGE` |
+| [`rows/entry_symmetry.py`](../../scripts/ci/ui_host_drift/rows/entry_symmetry.py) | `HOTKEY_SOURCES`, `SHARED_CALLER_ROOTS`, `HOTKEY_ONLY_WAIVERS`, `HOTKEY_ONLY_BLOCKED` |
+| [`rows/frame_paths.py`](../../scripts/ci/ui_host_drift/rows/frame_paths.py) | `FRAME_PATHS`, `FRAME_PATH_NON_KERNELS`, `WEB_PAGE_FRAME` and its three call names |
+| [`rows/frame_content.py`](../../scripts/ci/ui_host_drift/rows/frame_content.py) | `ENGINE_API_CRATES`, `STD_METHOD_NAMES`, `CONTENT_WALK_STOPS` |
+| [`rows/boot_installs.py`](../../scripts/ci/ui_host_drift/rows/boot_installs.py) | `BOOT_NATIVE`, `BOOT_WEB_ROOT` |
+| [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
+| [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
+| [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
+| [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
+| [`path_check.py`](../../scripts/ci/ui_host_drift/path_check.py) | the row self-check below |
+| [`report.py`](../../scripts/ci/ui_host_drift/report.py) | command line and report |
+
+A Rust file that moves or splits is one edit: its path constant in
+`rows/host_files.py`, or the row of the one table that names it directly.
+
+### A row that names a missing file checks nothing
+
+Most tiers read a file that is not there as a file with nothing in it, so a
+rule whose surface was moved away reports that surface clean and no line of
+output changes. `path_check.py` is the floor under all of them: it walks
+`roots.py` and every `rows/` module, collects each value that is a path (a
+`pathlib.Path`, or a string that starts at `crates/`, `site/`, `scripts/` or
+`docs/` and holds only path characters), and fails the gate with
+`MISSING PATH` when one is not on disk. A new table joins the walk by existing.
+Regex sources, function names and prose do not have that shape and are not
+read; a rule that names a module by pattern rather than by path is outside it.
 
 ## Where the gates run
 
@@ -227,7 +273,7 @@ and the native minigame screens are genuinely different screen sets.
 
 ## Tier 2 - paired constants: do paired values agree?
 
-`CONSTANT_PAIRS` in the same script. Each row names a constant on each host
+`CONSTANT_PAIRS` in [`rows/constant_pairs.py`](../../scripts/ci/ui_host_drift/rows/constant_pairs.py). Each row names a constant on each host
 that both feed to the *same* shared kernel - an `engine-ui` builder for the
 screen rows, `swap_bgm` for the BGM transition row - and the two initialisers
 must normalise to one token stream. Formatting, comments and import aliasing are
@@ -260,7 +306,8 @@ the comment where the row used to be, which is where it now sits.
 
 ## Tier 3 - simulation: do both hosts feed the same kernel?
 
-`SIM_PAIRS`, the simulation twin of tier 2. Each row names a feature and, per
+`SIM_PAIRS` in [`rows/sim_pairs.py`](../../scripts/ci/ui_host_drift/rows/sim_pairs.py),
+the simulation twin of tier 2. Each row names a feature and, per
 host, the **injection site** where that host hands a model to a shared kernel.
 Three assertion modes:
 
@@ -366,7 +413,7 @@ and reachability of it is the [port catalog's](port-catalog.md) question.
 
 ## Tier 5 - input: does any page carry its own keyboard table?
 
-`check_page_key_tables` in the same script.
+`check_page_key_tables` in [`tiers/page_keys.py`](../../scripts/ci/ui_host_drift/tiers/page_keys.py).
 
 The three hosts share one keyboard layout, served out of the engine by
 `pad_bindings_json`
@@ -425,7 +472,7 @@ an opaque red-ish box around every effect sprite - up to 25 at once. Both hosts
 called the builder, the constants matched, the sim pairs matched, no page
 carried a key table: **all five tiers above passed.**
 
-`DIAG_GATES` in [`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
+`DIAG_GATES` in [`rows/diag_gates.py`](../../scripts/ci/ui_host_drift/rows/diag_gates.py)
 declares every `LEGAIA_DIAG_*` gate in the engine crates and whether it is
 `additive` - whether it draws something retail does not. The asymmetry is the
 whole point:
@@ -454,7 +501,7 @@ one implementation both hosts call, and `std::env::var` answers `Err` under
 ## Tier 7 - render kernels: same draw list, same kernel, every surface
 
 `RENDER_KERNEL_RULES` in
-[`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
+[`rows/render_kernels.py`](../../scripts/ci/ui_host_drift/rows/render_kernels.py).
 
 Every tier above measures a UI screen, a constant, a simulation injection
 site, a trait hook or a keyboard table. None of them asks the question that has
@@ -623,7 +670,7 @@ the rule is the instrument, and this is not a plan to replace it.
 ## Tier 8 - ownership: does the host hold the engine type, or only read it?
 
 `OWNED_TYPES` in
-[`check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py).
+[`rows/owned_types.py`](../../scripts/ci/ui_host_drift/rows/owned_types.py).
 
 Every tier above asks whether a host **reaches** something: a builder, a
 constant, a kernel, a gate, a hook. None can see a host that reaches an engine
@@ -662,7 +709,7 @@ the type still exists. It proves nothing about how either host drives it.
 
 ## Tier 9 - variant coverage: does each host answer every variant?
 
-`ENUM_COVERAGE` in the same file.
+`ENUM_COVERAGE` in [`rows/enum_coverage.py`](../../scripts/ci/ui_host_drift/rows/enum_coverage.py).
 
 A shared enum's variant can be **entered on both hosts and answered on one**.
 Four minigame `SceneMode`s shipped that way: the shared scene host drains the
@@ -686,7 +733,8 @@ reachable at runtime.
 
 ## Tier 10 - entry symmetry: is the phase armed only from a debug key?
 
-`HOTKEY_SOURCES` / `HOTKEY_ONLY_WAIVERS` in the same file.
+`HOTKEY_SOURCES` / `HOTKEY_ONLY_WAIVERS` in
+[`rows/entry_symmetry.py`](../../scripts/ci/ui_host_drift/rows/entry_symmetry.py).
 
 A gap that reads as "one host has it" can turn out to be "one host's *debug
 path* has it", and no tier above can tell those apart because both end at a
@@ -730,7 +778,8 @@ task nobody owes.
 
 ## Tier 11 - frame path: does an early exit skip a kernel the frame still draws?
 
-`FRAME_PATHS` / `WEB_PAGE_FRAME` in the same file, `[[frame_arm]]` and
+`FRAME_PATHS` / `WEB_PAGE_FRAME` in
+[`rows/frame_paths.py`](../../scripts/ci/ui_host_drift/rows/frame_paths.py), `[[frame_arm]]` and
 `[[frame_kernel]]` rows in `scripts/ci/ui-host-drift-waivers.toml`.
 
 Every tier above measures what a host **has**: a builder it reaches, a
@@ -847,7 +896,8 @@ with no `World` state behind it owns the frame.
 
 ## Tier 12 - content: do two paired kernels call the same engine?
 
-`check_frame_content` / `frame_kernel_pairs` in the same file,
+`check_frame_content` / `frame_kernel_pairs` in
+[`tiers/frame_content.py`](../../scripts/ci/ui_host_drift/tiers/frame_content.py),
 `[[frame_content]]` rows in `scripts/ci/ui-host-drift-waivers.toml`.
 
 Tier 11 pairs a frame path's kernels by **name** (or by an alias row). That
@@ -930,8 +980,8 @@ method both boots must call is one the tier can pair.
 
 ## Tier 14 - save routing: does every save go through the retail screen?
 
-`check_save_io_routes` / `SAVE_IO_ROUTES` / `PAGE_CARD_RACK_RULES` in the
-same file.
+`check_save_io_routes` in [`tiers/save_io.py`](../../scripts/ci/ui_host_drift/tiers/save_io.py), `SAVE_IO_ROUTES` /
+`PAGE_CARD_RACK_RULES` in [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py).
 
 Retail moves save bytes in one place, the card driver behind the save screen
 ([`save-screen.md`](../subsystems/save-screen.md)). Each host owns the bytes
