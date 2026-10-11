@@ -50,7 +50,7 @@ pub mod coplanar_draws;
 pub use legaia_engine_system::cutscene;
 pub mod cutscene_caption;
 pub use legaia_engine_field::cutscene_narration;
-pub use legaia_engine_field::cutscene_script_elements;
+pub use legaia_engine_field::plain_template_actors as cutscene_script_elements;
 pub use legaia_engine_field::cutscene_timeline;
 pub mod dance;
 pub mod dance_cast_scene;

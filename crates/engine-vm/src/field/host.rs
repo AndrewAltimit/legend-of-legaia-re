@@ -2005,7 +2005,7 @@ pub trait FieldHost {
     /// including the terminator). `script_id` is the active script's ID,
     /// passed in lieu of the original `param_3` ctx pointer.
     ///
-    /// [`field_helpers::packet_length`]: crate::field_helpers::packet_length
+    /// [`field_helpers::packet_length`]: crate::field::dispatch_leaves::packet_length
     fn op4c_n_e_sub_1_text_actor(&mut self, text_buf: &[u8], script_id: u16) {
         let _ = (text_buf, script_id);
     }
@@ -2032,7 +2032,7 @@ pub trait FieldHost {
     /// hook because the original's two branches differ only in side-effect
     /// (the loop body) and the PC delta is identical.
     ///
-    /// [`field_helpers::party_flag_test`]: crate::field_helpers::party_flag_test
+    /// [`field_helpers::party_flag_test`]: crate::field::dispatch_leaves::party_flag_test
     fn op4c_n_c_sub_1_flag_loop_reset(&mut self, flags: &[u8]) {
         let _ = flags;
     }
@@ -2125,7 +2125,7 @@ pub trait FieldHost {
     /// The host hook returns `Some(new_pc)` for the ce9c-jump path, or `None`
     /// to take the PC += 5 path. Default impl returns `None` (safe fallback).
     ///
-    /// [`field_helpers::small_table_search`]: crate::field_helpers::small_table_search
+    /// [`field_helpers::small_table_search`]: crate::field::dispatch_leaves::small_table_search
     fn op4c_n_d_sub_c_party_search_set(&mut self, needle: u8) -> Option<usize> {
         let _ = needle;
         None
@@ -2275,8 +2275,8 @@ pub trait FieldHost {
     /// the dispatcher. Hosts apply the cap + flag set; default no-op (the
     /// world's host: `legaia_engine_core::casino_coin_bank`).
     ///
-    /// [`field_helpers::load_u24_le`]: crate::field_helpers::load_u24_le
-    /// [`field_helpers::sign_extend_24`]: crate::field_helpers::sign_extend_24
+    /// [`field_helpers::load_u24_le`]: crate::field::dispatch_leaves::load_u24_le
+    /// [`field_helpers::sign_extend_24`]: crate::field::dispatch_leaves::sign_extend_24
     fn op4c_n_e_sub_5_add_coins(&mut self, coin_delta: i32) {
         let _ = coin_delta;
     }
@@ -2316,8 +2316,8 @@ pub trait FieldHost {
     /// from `FUN_8003CE64`), `false` otherwise. Default impl returns `false`
     /// - engines without a flag bank treat all bits as clear.
     ///
-    /// [`field_helpers::load_u16_le`]: crate::field_helpers::load_u16_le
-    /// [`party_flag_test`]: crate::field_helpers::party_flag_test
+    /// [`field_helpers::load_u16_le`]: crate::field::dispatch_leaves::load_u16_le
+    /// [`party_flag_test`]: crate::field::dispatch_leaves::party_flag_test
     fn op4c_n_c_party_flag_test(&self, flag_idx: u16) -> bool {
         let _ = flag_idx;
         false

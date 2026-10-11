@@ -50,7 +50,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             };
             let payload = &bytecode[operand + 1..];
-            let length = crate::field_helpers::packet_length(payload);
+            let length = crate::field::dispatch_leaves::packet_length(payload);
             if first != 0 {
                 host.op4c_n_e_sub_1_text_actor(&payload[..length], ctx.script_id);
             }
@@ -93,8 +93,8 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             if operand + 6 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let target = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
-            let duration = crate::field_helpers::load_u16_le(&bytecode[operand + 4..]);
+            let target = crate::field::dispatch_leaves::load_u24_le(&bytecode[operand + 1..]);
+            let duration = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 4..]);
             host.op4c_n_e_sub_7_camera_animate(target, duration);
             StepResult::Advance {
                 next_pc: pc + header_size + 6,
@@ -109,10 +109,10 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             if operand + 9 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let zoom_x = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]) as i16;
-            let zoom_y = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]) as i16;
-            let zoom_z = crate::field_helpers::load_u16_le(&bytecode[operand + 5..]) as i16;
-            let mode = crate::field_helpers::load_u16_le(&bytecode[operand + 7..]) as i16;
+            let zoom_x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]) as i16;
+            let zoom_y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]) as i16;
+            let zoom_z = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 5..]) as i16;
+            let mode = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 7..]) as i16;
             host.op4c_n_e_sub_8_camera_zoom(zoom_x, zoom_y, zoom_z, mode);
             StepResult::Advance {
                 next_pc: pc + header_size + 9,
@@ -169,8 +169,8 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             if operand + 4 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let raw = crate::field_helpers::load_u24_le(&bytecode[operand + 1..]);
-            let coin_delta = crate::field_helpers::sign_extend_24(raw);
+            let raw = crate::field::dispatch_leaves::load_u24_le(&bytecode[operand + 1..]);
+            let coin_delta = crate::field::dispatch_leaves::sign_extend_24(raw);
             host.op4c_n_e_sub_5_add_coins(coin_delta);
             StepResult::Advance {
                 next_pc: pc + header_size + 4,
@@ -241,7 +241,7 @@ pub(super) fn op_4c_ne<H: FieldHost>(
             match host.op4c_n_e_sub_b_actor_jump(actor_id) {
                 Some(()) => StepResult::Advance { next_pc },
                 None => {
-                    let skip = crate::field_helpers::load_u16_le(&bytecode[operand + 2..]) as i16;
+                    let skip = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 2..]) as i16;
                     let target = next_pc as isize + isize::from(skip) - 2;
                     if target < 0 {
                         return StepResult::Unknown { opcode, pc };

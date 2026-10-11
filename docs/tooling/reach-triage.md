@@ -68,7 +68,7 @@ export: an export is a full instrumented build per ladder.
 | never entered, worklist | Live, unexecuted, and owed a verdict in one of the buckets below. |
 | <a id="a-live-row-its-own-tag-and-the-strict-graph-both-call-dead"></a>never entered, disclosed and receiver-gated dead | Every permissively-live anchor carries `NOT WIRED:` or `REPLACED-BY:` and the strict graph reaches none of them (`disclosed_dead_addresses`). Three instruments agree, so it is not reach work. If a ladder later enters one it surfaces as *disclosed executed*. The memory-card I/O machines (`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the stream-file reader and `scene_name_sync.rs` have this shape. |
 | not observable (const) | A tag above a `const` / `static` / `type` alias has no lines to execute. It resolves through executed references (`port-catalog.py: item_reference_patterns` / `item_reference_hit`) and otherwise files here - never "entered", never "never entered". Type anchors resolve through the executed methods of the type's own `impl` blocks. |
-| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`, `battle_stream_slot.rs`, `battle_helpers.rs`, `code_lock_actor.rs`. |
+| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`, `battle_stream_slot.rs`, `incense_window.rs`, `code_lock_actor.rs`. |
 | defect lists | Disclosed `NOT WIRED` anchors that executed, and the item-verdict defects. Normally empty. |
 
 Worklist buckets:
@@ -919,7 +919,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `battle_action.rs` | 1 | - | a `//!` module anchor, not a routine verdict - see [the added rows' note](#two-of-the-added-rows-were-the-anchor-mechanism-not-a-gap) | `801d5854` |
 | `battle_action/overlay_rng.rs` | 1 | (c) | disclosed | `801d0290` |
 | `battle_burst.rs` | 1 | (c) | disclosed | `801f30c4` |
-| `battle_helpers.rs` | 1 | (c) | disclosed | `80046870` |
+| `incense_window.rs` | 1 | (c) | disclosed | `80046870` |
 | `battle_stream_slot.rs` | 2 | (c) | disclosed | `80055b4c` `801f17f8` |
 | `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`op43_sub9_tween`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
@@ -943,7 +943,7 @@ seven went with the widget-script resolver and the composition ladder; the
 **Whether the `(c)` rows are measured is not a property of the rows.** The
 page's [unmeasured bucket](#a-row-can-also-be-neither-entered-nor-never-entered)
 named `scus_core_helpers.rs`, `overlay_rng.rs`, `world_map_clut_fade.rs`,
-`battle_stream_slot.rs`, `battle_helpers.rs` and `code_lock_actor.rs` as
+`battle_stream_slot.rs`, `incense_window.rs` and `code_lock_actor.rs` as
 addresses no binary in the union carried a record for - outside both counts,
 so their verdict was *unmeasured* rather than never-entered. A later export
 had a record for each of them and the page said so; **the export after that

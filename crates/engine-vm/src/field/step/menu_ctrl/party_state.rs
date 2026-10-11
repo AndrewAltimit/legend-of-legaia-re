@@ -36,8 +36,8 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let a = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
-            let b = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+            let a = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
+            let b = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
             host.op4c_n_d_sub_0_field_se_trigger(a, b);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
@@ -233,8 +233,8 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let x = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
-            let y = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+            let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
+            let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
             host.op4c_n_d_sub_4_vram_stp_set(x, y);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,
@@ -250,8 +250,8 @@ pub(super) fn op_4c_nd<H: FieldHost>(
             if operand + 5 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let x = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
-            let y = crate::field_helpers::load_u16_le(&bytecode[operand + 3..]);
+            let x = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
+            let y = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 3..]);
             host.op4c_n_d_sub_5_vram_stp_clear(x, y);
             StepResult::Advance {
                 next_pc: pc + header_size + 5,

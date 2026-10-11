@@ -141,7 +141,7 @@ pub enum FieldEvent {
     /// the spawn request to engines. `records` is the list of child-actor
     /// bytecode streams split out of the script's `tail` via the retail
     /// `FUN_8003CA38` packet-length walker (mirrored by
-    /// [`legaia_engine_vm::field_helpers::packet_length`]). The parent
+    /// [`legaia_engine_vm::field::dispatch_leaves::packet_length`]). The parent
     /// script's PC has already advanced past the opcode header; the records
     /// themselves remain embedded in the bytecode buffer and become the
     /// spawned actors' own bytecode (retail stores the pointer at

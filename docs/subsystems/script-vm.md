@@ -2181,7 +2181,7 @@ The stored index is not the loaded one: a scene-local id does **not** load PROT 
 
 ## Helper functions
 
-The small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they are ported as plain functions in [`crates/engine-vm/src/field_helpers.rs`](../../crates/engine-vm/src/field_helpers.rs) instead of host hooks. The dispatcher arms call into them directly.
+The small leaf helpers in the dispatcher's call graph are pure arithmetic - no globals, no overlay calls - so they are ported as plain functions in [`crates/engine-vm/src/field/dispatch_leaves.rs`](../../crates/engine-vm/src/field/dispatch_leaves.rs) instead of host hooks. The dispatcher arms call into them directly.
 
 | Helper                  | Original          | Source dump                              | Used by                                    |
 |-------------------------|-------------------|------------------------------------------|--------------------------------------------|
@@ -2197,7 +2197,7 @@ Behaviour worth knowing beyond the signatures:
 
 - **`packet_length(buf)`** measures one variable-length packet of the in-game text encoding. It walks `buf` until any byte `<= 0x1E` (terminator); bytes `>= 0x1F` count as 1; bytes whose top nibble is `0xC` consume the next byte unconditionally and count as 2 (escape sequence). The count excludes the terminator; the dispatcher adds the opcode-prefix bytes and terminator itself when computing the PC delta.
 - **`party_flag_test(idx, flags)`** reads bit `idx` of a packed bit array, MSB-first per byte (bit 7 of `flags[0]` is index 0), returning `0xFF` when set and `0` otherwise. Out-of-range indices return `0` (the original would read past the array). `0x4C nC sub-5/6` reach the trigger-flag bank through the `op4c_n_c_party_flag_test(flag_idx)` host hook, with the index read via `load_u16_le`.
-- **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field_helpers.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
+- **`small_table_search(needle, table, lo, hi)`** searches `table[i * 2]` (stride 2, low byte of each short) across indices `[lo, hi)` and returns the matching index or [`SEARCH_NOT_FOUND`](../../crates/engine-vm/src/field/dispatch_leaves.rs) (`0x100`). Negative bounds or `lo >= hi` return `SEARCH_NOT_FOUND` without scanning.
 - **`load_u16_le` / `load_u24_le` / `load_u32_le`** assemble little-endian values from sequential bytes and return 0 for missing bytes. The 24-bit form pairs with `sign_extend_24(value)` for the opcodes that take a signed 24-bit immediate (`0x4C nE sub-5`).
 - **`tile_center(b)`** is the grid-byte to world-coordinate conversion: `b == 0` returns 0; otherwise `(b & 0x7F) << 7 | 0x40`, plus `0x40` if the high bit is set. Retail inlines it in nine dispatcher arms (`0x4C nE sub-3/4`, `MOVE_TO` at op `0x23`, the scene-change entry tile at op `0x3F`, the position-broadcast `0x4C nC sub-F`, ...).
 

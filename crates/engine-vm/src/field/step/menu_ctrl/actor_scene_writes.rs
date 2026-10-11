@@ -52,7 +52,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+            let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
             let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
             // Both polarities (5 = jump-if-zero, 6 = jump-if-nonzero)
             // share the same dispatcher fallthrough - the original's
@@ -69,7 +69,7 @@ pub(super) fn op_4c_nc<H: FieldHost>(
             if operand + 3 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };
             }
-            let flag_idx = crate::field_helpers::load_u16_le(&bytecode[operand + 1..]);
+            let flag_idx = crate::field::dispatch_leaves::load_u16_le(&bytecode[operand + 1..]);
             let _bit_set = host.op4c_n_c_party_flag_test(flag_idx);
             StepResult::Advance {
                 next_pc: pc + header_size + 3,

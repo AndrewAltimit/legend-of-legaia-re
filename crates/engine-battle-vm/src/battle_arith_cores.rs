@@ -175,7 +175,7 @@
 /// Both count tests are signed (`blez` / `slt`), and both loops are
 /// `while`-shaped (the guard precedes the body), so a zero count copies
 /// only the header - unlike the `do-while` copier in
-/// [`scus_core_helpers::copy_blocks_32`](legaia_engine_vm::scus_core_helpers::copy_blocks_32).
+/// [`scus_core_helpers::copy_blocks_32`](legaia_engine_vm::actor_node_pool::copy_blocks_32).
 ///
 /// This port reads whole words from `src` and writes them into `dst`,
 /// returning the count of words written. It stops early - returning what

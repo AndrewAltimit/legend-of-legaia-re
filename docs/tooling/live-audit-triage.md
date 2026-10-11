@@ -262,8 +262,8 @@ verdicts; `engine-core` re-exports them.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
-| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/scus_core_helpers.rs` | REPLACE |
-| `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/scus_core_helpers.rs` | DISCLOSE |
+| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/actor_node_pool.rs` | REPLACE |
+| `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/actor_node_pool.rs` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs` | REPLACE |
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs` | FALSE INERT |
 | `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |

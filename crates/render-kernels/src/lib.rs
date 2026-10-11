@@ -18,6 +18,7 @@ pub mod battle_trail;
 pub mod billboard;
 pub mod cast_beam;
 pub mod cast_theeder;
+pub mod display_mirror;
 pub mod effect_billboard;
 pub mod field_light;
 pub mod gte;

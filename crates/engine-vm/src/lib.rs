@@ -87,6 +87,7 @@
 #![forbid(unsafe_code)]
 
 pub mod actor_alloc;
+pub mod actor_node_pool;
 pub mod actor_tick;
 pub use legaia_engine_motion_vm::ambient_motion;
 pub use legaia_engine_motion_vm::ambient_motion_ops;
@@ -113,7 +114,6 @@ pub use legaia_engine_battle_vm::battle_formulas;
 pub use legaia_engine_battle_vm::battle_gauge;
 pub use legaia_engine_battle_vm::battle_gauge_rearm;
 pub use legaia_engine_battle_vm::battle_ground_grid;
-pub use legaia_engine_battle_vm::battle_helpers;
 pub use legaia_engine_battle_vm::battle_hp_bar;
 pub use legaia_engine_battle_vm::battle_impact_fx;
 pub use legaia_engine_battle_vm::battle_intro_particles;
@@ -152,7 +152,6 @@ pub mod field;
 /// paths keep working.
 pub use legaia_asset::field_disasm;
 pub mod field_actor_billboard;
-pub mod field_helpers;
 pub mod field_ledge_hop_arc;
 pub use legaia_engine_motion_vm::motion_vm;
 pub mod move_buffer;
@@ -161,7 +160,6 @@ pub use legaia_engine_battle_vm::move_no_effect_guard;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
 pub use legaia_engine_battle_vm::psx_camera;
-pub mod scus_core_helpers;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
 

@@ -1182,7 +1182,7 @@ Specifics:
   `World::drain_staged_menu_warp` resolves the scene on the next tick (a miss
   logs retail's `UNFIND MAP NUMBER %d` and drops the use).
 - **Incense**: each commit tops `FieldLocomotion::walk_regen_window` up through
-  `engine-vm::battle_helpers::top_up_cooldown`; `World::on_field_step` and
+  `engine-field::incense_window::top_up_cooldown`; `World::on_field_step` and
   `World::tick_world_map` skip the region roll while it is open; the zero edge
   raises `World::raise_incense_notice` (the ported `FUN_801F1E48`), drawn by
   `engine-ui::incense_notice_sprites_for` / `incense_notice_text_draws_for`

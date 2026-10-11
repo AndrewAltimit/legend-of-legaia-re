@@ -1,5 +1,5 @@
 //! Pure-Rust ports of the small leaf helpers the field VM dispatcher
-//! ([`super::field`]) calls into, lifted out of the dispatcher arms so they
+//! ([`crate::field`]) calls into, lifted out of the dispatcher arms so they
 //! can be unit-tested in isolation.
 //!
 //! PORT: FUN_8003CA38, FUN_8003CE64, FUN_80042EE0, FUN_8003CE9C, FUN_8003CEB8, FUN_8003CED8
@@ -29,7 +29,7 @@
 
 /// The variable-length text/data packet-width helper (`FUN_8003CA38`) now lives
 /// in the Track-1 `asset` crate next to the field-VM disassembler that also uses
-/// it; re-exported so `crate::field_helpers::packet_length` keeps resolving.
+/// it; re-exported so `crate::field::dispatch_leaves::packet_length` keeps resolving.
 pub use legaia_asset::field_disasm::packet_length;
 
 /// Test whether the `idx`-th bit of a packed bit array is set.

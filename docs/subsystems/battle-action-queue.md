@@ -700,7 +700,7 @@ ported as `battle_action::item_count_gate` over `ActionValidatorHost::inventory_
 That compare is not an inventory-room test against a 224-slot cap, although the symbol names `item_count_gate` / `inventory_count` still spell that reading. `gp` is `0x8007B318` (`80026ca8` `lui gp,0x8008` + `80026cac` `addiu gp,gp,-0x4ce8`, cross-checked against the camera pitch at `gp+0x478` = `_DAT_8007B790` and the tile-board install pointer at `gp+0x138` = `_DAT_8007B450`), so `gp + 0x2E8` is `_DAT_8007B600`, in the `0x8007Bxxx` scratch band and not the `0x80084xxx` save-state window an inventory length lives in.
 
 It is the **Incense window**. Its one writer, `FUN_80046870`
-(`battle_helpers::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
+(`incense_window::top_up_cooldown`), is the whole of the applier's selector-`0x82` arm - class
 `0x82` being Incense (item `0x8A`) - and tops it up by `0x40`, capped at `0x100`. The two overlay
 sites that reach it by absolute address count it in field **walk-regen ticks**, not frames: the
 walk tick `FUN_801D0B90` (PROT 0897, `0x801D0CD4..0x801D0CE8`) decrements it once per running tick

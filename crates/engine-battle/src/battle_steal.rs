@@ -40,7 +40,7 @@
 //!
 //! The caption is composed the retail way - template copy
 //! (`FUN_8003CA78`), the `{0xC2, item}` item-name token appended by
-//! `FUN_8003CB54` ([`legaia_engine_battle_vm::battle_helpers::mes_append_escape`]),
+//! `FUN_8003CB54` ([`legaia_engine_battle_vm::mes_escape_append::mes_append_escape`]),
 //! the two-byte tail appended by `FUN_8003CAC4` - from the templates pinned in
 //! [`legaia_asset::battle_ui_strings`] and read off the user's own
 //! executable, and shown in HUD element `0x5B`: placement record 91
@@ -215,7 +215,7 @@ pub fn compose_caption(strings: &BattleUiStrings, spoils: DeathSpoils) -> Option
     // Room for the token + its terminator, the fixed-buffer contract
     // `mes_append_escape` documents.
     buf.extend_from_slice(&[0, 0, 0]);
-    let end = legaia_engine_battle_vm::battle_helpers::mes_append_escape(&mut buf, 0xC2, spoils.item());
+    let end = legaia_engine_battle_vm::mes_escape_append::mes_append_escape(&mut buf, 0xC2, spoils.item());
     buf.truncate(end + 2);
     buf.extend(strings.get(tail).map(latin1_bytes).unwrap_or_default());
     Some(buf)

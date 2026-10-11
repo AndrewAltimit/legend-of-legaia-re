@@ -25,7 +25,7 @@ use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, SceneMode, World};
 ///
 /// Matches the `[opcode, which, count, body..., 0x00]` encoding the
 /// dispatcher's halt-acquire prelude (`FUN_8003CA38` packet-length walker
-/// mirrored by `legaia_engine_vm::field_helpers::packet_length`) expects.
+/// mirrored by `legaia_engine_vm::field::dispatch_leaves::packet_length`) expects.
 fn op_4c_80_one_packet_record() -> Vec<u8> {
     vec![0x4C, 0x80, 0x01, 0xAA, 0xBB, 0x00]
 }
