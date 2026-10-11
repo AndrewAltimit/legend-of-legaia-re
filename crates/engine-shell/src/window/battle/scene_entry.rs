@@ -252,7 +252,7 @@ impl PlayWindowApp {
             // on: measure the shell as drawn (the browser play page takes the
             // same measurement in `enter_battle_render`).
             self.session.host.world.fog_volume.battle_luma =
-                legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
+                legaia_render_kernels::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             // The shell proper is every slot but 1, baked with its second
             // copy. Slot 1 is the object the backdrop draw turns about Y
             // each frame (`BattleStageLayers`), so it is one copy of its

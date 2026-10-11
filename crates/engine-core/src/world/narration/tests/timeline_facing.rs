@@ -8,8 +8,8 @@ use crate::world::World;
 /// timeline stays installed. The NPC starts posed at engine heading
 /// `start` (slot 5 in the render-heading map).
 fn timeline_with_npc_facing_op(op0: u8, op1: u8, start: i16) -> World {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -161,8 +161,8 @@ fn cutscene_timeline_player_facing_ramp_turns_the_player() {
 /// plus the half-turn, engine `0x23B` for this geometry.
 #[test]
 fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,
@@ -213,8 +213,8 @@ fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
 /// `0x23B`.
 #[test]
 fn cutscene_timeline_npc_halt_acquire_turns_the_npc_to_its_bind() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,
@@ -271,8 +271,8 @@ fn cutscene_timeline_npc_halt_acquire_turns_the_npc_to_its_bind() {
 /// another actor's.
 #[test]
 fn cutscene_timeline_position_copy_carries_the_heading() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,
@@ -327,7 +327,7 @@ fn cutscene_timeline_position_copy_carries_the_heading() {
 /// placement, which the next field tick lands.
 #[test]
 fn a_spawn_prologue_own_face_at_turns_the_placement() {
-    use crate::field_channels::FieldChannel;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut w = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,

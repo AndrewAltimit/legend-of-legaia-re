@@ -28,7 +28,7 @@ pub struct WorldToggles {
     /// only takes effect at retail framing.
     pub(crate) view_window_crop: bool,
     /// The volumetric ground-fog **enhancement**
-    /// ([`crate::fog_volume`], stepped by `World::tick`), from
+    /// ([`legaia_render_kernels::fog_volume`], stepped by `World::tick`), from
     /// [`crate::options::OptionsState::volumetric_fog`]. Default **off** here
     /// so headless hosts (replays, oracles) carry no enhancement; the play
     /// hosts push their option (default on) through

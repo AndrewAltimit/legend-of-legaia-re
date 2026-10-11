@@ -132,7 +132,7 @@ pub struct NarrationSite {
 pub struct ChannelWait {
     /// Cross-context target id (`ctx[+0x50]`) the timeline is waiting on - the
     /// raw operand byte resolved through
-    /// `legaia_engine_core::field_channels::resolve_target`.
+    /// `crate::field_channels::resolve_target`.
     pub target_id: u8,
     /// Context-flag bit index (`ctx.flags & (1 << bit)`) that signals the
     /// awaited channel's beat completed.

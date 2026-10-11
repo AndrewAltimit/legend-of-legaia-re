@@ -65,8 +65,8 @@ pub struct World {
     /// The volumetric ground-fog **enhancement** (not retail): a drifting
     /// mist bank the moving actors part, stepped once per tick while
     /// [`WorldToggles::volumetric_fog`] is raised - see
-    /// [`crate::fog_volume`].
-    pub fog_volume: crate::fog_volume::FogVolume,
+    /// [`legaia_render_kernels::fog_volume`].
+    pub fog_volume: legaia_render_kernels::fog_volume::FogVolume,
     /// Field script actors: op `0x43` scripted arcs and the NPC height
     /// channel they write, and op `0x34` sub-1 attached lights.
     pub script_actors: FieldScriptActorState,
@@ -386,7 +386,7 @@ impl World {
             presentation: ScreenFxState::new(),
             flags: StoryFlagState::new(),
             fog: crate::fog_particles::FogPool::new(),
-            fog_volume: crate::fog_volume::FogVolume::new(),
+            fog_volume: legaia_render_kernels::fog_volume::FogVolume::new(),
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),

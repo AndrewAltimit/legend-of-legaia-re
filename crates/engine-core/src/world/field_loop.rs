@@ -600,7 +600,9 @@ impl World {
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
         // `0x80055D2C..0x80055D44`), which pages the arrival module in.
-        if let Some(stage) = crate::battle_stage_module::battle_init_stage_override(lead_monster) {
+        if let Some(stage) =
+            legaia_engine_battle::battle_stage_module::battle_init_stage_override(lead_monster)
+        {
             self.battle.stage_id = stage;
         }
         let stage_set = self.battle.stage_id != 0;
@@ -839,7 +841,8 @@ impl World {
         if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
-        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let ci =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let ch = &mut self.field_vm.channels[ci];
         if ch.object_bind {
             return None;
@@ -912,7 +915,8 @@ impl World {
         if op != 0xA3 && !clip_control {
             return None;
         }
-        let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
+        let ci =
+            legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let object = self.field_vm.channels[ci].object_bind;
         if clip_control && !object {
             return None;
@@ -1193,8 +1197,8 @@ impl World {
 mod cross_context_cflag_tests {
     use crate::world::World;
 
-    fn channel(slot: usize, script_id: u16) -> crate::field_channels::FieldChannel {
-        crate::field_channels::FieldChannel {
+    fn channel(slot: usize, script_id: u16) -> legaia_engine_field::field_channels::FieldChannel {
+        legaia_engine_field::field_channels::FieldChannel {
             placement_index: slot,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id,
@@ -1316,7 +1320,7 @@ mod placement_facing_op_tests {
 
     fn world_with_channel() -> World {
         let mut w = World::new();
-        w.field_vm.channels = vec![crate::field_channels::FieldChannel {
+        w.field_vm.channels = vec![legaia_engine_field::field_channels::FieldChannel {
             placement_index: 5,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id: 0x21,

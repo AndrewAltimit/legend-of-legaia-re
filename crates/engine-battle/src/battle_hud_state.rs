@@ -1,6 +1,39 @@
-//! `BattleHud`: the slot rows, popup ring, log and combo readout, and the view structs it projects.
+//! Battle HUD model - renderer-agnostic UI state for the in-battle screen.
+//!
+//! Holds per-slot HP / MP / AP / status-icon state plus a queue of damage
+//! popups and battle-event log lines ([`BattleHud`]: the slot rows, popup
+//! ring, log and combo readout, and the view structs it projects).
+//! `legaia_engine_ui::battle_hud_draws_for` turns one of these into a
+//! `Vec<TextDraw>` for the GPU pipeline; engines that render via a
+//! different path (web / terminal) can read the same struct directly.
+//! The `World` projections that feed it live in
+//! `legaia_engine_core::battle_hud`.
+//!
+//! ## Frame timing
+//!
+//! Damage popups carry a `frames_remaining` counter; [`BattleHud::tick`]
+//! decrements it each frame and drops popups whose counter reaches zero.
+//! Default lifetime is 60 frames (~1 s at PSX 60 Hz). Simultaneous popups
+//! are bounded by retail's 8-slot ring (`FUN_801F44A0`, delegated to
+//! `legaia_engine_battle_vm::battle_gauge_rearm::DamagePopupRing` by
+//! [`BattleHud::push_popup`]): a ninth push overwrites the slot the ring
+//! cursor names instead of growing the list.
 
-use super::*;
+use crate::ap_gauge::ApGauge;
+use legaia_engine_battle_vm::battle_gauge_rearm::DamagePopupRing;
+use legaia_engine_battle_vm::battle_value_readout::ComboStyle;
+use legaia_engine_battle_vm::battle_value_readout::{
+    COMBO_SLIDE_FRAMES, COMBO_SLIDE_IN_X, combo_slide,
+};
+use legaia_engine_battle_vm::status_effects::{StatusEffectTracker, StatusIcon, StatusKind};
+
+mod slot;
+mod subdraw;
+#[cfg(test)]
+mod tests;
+
+pub use slot::*;
+pub use subdraw::*;
 
 /// One battle-event log line, ringed in the HUD's left column. Engines
 /// push lines from world-event drains; the buffer is bounded by
@@ -60,8 +93,8 @@ pub struct BattleHud {
     /// `FUN_8004CE2C`. Armed by [`Self::sync_status`] (which every host
     /// already calls once per slot per frame) and
     /// drained by the host's mid-battle VRAM pass through
-    /// [`legaia_engine_battle::battle_status_clut::StatusClutState::step`].
-    pub status_clut: legaia_engine_battle::battle_status_clut::StatusClutState,
+    /// [`crate::battle_status_clut::StatusClutState::step`].
+    pub status_clut: crate::battle_status_clut::StatusClutState,
     /// The right-hand combo counter the current action has put up - `N HIT`
     /// / `TOTAL x` for a physical chain, `DAMAGE x` for a cast - or `None`
     /// while nothing has landed. Accumulated by [`Self::push_popup`] from

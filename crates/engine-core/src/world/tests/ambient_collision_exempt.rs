@@ -30,7 +30,7 @@ fn walker_world(flags: u32) -> World {
     w.actors[0].move_state.world_z = 2064;
     w.field_vm
         .channels
-        .push(crate::field_channels::FieldChannel {
+        .push(legaia_engine_field::field_channels::FieldChannel {
             placement_index: 5,
             ctx: FieldCtx {
                 flags,

@@ -204,7 +204,7 @@ pub(super) fn with_battle_item_frame<R>(
 /// the absolute actor-table slot. Compacting to active slots only would shift
 /// every monster row up and anchor damage numbers to the wrong actor.
 pub(super) fn battle_hud_slot_views(
-    hud: &legaia_engine_core::battle_hud::BattleHud,
+    hud: &legaia_engine_battle::battle_hud_state::BattleHud,
 ) -> Vec<HudSlotView<'_>> {
     hud.slots
         .iter()
@@ -235,7 +235,7 @@ pub(super) fn battle_hud_slot_views(
 
 /// Project the HUD model's popup queue into the shared builder's view type.
 pub(super) fn battle_hud_popup_views(
-    hud: &legaia_engine_core::battle_hud::BattleHud,
+    hud: &legaia_engine_battle::battle_hud_state::BattleHud,
 ) -> Vec<HudPopupView> {
     hud.popup_views()
         .into_iter()

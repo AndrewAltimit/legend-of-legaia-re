@@ -9,8 +9,8 @@ use crate::world::World;
 /// the flag-test. A single spawned channel (script id 5) provides the
 /// cross-context target whose flag the timeline waits on.
 fn timeline_with_channel_wait(channel_flag_bit3: bool) -> World {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -317,8 +317,8 @@ fn cutscene_timeline_player_compass_walk_runs_its_budget_while_the_record_waits(
 /// after the leg lands, exactly as the player arm does.
 #[test]
 fn cutscene_timeline_npc_compass_walk_moves_the_placement_while_the_record_waits() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let bc = vec![
         0xB7, 0x40, 0x00, 0x84, // compass walk: dir 0 (-Z), 4 x div 16

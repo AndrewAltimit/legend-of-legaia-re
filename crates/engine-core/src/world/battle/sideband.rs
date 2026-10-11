@@ -3,7 +3,7 @@
 //! [`World::live_battle_tick`].
 //!
 //! The kernel is [`legaia_engine_battle::battle_sideband`]; the two stage modules it drives
-//! for the Cort fight are [`crate::battle_stage_module`]. This file builds
+//! for the Cort fight are [`legaia_engine_battle::battle_stage_module`]. This file builds
 //! their inputs from live world state and applies what they return:
 //!
 //! * **stage 1** (the sparring tutorial): the round start runs the kernel with
@@ -24,8 +24,8 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
-use crate::battle_stage_module::{self as stage, StageCamera, StageEffect};
 use legaia_engine_battle::battle_sideband::{self as sb, BattleSidebandEffect as Fx};
+use legaia_engine_battle::battle_stage_module::{self as stage, StageCamera, StageEffect};
 
 impl World {
     /// The side-band's inputs this frame. `ctx_mode` overrides the command
@@ -502,7 +502,7 @@ impl World {
             }
             // Not staged (every record is a meshless `model_sel = -1` part)
             // and the HUD handle list is derived per frame, so its hard reset
-            // has nothing to clear - see `crate::battle_stage_module`.
+            // has nothing to clear - see `legaia_engine_battle::battle_stage_module`.
             StageEffect::Spawn { .. } | StageEffect::HudReset => {}
             // Consumed by the arrival's own loop above.
             StageEffect::HandBack => {}

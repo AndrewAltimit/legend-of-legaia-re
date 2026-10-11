@@ -304,7 +304,7 @@ SIM_PAIRS: list[dict[str, object]] = [
     {
         "what": "volumetric ground fog, native vs play page - the bank is "
         "simulated once per tick inside `World::tick` "
-        "(`engine-core::fog_volume`); each host's draw site must take "
+        "(`render-kernels::fog_volume`); each host's draw site must take "
         "this frame's bank from `World::fog_volume_frame` rather than "
         "keep a bank (or a scene table) of its own",
         "sites": {

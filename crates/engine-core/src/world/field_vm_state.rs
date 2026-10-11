@@ -70,7 +70,7 @@ pub struct FieldVmState {
     /// Their own scripts run only in the load-frame spawn pre-run
     /// ([`crate::world::World::pre_run_field_channel_prologues`]); a touch
     /// resumes one as the interaction timeline.
-    pub channels: Vec<crate::field_channels::FieldChannel>,
+    pub channels: Vec<legaia_engine_field::field_channels::FieldChannel>,
     /// A copy of [`Self::channels`] taken when a stepping pass moves the live
     /// vector out (`std::mem::take` in the channel and spawned-record
     /// steppers), so a host hook that resolves a cross-context id while a
@@ -78,7 +78,7 @@ pub struct FieldVmState {
     /// retail always sees every actor - still finds the other channels.
     /// Empty outside a stepping pass. Read it through
     /// [`crate::world::World::channel_view`], never directly.
-    pub(crate) stepping_view: Vec<crate::field_channels::FieldChannel>,
+    pub(crate) stepping_view: Vec<legaia_engine_field::field_channels::FieldChannel>,
     /// The MAN payload the channels' bytecode slices from (each channel's
     /// buffer base is its `record_offset` into this).
     pub channels_man: Option<std::sync::Arc<Vec<u8>>>,
@@ -127,7 +127,7 @@ pub struct FieldVmState {
     /// (`(flat_record_index, contact_centre)`, retail `FUN_8003A55C`),
     /// stored at scene entry so a cutscene-timeline install that has to
     /// respawn the channel set can re-append the object-bind channels
-    /// ([`crate::field_channels::spawn_object_channels`]).
+    /// ([`legaia_engine_field::field_channels::spawn_object_channels`]).
     pub(crate) object_channel_binds: Vec<(usize, (i16, i16))>,
     /// Bind-time rotation of each object-bind context, by flat record
     /// ([`legaia_engine_field::man_field_scripts::object_script_bind_rots`]): the `.MAP`

@@ -502,7 +502,7 @@ impl LegaiaRuntime {
             // The volumetric ground fog may not outshine the stage it lies
             // on: the native window's measurement, same kernel, same shell.
             fog_stage_luma =
-                legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
+                legaia_render_kernels::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             // Every slot but 1 is the baked shell; slot 1 is the spun copy
             // (`SceneHost::battle_stage_layers`, the native window's split).
             let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);

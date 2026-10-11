@@ -61,8 +61,11 @@ impl PlayWindowApp {
                 self.battle_hud.push_heal(f.target_slot, f.amount);
             } else if f.is_crit {
                 self.battle_hud.push_popup(
-                    legaia_engine_core::battle_hud::DamagePopup::damage(f.target_slot, f.amount)
-                        .crit(),
+                    legaia_engine_battle::battle_hud_state::DamagePopup::damage(
+                        f.target_slot,
+                        f.amount,
+                    )
+                    .crit(),
                 );
             } else {
                 self.battle_hud.push_damage(f.target_slot, f.amount);

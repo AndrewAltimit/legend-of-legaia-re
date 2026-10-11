@@ -284,9 +284,11 @@ impl World {
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
         if !same_man || self.field_vm.channels.is_empty() {
-            self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+            self.field_vm.channels =
+                legaia_engine_field::field_channels::spawn_channels(man_file, man);
             let binds = std::mem::take(&mut self.field_vm.object_channel_binds);
-            let mut obj = crate::field_channels::spawn_object_channels(man_file, man, &binds);
+            let mut obj =
+                legaia_engine_field::field_channels::spawn_object_channels(man_file, man, &binds);
             self.seat_object_channel_rots(&mut obj);
             self.field_vm.channels.extend(obj);
             self.field_vm.object_channel_binds = binds;

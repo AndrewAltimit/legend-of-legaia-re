@@ -275,7 +275,7 @@ pub struct LegaiaRuntime {
     /// Battle HUD model (per-slot HP / MP / AP rows, damage popups), refreshed
     /// each battle tick by the shared `engine-core` fold and projected into
     /// the shared `battle_hud_draws_for` builder ([`crate::play_battle`]).
-    pub(crate) battle_hud: legaia_engine_core::battle_hud::BattleHud,
+    pub(crate) battle_hud: legaia_engine_battle::battle_hud_state::BattleHud,
     /// Encounter-transition banner: `(frames_remaining, formation_label)`,
     /// armed once per `Field -> Battle` mode edge.
     pub(crate) encounter_banner: Option<(u16, String)>,
@@ -452,7 +452,7 @@ impl LegaiaRuntime {
             live_battles: true,
             pending_card_resume: None,
             battle_bgm: None,
-            battle_hud: legaia_engine_core::battle_hud::BattleHud::new(),
+            battle_hud: legaia_engine_battle::battle_hud_state::BattleHud::new(),
             encounter_banner: None,
             prev_scene_mode: None,
             battle_render: None,

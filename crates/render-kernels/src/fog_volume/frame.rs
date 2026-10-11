@@ -53,9 +53,9 @@ pub mod header {
     pub const GROUND_GEN: usize = 16;
     /// `0` field, `1` battle.
     pub const SPACE: usize = 17;
-    /// [`super::super::FogSpace::shader_constants`] start here.
+    /// `super::FogSpace::shader_constants` start here.
     pub const SHADER_CONSTANTS: usize = 18;
-    /// [`super::super::FogSpace::soft_distance`].
+    /// `super::FogSpace::soft_distance`.
     pub const SOFT_DISTANCE: usize = 22;
     pub const LEN: usize = 23;
 }

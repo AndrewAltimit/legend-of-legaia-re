@@ -203,7 +203,7 @@ pub fn marker_segments(world: &World, draw_player: bool) -> Vec<MarkerSegment> {
 
 /// Project raw Y-down world points through a Y-up `vp` onto the display,
 /// bent down by the overworld curvature at `curve` (the frame's
-/// `clip.w`-to-`SZ` factor, [`crate::overworld_curvature::frame_curve_scale`];
+/// `clip.w`-to-`SZ` factor, [`crate::camera_view::frame_curve_scale`];
 /// `0` is flat) - the bend the hosts' mesh shaders give the continent the
 /// marker stands on. `None` behind the lens or absurdly far off-screen.
 fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
@@ -215,8 +215,8 @@ fn project(vp: &[f32; 16], p: [f32; 3], curve: f32) -> Option<[f32; 2]> {
         return None;
     }
     let sx = (cx / cw + 1.0) * 0.5 * DISPLAY_W;
-    let sy =
-        (1.0 - cy / cw) * 0.5 * DISPLAY_H + crate::overworld_curvature::clip_bend_rows(cw, curve);
+    let sy = (1.0 - cy / cw) * 0.5 * DISPLAY_H
+        + legaia_render_kernels::overworld_curvature::clip_bend_rows(cw, curve);
     (sx.abs() < OFFSCREEN_LIMIT && sy.abs() < OFFSCREEN_LIMIT).then_some([sx, sy])
 }
 
@@ -309,7 +309,7 @@ pub fn marker_quads(
         return Vec::new();
     };
     let eye = camera_view::frame_eye(frame);
-    let curve = crate::overworld_curvature::frame_curve_scale(world.overworld_bit(), frame);
+    let curve = crate::camera_view::frame_curve_scale(world.overworld_bit(), frame);
     marker_segments(world, draw_player)
         .iter()
         .filter_map(|s| segment_quad_depth(&vp, s, eye, curve))

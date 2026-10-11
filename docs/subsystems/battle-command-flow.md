@@ -1006,7 +1006,7 @@ spoils are shown or credited. The form transition's phase 3 ends the
 battle itself: mode word `2` (back to the field) and `DAT_8007BD60 = 0x80`,
 the won bit MAIN INIT turns into story flag 1 (`0x8003B570..0x8003B590`).
 
-**Engine port.** `engine-core::battle_stage_module` ports both phase
+**Engine port.** `engine-battle::battle_stage_module` ports both phase
 machines as pure kernels over the state they touch (`arrival_tick`,
 `form_transition_tick`), and `World::tick_battle_sideband` hosts them: the
 battle-init override writes stage `2` at entry, the round start holds until

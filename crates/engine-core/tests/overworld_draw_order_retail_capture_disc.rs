@@ -27,11 +27,11 @@ use legaia_engine_battle_vm::psx_camera::{
 use legaia_engine_core::fog_particles::{
     FOG_CLUT, FOG_POOL_SLOTS, FOG_TPAGE, FogFrameEnv, FogPool, FogQuad, FogView,
 };
-use legaia_engine_core::overworld_curvature::curvature_at;
 use legaia_engine_field::overworld_draw_order as order;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::prim_pool::{self, Prim};
+use legaia_render_kernels::overworld_curvature::curvature_at;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 

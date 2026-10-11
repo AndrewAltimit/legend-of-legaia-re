@@ -305,7 +305,7 @@ fn fog_sheet_geometry_matches_the_retail_frame() {
     // Retail's walked table.
     // The curvature table the emitter adds, entry for entry.
     let lut = u32_at(ram, CURVATURE_LUT_PTR);
-    let table = legaia_engine_core::overworld_curvature::curvature_table();
+    let table = legaia_render_kernels::overworld_curvature::curvature_table();
     for (i, &e) in table.iter().enumerate() {
         assert_eq!(e, i16_at(lut + 2 * i as u32), "curvature entry {i}");
     }

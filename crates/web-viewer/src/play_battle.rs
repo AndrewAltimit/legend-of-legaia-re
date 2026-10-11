@@ -37,9 +37,10 @@
 //! [`crate::play_battle_fx`].
 
 use crate::runtime::LegaiaRuntime;
+use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup};
 use legaia_engine_core::battle_hud::{
-    BattleHud, DamagePopup, battle_active_actor, battle_plaque_element_badge,
-    encounter_banner_enabled, encounter_banner_label, sync_battle_hud_rows,
+    battle_active_actor, battle_plaque_element_badge, encounter_banner_enabled,
+    encounter_banner_label, sync_battle_hud_rows,
 };
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_ui::{self as ui, HudPopupView, HudSlotMeta, HudSlotView, SpriteDraw, TextDraw};

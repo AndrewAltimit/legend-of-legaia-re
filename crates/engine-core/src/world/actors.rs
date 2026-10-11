@@ -727,7 +727,7 @@ impl World {
             EasedMoveTarget::Player
         } else {
             let view = self.channel_view();
-            let ci = crate::field_channels::resolve_target(view, source_id)?;
+            let ci = legaia_engine_field::field_channels::resolve_target(view, source_id)?;
             EasedMoveTarget::Placement(view[ci].placement_index as u8)
         };
         if source == destination {
@@ -762,7 +762,7 @@ impl World {
     /// naming the player, which bypasses the walk) where a retail capture of
     /// the same entry seats all three.
     // REF: FUN_8003C83C
-    pub fn channel_view(&self) -> &[crate::field_channels::FieldChannel] {
+    pub fn channel_view(&self) -> &[legaia_engine_field::field_channels::FieldChannel] {
         if self.field_vm.channels.is_empty() {
             &self.field_vm.stepping_view
         } else {
@@ -796,7 +796,7 @@ impl World {
             });
         }
         let view = self.channel_view();
-        let ci = crate::field_channels::resolve_target(view, src_id)?;
+        let ci = legaia_engine_field::field_channels::resolve_target(view, src_id)?;
         let ch = &view[ci];
         let placement = ch.placement_index as u8;
         let (x, z) = self

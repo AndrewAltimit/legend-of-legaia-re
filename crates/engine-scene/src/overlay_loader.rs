@@ -18,7 +18,7 @@
 //!
 //! [`battle_stage_overlay_entry`] is replaced by the same substitution one
 //! layer up: the stage id `_DAT_8007B64A` is produced (its writers live with
-//! the stage modules, `legaia_engine_core::battle_stage_module`), but the engine runs
+//! the stage modules, `legaia_engine_battle::battle_stage_module`), but the engine runs
 //! the three stage overlays' code natively - the sparring prompt machine and
 //! the two Cort modules - so no stage overlay is paged and no PROT entry is
 //! resolved from the id. The stage *geometry* the player sees comes from the

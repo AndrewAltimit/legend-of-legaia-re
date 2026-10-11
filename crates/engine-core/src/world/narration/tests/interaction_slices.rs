@@ -7,8 +7,8 @@ use crate::world::World;
 /// (`interaction_slot`) over `bc`, with that placement's channel sharing
 /// the bytes at PC 0.
 fn interaction_timeline(bc: Vec<u8>, slot: u8) -> World {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
 
     let mut w = World::new();
@@ -102,8 +102,8 @@ fn a_committed_battle_holds_the_system_script() {
 
 #[test]
 fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     // `CC 40 51 10 10 00 00` seats channel 0x40 at tile (16,16), then
     // `C7 40 12 10 33` walks it to (18,16) - the shape of every cutscene
@@ -141,8 +141,8 @@ fn a_seat_then_walk_in_one_slice_walks_from_the_seat() {
 
 #[test]
 fn a_poked_placement_does_not_run_its_talk_body() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_vm::field::FieldCtx;
     // A placement whose talk body is `SET 0x20`. The timeline pokes it
@@ -202,8 +202,8 @@ fn a_player_targeted_move_to_in_a_timeline_seats_the_player() {
 
 #[test]
 fn a_copy_from_player_then_walk_starts_at_the_player() {
-    use crate::field_channels::FieldChannel;
     use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     // `CC 40 37` (4C nibble-3 sub-7: copy the player's position onto
     // channel 0x40), then `C7 40 12 10 33` walks it off. The channel

@@ -556,8 +556,8 @@ mod tests {
         assert_eq!(w.ambient.clut_pending_game_ticks, 9);
     }
 
-    fn party_channel(slot: usize, flags: u32) -> crate::field_channels::FieldChannel {
-        crate::field_channels::FieldChannel {
+    fn party_channel(slot: usize, flags: u32) -> legaia_engine_field::field_channels::FieldChannel {
+        legaia_engine_field::field_channels::FieldChannel {
             placement_index: slot,
             ctx: legaia_engine_vm::field::FieldCtx {
                 flags,

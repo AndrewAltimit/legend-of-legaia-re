@@ -807,7 +807,7 @@ pub(super) struct PlayWindowApp {
     /// `World::drain_battle_hit_fx` (floating numbers) + the live status
     /// tracker (per-slot icons); aged by `BattleHud::tick`. Popups + status
     /// letters are drawn anchored to the per-slot HP rows in `build_hud`.
-    pub(super) battle_hud: legaia_engine_core::battle_hud::BattleHud,
+    pub(super) battle_hud: legaia_engine_battle::battle_hud_state::BattleHud,
     /// Actor slots queued for render-side mesh upload. Populated when a
     /// `FieldEvent::ActorSpawned` fires with a non-`None` `Actor::tmd_ref`
     /// (the field-VM `0x4C 0xD8` synchronous-spawn path); drained in the

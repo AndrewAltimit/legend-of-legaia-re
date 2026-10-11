@@ -39,7 +39,7 @@ impl FieldHostImpl<'_> {
         // state is keyed by; an unmatched id passes through raw (tests /
         // channel-less scenes).
         fn resolve(world: &World, id: u8) -> u8 {
-            crate::field_channels::resolve_target(&world.field_vm.channels, id)
+            legaia_engine_field::field_channels::resolve_target(&world.field_vm.channels, id)
                 .map(|ci| world.field_vm.channels[ci].placement_index as u8)
                 .unwrap_or(id)
         }

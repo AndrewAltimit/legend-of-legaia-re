@@ -13,15 +13,15 @@
 //! Disc-free: the monster is a synthetic one-HP record under the real id, so
 //! this runs in CI.
 
+use legaia_engine_battle::battle_stage_module::{
+    ARRIVAL_CUE, ARRIVAL_DROP_HEIGHT, FORM_TRANSITION_ACTION_STATE, FORM_TRANSITION_CUE,
+};
 use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
 use legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
-};
-use legaia_engine_core::battle_stage_module::{
-    ARRIVAL_CUE, ARRIVAL_DROP_HEIGHT, FORM_TRANSITION_ACTION_STATE, FORM_TRANSITION_CUE,
 };
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;

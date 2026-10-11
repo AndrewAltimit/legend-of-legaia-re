@@ -72,7 +72,7 @@ impl World {
             .sibling_sections()
             .get(FOG_REGION_SIBLING_SECTION)
             .and_then(|s| s.body(man))
-            .map(crate::fog_particles::parse_fog_regions)
+            .map(legaia_render_kernels::fog_volume::parse_fog_regions)
             .unwrap_or_default();
         // `_DAT_8007BCB0`, seated by the same installer from the MAN's
         // header byte `+1` (`0x8003B6BC..0x8003B6E8`).

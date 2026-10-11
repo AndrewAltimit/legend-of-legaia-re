@@ -959,7 +959,7 @@ the blob draws over it. On the overworld every corner's `SY` also takes the
 curvature entry at `(sum >> 2) >> 5` - the mean depth, with **no** `+1`,
 unlike the prim leaves and the fog. Nothing culls.
 
-Port: `legaia_engine_core::drop_shadow` (the grid and the packet) under
+Port: `legaia_render_kernels::drop_shadow` (the grid and the packet) under
 `World::field_drop_shadows`, which walks the player and every partition-1
 channel whose clip id `+0x5C` is non-zero - the port's stand-in for draw kind
 `1`, which an actor with no clip never reaches. Both hosts wrap the cells
@@ -1256,7 +1256,7 @@ to retail's. Which transition installs the overworld under the field's draw
 area is not pinned (that state's party is level 99, so a debug warp is a
 candidate). The port builds the common, unbiased table.
 
-**Port.** `engine-core::overworld_curvature`, pinned entry for entry against
+**Port.** `render-kernels::overworld_curvature`, pinned entry for entry against
 the `keikoku_chest_preload` capture. The fog sheets and the drop shadow add
 it on the CPU. The continent, its landmarks, the player mesh and the
 overworld markers bend in the hosts' mesh shaders, which evaluate the table
@@ -2617,7 +2617,7 @@ and lets the characters part it. Nothing in it is retail, and it never
 touches the puff pool.
 
 **Simulation**
-([`engine-core::fog_volume`](../../crates/engine-core/src/fog_volume.rs),
+([`render-kernels::fog_volume`](../../crates/render-kernels/src/fog_volume.rs),
 `World::tick_fog_volume`). A 64 x 64 disturbance grid, recentred on the
 player in whole-cell steps, holds a density multiplier (`1.0` = undisturbed
 bank) and a 2D velocity per cell; everything outside reads as undisturbed,

@@ -759,9 +759,49 @@ pub fn frame_eye(frame: &FieldCameraFrame) -> Option<[f32; 3]> {
     }
 }
 
+/// How the hosts' mesh shaders turn a draw's `clip.w` into retail's `SZ`
+/// for the curvature index, for this frame - `0.0` switches the bend off.
+///
+/// On while retail's overworld bit is up ([`World::overworld_bit`])
+/// and the frame is one of retail's own cameras:
+///
+/// - the overworld **walk** camera composes the 6x world scale into its
+///   matrix (`camera_view::world_map_walk_vp`), so its `clip.w` already is
+///   `SZ` - factor `1`;
+/// - a **scripted** shot (the `map01` aerial fly-in) and the field follow
+///   pose are `1x` frames, so `SZ` is `clip.w` times the base matrix's scale
+///   ([`CUTSCENE_WORLD_SCALE`]).
+///
+/// The top-view debug camera and the host's own orbit have no retail eye to
+/// bend about, and keep the flat projection.
+pub fn frame_curve_scale(overworld: bool, frame: &FieldCameraFrame) -> f32 {
+    use FieldCameraFrame as F;
+    if !overworld {
+        return 0.0;
+    }
+    match frame {
+        F::WorldMapWalk { .. } => 1.0,
+        F::Cutscene(_) | F::Follow(_) => CUTSCENE_WORLD_SCALE,
+        // A minigame venue is never the overworld; flat.
+        F::WorldMapTopView { .. } | F::HostDebugOrbit | F::Venue(_) => 0.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_bend_scale_follows_the_frame() {
+        use FieldCameraFrame as F;
+        let top = F::WorldMapTopView {
+            azimuth: 0,
+            zoom: 0,
+            pan: [0, 0],
+        };
+        assert_eq!(frame_curve_scale(true, &top), 0.0);
+        assert_eq!(frame_curve_scale(false, &F::HostDebugOrbit), 0.0);
+    }
     use legaia_engine_vm::Position as ActorVmPosition;
 
     fn world_with_player(x: i16, z: i16) -> World {

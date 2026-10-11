@@ -992,7 +992,7 @@ pub fn object_walk_touch_binds(
 ///
 /// [`object_walk_touch_binds`] is the door-classified subset (records
 /// carrying a player teleport); this one feeds
-/// `legaia_engine_core::field_channels::spawn_object_channels`. Duplicate
+/// `crate::field_channels::spawn_object_channels`. Duplicate
 /// `(record, contact)` pairs collapse to one bind.
 // REF: FUN_8003A55C
 pub fn object_script_binds(
@@ -1026,7 +1026,7 @@ pub fn object_script_binds(
 /// landmark (record 8) is keyed two tiles north of where it stands, and the
 /// credits walk's `A3 08 60 17` - which seats it back on its own tile - read
 /// as a 256-unit move. This is what the object-bind script contexts are
-/// seated on (`legaia_engine_core::field_channels::spawn_object_channels`); the portal
+/// seated on (`crate::field_channels::spawn_object_channels`); the portal
 /// and walk-touch layers keep the contact centre.
 // REF: FUN_8003A55C
 pub fn object_script_bind_seats(

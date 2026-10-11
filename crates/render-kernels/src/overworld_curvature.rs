@@ -106,37 +106,9 @@ pub fn curvature_closed_form(i: usize) -> i32 {
 /// The last table index a saturated `SZ` reaches: `(0xFFFF >> 5) + 1`.
 pub const CURVATURE_REACHABLE: usize = (0xFFFF >> 5) + 1;
 
-/// How the hosts' mesh shaders turn a draw's `clip.w` into retail's `SZ`
-/// for the curvature index, for this frame - `0.0` switches the bend off.
-///
-/// On while retail's overworld bit is up ([`crate::world::World::overworld_bit`])
-/// and the frame is one of retail's own cameras:
-///
-/// - the overworld **walk** camera composes the 6x world scale into its
-///   matrix (`camera_view::world_map_walk_vp`), so its `clip.w` already is
-///   `SZ` - factor `1`;
-/// - a **scripted** shot (the `map01` aerial fly-in) and the field follow
-///   pose are `1x` frames, so `SZ` is `clip.w` times the base matrix's scale
-///   ([`crate::camera_view::CUTSCENE_WORLD_SCALE`]).
-///
-/// The top-view debug camera and the host's own orbit have no retail eye to
-/// bend about, and keep the flat projection.
-pub fn frame_curve_scale(overworld: bool, frame: &crate::camera_view::FieldCameraFrame) -> f32 {
-    use crate::camera_view::FieldCameraFrame as F;
-    if !overworld {
-        return 0.0;
-    }
-    match frame {
-        F::WorldMapWalk { .. } => 1.0,
-        F::Cutscene(_) | F::Follow(_) => crate::camera_view::CUTSCENE_WORLD_SCALE,
-        // A minigame venue is never the overworld; flat.
-        F::WorldMapTopView { .. } | F::HostDebugOrbit | F::Venue(_) => 0.0,
-    }
-}
-
 /// The screen-Y bend, in PSX stage rows, the curvature adds to a vertex whose
 /// clip-space `w` is `clip_w` under a frame with `scale` from
-/// [`frame_curve_scale`] - the CPU twin of the shaders' per-vertex term, for
+/// `legaia_engine_core::camera_view::frame_curve_scale` - the CPU twin of the shaders' per-vertex term, for
 /// the screen-space draws that must land on the bent ground (the overworld
 /// markers). `0` when `scale` is `0`.
 pub fn clip_bend_rows(clip_w: f32, scale: f32) -> f32 {
@@ -170,15 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bend_scale_follows_the_frame() {
-        use crate::camera_view::FieldCameraFrame as F;
-        let top = F::WorldMapTopView {
-            azimuth: 0,
-            zoom: 0,
-            pan: [0, 0],
-        };
-        assert_eq!(frame_curve_scale(true, &top), 0.0);
-        assert_eq!(frame_curve_scale(false, &F::HostDebugOrbit), 0.0);
+    fn the_bend_rows_follow_the_scale() {
         assert_eq!(
             clip_bend_rows(0x1000 as f32, 1.0),
             curvature_at(0x1000) as f32

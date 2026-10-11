@@ -33,8 +33,9 @@ impl World {
         // it before stepping - rather than the pre-handshake behaviour of
         // advancing past the wait by instruction width.
         if let Some(mut wait) = tl.channel_wait.take() {
-            let flag_set = crate::field_channels::resolve_target(&channels, wait.target_id)
-                .map(|ci| channels[ci].ctx.flags & (1u32 << (wait.bit & 0x1F)) != 0);
+            let flag_set =
+                legaia_engine_field::field_channels::resolve_target(&channels, wait.target_id)
+                    .map(|ci| channels[ci].ctx.flags & (1u32 << (wait.bit & 0x1F)) != 0);
             match flag_set {
                 // Still waiting (the channel's bit is still up) and within the
                 // park budget: hold the PC on the flag-test op another tick.
@@ -439,14 +440,16 @@ impl World {
                     && !host.world.field_vm.halted_elsewhere.is_empty()
                     && match vm::field::peek_extended(&tl.bytecode, pc) {
                         Some(0xF8) => host.world.field_vm.halted_elsewhere.contains(&None),
-                        Some(t) => crate::field_channels::resolve_target(&channels, t)
-                            .filter(|&ci| !channels[ci].object_bind)
-                            .is_some_and(|ci| {
-                                host.world
-                                    .field_vm
-                                    .halted_elsewhere
-                                    .contains(&Some(channels[ci].placement_index as u8))
-                            }),
+                        Some(t) => {
+                            legaia_engine_field::field_channels::resolve_target(&channels, t)
+                                .filter(|&ci| !channels[ci].object_bind)
+                                .is_some_and(|ci| {
+                                    host.world
+                                        .field_vm
+                                        .halted_elsewhere
+                                        .contains(&Some(channels[ci].placement_index as u8))
+                                })
+                        }
                         None => false,
                     };
                 // The player walk this context armed itself holds the player's
@@ -477,7 +480,9 @@ impl World {
                     && !(opcode_byte & 0x7F == 0x32 && tl.bytecode.get(pc + 2) == Some(&0x0A))
                     && vm::field::peek_extended(&tl.bytecode, pc)
                         .filter(|&t| t != 0xF8 && t != 0xFB)
-                        .and_then(|t| crate::field_channels::resolve_target(&channels, t))
+                        .and_then(|t| {
+                            legaia_engine_field::field_channels::resolve_target(&channels, t)
+                        })
                         .filter(|&ci| !channels[ci].object_bind)
                         .is_some_and(|ci| {
                             let slot = channels[ci].placement_index as u8;
@@ -508,7 +513,8 @@ impl World {
                 // OWN busy bit, and the `CC <id> A0` busy-wait then hijacked
                 // the caller PC into the record header).
                 let target = vm::field::peek_extended(&tl.bytecode, pc).and_then(|t| {
-                    crate::field_channels::resolve_target(&channels, t).map(|ci| (t, ci))
+                    legaia_engine_field::field_channels::resolve_target(&channels, t)
+                        .map(|ci| (t, ci))
                 });
                 if target.is_none()
                     && let Some(t) = vm::field::peek_extended(&tl.bytecode, pc)

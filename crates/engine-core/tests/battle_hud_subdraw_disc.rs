@@ -15,7 +15,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_hud::{
+use legaia_engine_battle::battle_hud_state::{
     SUBDRAW_STEP_COUNT, SubdrawStep, placement_record as rec, subdraw_step,
     subdraw_steps as step_of,
 };

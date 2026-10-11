@@ -874,7 +874,7 @@ pub enum StatusIcon {
 /// function's return. `0x2000`/`0x4000`/`0x8000` are the only such bits, and
 /// nothing in the dumped corpus sets them.
 ///
-/// Wired: `legaia_engine_core::battle_hud::BattleSlotHud::status_element`
+/// Wired: `legaia_engine_battle::battle_hud_state::BattleSlotHud::status_element`
 /// packs the slot's typed status set with [`pack_display_flags`] and runs it
 /// through this ladder, and both hosts draw the single selected element (the
 /// native window's battle HUD and the browser play page) instead of one glyph

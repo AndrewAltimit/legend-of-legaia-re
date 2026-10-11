@@ -99,7 +99,7 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
-    /// This tick's actor drop shadows (`legaia_engine_core::drop_shadow`,
+    /// This tick's actor drop shadows (`legaia_render_kernels::drop_shadow`,
     /// retail's `FUN_8001C394` blob) as screen primitives: the native
     /// window's `field_drop_shadow_prims` twin - `World::field_drop_shadows`
     /// through the same follow camera as the fog sheets, wrapped by the shared

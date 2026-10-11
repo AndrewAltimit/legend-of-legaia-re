@@ -244,7 +244,7 @@ impl LegaiaRuntime {
     /// This frame's overworld-curvature scale for the scene pass - the
     /// `clip.w`-to-`SZ` factor the page hands `TmdRenderer.setOverworldCurve`
     /// (the GLSL `u_curve`), from the shared
-    /// `legaia_engine_core::overworld_curvature::frame_curve_scale` the
+    /// `legaia_engine_core::camera_view::frame_curve_scale` the
     /// native window's `Renderer::set_overworld_curvature` call also reads.
     /// `0` (flat) off the kingdom overworld and under the top-view debug
     /// camera. A query, not a step: it resolves the frame's **arm** without
@@ -267,7 +267,7 @@ impl LegaiaRuntime {
             .then(|| camera_view::cutscene_view(world, centre));
         let frame =
             camera_view::resolve_field_camera(world, self.scene_host.camera(), cutscene, centre);
-        legaia_engine_core::overworld_curvature::frame_curve_scale(true, &frame)
+        legaia_engine_core::camera_view::frame_curve_scale(true, &frame)
     }
 
     /// The camera-occlusion fade's focus point for this frame, in the page's

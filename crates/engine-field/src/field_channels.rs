@@ -11,7 +11,7 @@
 //!
 //! [`FieldChannel`] is the engine's mirror of one such spawned context. The
 //! World spawns the full set when a cutscene timeline installs
-//! ([`crate::world::World::install_cutscene_timeline_record`]) and steps each
+//! (`World::install_cutscene_timeline_record`) and steps each
 //! channel run-until-yield per frame - the mechanism behind the opening
 //! prologue's vignettes: the `opdeene` timeline pokes actor channels
 //! (`0x05..0x0F`) with cross-context flag writes, and each poked channel's own
@@ -29,7 +29,7 @@
 //! A channel can set an actor's facing without moving via field-VM op 0x43
 //! sub-7 (the VM writes `ctx.face_rotation = face_id`, mirror of `actor+0x6D`).
 //! The engine does not convert that to a renderer heading
-//! ([`crate::world::FieldNpcState::headings`], the 12-bit `render_26`
+//! (`FieldNpcState::headings`, the 12-bit `render_26`
 //! convention), so a never-walked-but-turned NPC stays at its default facing.
 //!
 //! There is **no static `face_id -> heading` table to pin**. Op 0x43 sub-7
@@ -60,7 +60,7 @@ use legaia_scene_formats::man_section::ManFile;
 #[derive(Debug, Clone)]
 pub struct FieldChannel {
     /// Partition-1 record index (`1..N1`; record 0 is the scene controller).
-    /// Also the key [`crate::world::FieldNpcState::positions`] and the
+    /// Also the key `FieldNpcState::positions` and the
     /// windowed host's NPC clip players track.
     pub placement_index: usize,
     /// The context. `script_id` carries the retail id
@@ -86,7 +86,7 @@ pub struct FieldChannel {
     /// are poke targets only: the engine does not step them autonomously
     /// (their interaction bodies are driven by the touch/interact dispatch),
     /// and their state never writes through to the placement-keyed NPC
-    /// surfaces ([`crate::world::FieldNpcState::positions`]).
+    /// surfaces (`FieldNpcState::positions`).
     pub object_bind: bool,
 }
 
@@ -129,7 +129,7 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
                 // gesture (`B2 <id> 18` .. `B1 <id> 18`).
                 flags: PLACEMENT_CLASS_BIT
                     | if p.model_index >= 0xF0 {
-                        legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
+                        crate::field_player_clip::PARTY_BANK_FLAG
                     } else {
                         0
                     },
@@ -179,7 +179,7 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
 /// through the `FUN_8003C83C` actor-list walk.
 ///
 /// `binds` carries `(flat_record_index, contact_centre)` pairs (see
-/// [`legaia_engine_field::man_field_scripts::object_script_binds`]). Binds whose flat
+/// [`crate::man_field_scripts::object_script_binds`]). Binds whose flat
 /// record cannot be spanned are skipped. Spawn these AFTER the placement
 /// channels: a flat index `>= N0` aliases a placement channel's script id,
 /// and [`resolve_target`]'s first-match walk must keep the placement.
@@ -196,7 +196,7 @@ pub fn spawn_object_channels(
             continue;
         }
         let Some((record_offset, pc0, _len)) =
-            legaia_engine_field::man_field_scripts::flat_record_span(man_file, man, flat)
+            crate::man_field_scripts::flat_record_span(man_file, man, flat)
         else {
             continue;
         };

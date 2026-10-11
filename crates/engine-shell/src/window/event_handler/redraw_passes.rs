@@ -53,7 +53,7 @@ impl PlayWindowApp {
         cam: Mat4,
         in_world_map: bool,
     ) {
-        use legaia_engine_core::fog_volume::{FOG_LAYERS, FogSpace, MESH_DIM, SIM_DIM};
+        use legaia_render_kernels::fog_volume::{FOG_LAYERS, FogSpace, MESH_DIM, SIM_DIM};
         let world = &self.session.host.world;
         let venue = self.baka_gpu.is_some()
             || self.muscle_gpu.is_some()
@@ -265,7 +265,7 @@ impl PlayWindowApp {
                 (self.scene_aabb.0[2] + self.scene_aabb.1[2]) * 0.5,
             ],
         );
-        legaia_engine_core::overworld_curvature::frame_curve_scale(true, &frame)
+        legaia_engine_core::camera_view::frame_curve_scale(true, &frame)
     }
 
     /// Battle body `ai`'s draw plan under the camera the battle actor pass
@@ -953,7 +953,7 @@ impl PlayWindowApp {
             .collect()
     }
 
-    /// This frame's actor drop shadows (`legaia_engine_core::drop_shadow`,
+    /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
     /// retail's `FUN_8001C394` blob): `World::field_drop_shadows` through the
     /// same follow camera as the fog sheets, wrapped by the shared
     /// `drop_shadow_prim` so the blend class and vertex order are the browser

@@ -68,7 +68,7 @@ fn glare_lands_stone_and_the_clut_pass_greys_the_party_row() {
     // The render chain both hosts tick: sync_status folds the Stone bit into
     // the CLUT latch (retail actor[+0x220]); step() snapshots the pristine
     // row and LoadImages the greyed copy over CLUT row 481 + slot.
-    let mut hud = crate::battle_hud::BattleHud::new();
+    let mut hud = legaia_engine_battle::battle_hud_state::BattleHud::new();
     hud.sync_status(0, &w.battle.status_effects);
     assert!(hud.status_clut.armed(), "the Stone edge arms the latch");
 

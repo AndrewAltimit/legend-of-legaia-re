@@ -607,7 +607,7 @@ fn part_j_jou_jouina_door_decode() {
 /// it runs the retail halt-acquire handshake against the **player anchor
 /// channel** `0xF8` (`A2 F8 06` ExecMove + `C3 F8 00 5E E2 50` HaltAcquire at
 /// +0x60, whose operand s16 state-resumes BACKWARD at +0x50).
-/// [`legaia_engine_core::field_channels::resolve_target`] keeps its `None`
+/// [`legaia_engine_field::field_channels::resolve_target`] keeps its `None`
 /// contract for the special `0xF8` target (retail resolves it to the live
 /// player object, `FUN_8003C83C`); the timeline stepper instead models the
 /// two ops directly: the ExecMove arms a short in-flight countdown

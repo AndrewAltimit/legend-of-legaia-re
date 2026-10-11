@@ -1,6 +1,6 @@
 //! Volumetric ground fog - an **enhancement**, not a retail system.
 //!
-//! Retail's only fog is the `fog_set` puff pool ([`crate::fog_particles`]):
+//! Retail's only fog is the `fog_set` puff pool (`legaia_engine_core::fog_particles`):
 //! two additive billboards per particle, drifting on fixed per-region
 //! headings, blind to every actor. This module layers a low, drifting mist
 //! bank over the scenes that already read as misty, and lets the characters
@@ -33,21 +33,20 @@
 //!
 //! # Hosts
 //!
-//! `World` owns one ([`crate::world::World::fog_volume`]) and steps it at
-//! the end of every [`crate::world::World::tick`] while
-//! [`crate::world::WorldToggles::volumetric_fog`] is raised (the one
+//! `World` owns one (`World::fog_volume`) and steps it at
+//! the end of every `World::tick` while
+//! `WorldToggles::volumetric_fog` is raised (the one
 //! engine-side setting both play hosts flip, from
-//! [`crate::options::OptionsState::volumetric_fog`]). Each host draws
-//! [`crate::world::World::fog_volume_frame`] after its 3D scene and before
+//! `legaia_engine_core::options::OptionsState::volumetric_fog`). Each host draws
+//! `World::fog_volume_frame` after its 3D scene and before
 //! its HUD: the native renderer's `fog_volume` pass and the browser play
 //! page's `webgl-fog-volume.js`, two transcriptions of one shading recipe
 //! (see [`FOG_SHADER_CONSTANTS`]).
 
-use crate::fog_particles::FogRegion;
-
 mod frame;
 mod interior;
 mod luminance;
+mod region;
 mod style;
 #[cfg(test)]
 mod tests;
@@ -56,6 +55,7 @@ mod volume;
 pub use frame::*;
 pub use interior::*;
 pub use luminance::*;
+pub use region::*;
 pub use style::*;
 pub use volume::*;
 

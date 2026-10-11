@@ -10,7 +10,7 @@ use super::*;
 pub const INTERIOR_MAX_SUBCELLS: u32 = 800;
 
 /// Sub-cells per side of the walk-area lattice (four per 128-unit tile).
-pub(super) const AREA_STRIDE: usize = 0x100;
+pub const AREA_STRIDE: usize = 0x100;
 
 /// Which walk areas of the current field scene are interiors, learned from
 /// how the player moves between them.

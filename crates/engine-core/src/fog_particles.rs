@@ -86,7 +86,7 @@
 //! the PRNG call. On the overworld (`_DAT_1F800394 & 1`) the routine also
 //! culls a half whose depth is under `0x310`, links it at `(SZ - 0x10) >> 5`,
 //! and adds the per-depth screen-Y table `*_DAT_8007BB04` (the curvature
-//! table `FUN_800271A8` builds, [`crate::overworld_curvature`]) to both
+//! table `FUN_800271A8` builds, [`legaia_render_kernels::overworld_curvature`]) to both
 //! corners. The overworld's mesh dispatch hands the same table to its prim
 //! leaves, and both hosts' mesh shaders bend the continent by it per vertex.
 //! The link key puts the sheet in the one ordering table the continent's
@@ -95,6 +95,7 @@
 
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
 use legaia_engine_effects::action_effect_script::RotationLut;
+use legaia_render_kernels::fog_volume::FogRegion;
 
 /// Pool capacity - `pool[+2]`, `addiu a2,zero,0x50` at `0x801D7374`.
 pub const FOG_POOL_SLOTS: usize = 0x50;
@@ -147,10 +148,6 @@ pub const FOG_OVERWORLD_MAX_DEPTH: i32 = 0x4000;
 /// The overworld spawner's extra height (`addiu v0,v0,-0x28` at `0x801D6538`).
 pub const FOG_OVERWORLD_LIFT: i16 = 0x28;
 
-/// One fog-region record's stride in the MAN section-4 table (`addiu v1,v1,0xb`
-/// at `0x801D63B4`).
-pub const FOG_REGION_STRIDE: usize = 0xB;
-
 /// GP0 texpage word every fog quad carries (`0x8007322C` row word 1, high
 /// halfword): page `(448, 0)` (bit 4, the Y-base bit, is clear), 4bpp, ABR 1.
 pub const FOG_TPAGE: u16 = 0x0027;
@@ -198,76 +195,6 @@ pub const FOG_PLAYER_BOX: [i32; 3] = [0x180, 0x80, 0x80];
 /// D-pad bits of the held pad word (`andi v1,v1,0xf000`): while any is held
 /// the proximity boost is three times stronger again.
 pub const FOG_DPAD_MASK: u32 = 0xF000;
-
-/// One fog-region record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FogRegion {
-    /// `+0` - the spawner keeps a match only when this is non-zero.
-    pub enabled: bool,
-    /// `+1` / `+2` - open lower bounds (`rec < tile`).
-    pub x0: u8,
-    pub z0: u8,
-    /// `+3` / `+4` - open upper bounds (`tile < rec`).
-    pub x1: u8,
-    pub z1: u8,
-    /// `+5` - angle base, in sixteenths of the 4096-step circle.
-    pub angle_base: u8,
-    /// `+6` - angle spread, same units; the random term is `rand & 0xFFF`
-    /// scaled by it.
-    pub angle_spread: u8,
-    /// `+7` - drift speed; `sin/cos * speed >> 14` per axis.
-    pub speed: u8,
-    /// `+8` - read by nothing traced here.
-    pub byte_8: u8,
-    /// `+9..+10` - the story-flag index the nibble-C sub-1 reset tests.
-    pub flag_index: u16,
-}
-
-impl FogRegion {
-    /// Decode one `0xB`-byte record.
-    pub fn parse(rec: &[u8]) -> Option<Self> {
-        if rec.len() < FOG_REGION_STRIDE {
-            return None;
-        }
-        Some(Self {
-            enabled: rec[0] != 0,
-            x0: rec[1],
-            z0: rec[2],
-            x1: rec[3],
-            z1: rec[4],
-            angle_base: rec[5],
-            angle_spread: rec[6],
-            speed: rec[7],
-            byte_8: rec[8],
-            flag_index: u16::from_le_bytes([rec[9], rec[10]]),
-        })
-    }
-
-    /// The spawner's box test - strict on all four sides
-    /// (`0x801D6340..0x801D6388`: `slt rec,tile` then `slt tile,rec`).
-    pub fn contains(&self, tile_x: i32, tile_z: i32) -> bool {
-        i32::from(self.x0) < tile_x
-            && tile_x < i32::from(self.x1)
-            && i32::from(self.z0) < tile_z
-            && tile_z < i32::from(self.z1)
-    }
-}
-
-/// Parse a MAN section-4 payload (the bytes after its `u24` length:
-/// `[count][records]`) into fog regions.
-pub fn parse_fog_regions(section_body: &[u8]) -> Vec<FogRegion> {
-    let Some(&count) = section_body.first() else {
-        return Vec::new();
-    };
-    (0..usize::from(count))
-        .filter_map(|i| {
-            let at = 1 + i * FOG_REGION_STRIDE;
-            section_body
-                .get(at..at + FOG_REGION_STRIDE)
-                .and_then(FogRegion::parse)
-        })
-        .collect()
-}
 
 /// One pool record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -888,7 +815,7 @@ fn emit_half(
     // 0x8003F98C..0x8003F9A0: the overworld's curvature term, added to both
     // corners' `SY` before the row tests.
     let nudge = if overworld {
-        crate::overworld_curvature::curvature_at(sz as i32) as f32
+        legaia_render_kernels::overworld_curvature::curvature_at(sz as i32) as f32
     } else {
         0.0
     };
@@ -1025,26 +952,6 @@ mod tests {
             byte_8: 0,
             flag_index: 0,
         }
-    }
-
-    #[test]
-    fn region_table_parses_count_prefixed_records() {
-        let mut body = vec![2u8];
-        body.extend_from_slice(&[1, 2, 3, 40, 50, 0x10, 0x20, 0x30, 0, 0x34, 0x12]);
-        body.extend_from_slice(&[0, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0]);
-        let regs = parse_fog_regions(&body);
-        assert_eq!(regs.len(), 2);
-        assert!(regs[0].enabled);
-        assert_eq!(
-            (regs[0].x0, regs[0].z0, regs[0].x1, regs[0].z1),
-            (2, 3, 40, 50)
-        );
-        assert_eq!(regs[0].flag_index, 0x1234);
-        assert!(!regs[1].enabled);
-        // Strict on every side.
-        assert!(regs[0].contains(3, 4));
-        assert!(!regs[0].contains(2, 4));
-        assert!(!regs[0].contains(40, 4));
     }
 
     #[test]

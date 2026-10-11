@@ -14,7 +14,8 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
         let found = if actor_id == 0xF8 {
             self.world.player_actor_slot.is_some()
         } else {
-            crate::field_channels::resolve_target(self.world.channel_view(), actor_id).is_some()
+            legaia_engine_field::field_channels::resolve_target(self.world.channel_view(), actor_id)
+                .is_some()
         };
         found.then_some(())
     }

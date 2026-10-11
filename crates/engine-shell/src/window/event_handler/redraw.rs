@@ -451,7 +451,7 @@ impl PlayWindowApp {
         // stacking beside it - and stacking is not cosmetic here: two runs
         // centred on the same point interleave into an unreadable third
         // number (a 9 landing inside a 10 reads as "190").
-        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        let mut newest: Vec<&legaia_engine_battle::battle_hud_state::DamagePopup> = Vec::new();
         for p in &self.battle_hud.popups {
             if p.status.is_some() {
                 // Status applications have no numeral on the sheet.

@@ -1751,7 +1751,7 @@ sequenceDiagram
     Note over T: timeline advances
 ```
 
-**Port.** [`legaia_engine_core::field_channels`](../../crates/engine-core/src/field_channels.rs):
+**Port.** [`legaia_engine_field::field_channels`](../../crates/engine-field/src/field_channels.rs):
 `spawn_channels` builds one `FieldChannel` per placement (with the retail script-id rule),
 spawned alongside a cutscene timeline in
 [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world.rs).
@@ -1827,7 +1827,7 @@ disassembly:
   `+3` / `+5` are `FUN_801D25EC` tween arguments read by `FUN_8003CE9C`, not a jump target.
 
 The engine spawns no player channel, so
-[`field_channels::resolve_target`](../../crates/engine-core/src/field_channels.rs) returns
+[`field_channels::resolve_target`](../../crates/engine-field/src/field_channels.rs) returns
 `None` for `0xF8` and `run_spawned_record_slice` models the two ops directly. The ExecMove emits
 the `ExecMove` field event and arms an in-flight countdown
 ([`CutsceneTimeline::player_move_frames`](../../crates/engine-field/src/cutscene_timeline.rs),

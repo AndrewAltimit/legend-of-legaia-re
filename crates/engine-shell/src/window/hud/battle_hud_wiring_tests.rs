@@ -1,5 +1,5 @@
 use super::{BATTLE_HUD_PEN, battle_hud_popup_views, battle_hud_slot_views};
-use legaia_engine_core::battle_hud::{BattleHud, DamagePopup, SlotSyncInfo};
+use legaia_engine_battle::battle_hud_state::{BattleHud, DamagePopup, SlotSyncInfo};
 use legaia_engine_ui::{BattleHudDraws, BattleHudFrame, battle_hud_draws_for};
 
 /// A recognisable 1x1 solid src for the filled-rect draws.
@@ -637,7 +637,7 @@ fn live_world_battle_state_reaches_the_shared_builder() {
     world.actors[0].battle.mp = 12;
     world.set_character_max_mp(0, 30);
 
-    let mut hud = legaia_engine_core::battle_hud::BattleHud::new();
+    let mut hud = legaia_engine_battle::battle_hud_state::BattleHud::new();
     super::super::battle::sync_battle_hud_rows(&mut hud, &world);
     assert!(hud.slots[0].active, "party slot 0 did not sync");
     assert_eq!(

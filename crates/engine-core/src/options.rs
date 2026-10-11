@@ -161,7 +161,7 @@ pub struct OptionsState {
     pub retail_view_window: bool,
     /// Volumetric ground fog (engine-only, non-retail): a low drifting mist
     /// bank over the scenes that read as misty or night, parted by the
-    /// characters walking through it ([`crate::fog_volume`]). Mirrors into
+    /// characters walking through it ([`legaia_render_kernels::fog_volume`]). Mirrors into
     /// [`crate::world::WorldToggles::volumetric_fog`]. **Default on**; off is
     /// the frame without the feature, pixel for pixel. Presentation only -
     /// the bank reads the actors and never writes back.

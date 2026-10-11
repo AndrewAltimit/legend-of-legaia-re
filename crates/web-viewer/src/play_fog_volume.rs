@@ -1,5 +1,5 @@
 //! The volumetric ground-fog enhancement on the play page
-//! (`legaia_engine_core::fog_volume`): the toggle and the per-frame bank,
+//! (`legaia_render_kernels::fog_volume`): the toggle and the per-frame bank,
 //! the twin of the native window's `F9` and `stage_fog_volume`.
 //!
 //! The bank is the engine's - stepped inside `World::tick` while
@@ -9,7 +9,7 @@
 //! through four exports and draws it in `site/js/webgl-fog-volume.js`
 //! (the GLSL transcription of the native `fog_volume` WGSL).
 
-use legaia_engine_core::fog_volume::{FogVolumeFrame, mesh_indices};
+use legaia_render_kernels::fog_volume::{FogVolumeFrame, mesh_indices};
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::runtime::LegaiaRuntime;
@@ -41,7 +41,7 @@ impl LegaiaRuntime {
         self.options_state.volumetric_fog
     }
 
-    /// This frame's bank scalars in `legaia_engine_core::fog_volume::header`
+    /// This frame's bank scalars in `legaia_render_kernels::fog_volume::header`
     /// order, or empty when there is no bank (toggle down, a mode without
     /// one, no style raised).
     pub fn play_fog_volume_header(&self) -> Vec<f32> {
@@ -52,7 +52,7 @@ impl LegaiaRuntime {
         // Enhanced lighting: the mist sits in the scene's mood light (the
         // native window's `stage_fog_volume` rule).
         if self.options_state.enhanced_lighting && !h.is_empty() {
-            use legaia_engine_core::fog_volume::header as hd;
+            use legaia_render_kernels::fog_volume::header as hd;
             let c = legaia_render_kernels::scene_lighting::fog_tint(
                 [h[hd::COLOR_R], h[hd::COLOR_G], h[hd::COLOR_B]],
                 &self.lighting_mood(),

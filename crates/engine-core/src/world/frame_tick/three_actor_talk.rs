@@ -260,7 +260,7 @@ impl World {
     // REF: FUN_8003C83C (id resolve)
     fn talk_participant_slot(&self, id: u8) -> u8 {
         let view = self.channel_view();
-        crate::field_channels::resolve_target(view, id)
+        legaia_engine_field::field_channels::resolve_target(view, id)
             .map(|ci| view[ci].placement_index as u8)
             .unwrap_or(id)
     }

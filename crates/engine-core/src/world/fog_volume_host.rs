@@ -1,14 +1,14 @@
 //! The volumetric ground-fog enhancement's `World` seam: which scene raises
 //! a bank, who parts it, and the frame both play hosts draw.
 //!
-//! Nothing here is retail - see [`crate::fog_volume`]. The population that
+//! Nothing here is retail - see [`legaia_render_kernels::fog_volume`]. The population that
 //! parts the bank is the one that casts a drop shadow
 //! ([`World::field_drop_shadows`]): the player and every placed field
 //! channel with a position, plus every active body in battle.
 
 use super::*;
-use crate::fog_volume::{FogMover, FogSpace, FogVolumeFrame, scene_style};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_render_kernels::fog_volume::{FogMover, FogSpace, FogVolumeFrame, scene_style};
 
 /// Mover keys: the player, field channels by placement slot, battle bodies
 /// by actor index - disjoint ranges so a mode switch never pairs one with
@@ -19,12 +19,12 @@ const KEY_BATTLE: u32 = 0x1000;
 
 impl World {
     /// The bank the current state asks for: the field scene's own style
-    /// ([`crate::fog_volume::scene_style`] - its tuned entry, else the retail
+    /// ([`legaia_render_kernels::fog_volume::scene_style`] - its tuned entry, else the retail
     /// fog pool's gate with an enabled region); in battle, the style of the
     /// field scene the fight was entered from. `None` elsewhere, and `None`
     /// while the player stands in an interior
-    /// ([`crate::fog_volume::InteriorTracker`]).
-    pub fn fog_volume_style(&self) -> Option<crate::fog_volume::FogStyle> {
+    /// ([`legaia_render_kernels::fog_volume::InteriorTracker`]).
+    pub fn fog_volume_style(&self) -> Option<legaia_render_kernels::fog_volume::FogStyle> {
         // Indoors (a walk area a door warped the player into) there is no
         // bank, and a fight opened there inherits none.
         if self.fog_volume.interiors.indoors
@@ -125,7 +125,7 @@ impl World {
             self.fog_volume.interiors.reset();
         }
         // Interiors: the walk areas a door warps the player into
-        // ([`crate::fog_volume::InteriorTracker`]). Seeded once the scene's
+        // ([`legaia_render_kernels::fog_volume::InteriorTracker`]). Seeded once the scene's
         // collision grid is in.
         let mut warped_indoors = false;
         if self.mode == SceneMode::Field {
@@ -161,7 +161,7 @@ impl World {
         }
         self.fog_volume.set_style(style);
         // Where the bank may lie: the live fog-region table, the retail
-        // pool spawner's own gate ([`crate::fog_volume::region_weight`]).
+        // pool spawner's own gate ([`legaia_render_kernels::fog_volume::region_weight`]).
         if space == FogSpace::Field {
             self.fog_volume.set_regions(&self.fog.regions);
         }
@@ -201,7 +201,7 @@ impl World {
     }
 
     /// The brightness the bank may not outshine
-    /// ([`crate::fog_volume::FogVolume::frame`]): the field scene's measured
+    /// ([`legaia_render_kernels::fog_volume::FogVolume::frame`]): the field scene's measured
     /// luminance, or in battle the stage's (falling back to the field's),
     /// times the live battle ambient (`0x80` neutral; it dims through a
     /// summon close-up).

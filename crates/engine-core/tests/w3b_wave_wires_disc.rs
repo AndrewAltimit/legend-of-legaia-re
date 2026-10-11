@@ -35,10 +35,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::field_channels::FieldChannel;
 use legaia_engine_core::world::{EasedMoveTarget, World};
 use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::field_actor_reflect::{HALF_TURN, REFLECT_HANDLER, tile_of};
+use legaia_engine_field::field_channels::FieldChannel;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_field_scripts::scene_man_carriers;

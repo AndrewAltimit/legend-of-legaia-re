@@ -58,7 +58,7 @@ impl LegaiaRuntime {
             .combo
             .as_ref()
             .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
-        let mut newest: Vec<&legaia_engine_core::battle_hud::DamagePopup> = Vec::new();
+        let mut newest: Vec<&legaia_engine_battle::battle_hud_state::DamagePopup> = Vec::new();
         for p in &self.battle_hud.popups {
             if p.status.is_some() {
                 continue;

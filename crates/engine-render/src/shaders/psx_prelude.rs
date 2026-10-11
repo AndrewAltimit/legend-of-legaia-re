@@ -6,18 +6,18 @@
 /// (the world-map dispatch rows `12..19` at `0x801F8968`, e.g.
 /// `0x801F7770..0x801F77E4`) add `T[(SZ >> 5) + 1]` to every vertex's `SY`
 /// after the `RTPT`, `T` being the table `FUN_800271A8` builds into
-/// `_DAT_8007BB04` (`legaia_engine_core::overworld_curvature`). The table is
+/// `_DAT_8007BB04` (`legaia_render_kernels::overworld_curvature`). The table is
 /// a closed form of its index, so the shader evaluates it instead of
 /// sampling it: entry `i >= 2` is the drop `960 * ramp[3(i - 2) / 2] / 2000`
 /// saturated at `SY = 1023`, `ramp[k] = (0x2AB980 + 20 k (k + 1)) >> 18`
 /// (entries `0` and `1` are `0`). `SZ` saturates at `0xFFFF`, so no index
 /// past `2048` is reachable and the 32-bit accumulator never wraps.
-/// `legaia_engine_core::overworld_curvature::curvature_closed_form` is the
+/// `legaia_render_kernels::overworld_curvature::curvature_closed_form` is the
 /// CPU twin, pinned entry for entry against the built table; the browser
 /// play page's GLSL (`site/js/webgl-shaders.js`) carries the same law.
 ///
 /// `SZ` is `clip.w` times the frame's scale
-/// (`legaia_engine_core::overworld_curvature::frame_curve_scale`: `1` under
+/// (`legaia_engine_core::camera_view::frame_curve_scale`: `1` under
 /// the overworld walk camera, whose matrix carries the 6x world scale, `6`
 /// under a `1x` scripted shot), and the bend moves `SY` in PSX stage rows,
 /// `240` to the NDC span of `2`. A scale of `0` is the identity.

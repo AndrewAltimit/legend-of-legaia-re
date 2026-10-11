@@ -189,7 +189,7 @@ impl World {
     // REF: FUN_8003A55C
     pub(crate) fn seat_object_channel_rots(
         &self,
-        chans: &mut [crate::field_channels::FieldChannel],
+        chans: &mut [legaia_engine_field::field_channels::FieldChannel],
     ) {
         for c in chans.iter_mut().filter(|c| c.object_bind) {
             if let Some(&[rx, ry, rz]) = self.field_vm.object_channel_rots.get(&c.placement_index) {
@@ -403,11 +403,11 @@ impl World {
                 // channel and run the op against that context.
                 let ext = vm::field::peek_extended(bc, pc);
                 let target = ext.and_then(|t| {
-                    let ci = crate::field_channels::resolve_target(&channels, t)?;
+                    let ci = legaia_engine_field::field_channels::resolve_target(&channels, t)?;
                     (ci != i).then_some(ci)
                 });
                 let self_target = ext.is_some_and(|t| {
-                    crate::field_channels::resolve_target(&channels, t) == Some(i)
+                    legaia_engine_field::field_channels::resolve_target(&channels, t) == Some(i)
                 });
                 self.field_vm.executing_object = target
                     .filter(|&ci| channels[ci].object_bind)
@@ -579,7 +579,7 @@ impl World {
         man: &[u8],
     ) {
         self.field_vm.pending_engagements.clear();
-        self.field_vm.channels = crate::field_channels::spawn_channels(man_file, man);
+        self.field_vm.channels = legaia_engine_field::field_channels::spawn_channels(man_file, man);
         self.field_vm.channels_man = if man.is_empty() {
             None
         } else {
@@ -628,7 +628,8 @@ impl World {
         if !same_man {
             return;
         }
-        let mut obj = crate::field_channels::spawn_object_channels(man_file, man, binds);
+        let mut obj =
+            legaia_engine_field::field_channels::spawn_object_channels(man_file, man, binds);
         self.seat_object_channel_rots(&mut obj);
         self.pre_run_object_channel_prologues(&mut obj, man);
         self.field_vm.channels.extend(obj);
@@ -640,7 +641,7 @@ impl World {
     /// the context yields/halts - the retail inline loop's exact stop set.
     pub(super) fn pre_run_object_channel_prologues(
         &mut self,
-        channels: &mut [crate::field_channels::FieldChannel],
+        channels: &mut [legaia_engine_field::field_channels::FieldChannel],
         man: &[u8],
     ) {
         for c in channels.iter_mut() {

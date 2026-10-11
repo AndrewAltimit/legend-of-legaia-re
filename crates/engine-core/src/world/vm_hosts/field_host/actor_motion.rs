@@ -26,7 +26,7 @@ impl FieldHostImpl<'_> {
                 })
         } else {
             let view = w.channel_view();
-            crate::field_channels::resolve_target(view, actor_id).map(|ci| {
+            legaia_engine_field::field_channels::resolve_target(view, actor_id).map(|ci| {
                 let ch = &view[ci];
                 let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
                 let slot = (!ch.object_bind)

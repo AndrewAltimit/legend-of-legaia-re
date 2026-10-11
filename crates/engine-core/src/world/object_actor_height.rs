@@ -297,7 +297,7 @@ impl World {
             Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
             Some(t) => {
                 let view = self.channel_view();
-                let Some(ci) = crate::field_channels::resolve_target(view, t) else {
+                let Some(ci) = legaia_engine_field::field_channels::resolve_target(view, t) else {
                     // No actor answers the id: retail's resolve miss skips
                     // the arm.
                     return;
@@ -579,8 +579,8 @@ mod tests {
         placement: usize,
         script_id: u16,
         object_bind: bool,
-    ) -> crate::field_channels::FieldChannel {
-        crate::field_channels::FieldChannel {
+    ) -> legaia_engine_field::field_channels::FieldChannel {
+        legaia_engine_field::field_channels::FieldChannel {
             placement_index: placement,
             ctx: legaia_engine_vm::field::FieldCtx {
                 script_id,

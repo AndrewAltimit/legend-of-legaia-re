@@ -442,7 +442,7 @@ impl World {
             if let Some(t) = run_target {
                 let view = host.world.channel_view();
                 host.world.dialog.stepping_inline_npc =
-                    crate::field_channels::resolve_target(view, t)
+                    legaia_engine_field::field_channels::resolve_target(view, t)
                         .map(|ci| &view[ci])
                         .filter(|ch| !ch.object_bind)
                         .and_then(|ch| u8::try_from(ch.placement_index).ok());
@@ -782,7 +782,7 @@ impl World {
             return None;
         }
         let view = self.channel_view();
-        crate::field_channels::resolve_target(view, t)
+        legaia_engine_field::field_channels::resolve_target(view, t)
             .map(|ci| &view[ci])
             .filter(|ch| !ch.object_bind)
             .and_then(|ch| u8::try_from(ch.placement_index).ok())
@@ -938,7 +938,7 @@ impl World {
     // REF: FUN_8003C83C (the id resolve the kernel's FaceTarget arm shares)
     pub(super) fn talk_face_target(&self, bind: u8) -> Option<(i16, i16)> {
         let view = self.channel_view();
-        let ch = &view[crate::field_channels::resolve_target(view, bind)?];
+        let ch = &view[legaia_engine_field::field_channels::resolve_target(view, bind)?];
         let own = (ch.ctx.world_x as i16, ch.ctx.world_z as i16);
         if ch.object_bind {
             return Some(own);

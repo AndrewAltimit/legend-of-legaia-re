@@ -456,7 +456,7 @@ fn a_talk_face_at_on_another_placement_turns_it_to_its_bind() {
     // the walk kernel's FaceTarget leg on the target, not a halt on the
     // talker. The jouine geometry mirrored: the NPC lands a half-turn from
     // the player's own `0x23B` bearing toward it.
-    use crate::field_channels::FieldChannel;
+    use legaia_engine_field::field_channels::FieldChannel;
     use legaia_engine_vm::field::FieldCtx;
     let mut world = World {
         mode: legaia_engine_mode::mode::SceneMode::Field,

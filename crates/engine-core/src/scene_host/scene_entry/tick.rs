@@ -328,7 +328,7 @@ impl SceneHost {
     }
 
     /// Measure the field scene's luminance for the volumetric ground fog
-    /// (`crate::fog_volume::scene_luminance` over every textured mesh the
+    /// (`legaia_render_kernels::fog_volume::scene_luminance` over every textured mesh the
     /// scene's resources carry), once per scene label and only while the
     /// enhancement is on. Both play hosts tick through here, so both draw
     /// the bank at the same brightness.
@@ -352,7 +352,9 @@ impl SceneHost {
             .iter()
             .map(|t| legaia_tmd::mesh::tmd_to_vram_mesh(&t.tmd, &t.raw))
             .collect();
-        if let Some(l) = crate::fog_volume::scene_luminance(&res.vram, meshes.iter()) {
+        if let Some(l) =
+            legaia_render_kernels::fog_volume::scene_luminance(&res.vram, meshes.iter())
+        {
             self.world.fog_volume.field_luma = Some((self.world.active_scene_label.clone(), l));
         }
     }

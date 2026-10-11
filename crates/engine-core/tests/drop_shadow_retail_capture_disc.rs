@@ -8,7 +8,7 @@
 //! The test rebuilds them from nothing but the state's own inputs:
 //!
 //! 1. the actor lists (`0x8007C34C..0x8007C360`), filtered by the gate
-//!    `FUN_8001B964` runs (`legaia_engine_core::drop_shadow::casts_shadow`)
+//!    `FUN_8001B964` runs (`legaia_render_kernels::drop_shadow::casts_shadow`)
 //!    and the actor pass's own draw tests (draw kind `1`, the hide bits
 //!    `0xA` clear, view depth `+0x34 > 0xA0`);
 //! 2. each actor's `+0x14` position through the engine's grid kernel and the
@@ -27,12 +27,12 @@
 //! Skips (and passes) when the scenario manifest or the save library is
 //! missing.
 
-use legaia_engine_core::drop_shadow::{
-    SHADOW_CLUT, SHADOW_TPAGE, ShadowVertex, casts_shadow, shadow_grid, shadow_quads,
-};
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::prim_pool::{self, Prim};
+use legaia_render_kernels::drop_shadow::{
+    SHADOW_CLUT, SHADOW_TPAGE, ShadowVertex, casts_shadow, shadow_grid, shadow_quads,
+};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

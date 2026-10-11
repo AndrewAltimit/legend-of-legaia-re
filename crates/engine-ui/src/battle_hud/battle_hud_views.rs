@@ -28,7 +28,7 @@ pub struct HudSlotView<'a> {
     /// Gauge fill-colour index for the drawn HP bar - retail's
     /// `FUN_80046A20` code space (`2` dead, `3` status override, `7` high,
     /// `6` mid, `9` low). Engines derive it with
-    /// `legaia_engine_core::battle_hud::BattleSlotHud::gauge_fill_indices`;
+    /// `legaia_engine_battle::battle_hud_state::BattleSlotHud::gauge_fill_indices`;
     /// [`gauge_fill_color`] maps it to RGBA.
     pub hp_fill: u8,
     /// Gauge fill-colour index for the drawn MP bar (same code space).
@@ -36,7 +36,7 @@ pub struct HudSlotView<'a> {
     /// The **one** status element retail draws for this slot: the sprite id
     /// `0x18..=0x20` its priority ladder selected, or `0` for the no-ailment
     /// base marker. Engines fill it from
-    /// `legaia_engine_core::battle_hud::BattleSlotHud::status_sprite`; see
+    /// `legaia_engine_battle::battle_hud_state::BattleSlotHud::status_sprite`; see
     /// [`status_element_label`] for the id space.
     pub status_sprite: u8,
     /// Displayed character level - the count retail draws beside the base
@@ -67,7 +67,7 @@ pub struct HudLogView<'a> {
 
 impl<'a> HudSlotView<'a> {
     /// Build a slot view from a plain-data row. The argument shape mirrors
-    /// `legaia_engine_core::battle_hud::SlotView`; engines drive this from
+    /// `legaia_engine_battle::battle_hud_state::SlotView`; engines drive this from
     /// `BattleHud::slot_views()` without re-implementing the field copy.
     ///
     /// `name` borrows from the caller; ownership stays in the engine-core
