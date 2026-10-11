@@ -1527,7 +1527,7 @@ already holds - exactly, or through the nearest one with `quantize` - so it
 can never break the colouring of a region it did not touch. And **a page has
 no single colouring**: a primitive picks its palette with its CBA column, so
 `export_page` decodes through
-[`MonsterPage::ownership`](../asset/README.md#monster_archive) and leaves
+[`MonsterPage::ownership`](../actor-formats/README.md#monster_archive) and leaves
 texels no primitive samples transparent. The fit budget is the fixed
 `0x14000` archive slot; an overage is reported with its byte count and
 nothing is written.

@@ -643,7 +643,11 @@ mod tests {
     /// The named slot-A images are the ones the map records at that base.
     #[test]
     fn named_slot_a_images_match_the_map() {
-        for prot in [BATTLE_ACTION_OVERLAY_PROT, MENU_OVERLAY_PROT, STR_OVERLAY_PROT] {
+        for prot in [
+            BATTLE_ACTION_OVERLAY_PROT,
+            MENU_OVERLAY_PROT,
+            STR_OVERLAY_PROT,
+        ] {
             let rec = overlay_map().by_prot_index(prot).expect("in the map");
             assert_eq!(rec.base_va, SLOT_A_BASE, "PROT {prot}");
         }

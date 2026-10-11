@@ -38,7 +38,7 @@
 //! The row *above* the table is the per-character height table
 //! ([`crate::battle_camera_table`], `0x801F4D2C`) and its trailing pointer
 //! list; the region below is the move-power table
-//! (`legaia_asset::move_power`, `0x801F4F5C`).
+//! (`legaia_game_tables::move_power`, `0x801F4F5C`).
 //!
 //! ## What a row means
 //!

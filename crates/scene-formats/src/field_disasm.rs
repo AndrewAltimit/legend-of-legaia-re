@@ -39,7 +39,7 @@
 //!
 //! This module is a thin coordinator over the cohesive submodules under
 //! `field_disasm/`; every public item is re-exported here so external paths
-//! (`legaia_asset::field_disasm::<Item>`, and the `legaia-engine-vm`
+//! (`legaia_scene_formats::field_disasm::<Item>`, and the `legaia-engine-vm`
 //! re-export) keep resolving.
 
 mod census;

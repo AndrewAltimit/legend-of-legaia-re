@@ -73,7 +73,7 @@
 //!
 //! Indexing traced from `ghidra/scripts/funcs/overlay_menu_801cf650.txt`
 //! (also documented in `docs/subsystems/save-screen.md`). The
-//! `legaia_asset::equip_stats` resolver mirrors the same `t_addr -> file-offset`
+//! `legaia_game_tables::equip_stats` resolver mirrors the same `t_addr -> file-offset`
 //! map as [`crate::item_names`] / [`crate::item_effect`]. The disc-gated
 //! `equip_stats_real` test pins the attack / defense bytes + equip masks
 //! against the real executable and the curated gamedata.

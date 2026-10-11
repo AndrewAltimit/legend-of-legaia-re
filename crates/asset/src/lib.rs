@@ -61,6 +61,8 @@ pub use legaia_actor_formats::summon_readef;
 #[doc(hidden)]
 pub use legaia_container_formats::anm_detect;
 #[doc(hidden)]
+pub use legaia_container_formats::bse_bank;
+#[doc(hidden)]
 pub use legaia_container_formats::data_field_truncated;
 #[doc(hidden)]
 pub use legaia_container_formats::efect_pack;
@@ -69,11 +71,17 @@ pub use legaia_container_formats::effect_bundle;
 #[doc(hidden)]
 pub use legaia_container_formats::pack;
 #[doc(hidden)]
+pub use legaia_container_formats::scene_vab_stream;
+#[doc(hidden)]
+pub use legaia_container_formats::sound_pack;
+#[doc(hidden)]
 pub use legaia_container_formats::tim_scan;
 #[doc(hidden)]
 pub use legaia_container_formats::tmd_scan;
 #[doc(hidden)]
 pub use legaia_container_formats::tmd_size_prefix;
+#[doc(hidden)]
+pub use legaia_container_formats::vab_multi_bank;
 #[doc(hidden)]
 pub use legaia_container_formats::{
     AssetType, Container, ContainerReport, DecodeMode, Descriptor, DescriptorReport, StreamChunk,
@@ -240,14 +248,6 @@ pub use legaia_scene_formats::shop_stock;
 pub use legaia_scene_formats::stage_geom;
 #[doc(hidden)]
 pub use legaia_scene_formats::world_map_overlay;
-#[doc(hidden)]
-pub use legaia_container_formats::bse_bank;
-#[doc(hidden)]
-pub use legaia_container_formats::scene_vab_stream;
-#[doc(hidden)]
-pub use legaia_container_formats::sound_pack;
-#[doc(hidden)]
-pub use legaia_container_formats::vab_multi_bank;
 #[doc(hidden)]
 pub use legaia_ui_formats::battle_ui_strings;
 #[doc(hidden)]

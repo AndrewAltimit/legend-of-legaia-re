@@ -114,7 +114,7 @@ pub(super) fn walker_for_type(type_byte: u8) -> Walker {
         AssetType::Man => Walker::Man,
         // Type `0x05` is labelled MOVE by the dispatcher table but carries an
         // ANM clip bank, not a Tactical-Arts move table
-        // (`docs/formats/world-map-overlay.md`, `legaia_asset::player_anm`).
+        // (`docs/formats/world-map-overlay.md`, `legaia_actor_formats::player_anm`).
         AssetType::Move | AssetType::Move2 => Walker::ClipBank,
         AssetType::Anm => Walker::Anm,
         AssetType::Mes => Walker::Mes,

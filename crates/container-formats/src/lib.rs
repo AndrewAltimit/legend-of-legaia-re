@@ -24,7 +24,7 @@
 //!   decoding a VAB or a SEQ is `legaia-vab` / `legaia-seq`.
 //!
 //! It is the bottom of the format stack: every scene, UI, minigame and
-//! actor-model format crate sits on it, and it names none of them.
+//! actor format crate sits on it, and it names none of them.
 
 use anyhow::{Result, bail};
 use serde::Serialize;

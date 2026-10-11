@@ -8,7 +8,7 @@
 //!   from the actor tick `FUN_80021DF4`). It reads `entry[3] & 0x1F` as a voice
 //!   count and `SpuKeyOn`s (`FUN_800653c8`) that many consecutive voices.
 //! * **`FUN_80016b6c`** - the SFX cue-ring drainer. It walks the 4-entry ring
-//!   `DAT_8007B6D8` (the same ring `FUN_8004fcc8` / `legaia_asset::move_power` sound
+//!   `DAT_8007B6D8` (the same ring `FUN_8004fcc8` / `legaia_game_tables::move_power` sound
 //!   cues write into), reads the descriptor, and programs each voice through
 //!   `FUN_80065034` (the libsnd `SpuSetVoiceAttr` analogue).
 //!
@@ -45,7 +45,7 @@
 //! The record initialiser `FUN_8001D424` writes `+8 = record index` for all 16
 //! records, so [`slot_for_category`]'s identity is the initialiser's own.
 //!
-//! Parser: `legaia_asset::sfx_table`.
+//! Parser: `legaia_game_tables::sfx_table`.
 
 /// Virtual address of the table base (`DAT_8006F198`).
 pub const SFX_TABLE_VA: u32 = 0x8006_F198;

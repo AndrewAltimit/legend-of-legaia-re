@@ -89,7 +89,7 @@ impl ShopRecord {
     /// excluding the trailing unsellable template-id padding the record `count`
     /// over-counts (see the module docs). `man` is the decoded MAN the offsets
     /// index into; `is_priced` reports whether an id has a `> 0` `SCUS_942.54`
-    /// price (e.g. `|id| legaia_asset::item_names::price_slot(scus, id)
+    /// price (e.g. `|id| legaia_game_tables::item_names::price_slot(scus, id)
     /// .is_some_and(|(_, p)| p > 0)`).
     ///
     /// The stock is the leading priced run: every shop on the disc partitions

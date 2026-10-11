@@ -61,7 +61,7 @@
 //! on-disc item *description* strings (item record `+8` pointer): e.g. class 0
 //! items read "Recover NHP. Ally.", class 1 "...All allies.", class 2
 //! "Recover NMP.", class 4 "Restore life.", class 128 "Teleport out of
-//! dungeons.". The `legaia_asset::item_effect` resolver mirrors the same
+//! dungeons.". The `legaia_game_tables::item_effect` resolver mirrors the same
 //! `t_addr -> file-offset` map as [`crate::item_names`].
 
 /// RAM address of the effect-descriptor table (`DAT_800752C0`).

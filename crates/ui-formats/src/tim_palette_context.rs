@@ -11,7 +11,7 @@
 //!    16-colour palette. Viewed through any single palette most of the sheet
 //!    looks mis-coloured, because most of it was never meant to be seen in
 //!    that palette. The system-UI sheet's sprites name their palette in the
-//!    widget-class table (`legaia_asset::ui_widgets`); [`sheet_palette_regions`]
+//!    widget-class table (`legaia_ui_formats::ui_widgets`); [`sheet_palette_regions`]
 //!    turns that table into a per-rectangle palette map, and
 //!    [`composite_rgba`] decodes each rectangle through its own palette.
 //! 2. **A palette from another file.** A sprite record's palette byte is a
