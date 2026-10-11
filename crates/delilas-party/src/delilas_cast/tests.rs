@@ -2,8 +2,8 @@ use super::arena_hook::{
     ARENA1_MORPH_VA, ARENA1_QEDIT_VA, assemble_delilas_arena, assemble_hook, hook_layout,
 };
 use super::*;
-use crate::mips::{self as m, RA};
-use crate::mips_sim::Cpu;
+use legaia_code_hooks::mips::{self as m, RA};
+use legaia_code_hooks::mips_sim::Cpu;
 
 const STUB_VA: u32 = 0x8007_7728; // SCUS_GAP - a plausible host
 const ACTOR_VA: u32 = 0x800F_0000;

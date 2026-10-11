@@ -5,11 +5,11 @@ use super::{
     ACTOR_TABLE_VA, APPLIER_VA, BATTLE_OVERLAY_BASE, BATTLE_OVERLAY_PROT, CastRoute,
     SUPER_FIRED_VA, WordEdit, apply_word_edits,
 };
-use crate::disc::DiscPatcher;
-use crate::mips::{
+use anyhow::{Context, Result, bail};
+use legaia_code_hooks::mips::{
     self as m, A0, A1, RA, S3, S5, SP, T0, T1, T2, T3, T4, T5, T6, T7, T8, V0, V1, ZERO,
 };
-use anyhow::{Context, Result, bail};
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// Assemble the queue-hook stub for `stub_va`, with its 4-row route table
 /// appended immediately after the code (row = char index, `[const, spell]`;
@@ -127,7 +127,7 @@ pub fn assemble_hook(stub_va: u32, routes: &[CastRoute]) -> Vec<u8> {
 /// every other ARENA1 claimant (`--shiny-seru`, `--show-super-arts`,
 /// `--arts-ap-grant`) is option-exclusive with it, and
 /// [`install_delilas_arena`] still verifies free-or-identical bytes.
-pub(super) const ARENA1_QEDIT_VA: u32 = crate::arenas::ARENA1_VA;
+pub(super) const ARENA1_QEDIT_VA: u32 = legaia_code_hooks::arenas::ARENA1_VA;
 /// The strike-loop fetch site in overlay 0898 (`FUN_801E295C` state
 /// `0x1E`, `lbu v1,0x1df(v0)` at `0x801E374C` staging into `+0x1DA`,
 /// cursor `ctx[+0x15]`; see `docs/subsystems/battle-action.md`).
@@ -286,9 +286,9 @@ pub(super) fn hook_layout(stub_va: u32) -> (u32, u32) {
 /// contract like [`install_cast_hook`]: bails when another injected
 /// feature owns the arena.
 pub fn install_delilas_arena(p: &mut DiscPatcher) -> Result<bool> {
-    use crate::arenas::{ARENA1_END_VA, ARENA1_VA};
+    use legaia_code_hooks::arenas::{ARENA1_END_VA, ARENA1_VA};
     const SCUS_NAME: &str = "SCUS_942.54";
-    let (tbl_va, done_va) = hook_layout(crate::arenas::SCUS_GAP_VA);
+    let (tbl_va, done_va) = hook_layout(legaia_code_hooks::arenas::SCUS_GAP_VA);
     let bytes = assemble_delilas_arena(done_va, tbl_va);
     if ARENA1_VA + bytes.len() as u32 > ARENA1_END_VA {
         bail!("delilas arena does not fit ARENA1 ({} bytes)", bytes.len());

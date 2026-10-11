@@ -4,9 +4,9 @@
 use super::arena_hook::assemble_hook;
 use super::module_958::S2_REG;
 use super::{S4, WordEdit};
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A0, A1, A2, RA, T5, T7, T8, T9, V0, ZERO};
 use anyhow::{Context, Result, bail};
+use legaia_code_hooks::mips::{self as m, A0, A1, A2, RA, T5, T7, T8, T9, V0, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 // ---------------------------------------------------------------------------
 // Stage caves: the un-folded retail walks.
@@ -142,7 +142,7 @@ const STUB_958_BODY_OFFSETS: [u64; 3] = [0x21B4, 0x21BC, 0x21C4];
 pub(super) const GATE_958_OFFSET: u64 = 0x21CC;
 
 pub(super) fn stage_cave_layout() -> Result<StageCaveLayout> {
-    use crate::arenas::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
+    use legaia_code_hooks::arenas::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
     // The queue hook is fixed-size (its shape does not depend on the
     // routes), so the tail base is stable across builds.
     let hook_len = assemble_hook(SCUS_GAP_VA_LOCAL, &[]).len() as u32;
@@ -195,8 +195,8 @@ const BED_960_DUR: u16 = 0x3F6;
 /// Link base of the cast modules (slot-B); 958's wipe-body stubs are
 /// addressed as `MODULE_LINK_BASE + file offset`.
 const MODULE_LINK_BASE: u32 = 0x801F_69D8;
-const SCUS_GAP_VA_LOCAL: u32 = crate::arenas::SCUS_GAP_VA;
-const SCUS_GAP_END_VA_LOCAL: u32 = crate::arenas::SCUS_GAP_END_VA;
+const SCUS_GAP_VA_LOCAL: u32 = legaia_code_hooks::arenas::SCUS_GAP_VA;
+const SCUS_GAP_END_VA_LOCAL: u32 = legaia_code_hooks::arenas::SCUS_GAP_END_VA;
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|w| w.to_le_bytes()).collect()

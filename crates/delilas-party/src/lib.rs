@@ -20,12 +20,13 @@
 // Modules these files name as `crate::...`, which `legaia-patcher` re-exports
 // at its root; binding them here keeps the moved files' paths unchanged.
 use legaia_arts_patch::arts;
-use legaia_code_hooks::{delilas_cast, mips};
+use legaia_code_hooks::mips;
 use legaia_disc_patch::{disc, rng};
 use legaia_party_swap::party_swap;
 use legaia_texture_replace::save_icon;
 use legaia_translate::translation;
 
+pub mod delilas_cast;
 pub mod delilas_effects;
 pub mod delilas_party;
 pub mod delilas_signature_attack;

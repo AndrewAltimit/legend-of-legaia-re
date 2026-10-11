@@ -2,9 +2,9 @@
 //! and their installer.
 
 use super::{S4, WordEdit, apply_word_edits, move_};
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A0, S5, V0, V1, ZERO};
 use anyhow::{Context, Result};
+use legaia_code_hooks::mips::{self as m, A0, S5, V0, V1, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 const MODULE_959_DAMAGE_EDITS: &[WordEdit] = &[
     WordEdit {

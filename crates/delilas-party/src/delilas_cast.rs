@@ -57,8 +57,8 @@
 
 use anyhow::{Context, Result, bail};
 
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, ZERO};
+use legaia_code_hooks::mips::{self as m, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 mod arena_hook;
 mod module_958;

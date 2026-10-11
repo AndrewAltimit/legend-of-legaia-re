@@ -12,6 +12,7 @@
 #![forbid(unsafe_code)]
 
 pub mod disc;
+pub mod monster;
 pub mod ppf;
 pub mod rng;
 pub mod space_ledger;

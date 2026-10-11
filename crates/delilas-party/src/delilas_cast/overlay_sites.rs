@@ -6,9 +6,9 @@ use super::{
     APPLIER_CALL_VA, APPLIER_VA, BATTLE_OVERLAY_BASE, BATTLE_OVERLAY_PROT, CastRoute, WordEdit,
     apply_word_edits,
 };
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, S3, T4, V0, ZERO};
 use anyhow::{Context, Result, bail};
+use legaia_code_hooks::mips::{self as m, S3, T4, V0, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// The state-`0x28` spell-name label gate in overlay 0898
 /// (`FUN_801E295C`, Magic cast begin). Retail heads the label block with
@@ -98,14 +98,14 @@ pub fn install_chain_admission_tier(p: &mut DiscPatcher) -> Result<bool> {
 /// The `jal FUN_801EF9E4` word at the applier call site.
 const APPLIER_JAL_RETAIL: u32 = 0x0C00_0000 | ((APPLIER_VA & 0x0FFF_FFFF) >> 2);
 
-/// Write the stub into the SCUS injection gap ([`crate::arenas::SCUS_GAP_VA`]) and redirect the applier
+/// Write the stub into the SCUS injection gap ([`legaia_code_hooks::arenas::SCUS_GAP_VA`]) and redirect the applier
 /// call through it. Claims the SCUS gap arena, so
 /// the cast route is mutually exclusive with every other feature that
 /// allocates the SCUS arenas (`--shiny-seru`, `--show-super-arts`); the
 /// caller enforces that at option level. Returns `false` when the hook is
 /// already installed byte-identically (idempotent skip).
 pub fn install_cast_hook(p: &mut DiscPatcher, routes: &[CastRoute]) -> Result<bool> {
-    use crate::arenas::{SCUS_GAP_END_VA, SCUS_GAP_VA};
+    use legaia_code_hooks::arenas::{SCUS_GAP_END_VA, SCUS_GAP_VA};
     const SCUS_NAME: &str = "SCUS_942.54";
 
     let stub_va = SCUS_GAP_VA;

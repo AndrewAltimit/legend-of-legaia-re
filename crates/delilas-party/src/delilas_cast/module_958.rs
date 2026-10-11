@@ -3,9 +3,9 @@
 
 use super::stage_caves::{GATE_958_OFFSET, module_958_unfold_edits, stage_cave_layout};
 use super::{WordEdit, apply_word_edits, move_};
-use crate::disc::DiscPatcher;
-use crate::mips::{self as m, A0, A1, A3, S1, T0, T4, V0, V1, ZERO};
 use anyhow::{Context, Result};
+use legaia_code_hooks::mips::{self as m, A0, A1, A3, S1, T0, T4, V0, V1, ZERO};
+use legaia_disc_patch::disc::DiscPatcher;
 
 /// PROT 958 (Blazing Slash): consolidate the caster's staged-clip walk
 /// into the two player-representable rows.
