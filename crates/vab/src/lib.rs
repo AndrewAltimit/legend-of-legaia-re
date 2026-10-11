@@ -71,8 +71,11 @@
 //! with a hard-coded `+4` of their own, so moving them would move those
 //! compensations too.
 //!
-//! Shares the F0/F1 filter constants with [`legaia_xa`] - the algorithm is
-//! identical to XA-ADPCM, only the block packaging differs.
+//! The [`ADPCM_F0`] / [`ADPCM_F1`] filter constants are the same five-entry
+//! tables XA-ADPCM uses (`legaia_xa::F0` / `F1`) - the algorithm is identical,
+//! only the block packaging differs. This crate carries its own copy so a
+//! sound-bank reader does not link the disc reader `legaia-xa` sits on; a
+//! test pins the two copies equal.
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -87,6 +90,12 @@ pub const TONES_PER_PROGRAM: usize = 16;
 pub const VAG_TABLE_ENTRIES: usize = 256;
 pub const VAG_BLOCK_BYTES: usize = 16;
 pub const SAMPLES_PER_BLOCK: usize = 28;
+/// SPU-ADPCM prediction filter, first coefficient (x/64), by filter index.
+/// Identical to `legaia_xa::F0`.
+pub const ADPCM_F0: [i32; 5] = [0, 60, 115, 98, 122];
+/// SPU-ADPCM prediction filter, second coefficient (x/64), by filter index.
+/// Identical to `legaia_xa::F1`.
+pub const ADPCM_F1: [i32; 5] = [0, 0, -52, -55, -60];
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct VabHeader {
@@ -619,8 +628,8 @@ pub fn decode_vag(buf: &[u8]) -> Result<Vec<i16>> {
             break;
         }
 
-        let f0 = legaia_xa::F0[filter];
-        let f1 = legaia_xa::F1[filter];
+        let f0 = ADPCM_F0[filter];
+        let f1 = ADPCM_F1[filter];
 
         // Decode 14 bytes = 28 nibble samples (low nibble first).
         for &byte in &block[2..16] {
@@ -686,6 +695,13 @@ pub fn write_wav<W: std::io::Write>(
 
 #[cfg(test)]
 mod tests {
+    /// The filter tables are a copy of the XA decoder's; they must not drift.
+    #[test]
+    fn adpcm_filter_tables_match_xa() {
+        assert_eq!(super::ADPCM_F0, legaia_xa::F0);
+        assert_eq!(super::ADPCM_F1, legaia_xa::F1);
+    }
+
     use super::*;
 
     fn synthetic_vab(ps: u16, vs: u16, vag_sizes_8b: &[u16]) -> Vec<u8> {

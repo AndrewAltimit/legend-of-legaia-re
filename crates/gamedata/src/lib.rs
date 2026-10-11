@@ -76,15 +76,6 @@ impl Character {
         }
     }
 
-    /// Map this character to a [`legaia_art::queue::Character`].
-    pub fn to_art_character(self) -> legaia_art::Character {
-        match self {
-            Character::Vahn => legaia_art::Character::Vahn,
-            Character::Noa => legaia_art::Character::Noa,
-            Character::Gala => legaia_art::Character::Gala,
-        }
-    }
-
     /// Resolve the player-facing input token (`Arms` / `Ra-Seru` / `High`
     /// / `Low`) to the raw direction byte stored in an Art Record:
     /// `1=L, 2=R, 3=D, 4=U`.

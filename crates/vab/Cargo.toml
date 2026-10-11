@@ -28,6 +28,9 @@ anyhow.workspace = true
 clap = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+# Only the test pinning the ADPCM filter tables equal to the XA decoder's.
 legaia-xa.workspace = true
 
 [target.'cfg(unix)'.dependencies]

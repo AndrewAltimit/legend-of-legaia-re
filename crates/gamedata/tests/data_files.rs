@@ -11,7 +11,7 @@ fn arts_action_constants_match_legaia_art_tables() {
         };
         let action = legaia_art::ActionConstant::from_byte(ac)
             .unwrap_or_else(|| panic!("invalid action constant 0x{ac:02X}"));
-        let expected = legaia_art::tables::art_name(art.character.to_art_character(), action)
+        let expected = legaia_art::tables::art_name(to_art_character(art.character), action)
             .unwrap_or_else(|| {
                 panic!(
                     "no canonical art name for {:?} action 0x{:02X}",
@@ -510,4 +510,15 @@ fn scene_names_are_unique_ordered_and_named() {
         db.scene_by_id("stone").unwrap().banner.as_deref(),
         Some("Shadow Gate")
     );
+}
+
+/// Map a curated-table character to the disc-side `legaia_art` one. Lives
+/// with the one comparison that needs both vocabularies, so the library
+/// does not depend on `legaia-art`.
+fn to_art_character(c: legaia_gamedata::Character) -> legaia_art::Character {
+    match c {
+        legaia_gamedata::Character::Vahn => legaia_art::Character::Vahn,
+        legaia_gamedata::Character::Noa => legaia_art::Character::Noa,
+        legaia_gamedata::Character::Gala => legaia_art::Character::Gala,
+    }
 }
