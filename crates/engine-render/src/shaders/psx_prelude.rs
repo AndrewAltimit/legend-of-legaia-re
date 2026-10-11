@@ -1,4 +1,5 @@
-//! The WGSL chunks every PSX-shaded pipeline shares: overworld curvature, dither, grade, palette law, modulate, depth cue and the dynamic-light model.
+//! The WGSL prelude every PSX-shaded pipeline is composed with: overworld curvature, dither, grade,
+//! palette law, modulate, depth cue and the dynamic-light model.
 
 /// The kingdom overworld's **screen-Y curvature**, prepended to every shaded
 /// 3D shader alongside [`PSX_DITHER_WGSL`]. Retail's overworld prim leaves

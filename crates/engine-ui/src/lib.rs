@@ -25,7 +25,7 @@
 //!   options + key-rebind, name entry, game-over, tactical-arts editor.
 //! * [`ui_menu_window_painters`] - content painters for the menu-overlay
 //!   window-descriptor table's prompt / counter / tab / shop-panel block, and
-//!   `ui_menu_window_painters_large` for the equip screen's two stat-compare
+//!   `ui_equip_stat_compare` for the equip screen's two stat-compare
 //!   painters (descriptor ids 25 and 41).
 //! * [`ui_menu_window_dispatch`] - which painter draws a given descriptor,
 //!   keyed on its `renderer_va` the way the retail window walker keys on the
@@ -92,6 +92,7 @@ mod tile_board_prompt;
 pub mod ui_baka_strips;
 pub mod ui_boot_logos;
 pub mod ui_dance;
+mod ui_equip_stat_compare;
 mod ui_fishing;
 pub mod ui_fishing_exchange;
 pub mod ui_fishing_hub;
@@ -101,7 +102,6 @@ pub mod ui_fishing_sprite;
 mod ui_menu;
 pub mod ui_menu_window_dispatch;
 pub mod ui_menu_window_painters;
-mod ui_menu_window_painters_large;
 mod ui_overlay;
 pub mod ui_prize_exchange;
 pub mod ui_slot_cabinet;
@@ -116,10 +116,10 @@ pub use dialog_reading_box::*;
 pub use incense_notice_box::*;
 pub use text_balloon_box::*;
 pub use tile_board_prompt::*;
+pub use ui_equip_stat_compare::*;
 pub use ui_fishing::*;
 pub use ui_menu::*;
 pub use ui_menu_window_dispatch::*;
-pub use ui_menu_window_painters_large::*;
 pub use ui_overlay::*;
 pub use ui_title_save::*;
 

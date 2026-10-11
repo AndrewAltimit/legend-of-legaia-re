@@ -225,7 +225,7 @@ DF_LADDER = (8, 12, 16, 24, 32, 48, 64, 96)
 # ...but a per-module estimate needs pairs to estimate from. Five tags are ten
 # pairs and several of those are vacuous; the cut such a module "needs" is one
 # pair's accident. Below this many tagged addresses the base cut stands, and
-# the cheapest way to see why is `ui_menu_window_painters_large.rs`: four tags,
+# the cheapest way to see why is `ui_equip_stat_compare.rs`: four tags,
 # two of them corroborating, and its one genuinely wrong tag stops reading as an
 # orphan the moment the cut reaches 16.
 ADAPTIVE_MIN_TAGS = 6

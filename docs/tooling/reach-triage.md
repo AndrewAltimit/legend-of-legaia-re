@@ -1149,7 +1149,7 @@ resolves `FUN_801D5510`), so both hosts filter the id on the descriptor's own
 `crates/engine-shell/tests/menu_window_dispatch_real.rs`.
 
 One near-miss is worth recording because the grep that finds it is wrong. The
-window-25 / window-41 stat-compare chain in `ui_menu_window_painters_large.rs`
+window-25 / window-41 stat-compare chain in `ui_equip_stat_compare.rs`
 reads like an orphan cluster: `compare_panel_draws_for` and
 `party_compare_panel_fields` have no caller outside their own file, and their
 in-file call sites sit at line numbers past the module's test boundary. They are

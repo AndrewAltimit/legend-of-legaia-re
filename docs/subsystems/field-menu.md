@@ -340,7 +340,7 @@ The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 (`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
 [`engine-ui::ui_menu_window_painters`](../../crates/engine-ui/src/ui_menu_window_painters.rs)
-(windows 25 and 41 in `ui_menu_window_painters_large`). Every window painter
+(windows 25 and 41 in `ui_equip_stat_compare`). Every window painter
 is reached by a screen on both hosts. The port keeps the pen arithmetic and the
 state-word rules and drops two globals every painter touches - the ink word
 `DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
