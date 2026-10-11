@@ -758,10 +758,7 @@ mod tests {
         };
         let t: Vec<V3> = d.iter().map(|p| xf.apply(*p)).collect();
         let cands = fit_pair(&d, &t).unwrap();
-        let best = cands
-            .iter()
-            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-            .unwrap();
+        let best = cands.iter().min_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
         assert!(best.1 < 0.5, "residual {}", best.1);
         assert!(rotation_gap(best.0.r, xf.r).to_degrees() < 1.0);
         for k in 0..3 {

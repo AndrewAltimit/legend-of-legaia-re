@@ -421,7 +421,7 @@ pub fn current_specialties(patcher: &DiscPatcher) -> Result<Vec<SpecialtyAssignm
             .max_by(|&a, &b| {
                 let ra = favored_hits[a].0 as f64 / favored_hits[a].1 as f64;
                 let rb = favored_hits[b].0 as f64 / favored_hits[b].1 as f64;
-                ra.partial_cmp(&rb).unwrap()
+                ra.total_cmp(&rb)
             })
             .map(|i| fams[i])
             .unwrap_or(player.vanilla);

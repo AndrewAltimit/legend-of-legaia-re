@@ -25,18 +25,6 @@
 # rather than carry it - it excuses something that no longer exists.
 
 [[waiver]]
-key = "dual-label:801d5de0"
-reason = """
-Reviewed and corrected rather than dismissed. The three dumps of this VA are
-byte-identical across all 151 printed instructions and two of them tag the menu
-overlay, so it is one routine: the casino prize list's row renderer. Both
-remaining defining sites now say so - docs/reference/functions/menus.md's row
-and the correction section in docs/subsystems/world-map.md, which is kept
-deliberately so the falsified world-map reading stays findable. The signal is
-structural and cannot tell agreement from contradiction, so it still fires.
-"""
-
-[[waiver]]
 key = "dual-label:80021934"
 reason = """
 All three carriers say scene-transition streaming actor. 80021934.txt is the
@@ -148,15 +136,6 @@ truncation of the 131-instruction body, not a second occupant.
 """
 
 [[waiver]]
-key = "dual-label:801cfe98"
-reason = """
-Nine instructions forwarding to the PsyQ DMACallback entry FUN_8005FDE8 with
-channel 0. Byte-identical in the debug_menu and str_fmv images. runtime-libs.md
-files the leaf, cutscene.md explains why channel 0 (MDECin) is the FMV path's
-hook. Same sentence twice.
-"""
-
-[[waiver]]
 key = "dual-label:801d362c"
 reason = """
 vm-inventory.md's section exists precisely to answer how many copies there are:
@@ -198,14 +177,6 @@ Both carriers call it the dialog pager in the dialog overlay; mes.md documents
 the 26-state machine, field-menu.md the box geometry it draws. The 1499- and
 544-instruction bodies split by image (dialog/cutscene/world_map versus
 field_battle_intro/world_map_top), and neither page claims the other's image.
-"""
-
-[[waiver]]
-key = "dual-label:801d9c14"
-reason = """
-save-screen.md's section opens with "Not a save-screen function at all" and
-hands it to the pause menu's equip-candidate list, which is exactly what
-menus.md's row says. The two texts agree; only the page names disagree.
 """
 
 [[waiver]]
@@ -431,29 +402,6 @@ matching the row's 244 bytes. The body was re-read at the same time and the
 row corrected: the sub-state switch on `+0x5A` is two switches, not one.
 """
 
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/scene_host/scene_entry.rs:801d1ec4"
-reason = """
-The finding appeared when overlay_cutscene_str_0970_801cea3c.txt was dumped: the
-sibling tag 801cea3c now has a corroborating dump from PROT 0970 (cutscene_str),
-a different image at the same 0x801CE818 base, so the sibling set spans two
-images. FUN_801D1EC4's identity is the field image's kind-0 intra-scene
-teleport arm (0x801D21C0..0x801D2268): it reads 0x8007BDC8..0x8007BDD4 and
-0x8007B5FC and calls the spawn evaluator FUN_8003BDE0 plus 0x801D5630 /
-0x801D58F0 / 0x801DDF48. The checker corroborates by module, not by image;
-the image-keyed form is the open checker gap.
-"""
-
-# --- doc-citation rows read against the disassembly ---------------------------
-#
-# Each of these cites an address that is real and checkable, and that the
-# subject's own body cannot carry: a global its CALLEE forms, a struct field
-# reached by `addu` off a base the body does form, a store site in another
-# image, or a contrastive "not this pool" reference. None is a caller `jal`
-# site (`site_relation` settles those from the bytes) and none is a hex-digit
-# slip - the one of those in the class was fixed rather than waived
-# (`8005DEA0`'s directory cache is `0x801CB408`, not `0x801C4BEC`).
 
 [[waiver]]
 key = "doc-citation:docs/reference/functions/asset-loading.md:80017910:801ce362"
@@ -954,18 +902,6 @@ the routines that were inlined.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-scene/src/cd_dma.rs:8005ea84"
-reason = """
-A layer boundary, visible in the bytes. FUN_8005EA84 forms 0x800796E0
-(`lui s1,0x8008` / `addiu s1,s1,-0x6920` at 0x8005EA9C) - the libcd streaming-read
-working block - and calls the timer 0x8005FB84. Its module siblings (8003dda0,
-8003de7c, 8003e800, 8003e8a8, 8003eb98, 8003f128) keep all of their state in
-`imm(gp)` cells (gp+0x97c, gp+0x894, gp+0x8f0, gp+0x90c), a form the absolute
-data tracker cannot see at all. So the module is one loader stack whose two
-halves address memory differently, not a foreign member.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-field/src/field_actor_program.rs:801d4a60"
 reason = """
 Cross-image module, and the tag pins the routine from its own bytes: FUN_801D4A60
@@ -974,17 +910,6 @@ opens `lh v1,0x54(s1)` / `sltiu v1,0x26` / `jr v0` against the 38-word table at
 (8003aeb0) and another field-overlay routine (801d5a24); corroboration across the
 overlay band requires a shared image tag, so a SCUS sibling can never corroborate
 an overlay member however tightly the two are coupled at runtime.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-field/src/field_submode.rs:801d84b4"
-reason = """
-VA aliasing, which the checker documents as unresolved. 0x801D84B4 in the FIELD
-overlay (0897) is this module's panel-row layout; 0x801D84C0 twelve bytes away is
-`panel_labels` in the BATTLE overlay (0898), a different image. The module's
-corroborating siblings 801d9c3c / 801de478 are field-overlay routines that share
-the submode context block through actor pointers rather than through a global,
-so nothing distinctive is common. Nothing here contradicts either reading.
 """
 
 [[waiver]]
@@ -1044,18 +969,6 @@ three siblings are overlay-resident (801d9d3c, 801da780, 801daba4), so
 corroboration would have to cross the SCUS / overlay boundary, which the signal
 declines by construction. The arithmetic half is separately tagged in
 engine-vm's battle_formulas::round, and this tag says so.
-"""
-
-[[waiver]]
-key = "module-orphan:crates/engine-core/src/world/encounters.rs:801da51c"
-reason = """
-Cross-image again: FUN_801DA51C is the world-map entity SM's encounter-record
-reader (its record-overlay body is 0x801DA620..0x801DA678, pinned in
-encounter.md), and the module's corroborating siblings are the SCUS aggregator
-80042558, 800431d0, plus 801cf5bc and the field VM 801de840. The field VM is the
-one true overlay sibling and it shares no rare datum with the reader - it hands
-it a window off the script pointer. No claim in the module contradicts the
-routine's identity.
 """
 
 [[waiver]]
@@ -1398,4 +1311,17 @@ reads magic slot `s1 - 1`, the `0x800754C8` stride-12 `+3` read at
 the entry index to `+0x1E7` / `+0x1E0` and the spell id to `+0x1DF`. The orphan
 reading is file placement: the picker's other ports live in the monster-AI
 modules, while this one kernel sits beside the cast band that consumes `+0x1E0`.
+"""
+
+[[waiver]]
+key = "dual-label:801f3990"
+reason = """
+Two heading sites that agree, and a heading cannot carry the link that would
+make one a pointer. The battle-overlay occupant (overlay_muscle_dome_801f3990.txt,
+169 instructions) opens lw -0x42dc(0x8008) / lbu 0x13 - ctx[+0x13] off
+_DAT_8007BD24 - and ends in jal 0x8004fcc8, which is the cast audio-cue
+dispatcher battle-action-helpers.md describes. move-power.md's section exists to
+say the same routine reads no field of the move-power record. The 77-instruction
+body the minigame captures carry at this VA is a different image's code and no
+page describes it under this name.
 """

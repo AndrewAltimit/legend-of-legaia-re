@@ -136,7 +136,20 @@ def main() -> int:
         for a, x in live_unentered_all
         if a.lower() in dead
     ]
-    unobservable = joined["unobservable"]
+    # A disclosed-dead address with no record in any binary is the same
+    # verdict from the same two instruments: the disclosure says no host is
+    # owed, the strict graph reaches nothing, and a function nothing links is
+    # exactly what leaves no record. Filing it as "unmeasured" would ask for a
+    # ladder whose only way to enter the row is to call what the source
+    # disclaims.
+    unobservable_all = joined["unobservable"]
+    unobservable = [(a, x) for a, x in unobservable_all if a.lower() not in dead]
+    unentered_disclosed += [
+        (a, {**x, "crate": f"{x['crate']} ({dead[a.lower()]}, no record)"})
+        for a, x in unobservable_all
+        if a.lower() in dead
+    ]
+    unentered_disclosed.sort(key=lambda r: r[0])
     not_observable_const = joined["not_observable_const"]
     # label -> the live addresses that source entered. Drives the per-source
     # contribution table: an address several ladders reach is credited to each,
@@ -157,7 +170,7 @@ def main() -> int:
     w(f"- ported addresses with anchors: **{len(anchors)}**")
     w(f"- statically live: **{len(live)}**, of which entered by a run: **{len(live_entered)}**")
     w(
-        f"- live, never entered: **{len(live_unentered_all)}** - "
+        f"- live, never entered: **{len(live_unentered) + len(unentered_disclosed)}** - "
         f"**{len(live_unentered)}** reach worklist, "
         f"**{len(unentered_disclosed)}** disclosed and receiver-gated dead"
     )
@@ -258,7 +271,9 @@ def main() -> int:
         "reaches none of the address's anchors, and every anchor the "
         "permissive graph does reach carries a `NOT WIRED:` or `REPLACED-BY:` "
         "disclosure. The disclosure, the strict graph and the coverage all "
-        "agree, so these are not reach work - they are counted in the "
+        "agree (a row marked *no record* has no function record in any "
+        "binary, which is what an unlinked function leaves), so these are "
+        "not reach work - they are counted in the "
         "never-entered total above and listed here so they leave the worklist "
         "without leaving the report. One that a ladder enters moves to the "
         "disclosed-executed bucket.",

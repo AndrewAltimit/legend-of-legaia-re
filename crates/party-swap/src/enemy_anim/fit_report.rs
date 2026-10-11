@@ -77,7 +77,7 @@ fn sym_eigenvalues(a: [[f32; 3]; 3]) -> [f32; 3] {
         m = m2;
     }
     let mut ev = [m[0][0], m[1][1], m[2][2]];
-    ev.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    ev.sort_by(|a, b| b.total_cmp(a));
     ev
 }
 

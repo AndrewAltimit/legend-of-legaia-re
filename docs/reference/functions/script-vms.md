@@ -6,7 +6,7 @@ Part of the [key function directory](../functions.md) - the conventions for read
 
 | Address | Role |
 |---|---|
-| `801D6628` | Actor / sprite VM (title-screen overlay). 13 opcodes; dispatch table at `0x801CED70`. |
+| `801D6628` | **Window-widget script interpreter** (menu overlay, PROT 0899) - the routine historically called the actor / sprite VM. 13 opcodes over 4-byte `[op][window id][arg]` instructions; dispatch table at `0x801CED70`. It drives windows, not actors: [`actor-vm.md`](../../subsystems/actor-vm.md), and the pause screens' use of it in [`field-menu.md`](../../subsystems/field-menu.md#window-script-runner-fun_801d6628). |
 | `801D6704` | **Field/town per-scene initializer** (the body of mode-2 "MAIN INIT", invoked by `FUN_80025B64`; also every field scene transition). Reads the resident map id, loads geometry + MAN (`FUN_8003AEB0`) + camera + fog + BGM via the field loader `FUN_8001F7C0`, allocates the game-mode work buffer, calls `FUN_80020224` at `0x801D6B0C`, and ends by writing `_DAT_8007B83C = 3` to hand off to the field per-frame loop. Debug strings `map_name`/`map_read`/`man_set`/`camera_set`/`fog_set`/`tmds: %d`/`game_mode`/`program_mode`. The title NEW GAME path lands here via mode 2. |
 | `801CF650` | Emitter ramp-actor allocator, **image-unverified**: both dumps at this VA (`overlay_menu`, `overlay_shop_save`) carry the 272-byte equipment stat aggregator this page also files below, and neither contains `FUN_80020DE0`. A dump of `0x801CF650` from the field/town overlay image would settle whether this occupant exists. Calls `FUN_80020DE0(base + 0x27EC)`, configures the actor's curve / ramp slots: `+0x50 = sub_id`, `+0x6C = mode_byte`, `+0x80 / +0x8C = curve_table[curve_id] << 16` (table at `_DAT_1F80035C`), `+0x84 = (target << 17) / (duration + 1)`, `+0x88 = abs / duration`. Shared helper used by 0x43 sub-0x10 / sub-0x12 emitter setup ops. |
 | `801DB7B0` | VA aliases two different functions - [details ↓](#801db7b0) |
@@ -51,9 +51,9 @@ Part of the [key function directory](../functions.md) - the conventions for read
 | `801F03F0` | Name-entry SM - [details ↓](#801f03f0) |
 | `801E6B34` | Name-entry **renderer** (field/dialog overlay). Draws the 6×17 grid (skipping `\|` / space) via glyph drawer `FUN_80036888`, plus the working name, the blinking `Vahn_` caret (measured via MES `FUN_8003CA38` + width `FUN_80035F04`), and the box frames (`FUN_8002C69C`). Called by the interactive substate of `FUN_801F03F0`. |
 
-### Actor / sprite-VM SCUS callees (invoked from `FUN_801D6628`)
+### Window-widget interpreter SCUS callees
 
-The actor / sprite VM at `FUN_801D6628` (13 opcodes, 4-byte instruction, the smallest VM in the corpus) dispatches every opcode through this cluster of SCUS-side helpers. All seven share a doubly-linked-list lookup pattern: they walk `*(gp + 0x148)` (the active-actor list head) comparing each entry's `+0x4` field against `param_1` (actor id). The Rust port at `crates/engine-vm/src/lib.rs` abstracts each one as a `Host` trait method; engines wire whatever per-actor record they have.
+The window-widget script interpreter at `FUN_801D6628` (the "actor / sprite VM" of older notes; 13 opcodes, 4-byte instruction, the smallest VM in the corpus; see [`field-menu.md`](../../subsystems/field-menu.md#window-script-runner-fun_801d6628)) dispatches every opcode through this cluster of SCUS-side helpers. All seven share a doubly-linked-list lookup pattern: they walk `*(gp + 0x148)` (the active-actor list head) comparing each entry's `+0x4` field against `param_1` (actor id). The Rust port at `crates/engine-vm/src/lib.rs` abstracts each one as a `Host` trait method; engines wire whatever per-actor record they have.
 
 | Address | Role |
 |---|---|

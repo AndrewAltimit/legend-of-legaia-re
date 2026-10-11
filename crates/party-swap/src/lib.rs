@@ -704,7 +704,7 @@ pub(crate) fn seat_terminal_axial(
             .zip(&used)
             .filter(|&(_, &u)| u)
             .map(|(v, _)| a[0] * v[0] as f32 + a[1] * v[1] as f32 + a[2] * v[2] as f32)
-            .min_by(|x, y| x.partial_cmp(y).unwrap())
+            .min_by(|x, y| x.total_cmp(y))
     };
     let (Some(b), Some(d)) = (near(baked), near(dst_obj)) else {
         return Ok(());
@@ -722,7 +722,7 @@ pub(crate) fn seat_terminal_axial(
             .zip(&used)
             .filter(|&(_, &u)| u)
             .map(|(v, _)| a[0] * v[0] as f32 + a[1] * v[1] as f32 + a[2] * v[2] as f32)
-            .max_by(|x, y| x.partial_cmp(y).unwrap())
+            .max_by(|x, y| x.total_cmp(y))
             .unwrap_or(d)
     };
     let shift = (d - b) - 0.10 * (far - d).abs();

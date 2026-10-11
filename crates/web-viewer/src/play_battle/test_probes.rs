@@ -64,6 +64,15 @@ impl LegaiaRuntime {
             .unwrap_or(0)
     }
 
+    /// Whether the live cast drew a Theeder beam packet this tick
+    /// (`World::theeder_draw`) - the packet the page's screen-FX pass hands
+    /// to `legaia_render_kernels::cast_theeder::theeder_prims`.
+    pub fn debug_battle_theeder_packet_live(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.theeder_draw().is_some())
+    }
+
     /// Raise a system-flag-bank bit on the live world, the way a field-VM
     /// `0x5x` SET op does.
     ///

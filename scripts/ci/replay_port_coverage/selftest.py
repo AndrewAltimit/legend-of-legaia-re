@@ -95,10 +95,49 @@ impl HotMeter {
     }
 }
 """,
+    # A generic function is emitted only where it is instantiated. The
+    # synthetic export drops its record, as a binary that never names it does;
+    # the executed function below it must not lend it a verdict.
+    "generic.rs": """\
+/// PORT: FUN_8001d1e0
+/// REPLACED-BY: the typed rows.
+pub fn uninstantiated<F: Fn() -> u32>(f: F) -> u32 {
+    f()
+}
+
+pub fn generic_neighbour() -> u32 {
+    9
+}
+""",
+    # A facade: the module tag sits on a file that only declares submodules,
+    # so no coverage record ever names it. The verdict is read off the subtree.
+    "hot_facade.rs": """\
+//! PORT: FUN_8001d1c0
+
+mod body;
+""",
+    "hot_facade/body.rs": """\
+pub fn facade_hot() -> u32 {
+    7
+}
+""",
+    "cold_facade.rs": """\
+//! PORT: FUN_8001d1d0
+
+mod body;
+""",
+    "cold_facade/body.rs": """\
+pub fn facade_cold() -> u32 {
+    8
+}
+""",
 }
 
 # Which synthetic functions the synthetic ladder "executed".
-_SELFTEST_EXECUTED = {"exec_fn", "qual_user", "bump", "hot_sibling"}
+_SELFTEST_EXECUTED = {"exec_fn", "qual_user", "bump", "hot_sibling", "facade_hot", "generic_neighbour"}
+
+# Functions the synthetic binary carries no record for at all.
+_SELFTEST_NO_RECORD = {"uninstantiated"}
 
 
 def run_selftest() -> int:
@@ -119,6 +158,8 @@ def run_selftest() -> int:
     functions = []
     for path, src in srcs.items():
         for f in src.fns:
+            if f.name in _SELFTEST_NO_RECORD:
+                continue
             hi = src.line_of(max(f.body_end - 1, f.body_start))
             functions.append(
                 {
@@ -135,6 +176,7 @@ def run_selftest() -> int:
         cov = load_coverage(tmp_path)
     finally:
         tmp_path.unlink()
+        tmp_path.with_name(tmp_path.name + ".reduced").unlink(missing_ok=True)
 
     live = {
         "8001d110",
@@ -146,8 +188,10 @@ def run_selftest() -> int:
         "8001d190",
         "8001d1a0",
         "8001d1b0",
+        "8001d1c0",
+        "8001d1d0",
     }
-    not_live = {"8001d120", "8001d180"}
+    not_live = {"8001d120", "8001d180", "8001d1e0"}
     joined = join_anchor_coverage(
         catalog, anchors, srcs, [("selftest", cov)], live, not_live
     )
@@ -222,8 +266,24 @@ def run_selftest() -> int:
         "8001d1a0" in addrs("live_entered"),
     )
     check(
-        "nothing in this corpus is unobservable",
-        not addrs("unobservable"),
+        "a fn with no record does not borrow the next function's verdict",
+        "8001d1e0" not in addrs("disclosed_entered")
+        and "8001d1e0" not in addrs("inert_entered"),
+        f"disclosed={addrs('disclosed_entered')} inert={addrs('inert_entered')}",
+    )
+    check(
+        "a facade's module tag is entered when its subtree ran",
+        "8001d1c0" in addrs("live_entered"),
+        f"entered={addrs('live_entered')} unobservable={addrs('unobservable')}",
+    )
+    check(
+        "a facade's module tag is never-entered when its subtree did not run",
+        "8001d1d0" in addrs("live_unentered"),
+        f"unentered={addrs('live_unentered')} unobservable={addrs('unobservable')}",
+    )
+    check(
+        "only the record-less fn is unobservable",
+        addrs("unobservable") == {"8001d1e0"},
         f"unobservable={addrs('unobservable')}",
     )
 
