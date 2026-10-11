@@ -19,7 +19,7 @@
 
 use legaia_engine_core::camera_view::resolve_field_camera;
 use legaia_engine_core::world_map_markers::marker_quads;
-use legaia_engine_core::world_map_sky::sky_band;
+use legaia_engine_core::world_views::world_map_sky::sky_band;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::screen_prim::{ScreenPrim, sky_band_prims, world_map_marker_prim};
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -54,7 +54,7 @@ impl LegaiaRuntime {
     }
 
     /// This frame's overworld sky band (`FUN_801F73E4`), through the gate
-    /// (`legaia_engine_core::world_map_sky`) and wrapper (`sky_band_prims`)
+    /// (`legaia_engine_core::world_views::world_map_sky`) and wrapper (`sky_band_prims`)
     /// the native window draws it with. Empty outside the world map.
     pub(crate) fn world_map_sky_prims(&mut self) -> Vec<ScreenPrim> {
         let aabb = self.scene_aabb();

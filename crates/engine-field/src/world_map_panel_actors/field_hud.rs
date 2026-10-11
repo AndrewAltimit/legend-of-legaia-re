@@ -106,7 +106,7 @@ pub fn hud_idle_frames(view_mode: i32, short_idle: bool) -> i16 {
 /// PORT: FUN_801d0d38
 ///
 /// Wired: `PanelActorHost::tick_party_hud` in
-/// `legaia_engine_core::world_map_panel_host` runs it every overworld frame,
+/// `legaia_engine_core::world_views::world_map_panel_host` runs it every overworld frame,
 /// caching the player position itself. Retail installs the handler in the
 /// field band; the engine drives it from the overworld tick, where the party
 /// panel and the player marker both live. `projected_y` stays `None` there -

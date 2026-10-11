@@ -145,7 +145,7 @@ fn substitute_name_token(template: &str, name: &str) -> String {
 mod tests {
     use super::*;
 
-    /// The merge order of `legaia_engine_core::battle_open::battle_ui_strings_for_disc` cannot change a
+    /// The merge order of `legaia_engine_core::disc_readers::battle_open::battle_ui_strings_for_disc` cannot change a
     /// label: the SCUS and overlay halves key disjoint label sets.
     #[test]
     fn the_two_label_halves_share_no_key() {

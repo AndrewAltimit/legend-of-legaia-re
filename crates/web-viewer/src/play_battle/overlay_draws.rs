@@ -295,7 +295,7 @@ impl LegaiaRuntime {
                     // reason: a text run cannot go under the strip's frame
                     // in either host's layer order).
                     || world
-                        .is_some_and(|w| legaia_engine_core::timed_fight::timed_fight_strip(w).is_some()),
+                        .is_some_and(|w| legaia_engine_core::world_views::timed_fight::timed_fight_strip(w).is_some()),
                 badges: badges.as_ref(),
                 // The same tutorial box that takes the plaque's seat also
                 // sits on a party surface's row; naming its rect is what

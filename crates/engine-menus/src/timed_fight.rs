@@ -51,7 +51,7 @@
 //! `FUN_801D99BC` (`0x801D9A24`), which the `0xFE` arm calls as the round
 //! starts to play out (`0x801D31E8`). So the strip is up from each round's
 //! start until `Begin` is taken - the whole command phase - and gone for the
-//! round's action playback. That is `legaia_engine_core::timed_fight::strip_visible`.
+//! round's action playback. That is `legaia_engine_core::world_views::timed_fight::strip_visible`.
 //!
 //! PORT: FUN_801D0748 (state `0x14`'s strip arm, `0x801D0F0C..0x801D1028`)
 

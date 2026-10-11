@@ -133,7 +133,7 @@ impl PlayWindowApp {
         };
         let clean = base.clone();
         let mut staged = base.clone();
-        let n = legaia_engine_core::dance::stage_dance_hud_vram(
+        let n = legaia_engine_core::disc_readers::dance::stage_dance_hud_vram(
             &self.session.host.index,
             &rects,
             &mut staged,

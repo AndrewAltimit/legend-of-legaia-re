@@ -420,7 +420,7 @@ pub fn recipient_window_draws(inputs: &ScreenInputs<'_>) -> (Vec<TextDraw>, Vec<
     let Some(table) = inputs.table else {
         return (Vec::new(), Vec::new());
     };
-    let members = legaia_engine_core::shop::party_compare_members(
+    let members = legaia_engine_core::world_views::shop::party_compare_members(
         inputs.world,
         inputs.menu.equip_info.as_ref(),
         session.item_id,
@@ -605,7 +605,11 @@ pub fn gold_shop_screen(
     };
     let members = staged
         .map(|id| {
-            legaia_engine_core::shop::party_compare_members(world, menu.equip_info.as_ref(), id)
+            legaia_engine_core::world_views::shop::party_compare_members(
+                world,
+                menu.equip_info.as_ref(),
+                id,
+            )
         })
         .unwrap_or_default();
     let party: Vec<ss::ShopCompareMember<'_>> = members

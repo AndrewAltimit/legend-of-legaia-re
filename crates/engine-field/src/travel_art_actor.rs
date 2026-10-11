@@ -33,7 +33,7 @@
 //!
 //! The engine's scan table is a stand-in built by its callers: the world-map
 //! panel host records the kingdom map the party stands on
-//! (`legaia_engine_core::world_map_panel_host`), and the pause-menu session
+//! (`legaia_engine_core::world_views::world_map_panel_host`), and the pause-menu session
 //! resolves the staged scene word through the CDNAME map the scene host
 //! installs (`legaia_engine_core::world::pause_session`). For a Door of Light
 //! that word is the region record's return triple, which a retail capture
@@ -194,7 +194,7 @@ impl TravelArt {
 /// PORT: FUN_801ee094 (`0x801EE2B4..0x801EE2DC` destination store)
 ///
 /// Wired: through [`destination_for`], whose host is
-/// `legaia_engine_core::world_map_panel_host`.
+/// `legaia_engine_core::world_views::world_map_panel_host`.
 pub fn tile_centre(tile: i32) -> i32 {
     (tile << 7) + 0x40
 }

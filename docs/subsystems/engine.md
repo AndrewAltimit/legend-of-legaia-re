@@ -471,7 +471,7 @@ The shell loop closes: title -> save-select -> field / encounter -> battle -> sa
 
 | System | Module | Notes |
 |---|---|---|
-| Game-mode driver | `engine-mode::mode` (`GameMode`, `ModeEntry`, `ModeDriver`); `World` side in `engine-core::mode` | The 28-entry table at SCUS `0x8007078C`. Boot starts in `MainInit`, as retail does. |
+| Game-mode driver | `engine-mode::mode` (`GameMode`, `ModeEntry`, `ModeDriver`); `World` side in `engine-core::world::mode_world` | The 28-entry table at SCUS `0x8007078C`. Boot starts in `MainInit`, as retail does. |
 | Title screen | `engine-menus::title::TitleSession` | `FadeIn -> PressStart -> MainMenu -> Done`, with a no-save fallback. The title TIM (PROT 0890 at `0x14228`, 256x256 8bpp) is decoded by `title_screen_atlas`. Layout: [boot](boot.md#title-screen-overlay-state). |
 | Save select | `engine-menus::save_select::SaveSelectSession` | Slot-list browse with Load / Save / Delete confirms. See [save-screen](save-screen.md). |
 | Encounters | `engine-battle::encounter` | Per-scene table, step-driven random battle trigger, 5-phase transition. |

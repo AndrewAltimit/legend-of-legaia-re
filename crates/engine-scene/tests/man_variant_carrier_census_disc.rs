@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 use legaia_disc_audit::categorize::Class;
 use legaia_engine_field::man_field_scripts::flag_test_bytescan;
-use legaia_engine_scene::man_field_scripts::{scene_man_carriers, system_flag_census};
+use legaia_engine_scene::man_census::{scene_man_carriers, system_flag_census};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::FlagKind;
 

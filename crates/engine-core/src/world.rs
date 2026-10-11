@@ -140,8 +140,11 @@ pub use world_toggles::WorldToggles;
 
 mod actors;
 pub mod ambient;
+mod camera_world;
 mod cutscene_elements;
 mod field_script_actors;
+mod fishing_hub_exits;
+pub mod mode_world;
 pub use field_script_actors::{FieldLightDraw, NpcDrawPose};
 mod drop_shadow_render;
 mod fog_render;

@@ -22,7 +22,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{OpKey, clean_hit_offsets, man_script_spans};
 

@@ -13,7 +13,7 @@ pub mod clut_walk_anim;
 pub mod coplanar_draws;
 pub mod cutscene_caption;
 pub mod field_env;
-pub mod man_field_scripts;
+pub mod man_census;
 pub mod model_bank;
 pub mod overlay_loader;
 pub mod scene;

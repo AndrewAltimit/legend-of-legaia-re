@@ -161,7 +161,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // would render an unrelated scene mesh, and unresolved
         // templates (no `tmd_ref`) never upload - both degrade
         // to "no draw".
-        for d in legaia_engine_core::tile_board::tile_board_actor_draws(w) {
+        for d in legaia_engine_core::world_views::tile_board::tile_board_actor_draws(w) {
             if !app.drained_spawn_slots.contains(&d.slot) {
                 continue;
             }
@@ -340,7 +340,10 @@ impl<'m> DrawCtx<'_, 'm> {
             // only holds the LAST repositioned cell (and a slot the
             // drain hasn't uploaded still wears the naive pre-bind).
             // The player (tile table slot 0) stays on this path.
-            if legaia_engine_core::tile_board::is_tile_actor_slot(&app.session.host.world, i) {
+            if legaia_engine_core::world_views::tile_board::is_tile_actor_slot(
+                &app.session.host.world,
+                i,
+            ) {
                 continue;
             }
             // The `opdeene` prologue cutscene is an abstract vignette

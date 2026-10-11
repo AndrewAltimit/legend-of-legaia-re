@@ -371,7 +371,11 @@ impl DanceVenue {
                     rects.push(r);
                 }
             }
-            hud_staged = crate::dance::stage_dance_hud_vram(index, &rects, &mut resources.vram) > 0;
+            hud_staged = crate::disc_readers::dance::stage_dance_hud_vram(
+                index,
+                &rects,
+                &mut resources.vram,
+            ) > 0;
             for s in &face_stamps {
                 let Some(rig) = dance_art::FACE_RIGS.get(s.rig) else {
                     continue;

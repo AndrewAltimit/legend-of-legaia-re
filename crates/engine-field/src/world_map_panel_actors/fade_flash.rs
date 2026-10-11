@@ -125,7 +125,7 @@ pub struct FadeFlashInput {
 /// PORT: FUN_801ed308
 ///
 /// Wired: `PanelActorKind::FadeFlash` in
-/// `legaia_engine_core::world_map_panel_host`. The host owns the brightness
+/// `legaia_engine_core::world_views::world_map_panel_host`. The host owns the brightness
 /// accumulator and the flash counter, performs the spawn through
 /// `crate::plain_template_actors::save_screen_spawn`, and
 /// releases the park through `PanelActorHost::release_flash`, which writes the

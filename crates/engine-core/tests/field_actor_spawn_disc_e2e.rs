@@ -16,7 +16,7 @@
 //! `0x4C` (`MENU_CTRL`) is a **field-VM** opcode, and the field VM's
 //! bytecode lives in the scene **MAN** - the asset-table bundle MAN plus
 //! each block's streaming variant carrier. This census therefore walks MAN
-//! records (see [`legaia_engine_scene::man_field_scripts`]).
+//! records (see [`legaia_engine_scene::man_census`]).
 //!
 //! It used to walk `Scene::find_event_scripts` instead. Those entries carry
 //! **move-VM prescripts**, not field-VM bytecode, so a census over them was
@@ -44,7 +44,7 @@ use legaia_engine_core::world::{FIELD_SPAWN_START_SLOT, World};
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
@@ -95,7 +95,7 @@ struct SpawnOpSite {
 ///
 /// Records are bounded and header-decoded per partition by
 /// [`partition_record_span`], then disassembled from the record's first
-/// opcode - the same instrument [`legaia_engine_scene::man_field_scripts`]
+/// opcode - the same instrument [`legaia_engine_scene::man_census`]
 /// uses for the flag censuses.
 fn collect_0x4c_d8_sites(extracted: &std::path::Path) -> Vec<SpawnOpSite> {
     let index = ProtIndex::open_extracted(extracted).expect("open ProtIndex");

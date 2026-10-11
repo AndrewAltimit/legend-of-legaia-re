@@ -147,7 +147,9 @@ impl PlayWindowApp {
         }
         // Koru's timed-fight strip wears the same skin (both are text actors
         // registered with an explicit rect and style word `0x44`).
-        if legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world).is_some() {
+        if legaia_engine_core::world_views::timed_fight::timed_fight_strip(&self.session.host.world)
+            .is_some()
+        {
             out.extend(legaia_engine_ui::timed_fight_strip_chrome_draws(
                 &assets.rects,
                 stage_origin,

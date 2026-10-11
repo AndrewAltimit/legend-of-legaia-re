@@ -41,7 +41,7 @@ use legaia_engine_field::field_actor_reflect::{HALF_TURN, REFLECT_HANDLER, tile_
 use legaia_engine_field::field_channels::FieldChannel;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field::FieldCtx;
 use legaia_scene_formats::field_disasm::{EffectKind, Insn, InsnInfo, LinearWalker, MenuCtrlKind};

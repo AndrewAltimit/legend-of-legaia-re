@@ -99,9 +99,9 @@ navigation logic depends on the GPU backend.
 - `incense_notice_box` / `tile_board_prompt` - the Incense wear-off notice
   (`FUN_801F1E48` / `FUN_801F1B64`) and the tile board's quit prompt (walk-SM
   state `5`); geometry arrives from `engine-core::incense_notice` /
-  `engine-core::tile_board`.
+  `engine-core::world_views::tile_board`.
 - `battle_timed_fight_strip` - the `Turns Left / HP Left` strip of the one
-  turn-limited boss fight; gate and numbers are `engine-core::timed_fight`.
+  turn-limited boss fight; gate and numbers are `engine-core::world_views::timed_fight`.
 - `baka_strips` - the Baka Fighter HUD's digit strips (`FUN_801d69e4`,
   `FUN_801d6ef4`, `FUN_801d6f44`), drawn as font glyphs at the ported cell x.
 - `fishing::hub` / `fishing::exchange` / `fishing::rod` - the fishing

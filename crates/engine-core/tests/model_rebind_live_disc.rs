@@ -17,7 +17,7 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing.
 
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::model_bank::SceneModelBank;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::collections::BTreeSet;

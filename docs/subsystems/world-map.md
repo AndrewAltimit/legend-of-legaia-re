@@ -2261,7 +2261,7 @@ hidden at the walk camera's pitch and shows where the visible-tile window or
 the coast leaves the top of the frame open.
 
 Port: `legaia_render_kernels::world_map_sky` (the packets),
-`legaia_engine_core::world_map_sky` (the gate both hosts call), and
+`legaia_engine_core::world_views::world_map_sky` (the gate both hosts call), and
 `legaia_render_kernels::screen_prim::sky_band_prims`, which depth-tests each quad
 at the far plane so it lands only where the scene drew nothing.
 `engine_screens::screen_layers::compose_screen_prims` puts the band first in

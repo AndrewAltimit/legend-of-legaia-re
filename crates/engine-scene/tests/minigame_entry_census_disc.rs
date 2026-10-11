@@ -32,7 +32,7 @@
 
 use legaia_engine_field::man_field_scripts::partition_record_span;
 use legaia_engine_mode::minigame_entry::MinigameSubId;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 use std::collections::BTreeMap;

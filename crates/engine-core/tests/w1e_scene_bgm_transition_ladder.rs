@@ -115,7 +115,7 @@ impl BgmDirector for LatchDirector {
 /// opcode-aware walker across all three record partitions.
 fn scene_bgm_ops(host: &SceneHost) -> Vec<(u16, u8)> {
     use legaia_engine_field::man_field_scripts::partition_record_span;
-    use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+    use legaia_engine_scene::man_census::scene_man_carriers;
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
     let Some(scene) = host.scene.as_ref() else {

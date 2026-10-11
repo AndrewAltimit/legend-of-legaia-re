@@ -7,14 +7,14 @@ impl PlayWindowApp {
     /// Is the field party HUD allowed to be on screen at all this frame?
     ///
     /// Retail's `_DAT_8007B868` suppress global, asked of the shared kernel
-    /// [`legaia_engine_core::world_map_panel_host::field_hud_suppressed`].
+    /// [`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`].
     /// This host answers only the term the world cannot: a window-side panel
     /// with no `World` state behind it. The enumeration used to live here in
     /// full and a second copy lived on the browser play page, and the copies
     /// had drifted - the page's lacked all three of the host terms below, and
     /// this one gated the badge column (`FUN_801d095c`) differently again.
     pub(in crate::window) fn field_party_hud_suppressed(&self) -> bool {
-        legaia_engine_core::world_map_panel_host::field_hud_suppressed(
+        legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed(
             &self.session.host.world,
             self.boot_ui.is_active()
                 || self.menu_runtime.is_open()
@@ -79,7 +79,7 @@ impl PlayWindowApp {
         // holds the player restarts the idle countdown every frame - read
         // a frame late, the order retail's actor lists run in
         // (`FieldPartyHud::rearm_term`).
-        let held = legaia_engine_core::world_map_panel_host::field_hud_rearm_held(
+        let held = legaia_engine_core::world_views::world_map_panel_host::field_hud_rearm_held(
             &self.session.host.world,
         );
         if self.field_party_hud.rearm_term(held) {
@@ -98,7 +98,7 @@ impl PlayWindowApp {
             && let Some(n) = sc.hud_countdown
             && !gated_drawn
         {
-            let mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(
+            let mode = legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(
                 &self.session.host.world,
             );
             let idle = legaia_engine_field::world_map_panel_actors::hud_idle_frames(mode, false);
@@ -121,7 +121,8 @@ impl PlayWindowApp {
         // `_DAT_800845C4` is the options screen's Field HP Display row
         // (Immediate / Gradual / Display Off), not a camera mode - the one
         // engine read both hosts share.
-        let view_mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(world);
+        let view_mode =
+            legaia_engine_core::world_views::world_map_panel_host::field_hud_view_mode(world);
         let player_pos = world
             .player_actor_slot
             .map(usize::from)
@@ -177,7 +178,7 @@ impl PlayWindowApp {
         else {
             return Default::default();
         };
-        let rows = legaia_engine_core::world_map_panel_host::field_party_hud_members(
+        let rows = legaia_engine_core::world_views::world_map_panel_host::field_party_hud_members(
             &self.session.host.world,
         );
         let members: Vec<fp::FieldHudMember<'_>> = rows

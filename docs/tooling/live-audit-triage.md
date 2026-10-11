@@ -343,7 +343,7 @@ Every row is landed. What each wire had to be:
   ([motion-vm.md](../subsystems/motion-vm.md#the-motion-pause-kick)).
 - **`timed_fight_turns_left`** (`801d0748`). The strip it feeds is Koru's timed
   fight. A Muscle Dome round is an ordinary battle that ends on a knockout, so
-  wiring it *into the dome* would have been a bug; `engine-core::timed_fight`
+  wiring it *into the dome* would have been a bug; `engine-core::world_views::timed_fight`
   gates it on the formation's first monster seat and both hosts draw the strip.
 - **`tile_for_slot`** (`801e1934`, `crates/ui-formats/src/save_icon.rs`).
   The card-block icon writer in `engine-core::card_write` routes through it;
@@ -426,7 +426,7 @@ section.
   and `0x2B`, which are not.
 - The panel-window host all of `world_map_panel_actors.rs`,
   `world_map_overlay.rs`, `world_map_panel.rs` and `travel_art_actor.rs` named
-  as missing is `legaia_engine_core::world_map_panel_host`
+  as missing is `legaia_engine_core::world_views::world_map_panel_host`
   ([`world-map.md`](../subsystems/world-map.md#the-panel-actor-state-machines)).
 
 ### The battle-camera rows
@@ -1421,7 +1421,7 @@ withdrawn claim is only useful with its refutation attached.
 | Anchor | The claim that does not hold |
 |---|---|
 | `801de2b0` | Named a host hook for field-VM op `0x34` sub-0 as missing. The hook exists and is live (`World::op34_sub0_color_intensity_setup`), and both retail call sites are in that op's sub-0 arm - `jal 0x801DE2B0` at `0x801DFD68` and `0x801DFEE8`, on the `_DAT_1F800394 & 0x800000` default side of the fork. The gap behind that was a representation conflict, since resolved in favour of the push: the op seats its tweens through `World::spawn_colour_tween` and the float ramp beside them is gone. |
-| `801cee80` | Named `FUN_80025980` at `0x80025AA0` as the retail caller, ported in `engine-core::mode`. That `jal` is one arm of a seven-way jump table (`sltiu v0,v1,0x7`, base `lui v0,0x8001; addiu v0,v0,0xae4`) dispatching per minigame sub-id into the **slot-A overlay's own** routine at this VA, which has a real prologue. The body ported here is different bytes - its dump opens `sh a1,0x16(v0)`, mid-function code storing through a register nothing in the window sets. So the port has no identified caller, and whether the VA is a function entry wants a re-dump. |
+| `801cee80` | Named `FUN_80025980` at `0x80025AA0` as the retail caller, ported in `engine-core::world::mode_world`. That `jal` is one arm of a seven-way jump table (`sltiu v0,v1,0x7`, base `lui v0,0x8001; addiu v0,v0,0xae4`) dispatching per minigame sub-id into the **slot-A overlay's own** routine at this VA, which has a real prologue. The body ported here is different bytes - its dump opens `sh a1,0x16(v0)`, mid-function code storing through a register nothing in the window sets. So the port has no identified caller, and whether the VA is a function entry wants a re-dump. |
 | `8004c650` | Called the walked table a runtime table and made staging it the prerequisite. The walk is over the **static** SCUS arts-name table `DAT_80075EC4` (`lbu v1,0x5ec4(a2)` at `0x8004C664`, 20-byte stride, `0x63` sentinel); `0x80076C10` is only the placement block the X is written into. `legaia_art::arts_table::parse_from_scus` already decodes that table and is live. |
 | `801d4c50` | Made "the duel host must stage art at all" the prerequisite. The browser minigames host stages the duel's art in full - both fighters' meshes, both anim banks, the stage set and the duel VRAM - and still does not call this walk, because `legaia_minigame_formats::baka_opponents::parse_fighter_pack` walks the same chunk chain into typed sub-assets. |
 | `801d57bc` / `801d58e0` | Asserted the keyframe-editor phase is one no shipping path enters. The Baka overlay's own dispatcher writes `400` into `DAT_801DBF44` at `0x801D19DC` (`li v0,0x190; sw v0,-0x40bc(v1)`) on the arm taken when the selection word `0x801DBF90` holds `4` under the pad test at `0x801D194C`, and the dispatcher carries explicit `0x190` / `0x191` / `0x1F4` arms at `0x801CF654..0x801CF684`. |
@@ -1661,7 +1661,7 @@ structure they blamed and are rewritten; every row stays held.
 | `801cf00c` `duel_overlay_init` | held | the mode-24 door warp's `enter_baka_from_overlay` is the overlay-entry host the tag said did not exist; of the seeds only the win target and fighter slots have a consumer (both already the rules engine's constants), and the stage seed, arena camera, `6 x 6` window and the two stream ids have no duel-side counterpart |
 | `801d6704` `field_bgm_plan` | live | the two-part arm is the credits theme, now staged at scene entry through `mode_entry_init::two_part_bgm_stream`; the one-shot latch's stand-in is the directors' same-track suppression |
 | `801d4a60` `step_scene_program` / `lift_step` / `entry_successor` | wired | the pair it parks on is the side-band **bank** request / acknowledge, live as `World::audio.sound_stream`, not a BGM latch; `World::tick_scene_programs` now steps each resumed program from the handler pass |
-| `801d72a0` `help_panel_layout` | wired | its callers are states `0x65` / `0x66`, reached from the venue menu's row 1; the menu opens from the idle shore on Triangle / Select (state `0x0C`, `& 0x110` at `0x801CF9EC`), which no host had bound. `engine-core::fishing_hub` runs the menu, help pages and tackle list on the shared `PondSession`, with the text read off the disc, on all three hosts |
+| `801d72a0` `help_panel_layout` | wired | its callers are states `0x65` / `0x66`, reached from the venue menu's row 1; the menu opens from the idle shore on Triangle / Select (state `0x0C`, `& 0x110` at `0x801CF9EC`), which no host had bound. `engine-core::world::fishing_hub_exits` runs the menu, help pages and tackle list on the shared `PondSession`, with the text read off the disc, on all three hosts |
 | `801d26cc` `bite_pad_nudge` | wired | the play hosts' `PondSession::tick` did run the band; what was off was the count - retail adds one per mask hit on `_DAT_8007B874` (`0x8000`, `0x2000`, and `0xC0` as one mask; the cast press none, `0x801D343C..0x801D3468`), and all three hosts now count through `PondInput::from_engine_pad` |
 | `801d56e4` `clip_segment_2d` | wired | its one caller clips the fishing line's packet (`0x801D3D00`). The blamed endpoint was never the angler: `*s4 + 0x128` is vertex 37 of the **rod actor's** own model (scene models `0x19..0x1B`, spawned by the cast lock), posed in view space and bent by VDF sub-entry 0. `RodActor` ports `FUN_801D1C5C`, and `PondSession::line_frame` builds and clips the line on all three hosts - see [minigame-fishing.md](../subsystems/minigame-fishing.md#the-fishing-line) |
 | `801dc6b4` `CONTEXT_LOCKED_ENTRY_SUBSCREEN` / `801dcd58` `notify_window_operands` | wired | the entry decode (`0x801DC85C..0x801DC8E4`) is ported as `pause_screens::menu_entry_subscreen`, and window 8 is the art-learned notice: its template `0x801E4700` is resident menu data and a Hyper-Art book stages its operands through `FUN_80035C00`, painted on both hosts |

@@ -34,7 +34,7 @@
 //! resolve their row labels from the disc item table (`World::menu.text`).
 //!
 //! Row inks come from the retail kernels
-//! `legaia_engine_core::shop::{shop_root_command_rows, shop_buy_row_ink,
+//! `legaia_engine_core::world_views::shop::{shop_root_command_rows, shop_buy_row_ink,
 //! shop_stock_row_ink}` (`FUN_801D4868`; the list kernel `FUN_80032A44`'s
 //! shop-row arm; `FUN_801D5DE0`), so an empty bag greys the Sell row, a full
 //! stack / unaffordable price greys a stock row, and the Platinum Card band a

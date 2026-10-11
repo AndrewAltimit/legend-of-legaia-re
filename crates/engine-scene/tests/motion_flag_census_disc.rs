@@ -26,7 +26,7 @@
 //! (CLAUDE.md disc-gated convention).
 
 use legaia_engine_field::man_field_scripts::MotionCensusSite;
-use legaia_engine_scene::man_field_scripts::motion_flag_census;
+use legaia_engine_scene::man_census::motion_flag_census;
 use legaia_engine_scene::scene::ProtIndex;
 use std::collections::BTreeMap;
 use std::path::PathBuf;

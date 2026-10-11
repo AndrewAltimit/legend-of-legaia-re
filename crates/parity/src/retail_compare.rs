@@ -86,7 +86,7 @@ const GTE_H: u32 = 0x8007_B6F4;
 const CAM_ROT: u32 = 0x8007_B790;
 const CAM_EYE: u32 = 0x8008_40B8;
 /// The camera focus pair `_DAT_80089118` / `_DAT_80089120` - the world X / Z
-/// the view orbits, stored **negated** (`engine-core::camera`, axes 6 / 8).
+/// the view orbits, stored **negated** (`engine-core::world::camera_world`, axes 6 / 8).
 const CAM_FOCUS: u32 = 0x8008_9118;
 const BGM_ID: u32 = 0x8007_BAC8;
 /// The arrival facing `_DAT_80073EFC` (op `0x3F`'s compass write, zeroed by

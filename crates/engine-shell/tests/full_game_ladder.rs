@@ -92,7 +92,7 @@ use legaia_engine_field::field_regions::TileTrigger;
 use legaia_engine_field::man_field_scripts::{overworld_portal_sites, scene_destinations};
 use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::man_field_scripts::{scene_man_carriers, system_flag_census};
+use legaia_engine_scene::man_census::{scene_man_carriers, system_flag_census};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::boot::BootSession;

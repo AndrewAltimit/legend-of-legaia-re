@@ -141,7 +141,7 @@ impl World {
     /// leaves the fast arm disengaged (see the comment at the call).
     ///
     /// The result is observable engine state, not a camera input:
-    /// [`crate::camera`] still drives the rendered view from its float
+    /// [`crate::world::camera_world`] still drives the rendered view from its float
     /// controller, and choosing between them is a fidelity-mode decision.
     pub fn tick_camera_offset_ease(&mut self) {
         let (y, z) = match self

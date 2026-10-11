@@ -29,7 +29,7 @@ draw builders; the remaining differences from retail are listed under
 | Port: session | `engine-menus` (`field_menu`, `pause_screens`, `equip_session`, `spell_menu`, `menu_list_rows`), driven by `engine-session::BootSession` |
 | Port: drawing | `engine-ui` (`pause_menu`, `menu::*`, `menu::window_painters`, `menu::window_dispatch`) |
 
-`engine-core::pause_screens` holds only the functions that read a `World`;
+`engine-core::world_views::pause_screens` holds only the functions that read a `World`;
 the screen models are `engine-menus::pause_screens`. Dumps cited as `overlay_menu_<addr>.txt` live in
 `ghidra/scripts/funcs/`.
 

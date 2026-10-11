@@ -1,7 +1,7 @@
 //! Disc-gated: the two host screens this file pins read their text off the
 //! user's disc and run on the world every host ticks.
 //!
-//! - The fishing venue hub (`engine-core::fishing_hub`): the entry every host
+//! - The fishing venue hub (`engine-core::world::fishing_hub_exits`): the entry every host
 //!   shares (`SceneHost::enter_fishing_from_overlay`) decodes the menu rows and
 //!   both help pages off PROT 0972, Triangle on the idle shore opens the menu,
 //!   row 1 walks the two help pages (`FUN_801D72A0`), and row 4 leaves.

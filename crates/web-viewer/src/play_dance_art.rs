@@ -5,7 +5,7 @@
 //! The native window's twin is `window/minigames.rs`'s `stage_dance_hud_art`
 //! plus `redraw`'s `dance_countin_prims`. The two hosts stage the same rects
 //! through the same kernel
-//! ([`legaia_engine_core::dance::stage_dance_hud_vram`]) and emit the same
+//! ([`legaia_engine_core::disc_readers::dance::stage_dance_hud_vram`]) and emit the same
 //! quads through the same builder
 //! ([`legaia_engine_ui::dance::dance_countin_prims`]); what differs is only
 //! *where the VRAM lives*, and that is a genuine per-host fact.

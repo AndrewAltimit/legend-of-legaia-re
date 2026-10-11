@@ -62,7 +62,7 @@ impl LegaiaRuntime {
         if let Some(strip) = self
             .scene_host
             .host()
-            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+            .and_then(|h| legaia_engine_core::world_views::timed_fight::timed_fight_strip(&h.world))
         {
             out.extend(ui::timed_fight_strip_text_draws(
                 font,
@@ -99,7 +99,7 @@ impl LegaiaRuntime {
         if self
             .scene_host
             .host()
-            .and_then(|h| legaia_engine_core::timed_fight::timed_fight_strip(&h.world))
+            .and_then(|h| legaia_engine_core::world_views::timed_fight::timed_fight_strip(&h.world))
             .is_some()
         {
             out.extend(ui::timed_fight_strip_chrome_draws(rects, origin, scale));

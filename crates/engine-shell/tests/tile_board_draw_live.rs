@@ -10,7 +10,7 @@
 //! 2. A boot of a real field scene through [`BootSession`], installing a
 //!    board from the same 14-byte op window the field VM would deliver,
 //!    then asserting the draw assembly
-//!    ([`legaia_engine_core::tile_board`]) yields a per-cell draw at
+//!    ([`legaia_engine_core::world_views::tile_board`]) yields a per-cell draw at
 //!    every drawable cell, with every tile actor's template mesh resolved
 //!    from the resident global TMD pool (the set the play-window redraw
 //!    pass uploads + draws).
@@ -234,7 +234,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         "procedural fill produced no drawable cells"
     );
     assert_eq!(world.board.draw_list.len(), drawable_cells);
-    let draws = legaia_engine_core::tile_board::tile_board_actor_draws(world);
+    let draws = legaia_engine_core::world_views::tile_board::tile_board_actor_draws(world);
     assert_eq!(
         draws.len(),
         drawable_cells,
@@ -254,7 +254,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // template mesh (`tmd_ref`) from the global pool - the exact set the
     // play-window redraw queues for GPU upload. The upload queue lists each
     // slot exactly once.
-    let need = legaia_engine_core::tile_board::tile_actor_slots_needing_mesh(world);
+    let need = legaia_engine_core::world_views::tile_board::tile_actor_slots_needing_mesh(world);
     let distinct_slots: std::collections::BTreeSet<u8> =
         world.board.draw_list.iter().map(|d| d.slot).collect();
     assert_eq!(
@@ -266,7 +266,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         let a = &world.actors[*slot as usize];
         assert!(a.active && a.tmd_ref.is_some());
         assert!(
-            legaia_engine_core::tile_board::is_tile_actor_slot(world, *slot as usize),
+            legaia_engine_core::world_views::tile_board::is_tile_actor_slot(world, *slot as usize),
             "tile slot {slot} not board-owned"
         );
     }
@@ -274,9 +274,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
     // The player actor (tile table slot 0) is NOT board-owned - the normal
     // field path keeps drawing it.
     let pslot = world.player_actor_slot.expect("player seated") as usize;
-    assert!(!legaia_engine_core::tile_board::is_tile_actor_slot(
-        world, pslot
-    ));
+    assert!(!legaia_engine_core::world_views::tile_board::is_tile_actor_slot(world, pslot));
 }
 
 #[test]
@@ -309,13 +307,14 @@ fn tile_board_unresolved_templates_degrade_gracefully() {
     let world = &session.host.world;
     assert!(!world.board.draw_list.is_empty());
     assert!(
-        legaia_engine_core::tile_board::tile_actor_slots_needing_mesh(world).is_empty(),
+        legaia_engine_core::world_views::tile_board::tile_actor_slots_needing_mesh(world)
+            .is_empty(),
         "unresolved templates must not enter the upload queue"
     );
     // The per-cell assembly still enumerates the cells (the actors are
     // live); the bin-side drained-slot gate is what keeps them off-screen.
     assert_eq!(
-        legaia_engine_core::tile_board::tile_board_actor_draws(world).len(),
+        legaia_engine_core::world_views::tile_board::tile_board_actor_draws(world).len(),
         world.board.draw_list.len()
     );
 }

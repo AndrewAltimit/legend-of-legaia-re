@@ -130,13 +130,16 @@ impl<S: AudioSink> BootSession<S> {
         // opening caption) - through the one builder the browser runtime's
         // `load_disc` calls too.
         host.world.battle.ui_strings =
-            legaia_engine_core::battle_open::battle_ui_strings_for_disc(&host.index, scus);
+            legaia_engine_core::disc_readers::battle_open::battle_ui_strings_for_disc(
+                &host.index,
+                scus,
+            );
         // The party cast trigger's anim-pair lists and the monster casts'
         // opening camera shots, off the same battle-overlay image, for every
         // session - headless ones included, since a monster cast stages its
         // shot from them (the browser runtime's `load_disc` reads the same).
         host.world.battle.spell_anim_pairs =
-            legaia_engine_core::battle_open::spell_anim_pairs_from_prot(&host.index);
+            legaia_engine_core::disc_readers::battle_open::spell_anim_pairs_from_prot(&host.index);
         if let Some(scus) = scus {
             host.world.install_retail_progression_tables(scus);
             // Pause-menu text: item names + info-window descriptions,

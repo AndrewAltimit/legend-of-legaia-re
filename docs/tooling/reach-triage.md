@@ -1292,7 +1292,7 @@ on the shop picker entry / Sell transition edges - the transitions retail's
 What stays true from the old verdict: `World::run_actor_bytecode`
 (`crates/engine-core/src/world/effects/vm_entry.rs`), the field-actor host, is still
 reached only from `FieldDemoHandler::run` in
-`crates/engine-core/src/mode.rs` - a handler that synthesizes its bytecode
+`crates/engine-core/src/world/mode_world.rs` - a handler that synthesizes its bytecode
 and is constructed nowhere outside the `#[cfg(test)]` module in the same
 file. That edge is a demo, disclosed at both ends; the production route is
 the menu-widget one above. A rerun of the replay reach report is what moves

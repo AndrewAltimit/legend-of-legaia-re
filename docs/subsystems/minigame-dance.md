@@ -635,7 +635,7 @@ So no second staging step exists: the page is up before the hall loads. Parser +
 
 In retail the dance **is** the `other7` scene, so the whole art pack is resident before the minigame starts. The port hosts the session over whichever scene the player walked in from and keeps that scene's VRAM, so it stages the HUD art **selectively**: only the rects the run's own widget table names. The pack's eleven other 256x256 members target `(576, 0)` through `(768, 256)`, the columns a field scene's texture pack occupies.
 
-Port: `engine-core::dance::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
+Port: `engine-core::disc_readers::dance::stage_dance_hud_vram`, driven from `DanceGame::hud_vram_rects`. The residency flag is `World::minigames.dance_hud_art_staged`; both play hosts read it to choose between the retail sprites and placeholder font text.
 
 ### HUD render driver (`FUN_801d231c`)
 

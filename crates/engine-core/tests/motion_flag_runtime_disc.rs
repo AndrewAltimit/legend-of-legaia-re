@@ -21,7 +21,7 @@ use legaia_engine_core::world::{FieldNpcAmbient, World};
 use legaia_engine_field::man_field_scripts::MotionCensusSite;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_motion_vm::ambient_motion::AmbientMotion;
-use legaia_engine_scene::man_field_scripts::motion_flag_census;
+use legaia_engine_scene::man_census::motion_flag_census;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::man_motion::{self, MotionFlagKind};
 use std::path::PathBuf;
@@ -57,7 +57,7 @@ fn open_index() -> Option<ProtIndex> {
 /// opcode byte to the end of its variant.
 fn code_at_site(index: &ProtIndex, s: &MotionCensusSite) -> Option<Vec<u8>> {
     let scene = Scene::load(index, &s.scene_name).ok()?;
-    let carriers = legaia_engine_scene::man_field_scripts::scene_man_carriers(index, &scene);
+    let carriers = legaia_engine_scene::man_census::scene_man_carriers(index, &scene);
     let carrier = carriers.iter().find(|c| c.entry_idx == s.entry_idx)?;
     let man = &carrier.payload;
     let man_file = legaia_scene_formats::man_section::parse(man).ok()?;

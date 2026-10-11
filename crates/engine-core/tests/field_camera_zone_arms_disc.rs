@@ -32,7 +32,7 @@ use legaia_engine_core::world::ZONE_REQUERY_FLAG;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera::CameraZoneRequest;
 use legaia_engine_field::man_field_scripts::partition_record_span;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{CameraKind, InsnInfo, LinearWalker};
 

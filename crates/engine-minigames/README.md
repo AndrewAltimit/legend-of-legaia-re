@@ -47,11 +47,11 @@ simulation crate:
 - **The Muscle Dome leg** - a leg is an ordinary battle under the hood
   (spells, the battle command menu, the arts input), so `MuscleDomeSession`,
   its command menu, the ring / magic gates and the loadouts built off a live
-  roster stay in `engine-core::muscle_dome`; `muscle_ringside` stays too.
+  roster stay in `engine-core::world_views::muscle_dome`; `muscle_ringside` stays too.
 - **The engine bag** - `prize_exchange::apply_redeem` is generic over
   `RedeemBag`; `engine-menus` implements it for the world's `ItemBag`.
   `tile_board`'s per-cell draw assembly reads the `World` and is
-  `engine-core::tile_board`.
+  `engine-core::world_views::tile_board`.
 
 The pure leaves these engines share with the rest of the engine (the BIOS
 `rand()` LCG, both pad-word layouts, the `.MAP` region tables, the field clip

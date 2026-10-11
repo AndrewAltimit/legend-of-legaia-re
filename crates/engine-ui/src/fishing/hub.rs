@@ -1,6 +1,6 @@
 //! The fishing venue's **hub menu and help pages** - one draw, both play hosts.
 //!
-//! The screen's state and layout are `legaia_engine_core::fishing_hub` (the
+//! The screen's state and layout are `legaia_engine_core::world::fishing_hub_exits` (the
 //! five menu rows, the two help pages, the tackle list, all positioned in
 //! retail's 320x240 space off the overlay's own draw calls). What this module
 //! owns is the last step: dialog-font text lines into [`TextDraw`]s, with the

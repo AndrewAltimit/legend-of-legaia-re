@@ -15,7 +15,7 @@
 //!
 //! It lives in `engine-vm` - the leaf both the simulation and the draw layer
 //! link - so a screen point the simulation itself needs (the fishing line's
-//! rod-tip endpoint, `legaia_engine_core::fishing_actors`) and a point the
+//! rod-tip endpoint, `legaia_engine_fishing::fishing_actors`) and a point the
 //! renderer draws divide identically. `crate::gte` re-exports
 //! [`gte_divide`].
 

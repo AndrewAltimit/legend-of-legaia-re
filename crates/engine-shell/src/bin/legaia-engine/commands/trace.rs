@@ -24,7 +24,7 @@ pub(crate) fn cmd_man_scripts(
     use legaia_engine_field::man_field_scripts::{
         FlagBank, partition_record_span, walk_partition_gflag_sites, walk_partition1_scripts,
     };
-    use legaia_engine_scene::man_field_scripts::{
+    use legaia_engine_scene::man_census::{
         scene_man_carriers, system_flag_census as run_system_flag_census,
     };
     use legaia_scene_formats::field_disasm::FlagKind;
@@ -263,7 +263,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if motion_flag_census {
-        use legaia_engine_scene::man_field_scripts::motion_flag_census as run_motion_flag_census;
+        use legaia_engine_scene::man_census::motion_flag_census as run_motion_flag_census;
         let scenes = index.cdname_scene_names();
         let census = run_motion_flag_census(&index, &scenes);
         let total: usize = census.values().map(Vec::len).sum();
@@ -309,7 +309,7 @@ pub(crate) fn cmd_man_scripts(
     }
 
     if op49_window_census {
-        use legaia_engine_scene::man_field_scripts::op49_window_census as run_op49_window_census;
+        use legaia_engine_scene::man_census::op49_window_census as run_op49_window_census;
         let scenes = index.cdname_scene_names();
         let sites = run_op49_window_census(&index, &scenes);
         println!(

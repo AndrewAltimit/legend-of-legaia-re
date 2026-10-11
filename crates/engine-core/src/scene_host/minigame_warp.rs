@@ -206,7 +206,7 @@ impl SceneHost {
             anchor_x: lead.x,
             anchor_z: lead.z,
             facing: lead.facing,
-            rod_mesh: crate::fishing_actors::rod_mesh_from_scene(&scene),
+            rod_mesh: crate::disc_readers::fishing_actors::rod_mesh_from_scene(&scene),
         })
     }
 
@@ -434,7 +434,9 @@ impl SceneHost {
         let special = self.world.dome_special_word();
         session.set_special_word(special);
         // The Ra-Seru (magic) command class.
-        if let Some(magic) = crate::muscle_dome::magic_loadout_for(&self.world, 0, special) {
+        if let Some(magic) =
+            crate::world_views::muscle_dome::magic_loadout_for(&self.world, 0, special)
+        {
             session.install_magic(0, magic);
         }
         self.world.enter_muscle_dome(session);

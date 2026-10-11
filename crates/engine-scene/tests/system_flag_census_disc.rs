@@ -12,7 +12,7 @@
 //! (CLAUDE.md disc-gated convention).
 
 use legaia_engine_field::man_field_scripts::FlagCensusSite;
-use legaia_engine_scene::man_field_scripts::system_flag_census;
+use legaia_engine_scene::man_census::system_flag_census;
 use legaia_engine_scene::scene::ProtIndex;
 use legaia_scene_formats::field_disasm::FlagKind;
 use std::collections::BTreeMap;

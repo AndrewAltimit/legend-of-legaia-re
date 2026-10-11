@@ -220,7 +220,9 @@ impl LegaiaRuntime {
         if model.target_select {
             if let Some(panel) = self
                 .menu_world()
-                .and_then(|w| legaia_engine_core::pause_screens::target_panel_view_model(s, w))
+                .and_then(|w| {
+                    legaia_engine_core::world_views::pause_screens::target_panel_view_model(s, w)
+                })
                 .filter(|m| !m.members.is_empty())
             {
                 let members = target_panel_members(&panel);

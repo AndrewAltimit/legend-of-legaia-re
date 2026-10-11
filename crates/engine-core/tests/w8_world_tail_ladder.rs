@@ -28,7 +28,7 @@ use legaia_engine_fishing::fishing::{
     FLIGHT_FRAMES, FishingRecord, PondPhase, PondSession, WINDUP_FRAMES,
 };
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_system::input::PadButton;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};

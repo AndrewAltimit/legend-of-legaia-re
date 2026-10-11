@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_dir() -> Option<PathBuf> {

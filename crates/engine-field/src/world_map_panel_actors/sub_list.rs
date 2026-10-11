@@ -65,7 +65,7 @@ pub struct SubListInput {
 /// PORT: FUN_801ed590
 ///
 /// Wired: `PanelActorKind::SubList` in
-/// `legaia_engine_core::world_map_panel_host`; it is the entry point the
+/// `legaia_engine_core::world_views::world_map_panel_host`; it is the entry point the
 /// world-map screen's chord installs, and the one whose state-3 hand-off
 /// reaches the travel art.
 pub fn sub_list_tick(phase: i16, input: SubListInput) -> (i16, i32, Vec<SubListEffect>) {

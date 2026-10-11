@@ -18,7 +18,7 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;

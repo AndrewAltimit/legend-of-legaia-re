@@ -990,9 +990,9 @@ impl PlayWindowApp {
             // Koru's timed-fight strip (`Turns Left / HP Left`): a stage-space
             // text actor like the tutorial box, framed in the same layer by
             // `battle_tutorial_chrome_sprite_draws`.
-            if let Some(strip) =
-                legaia_engine_core::timed_fight::timed_fight_strip(&self.session.host.world)
-            {
+            if let Some(strip) = legaia_engine_core::world_views::timed_fight::timed_fight_strip(
+                &self.session.host.world,
+            ) {
                 let mut draws = legaia_engine_ui::timed_fight_strip_text_draws(
                     &self.font,
                     &legaia_engine_ui::TimedFightStripView {

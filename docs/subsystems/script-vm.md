@@ -1692,7 +1692,7 @@ Three things follow:
 
 ### Disc-wide SYSTEM-flag census tooling
 
-An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_scene::man_field_scripts` walks the flag ops out of the decoded MAN:
+An overworld progress gate reads a SYSTEM flag (`0x7x` TEST) in one scene, but the **setter** that opens it (`0x5x` SET / `0x6x` CLEAR) almost always lives in a *different* scene's MAN. To resolve a gate to its writer, `legaia_engine_scene::man_census` walks the flag ops out of the decoded MAN:
 
 - `walk_partition_gflag_sites` reports every flag site in a MAN partition at real opcode boundaries, tagging each with its bank (`FlagBank::Scratchpad` for the `0x2E`/`0x2F` global ops, `FlagBank::System` for the `0x50..=0x7F` ops), the full flag number (`(lead & 0x8F) << 8 | operand` for system flags), and the SET/CLEAR/TEST kind.
 - `system_flag_census` runs that walk over **every** CDNAME scene's MAN across all three partitions and returns `flag -> [(scene, partition, record, op, kind)]`, sorted by flag number - the setter-vs-gate map the progress-gate RE consumes.
@@ -1760,7 +1760,7 @@ The same shape sits one branch level up: `P1[0]`'s first-arrival arm spawns `P2[
 The from-scratch engine executes this chain organically - the host re-runs the entry script on the battle-to-field mode edge (`SceneHost::tick`) and the spawned record's own script bytes land `0x142`; disc-gated oracle `engine-core/tests/organic_beat_records_disc.rs`.
 Thirteen retail blocks ship such a **streaming variant MAN** (extraction indices: `dolk2` 70, `rikuroa2` 122, `rikuroa` 157, `rayman` 201, `station` 228, `balden2` 320, `ropeway2` 339, `taiku` 373, `doman` 401, `taiku2` 427, `nilboa2` 648, `edbalden` 792, `eddoman` 817); for the v12-family dungeons (`rikuroa` / `dolk2`, whose own bundle is the MAN-less `count=4` form) the streaming carrier is the scene's **only** MAN.
 
-`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_scene::man_field_scripts::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-scene/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
+`system_flag_census` (and the motion / op-`0x49` censuses) walk **every** carrier per scene - the bundle MAN plus the streaming variants, enumerated by `legaia_engine_scene::man_census::scene_man_carriers` - so the variant-resident writers surface: the `0x142` setters above, the `0x63A` beat writers. Disc-gated pins: `crates/engine-scene/tests/man_variant_carrier_census_disc.rs`. CLI: `legaia-engine man-scripts --scene <name> --variant <entry_idx>` targets a variant carrier directly (census rows tag them `VARIANT-MAN`); `--p2-gates` prints every partition-2 record's C1/C2 header gate lists + name (the `FUN_8003BDE0` spawn-condition surface the inline-op censuses cannot see).
 
 **Carriers are byte-unique, and every per-scene count depends on it.**
 No two MAN carriers on the disc share bytes, so walking every carrier of every

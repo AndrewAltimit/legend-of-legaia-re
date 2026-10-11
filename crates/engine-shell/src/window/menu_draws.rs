@@ -653,8 +653,11 @@ impl PlayWindowApp {
         &self,
         s: &legaia_engine_menus::pause_screens::PauseItemsSession,
     ) -> Option<legaia_engine_menus::pause_screens::TargetPanelModel> {
-        legaia_engine_core::pause_screens::target_panel_view_model(s, &self.session.host.world)
-            .filter(|m| !m.members.is_empty())
+        legaia_engine_core::world_views::pause_screens::target_panel_view_model(
+            s,
+            &self.session.host.world,
+        )
+        .filter(|m| !m.members.is_empty())
     }
 
     /// Build draws for the inventory item-use overlay. Resolves item

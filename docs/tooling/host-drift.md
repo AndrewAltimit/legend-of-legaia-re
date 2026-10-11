@@ -246,7 +246,7 @@ this class, because a kernel that hands back pens rather than a draw list has
 no `engine-ui` builder to be enumerated:
 
 * window 35, the buy-quantity readout
-  (`engine-core::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - it drew on
+  (`engine-core::world_views::shop::shop_buy_quantity_panel`, `FUN_801D5510`) - it drew on
   the browser page alone, so a native-window buyer sized a stack with no held
   count, no unit price and no running total on screen.
 * window 39, the sell-list item detail
@@ -883,7 +883,7 @@ as well as on the tick, so a decision that went stale on a guarded frame
 cannot reach the screen whichever host skipped the step.
 
 The predicate they ask is one kernel,
-`legaia_engine_core::world_map_panel_host::field_hud_suppressed`. It used to be
+`legaia_engine_core::world_views::world_map_panel_host::field_hud_suppressed`. It used to be
 an enumeration spelled out in each host, and the copies had drifted: the page's
 was missing all three of the window-side terms, and the native window gated the
 badge column on a different test again - which put the badges over every dialog
@@ -1719,7 +1719,7 @@ inside it. Tier 12 measures the inside, and the pair carries a
 | Game | Shared kernels | Per host |
 |---|---|---|
 | fishing | `PondSession` (the only session) through `SceneHost::enter_fishing_from_overlay`; `fishing::FishingTables`, `venue_for_departure_scene`, `SceneHost::fishing_venue_map`; `World::tick_fishing` (events on `fishing_events`); `PondSession::catch_hud`, `status_rows`, `hub_step`; `fishing_actors::bite_pad_nudge`; venue pass `fishing_venue::tick_fishing_venue_on_host` returning `VenueCameraWrites` | The minigames page drives the session with no `World`. |
-| fishing hub (state `0x0C`) | `engine-core::fishing_hub` (`FishingHub::lines`, `FishingHubText::from_overlay`), `engine-ui::fishing::hub`, `World::tick_fishing_hub` | The `0xCE` button escapes draw no glyph and the cursor is a `>` stand-in on every host. |
+| fishing hub (state `0x0C`) | `engine-core::world::fishing_hub_exits` (`FishingHub::lines`, `FishingHubText::from_overlay`), `engine-ui::fishing::hub`, `World::tick_fishing_hub` | The `0xCE` button escapes draw no glyph and the cursor is a `>` stand-in on every host. |
 | slot machine | `SlotMachine::frame`, `slot_machine::projected_paylines` (`FUN_801D3380`), `engine-ui::slot_cabinet`, `slot_paylines`, `SlotMarqueeClock::frame` | The minigames page rasterises the same list on the CPU (`screen_prim_raster`). |
 | Baka Fighter | `BakaFight::frame`; `baka_cabinet::BakaCabinet` (`FUN_801CF388`), `with_attract`, `cabinet_cells`, `install_rung`; `StrikeClock` (`FUN_801D6E5C`), `roster_clip_headers`; `engine-minigame-scenes::baka_duel_scene` (`BakaDuelSurface`, `DuelCamera::vp_raw`); labels `choice_sheet_labels`, `chrome_labels`, `glyph_u`, `hud_digit_placements`; `engine-minigames::baka_impact_fx` | Native resolves each glyph's cell rect without sampling it. |
 | dance | `World::enter_dance` (arms `dance_countin`), `dance::CountIn`, `FinishCountdown`, `DanceTutorial`; `DanceGame::advance_body_clips`, `DanceCastSurface::frame`; `dance_venue::DanceVenue::build`, `sync_dance_venue`; `stage_dance_hud_vram`, with `World::minigames.dance_hud_art_staged` as the one residency predicate; `World::finish_dance_if_over` | Mesh build and instance transform. |

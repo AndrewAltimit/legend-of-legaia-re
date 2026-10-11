@@ -36,7 +36,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_scene::man_field_scripts::op49_window_census;
+use legaia_engine_scene::man_census::op49_window_census;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// Highest sub-op the op's Idle arm accepts (`sltiu v0,v0,0xe` at

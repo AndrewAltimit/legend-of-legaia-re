@@ -80,7 +80,7 @@ use legaia_engine_field::man_field_scripts::{
 };
 use legaia_engine_field::world_map_state::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_scene::man_field_scripts::system_flag_census;
+use legaia_engine_scene::man_census::system_flag_census;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_bundle::{extract_man_payload, find_bundle};
 use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, scene_change_name};

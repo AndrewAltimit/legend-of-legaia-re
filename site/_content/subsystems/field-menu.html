@@ -11,7 +11,7 @@
     <dt>Record</dt><dd>0x10 bytes: content id, park edge, window class (2 tab / 3 standard / 4 list), content rect <code>x,y,w,h</code>, renderer VA</dd>
     <dt>Choreography</dt><dd>Windows slide in / out via the <a href="actor-vm.html">window-widget VM</a>; a closed window parks offscreen at its park edge</dd>
     <dt>Data read</dt><dd>The live <code>0x414</code>-byte character records at <code>0x80084708</code> - the same block the save file copies</dd>
-    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::pause_screens</code></dd>
+    <dt>In the port</dt><dd><code>engine-ui</code> draw builders (wgpu-free, shared by native window and browser) over <code>engine-core::world_views::pause_screens</code></dd>
     <dt>Confidence</dt><dd>Confirmed - table byte-matched disc-vs-RAM; layouts pinned by GPU-prim scans of menu captures (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <table class="data-table">

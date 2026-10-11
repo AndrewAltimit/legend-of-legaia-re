@@ -91,7 +91,7 @@ impl PlayWindowApp {
                     // sits under the strip's fill. This host composites
                     // every text run above every sprite and cannot put the
                     // plaque's name under the strip's frame - it parks it.
-                    || legaia_engine_core::timed_fight::timed_fight_strip(w_ref).is_some(),
+                    || legaia_engine_core::world_views::timed_fight::timed_fight_strip(w_ref).is_some(),
                 badges: badges.as_ref(),
                 // The same box, tested against the party surfaces' own rows:
                 // a bottom-anchored prompt lands on the active-actor bar

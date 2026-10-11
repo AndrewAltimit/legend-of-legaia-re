@@ -63,7 +63,7 @@ pub struct SoftResetInput {
 /// PORT: FUN_801edf00
 ///
 /// Wired: `PanelActorKind::SoftReset` in
-/// `legaia_engine_core::world_map_panel_host`. The host records the
+/// `legaia_engine_core::world_views::world_map_panel_host`. The host records the
 /// executable reload rather than performing it - there is no boot image to
 /// re-load into.
 pub fn soft_reset_tick(phase: i16, input: SoftResetInput) -> (i16, i32, Vec<SoftResetEffect>) {

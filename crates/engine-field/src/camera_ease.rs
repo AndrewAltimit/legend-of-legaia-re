@@ -49,7 +49,7 @@
 //! `_delta_write_or_ramp`) onto `crate::camera_rig::CameraRig::scene_offset` /
 //! `crate::camera_rig::CameraRig::offset_ease`, and `World::tick` steps the
 //! accumulator once a frame through [`ease_camera_offset`]. The accumulator is
-//! observable state, not yet a camera input: `legaia_engine_core::camera` still drives the
+//! observable state, not yet a camera input: `legaia_engine_core::world::camera_world` still drives the
 //! rendered camera from its own float controller, and which of the two owns the
 //! view is a fidelity-mode decision, not a wiring one - the two disagree frame
 //! by frame and swapping silently changes camera feel.
@@ -172,7 +172,7 @@ pub fn ease_step(input: CameraEaseInput, gap: i16) -> i16 {
 /// two globals the field VM's op `0x4C` n4 sub-9 hooks now write
 /// (`crate::camera_rig::CameraRig::scene_offset` and
 /// `crate::camera_rig::CameraRig::offset_ease`). What the accumulator does
-/// *not* yet do is drive the rendered camera - `legaia_engine_core::camera` keeps its own
+/// *not* yet do is drive the rendered camera - `legaia_engine_core::world::camera_world` keeps its own
 /// float controller, and choosing between them is a fidelity-mode decision.
 pub fn ease_camera_offset(input: CameraEaseInput) -> i32 {
     if input.pad & PAD_INPUT_LOCKED != 0 {

@@ -8,7 +8,7 @@
 //! fighter loadouts read live `World` state and the battle command screen,
 //! so they live above this crate: the session in
 //! `legaia_engine_menus::muscle_dome_session`, the `World` entry in
-//! `legaia_engine_core::muscle_dome`. See
+//! `legaia_engine_core::world_views::muscle_dome`. See
 //! [`docs/subsystems/minigame-muscle-dome.md`](../../../docs/subsystems/minigame-muscle-dome.md).
 
 // The flag-bank primitives the contest settlement calls. The port returns the

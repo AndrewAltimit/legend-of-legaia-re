@@ -26,7 +26,7 @@
 //! walked in from rather than inside the hall the way retail does, so the
 //! page's texels were the interrupted town's; the entry path now stages the
 //! rects the run's own widget table names
-//! (`legaia_engine_core::dance::stage_dance_hud_vram`). The text below stays
+//! (`legaia_engine_core::disc_readers::dance::stage_dance_hud_vram`). The text below stays
 //! as the fallback for a run with no page - a chart-only session, or a host
 //! whose staging soft-failed.
 //!

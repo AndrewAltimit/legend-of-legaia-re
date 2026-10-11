@@ -26,7 +26,7 @@ impl World {
     /// per-game-tick `d = 2`.
     ///
     /// No-ops without a player actor slot or an installed
-    /// [`tile_board`](crate::tile_board), and while a dialog box is up
+    /// [`tile_board`](crate::world_views::tile_board), and while a dialog box is up
     /// (the field VM owns the frame). Deterministic across identical pad
     /// streams.
     ///

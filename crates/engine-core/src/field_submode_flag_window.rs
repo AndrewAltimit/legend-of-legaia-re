@@ -14,7 +14,7 @@
 //! one remembered, the pick committed as the only set flag.
 //!
 //! The picker had a port (`legaia_engine_field::world_map_panel_actors::flag_window_tick`)
-//! hosted only by `crate::world_map_panel_host` behind a world-map pad chord,
+//! hosted only by `crate::world_views::world_map_panel_host` behind a world-map pad chord,
 //! while the field path fell into [`crate::field_submode_screen`]'s empty
 //! default arm: the dispatcher retired the actor on its first frame, the script
 //! unparked with no floor chosen (the pad's own row stays the only set
