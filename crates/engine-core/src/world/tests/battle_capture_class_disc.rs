@@ -147,7 +147,7 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
         eprintln!("[skip] no move-power record for 0x37 on this image");
         return;
     };
-    // --- W1-D: the fourteen trampoline arms ---
+    // --- the fourteen trampoline arms ---
     // PROT 0944's `0x37` body now has a decoded damage shape, so the engine
     // hands the wrapper the module's **baked** `a0` (`li a0, 0x38e` at
     // `0x801F6AD0`, `jal 0x801DD6B4` at `0x801F6AD8`) rather than the
@@ -173,7 +173,6 @@ fn a_bypass_class_cast_rolls_the_resist_bypass_wrapper() {
     // victim's live HP - and the baked power is large enough to reach it,
     // where the table scalar was not.
     let victim_hp = w.actors[0].battle.hp;
-    // --- end W1-D ---
     let dealt = folded_damage(&mut w, 0x37);
 
     // Mirror: the bypass wrapper's exact roll over the same stat bridge and

@@ -145,8 +145,8 @@ impl Vertex {
 }
 
 /// Top-level parsed stage: the records table plus a contiguous vertex pool
-/// either before or after the table. See `project_stage_geom_layout.md`
-/// for the on-disc layout discoveries.
+/// either before or after the table (the module docs give the on-disc
+/// layout).
 #[derive(Debug, Clone)]
 pub struct Stage {
     /// All record tables found in the file. The largest is the one whose

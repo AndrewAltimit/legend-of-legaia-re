@@ -1,4 +1,4 @@
-//! 0x4C outer-nibbles 5..F sub-op coverage. Extracted verbatim from `field/tests.rs`.
+//! 0x4C outer-nibbles 5..F sub-op coverage.
 
 use super::*;
 

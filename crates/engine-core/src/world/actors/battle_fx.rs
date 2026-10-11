@@ -1,7 +1,6 @@
 //! Battle actor effects: the per-actor effect-script step, the animation cue
 //! walk and its SFX routing, ghost / burn / weapon-trail draws, impact tint and
 //! impact FX, the stage ambient, the defeat sink and the tween target.
-//! Split out of `actors.rs`; no logic change.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

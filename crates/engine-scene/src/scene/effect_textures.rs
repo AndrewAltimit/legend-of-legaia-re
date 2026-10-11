@@ -5,9 +5,8 @@
 use super::*;
 
 /// PROT entry index for `befect_data` carrying the global TMD-pool head
-/// (the 5 character-mesh TMDs at retail `DAT_8007C018[0..4]`). Pinned in
-/// `project_global_tmd_pool_source.md` via byte-equality vs a Drake post-warp
-/// RAM snapshot.
+/// (the 5 character-mesh TMDs at retail `DAT_8007C018[0..4]`). Pinned by
+/// byte-equality against a Drake post-warp RAM snapshot.
 pub const PROT_BEFECT_DATA_ENTRY: u32 = 874;
 
 /// PROT entry holding the battle effect-texture atlas (the "flame atlas"):

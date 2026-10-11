@@ -1,6 +1,5 @@
 //! Per-actor battle stat modifiers: equipment resist, escape roll, spirit-art
-//! gauge, and buff / debuff application. Split out of `battle.rs` as additional
-//! `impl World` blocks; no logic change from the original inline definitions.
+//! gauge, and buff / debuff application.
 
 use super::*;
 

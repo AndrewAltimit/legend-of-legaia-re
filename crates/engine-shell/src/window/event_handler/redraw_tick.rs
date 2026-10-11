@@ -1,6 +1,6 @@
 //! The redraw's simulation half: the sim ticks one redraw drains and the
 //! per-tick steps (scripted input, the modal arms that own a tick, the field
-//! pad, the world tick and its frame tail), split out of `handle_redraw`.
+//! pad, the world tick and its frame tail).
 
 use super::super::*;
 use super::redraw::tick_menu_runtime_session;

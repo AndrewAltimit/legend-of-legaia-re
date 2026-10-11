@@ -26,8 +26,8 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov -p legaia-engine-shell --test integration w1c_arts_swing_ladder:: \
-//!     --json --output-path target/cov-w1c_arts_swing_ladder.json
+//! cargo llvm-cov -p legaia-engine-shell --test integration arts_swing_ladder:: \
+//!     --json --output-path target/cov-arts_swing_ladder.json
 //! ```
 //!
 //! **No `--release`.** An optimised build inlines the small kernels and
@@ -254,7 +254,7 @@ fn drive_the_swing(w: &mut World) -> Swing {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn w1c_arts_swing_ladder() {
+fn arts_swing_ladder() {
     let Some(disc) = disc_path() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -512,5 +512,5 @@ fn w1c_arts_swing_ladder() {
     assert_eq!(voice_clip_duration_sectors(200), 120);
     eprintln!("[rung 4] xa-cue census: {} rows", report.lines().count());
 
-    eprintln!("w1c_arts_swing_ladder: 4/4 rungs cleared");
+    eprintln!("arts_swing_ladder: 4/4 rungs cleared");
 }

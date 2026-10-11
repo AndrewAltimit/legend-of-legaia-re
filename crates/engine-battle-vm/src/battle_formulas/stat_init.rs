@@ -1,6 +1,5 @@
 //! Battle-load stat initialisation: the party actor's `+0x14C..+0x176` block
-//! (`FUN_80053CB8`) and the equipment bonus fold it applies. Split out of
-//! `battle_formulas.rs`.
+//! (`FUN_80053CB8`) and the equipment bonus fold it applies.
 //!
 //! The monster-side sibling is `FUN_80054CB0`; its hit-reaction tag map is
 //! ported in `legaia_actor_formats::monster_archive::reaction_map`.

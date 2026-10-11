@@ -16,11 +16,9 @@
 //!
 //! ### Pool location
 //!
-//! For the Drake-Kingdom top-view save state (`mc1` per the user's
-//! convention) the pool starts at `0x800AD400` and runs ~341 KB. Decoded
+//! For the Drake-Kingdom top-view save state the pool starts at `0x800AD400` and runs ~341 KB. Decoded
 //! corpus: ~4400 `POLY_FT4`, ~250 `POLY_GT4`, ~150 `SPRT_16` ≈ 4800 prims
-//! per frame. See `memory/project_world_map_top_view_findings.md` for the
-//! per-region RAM layout summary.
+//! per frame. The per-region RAM layout is in `docs/subsystems/world-map.md`.
 //!
 //! ### Tag validation
 //!

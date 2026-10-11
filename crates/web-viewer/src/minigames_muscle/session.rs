@@ -1,5 +1,4 @@
 //! Session plumbing behind the Muscle Dome exports: disc tables, fighter assembly, contest state.
-//! Split out of `minigames_muscle.rs`.
 
 use super::*;
 

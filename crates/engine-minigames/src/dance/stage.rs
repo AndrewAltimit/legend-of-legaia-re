@@ -1,5 +1,4 @@
 //! Count-in banner, clip / face-rig gates, scene entry and stage, and the sprite-part emitter.
-//! Split out of `dance.rs`.
 
 use super::*;
 

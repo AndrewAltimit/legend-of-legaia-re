@@ -1,5 +1,4 @@
 //! Rod / lure selection, the help panel and the fishing menu.
-//! Split out of `fishing.rs`.
 
 // --- rod / lure selection ----------------------------------------------------
 

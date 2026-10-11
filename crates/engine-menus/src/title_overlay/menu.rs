@@ -1,5 +1,4 @@
 //! The executable half: the title menu's input and attract law.
-//! Split out of `title_overlay.rs`.
 
 use super::*;
 

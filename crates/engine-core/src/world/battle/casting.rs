@@ -1,6 +1,4 @@
 //! Spell / summon / monster-special damage resolution and element affinity.
-//! Split out of `battle.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 

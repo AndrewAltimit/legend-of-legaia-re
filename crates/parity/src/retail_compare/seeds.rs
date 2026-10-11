@@ -2,7 +2,7 @@
 //! read out of a state's RAM / VRAM (ambient headings and stream turns, the
 //! clear colour, scroll rects and panels, object models, walkers, morph
 //! weights, fog, CLUT cell FX, the pause menu and the camera block), each with
-//! its environment hand-off. Split out of `retail_compare.rs`; no logic change.
+//! its environment hand-off.
 
 use super::*;
 

@@ -1,6 +1,5 @@
 //! Seru capture, shiny-enemy roll, summon spell-XP accrual, and seru-registry /
-//! trade install. Split out of `battle.rs` as additional `impl World` blocks; no
-//! logic change from the original inline definitions.
+//! trade install.
 
 use super::*;
 

@@ -1,8 +1,8 @@
-//! Round 18/19/20 coverage: 0x4C n8 actor-allocator, nE camera, nD/n5 dialog, VRAM STP, STATE_RESUME-entangled sub-cases. Extracted verbatim from `field/tests.rs`.
+//! 0x4C n8 actor-allocator, nE camera, nD/n5 dialog, VRAM STP, STATE_RESUME-entangled sub-cases.
 
 use super::*;
 
-// -- Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog ---
+// -- 0x4C n8 actor-allocator + nE camera + nD/n5 dialog ---
 
 #[test]
 fn op_4c_n_8_sub_1_set_model_anim_advances_pc_by_9() {

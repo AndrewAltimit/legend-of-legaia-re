@@ -1,4 +1,4 @@
-//! 0x4D BBOX_TEST, 0x36 SCENE_FADE, 0x45 CAMERA, 0x4E inventory compare, 0x49 STATE_RESUME. Extracted verbatim from `field/tests.rs`.
+//! 0x4D BBOX_TEST, 0x36 SCENE_FADE, 0x45 CAMERA, 0x4E inventory compare, 0x49 STATE_RESUME.
 
 use super::*;
 

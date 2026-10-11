@@ -1,5 +1,4 @@
 //! The running Muscle Dome leg (`MuscleDomeSession`).
-//! Split out of `muscle_dome.rs`.
 
 use super::*;
 

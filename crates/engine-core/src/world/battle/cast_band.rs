@@ -363,7 +363,7 @@ pub struct CastModuleCodeRun {
     pub kills_fades: bool,
 }
 
-// --- W1-D: the fourteen trampoline arms ---
+// --- the fourteen trampoline arms ---
 /// The clip PROT 0941's Steal stages on its caster in arm `0`.
 ///
 /// Retail picks it with `FUN_80050E2C(record + 0x4C, 1, record[+0x4A])` - a
@@ -372,7 +372,6 @@ pub struct CastModuleCodeRun {
 /// stages, and the arm's own contribution - the **OR** restage `+0x1DC |= 1`
 /// rather than the band's usual bump - is what the port carries exactly.
 const CAST_STEAL_RUN_CLIP: u8 = 1;
-// --- end W1-D ---
 
 mod code_run;
 mod seat_map;
@@ -463,7 +462,6 @@ mod capture_hold_tests {
     #[test]
     fn an_unported_tick_body_never_holds_the_phase() {
         let mut world = band_world();
-        // --- W1-C ---
         // PROT 0914's tick body is one of the band's unported rows. (This
         // test used to key on PROT 0909, whose tick body is now ported -
         // `legaia_engine_battle_vm::seru_magic_ticks::viguro_tick` - so keying on
@@ -474,7 +472,6 @@ mod capture_hold_tests {
         assert!(!run.tick_ported, "but no tick body ran");
 
         world.arm_capture_cast_module(0x8C);
-        // --- end W1-C ---
         assert!(
             !world.capture_stager_tick(),
             "so the band is not held on it"

@@ -1,6 +1,4 @@
 //! `LevelUpResult` + `LevelUpTracker`: the party level-up driver.
-//!
-//! Extracted verbatim from `levelup.rs`.
 
 use super::*;
 use legaia_engine_system::rand::BiosRand;

@@ -1,6 +1,4 @@
 //! Scene-level trigger tables: destinations, FMV triggers, BGM starts, stager installs.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 

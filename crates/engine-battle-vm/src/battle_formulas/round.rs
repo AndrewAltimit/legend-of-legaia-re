@@ -1,6 +1,5 @@
 //! Per-round battle bookkeeping: the initiative-key seeder (`FUN_801DA780`)
-//! and the agility / action-gauge reset (`FUN_801D88CC`). Split out of
-//! `battle_formulas.rs`.
+//! and the agility / action-gauge reset (`FUN_801D88CC`).
 //!
 //! These are the two passes that run at a round boundary, and the order is
 //! **reset first**: the battle-flow SM calls `FUN_801D88CC` at `801d0ed0` and

@@ -4,7 +4,6 @@
 use super::*;
 
 impl World {
-    // --- end W1-C ---
 
     /// Run the band's two whole-row AoE stagers - PROT 0927 (Juggernaut,
     /// `FUN_801F85A8`) and PROT 0966 (Evil Seru Magic, `FUN_801F8D64`) -

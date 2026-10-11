@@ -238,8 +238,8 @@ fn op03_world_rotate_add_uses_host_lut() {
 /// `run_until_break` should exit at HALT with all per-op state changes
 /// applied. Avoids the default-arm sub-ops whose `size_u16 = 1`
 /// semantics leave PC pointing at the sub-op byte (which would then be
-/// re-interpreted as a new opcode). Mirrors session-20's integration
-/// style for the field VM but exercises the move-VM dispatch table.
+/// re-interpreted as a new opcode). Mirrors the field VM's integration
+/// style but exercises the move-VM dispatch table.
 #[test]
 fn run_until_break_walks_explicit_size_opcodes_then_halts() {
     let mut host = TestHost::default();

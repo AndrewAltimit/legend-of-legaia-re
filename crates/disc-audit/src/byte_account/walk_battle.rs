@@ -1,5 +1,4 @@
 //! Battle-side walkers: monster archive, `summon.dat` / `readef.DAT`, player battle files.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

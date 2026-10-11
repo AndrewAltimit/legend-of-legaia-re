@@ -1,5 +1,4 @@
 //! HUD kernels: the step-mark spawn, digit glyphs, beat track, hit stings and the GOOD banner.
-//! Split out of `dance.rs`.
 
 use super::*;
 

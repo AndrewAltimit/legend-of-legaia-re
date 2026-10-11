@@ -49,6 +49,6 @@ mod talk_face_acquire_bind_disc;
 mod town01_entry_script;
 mod town01_p1_arm_sites;
 mod v12_bundle_man_disc;
-mod w4a_goods_candidates_disc;
+mod goods_candidates_disc;
 mod walk_field_map;
 mod world_map_pack_untextured_real;

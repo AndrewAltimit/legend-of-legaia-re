@@ -2,7 +2,7 @@
 //! (PROT 0903..0908) and walk each module's phase chain from `0` to its
 //! terminal through `World::run_cast_module_code`.
 //!
-//! Why it exists, separately from `w4d_cast_band_ladder`. That ladder steps
+//! Why it exists, separately from `cast_band_ladder`. That ladder steps
 //! two *arms* per band entry and asks whether a ported body was reached at
 //! all. These six bodies are `beq` **chains** fifteen arms deep whose
 //! simulation writes live in the late arms - PROT 0903's hit is arm 11, PROT
@@ -24,7 +24,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_overlay_images::cast_effect_pool::{CAST_MODULE_PROT_FIRST, CAST_MODULE_PROT_LAST};
 use std::path::PathBuf;
 
-/// The six ids this lane ports, and the PROT entry each resolves to.
+/// The six ids this ladder walks, and the PROT entry each resolves to.
 const IDS: [(u8, u32); 6] = [
     (0x81, 903),
     (0x82, 904),

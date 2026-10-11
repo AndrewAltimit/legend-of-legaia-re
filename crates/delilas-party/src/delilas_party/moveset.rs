@@ -1,5 +1,4 @@
 //! Delilas move mode: the whole art kit re-animated from the sibling's own clips.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 

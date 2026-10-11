@@ -161,7 +161,7 @@ fn menu_ctrl_op0(insn: &Insn) -> Option<u8> {
 }
 
 #[test]
-fn w1f2_field_vm_op_arms_run_on_real_scene_bytecode() {
+fn field_vm_op_arms_run_on_real_scene_bytecode() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;

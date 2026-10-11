@@ -1,5 +1,4 @@
-//! The battle-state run and its image comparison. Split out of
-//! `retail_compare.rs`; no logic change.
+//! The battle-state run and its image comparison.
 
 use super::*;
 

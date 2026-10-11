@@ -1,5 +1,5 @@
 //! Field VM result / parameter value types surfaced by the [`FieldHost`]
-//! trait methods. Split out of `field.rs`.
+//! trait methods.
 
 /// Tristate result for [`FieldPartyInventoryHost::op4c_n8_subd_actor_search`] (op 0x4C
 /// n8 sub-D).

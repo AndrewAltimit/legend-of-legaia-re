@@ -1,5 +1,4 @@
 //! Fighter stat profiles and the damage model.
-//! Split out of `muscle_dome.rs`.
 
 use super::*;
 

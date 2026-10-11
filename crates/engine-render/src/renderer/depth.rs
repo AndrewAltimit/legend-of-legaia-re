@@ -1,6 +1,6 @@
 //! The renderer's depth conventions: the depth target format + view, the
 //! reversed-Z projection fold and clear value, and the shadow-map
-//! resolution and compare bias. Split out of `renderer.rs`.
+//! resolution and compare bias.
 
 use super::*;
 

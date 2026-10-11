@@ -8,4 +8,4 @@
 mod mdec_robustness_fuzz;
 mod st_ring_real_str;
 mod str_player_segment;
-mod w1a_fmv_ladder;
+mod fmv_ladder;

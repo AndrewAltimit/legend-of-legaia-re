@@ -4,7 +4,7 @@
 use super::*;
 
 impl World {
-    // --- W1-D: the fourteen trampoline arms ---
+    // --- the fourteen trampoline arms ---
 
     /// The five extra record fields
     /// [`legaia_engine_battle_vm::cast_arm_ticks::CastArmExtState`] carries, lifted

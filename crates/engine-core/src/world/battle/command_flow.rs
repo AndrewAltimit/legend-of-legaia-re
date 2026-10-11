@@ -1,6 +1,5 @@
 //! Player-driven battle command menu and the Arts / Magic / Item submenu
-//! drivers. Split out of `battle.rs` as additional `impl World` blocks; no
-//! logic change from the original inline definitions.
+//! drivers.
 
 use super::*;
 

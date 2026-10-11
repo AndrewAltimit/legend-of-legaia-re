@@ -1,5 +1,4 @@
 //! The contest: the ladder run that sits above a single leg, and its settlement.
-//! Split out of `muscle_dome.rs`.
 
 use super::*;
 use legaia_save::minigame_save::COIN_BANK_MAX;

@@ -1,7 +1,7 @@
 //! Seru capture + magic-learning state: the capture log and registry, this battle's captures, shiny rolls and magic level-ups.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 /// Default chance (percent) that a capturable enemy spawns shiny.
 /// Matches the `--shiny-seru` randomizer default and the rare-encounter

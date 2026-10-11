@@ -1,5 +1,4 @@
 //! Arts / physical damage-roll branch (`FUN_801dd0ac`, `attacker_slot != 7`).
-//! Split out of `battle_formulas.rs`.
 
 use super::*;
 

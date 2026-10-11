@@ -1,5 +1,4 @@
 //! Every write to the sub-mode word (`+0x204`) and the pad masks that gate them.
-//! Split out of `title_overlay.rs`.
 
 /// One `state[+0x204] = value` write inside the tick function. Each row
 /// pins the store's instruction address, the sub-mode handler whose body

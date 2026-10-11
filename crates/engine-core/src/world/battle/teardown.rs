@@ -1,6 +1,5 @@
 //! Battle teardown: finish / loot / field restore, and the monster-slot render
-//! bridge. Split out of `battle.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
+//! bridge.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

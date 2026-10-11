@@ -1,5 +1,4 @@
 //! Reel input, cast power, the tension gauge and the persistent catch record.
-//! Split out of `fishing.rs`.
 
 use super::*;
 

@@ -1,4 +1,4 @@
-//! Unit tests for the field VM. Split out of `field.rs`.
+//! Unit tests for the field VM.
 
 use super::*;
 
@@ -170,7 +170,7 @@ struct TestHost {
     n_e_capture_ddf48_calls: u32,
     n_e_ba66_writes: Vec<u8>,
     n_e_snapshot_84570_calls: u32,
-    // Round 16 - overlay-helper hooks.
+    // Overlay-helper hooks.
     n_c_sub_1_flag_loops: u32,
     n_d_sub_1_jump_target: Option<usize>,
     n_d_sub_2_channel_calls: Vec<u8>,
@@ -181,7 +181,7 @@ struct TestHost {
     n_d_sub_e_jump_target: Option<usize>,
     n_d_sub_e_calls: Vec<u8>,
     n_e_sub_1_text_calls: Vec<(Vec<u8>, u16)>,
-    // Round 17 - five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+    // Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
     n_c_sub_0_move_cancels: u32,
     n_c_sub_0_active: bool,
     n_c_sub_3_teleports: u32,
@@ -197,7 +197,7 @@ struct TestHost {
     halt_acquire_predicate: bool,
     arc_target_halted: bool,
     halt_acquire_calls: Vec<(u8, usize, [i16; 3])>,
-    // Round 18 - 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
+    // 0x4C n8 actor-allocator + nE camera + nD/n5 dialog.
     n_8_sub_1_set_model_calls: Vec<(u32, u16, u16)>, // (model_id, anim, tween)
     n8_sub6_reflection_installs: Vec<(u8, [i16; 6])>,
     n8_sub6_source_present: bool,
@@ -211,10 +211,10 @@ struct TestHost {
     n_5_sub_3_dialog_waits: u32,
     n_5_sub_4_dialog_active: bool,
     n_5_sub_4_polls: u32,
-    // Round 19 - 0x4C nD sub-4/5 VRAM STP set/clear.
+    // 0x4C nD sub-4/5 VRAM STP set/clear.
     n_d_sub_4_vram_stp_set_calls: Vec<(u16, u16)>,
     n_d_sub_5_vram_stp_clear_calls: Vec<(u16, u16)>,
-    // Round 20 - STATE_RESUME-entangled 0x4C n5/n6/n8 sub-cases.
+    // STATE_RESUME-entangled 0x4C n5/n6/n8 sub-cases.
     #[allow(clippy::type_complexity)]
     n_5_sub_1_npc_runs: Vec<(u16, u16, u8, u8, bool)>, // (x, z, depth, move_id, is_player)
     n_5_sub_2_take_items: std::cell::RefCell<Vec<u8>>,
@@ -1039,7 +1039,7 @@ fn run<H: FieldHost>(host: &mut H, bytecode: &[u8]) -> (FieldCtx, Vec<StepResult
     (ctx, trace)
 }
 
-mod actor_camera_dialog_rounds;
+mod actor_camera_dialog_vram;
 mod actor_ctrl_sysflag_integration;
 mod camera_fade_inventory_state;
 mod field_actions;

@@ -1,6 +1,6 @@
 //! The redraw's submit half: the draw census diagnostic, the per-draw
 //! marks staged on the renderer, the screenshot harness (sweep and
-//! single-shot capture) and the present - split out of `handle_redraw`.
+//! single-shot capture) and the present.
 
 use super::super::*;
 

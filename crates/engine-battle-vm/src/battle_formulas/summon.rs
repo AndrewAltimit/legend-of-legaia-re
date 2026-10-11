@@ -1,5 +1,5 @@
 //! Summon-magic damage roll + scale kernels (`FUN_801dd0ac` summon branch,
-//! `FUN_801dd864` modifiers). Split out of `battle_formulas.rs`.
+//! `FUN_801dd864` modifiers).
 
 // ---------------------------------------------------------------------------
 // Summon-magic damage roll (FUN_801dd0ac summon branch + FUN_801dd864 modifiers)

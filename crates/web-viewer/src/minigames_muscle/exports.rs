@@ -1,5 +1,4 @@
 //! The Muscle Dome's wasm-bindgen API: leg, contest, magic and arts exports.
-//! Split out of `minigames_muscle.rs`.
 
 use super::*;
 

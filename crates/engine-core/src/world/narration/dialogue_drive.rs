@@ -1,5 +1,4 @@
 //! Inline-dialogue driving: start / step / drive, and the talk-facing legs.
-//! Split out of `narration.rs`.
 
 use super::*;
 

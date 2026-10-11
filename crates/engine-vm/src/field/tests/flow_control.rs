@@ -1,4 +1,4 @@
-//! Core flow control: NOP/JMP_REL, flag triplets, YIELD, DATA_BLOCK, WAIT_FRAMES, peek_extended, cross-context extended dispatch. Extracted verbatim from `field/tests.rs`.
+//! Core flow control: NOP/JMP_REL, flag triplets, YIELD, DATA_BLOCK, WAIT_FRAMES, peek_extended, cross-context extended dispatch.
 
 use super::*;
 

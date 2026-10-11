@@ -1,6 +1,6 @@
 //! Effect-VM slot pool: constants, master/child slot layout, script header,
 //! and the [`Pool`] runtime (`FUN_801DE914` init, `FUN_801DFDF0` spawn,
-//! `FUN_801E0088` per-frame walker). Split out of `effect_vm.rs`.
+//! `FUN_801E0088` per-frame walker).
 //!
 //! The faithful per-frame algebra lives in [`Pool::tick_retail`] (pass 1:
 //! master spawn cadence + child anim/motion) and [`Pool::child_billboards`]

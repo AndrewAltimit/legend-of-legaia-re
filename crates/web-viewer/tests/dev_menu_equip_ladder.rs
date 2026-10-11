@@ -12,7 +12,7 @@
 //! (`docs/tooling/host-drift.md` tier 5).
 //!
 //! What the *kernels* do with the bag and the record is asserted disc-free in
-//! `crates/engine-core/tests/w1d_world_map_render_ladder.rs`, over the same
+//! `crates/engine-core/tests/world_map_render_ladder.rs`, over the same
 //! `DevMenuSession` wrapper both hosts call. This file's job is narrower and
 //! is the half that file cannot cover: that a pad stream on a real host
 //! reaches them at all.
@@ -22,9 +22,9 @@
 //! ```text
 //! cargo llvm-cov clean --profraw-only
 //! cargo llvm-cov -p legaia-web-viewer \
-//!     --test integration w1d_dev_menu_equip_ladder:: --no-report
+//!     --test integration dev_menu_equip_ladder:: --no-report
 //! cargo llvm-cov report --json \
-//!     --output-path target/cov-w1d_dev_menu_equip_ladder.json
+//!     --output-path target/cov-dev_menu_equip_ladder.json
 //! ```
 //!
 //! No `--release`, and the report step is unscoped: an optimised build leaves
@@ -62,7 +62,7 @@ fn text_count(v: &serde_json::Value) -> usize {
 }
 
 #[test]
-fn w1d_dev_menu_equip_ladder() {
+fn dev_menu_equip_ladder() {
     let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -204,5 +204,5 @@ fn w1d_dev_menu_equip_ladder() {
         0,
         "turning the opt-in off must take the overlay with it"
     );
-    eprintln!("w1d_dev_menu_equip_ladder: cleared");
+    eprintln!("dev_menu_equip_ladder: cleared");
 }

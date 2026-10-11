@@ -1,5 +1,4 @@
 //! The overlay state block's addresses and the master game-mode values it hands off to.
-//! Split out of `title_overlay.rs`.
 
 /// Title-overlay state struct base. Passed as the first argument (`a0`)
 /// to [`SUBMODE_TICK_FN_ENTRY_PC`](super::SUBMODE_TICK_FN_ENTRY_PC).

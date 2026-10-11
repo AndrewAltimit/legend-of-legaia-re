@@ -1,5 +1,4 @@
 //! Instruction scans over a code image: its uninitialised data region, `lui`-pair forms and loop-bounded arrays.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

@@ -1,6 +1,5 @@
 //! Battle actor animation: the per-frame battle animation tick, staged clip
 //! commits at clip boundaries, reaction queueing and the battle pose apply.
-//! Split out of `actors.rs`; no logic change.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

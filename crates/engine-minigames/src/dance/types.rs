@@ -1,5 +1,4 @@
 //! Floor modes, step directions, judgements, events and the per-dancer run state.
-//! Split out of `dance.rs`.
 
 use super::*;
 

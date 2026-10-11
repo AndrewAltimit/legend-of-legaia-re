@@ -392,8 +392,7 @@ pub struct ActorSpriteRequest {
 /// raw bytes so downstream renderers can drive `legaia_tmd::mesh::*` builders
 /// without re-fetching from disc.
 ///
-/// See `project_dat_8007c018_global_tmd_table.md` and
-/// `project_global_tmd_pool_source.md` for the retail-side semantics. The
+/// The
 /// port treats the pool as opaque indexed storage: the field-VM
 /// `0x4C 0xD8` host hook reads slot `tmd_idx` and writes the resulting `Arc`
 /// onto [`Actor::tmd_ref`] - whatever populated the slot is the producer's

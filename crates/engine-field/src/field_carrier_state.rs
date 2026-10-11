@@ -1,7 +1,7 @@
 //! Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 use crate::man_field_scripts::FieldCarrierConfig;
 

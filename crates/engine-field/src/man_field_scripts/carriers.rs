@@ -1,6 +1,4 @@
 //! Derived field-carrier menus (Rim Elm sparring carrier detection).
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 

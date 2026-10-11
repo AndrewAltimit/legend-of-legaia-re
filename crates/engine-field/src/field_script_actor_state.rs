@@ -3,8 +3,8 @@
 //! records) and the op `0x34` sub-1 **attached light** (`FUN_801E5668`,
 //! ticked by `FUN_801E4470`).
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit; the behaviour lives in `world/field_script_actors.rs`.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 use legaia_engine_vm::field_actor_billboard::AttachedSprite;
 use legaia_engine_vm::field_ledge_hop_arc::{HopArc, HopEmitter};

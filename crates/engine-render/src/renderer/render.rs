@@ -1,6 +1,5 @@
 //! The per-frame draw path: [`Renderer::render`], scene/text uniform
-//! staging, and the internal text-quad helpers. Split out of
-//! `renderer.rs`.
+//! staging, and the internal text-quad helpers.
 
 use super::*;
 

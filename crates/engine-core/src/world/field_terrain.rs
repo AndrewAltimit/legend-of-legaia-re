@@ -1,7 +1,7 @@
 //! Per-scene field terrain: walkability grid, map-region block, zone table, floor-height LUT, object cells, elevation overrides and the region / tile trackers.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// One frame of the floor-height ladder's oscillators (field-VM op `0x4C`
 /// nibble-9 sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`):

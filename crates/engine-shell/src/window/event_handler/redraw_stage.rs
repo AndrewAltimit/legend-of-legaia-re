@@ -1,6 +1,6 @@
 //! The redraw's render-state staging, mesh-upload drains and per-frame
 //! skinning - the steps of the render block that run before the draw lists
-//! borrow the uploaded meshes - split out of `handle_redraw`.
+//! borrow the uploaded meshes.
 //!
 //! Each step re-borrows the renderer itself: the render block only enters
 //! when the renderer, the scene VRAM and the font atlas are all present.

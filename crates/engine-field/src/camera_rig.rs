@@ -1,7 +1,7 @@
 //! Field camera rig: the saved camera snapshot, scene offset + ease, shake amplitude and the zone-ramp register file.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 use legaia_engine_vm::field::CameraParam;
 

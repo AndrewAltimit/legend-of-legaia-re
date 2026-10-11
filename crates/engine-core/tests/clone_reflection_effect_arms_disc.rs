@@ -1,4 +1,4 @@
-//! Disc-gated: the three field-VM arms wired in this program, each driven
+//! Disc-gated: three wired field-VM arms, each driven
 //! from **real scene bytecode** rather than from a hand-written instruction.
 //!
 //! Each of the three has a sibling oracle that writes the instruction out as
@@ -93,7 +93,7 @@ enum Arm {
 
 fn arm_of(insn: &Insn) -> Option<Arm> {
     // The cross-context `0x80` prefix widens the header, and every offset
-    // below is written against the one-byte form; the sites this program
+    // below is written against the one-byte form; the sites this file
     // documents are all unprefixed.
     if insn.extended.is_some() {
         return None;
@@ -250,7 +250,7 @@ fn actors_with(w: &World, handler: ActorHandler) -> Vec<usize> {
 }
 
 #[test]
-fn w3b_wave_wires_run_on_real_scene_bytecode() {
+fn clone_reflection_effect_arms_run_on_real_scene_bytecode() {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;

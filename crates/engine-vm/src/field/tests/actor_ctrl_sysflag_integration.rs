@@ -1,4 +1,4 @@
-//! 0x34 EFFECT sub-3, 0x43 ACTOR_CTRL sub-ops, step_with_caller propagation, high-byte 0x5x/0x6x/0x7x sysflag ops, and cross-opcode integration traces. Extracted verbatim from `field/tests.rs`.
+//! 0x34 EFFECT sub-3, 0x43 ACTOR_CTRL sub-ops, step_with_caller propagation, high-byte 0x5x/0x6x/0x7x sysflag ops, and cross-opcode integration traces.
 
 use super::*;
 

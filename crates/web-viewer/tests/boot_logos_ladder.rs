@@ -216,8 +216,8 @@ fn rung3_skip(rt: &mut LegaiaRuntime) -> Result<(), String> {
 
 fn baseline() -> u32 {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../scripts/replays/w3c_boot_logos_baseline.toml");
-    let text = std::fs::read_to_string(&path).expect("w3c_boot_logos_baseline.toml");
+        .join("../../scripts/replays/boot_logos_baseline.toml");
+    let text = std::fs::read_to_string(&path).expect("boot_logos_baseline.toml");
     let value: toml::Value = text.parse().expect("baseline TOML parses");
     value["reached"]
         .as_integer()
@@ -225,7 +225,7 @@ fn baseline() -> u32 {
 }
 
 #[test]
-fn w3c_boot_logos_ladder() {
+fn boot_logos_ladder() {
     let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -257,19 +257,19 @@ fn w3c_boot_logos_ladder() {
         }
     }
     eprintln!(
-        "w3c_boot_logos_ladder: score {score} (sequence budget {} frames)",
+        "boot_logos_ladder: score {score} (sequence budget {} frames)",
         sequence_frames()
     );
     let base = baseline();
     assert!(
         score >= base,
         "boot-logos ladder regressed: score {score} < baseline {base} \
-         (scripts/replays/w3c_boot_logos_baseline.toml)"
+         (scripts/replays/boot_logos_baseline.toml)"
     );
     if score > base {
         eprintln!(
             "baseline can ratchet: set reached = {score} in \
-             scripts/replays/w3c_boot_logos_baseline.toml"
+             scripts/replays/boot_logos_baseline.toml"
         );
     }
 }

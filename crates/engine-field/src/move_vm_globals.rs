@@ -1,7 +1,7 @@
 //! Move-VM globals: per-actor bytecode and buffer pools, the shared predicate / counter / slot-table words, scratchpad ramp targets and the per-tick outcomes.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 use legaia_engine_vm::MAX_ACTORS;
 use legaia_engine_vm::actor_tick::TickResult;

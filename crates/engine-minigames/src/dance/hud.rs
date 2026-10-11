@@ -1,5 +1,4 @@
 //! HUD widget quads and the HUD driver.
-//! Split out of `dance.rs`.
 
 use super::*;
 

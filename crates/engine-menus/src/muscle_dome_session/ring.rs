@@ -1,5 +1,4 @@
 //! The command ring (which chip a fighter may pick), the magic arm, and the per-turn selection types.
-//! Split out of `muscle_dome.rs`.
 
 use super::*;
 

@@ -19,9 +19,9 @@
 //! ```text
 //! cargo llvm-cov clean --profraw-only
 //! cargo llvm-cov -p legaia-engine-core \
-//!     --test integration w1d_world_map_render_ladder:: --no-report
+//!     --test integration world_map_render_ladder:: --no-report
 //! cargo llvm-cov report --json \
-//!     --output-path target/cov-w1d_world_map_render_ladder.json
+//!     --output-path target/cov-world_map_render_ladder.json
 //! ```
 //!
 //! No `--release`, and the report step is unscoped: an optimised build leaves
@@ -683,7 +683,7 @@ fn rung12_fade_flash(w: &mut World) -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn w1d_world_map_render_ladder() {
+fn world_map_render_ladder() {
     let mut w = overworld();
     type Rung = (&'static str, fn(&mut World) -> Result<(), String>);
     let rungs: [Rung; 12] = [
@@ -715,7 +715,7 @@ fn w1d_world_map_render_ladder() {
             }
         }
     }
-    eprintln!("w1d_world_map_render_ladder: score {score}/12");
+    eprintln!("world_map_render_ladder: score {score}/12");
     assert!(stall.is_none(), "{}", stall.unwrap());
 }
 
@@ -730,7 +730,7 @@ fn w1d_world_map_render_ladder() {
 /// the hosts convert to, because the browser surface exposes neither the
 /// picker phase nor the draw gate the dispatcher's return feeds.
 #[test]
-fn w1d_dev_menu_cancel_runs_the_row_action_dispatcher() {
+fn dev_menu_cancel_runs_the_row_action_dispatcher() {
     use legaia_engine_core::dev_menu_host::{DevMenuSession, DevPage};
     use legaia_engine_field::dev_menu_leaves::ListPickerPhase;
     use legaia_engine_system::pad::{PACK_CIRCLE, PACK_DOWN};
@@ -782,7 +782,7 @@ impl DevMenuRowCount {
 /// commit takes the item **out** of the bag and gives back whatever occupied
 /// the destination slot, and a bag miss must leave both untouched.
 #[test]
-fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
+fn dev_menu_equip_commit_swaps_bag_and_slot() {
     use legaia_engine_core::dev_menu_host::{DevMenuSession, WorldEquipHost};
 
     // Slot bits `0x00` -> destination slot 0 (`(bits & 0x60) >> 5 == 0`).
@@ -853,7 +853,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
 /// per-entry equipment sub-draw. Calling the painter directly would prove the
 /// kernel computes, not that a session asks it to.
 #[test]
-fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
+fn submode_frame_loop_reaches_the_equipment_sub_panel() {
     use legaia_engine_field::actor_handler::ActorHandler;
     use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot, window};
 
@@ -918,7 +918,7 @@ fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
 /// worklist as gated on a scene whose script arms them; what is closed is the
 /// older reading that the port had no arming call site at all.
 #[test]
-fn w1d_horizon_gate_is_data_blocked_not_plumbing_blocked() {
+fn horizon_gate_is_data_blocked_not_plumbing_blocked() {
     let mut w = overworld();
     for _ in 0..8 {
         frame(&mut w, 0);

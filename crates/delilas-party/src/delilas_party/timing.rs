@@ -1,5 +1,4 @@
 //! Frame retiming: clip contacts, retimed hit frames and effect-script edits.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 

@@ -1,5 +1,4 @@
 //! The overlay-code walker and the claim passes it runs over a code image.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

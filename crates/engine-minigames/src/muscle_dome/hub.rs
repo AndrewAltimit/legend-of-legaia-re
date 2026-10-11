@@ -1,5 +1,4 @@
 //! Contest-hub presentation: sprite glides, the time meter and the hub screen timing.
-//! Split out of `muscle_dome.rs`.
 
 /// One animated-sprite glide record (`ctx + 0x11B4 + i*0xC`, up to 0x28
 /// handles): a sprite easing from `start` to `target` over `total` frames.

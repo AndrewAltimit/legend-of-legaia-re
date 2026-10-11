@@ -1,5 +1,4 @@
 //! Overlay sub-assets and tables pinned by consumer, and the slot-B module walker.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

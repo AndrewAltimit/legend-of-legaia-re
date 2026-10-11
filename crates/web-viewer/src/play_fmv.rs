@@ -39,7 +39,7 @@
 //!
 //! ## Fallbacks (the page never installs)
 //!
-//! A cached `play-app.js` that predates this lane never loads the FMV script,
+//! A cached `play-app.js` that predates this module never loads the FMV script,
 //! so it never calls [`LegaiaRuntime::play_fmv_set_supported`]: the runtime
 //! then auto-finishes the movie the frame it arms - the pre-existing
 //! behaviour, hand-off included. A page that *did* declare support but never
@@ -104,7 +104,7 @@ fn skip_edge_from_input(fmv_id: i16, input: &InputState) -> bool {
 
 /// Who armed the movie: the field VM's cutscene mode or the title attract -
 /// the engine's own [`legaia_engine_system::movie::movie_audio::MovieOrigin`], so the
-/// movie-audio policy reads the same value this lane arms with.
+/// movie-audio policy reads the same value this module arms with.
 pub(crate) use legaia_engine_system::movie::movie_audio::MovieOrigin as FmvOrigin;
 
 /// A movie the runtime wants the page to install: the raw-sector window of

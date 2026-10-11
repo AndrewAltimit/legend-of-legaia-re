@@ -10,7 +10,7 @@
 //! | `801e45bc` | `move_vm::ext::write_bezier_world` | a shipped prescript stager whose move program issues ext sub-op `0x0E` / `0x12`, spawned and advanced by `World::step_world_frame_tail` |
 //!
 //! The fishing rung is disc-free: its species and cadence tables are
-//! synthetic `pub` types, as in `w1f1_fishing_pond_ladder`, because what is
+//! synthetic `pub` types, as in `fishing_pond_ladder`, because what is
 //! under test is the world's event routing, not the disc's numbers. The two
 //! corpus rungs take their bytecode from the disc - a hand-written instruction
 //! would prove the interpreter runs, not that any shipped scene reaches the

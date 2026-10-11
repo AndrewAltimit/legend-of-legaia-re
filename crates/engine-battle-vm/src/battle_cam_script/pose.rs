@@ -1,5 +1,4 @@
 //! Camera poses: dialogue, boot and menu framings, plus the actor / formation inputs they read.
-//! Split out of `battle_cam_script.rs`.
 
 /// One camera pose: 12-bit angle units (`4096` = full turn) + the eye-space
 /// translation trio, exactly the retail globals' value space.

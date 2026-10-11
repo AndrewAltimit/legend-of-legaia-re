@@ -1,4 +1,4 @@
-//! Field action opcodes: EXEC_MOVE/MOVE_TO, SCENE_CHANGE, BGM, CAM_CFG, item/money/party, COND_JMP, SCRIPTED BATTLE / MINIGAME WARP (0x3E), RENDER_CFG, COUNTER, ANIMATE. Extracted verbatim from `field/tests.rs`.
+//! Field action opcodes: EXEC_MOVE/MOVE_TO, SCENE_CHANGE, BGM, CAM_CFG, item/money/party, COND_JMP, SCRIPTED BATTLE / MINIGAME WARP (0x3E), RENDER_CFG, COUNTER, ANIMATE.
 
 use super::*;
 

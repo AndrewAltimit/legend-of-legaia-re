@@ -1,5 +1,5 @@
 //! Field VM per-script execution context ([`FieldCtx`]) and the [`StepResult`]
-//! step outcome. Split out of `field.rs`.
+//! step outcome.
 
 /// Per-script execution context. One instance per running script.
 ///

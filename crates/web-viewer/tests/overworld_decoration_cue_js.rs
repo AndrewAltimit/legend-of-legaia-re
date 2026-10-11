@@ -1,4 +1,4 @@
-//! The play page's two JS / GLSL twins of engine kernels this lane added,
+//! The play page's two JS / GLSL twins of engine kernels,
 //! pinned against the kernels' constants:
 //!
 //! - `overworldDecorationCue` (`site/js/webgl-tmd.js`) against

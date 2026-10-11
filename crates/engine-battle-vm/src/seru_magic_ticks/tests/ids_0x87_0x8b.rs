@@ -558,7 +558,6 @@ fn every_damage_shape_goes_through_the_summon_wrapper() {
     );
 }
 
-// --- W3-A ---------------------------------------------------------------
 //
 // Retail fixtures from live PCSX-Redux captures of PROT 0910 and PROT 0911
 // driven end to end in a random encounter. Per-arm dwell for both bodies is
@@ -567,7 +566,7 @@ fn every_damage_shape_goes_through_the_summon_wrapper() {
 /// PROT 0911's heal, measured: magic level `3`, one party seat on `42` of
 /// `999` HP, retail restored exactly `640` = `(3 << 6) + 0x1C0`.
 #[test]
-fn w3a_retail_orb_heals_six_hundred_and_forty_at_level_three() {
+fn retail_orb_heals_six_hundred_and_forty_at_level_three() {
     assert_eq!(orb_heal_amount(3), 640);
     let mut s = seats(8);
     s[0].hp = 42;
@@ -590,7 +589,7 @@ fn w3a_retail_orb_heals_six_hundred_and_forty_at_level_three() {
 /// PROT 0911's arm `5` jumps to `9`, which is exactly what the capture's
 /// phase walk shows: `0,1,2,3,4,5,9,0x0A,0xFF` with `6..8` never entered.
 #[test]
-fn w3a_retail_orb_arm_five_jumps_over_six_to_eight() {
+fn retail_orb_arm_five_jumps_over_six_to_eight() {
     let mut s = seats(8);
     let mut ctx = ctx_at(5);
     orb_tick(&mut ctx, &mut s, 7, 0, None, &mut 0, |_| 999);
@@ -610,7 +609,7 @@ fn w3a_retail_orb_arm_five_jumps_over_six_to_eight() {
 /// HP against the **kernel** rather than against a clamp helper - which is
 /// what let an unscaled kernel pass while the capture said otherwise.
 #[test]
-fn w3a_retail_swordie_slash_applies_a_quarter_of_the_wrapper_return() {
+fn retail_swordie_slash_applies_a_quarter_of_the_wrapper_return() {
     let returns: [i32; 4] = [427, 427, 380, 384];
     let applied: [u32; 4] = [106, 106, 95, 96];
     let mut v = seats(1).remove(0);
@@ -635,4 +634,3 @@ fn a_negative_wrapper_return_still_clamps_rather_than_healing() {
     assert_eq!(swordie_slash(&mut v, 0, 1, -8), 399);
     assert_eq!(v.hp, 1);
 }
-// --- end W3-A -----------------------------------------------------------

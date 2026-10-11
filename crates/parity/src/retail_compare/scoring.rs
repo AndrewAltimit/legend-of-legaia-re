@@ -1,6 +1,6 @@
 //! Per-channel scoring of an engine observation against the retail one:
 //! party, flags, inventory, facing and camera scores, and the state report
-//! they fold into. Split out of `retail_compare.rs`; no logic change.
+//! they fold into.
 
 use super::*;
 

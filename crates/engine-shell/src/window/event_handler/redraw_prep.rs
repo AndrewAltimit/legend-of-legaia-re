@@ -1,7 +1,7 @@
 //! The redraw's pre-render half: the capture harness's per-frame seating,
 //! the field view sync, the windowed movie, the battle render edge, the
 //! cutscene camera and the frame-local draw inputs taken out of `self`
-//! before the renderer borrow - split out of `handle_redraw`.
+//! before the renderer borrow.
 
 use super::super::*;
 use super::redraw_passes::CutsceneCam;

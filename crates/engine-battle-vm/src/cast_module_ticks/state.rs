@@ -1,5 +1,4 @@
 //! State views: the actor and module-context slices a cast routine reads and writes.
-//! Split out of `cast_module_ticks.rs`.
 
 // ---------------------------------------------------------------------------
 // State views

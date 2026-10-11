@@ -21,8 +21,8 @@
 //! `legaia_engine_core::World` joins the two through its
 //! `schedule_timed_flags` host hook and its per-frame `tick_escape_timer`.
 //!
-//! Split out of [`crate::dev_menu_leaves`], whose other four addresses are
-//! the developer-menu / records-screen leaves and have no engine caller.
+//! Separate from [`crate::dev_menu_leaves`], whose four addresses are the
+//! developer-menu / records-screen leaves and have no engine caller.
 //! Written from the disassembly; no Sony bytes live here.
 
 /// Ink colour the escape-timer HUD selects from the remaining count

@@ -1,6 +1,5 @@
 //! Encounter / formation installation + per-scene monster catalog and party
-//! battle-stat seeding. Split out of `world.rs` as an additional `impl World`
-//! block.
+//! battle-stat seeding.
 
 use super::*;
 

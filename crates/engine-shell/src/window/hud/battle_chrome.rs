@@ -1,7 +1,6 @@
 //! The battle HUD chrome the play window draws: the frame and badge rects,
 //! the banner message, the item / command menu chips, the Muscle Dome chrome
 //! gate and the enemy target strip.
-//! Split out of `hud.rs`; no logic change.
 
 use super::*;
 

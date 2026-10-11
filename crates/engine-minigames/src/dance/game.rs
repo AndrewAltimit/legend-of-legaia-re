@@ -1,5 +1,4 @@
 //! The dance floor (`DanceGame`): beat clock, chart feed, hit judge and scoring.
-//! Split out of `dance.rs`.
 
 use super::*;
 

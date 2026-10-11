@@ -1,6 +1,5 @@
 //! The spawned-record slice runner: the field VM's per-frame walk over a
 //! spawned P2 record's script slice (`World::run_spawned_record_slice`).
-//! Split out of `narration.rs`; no logic change.
 
 use super::*;
 

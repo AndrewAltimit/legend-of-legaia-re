@@ -3,7 +3,7 @@
 use super::*;
 
 impl World {
-    // --- W1-C: player Seru 0909..0913 ---
+    // --- player Seru 0909..0913 ---
     /// Dispatch one of the five player-Seru tick bodies for this frame
     /// ([`legaia_engine_battle_vm::seru_magic_ticks`], PROT 0909..0913, action ids
     /// `0x87..=0x8B`).

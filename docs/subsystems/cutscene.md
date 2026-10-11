@@ -1936,7 +1936,7 @@ OT bucket, not a quad family.
 Both hosts composite the frame's pushes through one emitter - `World::screen_tint_push_args`
 into `legaia_render_kernels::screen_prim::screen_effect_push_prims`, which applies the floor, the
 two-bit mask and the red/blue swap. The page-side consumer is pinned by
-`crates/web-viewer/tests/w4b_screen_effect_page_prims.rs` (the `town0e` entry script issues the
+`crates/web-viewer/tests/screen_effect_page_prims.rs` (the `town0e` entry script issues the
 instruction), the native call site by the `SIM_PAIRS` row in
 `scripts/ci/check-ui-host-drift.py`.
 

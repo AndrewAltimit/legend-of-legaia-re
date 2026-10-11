@@ -1,6 +1,5 @@
 //! Battle command flow, submenu ticks, monster AI, initiative, capture
-//! resolution, and battle teardown. Split out of `world.rs` as additional
-//! `impl World` blocks.
+//! resolution, and battle teardown.
 
 use super::*;
 

@@ -1,4 +1,4 @@
-//! 0x43 sub-0/1/A/B halt-acquire plus the Round 16/17 overlay-helper-driven 0x4C sub-ops. Extracted verbatim from `field/tests.rs`.
+//! 0x43 sub-0/1/A/B halt-acquire plus the overlay-helper-driven 0x4C sub-ops.
 
 use super::*;
 
@@ -94,7 +94,7 @@ fn op_43_waits_while_the_target_is_still_arcing() {
     assert!(host.halt_acquire_calls.is_empty(), "no acquire, no arc");
 }
 
-// -- Round 16: helper-driven sub-ops --------------------------------
+// -- helper-driven sub-ops --------------------------------
 
 #[test]
 fn op_4c_n_c_sub_1_flag_loop_reset_advances_2_bytes() {
@@ -324,7 +324,7 @@ fn op_4c_n_e_sub_1_text_actor_truncated_returns_unknown() {
 }
 
 // -----------------------------------------------------------------
-// Round 17 - five new 0x4C nC sub-ops + two 0x4C nE sub-ops.
+// Five 0x4C nC sub-ops + two 0x4C nE sub-ops.
 // -----------------------------------------------------------------
 
 #[test]

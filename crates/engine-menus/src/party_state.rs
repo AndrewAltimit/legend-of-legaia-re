@@ -1,7 +1,7 @@
 //! Party + save-game state: roster, active party and leader, money, inventory, ability masks, tactical arts, level-up tracking, banners, per-character save extensions and name entry.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 use legaia_engine_battle::levelup::{LevelUpBanner, LevelUpTracker};
 use legaia_engine_battle::tactical_arts::{ArtLearnedBanner, TacticalArtsTracker};

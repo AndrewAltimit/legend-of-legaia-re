@@ -1,6 +1,5 @@
 //! Installing P2 records: spawned / gated / helper records and the cutscene
 //! timeline records (`town01`'s opening timeline among them).
-//! Split out of `narration.rs`; no logic change.
 
 use super::*;
 

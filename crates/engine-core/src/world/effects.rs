@@ -1,7 +1,4 @@
 //! Move bytecode/system flags/field-script loading, actor spawning, effect markers/sprites/models, summons, field stagers, and move FX.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 

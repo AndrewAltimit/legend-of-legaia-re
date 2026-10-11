@@ -42,8 +42,8 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov -p legaia-web-viewer --test integration w1c_battle_render_ladder:: \
-//!     --json --output-path target/cov-w1c_battle_render_ladder.json
+//! cargo llvm-cov -p legaia-web-viewer --test integration battle_render_ladder:: \
+//!     --json --output-path target/cov-battle_render_ladder.json
 //! ```
 //!
 //! **No `--release`.** An optimised build inlines the small kernels and
@@ -928,7 +928,7 @@ fn rung5_target_kernels() -> Result<(), String> {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn w1c_battle_render_ladder() {
+fn battle_render_ladder() {
     let Some(disc) = disc_bytes() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -984,7 +984,7 @@ fn w1c_battle_render_ladder() {
             }
         }
     }
-    eprintln!("w1c_battle_render_ladder: score {score}/6");
+    eprintln!("battle_render_ladder: score {score}/6");
     if let Some((n, name, why)) = fail {
         panic!("rung {n} ({name}): {why}");
     }

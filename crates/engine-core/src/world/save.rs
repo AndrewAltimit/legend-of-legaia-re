@@ -1,5 +1,4 @@
-//! Party load / save and full LGSF save-file round-trip. Split out of
-//! `world.rs` as an additional `impl World` block.
+//! Party load / save and full LGSF save-file round-trip.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

@@ -1,7 +1,7 @@
 //! Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 /// Field dialogue state: the simplified dialog panel, the inline field-VM dialogue runner and the interact / talk latches.
 pub struct DialogState {

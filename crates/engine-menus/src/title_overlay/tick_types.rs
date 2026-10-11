@@ -1,5 +1,4 @@
 //! The whole dispatcher's inputs, effects and state (`TitleTickState`).
-//! Split out of `title_overlay.rs`.
 
 // ---------------------------------------------------------------------------
 // The whole dispatcher: one `step` per sub-mode over the tick's state

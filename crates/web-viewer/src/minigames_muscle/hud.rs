@@ -1,5 +1,4 @@
 //! The retail HUD: sheets, banners, course ladder and hub quads.
-//! Split out of `minigames_muscle.rs`.
 
 use super::*;
 

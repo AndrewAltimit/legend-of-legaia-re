@@ -1,5 +1,5 @@
 //! Field VM instruction dispatch: the single-instruction `step` executor and
-//! its cross-context `step_with_caller` wrapper. Split out of `field.rs`.
+//! its cross-context `step_with_caller` wrapper.
 
 use super::*;
 

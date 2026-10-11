@@ -3,7 +3,7 @@
 //! (`FUN_801D0F5C`) - driven by pad, with the picks they produce carried
 //! into the pond.
 //!
-//! `w1f1_fishing_pond_ladder` reaches four of the six fishing session kernels
+//! `fishing_pond_ladder` reaches four of the six fishing session kernels
 //! and cannot reach these two, because it **sets** the lure and rod as pond
 //! constructor arguments. That is a precondition, not a screen: nothing in it
 //! moves a cursor, refuses an unowned row, or skips an unowned rod slot. This

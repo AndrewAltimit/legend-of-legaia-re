@@ -1,5 +1,4 @@
 //! The whole dispatcher: one `step` per sub-mode over the tick's state.
-//! Split out of `title_overlay.rs`.
 
 use super::*;
 

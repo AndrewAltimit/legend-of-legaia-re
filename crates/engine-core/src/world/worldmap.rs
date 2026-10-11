@@ -1,7 +1,4 @@
 //! World-map ticking, locomotion, entity install/engage, portal auto-engage, NPC dialog, and encounter setup.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

@@ -1,6 +1,5 @@
 //! `Renderer` GPU-upload methods: mesh / textured-mesh / VRAM-mesh /
-//! color-mesh / lines / font-atlas / texture uploads. Split out of
-//! `renderer.rs`.
+//! color-mesh / lines / font-atlas / texture uploads.
 
 use super::*;
 

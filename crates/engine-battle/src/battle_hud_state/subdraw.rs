@@ -1,5 +1,4 @@
-//! The battle HUD's retail sub-draw step table walk. Split out of
-//! `battle_hud.rs`; no logic change.
+//! The battle HUD's retail sub-draw step table walk.
 
 // ---------------------------------------------------------------------------
 // The sub-draw script table - retail's own per-step element lists

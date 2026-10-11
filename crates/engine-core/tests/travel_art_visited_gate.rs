@@ -23,8 +23,7 @@
 //! crossed. The write now keys on the kingdom the party stands on
 //! (`kingdom_index_for_scene_base(ctrl.scene_base)`, falling back to the
 //! entry fade's derived index and then the active `mapNN` scene label), and
-//! `each_kingdom_crossed_gets_its_own_visited_record` - formerly the
-//! `#[ignore]`d repro - asserts the multi-record behaviour live.
+//! `each_kingdom_crossed_gets_its_own_visited_record` asserts the multi-record behaviour live.
 //!
 //! The same hand-off hard-codes `TravelArt::Riremito`, so `801ee328`'s dwell
 //! constants have no production installer at all. The panel host itself

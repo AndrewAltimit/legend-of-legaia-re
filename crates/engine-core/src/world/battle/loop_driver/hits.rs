@@ -1,7 +1,6 @@
 //! Battle hit resolution: the per-frame hit-event tick, hit apply modes and
 //! power runs, zero-length clip hits, the melee landing, reaction, block roll
 //! and juggle window, combo totals and the melee impact cue.
-//! Split out of `loop_driver.rs`; no logic change.
 
 use super::*;
 

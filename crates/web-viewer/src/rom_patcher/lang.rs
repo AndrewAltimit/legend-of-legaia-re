@@ -1,5 +1,4 @@
 //! Language packs: validate, lift, export and strip, plus the import-report JSON.
-//! Split out of `rom_patcher.rs`.
 
 use super::*;
 

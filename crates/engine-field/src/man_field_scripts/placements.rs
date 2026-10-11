@@ -1,6 +1,4 @@
 //! Actor-placement classification (portals, dialog, props) + inline-dialog prologue.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 

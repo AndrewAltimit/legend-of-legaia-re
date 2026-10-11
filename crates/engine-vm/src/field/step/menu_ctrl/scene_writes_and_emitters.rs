@@ -1,4 +1,4 @@
-//! `0x4C` MENU_CTRL outer-nibble 0xE handler. Extracted verbatim from `op_4c`.
+//! `0x4C` MENU_CTRL outer-nibble 0xE handler.
 
 use super::*;
 

@@ -12,7 +12,7 @@
 //! ## The seeding helper is shared on purpose
 //!
 //! No `debug_` helper grants `0x88` / `0x89` / `0x8A`, so the bag is seeded
-//! directly ([`world_holding`]). Lane W1-F2 needs the same world for the
+//! directly ([`world_holding`]). The same world serves the
 //! confirm-window *draw* side (`801d1dac` / `801d1f10` in
 //! `engine-ui/src/menu/screens/system_menus.rs`); this file is the reusable copy.
 //!
@@ -46,7 +46,7 @@ use legaia_engine_system::input::PadButton;
 /// A field world whose bag holds `ids` (one each) plus a plain Healing Leaf,
 /// with a three-member roster the item-use flow can target.
 ///
-/// Reusable: lane W1-F2's confirm-window draw tests need exactly this state.
+/// Reusable: the confirm-window draw tests need exactly this state.
 fn world_holding(ids: &[u8]) -> World {
     let mut world = World::new();
     world.party.roster = legaia_save::Party::zeroed(3);

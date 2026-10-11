@@ -1,5 +1,4 @@
 //! Signature arts: the host-art table, staged clip chains, authored cast rows and fanfares.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 

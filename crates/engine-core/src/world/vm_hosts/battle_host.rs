@@ -1,5 +1,4 @@
 //! The battle-action SM's `BattleActionHost` bridge (`BattleHostImpl`).
-//! Split out of `vm_hosts.rs`.
 
 use super::*;
 

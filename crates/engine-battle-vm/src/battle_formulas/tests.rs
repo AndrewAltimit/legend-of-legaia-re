@@ -1,4 +1,4 @@
-//! Unit tests for the battle-formula kernels. Split out of `battle_formulas.rs`.
+//! Unit tests for the battle-formula kernels.
 
 use super::*;
 

@@ -1,5 +1,5 @@
 //! Battle command chips (party and Muscle Dome), the commit log and the combo
-//! style. Split out of `battle_hud.rs`; no logic change.
+//! style.
 
 use super::*;
 

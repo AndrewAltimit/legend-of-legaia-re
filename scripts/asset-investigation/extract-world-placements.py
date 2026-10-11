@@ -41,8 +41,8 @@ position - those actors are positioned by the field-VM script at runtime
 (party members, story characters, system actors). The site only renders
 placements with real world coordinates.
 
-See memory/project_world_map_render_state.md for the full reverse-engineering
-notes (resolver chain + format spec). Run from the repo root:
+The resolver chain and format spec are in docs/subsystems/world-map.md. Run
+from the repo root:
 
     python3 scripts/asset-investigation/extract-world-placements.py \\
         --prot-dir /tmp/legaia-extract/PROT \\

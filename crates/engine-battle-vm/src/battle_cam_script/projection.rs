@@ -1,5 +1,4 @@
 //! Projection: the retail GTE battle camera as one view-projection matrix.
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 

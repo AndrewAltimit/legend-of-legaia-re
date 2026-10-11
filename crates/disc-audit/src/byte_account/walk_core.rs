@@ -1,5 +1,4 @@
 //! Walker plumbing (the claim sink) and the scene-bundle, streaming and slot-fill walkers.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

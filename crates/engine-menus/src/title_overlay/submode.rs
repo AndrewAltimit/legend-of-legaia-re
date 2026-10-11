@@ -1,5 +1,4 @@
 //! The 25 title-overlay sub-modes and the sub-mode jump table.
-//! Split out of `title_overlay.rs`.
 
 /// The 25 sub-modes the title-overlay tick can be in.
 ///

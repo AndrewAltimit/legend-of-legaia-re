@@ -1,7 +1,6 @@
 //! The battle round: turn cycling, round begin / end and execution, party
 //! command commit and confirm, turn dispatch, dead-target redirects, the
 //! round-open prompt and the basic attack.
-//! Split out of `loop_driver.rs`; no logic change.
 
 use super::*;
 

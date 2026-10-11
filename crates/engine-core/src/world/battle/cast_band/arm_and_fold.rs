@@ -319,7 +319,7 @@ impl World {
         {
             return;
         }
-        // --- W1-D: the fourteen trampoline arms ---
+        // --- the fourteen trampoline arms ---
         // The same property for the three whole-row sweeps among them (PROT
         // 0941's `0xB9`, 0950's `0xAB`, 0956's `0x71`): each rolls its own
         // baked power per hittable seat and stores the clamped net into
@@ -334,7 +334,6 @@ impl World {
         {
             return;
         }
-        // --- end W1-D ---
         // A monster's capture-class special is not in the catalog (its record
         // is the module's), so the fold resolves it the way the arm did -
         // and only when the module has a damage site to seed it with; a

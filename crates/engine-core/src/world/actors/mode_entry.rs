@@ -1,7 +1,6 @@
 //! The party roster and the mode entries that start from the field: the
 //! present-party list, battle entry, world-map entry and the FMV cutscene
 //! hand-off and return.
-//! Split out of `actors.rs`; no logic change.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

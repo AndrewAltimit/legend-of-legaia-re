@@ -1,5 +1,4 @@
 //! The pond session (`PondSession`): the venue-faithful fishing loop, its tables, persistence and catch HUD.
-//! Split out of `fishing.rs`.
 
 use super::*;
 

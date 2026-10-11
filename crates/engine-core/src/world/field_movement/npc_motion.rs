@@ -1,5 +1,4 @@
 //! NPC facing, ambient motion, scripted NPC / actor motion and the walk-touch check.
-//! Split out of `field_movement.rs`.
 
 use super::*;
 

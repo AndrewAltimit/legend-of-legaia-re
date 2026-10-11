@@ -1,7 +1,7 @@
 //! Tile-board grid-mode state (the op-0x49 puzzle board, not town locomotion).
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 /// Tile-board grid-mode state (the op-0x49 puzzle board, not town locomotion).
 pub struct TileBoardState {

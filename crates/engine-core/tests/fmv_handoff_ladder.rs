@@ -10,7 +10,7 @@
 //! ladder its only caller under coverage was the `play` subcommand's `bin/`
 //! arm - which no pad ladder reaches, because no ladder run ever fired an FMV.
 //! The synthetic halves are already pinned (`field_records.rs` drives a
-//! hand-typed `4C E2`; `w1a_fmv_ladder` plays every retail STR); what was
+//! hand-typed `4C E2`; `fmv_ladder` plays every retail STR); what was
 //! missing is the disc-sourced chain: a real scene's own trigger op, executed
 //! by the session's field VM, flipping the world into `SceneMode::Cutscene`,
 //! and the hand-off resolving where retail says that movie lands.
@@ -173,7 +173,7 @@ fn every_scene_fmv_trigger_reaches_its_retail_handoff() {
             "[{scene_name}] retail slot resolves an MV*.STR path"
         );
 
-        // Playback completion (the STR chain itself is w1a_fmv_ladder's
+        // Playback completion (the STR chain itself is fmv_ladder's
         // rung), then the hand-off - the play host's own shape
         // (`commands/run.rs` apply_fmv_handoff).
         host.world.finish_cutscene();

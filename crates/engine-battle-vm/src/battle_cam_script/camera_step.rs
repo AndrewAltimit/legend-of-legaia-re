@@ -1,5 +1,4 @@
 //! The battle camera's per-step state machine (`impl BattleCamera`).
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 

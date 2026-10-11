@@ -1,7 +1,7 @@
 //! Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 /// One captured VRAM rect `(x, y, w, h)` and its `w * h` texels
 /// ([`AmbientFxState::vram_rect_seed`]).

@@ -1,5 +1,4 @@
 //! The battle camera's state, glides and per-frame inputs.
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 

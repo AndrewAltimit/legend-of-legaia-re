@@ -1,6 +1,4 @@
 //! MAN partition-1 script-record walking + arm-site / script-record types.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 

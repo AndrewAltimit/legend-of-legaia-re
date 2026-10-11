@@ -1,5 +1,4 @@
 //! Memory-card directory classification, the directory table and free-block arithmetic.
-//! Split out of `save_select.rs`.
 
 use super::*;
 

@@ -216,8 +216,8 @@ pub struct World {
     /// VDF ("set_mime", asset type `0x07`) buffer for the active scene.
     /// Layout `[u32 count][u32 byte_offsets[count]][body...]` mirrors the
     /// retail `DAT_8007B7DC` buffer the asset-dispatcher case 7 builds
-    /// (see `project_vdf_buffer_and_parallel_table.md` for byte-level
-    /// detail). The buffer holds the spawnable actor templates the field
+    /// (`docs/subsystems/script-vm-menuctrl.md`, "What the `0x4C 0xD8`
+    /// spawner builds"). The buffer holds the spawnable actor templates the field
     /// VM's `0x4C 0xD8` opcode resolves via [`World::vdf_record_bytes`].
     ///
     /// `None` when no scene is loaded or the scene carries no VDF chunk
@@ -228,13 +228,13 @@ pub struct World {
 
     /// Global TMD-pointer pool indexed by `tmd_idx`. Mirrors retail
     /// `DAT_8007C018` (the 143-entry homogeneous TMD pointer table in
-    /// steady-state - see `project_dat_8007c018_global_tmd_table.md`).
+    /// steady-state).
     /// `None` at indices the active loader chain hasn't populated; the
     /// vector grows on demand through [`Self::set_global_tmd`].
     ///
     /// Seeded by [`crate::scene_host::SceneHost::enter_field_scene`] with the
-    /// 5 character-mesh TMDs from PROT 0874 section 0 (byte-equality
-    /// verified in `project_global_tmd_pool_source.md`). Producers of the
+    /// 5 character-mesh TMDs from PROT 0874 section 0 (byte-equal to a
+    /// Drake post-warp RAM snapshot). Producers of the
     /// other 138 kingdom-derived entries are not yet pinned; those slots
     /// stay `None` until the full chain lands.
     ///

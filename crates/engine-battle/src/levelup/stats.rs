@@ -1,6 +1,4 @@
 //! Per-stat gain, growth-curve classification, and the BIOS RNG used by level-ups.
-//!
-//! Extracted verbatim from `levelup.rs`.
 
 /// Stats gained per level-up for one party slot - the eight `FUN_801E9504`
 /// grows, in template / applier order (HP, MP, then the six battle stats

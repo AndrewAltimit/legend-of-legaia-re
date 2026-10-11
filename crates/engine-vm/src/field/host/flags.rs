@@ -129,11 +129,11 @@ pub trait FieldFlagsHost {
     /// (`func_0x8003CE9C(operand + 2)` - signed 16-bit absolute PC). When
     /// clear, PC advances by 5.
     ///
-    /// (Round 11 corrected the take/skip direction here: prior implementations
-    /// were inverted because Ghidra's C output for case 10 hides the `bne a1,
-    /// zero, 0x801e258c` dispatch at 0x801e2568. The asm flow is "if sub != 0,
-    /// skip ctx[+0x10] check; per-sub-op bit SET → branch to the take-jump
-    /// label", not the other way around.)
+    /// (The take/skip direction is the disassembly's, not the decompiled C's:
+    /// Ghidra's C output for case 10 hides the `bne a1, zero, 0x801e258c`
+    /// dispatch at 0x801e2568. The asm flow is "if sub != 0, skip ctx[+0x10]
+    /// check; per-sub-op bit SET → branch to the take-jump label", not the
+    /// other way around.)
     ///
     /// `bit` is the operand byte; the VM masks the low 5 bits to match
     /// MIPS `sllv` shift semantics.

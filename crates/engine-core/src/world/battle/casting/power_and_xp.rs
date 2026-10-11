@@ -86,7 +86,7 @@ impl World {
     /// REF: FUN_801F85A8, FUN_801F8D64 (the sites the constants come from)
     pub(super) fn baked_module_power(&self, move_id: u8) -> Option<i32> {
         let entry = self.cast_module_for(move_id)?;
-        // --- W1-D: the fourteen trampoline arms ---
+        // --- the fourteen trampoline arms ---
         // Seven more modules bake a power, and two of them bake a *different*
         // one per body - PROT 0941 pairs a wrapper-free Steal against `0xC0`,
         // PROT 0950 pairs `0x100` against `0x29A` - so the entry alone cannot
@@ -100,7 +100,6 @@ impl World {
         {
             return Some(i32::from(*power));
         }
-        // --- end W1-D ---
         legaia_engine_battle_vm::cast_module_ticks::baked_power_for(entry)
             .or_else(|| {
                 legaia_engine_battle_vm::cast_module_ticks::capture_site_power(entry, move_id)

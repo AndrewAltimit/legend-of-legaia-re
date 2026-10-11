@@ -23,7 +23,7 @@
 //! The file list and the per-file staging are the engine's,
 //! `legaia_engine_session::xa_banks` - the same calls the native boot's
 //! `read_arts_shout_bank` / `read_battle_xa_clip_bank` make, so the two
-//! hosts stage identical banks from identical sectors; this lane only
+//! hosts stage identical banks from identical sectors; this module only
 //! demuxes the page's slice (`legaia_xa::demux::demux_raw_sectors`) and
 //! hands the channels over.
 //!
@@ -44,7 +44,7 @@
 //! CD-response start delay so the voice trails the animation, the one-deep
 //! back-to-back queue, and a mix point **before** the page's post-mixer gain,
 //! so a shout sits against the music at the same ratio as under the native
-//! window. What this lane keeps is the page's side: installing the files the
+//! window. What this module keeps is the page's side: installing the files the
 //! page slices off its disc bytes (the banks live here until a director
 //! takes them), the deferred span staging a cast voice rides, and the
 //! readout's counters.
@@ -84,7 +84,7 @@ pub struct PlayXa {
     pub shouts_unvoiced: u32,
     /// Clip requests handed to the mixer.
     pub clips_fired: u32,
-    /// Clip requests for a `(slot, channel)` this lane has not staged.
+    /// Clip requests for a `(slot, channel)` this module has not staged.
     pub clips_unstaged: u32,
     /// The most recent shout: `(cslot, action, channel)`.
     pub last_shout: Option<(u8, u8, u8)>,
@@ -379,7 +379,7 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
-    /// The XA files this lane wants, as a JSON string array in install
+    /// The XA files this module wants, as a JSON string array in install
     /// order - `["XA/XA2.XA", ..., "XA/XA30.XA"]` once a disc is loaded,
     /// each spelled as the ISO path `disc_file_extent_json` resolves (the
     /// files sit in the disc's `XA/` directory; the bare names are returned

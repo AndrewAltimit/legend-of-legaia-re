@@ -1,6 +1,5 @@
 //! Turn order: opponent scan, round-robin fallback, and SPD-seeded initiative
-//! keys. Split out of `battle.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
+//! keys.
 
 use super::*;
 

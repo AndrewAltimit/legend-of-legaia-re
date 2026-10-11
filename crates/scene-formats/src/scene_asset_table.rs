@@ -2,8 +2,7 @@
 //!
 //! ### Provenance
 //!
-//! Round-21 cluster characterisation (2026-05-04) found that **80 PROT entries
-//! lead with the literal 4-byte `07 00 00 00`** and decode as
+//! **80 PROT entries lead with the literal 4-byte `07 00 00 00`** and decode as
 //! `parse_player_lzs(buf, 7)`-style descriptor tables - a fixed 7-asset
 //! bundle whose descriptor types form the canonical scene-asset sequence
 //! `(TimList, Tmd, Man, Mes, Move, Anm, Vdf)` = `(1, 2, 3, 4, 5, 6, 7)`.

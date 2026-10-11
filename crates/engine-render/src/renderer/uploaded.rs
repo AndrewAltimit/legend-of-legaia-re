@@ -1,6 +1,5 @@
 //! GPU-resident data types: the uniform blocks, all `Uploaded*` GPU
 //! resources, and the [`RenderTarget`] / [`Scene`] draw descriptors.
-//! Split out of `renderer.rs`.
 
 use super::*;
 

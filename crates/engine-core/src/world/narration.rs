@@ -1,7 +1,4 @@
 //! Name entry, cutscene narration, prologue handoff, cutscene timelines, field channels, and inline-dialogue driving.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

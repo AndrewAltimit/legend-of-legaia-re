@@ -1,7 +1,7 @@
 //! Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
 //!
-//! Split out of the composite [`World`] so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite [`World`].
+//! Fields keep their retail provenance notes.
 
 use super::*;
 
@@ -113,14 +113,13 @@ pub struct CastFxState {
     /// `None` while no Nighto cast is resident.
     pub(crate) module_nighto_outcome:
         Option<legaia_engine_battle_vm::seru_magic_ticks::NightoOutcome>,
-    // --- W1-D: the fourteen trampoline arms ---
+    // --- the fourteen trampoline arms ---
     /// The `+0x1DD` value PROT 0940's split arm displaced off the caster,
     /// which the module keeps in its own image word `0x801F8658` until the
     /// `0xFF` arm puts it back
     /// ([`legaia_engine_battle_vm::cast_arm_ticks::glare_divide_split_tick`]).
     /// `None` outside that choreography.
     pub(crate) module_split_saved_target: Option<u8>,
-    // --- end W1-D ---
     /// PROT 0910 (Swordie)'s per-slash progress words, hit counter, settle
     /// countdown and `ctx[+0x6D8]` arm timer
     /// ([`legaia_engine_battle_vm::seru_magic_ticks::SwordieSlashes`]) - the module
@@ -259,9 +258,7 @@ impl CastFxState {
             module_hit_arm: None,
             module_settle_ticks: 0,
             module_nighto_outcome: None,
-            // --- W1-D ---
             module_split_saved_target: None,
-            // --- end W1-D ---
             module_swordie: Default::default(),
             module_settle_countdown: 0,
             module_cam: Default::default(),

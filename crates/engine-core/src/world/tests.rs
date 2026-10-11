@@ -1,4 +1,4 @@
-//! Unit tests for [`World`]. Split out of `world.rs`.
+//! Unit tests for [`World`].
 
 use super::*;
 use legaia_engine_battle_vm::battle_action::BattleActionHost;

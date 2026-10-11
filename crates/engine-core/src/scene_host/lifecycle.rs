@@ -1,6 +1,4 @@
 //! `SceneHost` construction, PROT/disc/extracted openers, scene loading, and simple accessors.
-//!
-//! Extracted verbatim from `scene_host.rs` as an additional `impl SceneHost` block.
 
 use super::*;
 

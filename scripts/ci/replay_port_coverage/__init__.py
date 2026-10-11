@@ -149,7 +149,7 @@ Usage:
 `-C instrument-coverage` counters are emitted per function, but an optimised
 build inlines the small ones away and the out-of-line copy's record is left at
 **zero** - indistinguishable, in this join, from a function no run called. It is
-not a rare shape: on one `w1a_fmv_ladder` run, `advance_slice` (40 calls),
+not a rare shape: on one `fmv_ladder` run, `advance_slice` (40 calls),
 `slice_word_count` (39) and `mdec_output_control` / `skip_requested` /
 `mdec_control_flags` (1-3 each) all reported `count = 0` under `--release` and
 their real counts under the default profile, from the same ladder over the same

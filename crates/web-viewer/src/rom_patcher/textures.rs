@@ -1,5 +1,4 @@
 //! Texture replacement: scan, preview, apply, and change packs.
-//! Split out of `rom_patcher.rs`.
 
 use super::*;
 

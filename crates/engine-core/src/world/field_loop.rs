@@ -1,7 +1,4 @@
 //! Live field<->battle loop, encounter/formation battle entry, battle BGM swap, field player install/seating, and step_field.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 use legaia_engine_mode::mode::SceneMode;

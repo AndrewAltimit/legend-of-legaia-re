@@ -97,7 +97,7 @@ fn build_world() -> World {
     use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
-    let mut table = EncounterTable::new("w1g_seru_capture_ladder");
+    let mut table = EncounterTable::new("seru_capture_ladder");
     table.set_trigger_rate(0xFF);
     table.push(EncounterEntry::new(FORMATION_KILLER_BEE_PAIR, 1));
     let mut session = EncounterSession::new(EncounterTracker::new(table));

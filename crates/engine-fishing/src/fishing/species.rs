@@ -1,5 +1,4 @@
 //! Retail species selection: cadence, band, strike, the band-4 gate, and the fish AI.
-//! Split out of `fishing.rs`.
 
 use super::*;
 

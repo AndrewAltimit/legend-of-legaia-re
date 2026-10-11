@@ -6,7 +6,7 @@
 //! `crates/engine-shell/src/bin/legaia-engine/` is the native host's own
 //! composition layer, and no integration test links against a `bin/` target -
 //! so the subcommand is reached by running it, exactly as
-//! `w5_native_minigame_ladder` reaches the window. The mounted-card model the
+//! `native_minigame_ladder` reaches the window. The mounted-card model the
 //! save screen's rack is built on is unit-tested beside it, in
 //! `window/save_rack_disk.rs`, where it can be called.
 //!

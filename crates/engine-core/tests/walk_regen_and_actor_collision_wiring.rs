@@ -1,5 +1,5 @@
-//! Field-runtime wiring oracles: the two `engine-core` ports this lane moved
-//! from "reachable only from tests" onto the live per-frame field path.
+//! Field-runtime wiring oracles: two `engine-core` ports on the live
+//! per-frame field path.
 //!
 //! - `FUN_801D0B90` walk-regen (`walk_regen::tick_walk_regen`), reached from
 //!   `World::tick`'s Field arm through `World::tick_field_walk_regen`.

@@ -1,7 +1,7 @@
 //! Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
 //!
-//! Split out of the composite `World` so the state one subsystem owns
-//! reads as one unit. Fields keep their retail provenance notes.
+//! One subsystem's state, held as a unit on the composite `World`.
+//! Fields keep their retail provenance notes.
 
 /// Random / scripted encounter state: the per-scene encounter session, the scripted-encounter arm and the roll gates.
 pub struct EncounterState {

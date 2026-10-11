@@ -1,5 +1,4 @@
 //! The pond session's phase, input, event and venue types.
-//! Split out of `fishing.rs`.
 
 use super::*;
 

@@ -5,7 +5,7 @@ engine can be put into, seed the engine into the same situation, let it
 settle, and score what it shows against what retail showed - per channel,
 per state, with a ratcheted summary. It is the breadth sibling of the
 single-subsystem oracles (`field_camera_zone_oracle`,
-`w3a_retail_frame_oracles`, `vram-oracle`, `audio-trace`): those pin one
+`retail_frame_oracles`, `vram-oracle`, `audio-trace`): those pin one
 mechanism exactly, this one asks how far the whole port is from retail at
 every captured moment, and ranks the moments by how far.
 

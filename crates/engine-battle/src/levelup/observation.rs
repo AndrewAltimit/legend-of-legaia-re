@@ -1,6 +1,4 @@
 //! Captured level-up observations + the `observations` reference dataset.
-//!
-//! Extracted verbatim from `levelup.rs`.
 
 use super::*;
 

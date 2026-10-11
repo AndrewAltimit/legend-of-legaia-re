@@ -1,7 +1,7 @@
 //! Battle HUD plates and plaques: the readout bar and ring AP plate, the move
 //! name and message bars, the plate glide offsets, the action / target
 //! plaques with their element badges, and the Ra-Seru magic chips and ring
-//! marks. Split out of `battle_hud.rs`; no logic change.
+//! marks.
 
 use super::*;
 use legaia_engine_menus::battle_input::CommandChipPhase;

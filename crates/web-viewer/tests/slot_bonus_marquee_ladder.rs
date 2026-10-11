@@ -1,7 +1,7 @@
 //! Disc-gated ladder: a **real bonus round**, played to its product payout, and
 //! the marquee composed off that round's own live state.
 //!
-//! The sibling fixture `crates/asset/tests/w1l4_slot_bonus_marquee.rs` drives the
+//! The sibling fixture `crates/asset/tests/slot_bonus_marquee.rs` drives the
 //! marquee kernels over hand-seeded [`MarqueeFrame`] tuples and the disc's
 //! message bank; that half proves the composition. This half closes the loop the
 //! other way round: it plays the machine - jackpot line, bonus round, three free

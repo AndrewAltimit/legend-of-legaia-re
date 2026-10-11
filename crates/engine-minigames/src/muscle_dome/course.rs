@@ -1,5 +1,4 @@
 //! The course ladder: who you fight, the score table, and the Master-course prize.
-//! Split out of `muscle_dome.rs`.
 
 /// Fixed item id of the one-shot Master-course first-clear prize (the
 /// War God Icon; `FUN_800421D4(0xCD, 1)`).

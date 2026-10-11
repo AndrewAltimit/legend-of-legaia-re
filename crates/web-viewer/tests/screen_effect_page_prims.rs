@@ -132,7 +132,7 @@ fn play_page_draws_the_field_screen_effect_wash() {
     );
 }
 
-/// Two shared kernels an earlier wave added that **no ladder on either host
+/// Two shared kernels that **no other ladder on either host
 /// entered** - the reach export finds them live and never executed. Each gets
 /// a rung, and the second rung's answer is a negative one.
 ///

@@ -1,6 +1,4 @@
 //! Field-NPC grid geometry, motion routes, and walk-touch event derivation.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use super::*;
 

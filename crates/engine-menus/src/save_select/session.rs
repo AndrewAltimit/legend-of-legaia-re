@@ -1,5 +1,4 @@
 //! The save-select session state machine (`SaveSelectSession`).
-//! Split out of `save_select.rs`.
 
 use super::*;
 

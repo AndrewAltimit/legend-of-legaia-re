@@ -1,5 +1,4 @@
 //! Small fixed-format and leaf sub-asset walkers.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

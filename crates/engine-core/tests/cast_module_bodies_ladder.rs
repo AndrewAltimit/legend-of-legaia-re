@@ -4,9 +4,9 @@
 //!
 //! Why it exists. `cast_module_ticks.rs` is the one cast-band module whose
 //! bodies no union member accounts for by name.
-//! `w2c_cast_band_body_ladder` scrapes the other band modules
+//! `cast_band_body_ladder` scrapes the other band modules
 //! (`seru_magic_ticks` / `cast_arm_ticks`) and this file
-//! is deliberately not among them; `w4d_cast_band_ladder` walks the band one
+//! is deliberately not among them; `cast_band_ladder` walks the band one
 //! frame deep but seats **one representative id per PROT entry**, which is
 //! blind by construction to a module holding several choreographies - PROT
 //! 0955 holds six, and five of them sit behind ids the representative is not.
@@ -30,7 +30,7 @@
 //! `TRAMPOLINE_TABLE` have to account for every one. Adding a body without
 //! adding a row fails
 //! `the_row_table_accounts_for_every_ported_body` with no disc present - the
-//! same property that makes `w2c_cast_band_body_ladder` unable to go stale.
+//! same property that makes `cast_band_body_ladder` unable to go stale.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 

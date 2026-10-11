@@ -1,4 +1,4 @@
-//! 0x4C MENU_CTRL sub-0 + outer-nibble-4 sub-ops and the 0x34/0x37 effect/encounter setup cases. Extracted verbatim from `field/tests.rs`.
+//! 0x4C MENU_CTRL sub-0 + outer-nibble-4 sub-ops and the 0x34/0x37 effect/encounter setup cases.
 
 use super::*;
 

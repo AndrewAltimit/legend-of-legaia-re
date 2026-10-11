@@ -1,6 +1,5 @@
 //! Effect sprite-atlas + animation catalog: [`SpriteAtlasEntry`],
-//! [`AnimFrame`], [`AnimBatch`], and the [`EffectCatalog`]. Split out of
-//! `effect_vm.rs`.
+//! [`AnimFrame`], [`AnimBatch`], and the [`EffectCatalog`].
 
 use super::*;
 

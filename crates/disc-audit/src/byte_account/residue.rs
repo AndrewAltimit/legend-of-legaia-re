@@ -1,5 +1,4 @@
 //! Range algebra and residue classification.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

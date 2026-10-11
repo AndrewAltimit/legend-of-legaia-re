@@ -1,6 +1,5 @@
 //! Core battle arithmetic: PsyQ RNG, spirit damage, MP-cost ability-bit
 //! modifiers, accuracy roll, damage caps, art-strike damage, buff ramp.
-//! Split out of `battle_formulas.rs`.
 
 use legaia_engine_system::rand::{bios_rand_shape, psyq_rand_step};
 

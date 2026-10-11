@@ -1,5 +1,5 @@
 //! Per-VM `Host` trait implementations that bridge each port VM into
-//! [`World`]. Split out of `world.rs`.
+//! [`World`].
 
 use super::*;
 use legaia_engine_field::man_field_scripts::FieldCarrierConfig;

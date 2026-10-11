@@ -1,6 +1,4 @@
 //! MAN partition record-offset helpers + narration / g-flag site collection.
-//!
-//! Extracted verbatim from `man_field_scripts.rs`.
 
 use std::collections::BTreeMap;
 
@@ -70,7 +68,7 @@ pub struct GFlagSite {
     /// where operand/text bytes alias the `0x50..=0x7F` flag opcodes: e.g.
     /// the full-width digit run `82 54 82 4F` yields a phantom
     /// `SysFlag.Set idx=0x482`. Non-clean sites are byte noise until
-    /// verified by hand disasm or a live capture - the wave-8 `other7`-pool
+    /// verified by hand disasm or a live capture - the `other7`-pool
     /// "0x482 writers" were exactly this class (all 37 census sites for
     /// `0x482` are non-clean; the live-confirmed `0x142` writer ladders all
     /// stay clean).

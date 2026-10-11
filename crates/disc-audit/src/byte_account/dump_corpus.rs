@@ -1,5 +1,4 @@
 //! Ghidra dump corpus: header parse and byte-level attribution.
-//! Split out of `byte_account.rs`.
 
 use super::*;
 

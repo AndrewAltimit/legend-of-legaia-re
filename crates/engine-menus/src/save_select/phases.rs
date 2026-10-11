@@ -1,5 +1,4 @@
 //! Info-panel modes, select phases and their layout, and the session's input / event types.
-//! Split out of `save_select.rs`.
 
 use super::*;
 

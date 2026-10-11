@@ -1,5 +1,4 @@
 //! Player free-movement locomotion: pad direction decode, the per-frame step, ledge hops, vertical follow, the player clip picks and collision-advanced steps.
-//! Split out of `field_movement.rs`.
 
 use super::*;
 

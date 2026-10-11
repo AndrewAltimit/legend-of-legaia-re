@@ -1,5 +1,4 @@
 //! Read-only table exports for the page's editors (equipment, manual edits).
-//! Split out of `rom_patcher.rs`.
 
 use super::*;
 

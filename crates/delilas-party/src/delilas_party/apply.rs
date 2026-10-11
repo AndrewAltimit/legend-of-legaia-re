@@ -1,5 +1,4 @@
 //! The party-swap patch driver (`apply_delilas_party_with`) and the per-slot element retarget.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 

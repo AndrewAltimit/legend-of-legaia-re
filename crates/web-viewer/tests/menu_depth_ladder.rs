@@ -5,7 +5,7 @@
 //! It does not push any screen to its commit: its shop rung confirms the
 //! second row of the Buy/Sell/Quit picker (Sell), its Equip rung browses the
 //! slot list without a Cross, and its Items rung stops at the first confirm.
-//! Every one of those beats is where the retail sub-screens this lane owns
+//! Every one of those beats is where the retail sub-screens this ladder covers
 //! actually live, so the whole cluster read never-entered under a ladder that
 //! demonstrably opened their parent screens.
 //!
@@ -26,7 +26,7 @@
 //!
 //! ## Two defects this ladder found on the field item-use path
 //!
-//! Neither is fixed here (both live outside this lane's files) and both are
+//! Neither is fixed here (both live outside this ladder's files) and both are
 //! why the Items rung is not scored on the bag:
 //!
 //! 1. **A field item use is never consumed.**
@@ -43,8 +43,8 @@
 //! Coverage export (what wires this into the reach report):
 //!
 //! ```text
-//! cargo llvm-cov -p legaia-web-viewer --test integration w1f2_menu_depth_ladder:: \
-//!     --json --output-path target/cov-w1f2_menu_depth_ladder.json
+//! cargo llvm-cov -p legaia-web-viewer --test integration menu_depth_ladder:: \
+//!     --json --output-path target/cov-menu_depth_ladder.json
 //! ```
 //!
 //! Exported **without** `--release`: an optimised export loses inlined
@@ -599,7 +599,7 @@ fn unwind_menu(rt: &mut LegaiaRuntime) {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn w1f2_menu_depth_ladder() {
+fn menu_depth_ladder() {
     let Ok(disc) = std::env::var("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;

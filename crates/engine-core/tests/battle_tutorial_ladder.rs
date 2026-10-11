@@ -93,7 +93,7 @@ fn primed_world() -> World {
     use legaia_engine_battle::encounter::{
         EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
     };
-    let mut table = EncounterTable::new("w1f1_tutorial_ladder");
+    let mut table = EncounterTable::new("tutorial_ladder");
     table.set_trigger_rate(0xFF);
     table.push(EncounterEntry::new(1, 1));
     let mut session = EncounterSession::new(EncounterTracker::new(table));

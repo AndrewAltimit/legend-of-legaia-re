@@ -292,8 +292,7 @@ const TRAMPOLINES: [TrampolineRow; 6] = [
 ];
 
 /// `(tick VA, owning PROT entry, summon-band row or `None` for capture band,
-/// phase-arm bound, damage wrapper + baked `a0`)` for the six tick bodies
-/// this wave ported.
+/// phase-arm bound, damage wrapper + baked `a0`)` for the six ported tick bodies.
 ///
 /// A bound of `None` marks PROT 0918, whose head is a `beq`/`slti` chain
 /// rather than a `sltiu` + table.

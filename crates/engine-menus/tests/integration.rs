@@ -7,7 +7,7 @@
 
 mod muscle_intermission_cadence;
 mod title_attract_handoff;
-mod w1g_save_subscreen_ladder;
-mod w2e_equip_applier;
-mod w2e_title_menu_law;
-mod w4a_menu_wiring;
+mod save_subscreen_ladder;
+mod equip_applier;
+mod title_menu_law;
+mod pause_menu_kernel_wiring;

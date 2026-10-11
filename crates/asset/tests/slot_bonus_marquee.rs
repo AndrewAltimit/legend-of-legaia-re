@@ -20,13 +20,13 @@
 //! time, and the payout caption sliding in. The *machine-driven* half of the
 //! same gate (a real bonus round played to its product payout, whose live state
 //! feeds these same kernels) is
-//! `crates/web-viewer/tests/w1l4_slot_bonus_marquee_ladder.rs`; this file is the
+//! `crates/web-viewer/tests/slot_bonus_marquee_ladder.rs`; this file is the
 //! disc-data half and the one that can spawn the production CLI caller.
 //!
 //! The last rung spawns `CARGO_BIN_EXE_asset slot-scene`, which is the only
 //! **non-test** caller these kernels have (`crates/asset/src/bin/asset/minigame.rs`).
 //! A spawned `CARGO_BIN_EXE_*` inherits `LLVM_PROFILE_FILE`, so its profile is
-//! merged into the run's - the same mechanism `w1a_fmv_ladder` uses to reach the
+//! merged into the run's - the same mechanism `fmv_ladder` uses to reach the
 //! `mdec` subcommand.
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` or the extracted PROT entries are

@@ -942,8 +942,8 @@ impl SceneHost {
         }
         // Seed the global TMD-pool head from PROT 0874 section 0 (the
         // 5 character-mesh TMDs that retail's `DAT_8007C018[0..4]`
-        // resolves to). Byte-equality verified - see
-        // `project_global_tmd_pool_source.md`. Producers for the
+        // resolves to), byte-equal to a Drake post-warp RAM snapshot.
+        // Producers for the
         // remaining 138 kingdom-bundle entries are not yet pinned;
         // those slots stay empty until the full chain lands. Idempotent:
         // the head re-seeds across scene transitions but only on the

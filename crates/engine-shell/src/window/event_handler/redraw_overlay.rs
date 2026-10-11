@@ -1,8 +1,7 @@
 //! The redraw's 2D and effect layers: the HUD text and the sprite-overlay
 //! draw lists (boot screens, menu chrome, the field and battle HUDs, the
 //! caption), the frame's clear colour, the 3D effect meshes, and the
-//! screen-space primitive lists composited over the scene - split out of
-//! `handle_redraw`.
+//! screen-space primitive lists composited over the scene.
 
 use super::super::*;
 use super::redraw_passes::CutsceneCam;

@@ -1,7 +1,7 @@
-//! Live-path coverage for the battle wiring this lane landed.
+//! Live-path coverage for the battle loop's wiring.
 //!
-//! Three retail routines that previously had no engine caller now run from the
-//! live battle loop, and each is exercised here through `World` alone:
+//! Three retail routines run from the live battle loop, and each is exercised
+//! here through `World` alone:
 //!
 //! - `FUN_8003FB10` - the action validator. The battle target rows are built
 //!   from its per-slot validity byte (`World::battle_target_rows`), so a

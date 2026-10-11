@@ -11,4 +11,4 @@ mod region_gate_card_brackets;
 mod resume_and_engine_ext;
 mod retail_live_state_lift;
 mod schema_fixture;
-mod w2c_card_inventory_ladder;
+mod card_inventory_ladder;

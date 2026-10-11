@@ -1,7 +1,7 @@
 //! Disc-gated: the **camera-register zone ramp** (field-VM op `0x43`
 //! sub-3..6) executed from real scene bytecode, then ticked at the output.
 //!
-//! The spawn half was already reached by `w1f2_field_vm_op_arms_disc`, which
+//! The spawn half was already reached by `field_vm_op_arms_disc`, which
 //! asserts the record's fields. This file asserts the half that was missing:
 //! the record is a live actor whose `+0x0C` handler (`FUN_80037018`) runs
 //! every frame and *writes a camera register*, and the camera reads it.

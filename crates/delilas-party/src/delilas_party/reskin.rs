@@ -1,5 +1,4 @@
 //! Re-skinning a signature art onto the host slot, and the attack-camera arm retiming / swap.
-//! Split out of `delilas_party.rs`.
 
 use super::*;
 

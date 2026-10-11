@@ -1,5 +1,4 @@
 //! Point exchange (prize shop).
-//! Split out of `fishing.rs`.
 
 // --- Point exchange (prize shop) -------------------------------------------
 

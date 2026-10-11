@@ -1,5 +1,4 @@
 //! PROT 0955, the six-spell cell, and the per-body damage-shape lookup.
-//! Split out of `cast_module_ticks.rs`.
 
 use super::*;
 

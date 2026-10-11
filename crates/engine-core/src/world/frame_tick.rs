@@ -1,8 +1,5 @@
 //! Per-frame time/RNG/pad, the top-level tick dispatcher, and the minigame ticks (tile board, dance, fishing, slot machine, baka fighter, muscle dome).
 //!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
-//!
 //! The frame-time sampler behind the adaptive cadence
 //! ([`World::resolve_frame_step`]) - retail's `VSync(1)` reading, returned by
 //! the dev profiler HUD.

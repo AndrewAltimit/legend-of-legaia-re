@@ -1,7 +1,7 @@
 //! The redraw's scene draw lists: every textured and untextured 3D draw
 //! the frame submits, by mode (minigame surfaces, the dance venue, the world
 //! map, the battle stage, the field environment, the actors, the arts
-//! ghosts) - split out of `handle_redraw`.
+//! ghosts).
 //!
 //! The lists borrow only the uploaded-mesh fields named in [`MeshStore`], so
 //! the caller can keep mutating the rest of the window (the battle-intro

@@ -8,13 +8,9 @@ const SPIKEFISH_ENTRY: u32 = 925;
 
 impl World {
     pub fn run_cast_module_code(&mut self, spell_id: u8, arm: u8) -> Option<CastModuleCodeRun> {
-        // --- W1-D ---
         use legaia_engine_battle_vm::cast_arm_ticks as arms;
-        // --- end W1-D ---
         use legaia_engine_battle_vm::cast_module_ticks as ticks;
-        // --- W1-B ---
         use legaia_engine_battle_vm::seru_magic_ticks as ticks_a;
-        // --- end W1-B ---
 
         let entry = self.cast_module_for(spell_id)?;
         // PROT 0954's body is ported whole - camera, records, wheel and
@@ -487,7 +483,7 @@ impl World {
                     }
                     Some(step)
                 }
-                // --- W1-D: fourteen arms ---
+                // --- fourteen arms ---
                 // PROT 0940 / 0941 / 0943 / 0944 / 0950 / 0956 / 0962, ported
                 // in `legaia_engine_battle_vm::cast_arm_ticks`. Three of these bodies
                 // wear the VA `0x801F6A04` in three different images, which is
@@ -700,7 +696,6 @@ impl World {
                     true,
                     None,
                 )),
-                // --- end W1-D ---
                 // The phase-chain bodies (`cast_module_ticks::chain_bodies`):
                 // PROT 0942 `0xAA`, 0956 `0x75`, 0959, 0960 `0xA6`, 0961,
                 // 0963 and 0964 `0xB0..=0xB2`. Their hits are the fold's.
@@ -730,7 +725,7 @@ impl World {
             }
         } else {
             match entry {
-                // --- W1-B: player Seru 0903..0908 ---
+                // --- player Seru 0903..0908 ---
                 // The first six `0x801CF4EC` arms - the player Seru-magic tick
                 // bodies (`legaia_engine_battle_vm::seru_magic_ticks`). Unlike the
                 // summon-creature ticks below, five of the six sweep or
@@ -859,7 +854,6 @@ impl World {
                     }));
                     Some(step)
                 }
-                // --- end W1-B ---
                 // The summon band's own tick bodies - no trampoline, the
                 // `0x801CF4EC` arm calls them directly.
                 918 => ticks::kemaro_tick(&mut ctx, &mut victim, None),
@@ -872,7 +866,7 @@ impl World {
                 925 => Some(ticks::spikefish_tick(&mut ctx, &mut caster)),
                 927 => Some(ticks::juggernaut_tick(&mut ctx, &mut victim, None)),
                 949 => Some(ticks::water_crystals_tick(&mut ctx, &mut victim, None)),
-                // --- W1-C: player Seru 0909..0913 ---
+                // --- player Seru 0909..0913 ---
                 // These five bodies read and write the whole actor table -
                 // the summon seat, the caster and the enemy row - so they
                 // take the table rather than the three locals above, and the
@@ -915,7 +909,6 @@ impl World {
                     }
                     step
                 }
-                // --- end W1-C ---
                 // The phase-chain bodies whose tick arm calls them directly
                 // (`cast_module_ticks::chain_bodies`): PROT 0919, 0935, 0936,
                 // 0937, 0939, 0947 and 0948. Their hits and heals are the

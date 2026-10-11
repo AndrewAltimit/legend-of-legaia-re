@@ -1,6 +1,4 @@
 //! Retail cumulative-XP threshold table (and the test placeholder table).
-//!
-//! Extracted verbatim from `levelup.rs`.
 
 #[cfg(test)]
 use super::MAX_LEVEL;

@@ -1,7 +1,4 @@
 //! VDF/global-TMD registration, event/spawn drains, battle-event folding, and status-effect ticking.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 

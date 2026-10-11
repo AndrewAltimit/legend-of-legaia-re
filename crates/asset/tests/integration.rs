@@ -8,4 +8,4 @@
 //! Only tests that spawn the `asset` binary live here; a format's own tests
 //! sit in the crate that owns the format.
 
-mod w1l4_slot_bonus_marquee;
+mod slot_bonus_marquee;

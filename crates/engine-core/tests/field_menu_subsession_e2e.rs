@@ -511,7 +511,7 @@ fn the_rack_kind_carries_card_slots_mode_through_the_dispatcher() {
 /// off the record's `+0x13D` / `+0x161` pair **in record order**, so moving
 /// those bytes moves what the player sees. The screen that offers the
 /// exchange is `list_order::ListOrderSession`, pinned end-to-end in
-/// `w4a_list_order_reorder`; this stays the narrower claim about the data
+/// `list_order_reorder`; this stays the narrower claim about the data
 /// under it.
 #[test]
 fn spell_swap_permutes_the_magic_screen_order() {

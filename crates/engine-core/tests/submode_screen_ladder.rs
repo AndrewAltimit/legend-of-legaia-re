@@ -40,7 +40,7 @@
 //! as a script-reached rung.
 //!
 //! Disc-free: every table this needs is committed as a constant, and
-//! `w1b_hub_tables_disc.rs` is what pins those constants to the disc.
+//! `hub_tables_disc.rs` is what pins those constants to the disc.
 
 use legaia_engine_core::field_submode_screen::{
     SUBMODE_ACCEPT_MASK, SUBMODE_BACK_MASK, slot_for_op49_sub_op,

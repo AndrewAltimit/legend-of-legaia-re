@@ -1,5 +1,4 @@
 //! Recovery / end-of-action framings - `FUN_801D5854` cases 7 and 8 - and the death reframe.
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 

@@ -9,7 +9,7 @@
 //! bodies also share the VA `0x801F6A04` across three images, which is why the
 //! dispatch seam keys on the pair and why this ladder asserts the pair.
 //!
-//! Sibling of `w4d_cast_band_ladder.rs`, which walks the whole band one frame
+//! Sibling of `cast_band_ladder.rs`, which walks the whole band one frame
 //! deep; this one walks seven modules to their terminal arm.
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.

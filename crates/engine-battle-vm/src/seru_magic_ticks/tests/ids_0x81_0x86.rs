@@ -761,7 +761,7 @@ fn nighto_resisted_writes_neither_outcome() {
 /// resist until this fixture. Arm 15 then writes nothing and latches
 /// `0xFF`.
 #[test]
-fn w3a_retail_a_resisted_nighto_still_forks_on_the_kill_word() {
+fn retail_a_resisted_nighto_still_forks_on_the_kill_word() {
     let mut seats = row();
     let mut ctx = CastModuleCtx {
         phase: NIGHTO_FORK_ARM,
@@ -891,7 +891,6 @@ fn seru_last_arm_answers_for_every_entry_in_the_set() {
     assert_eq!(seru_last_arm(909), None);
 }
 
-// --- W3-A ---------------------------------------------------------------
 //
 // Retail fixtures: numbers read off live PCSX-Redux captures of each body
 // driven end to end in an ordinary random encounter (one party seat, one
@@ -906,7 +905,7 @@ fn seru_last_arm_answers_for_every_entry_in_the_set() {
 /// (PROT 0903) and `0x801F8880` (PROT 0910) are literal constants, and the
 /// capture reads `a1 = 7` at all four wrapper entries with `ctx[+0x13] = 0`.
 #[test]
-fn w3a_retail_sites_bake_the_power_the_capture_read() {
+fn retail_sites_bake_the_power_the_capture_read() {
     for (site, power) in [
         (0x801F_74ACu32, 0x12u16), // PROT 0903, a0 = 0x12 read live
         (0x801F_7D38, 0x11),       // PROT 0904, a0 = 0x11 read live
@@ -922,7 +921,7 @@ fn w3a_retail_sites_bake_the_power_the_capture_read() {
 /// `76` HP and retail applied `76`, emptying the bar; against a victim on
 /// `9999` HP it returned `417` and applied all of it.
 #[test]
-fn w3a_retail_gimard_hit_is_unscaled_and_kill_capable() {
+fn retail_gimard_hit_is_unscaled_and_kill_capable() {
     let site = seru_hit_site(0x801F_74AC).unwrap();
     let mut v = seat(76);
     assert_eq!(site.apply(&mut v, 247), 76);
@@ -936,7 +935,7 @@ fn w3a_retail_gimard_hit_is_unscaled_and_kill_capable() {
 /// state produced the same roll on two separate runs, which is what makes
 /// it usable as a fixture.
 #[test]
-fn w3a_retail_theeder_ring_hit_is_unscaled() {
+fn retail_theeder_ring_hit_is_unscaled() {
     let site = seru_hit_site(0x801F_7D38).unwrap();
     let mut v = seat(9999);
     assert_eq!(site.apply(&mut v, 371), 371);
@@ -947,7 +946,7 @@ fn w3a_retail_theeder_ring_hit_is_unscaled() {
 /// and applied `405` (three quarters). The third site `0x801F7DF8` never
 /// fired in the capture.
 #[test]
-fn w3a_retail_zenoir_scales_its_two_reachable_sites() {
+fn retail_zenoir_scales_its_two_reachable_sites() {
     let opener = seru_hit_site(0x801F_76CC).unwrap();
     let mut v = seat(9999);
     assert_eq!(opener.apply(&mut v, 522), 130);
@@ -960,7 +959,7 @@ fn w3a_retail_zenoir_scales_its_two_reachable_sites() {
 /// `999` HP, retail restored exactly `320` = `3 * 0x20 + 0xE0` with the
 /// missing-HP clamp slack.
 #[test]
-fn w3a_retail_vera_restores_three_hundred_and_twenty_at_level_three() {
+fn retail_vera_restores_three_hundred_and_twenty_at_level_three() {
     assert_eq!(vera_heal_amount(3, 42, 999), 320);
     // And the clamp really is the missing HP, not the base: the same level
     // against Vahn's own 128-point bar restores only what is missing.
@@ -971,7 +970,7 @@ fn w3a_retail_vera_restores_three_hundred_and_twenty_at_level_three() {
 /// 0908 both latched `0xFF` out of arm `12`, PROT 0904 out of `14`, PROT
 /// 0905 out of `10` and PROT 0907 out of `15`.
 #[test]
-fn w3a_retail_phase_walks_end_on_the_tabled_last_arm() {
+fn retail_phase_walks_end_on_the_tabled_last_arm() {
     assert_eq!(seru_last_arm(903), Some(12));
     assert_eq!(seru_last_arm(904), Some(14));
     assert_eq!(seru_last_arm(905), Some(10));
@@ -990,7 +989,7 @@ fn w3a_retail_phase_walks_end_on_the_tabled_last_arm() {
 /// the confuse path's `sb 0xF, 0x279` at `0x801F7E28` and lands on arm
 /// `15`, never on arm `14`. See the FINDINGS note on this module.
 #[test]
-fn w3a_retail_nighto_roll_six_with_resist_is_resisted() {
+fn retail_nighto_roll_six_with_resist_is_resisted() {
     let roll = NightoRoll {
         kill_roll: 6,
         resist_roll: 9,
@@ -1009,7 +1008,7 @@ fn w3a_retail_nighto_roll_six_with_resist_is_resisted() {
 /// `1` on the first tick after arm `0` and leaves the boss on 15000 HP.
 /// `target_immune` is that branch, and it wins over any roll.
 #[test]
-fn w3a_retail_nighto_boss_immunity_beats_a_landing_roll() {
+fn retail_nighto_boss_immunity_beats_a_landing_roll() {
     let land = NightoRoll {
         kill_roll: 0,
         resist_roll: 0,
@@ -1029,4 +1028,3 @@ fn w3a_retail_nighto_boss_immunity_beats_a_landing_roll() {
     assert_eq!(nighto_outcome(&immune), NightoOutcome::KillResisted);
     assert!(nighto_outcome(&immune).resisted());
 }
-// --- end W3-A -----------------------------------------------------------

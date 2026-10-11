@@ -13,7 +13,7 @@
 //! interprets every site's operand window under that descriptor layout, the
 //! conservative superset (which sub-op arms handler `0x23` is runtime state).
 //!
-//! This is the LAST static probe for the spine flag writers after wave 7's
+//! This is the LAST static probe for the spine flag writers after the
 //! corpus-wide literal-operand negatives (all-programs Ghidra sweep + raw
 //! byte scan of all PROT entries + `--system-flag-census` +
 //! `--motion-flag-census`, all negative for `0x142`/`0x482`). The residual

@@ -60,7 +60,7 @@
 //! `P2[16]`); `0x15E`'s only SET is cave01 `P2[13]` and it is read
 //! cross-scene by `urudre1 P2[0]` (the Uru Mais dream sequence tests the cave
 //! beat); `0x142` has NO SET site in any MAN on the disc (sole non-test site:
-//! a Clear in `dolk P1[26]`) - corroborating the wave-5 finding that the
+//! a Clear in `dolk P1[26]`) - corroborating the finding that the
 //! dolk/dolk2 switch is written by the battle-id victory path, not by a field
 //! script. Census-visible but not asserted (recorded here as reference):
 //! `0x159` gains a second setter at `balden P2[3]`; `0x15C` is tested

@@ -75,7 +75,7 @@ pinned by the disc-gated parity test `crates/web-viewer/tests/play_parity.rs`:
   without moving the playhead - so clip cadence is refresh-rate-independent
   and scripted actors perform their cued beats.
 
-The disc-gated `crates/web-viewer/tests/play_parity_wave.rs` pins the hide-box contract, the
+The disc-gated `crates/web-viewer/tests/play_page_presentation_parity.rs` pins the hide-box contract, the
 sim-tick clip cadence, and the opening-chain staging below.
 
 ## Scene BGM (`runtime`)

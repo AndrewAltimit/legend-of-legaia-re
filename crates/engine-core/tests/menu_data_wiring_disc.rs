@@ -1,7 +1,7 @@
-//! Disc-gated: the two menu tables this lane wired reach the sessions that
+//! Disc-gated: the two wired menu tables reach the sessions that
 //! read them, off the **real** disc rather than a synthesised image.
 //!
-//! The disc-free sibling (`l2_menu_data_wiring.rs`) proves the sessions
+//! The disc-free sibling (`menu_data_wiring.rs`) proves the sessions
 //! consume a table once one is installed. What it cannot prove is that the
 //! boot hooks both hosts already call put the *retail* bytes there - a
 //! parser that works on a fixture and a boot path that never runs it look

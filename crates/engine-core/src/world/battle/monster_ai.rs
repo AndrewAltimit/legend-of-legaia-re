@@ -1,7 +1,5 @@
 //! Monster-turn decisioning: the action picker, confuse retargeting, physical /
-//! cast arming, and monster-side target-class resolution. Split out of
-//! `battle.rs` as additional `impl World` blocks; no logic change from the
-//! original inline definitions.
+//! cast arming, and monster-side target-class resolution.
 
 use super::*;
 

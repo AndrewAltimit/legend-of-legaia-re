@@ -1,5 +1,4 @@
 //! Action framing - `FUN_801D5854` case 6.
-//! Split out of `battle_cam_script.rs`.
 
 use super::*;
 

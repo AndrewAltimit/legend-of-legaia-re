@@ -2310,7 +2310,7 @@ record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
 tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
 name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
-the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
+the disc pin in `crates/engine-core/tests/hub_tables_disc.rs`.
 
 #### Sub-op `2`: the code lock
 

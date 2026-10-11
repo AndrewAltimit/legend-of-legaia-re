@@ -1,5 +1,4 @@
 //! Object render queries and the field-channel prologue runners.
-//! Split out of `narration.rs`.
 
 use super::*;
 

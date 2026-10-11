@@ -1,7 +1,4 @@
 //! Field carrier install/engage/tick, field interaction probing, carrier menus, and carrier/world-map encounter entry.
-//!
-//! Split out of `world.rs` as additional `impl World` blocks; no logic
-//! change from the original inline definitions.
 
 use super::*;
 use legaia_engine_field::man_field_scripts::FieldCarrierConfig;

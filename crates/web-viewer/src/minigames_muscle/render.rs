@@ -1,5 +1,4 @@
 //! The Muscle Dome's 3D exports: fighter / opponent meshes and poses, the arena backdrop, and dome SFX.
-//! Split out of `minigames_muscle.rs`.
 
 use super::*;
 
