@@ -140,7 +140,7 @@ impl SceneHost {
         // retail's: it also covers the door changes retail takes the
         // fresh-actor arm on. The engine has no surviving-actor pool across a
         // scene load, so the sweep is the engine's teardown either way.
-        // PORT: FUN_801D7518 (live wiring; kernel = `field_actor_kernels::sweep_actor`)
+        // PORT: FUN_801D7518 (live wiring; kernel = `scene_transition_sweep::sweep_actor`)
         if self.scene.is_some() {
             self.world.scene_transition_actor_sweep();
         }

@@ -386,7 +386,7 @@ listed so the bucket count is the whole of what no host reaches.
 | group | n | addresses | why |
 |---|---|---|---|
 | `card_bu_io.rs` | 4 | `801e0598` `801e3d68` `801e380c` `801e435c` | **`REPLACED-BY`** `legaia_save::emu::CardView` + `legaia_save::card` - out of the wiring denominator, not owed a host. |
-| `plain_template_actors.rs` | 2 | `801d5d60` `801d6058` | Since closed both ways. `801d6058` has a producer - `World::install_field_scene_elements` seats the emitter on every cold field entry, so any field ladder enters it. `801d5d60` (and `801d5c08`) were **duplicate** ports: every allocation from their templates is the hop-arc family, ported and live as `field_ledge_hop_arc::{advance_hop_arc, release_watcher_tick}`, so the element-channel copies were deleted rather than wired. |
+| `ambient_emitter.rs` | 2 | `801d5d60` `801d6058` | Since closed both ways. `801d6058` has a producer - `World::install_field_scene_elements` seats the emitter on every cold field entry, so any field ladder enters it. `801d5d60` (and `801d5c08`) were **duplicate** ports: every allocation from their templates is the hop-arc family, ported and live as `field_ledge_hop_arc::{advance_hop_arc, release_watcher_tick}`, so the element-channel copies were deleted rather than wired. |
 | `camera_rel_glide.rs` | 1 | `8002149c` | No producer for the family's 20-halfword spawn record. |
 | `card_flow.rs` | 1 | `801e13b8` | **`REPLACED-BY`** `legaia_save`'s synchronous card writer - out of the wiring denominator. |
 | `effect_ribbon.rs` | 1 | `801cfa48` | Wired: the op-`0x42` carriers arm it and both battle hosts draw `World::active_effect_ribbons`. Not reached - the "since reached" this cell carried was a module-tag credit; see [the module-tag note](#a-module-tag-answers-for-its-file-not-for-its-routine). |
@@ -889,7 +889,7 @@ cross and the level-up banner.
 |---|---|---|---|
 | `new_game.rs` | 1 | `8001ffa4` | `GAME_STATE_COLD_RESET` is a `const`, read in production by `scene/host/lifecycle` and `world/frame_tick` - wired; the reach report resolves an item anchor through its executed references (the const-anchor note above), so the row reports off those readers' own coverage |
 | `baka_cabinet.rs` | 1 | `801d553c` | the developer action-table dump retail writes as `ot5stat.txt` |
-| `plain_template_actors.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
+| `save_screen_spawn.rs` | 1 | `801d841c` | reached only from the dev world-map panel's fade/flash actor |
 
 The character-parameter editor (`801d6e18`) left this bucket: the play page's
 dev-menu opt-in is itself pad-driven library code, so the composition ladder
@@ -925,7 +925,7 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`tween_actor_position`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b), **converted** | `passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
-| `battle_arith_cores.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
+| `rgb_wash_scale.rs`, `nested_record_copy.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `actor_node_pool.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
 | `clut_fade_actor.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
 

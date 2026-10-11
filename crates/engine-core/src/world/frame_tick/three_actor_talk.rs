@@ -24,7 +24,7 @@ impl World {
     ///
     /// PORT: FUN_801D27E0
     ///
-    /// The SM kernel is [`legaia_engine_field::plain_template_actors::LeaderSwap`]
+    /// The SM kernel is [`legaia_engine_field::leader_swap::LeaderSwap`]
     /// (the byte-level port of the dispatcher, gate, and search); this tick
     /// is its host. Per state:
     ///
@@ -75,7 +75,7 @@ impl World {
     /// follows the player actor), and the `FUN_8003BDE0` spawn-condition
     /// re-check at the new tile.
     pub(crate) fn tick_three_actor_talk(&mut self) {
-        use legaia_engine_field::plain_template_actors::{
+        use legaia_engine_field::leader_swap::{
             LEADER_ACTOR_POSE_SENTINEL, LEADER_SWAP_REQUEST_BIT, LeaderSwapEffect, LeaderSwapWorld,
         };
         let Some(mut talk) = self.dialog.three_actor_talk else {
@@ -150,9 +150,8 @@ impl World {
                     self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
                         &legaia_engine_system::fade::FadeTemplate {
                             kind: 2,
-                            duration:
-                                legaia_engine_field::plain_template_actors::LEADER_SWAP_FADE_FRAMES
-                                    as i16,
+                            duration: legaia_engine_field::leader_swap::LEADER_SWAP_FADE_FRAMES
+                                as i16,
                             start_rgb: [0, 0, 0],
                             end_rgb: [0xFF, 0xFF, 0xFF],
                             mode: [0, -1, 0],
@@ -230,9 +229,8 @@ impl World {
                     self.presentation.fade = Some(legaia_engine_system::fade::FadeState::load(
                         &legaia_engine_system::fade::FadeTemplate {
                             kind: 2,
-                            duration:
-                                legaia_engine_field::plain_template_actors::LEADER_SWAP_FADE_FRAMES
-                                    as i16,
+                            duration: legaia_engine_field::leader_swap::LEADER_SWAP_FADE_FRAMES
+                                as i16,
                             start_rgb: [0xFF, 0xFF, 0xFF],
                             end_rgb: [0, 0, 0],
                             mode: [0, 0, 0],

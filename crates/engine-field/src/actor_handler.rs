@@ -21,7 +21,7 @@
 //!
 //! So the field has to do two jobs at once. It must compare equal to a raw
 //! retail VA (that is what the scene-transition sweep
-//! [`crate::field_actor_kernels::sweep_actor`], the submode open
+//! [`crate::scene_transition_sweep::sweep_actor`], the submode open
 //! [`crate::field_submode::open_submode`] and the field VM's own
 //! find/retire opcodes are written against), and it must **select a ported
 //! Rust kernel** so the dispatcher has something to run. [`ActorHandler`]
@@ -54,7 +54,7 @@
 //!
 //! REF: FUN_80020DE0 (installs the handler), FUN_8002519C (dispatches it)
 
-use crate::field_actor_kernels::{MOVE_VM_HANDLER, RETIRED_HANDLERS};
+use crate::scene_transition_sweep::{MOVE_VM_HANDLER, RETIRED_HANDLERS};
 
 /// `FUN_80021DF4` - the generic SCUS per-actor tick (drains the wait timer,
 /// steps the move VM, emits the render/audio events). Identical to
@@ -204,7 +204,7 @@ pub enum HandlerKernel {
     /// `legaia_engine_core::world::World::tick_actor_physics` - the same special case
     /// `FUN_8002519C` makes for this one handler.
     ActorTick,
-    /// [`crate::field_actor_kernels::step_colour_tween`], run by
+    /// [`crate::actor_colour_tween::step_colour_tween`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors`.
     ColourTween,
     /// [`crate::cutscene_narration::CutsceneNarration`] - driven by the
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn the_colour_tween_is_one_of_the_retired_classes() {
-        // The cross-link between the two ports in `field_actor_kernels`,
+        // The cross-link between `scene_transition_sweep` and `actor_colour_tween`,
         // restated on the identity type: the sweep names the tween's entry.
         assert!(ActorHandler::ColourTween.retired_by_scene_transition());
         assert_eq!(

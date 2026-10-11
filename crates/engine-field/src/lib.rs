@@ -19,8 +19,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod actor_colour_tween;
 pub mod actor_handler;
 pub mod actor_look;
+pub mod ambient_emitter;
 pub mod camera;
 pub mod camera_ease;
 pub mod camera_rig;
@@ -37,7 +39,6 @@ pub mod dev_menu_leaves;
 pub mod dialog_state;
 pub mod escape_timer;
 pub mod field_actor_clone;
-pub mod field_actor_kernels;
 pub mod field_actor_program;
 pub mod field_actor_reflect;
 pub mod field_actor_timers;
@@ -59,6 +60,7 @@ pub mod field_warp_tile;
 pub mod float_tween;
 pub mod incense_window;
 pub mod inline_dialogue;
+pub mod leader_swap;
 pub mod man_field_scripts;
 pub mod morph_weight_apply;
 pub mod motion_pause;
@@ -66,10 +68,12 @@ pub mod move_vm_globals;
 pub mod overworld_draw_order;
 pub mod overworld_ground_cue;
 pub mod packet_color;
-pub mod plain_template_actors;
 pub mod pooled_actor_seed;
+pub mod primitive_colour_grade;
 pub mod register_ramp;
+pub mod save_screen_spawn;
 pub mod scene_transition_actor;
+pub mod scene_transition_sweep;
 pub mod submode_hub_actors;
 pub mod travel_art_actor;
 pub mod vdf_pulse;

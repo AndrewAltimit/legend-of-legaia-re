@@ -44,10 +44,10 @@
 use super::*;
 
 use legaia_engine_field::actor_handler::ActorHandler;
-use legaia_engine_field::field_actor_kernels::ACTOR_FLAG_YIELD;
 use legaia_engine_field::field_actor_program::{
     PLAYER_LIFTING, ProgramEffect, ProgramEnv, ProgramPlayer, step_scene_program,
 };
+use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_YIELD;
 
 /// Flag id the closers test before releasing the player
 /// (`FUN_8003CE64(0x18)`).

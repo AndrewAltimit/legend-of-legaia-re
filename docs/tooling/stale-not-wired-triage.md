@@ -231,7 +231,7 @@ A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
 doc block opens a line with `WIRED:` opts that single item out of the module
 blanket, leaving the blanket true for the rest of the file. The worked example
-is `plain_template_actors::save_screen_spawn`, one live spawn under a
+is `save_screen_spawn::save_screen_spawn`, one live spawn under a
 blanket its three sibling element handlers still need. An own-block
 `NOT WIRED` beats an own-block `WIRED:`; the token rules and the control suite
 are in [`port-catalog.md`](port-catalog.md#per-item-wired-against-a-module-blanket).
@@ -353,7 +353,7 @@ recognisable: match the mechanism, apply the same fix.
 | `801ead98` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
 | `801eca08` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
 | `801ed710` | `engine-field/src/dev_menu_leaves.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
-| `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/actor_node_pool.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
+| `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/actor_node_pool.rs`, `u16_list_append.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
 | `80046870` | `engine-field/src/incense_window.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
 | `801d71b8` | `engine-battle-vm/src/battle_attack_camera.rs` | FALSE-EDGE | `gate` renamed `attack_camera_gate`; a free function named `gate` is reached by the bare-identifier edge from every function that merely *mentions* one. |
@@ -371,7 +371,7 @@ recognisable: match the mechanism, apply the same fix.
 | `801d84b4` | `engine-field/src/field_submode.rs` | FALSE-EDGE | Same shape: `CardRequest` is a struct and the file declares no `impl` at all, so the type anchor widened to a module live through `open_submode`. Now a `REF:`; `request_card_mode` keeps the `PORT:`. |
 | `801d4a60` | `engine-field/src/field_actor_program.rs` | FALSE-EDGE | `step` renamed `step_scene_program`. A free `fn step` is never receiver-gated and collected edges from the live `motion_vm::step` and from every reachable function naming a local `step` (`fishing_advance_cast(&mut self, step: i32)` fired it). Exposed `entry_successor` / `lift_step`, which then needed their own disclosures. |
 | `801dd0c0` | `engine-menus/src/menu_item_category.rs` | RESOLVED | Was wired-but-inert: reached via `best_equipment_now`'s scoring closure with a table nothing filled. `World::install_menu_overlay_tables` now parses `DAT_801E4B88` off PROT 0899 and `build_equip_session` installs it with the edited party slot, so the check scores real disc data on both hosts. |
-| `801ddc20` | `engine-field/src/field_actor_kernels.rs` | Wired, inert at runtime | `World::tick_handler_actors` dispatches it every tick, but no host installs `ActorHandler::ColourTween`, so the `a.colour_tween` guard is always `None`. The tag said as much already; only the token had to go. |
+| `801ddc20` | `engine-field/src/actor_colour_tween.rs` | Wired, inert at runtime | `World::tick_handler_actors` dispatches it every tick, but no host installs `ActorHandler::ColourTween`, so the `a.colour_tween` guard is always `None`. The tag said as much already; only the token had to go. |
 | `801cf1b0` | `engine-battle-vm/src/battle_intro_transition.rs` | STALE-TAG | `build_intro_quad`'s only caller `tick_curtain` draws end to end. Its reason - the PROT 0979 descriptor table "which the engine never loads" - was falsified by `IntroQuadTable::parse_overlay`, which the caller's own tag already recorded. |
 | `801cfbb4`, `801d0164` | `engine-battle-vm/src/battle_intro_particles.rs` | STALE-TAG | `BattleIntro::new` seeds the grid on every particle-style transition. The module blanket came off; the file is wholly wired, so nothing in it needed a per-item line. What survives as prose is the two real gaps: no packet consumer, and computed trig standing in for the overlay's height tables. |
 | `801cfda0`, `801d0370` | `engine-battle-vm/src/battle_intro_styles.rs` | STALE-TAG | `step_particle` is reached from `tick_particle_field`, whose own tag had already been rewritten to `NOT DRAWN`. The sibling-delegation shape above. |

@@ -262,7 +262,7 @@ crates; each row's site names the owning crate.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
-| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/actor_node_pool.rs` | REPLACE |
+| `8001fa68` | `list_append_u16` | `crates/engine-vm/src/u16_list_append.rs` | REPLACE |
 | `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/actor_node_pool.rs` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs` | REPLACE |
 | `80024e08` | `set_actor_model` | `crates/engine-vm/src/field/host/actor.rs` | FALSE INERT |
@@ -958,7 +958,8 @@ is the whole point of sweeping five reference forms rather than one.
 
 ### The SCUS battle-kernel block: one wire, and where its reach really ends
 
-`battle_arith_cores` disclosed four arithmetic kernels behind four different
+The battle arithmetic kernels (`nested_record_copy`, `rgb_wash_scale`, `bgr555_grey`
+and the tint-pass cores) disclosed four arithmetic kernels behind four different
 missing halves. One of the four closed, and it is worth recording as a shape
 rather than as a row, because the clause that gave way was not the one the
 disclosure leaned hardest on.
@@ -1007,7 +1008,8 @@ their blocker and wrong only about what *kind* of thing that blocker is.
 Two files carry both classes, and a file-level reading gets each of them
 backwards in one direction:
 
-- `engine-vm::actor_node_pool` - all three classes are `REPLACE` now: the
+- `engine-vm::actor_node_pool`, `block_copy_32` and `u16_list_append` - all three
+  classes are `REPLACE`: the
   actor node pool (`Vec`-backed generational pool), `copy_blocks_32`
   (borrow-in-place chunk walk in `legaia_container_formats::parse_streaming_with`), and
   `list_append_u16`, which is `engine-system::movie::cutscene::sprite_stack_push`'s
@@ -1084,8 +1086,8 @@ and the only thing that can be stale is a marker that exists.
 |---|---|---|
 | `scus_leaf_kernels::text_line_count` (`8003CBA8`) | `REPLACE` | `str::lines()` over the decoded prompt - `battle_tutorial::TutorialPrompts` folds `0x7C` to `'\n'` at decode and `engine-ui::battle_tutorial_box` counts with it, live on both hosts. The one divergence, the `0xC0..=0xCF` escape lead, appears in no PROT 0967 prompt. |
 | `ambient_motion::reset_pool` (`8003CDA8`) | `REPLACE`, since superseded: live | the verdict held while every scheduler was rebuilt per scene. The world-owned `player_scale_ramps` is not, so `World::install_field_player` calls the reset and the tag came off. Retail has no reference to the address in any image, so the seat is the engine's own. |
-| `battle_arith_cores::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_actor_formats::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
-| `battle_arith_cores::scale_rgb24` (`80046978`) | `REPLACE` | `render-kernels::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
+| `nested_record_copy::copy_nested_records` (`80055854`) | `REPLACE` | `legaia_actor_formats::battle_char_palette`, the port of the one retail caller `FUN_80052FA0`, which parses to typed records; no engine type holds the `&mut [u32]` staging buffer this advances. |
+| `rgb_wash_scale::scale_rgb24` (`80046978`) | `REPLACE` | `render-kernels::battle_intro::wash_prim` and its two arm constants, the same ABR-2 full-screen quad, live on both hosts. The scale input is the adaptive frame-skip cadence `0x1F800393`; every host ticks at 1, where the function is the identity. |
 | `battle_party_panel::LabelState::opened` (`801DBB8C`) | `REPLACE` | `engine-ui::battle_hud_draws_for`'s immediate-mode rebuild - every battle `TextDraw` is built afresh per frame, so no handle exists to open or tear down. |
 
 Two neighbours were checked against the same bar and stay `DISCLOSE`.

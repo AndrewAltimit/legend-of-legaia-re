@@ -926,7 +926,7 @@ oscillators.
   blend), `engine-vm::vdf_morph` (actor lanes + envelope) and
   `engine-core::world::npc_morph`; enhancement pulse `engine-field::vdf_pulse`.
 - Fog: `engine-core::fog_particles::FogPool` (cap from the MAN header),
-  emitter `engine-field::plain_template_actors::AmbientEmitter`, overworld
+  emitter `engine-field::ambient_emitter::AmbientEmitter`, overworld
   flat bucket depth `engine-field::overworld_draw_order`, 5-bit blend
   `render-kernels::screen_prim::psx_texture_blend`. World draws stand in for BIOS
   `rand()` through `engine-system::rand::bios_rand_shape`. The

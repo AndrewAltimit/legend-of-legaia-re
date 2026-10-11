@@ -153,22 +153,26 @@ them into their own audio mixer / scene graph / move-VM driver.
 
 ## `actor_node_pool`
 
-Five leaf helpers in `SCUS_942.54`. `ActorNodePool` is the per-scene
+`ActorNodePool` is the per-scene
 actor node pool: a LIFO free-stack over 143 fixed-stride nodes
 (`FUN_800203EC` init, `FUN_80020424` pop-as-list-head, `FUN_80020454`
 pop-and-append, `FUN_800204A4` unlink-and-free), with the retail link
 words `next` / `prev` / `owner` / `tail` at node offsets `+0x00` /
 `+0x04` / `+0x08` / `+0x0C`. Allocation descends from the highest node
 index and a freed node returns to the top of the stack, so the pool
-reproduces retail's actor ordering. `list_append_u16` is the sprite
-path's pre-increment u16 append (`FUN_8001FA68`), which indexes at the
-*new* count and ignores the capacity its caller passes in `a2`.
+reproduces retail's actor ordering.
 
-Neither is called, and neither is owed a call: both carry a `REPLACED-BY:`
-tag. The pool is replaced by the engine's `Vec`-backed actor pool with
-generational slots; the append is the same routine ported a second time as
-`legaia_engine_system::movie::cutscene::sprite_stack_push`, which is live on both
-hosts. The module's `copy_blocks_32` is likewise replaced, by the in-place
+Two unrelated `SCUS_942.54` leaves sit beside it, a module each:
+`u16_list_append::list_append_u16` is the sprite path's pre-increment u16
+append (`FUN_8001FA68`), which indexes at the *new* count and ignores the
+capacity its caller passes in `a2`; `block_copy_32::copy_blocks_32` is the
+32-byte-block copy (`FUN_8003D26C`).
+
+None of the three is called, and none is owed a call: each carries a
+`REPLACED-BY:` tag. The pool is replaced by the engine's `Vec`-backed actor
+pool with generational slots; the append is the same routine ported a
+second time as `legaia_engine_system::movie::cutscene::sprite_stack_push`,
+which is live on both hosts; the block copy is replaced by the in-place
 chunk walk in `legaia_container_formats::parse_streaming_with`.
 
 ## Battle-overlay leaves outside the action SM

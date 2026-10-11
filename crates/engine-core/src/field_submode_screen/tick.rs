@@ -292,7 +292,7 @@ impl World {
             // way every other kill-bit actor goes.
             if let Some(idx) = self.find_actor_by_handler(ActorHandler::SubmodeDriver) {
                 self.actors[idx].physics.status_flags |=
-                    legaia_engine_field::field_actor_kernels::ACTOR_FLAG_YIELD;
+                    legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_YIELD;
             }
         }
         retired

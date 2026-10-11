@@ -1,13 +1,8 @@
-//! SCUS core helpers: the actor node pool and the pre-increment u16 list
-//! append.
+//! The per-scene **actor node pool** of `SCUS_942.54`: a LIFO free-stack over
+//! a fixed array of fixed-stride nodes, plus the intrusive list primitives
+//! that link a popped node onto a list head.
 //!
-//! PORT: FUN_800203EC, FUN_80020424, FUN_80020454, FUN_800204A4, FUN_8001FA68
-//!
-//! Five small leaf routines in `SCUS_942.54`. Four of them form the
-//! per-scene **actor node pool**: a LIFO free-stack over a fixed array of
-//! fixed-stride nodes, plus the intrusive list primitives that link a
-//! popped node onto a list head. The fifth is an unrelated list-append
-//! helper the sprite path uses.
+//! PORT: FUN_800203EC, FUN_80020424, FUN_80020454, FUN_800204A4
 //!
 //! Every claim below is read out of the instruction stream, cross-checked
 //! against `extracted/SCUS_942.54` at `0x800 + va - 0x80010000`. The
@@ -17,13 +12,11 @@
 //!
 //! No `SCUS_942.54` bytes live in this crate. The reference dumps
 //! (`ghidra/scripts/funcs/800203ec.txt`, `80020424.txt`, `80020454.txt`,
-//! `800204a4.txt`, `8001fa68.txt`) are the *spec*.
+//! `800204a4.txt`) are the *spec*.
 //!
-//! REF: FUN_80020DE0, FUN_8002519C, FUN_8003F3FC, FUN_8001FE70
+//! REF: FUN_80020DE0, FUN_8002519C
 //!
 //! # Wiring status
-//!
-//! The three classes are split per item, because they close differently.
 //!
 //! REPLACED-BY: the engine's `Vec`-backed actor pool with generational slots.
 //! That covers [`ActorNodePool`] and its three link primitives. Nothing in
@@ -35,26 +28,6 @@
 //! spawn/despawn sequence reproduces a specific node ordering. That ordering
 //! feeds actor iteration order, which the recomp differential oracle
 //! compares per frame.
-//!
-//! REPLACED-BY: `legaia_engine_system::movie::cutscene::sprite_stack_push`. That covers
-//! [`list_append_u16`], which is the same address ported a second time and is
-//! live on both hosts through the fog-particle pool. This section used to read
-//! it as a wiring gap owed by an unported producer; the producer
-//! (`FUN_8003F3FC`, the per-particle update) is ported, and the `jal` at
-//! `0x8003F800` that names this routine is that port's free-slot return.
-//!
-//! REPLACED-BY: the borrow-in-place chunk walk in
-//! `legaia_container_formats::parse_streaming_with`. That covers [`copy_blocks_32`], and
-//! this section used to leave it out - the audit attributed it here through
-//! the module tag while the prose named only the other two, which is a
-//! disclosure that reads as covering an anchor it never mentions. Its retail
-//! caller `FUN_8001FE70` **is** ported and live, as
-//! `legaia_container_formats::parse_streaming_with`, but the copy itself is retail's way of
-//! moving a chunk body into an aligned buffer and the Rust walker borrows the
-//! chunk in place instead. There is no destination buffer to copy into, so
-//! there is no call site - not a missing host. The kernel is kept for the two
-//! edges the instruction stream settles and a `memcpy` would not: the
-//! `count <= 0` case still copies one block, and the stride is fixed at `0x20`.
 
 // ---------------------------------------------------------------------------
 // Retail memory layout
@@ -316,99 +289,6 @@ impl ActorNodePool {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pre-increment u16 list append
-// ---------------------------------------------------------------------------
-
-/// Append `value` to a u16 list whose element count sits in a separate
-/// `i16` - `FUN_8001FA68`.
-///
-/// PORT: FUN_8001FA68
-///
-/// REPLACED-BY: `legaia_engine_system::movie::cutscene::sprite_stack_push`, which is
-/// this same address ported a second time and reached on both hosts.
-/// `FUN_8003F3FC` - named here as the missing producer - is ported: it is the
-/// per-particle half of `legaia_engine_core::fog_particles::FogPool::render_step`,
-/// and the `jal` at `0x8003F800` this routine is the callee of is that port's
-/// `free_slot`, which returns a dead record's index through
-/// `sprite_stack_push`. So the producer exists, has a host, and already calls
-/// an equivalent - what is left here is a duplicate, not a gap. It stays
-/// because it is written against the `u16` element type of the sprite list and
-/// documents the unchecked-store edge the halfword port does not state; no
-/// host is owed a second call site.
-///
-/// The eight-instruction body is:
-///
-/// ```text
-/// lh   v0, 0(a0)     ; count
-/// addiu v0, v0, 1    ; pre-increment
-/// sh   v0, 0(a0)     ; store it back
-/// sll  v0, v0, 1     ; count * 2
-/// addu v0, v0, a1
-/// sh   a3, 0(v0)     ; entries[new_count] = value
-/// ```
-///
-/// Two things the C rendering does not show:
-///
-/// - The store indexes at the **new** count, so with a count starting at
-///   `0` the first append lands in `entries[1]` and slot `0` is never
-///   written. Callers that want a dense list start the count at `-1`.
-/// - `a2` is never read. The one traced caller, `FUN_8003F3FC` at
-///   `0x8003F7FC`, loads `a2` from `lh 0x2(a0)` - the list's capacity -
-///   immediately before the `jal`, and the callee ignores it. Retail
-///   therefore performs **no** bounds check on this append. Ghidra's
-///   inferred signature drops the argument entirely, which is the
-///   "dropped register arguments" artifact; the `jal` and its
-///   surroundings are what settle it.
-///
-/// This port cannot reproduce the unchecked store, so it returns the
-/// written index, or `None` when the new count falls outside `entries`.
-/// In that case the count is still incremented, matching retail's
-/// unconditional `sh v0, 0(a0)`.
-pub fn list_append_u16(count: &mut i16, entries: &mut [u16], value: u16) -> Option<usize> {
-    *count = count.wrapping_add(1);
-    let idx = *count;
-    if idx < 0 {
-        return None;
-    }
-    let idx = idx as usize;
-    match entries.get_mut(idx) {
-        Some(slot) => {
-            *slot = value;
-            Some(idx)
-        }
-        None => None,
-    }
-}
-
-/// PORT: FUN_8003D26C
-///
-/// REPLACED-BY: the borrow-in-place chunk walk in
-/// `legaia_container_formats::parse_streaming_with` - there is no destination buffer to
-/// copy into, so there is no call site.
-///
-/// 32-byte-block copy - the unrolled `t0..t7` load/store loop the
-/// battle-scene chunk walker uses to place a TMD body into its aligned
-/// buffer (`FUN_8001FE70`, see `docs/subsystems/asset-loader.md`).
-/// Copies `count` blocks of `0x20` bytes from `src` to `dst`.
-///
-/// Faithful edges, both off the instruction stream:
-///
-/// - **Do-while**: the count decrement + `bgtz` sit at the loop *tail*
-///   (`0x8003D2AC..0x8003D2B4`), so `count <= 0` still copies exactly
-///   one block.
-/// - The retail body moves whole words (`lw`/`sw`), so its pointers must
-///   be 4-byte aligned; the byte-slice port has no such constraint but
-///   preserves the byte-for-byte result.
-///
-/// Both slices must hold `max(count, 1) * 32` bytes; the port panics
-/// where retail would stride into unrelated memory.
-pub fn copy_blocks_32(dst: &mut [u8], src: &[u8], count: i32) {
-    let blocks = count.max(1) as usize;
-    let len = blocks * 32;
-    dst[..len].copy_from_slice(&src[..len]);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,58 +425,5 @@ mod tests {
             None,
             "FUN_80020454's bltz early exit"
         );
-    }
-
-    #[test]
-    fn u16_append_pre_increments_so_slot_zero_stays_unwritten() {
-        let mut entries = [0u16; 4];
-        let mut count: i16 = 0;
-        assert_eq!(list_append_u16(&mut count, &mut entries, 0xAAAA), Some(1));
-        assert_eq!(count, 1);
-        assert_eq!(entries, [0, 0xAAAA, 0, 0]);
-    }
-
-    #[test]
-    fn u16_append_from_minus_one_fills_densely() {
-        let mut entries = [0u16; 3];
-        let mut count: i16 = -1;
-        assert_eq!(list_append_u16(&mut count, &mut entries, 1), Some(0));
-        assert_eq!(list_append_u16(&mut count, &mut entries, 2), Some(1));
-        assert_eq!(list_append_u16(&mut count, &mut entries, 3), Some(2));
-        assert_eq!(entries, [1, 2, 3]);
-        assert_eq!(count, 2);
-    }
-
-    #[test]
-    fn u16_append_still_increments_the_count_when_it_overruns() {
-        // Retail's `sh v0, 0(a0)` is unconditional - the count advances
-        // whether or not the store lands in range.
-        let mut entries = [0u16; 2];
-        let mut count: i16 = 1;
-        assert_eq!(list_append_u16(&mut count, &mut entries, 9), None);
-        assert_eq!(count, 2);
-        assert_eq!(entries, [0, 0]);
-    }
-
-    #[test]
-    fn copy_blocks_32_copies_exactly_count_blocks() {
-        let src: Vec<u8> = (0..96u8).collect();
-        let mut dst = vec![0u8; 96];
-        copy_blocks_32(&mut dst, &src, 2);
-        assert_eq!(&dst[..64], &src[..64]);
-        assert!(dst[64..].iter().all(|&b| b == 0), "third block untouched");
-    }
-
-    #[test]
-    fn copy_blocks_32_do_while_copies_one_block_for_non_positive_counts() {
-        // The decrement + bgtz live at the loop tail, so count <= 0 still
-        // moves one 0x20-byte block.
-        for count in [0, -1, -100] {
-            let src = [0xABu8; 64];
-            let mut dst = [0u8; 64];
-            copy_blocks_32(&mut dst, &src, count);
-            assert_eq!(&dst[..32], &src[..32], "count={count}");
-            assert!(dst[32..].iter().all(|&b| b == 0), "count={count}");
-        }
     }
 }

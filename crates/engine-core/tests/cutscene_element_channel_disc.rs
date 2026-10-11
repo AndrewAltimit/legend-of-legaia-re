@@ -2,7 +2,7 @@
 //! overlay's own bytes rather than from a dump filename.
 //!
 //! The reading that there is "no element-actor dispatch to hang these off"
-//! (`legaia_engine_field::plain_template_actors`) is, for the ambient emitter
+//! (`legaia_engine_field::ambient_emitter`) is, for the ambient emitter
 //! (`FUN_801D6058`), falsified by the disc: its `+0x08` handler word sits in a `0x18`-byte
 //! spawn descriptor at `0x801F271C`, inside the field overlay's own
 //! plain-template table - the same table, and byte-for-byte the same shape, as
@@ -133,7 +133,7 @@ fn the_emitter_spawn_site_selects_the_scene_arm() {
 fn the_channel_advances_from_the_worlds_own_frame_tick() {
     // Disc-free on purpose - this asserts the wiring, not the data - but it
     // lives here because it is the other half of the claim above.
-    use legaia_engine_field::plain_template_actors::SceneSpan;
+    use legaia_engine_field::ambient_emitter::SceneSpan;
     use legaia_engine_system::mode_entry_init::FieldEntryMode;
     let mut w = World::new();
     w.mode = SceneMode::Field;

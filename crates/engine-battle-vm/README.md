@@ -236,8 +236,8 @@ The crate's remaining modules are leaf kernels; by family:
   `battle_cast_cue`, `battle_cast_dispatch`; see
   [`cast-module.md`](../../docs/subsystems/cast-module.md).
 - **Battle rules leaves** - `seru_side_effect` (the Seru-magic side-effect
-  stager), `battle_arith_cores` (the nested record copy, the RGB modulate and
-  the petrify grey), `mes_escape_append` (the caption's item-name token
+  stager), `nested_record_copy`, `rgb_wash_scale` and `bgr555_grey` (the nested
+  record copy, the RGB modulate and the petrify grey), `mes_escape_append` (the caption's item-name token
   splice), `panel_backread_loader` (PROT 0978's staged loader),
   `battle_damage_wrappers` (`FUN_801DD4B0` / `FUN_801DD6B4`),
   `battle_target_group` (`FUN_801DCEAC`), `battle_separation`,

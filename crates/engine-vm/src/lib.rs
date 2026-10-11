@@ -91,6 +91,7 @@ pub mod actor_node_pool;
 pub mod actor_tick;
 pub mod anim_vm;
 pub mod battle_burst;
+pub mod block_copy_32;
 pub mod effect_vm;
 pub mod field;
 pub mod field_actor_billboard;
@@ -100,6 +101,7 @@ pub mod move_buffer;
 pub mod move_ext_strip;
 pub mod move_vm;
 pub mod move_vm_overlay_ext;
+pub mod u16_list_append;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
 

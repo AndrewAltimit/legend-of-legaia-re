@@ -1914,7 +1914,7 @@ step and the draw
   of the capture.
 
 The beat is a `(a0, a1, packed)` triple per frame, which is the shape of the port's
-[`ScreenTintPush`](../../crates/engine-field/src/field_actor_kernels.rs) triples emitted by
+[`ScreenTintPush`](../../crates/engine-field/src/actor_colour_tween.rs) triples emitted by
 [`step_colour_tween`]. Both arguments are live selectors, not constants a scalar fade factor
 could stand in for.
 
@@ -1981,7 +1981,7 @@ One conditional touches the duration: a pure-white target under blend `2` loses 
 (`sra v0,s1,3` / `subu s1,s1,v0` at `0x801DFE60`), which is why the captured template reads `57`
 where the instruction's own word is `0x41`.
 
-[`step_colour_tween`]: ../../crates/engine-field/src/field_actor_kernels.rs
+[`step_colour_tween`]: ../../crates/engine-field/src/actor_colour_tween.rs
 
 ### Full-scene sepia grade (the gold prologue look)
 
@@ -2589,7 +2589,7 @@ stateDiagram-v2
 - Both fades are kind `2`, `0x20` frames, black-to-white then white-to-black, so the swap
   happens behind a white flash.
 
-Port: `legaia_engine_field::plain_template_actors::LeaderSwap` (defined in
+Port: `legaia_engine_field::leader_swap::LeaderSwap` (defined in
 `crates/engine-field`).
 
 **The request is a pad edge, which makes it player-reachable.** `801d2998..801d29a8` is
@@ -2631,13 +2631,14 @@ TMD's packed colour words**: for every primitive it converts each colour to HSV
 The disc's only callers are the prologue's six `4C E6` sites; what their two-op pair does to a
 word is under [the sepia grade](#full-scene-sepia-grade-the-gold-prologue-look).
 
-Port: `legaia_engine_field::plain_template_actors::shift_primitive_colours`; the renderers'
+Port: `legaia_engine_field::primitive_colour_grade::shift_primitive_colours`; the renderers'
 `prologue_sepia_word` is its two-op result in closed form.
 
 ### What the tween and the emitter do beyond the one-line role
 
 Three details of these bodies are visible only in the disassembly; the port
-(`legaia_engine_field::plain_template_actors`) carries all three.
+(`legaia_engine_field::ambient_emitter`, `leader_swap` and
+`primitive_colour_grade`) carries all three.
 
 - **The tween's entry test is on the linked object.** `0x801D5C1C` loads `linked[+0x10]` and
   branches on bit `8`, and the taken branch lands on the store that sets the *element's own* bit

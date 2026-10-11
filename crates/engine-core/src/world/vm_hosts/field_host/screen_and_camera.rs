@@ -89,12 +89,7 @@ impl FieldHostImpl<'_> {
             });
     }
 
-    pub(super) fn set_effect_colour(
-        &mut self,
-        op0: u8,
-        rgb: [u8; 3],
-        intensity: i16,
-    ) {
+    pub(super) fn set_effect_colour(&mut self, op0: u8, rgb: [u8; 3], intensity: i16) {
         // Op `0x34` sub-0 is the **screen-effect colour tween**, and it is a
         // walk-out / walk-in pair rather than a value ramp. Reading the arm
         // at `0x801DFCD4..0x801DFEF8` off the field overlay:
@@ -110,7 +105,7 @@ impl FieldHostImpl<'_> {
         // 4. Otherwise spawn the walk-in tween, black -> target, hold `-1`.
         //
         // REF: FUN_801DE2B0 (the spawner, ported at
-        // `legaia_engine_field::field_actor_kernels::tween_from_fade_template`)
+        // `legaia_engine_field::actor_colour_tween::tween_from_fade_template`)
         //
         // Both spawns fork on scratchpad global `_DAT_1F800394` bit 23
         // (`lui v1,0x80; and` at `0x801DFD1C` / `0x801DFEB0`): set, retail
@@ -120,9 +115,8 @@ impl FieldHostImpl<'_> {
         // field-op-census --only 2E`) nor a motion-VM `0x10`/`0x11` (none is
         // authored in any bank), pinned by
         // `crates/asset/tests/scratch_global_bit_writers_real.rs`.
-        use legaia_engine_field::field_actor_kernels::{
-            ACTOR_FLAG_YIELD, tween_from_fade_template,
-        };
+        use legaia_engine_field::actor_colour_tween::tween_from_fade_template;
+        use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_YIELD;
         use legaia_engine_system::fade::FadeTemplate;
 
         if let Some(slot) = self.world.presentation.effect_tween_slot.take() {
@@ -178,7 +172,7 @@ impl FieldHostImpl<'_> {
             end_rgb: target,
             mode: [
                 0,
-                legaia_engine_field::field_actor_kernels::TWEEN_HOLD_FOREVER,
+                legaia_engine_field::actor_colour_tween::TWEEN_HOLD_FOREVER,
                 0,
             ],
         };

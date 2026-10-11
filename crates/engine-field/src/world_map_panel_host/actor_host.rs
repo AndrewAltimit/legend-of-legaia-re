@@ -492,7 +492,7 @@ impl PanelActorHost {
                 FadeFlashEffect::SpawnSaveScreen => {
                     // `FUN_801D841C` verbatim: the descriptor / pool pair and
                     // the one field it writes on the returned actor.
-                    let spawn = crate::plain_template_actors::save_screen_spawn();
+                    let spawn = crate::save_screen_spawn::save_screen_spawn();
                     let handoff = SaveScreenHandoff {
                         descriptor: spawn.descriptor,
                         pool: spawn.pool,

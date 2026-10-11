@@ -57,7 +57,7 @@
 //! ramp but no window to apply it to. It stays out until the table has a
 //! reader.
 
-use legaia_engine_battle_vm::battle_arith_cores::bgr555_to_grey;
+use legaia_engine_battle_vm::bgr555_grey::bgr555_to_grey;
 
 /// First VRAM CLUT row of the battle party palettes - retail's
 /// `addiu v0,s3,0x1e1` (`0x8004D77C`), the same `481 + ordinal` the

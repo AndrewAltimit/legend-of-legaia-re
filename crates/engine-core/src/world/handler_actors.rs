@@ -18,12 +18,13 @@
 use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
+use legaia_engine_field::actor_colour_tween::{ColourTween, ScreenTintPush};
 use legaia_engine_field::actor_handler::{ActorHandler, MAN_LOAD_RETIRED_HANDLERS};
-use legaia_engine_field::field_actor_kernels::{
-    ACTOR_FLAG_YIELD, ColourTween, ScreenTintPush, SweepActor, SweepDecision, sweep_actor,
-};
 use legaia_engine_field::field_submode::{
     SCENE_ACTOR_REQUESTED_STATE, SubmodeOpen, open_submode, scene_actor_initial_state,
+};
+use legaia_engine_field::scene_transition_sweep::{
+    ACTOR_FLAG_YIELD, SweepActor, SweepDecision, sweep_actor,
 };
 
 /// What one [`World::scene_transition_actor_sweep`] pass did, for callers and
@@ -256,7 +257,7 @@ impl World {
             };
             let mut t = tween;
             t.flags = a.physics.status_flags;
-            let step = legaia_engine_field::field_actor_kernels::step_colour_tween(t, frame_delta);
+            let step = legaia_engine_field::actor_colour_tween::step_colour_tween(t, frame_delta);
             let mut next = tween;
             next.clock = step.clock;
             a.colour_tween = Some(next);
@@ -643,7 +644,8 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_field::field_actor_kernels::{ACTOR_FLAG_TRANSITION, TWEEN_HOLD_FOREVER};
+    use legaia_engine_field::actor_colour_tween::TWEEN_HOLD_FOREVER;
+    use legaia_engine_field::scene_transition_sweep::ACTOR_FLAG_TRANSITION;
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_system::fade::FadeTemplate;
 
@@ -799,7 +801,7 @@ mod tests {
     #[test]
     fn a_battle_draws_no_field_screen_wash() {
         let mut w = World::default();
-        let t = legaia_engine_field::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 2,
                 duration: 64,
@@ -827,7 +829,7 @@ mod tests {
         // nothing. Delay 0, duration 4, hold 2: pushes while it runs, gone
         // after.
         let mut w = World::default();
-        let t = legaia_engine_field::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 2,
                 duration: 4,
@@ -856,7 +858,7 @@ mod tests {
         // `hold == -1` never self-retires, so the scene-transition sweep is
         // the thing that stops a scripted fade leaking across a scene change.
         let mut w = World::default();
-        let t = legaia_engine_field::field_actor_kernels::tween_from_fade_template(
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(
             &FadeTemplate {
                 kind: 0,
                 duration: 2,
@@ -928,7 +930,7 @@ mod tests {
             end_rgb: [0x44, 0x55, 0x66],
             mode: [7, 9, -1],
         };
-        let t = legaia_engine_field::field_actor_kernels::tween_from_fade_template(&tpl, 5);
+        let t = legaia_engine_field::actor_colour_tween::tween_from_fade_template(&tpl, 5);
         assert_eq!(t.duration, tpl.duration);
         assert_eq!(t.from, (0x11, 0x22, 0x33));
         assert_eq!(t.to, (0x44, 0x55, 0x66));

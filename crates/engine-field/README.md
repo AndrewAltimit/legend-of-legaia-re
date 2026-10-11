@@ -29,11 +29,12 @@ a dependent crate.
 ## Modules
 
 - **Actors** - `actor_handler` (the actor's `+0x0C` per-frame handler
-  identity), `field_actor_kernels` (the scene-transition teardown sweep and
-  the actor colour tween), `field_actor_clone` (the `4C 14` clone spawn),
+  identity), `scene_transition_sweep` (the scene-transition teardown sweep),
+  `actor_colour_tween` (the actor colour tween), `field_actor_clone` (the `4C 14` clone spawn),
   `field_actor_program` (the voice-over scripted-scene actor,
-  `FUN_801D4A60`), `plain_template_actors` (the plain-template actor
-  bodies: ambient emitter, save-screen hand-off, leader swap),
+  `FUN_801D4A60`), `ambient_emitter`, `save_screen_spawn`, `leader_swap`
+  and `primitive_colour_grade` (the plain-template actor bodies: ambient
+  emitter, save-screen hand-off, leader swap, geometry colour grade),
   `morph_weight_apply` (the morph-weight apply pass), `actor_look` (op
   `4C 45` look rotation) and `float_tween` (the `gp+0x148` screen-position
   tween, `FUN_80031AE4`).
@@ -110,10 +111,10 @@ a dependent crate.
   fixed-template spawn (`FUN_801DE478`), the list-panel row layout
   (`FUN_801E6984`). The CARD mode-request leaf (`FUN_801D84B4`) is
   `legaia_engine_mode::card_request`.
-- `field_actor_kernels` - the scene-transition **teardown sweep**
+- `scene_transition_sweep` - the scene-transition **teardown sweep**
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
-  warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
-  the sweep retires by handler address.
+  warp entry); `actor_colour_tween` - the per-actor **colour tween**
+  (`FUN_801DDC20`) whose actors the sweep retires by handler address.
 - `camera_zone` - the **zone-driven follow camera**: the camera parameter
   block retail keeps at `0x8007B606..` (`CameraZoneConfig`, loaded from a MAN
   section-3 camera-region record by the port of `FUN_801DBC20`), the composer

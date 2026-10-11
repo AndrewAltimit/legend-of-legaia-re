@@ -161,7 +161,7 @@ then **sets the GTE H register** from `_DAT_8007B6F4` via `func_0x8003D254` (= `
 
 **The block is the 13-`i16` fade template** `FUN_80024E80` / `FUN_80020B00` consume. The field VM builds one on its stack and hands it to whichever of two arms the scratchpad story bit `_DAT_1F800394 & 0x800000` selects: set → the fade-actor spawn `FUN_80024E80`, clear → this (`FUN_801DE840` at `0x801DFD68` and `0x801DFEE8`). Two independent decodes of one layout agree field for field - kind `[0]`, duration `[1]`, start RGB `[3..=5]`, end RGB `[7..=9]` - and the tween names two words the fade side records as unpinned: `[10]` is its ramp **delay** and `[11]` its **hold**. `[12]` is the one word this arm never reads.
 
-Port `engine-field::field_actor_kernels::tween_from_fade_template`.
+Port `engine-field::actor_colour_tween::tween_from_fade_template`.
 
 ### `801DE084`
 

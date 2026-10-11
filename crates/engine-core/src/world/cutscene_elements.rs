@@ -1,5 +1,5 @@
 //! The **element channel**: the pool of spawned field-overlay plain-template
-//! actors whose handlers live in [`legaia_engine_field::plain_template_actors`]. Its one
+//! actors whose handlers live in [`legaia_engine_field::ambient_emitter`]. Its one
 //! occupant is the ambient particle emitter (`FUN_801D6058`).
 //!
 //! It follows the shape `World` already uses for the field overlay's other
@@ -7,18 +7,16 @@
 //! `floor_tier_bobs`): one `Vec` per family on the world, advanced together on
 //! the frame tick, retired when the kernel says so.
 //!
-//! The channel used to carry two more element kinds - a "position tween"
-//! (`FUN_801D5C08`) and a "teardown" (`FUN_801D5D60`) - that no producer ever
-//! spawned. Those two handlers are the ledge-hop / op-`0x43` arc pair, ported
-//! and seated in `legaia_engine_vm::field_ledge_hop_arc` and
-//! `World::script_actors`; see [`legaia_engine_field::plain_template_actors`] for the
-//! template evidence.
+//! Two handlers that read as further element kinds - a "position tween"
+//! (`FUN_801D5C08`) and a "teardown" (`FUN_801D5D60`) - are not on this
+//! channel: they are the ledge-hop / op-`0x43` arc pair, ported and seated in
+//! `legaia_engine_vm::field_ledge_hop_arc` (which carries the template
+//! evidence) and `World::script_actors`.
 //!
 //! # Where the ambient emitter actually comes from
 //!
-//! `legaia_engine_field::plain_template_actors`'s module note said there was "no
-//! element-actor dispatch to hang these off". For the **ambient emitter** that
-//! is falsified by the bytes: `0x801D6058` is the `+0x08` handler word of a
+//! The reading that there is "no element-actor dispatch to hang these off"
+//! is, for the **ambient emitter**, falsified by the bytes: `0x801D6058` is the `+0x08` handler word of a
 //! `0x18`-byte spawn descriptor at `0x801F271C` in the field overlay's own
 //! plain-template table - the same table, and the same
 //! `[u32 0][u16 0][u16 0xFFFF][u32 handler][u32 0][u32 0][u32 0]` shape, as the
@@ -35,7 +33,7 @@
 //! REF: FUN_80024C88 (the positioned spawn), FUN_801D6058 (the handler)
 
 use crate::world::World;
-use legaia_engine_field::plain_template_actors::{AmbientEmitter, AmbientParticle, AmbientScene};
+use legaia_engine_field::ambient_emitter::{AmbientEmitter, AmbientParticle, AmbientScene};
 use legaia_engine_mode::mode::SceneMode;
 
 /// A borrow-free view of [`World::rng_state`], so the channel can feed the
@@ -192,7 +190,7 @@ impl World {
     pub fn install_field_scene_elements(
         &mut self,
         entry_mode: legaia_engine_system::mode_entry_init::FieldEntryMode,
-        span: legaia_engine_field::plain_template_actors::SceneSpan,
+        span: legaia_engine_field::ambient_emitter::SceneSpan,
     ) {
         if entry_mode != legaia_engine_system::mode_entry_init::FieldEntryMode::Cold {
             return;
@@ -298,7 +296,7 @@ impl World {
                     // overworld a region record widens it to reach well
                     // ahead of the player, which is where retail's fog sits.
                     if let Some([x_min, y_min, x_max, y_max]) = fog.view_window {
-                        scene.span = legaia_engine_field::plain_template_actors::SceneSpan {
+                        scene.span = legaia_engine_field::ambient_emitter::SceneSpan {
                             x_min,
                             y_min,
                             x_max,
@@ -338,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_cold_field_entry_installs_exactly_one_emitter_with_the_gate_clear() {
-        use legaia_engine_field::plain_template_actors::SceneSpan;
+        use legaia_engine_field::ambient_emitter::SceneSpan;
         use legaia_engine_system::mode_entry_init::{FIELD_DEFAULT_VIEW_WINDOW, FieldEntryMode};
         let (x_min, y_min, x_max, y_max) = FIELD_DEFAULT_VIEW_WINDOW;
         let span = SceneSpan {
@@ -386,7 +384,7 @@ mod tests {
         w.spawn_ambient_emitter(AmbientScene {
             enabled: true,
             dense: false,
-            span: legaia_engine_field::plain_template_actors::SceneSpan {
+            span: legaia_engine_field::ambient_emitter::SceneSpan {
                 x_min: -100,
                 x_max: 100,
                 y_min: -60,
@@ -419,7 +417,7 @@ mod tests {
         let scene = AmbientScene {
             enabled: true,
             dense: false,
-            span: legaia_engine_field::plain_template_actors::SceneSpan {
+            span: legaia_engine_field::ambient_emitter::SceneSpan {
                 x_min: -100,
                 x_max: 100,
                 y_min: -60,

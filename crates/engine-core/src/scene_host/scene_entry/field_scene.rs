@@ -308,7 +308,7 @@ impl SceneHost {
         let (wx0, wz0, wx1, wz1) = legaia_engine_system::mode_entry_init::FIELD_DEFAULT_VIEW_WINDOW;
         self.world.install_field_scene_elements(
             legaia_engine_system::mode_entry_init::FieldEntryMode::Cold,
-            legaia_engine_field::plain_template_actors::SceneSpan {
+            legaia_engine_field::ambient_emitter::SceneSpan {
                 x_min: wx0,
                 y_min: wz0,
                 x_max: wx1,
