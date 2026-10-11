@@ -37,6 +37,3 @@ pub use gpu::{
 };
 pub use psx::{CpuRegs, PsxMain};
 pub use spu::{NUM_VOICES as SPU_NUM_VOICES, PsxSpu, SPU_RAM_BYTES, SpuVoiceState};
-
-// Transitional aliases: the emulator-neutral RAM-image analysis lives in
-// `legaia-ram-image`. New code names that crate.

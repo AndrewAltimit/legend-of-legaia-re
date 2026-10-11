@@ -1,10 +1,8 @@
 # legaia-asset
 
-Today this crate is two things: the `asset` command-line tool, and a library
-of transitional aliases. It defines no format. Every `legaia_asset::<module>`
-path is a `#[doc(hidden)] pub use` of the crate that owns the module, kept
-only so dependents not yet rewritten keep compiling; the aliases go away once
-those dependents name the owning crate. New code names the owning crate.
+The home of the `asset` command-line tool, and nothing else: the package has
+no library target, so no crate can depend on it. Each subcommand is a thin
+driver over the crate that owns the format it reads.
 
 | Crate | Holds |
 |---|---|
@@ -19,12 +17,13 @@ those dependents name the owning crate. New code names the owning crate.
 
 Each of those READMEs carries the per-module reference for what it owns:
 entry points, the `asset` subcommand that drives it, and the format page.
-[`.refactor/formats2-moves.tsv`](../../.refactor/formats2-moves.tsv) maps
-each alias to its owner.
 
 The static-overlay map `data/static-overlays.toml` stays in this crate - the
 analysis scripts and the docs open it by that path - and is embedded by
 `legaia-overlay-images`.
+
+The package's tests are the ones that spawn the `asset` binary; a format's
+own tests sit in the crate that owns the format.
 
 ## CLI
 

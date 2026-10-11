@@ -662,7 +662,7 @@ fn live_world_battle_state_reaches_the_shared_builder() {
 /// on a party row. The default surface no longer draws them at all:
 /// retail's landed-hit numeral is seated over the struck actor, which
 /// only a host holding the camera can place, so it is the window's own
-/// `battle_value_readout_prims` (see `engine-ui::battle_numerals`).
+/// `battle_value_readout_prims` (see `render-kernels::battle_numerals`).
 #[test]
 fn popup_anchors_track_absolute_actor_slot() {
     let mut hud = hud_with_party_row(100, 100, 0, 0);

@@ -361,7 +361,7 @@ impl<'m> DrawCtx<'_, 'm> {
             if let Some(mesh) = mesh {
                 // Target-select cursor: while the command picker
                 // points at an enemy row, the ported FUN_801DA6B4
-                // (`engine-vm::battle_action::target_cursor_highlight`)
+                // (`engine-battle-vm::battle_action::target_cursor_highlight`)
                 // stamps three render words across the monster slots -
                 // `render_flag` 5 on the pointed-at monster / 200 on
                 // the rest, the bright/dim colour words, and the q12

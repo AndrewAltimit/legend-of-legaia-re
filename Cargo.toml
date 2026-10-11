@@ -118,7 +118,6 @@ legaia-scene-formats = { path = "crates/scene-formats" }
 legaia-minigame-formats = { path = "crates/minigame-formats" }
 legaia-ui-formats = { path = "crates/ui-formats" }
 legaia-disc-audit = { path = "crates/disc-audit" }
-legaia-asset = { path = "crates/asset", default-features = false }
 legaia-cheats = { path = "crates/cheats", default-features = false }
 legaia-engine-audio = { path = "crates/engine-audio", default-features = false }
 legaia-engine-battle = { path = "crates/engine-battle" }

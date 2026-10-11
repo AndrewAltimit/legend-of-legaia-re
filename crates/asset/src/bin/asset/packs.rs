@@ -11,7 +11,7 @@ use legaia_scene_formats::field_pack;
 /// from. There is no field-pack format and no schema: the word the format was
 /// named for is a `(type << 24) | size` DATA_FIELD chunk header, and the
 /// "97-entry schema" is the `[u32 count][u32 word_offset[count]]` table of the
-/// [`asset::pack`](legaia_container_formats::pack) behind it (`docs/formats/field-pack.md`).
+/// [`container-formats::pack`](legaia_container_formats::pack) behind it (`docs/formats/field-pack.md`).
 /// The output therefore names a chunk header, a pack table and members. The
 /// subcommand keeps its name for CLI stability.
 pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> Result<()> {

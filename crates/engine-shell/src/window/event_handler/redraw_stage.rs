@@ -251,7 +251,7 @@ impl PlayWindowApp {
         let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
         // Arts after-image ghosts: the actor's mesh at rate-scheduled
         // historical poses, flat-coloured additive (retail FUN_80049348;
-        // kernel `engine-core::battle_afterimage`). Empty outside a
+        // kernel `engine-battle::battle_afterimage`). Empty outside a
         // battle / outside a SpecialStarter dash.
         let battle_ghost_uploads = self.build_battle_ghost_uploads(r);
         legaia_engine_render::profile::mark("pose:actor");

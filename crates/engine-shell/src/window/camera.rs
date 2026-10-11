@@ -32,7 +32,7 @@ use legaia_engine_core::camera_view;
 /// The rates serve two cameras. With the retail follow camera live (no
 /// `F3`) the same gestures steer the engine's follow knobs
 /// (`Camera::orbit_by` / `tilt_by` / `zoom_by`, whose clamps live in
-/// `engine-core::camera::follow_knobs` and which drop a gesture while a
+/// `engine-field::camera::follow_knobs` and which drop a gesture while a
 /// cutscene owns the camera); only under `F3` do they steer this window's
 /// own vantage through the pitch / half-extent clamps below.
 pub(super) mod debug_orbit {

@@ -37,7 +37,7 @@ fn arts_input_screen(
 
 /// The chip cluster a host projects for one frame: the owned `(label,
 /// enabled)` chips in seat order, the cursor index, and the cluster's phase
-/// (`engine-core::battle_hud::BattleCommandChips`, with the phase mapped
+/// (`engine-menus::battle_input::BattleCommandChips`, with the phase mapped
 /// onto the leaf crate's own enum).
 pub(super) type CommandChips = (
     Vec<(String, bool)>,

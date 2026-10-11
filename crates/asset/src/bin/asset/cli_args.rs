@@ -456,7 +456,7 @@ pub(super) enum Cmd {
         only_hits: bool,
     },
     /// Inspect a single PROT entry for the field-pack container shape
-    /// (the scene texture pack at raw-TOC `+4` of a block - an `asset::pack`,
+    /// (the scene texture pack at raw-TOC `+4` of a block - an `container-formats::pack`,
     /// optionally behind a DATA_FIELD chunk header). Reports the pack table,
     /// the member summary, and bytes-after-table.
     FieldPack {

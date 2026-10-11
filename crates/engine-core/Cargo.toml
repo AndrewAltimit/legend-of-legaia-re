@@ -56,13 +56,16 @@ legaia-engine-fishing.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 # Disc-gated runtime oracle for the chest randomizer: patch a real disc's MAN in
-# memory, then drive the patched bytes through the field VM. legaia-patcher depends only
-# on asset/lzs/prot/iso (never engine-core), so this dev-only edge is acyclic.
+# memory, then drive the patched bytes through the field VM. The patcher family
+# depends only on format crates (never engine-core), so these dev-only edges are acyclic.
 legaia-patcher.workspace = true
+legaia-arts-patch.workspace = true
+legaia-disc-patch.workspace = true
 # Disc-gated field-state oracles: load a cataloged PCSX-Redux playthrough anchor's
-# main RAM and assert the engine reproduces the captured retail facts. pcsxr
-# depends only on mednafen (never engine-core), so this dev-only edge is acyclic.
+# main RAM and assert the engine reproduces the captured retail facts. pcsx-redux
+# and ram-image depend on no engine crate, so these dev-only edges are acyclic.
 legaia-pcsx-redux.workspace = true
+legaia-ram-image.workspace = true
 # Disc-gated dance-minigame oracle: re-extract the dance overlay (PROT 0980) and
 # drive the real parsed step chart through the dance rules engine. prot depends
 # only on iso/lzs (never engine-core), so this dev-only edge is acyclic.
@@ -71,9 +74,7 @@ legaia-prot.workspace = true
 # (u16-offset RAM form at _DAT_8007B8D0). mednafen depends on no engine
 # crate, so this dev-only edge is acyclic.
 legaia-mednafen.workspace = true
-legaia-arts-patch.workspace = true
-legaia-disc-patch.workspace = true
-legaia-ram-image.workspace = true
+# Named only by tests.
 legaia-bytes.workspace = true
 legaia-gamedata.workspace = true
 

@@ -10,7 +10,6 @@
 /// The BGM / SFX director lives in `legaia-engine-session` (shared with the
 /// browser host); this host instantiates it over the cpal output.
 pub mod bgm {
-
     /// The director over the native cpal output.
     pub type AudioBgmDirector =
         legaia_engine_session::audio_director::AudioBgmDirector<legaia_engine_audio::AudioOut>;
@@ -18,7 +17,6 @@ pub mod bgm {
 /// The session `BootSession` lives in `legaia-engine-session` (shared with the
 /// browser host); this host instantiates it over the cpal output.
 pub mod boot {
-
     /// The session over the native cpal output.
     pub type BootSession = legaia_engine_session::boot::BootSession<legaia_engine_audio::AudioOut>;
 }
@@ -27,7 +25,6 @@ pub mod host_setup;
 pub mod launcher;
 pub mod replay;
 pub mod scenarios;
-pub mod tile_board_draws;
 pub mod window;
 pub mod xa_clip;
 

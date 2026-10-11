@@ -3,12 +3,9 @@ name = "legaia-asset"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "The `asset` command-line tool: inspection, scanning and export subcommands over the format crates. No library target."
 # tests/integration.rs gathers every tests/*.rs into one binary.
 autotests = false
-
-[lib]
-name = "legaia_asset"
-path = "src/lib.rs"
 
 [[bin]]
 name = "asset"
@@ -18,9 +15,8 @@ required-features = ["cli"]
 [features]
 default = ["cli"]
 # The command-line binary and its argument parser. On by default so
-# `cargo build` still builds every binary; library dependents take this
-# crate through [workspace.dependencies] with default features off, which
-# keeps clap out of library-only builds (the wasm bundle among them).
+# `cargo build` builds the binary; kept as a feature so the package follows
+# the same `cli` convention as every other crate with a binary.
 cli = ["dep:clap", "dep:libc"]
 
 [dependencies]
