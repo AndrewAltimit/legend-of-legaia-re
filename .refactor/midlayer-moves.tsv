@@ -14,3 +14,15 @@ legaia_engine_ui::ui_slot_cabinet	legaia_engine_ui::slot_cabinet
 legaia_engine_ui::ui_slot_paylines	legaia_engine_ui::slot_paylines
 legaia_engine_ui::ui_text_lines	legaia_engine_ui::text_lines
 legaia_engine_core::cutscene_script_elements	legaia_engine_field::plain_template_actors
+legaia_engine_render::ui_baka_strips	legaia_engine_ui::baka_strips
+legaia_engine_render::ui_boot_logos	legaia_engine_ui::boot_logos
+legaia_engine_render::ui_dance	legaia_engine_ui::dance
+legaia_engine_render::ui_fishing_exchange	legaia_engine_ui::fishing::exchange
+legaia_engine_render::ui_fishing_hub	legaia_engine_ui::fishing::hub
+legaia_engine_render::ui_fishing_line	legaia_engine_ui::fishing::line
+legaia_engine_render::ui_fishing_rod	legaia_engine_ui::fishing::rod
+legaia_engine_render::ui_fishing_sprite	legaia_engine_ui::fishing::sprite
+legaia_engine_render::other_game_hud	legaia_engine_ui::muscle_dome_hud
+legaia_engine_render::ui_slot_cabinet	legaia_engine_ui::slot_cabinet
+legaia_engine_render::ui_slot_paylines	legaia_engine_ui::slot_paylines
+legaia_engine_render::ui_text_lines	legaia_engine_ui::text_lines
