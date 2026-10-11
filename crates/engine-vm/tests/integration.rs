@@ -7,4 +7,5 @@
 
 mod battle_burst_real_records;
 mod effect_vm_real_efect;
+mod move_fx_records_vm_exec_disc;
 mod move_vm_overlay_ext_real_data;

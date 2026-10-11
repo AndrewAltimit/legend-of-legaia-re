@@ -3,7 +3,7 @@
 //!
 //! The other progression instruments each cover a slice. The pad-driven
 //! [`critical_path_replay`](critical_path_replay.rs) stops in chapter 1;
-//! `chapter1_frontier_ladder` (engine-core) measures chapter-1 scene
+//! `chapter1_frontier_ladder` (parity) measures chapter-1 scene
 //! *breadth*; the chapter-2 / chapter-3 spine oracles seat the player at a
 //! gate rather than drive them there. None of them answers "from a cold New
 //! Game, where does the port stop, and why".

@@ -35,7 +35,7 @@
 //! and wraps, which only entries far past any reachable depth see.
 //!
 //! Pinned entry for entry against the `keikoku_chest_preload` capture by
-//! `crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`.
+//! `crates/parity/tests/fog_sheet_colour_retail_capture_disc.rs`.
 
 use std::sync::OnceLock;
 

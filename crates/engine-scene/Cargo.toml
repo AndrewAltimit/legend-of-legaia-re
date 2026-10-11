@@ -36,10 +36,16 @@ legaia-ui-formats.workspace = true
 legaia-vab.workspace = true
 
 [dev-dependencies]
-# Named only by tests: the encounter tables a scene MAN decodes into, and the
-# mode seat's staged-index sentinel the load-entry plan is checked against.
+# Named only by tests. The kernel crates are here because a disc-gated test of
+# a kernel that reads the disc through `ProtIndex` / `DiscVfs` lives in this
+# crate, the lowest one that can open a disc.
 legaia-engine-battle.workspace = true
+legaia-engine-fishing.workspace = true
+legaia-engine-menus.workspace = true
 legaia-engine-mode.workspace = true
+legaia-game-tables.workspace = true
+legaia-minigame-formats.workspace = true
+legaia-overlay-images.workspace = true
 
 [[test]]
 name = "integration"

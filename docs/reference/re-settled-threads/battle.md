@@ -543,7 +543,7 @@ move name) is not computed: it is a table of per-step element lists.
   packet-pinned pens are the ring bar's seat for seat - the port draws the bar there and the item
   window keeps only its breadcrumbs.
 - Each `mednafen` state's `ctx[+0x1074]` walk agrees element for element; the disc-gated
-  `crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds the port's constants to the table's
+  `crates/engine-scene/tests/battle_hud_subdraw_disc.rs` holds the port's constants to the table's
   bytes.
 
 The resulting rule (card at the round prompt and while a window is browsed, pill in the ring and the

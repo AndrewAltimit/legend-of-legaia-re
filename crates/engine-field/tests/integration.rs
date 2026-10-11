@@ -6,4 +6,7 @@
 //! `cargo test -p legaia-engine-field --test integration <name>::`.
 
 mod hub_entry_sub_panel;
+mod scene_bgm_labels_disc;
+mod scene_fmv_triggers_disc;
 mod timed_flag_scheduler_chain;
+mod world_map_portal_classification_disc;

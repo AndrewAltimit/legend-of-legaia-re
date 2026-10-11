@@ -105,7 +105,7 @@ active_scene = "town01"</code></pre>
 
 <section class="doc-section" id="frontier">
   <h2>Scene-frontier ladder: the breadth-denominated sibling</h2>
-  <p>The critical-path ladder walks one route well; <code>crates/engine-core/tests/chapter1_frontier_ladder.rs</code> enumerates the whole chapter-1 reachable scene set and gives every member a verdict, against <code>scripts/replays/chapter1_frontier_baseline.toml</code> - because "the engine cannot get past the Ravine" and "no fixture drives past the Ravine" read identically until something scores the scenes one at a time. The set is the BFS closure of <code>town01</code> over each scene's decoded <code>0x3F</code> destinations, stopped at the kingdom boundary; scenes reached by the sibling <code>0x3E</code> door warp are outside it. Six rungs per scene, ordered and cumulative:</p>
+  <p>The critical-path ladder walks one route well; <code>crates/parity/tests/chapter1_frontier_ladder.rs</code> enumerates the whole chapter-1 reachable scene set and gives every member a verdict, against <code>scripts/replays/chapter1_frontier_baseline.toml</code> - because "the engine cannot get past the Ravine" and "no fixture drives past the Ravine" read identically until something scores the scenes one at a time. The set is the BFS closure of <code>town01</code> over each scene's decoded <code>0x3F</code> destinations, stopped at the kingdom boundary; scenes reached by the sibling <code>0x3E</code> door warp are outside it. Six rungs per scene, ordered and cumulative:</p>
   <table>
     <thead><tr><th>Rung</th><th>Verdict</th></tr></thead>
     <tbody>

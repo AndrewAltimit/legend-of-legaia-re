@@ -1266,7 +1266,7 @@ Notes on individual arms:
   alive across actions; the engine stages no visual for it.
 - **Neither `0x40` (Curse) nor `0x53` (Curse All) has a retail caster.** No
   monster record's `+0x21..+0x23` magic slots name them (disc-gated assertion
-  in `crates/engine-core/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
+  in `crates/engine-battle-vm/tests/cast_arm_retail_gating.rs`, with Cort's `0x37`
   as the positive control), and the AI picker's formation switch queues
   neither ([`spell-table.md`](../formats/spell-table.md)). Arm 0 of both
   stages clip `0x0B` on the caster (`sb 0x0B, 0x1DA(s1)` at `0x801F6FBC`;

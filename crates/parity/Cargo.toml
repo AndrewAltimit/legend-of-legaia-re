@@ -48,6 +48,18 @@ flate2.workspace = true
 legaia-game-tables.workspace = true
 legaia-overlay-images.workspace = true
 tempfile.workspace = true
+# The randomizer runtime oracles patch a scratch disc image in memory and drive
+# the engine over it. The patcher family depends on no engine crate.
+legaia-arts-patch.workspace = true
+legaia-disc-patch.workspace = true
+legaia-patcher.workspace = true
+legaia-actor-formats.workspace = true
+legaia-tmd.workspace = true
+legaia-ui-formats.workspace = true
+legaia-iso.workspace = true
+legaia-render-kernels.workspace = true
+legaia-lzs.workspace = true
+legaia-engine-vm.workspace = true
 
 [[test]]
 name = "integration"

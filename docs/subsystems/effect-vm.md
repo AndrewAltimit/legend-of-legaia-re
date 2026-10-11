@@ -546,7 +546,7 @@ none of shapes `4..7`.
 **Port.** `engine-effects::effect_default_arm`. `build` transliterates the routine onto a byte buffer - every
 word retail stores, at the offset it stores it, with a record of which bytes
 it wrote - and `decode` reads the object back the way the TMD renderer reads
-it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs` holds it
+it. `crates/parity/tests/effect_default_arm_retail_capture.rs` holds it
 to the scratch blocks the save library captured:
 
 - every ground-shadow build (`+0x62400`) reproduces byte for byte, whole or up to a later overwrite of its last four packets;

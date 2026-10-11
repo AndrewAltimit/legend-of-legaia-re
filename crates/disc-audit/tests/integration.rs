@@ -17,6 +17,7 @@ mod formation_census_real;
 mod inherited_tail_real;
 mod overlay_data_consumers_real;
 mod packer_buffer_slack_real;
+mod parser_robustness_fuzz;
 mod scene_asset_table_walk_real;
 mod scene_tmd_stream_real;
 mod slot_b_module_layout_real;

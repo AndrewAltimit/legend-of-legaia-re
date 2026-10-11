@@ -420,7 +420,7 @@ the carrier/channel install): one field-VM frame slice per placement channel, ru
 unconditionally - load-time behaviour, not the opt-in free-roam liveliness - with
 position write-through, and no heading derivation (facings come from
 `seed_field_npc_facings`). Disc + save-library oracle:
-`crates/engine-core/tests/field_npc_entry_positions_disc.rs`.
+`crates/parity/tests/field_npc_entry_positions_disc.rs`.
 
 `World::tick_field_npc_motions` (`engine-core`) drives MAN-placed field NPCs through the `0x47` `MoveTowardTarget` pursue step, one motion-VM step per field tick, writing the live position back into `World::npcs.positions` so the moving NPC's ±40-unit collision box and its interact box follow it (retail probes the live `+0x14`/`+0x18`, not the spawn anchor). Every leg it steps is scripted and ends where it lands; the start paths are listed below.
 

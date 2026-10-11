@@ -735,7 +735,7 @@ FUN_801D7BB8(angle, radius, &out_a, &out_b, scale)
 ```
 
 - **Tables.** The pointers live at `_DAT_8007B81C` (sine) and `_DAT_8007B7F8` (cosine). `FUN_80026BE0` installs the pair at boot from the SCUS statics `0x80070A2C` and `0x8007122C` (4096 entries, amplitude `0x1000`; [`functions/runtime-libs.md`](../reference/functions/runtime-libs.md)). They are `0x800` bytes apart - a quarter turn of an `i16` table - so the pair is one 5120-entry run read at two phases.
-- **Entries** are `trunc(0x1000 * sin)`, truncating toward zero. An analytic stand-in that rounds differs on about half the table by one LSB, and `radius` multiplies that error. Oracle: `engine-core/tests/minigame_polar_trig_tables_disc.rs`.
+- **Entries** are `trunc(0x1000 * sin)`, truncating toward zero. An analytic stand-in that rounds differs on about half the table by one LSB, and `radius` multiplies that error. Oracle: `engine-scene/tests/minigame_polar_trig_tables_disc.rs`.
 - **Shift.** Both products are formed at full 32-bit width and folded by a plain arithmetic `sra`, which rounds toward minus infinity - unlike the `bgez`-biased shifts the HUD emitters use. A 12.12 `scale` gives a 12.12 result.
 
 Port: `minigame_floor::polar_offset`. **Confirmed** arithmetic.

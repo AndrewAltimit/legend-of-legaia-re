@@ -562,7 +562,7 @@ pub enum MarkerTemplate {
 // minigames page draws the tiles it classes as markers. Measured on the real
 // venue: `other7` yields ten marker tiles, classes `[2, 2, 2, 4]`, and all ten
 // swap mesh inside 240 frames
-// (`crates/engine-core/tests/dance_marker_floor_disc.rs`).
+// (`crates/engine-scene/tests/dance_marker_floor_disc.rs`).
 pub fn marker_template(marker: u16) -> Option<MarkerTemplate> {
     match marker {
         0 => None,
@@ -812,7 +812,7 @@ pub fn polar_offset(
 /// rodata, so the entries are recomputed analytically with the retail table's
 /// truncate-toward-zero rounding - the same stand-in
 /// `legaia_minigame_formats::minigame_slot_scene` uses, and the disc is its oracle
-/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
+/// (`engine-scene/tests/minigame_polar_trig_tables_disc.rs`).
 ///
 /// [`SIN_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::SIN_TABLE_VA
 /// [`COS_TABLE_VA`]: legaia_minigame_formats::minigame_slot_scene::COS_TABLE_VA

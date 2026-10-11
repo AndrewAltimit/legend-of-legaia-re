@@ -54,7 +54,7 @@ pub const COS_TABLE_VA: u32 = 0x8007_122C;
 /// half of the 4096 entries by one LSB, and every consumer multiplies that
 /// error by a radius before shifting it back down. Nothing here reproduces a
 /// table *value* - the arithmetic is analytic and the disc is the oracle
-/// (`engine-core/tests/minigame_polar_trig_tables_disc.rs`).
+/// (`engine-scene/tests/minigame_polar_trig_tables_disc.rs`).
 // REF: FUN_801d0fa8 (the reel renderer's trig-table reads)
 pub fn sin_4096(angle: i32) -> i32 {
     let a = angle.rem_euclid(ANGLE_FULL) as f64 * (core::f64::consts::TAU / ANGLE_FULL as f64);

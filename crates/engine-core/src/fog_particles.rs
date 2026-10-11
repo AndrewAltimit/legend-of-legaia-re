@@ -241,7 +241,7 @@ impl FogParticle {
     /// fade-out tail (the kill).
     ///
     /// Pinned record for record against a retail frame by
-    /// `crates/engine-core/tests/fog_sheet_colour_retail_capture_disc.rs`.
+    /// `crates/parity/tests/fog_sheet_colour_retail_capture_disc.rs`.
     pub fn sheet_rgb(&self, tint: [u8; 3]) -> Option<[u8; 3]> {
         let bright = Self::brightness(self.age)?;
         Some(tint.map(|t| ((i32::from(self.grey) * i32::from(t) * bright) >> 15) as u8))

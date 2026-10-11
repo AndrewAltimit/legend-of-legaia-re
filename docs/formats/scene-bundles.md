@@ -410,7 +410,7 @@ The bundle has **one** consumer, reached from two script homes in the scene MAN:
 - **Partition 1** carries dedicated effect-actor records (whole script = `install id N` + infinite loop) that stage ambient effects on scene entry. Most scenes install record 0 this way.
 - **Partition 2** cutscene timelines install per-shot effect ids; one timeline installs many, re-installing a multi-part effect's id per part.
 
-No field-VM code consumes prescript bytes. Census + RAM pin: `engine-core/tests/scene_prescript_consumer_census_disc.rs`; script-side scanner `legaia_engine_field::man_field_scripts::scene_stager_installs`. The scene's actual field-VM scripts live in the MAN ([`script-vm.md`](../subsystems/script-vm.md)).
+No field-VM code consumes prescript bytes. Census + RAM pin: `parity/tests/scene_prescript_consumer_census_disc.rs`; script-side scanner `legaia_engine_field::man_field_scripts::scene_stager_installs`. The scene's actual field-VM scripts live in the MAN ([`script-vm.md`](../subsystems/script-vm.md)).
 
 ### Detection
 

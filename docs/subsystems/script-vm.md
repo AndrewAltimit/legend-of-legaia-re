@@ -693,8 +693,8 @@ the player at the state's position, the engine puts the rim at `201` px round
 the party HUD, as the capture's frame shows it, sorted in one ordering-table
 list with the fog sheets and move strips (the page's single screen-prim pass;
 the native window's `under_overlay` list). Pinned, retail side and engine
-side, by `crates/engine-core/tests/attached_light_retail_capture_disc.rs` and
-`crates/engine-core/tests/attached_light_cave01_retail_capture_disc.rs`.
+side, by `crates/parity/tests/attached_light_retail_capture_disc.rs` and
+`crates/parity/tests/attached_light_cave01_retail_capture_disc.rs`.
 `jiji`'s one attached-light site (`P1[0]` `+0x73`, a white
 `B4 F8 11 FF FF FF ...`) is unpinned: it did not spawn on two retail entries
 from `map02` (story flag `0x2AD` set as the card left it, then cleared by a

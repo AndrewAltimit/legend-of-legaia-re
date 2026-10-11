@@ -478,7 +478,7 @@ impl World {
     ///
     /// `None` when the slot's scripted-motion channel has never tweened
     /// either angle, which is the ordinary case: the disc-wide census
-    /// (`crates/engine-core/tests/ambient_motion_op_census_disc.rs`) finds op
+    /// (`crates/engine-scene/tests/ambient_motion_op_census_disc.rs`) finds op
     /// `0x15` authored at zero sites and op `0x16` at 45, all in `juui1`. A
     /// host may therefore keep its cheap yaw-only model build for `None` and
     /// compose the full `Rx * Ry * Rz` (`FUN_80026988`) only here.

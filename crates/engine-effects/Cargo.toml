@@ -3,6 +3,8 @@ name = "legaia-engine-effects"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_effects"
@@ -16,3 +18,11 @@ legaia-engine-vm.workspace = true
 legaia-tmd.workspace = true
 legaia-actor-formats.workspace = true
 legaia-overlay-images.workspace = true
+
+[dev-dependencies]
+legaia-prot.workspace = true
+legaia-tim.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

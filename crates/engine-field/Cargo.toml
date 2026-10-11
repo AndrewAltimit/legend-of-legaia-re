@@ -27,6 +27,9 @@ legaia-overlay-images.workspace = true
 legaia-scene-formats.workspace = true
 serde.workspace = true
 
+[dev-dependencies]
+legaia-lzs.workspace = true
+
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

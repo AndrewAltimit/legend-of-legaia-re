@@ -88,4 +88,5 @@ DIAG_ROOTS = [
     REPO / "crates" / "engine-battle-vm",
     REPO / "crates" / "engine-motion-vm",
     REPO / "crates" / "web-viewer",
+    REPO / "crates" / "parity",
 ]

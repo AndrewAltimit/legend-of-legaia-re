@@ -86,7 +86,7 @@ CANONICAL_LADDERS = [
     ("audio_session_ladder", "legaia-engine-audio"),
     ("w1e_scene_bgm_transition_ladder", "legaia-engine-core"),
     ("w1f1_battle_tutorial_ladder", "legaia-engine-core"),
-    ("w1f1_fishing_pond_ladder", "legaia-engine-core"),
+    ("w1f1_fishing_pond_ladder", "legaia-engine-fishing"),
     ("w1f1_fishing_banner_ladder", "legaia-web-viewer"),
     ("w1f1_pause_special_use_ladder", "legaia-engine-core"),
     ("w1f2_menu_depth_ladder", "legaia-web-viewer"),
@@ -278,7 +278,7 @@ CANONICAL_LADDERS = [
     #
     # Disc-gated and skip-passes without `LEGAIA_DISC_BIN`; export WITHOUT
     # `--release` (see "a release export loses executed code" above).
-    ("chapter1_frontier_ladder", "legaia-engine-core"),
+    ("chapter1_frontier_ladder", "legaia-parity"),
     # ------------------------------------------------------------------ </L4>
     # --- lane W4-D -----------------------------------------------------
     # `w4d_cast_band_ladder` is denominated in **spell ids**, which is the axis
@@ -378,8 +378,8 @@ CANONICAL_LADDERS = [
     # pad over a tackle bag and opens the pond on what they returned, so the
     # band-4 preconditions arrive rather than being seeded. Disc-free.
     ("w1g_seru_capture_ladder", "legaia-engine-core"),
-    ("w1g_save_subscreen_ladder", "legaia-engine-core"),
-    ("w1g_fishing_tackle_pick_ladder", "legaia-engine-core"),
+    ("w1g_save_subscreen_ladder", "legaia-engine-menus"),
+    ("w1g_fishing_tackle_pick_ladder", "legaia-engine-fishing"),
     # --- lane W3-C: the boot chain ----------------------------------------
     #
     # `w3c_boot_logos_ladder` opens the stage BEFORE the title card. Every

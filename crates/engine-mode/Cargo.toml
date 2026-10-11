@@ -3,6 +3,8 @@ name = "legaia-engine-mode"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_mode"
@@ -14,3 +16,8 @@ legaia-engine-system.workspace = true
 
 [dev-dependencies]
 legaia-minigame-formats.workspace = true
+legaia-game-tables.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

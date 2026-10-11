@@ -484,7 +484,7 @@ every in-clip frame pair, every non-zero fraction, every part): 103650 of
 9448740 blended part samples take the retry, in 832 of 1811 clips, and the
 retry changes every one of them; the 653436 whole-frame part samples are the
 plain decode. Disc-gated test
-`engine-core/tests/battle_anim_real.rs::monster_archive_pose_blend_retry_census`.
+`parity/tests/battle_anim_real.rs::monster_archive_pose_blend_retry_census`.
 
 #### Cursor advance and commit
 
@@ -516,7 +516,7 @@ The seed is a **finite hold budget**, and a module can end a park early by clear
 | `5` | Also rolls a rot-limb bit on a party target |
 | `6` | Rolls bit `0x1000` into `+0x16E` one in four with **no** tint (`0x801EE690`): the Curse class |
 
-Six archive entries carry `6` (two three-member families, all on attack tag `0x10`), which is what the `sltiu` guard exists for. See [battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel). Parser field `MonsterAnimation::impact_class`; the player-file art records carry the same byte (`ArtAnimRecord::impact_class`). Census: `crates/engine-core/tests/battle_afterimage_gate_real.rs`.
+Six archive entries carry `6` (two three-member families, all on attack tag `0x10`), which is what the `sltiu` guard exists for. See [battle.md](../subsystems/battle.md#how-the-tint-words-reach-the-pixel). Parser field `MonsterAnimation::impact_class`; the player-file art records carry the same byte (`ArtAnimRecord::impact_class`). Census: `crates/engine-battle/tests/battle_afterimage_gate_real.rs`.
 
 #### The commit shape
 

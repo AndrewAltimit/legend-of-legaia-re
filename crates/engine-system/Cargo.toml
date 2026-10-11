@@ -3,6 +3,8 @@ name = "legaia-engine-system"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_system"
@@ -17,3 +19,7 @@ toml = { workspace = true, features = ["display"] }
 
 [dev-dependencies]
 legaia-game-tables.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

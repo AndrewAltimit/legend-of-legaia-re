@@ -1402,7 +1402,7 @@ descriptors. The port decodes it as `AmbientEffect::ModelSwap`
 No site names a model some placement already binds, so the bytes come out of
 the bank (`model_bank::SceneModelBank::tmd_bytes`). The `>= 0xF0` meshes live
 in PROT 0874 (`legaia_actor_formats::character_pack`); no authored site takes that arm.
-Oracles: `crates/engine-core/tests/ambient_motion_op_census_disc.rs`,
+Oracles: `crates/engine-scene/tests/ambient_motion_op_census_disc.rs`,
 `model_rebind_live_disc.rs`.
 
 <a id="per-actor-pitch-and-roll"></a>

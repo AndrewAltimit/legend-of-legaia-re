@@ -416,7 +416,7 @@ The clip index is the record's `record` byte plus one:
 
 **Tick.** Each marker runs `FUN_801d0640`, a mesh flipbook. It counts `+0x54` down by the frame delta and, on expiry, stages the next `[mesh, duration]` pair from `0x801D44CC + class * 0x80` through the set-model primitive `FUN_80024E08`, biased by the field actor pack base `_DAT_8007B6F8`. There are four `0x80`-byte rows of 25 pairs each, `[-1, -1]`-terminated, and the four rows are the same loop at four phase offsets, so the four marker classes flip out of step. Full read: [`minigames-debug.md`](../reference/functions/minigames-debug.md#801d0640-is-a-mesh-flipbook-on-the-marker-tiles).
 
-**Measured on the venue.** `other7`'s `.MAP` carries sixty kind-1 trigger records, ten of which land on drawn floor cells with a clip in `6..=9`, spread over the classes as `[2, 2, 2, 4]`; all ten swap mesh inside 240 frames (`crates/engine-core/tests/dance_marker_floor_disc.rs`).
+**Measured on the venue.** `other7`'s `.MAP` carries sixty kind-1 trigger records, ten of which land on drawn floor cells with a clip in `6..=9`, spread over the classes as `[2, 2, 2, 4]`; all ten swap mesh inside 240 frames (`crates/engine-scene/tests/dance_marker_floor_disc.rs`).
 
 **Port.**
 

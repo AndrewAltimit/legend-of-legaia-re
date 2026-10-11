@@ -283,7 +283,7 @@ the ladder skips.
 
 ## Scene-frontier ladder: the breadth-denominated sibling
 
-[`crates/engine-core/tests/chapter1_frontier_ladder.rs`](../../crates/engine-core/tests/chapter1_frontier_ladder.rs)
+[`crates/parity/tests/chapter1_frontier_ladder.rs`](../../crates/parity/tests/chapter1_frontier_ladder.rs)
 asks the other question. The critical-path ladder walks one route well and
 reports one number; this one enumerates the whole chapter-1 reachable scene
 set and gives every member a verdict, against a ratcheted baseline in

@@ -3,6 +3,8 @@ name = "legaia-engine-battle"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_battle"
@@ -25,3 +27,8 @@ legaia-ui-formats.workspace = true
 
 [dev-dependencies]
 legaia-overlay-images.workspace = true
+legaia-lzs.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -51,7 +51,7 @@ A field-VM op-`0x35` BGM id `>= 2000` resolves through the global pool
 (`FUN_800243F0`, see [script-vm § BGM lookup](../subsystems/script-vm.md#bgm-lookup-table)),
 and the pool order **is** the debug sound-test order, so **global id
 `2000 + i` plays sound-test track `i`**. That id-space join is proven by the
-per-scene op-`0x35` census (`engine-core/tests/scene_bgm_labels_disc.rs`):
+per-scene op-`0x35` census (`engine-field/tests/scene_bgm_labels_disc.rs`):
 walking every scene MAN's scripts and joining each started id to this table
 lands the right label across the corpus - `town01` starts `2016` = `M14B`
 "Rim Elm theme", the three kingdom maps start `2000`/`2001` = `M01`/`M02`
@@ -73,7 +73,7 @@ The low range starts at extraction **988**, not 990: the first two tracks
 `monster_test`, because the `music_01` CDNAME `#define` number is a *raw* TOC
 index and the named content sits two entries earlier (the +2 filename skew,
 see [`../formats/cdname.md`](../formats/cdname.md)). Pinned by on-disc SEQ
-residency (`engine-core/tests/music_bank_residency_disc.rs`):
+residency (`engine-system/tests/music_bank_residency_disc.rs`):
 
 - **Pochi alignment**: the four placeholder-filled slots (extraction
   `1066..=1069`) land exactly on the four dev-leftover rows (#76..=79 - the

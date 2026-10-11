@@ -966,7 +966,7 @@ channel whose clip id `+0x5C` is non-zero - the port's stand-in for draw kind
 through `screen_prim::drop_shadow_prim` into their field screen-prim pass
 with each corner's scene depth taken six units above the floor, so the depth
 test does the job retail's ordering does: under the actor, over the ground.
-`crates/engine-core/tests/drop_shadow_retail_capture_disc.rs` rebuilds the
+`crates/parity/tests/drop_shadow_retail_capture_disc.rs` rebuilds the
 packets from `town01`, `map01` and `map03` states and matches every retail
 blob packet exactly (vertices and UVs), and checks the blob's texels and
 palette in the engine's scene VRAM against the state's VRAM word for word.

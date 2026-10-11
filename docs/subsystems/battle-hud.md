@@ -574,7 +574,7 @@ off the roster (`World::seed_party_battle_hp_from_records`).
 `battle_ring_ap_plate_value`, `battle_move_name`, `battle_target_plaque`,
 `battle_combo_style`, `battle_magic_chip`) and decodes the table itself
 (`subdraw_step`). The disc-gated
-`crates/engine-core/tests/battle_hud_subdraw_disc.rs` holds those constants to
+`crates/engine-scene/tests/battle_hud_subdraw_disc.rs` holds those constants to
 the disc's bytes. Both hosts feed the predicates into one
 `engine-ui::BattleHudFrame`, and the chip projection (`battle_command_chips`)
 is shared too.

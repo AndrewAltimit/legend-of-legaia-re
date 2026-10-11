@@ -73,9 +73,9 @@ Disc-gated oracle tests load `saves/library/pcsx-redux/<fingerprint>.sstate`
 engine's behaviour against the captured retail facts. The anchor search reads
 `extracted/SCUS_942.54` (or `$LEGAIA_SCUS`).
 
-- `crates/engine-core/tests/s4_warp_endstate_oracle.rs` - the engine's intra-town
+- `crates/parity/tests/s4_warp_endstate_oracle.rs` - the engine's intra-town
   walk-touch warp lands where the S4 capture recorded.
-- `crates/engine-core/tests/opening_progression_oracle.rs` - S1..S5 codify the
+- `crates/parity/tests/opening_progression_oracle.rs` - S1..S5 codify the
   retail opening progression (scene / game-mode / player position).
 - `crates/pcsx-redux/tests/anchor_load.rs` - the reader's own oracle (reads back each
   anchor's pinned facts).

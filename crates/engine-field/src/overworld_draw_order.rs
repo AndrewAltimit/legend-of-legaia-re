@@ -44,7 +44,7 @@
 //! projection, and all but a few percent of the continent cells at the
 //! ground formula's, the rest one bucket off where the port's rounded `SZ`
 //! crosses a bucket edge
-//! (`crates/engine-core/tests/overworld_draw_order_retail_capture_disc.rs`).
+//! (`crates/parity/tests/overworld_draw_order_retail_capture_disc.rs`).
 //!
 //! **Ties.** A later `AddPrim` into a bucket is drawn first. In every
 //! bucket of that table holding both a sheet and a cell, the sheet comes

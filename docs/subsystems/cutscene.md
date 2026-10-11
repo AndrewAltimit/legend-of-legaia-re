@@ -1106,7 +1106,7 @@ legaia-engine man-scripts --scene opdeene --disc "<disc>.bin" \
   --narration --disasm-partition 2
 ```
 
-The disc-gated test `crates/engine-core/tests/opdeene_narration.rs` checks the structure (two
+The disc-gated test `crates/engine-scene/tests/opdeene_narration.rs` checks the structure (two
 blocks, 14 + 8 pages, every page non-empty ASCII, declared count matches decoded).
 
 ### Narration playback - the crawl roller (`FUN_80037174`)
@@ -2026,7 +2026,7 @@ V = max(min(max(r, g, b), 0xF8) - 30, 0)   ->   (V, V*246 >> 8, V*112 >> 8)
 (`FUN_8001A8DC`'s sector-0 arm at hue `0x38`: `f = 238`, `t = V*(256 - (0x90*18 >> 8)) >> 8`,
 `p = V*(256 - 0x90) >> 8`.) The retail state `s1_newgame_field` (`opdeene` at field-run) holds
 all 18425 baked colour words of its 77 resident TMDs on that curve with none off it, an authored
-`0x80` word at `(98, 94, 42)` - `crates/engine-core/tests/prologue_sepia_retail_capture.rs`.
+`0x80` word at `(98, 94, 42)` - `crates/parity/tests/prologue_sepia_retail_capture.rs`.
 `G/R` is `246/256` and `B/R` is `112/256`, with a value drop of 30. Only baked-colour rows are
 touched: the colour counts at `0x801F26F0` are non-zero for `flags >> 1` in `12..=19` alone
 (flags `0x18..=0x27`), so the light-source rows `0x10..=0x17` keep their GTE colour.

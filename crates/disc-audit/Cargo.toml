@@ -32,6 +32,9 @@ legaia-vab.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 legaia-tmd.workspace = true
+legaia-mdt.workspace = true
+legaia-save.workspace = true
+legaia-seq.workspace = true
 
 [[test]]
 name = "integration"
