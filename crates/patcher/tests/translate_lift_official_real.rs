@@ -30,7 +30,7 @@ fn lift_official_pairs_and_locates() {
     let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
 
     // Region detection on the USA disc.
-    let exe = lift::boot_exe_name(&usa).expect("read SYSTEM.CNF");
+    let exe = legaia_patcher::disc::boot_exe_name(&usa).expect("read SYSTEM.CNF");
     assert!(
         exe.starts_with("SCUS_942"),
         "expected the USA boot exe, got {exe}"
@@ -171,7 +171,7 @@ fn unpinned_search_recovers_the_pinned_pal_bases() {
     };
     let usa = DiscPatcher::open(usa_bytes).expect("open USA disc");
     let pal = DiscPatcher::open(pal_bytes).expect("open PAL disc");
-    let exe = lift::boot_exe_name(&pal).expect("read SYSTEM.CNF");
+    let exe = legaia_patcher::disc::boot_exe_name(&pal).expect("read SYSTEM.CNF");
     let Some((pinned_tables, pinned_party)) = lift::pinned_bases_for_exe(&exe) else {
         eprintln!("[skip] {exe} is not a hand-pinned build - nothing to vouch against");
         return;

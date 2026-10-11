@@ -442,60 +442,6 @@ impl DiscPatcher {
         bail!("{name}: channel {chan} has no Form 2 sectors")
     }
 
-    /// Demux and decode one channel of a Mode 2 Form 2 XA file to mono
-    /// PCM (stereo channels down-mix). Returns `(pcm, sample_rate)`.
-    /// Reads the file as it CURRENTLY stands on the image - callers that
-    /// need retail audio must read before muting the channel.
-    pub fn read_xa_channel_pcm(&self, name: &str, chan: u8) -> Result<(Vec<i16>, u32)> {
-        let (lba, size) = legaia_iso::iso9660::find_path_in_image(&self.image, name)
-            .with_context(|| format!("{name} not found in disc image"))?;
-        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
-        let mut payload = Vec::new();
-        let mut coding = None;
-        for i in 0..sectors {
-            let base = (lba as usize + i) * SECTOR_SIZE;
-            let Some(sector) = self.image.get(base..base + SECTOR_SIZE) else {
-                break;
-            };
-            if legaia_iso::write::is_form2(sector)
-                && sector[0x12] & 0x04 != 0
-                && sector[0x11] == chan
-            {
-                coding.get_or_insert(sector[0x13]);
-                payload.extend_from_slice(&sector[0x18..0x18 + 2304]);
-            }
-        }
-        let coding =
-            coding.with_context(|| format!("{name}: channel {chan} has no audio sectors"))?;
-        let stereo = coding & 0x03 != 0;
-        let rate = if (coding >> 2) & 0x03 == 1 {
-            18900
-        } else {
-            37800
-        };
-        let opts = legaia_xa::DecodeOptions {
-            channels: if stereo {
-                legaia_xa::Channels::Stereo
-            } else {
-                legaia_xa::Channels::Mono
-            },
-            sample_rate: rate,
-            ..Default::default()
-        };
-        let (pcm, _) = legaia_xa::decode(&payload, opts)
-            .with_context(|| format!("decode {name} channel {chan}"))?;
-        let mono = if stereo {
-            pcm.as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| ((c[0] as i32 + c[1] as i32) / 2) as i16)
-                .collect()
-        } else {
-            pcm
-        };
-        Ok((mono, rate))
-    }
-
     /// Write encoded XA-ADPCM sound groups into one channel of a Mode 2
     /// Form 2 XA file: the channel's Form 2 sectors (in stream order)
     /// take 18 groups each from `groups` until it runs out; the rest of
@@ -1079,6 +1025,30 @@ pub mod synth {
         prot[entry1_off..entry1_off + entry1_data.len()].copy_from_slice(entry1_data);
         prot
     }
+}
+
+/// Detect the source disc's boot exe from `SYSTEM.CNF` (`BOOT = cdrom:\NAME;1`).
+/// Returns the bare ISO filename (`SCES_019.45`).
+pub fn boot_exe_name(patcher: &DiscPatcher) -> Result<String> {
+    let cnf = patcher
+        .read_named_file("SYSTEM.CNF")
+        .context("SYSTEM.CNF not found in disc image")?;
+    let text = String::from_utf8_lossy(&cnf);
+    for line in text.lines() {
+        let Some((k, v)) = line.split_once('=') else {
+            continue;
+        };
+        if k.trim().eq_ignore_ascii_case("BOOT") {
+            // v = ` cdrom:\SCES_019.45;1`
+            let v = v.trim();
+            let after = v.rsplit(['\\', ':', '/']).next().unwrap_or(v);
+            let name = after.split(';').next().unwrap_or(after).trim();
+            if !name.is_empty() {
+                return Ok(name.to_string());
+            }
+        }
+    }
+    bail!("no BOOT line in SYSTEM.CNF")
 }
 
 #[cfg(test)]

@@ -1417,7 +1417,6 @@ dependencies = [
  "legaia-iso",
  "legaia-lzs",
  "legaia-prot",
- "legaia-xa",
  "serde",
 ]
 
@@ -2094,7 +2093,6 @@ dependencies = [
  "legaia-iso",
  "legaia-lzs",
  "legaia-tim",
- "legaia-translate",
 ]
 
 [[package]]

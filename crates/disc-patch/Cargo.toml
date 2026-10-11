@@ -14,5 +14,4 @@ legaia-asset.workspace = true
 legaia-iso.workspace = true
 legaia-lzs.workspace = true
 legaia-prot.workspace = true
-legaia-xa.workspace = true
 serde.workspace = true

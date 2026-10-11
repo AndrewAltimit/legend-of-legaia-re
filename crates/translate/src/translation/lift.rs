@@ -163,30 +163,6 @@ impl LiftReport {
     }
 }
 
-/// Detect the source disc's boot exe from `SYSTEM.CNF` (`BOOT = cdrom:\NAME;1`).
-/// Returns the bare ISO filename (`SCES_019.45`).
-pub fn boot_exe_name(patcher: &DiscPatcher) -> Result<String> {
-    let cnf = patcher
-        .read_named_file("SYSTEM.CNF")
-        .context("SYSTEM.CNF not found in disc image")?;
-    let text = String::from_utf8_lossy(&cnf);
-    for line in text.lines() {
-        let Some((k, v)) = line.split_once('=') else {
-            continue;
-        };
-        if k.trim().eq_ignore_ascii_case("BOOT") {
-            // v = ` cdrom:\SCES_019.45;1`
-            let v = v.trim();
-            let after = v.rsplit(['\\', ':', '/']).next().unwrap_or(v);
-            let name = after.split(';').next().unwrap_or(after).trim();
-            if !name.is_empty() {
-                return Ok(name.to_string());
-            }
-        }
-    }
-    bail!("no BOOT line in SYSTEM.CNF")
-}
-
 /// MAN-domain segment texts of a PROT entry, in the exact scan order the pack
 /// keys follow. `allow_high` widens the gate for a PAL build's accented lines.
 fn man_seg_texts(entry: &[u8], allow_high: bool) -> Vec<(usize, Vec<u8>)> {
@@ -240,7 +216,7 @@ pub fn lift_official(
     target: &DiscPatcher,
     source: &DiscPatcher,
 ) -> Result<(LanguagePack, LiftReport)> {
-    let exe_name = boot_exe_name(source)?;
+    let exe_name = legaia_disc_patch::disc::boot_exe_name(source)?;
     let Some(build) = source_build_for_exe(&exe_name) else {
         bail!(
             "source boot exe {exe_name:?} is not a Latin-script Legaia build this lift can read \

@@ -27,15 +27,14 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     let probe = *chans
         .iter()
         .find(|&&c| {
-            retail
-                .read_xa_channel_pcm("XA/XA2.XA", c)
+            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", c)
                 .map(|(pcm, _)| pcm.iter().any(|&s| s.unsigned_abs() > 1000))
                 .unwrap_or(false)
         })
         .expect("XA2 has a voiced channel");
-    let (retail_pcm, _) = retail
-        .read_xa_channel_pcm("XA/XA2.XA", probe)
-        .expect("read");
+    let (retail_pcm, _) =
+        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA2.XA", probe)
+            .expect("read");
 
     let run = |mode: ArtsVoiceMode| -> DiscPatcher {
         let mut p = DiscPatcher::open(original.clone()).expect("open scratch");
@@ -53,15 +52,17 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
 
     // original: the shout bank survives byte-identical
     let p_orig = run(ArtsVoiceMode::Original);
-    let (pcm, _) = p_orig
-        .read_xa_channel_pcm("XA/XA2.XA", probe)
-        .expect("read");
+    let (pcm, _) =
+        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA2.XA", probe)
+            .expect("read");
     assert_eq!(pcm, retail_pcm, "original mode must not touch XA2");
 
     // removed: every channel decodes to silence
     let p_rm = run(ArtsVoiceMode::Removed);
     for &c in &chans {
-        if let Ok((pcm, _)) = p_rm.read_xa_channel_pcm("XA/XA2.XA", c) {
+        if let Ok((pcm, _)) =
+            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_rm, "XA/XA2.XA", c)
+        {
             assert!(
                 pcm.iter().all(|&s| s.unsigned_abs() <= 24),
                 "removed mode left channel {c} audible"
@@ -71,16 +72,18 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
 
     // adjusted: voiced, different from retail, deterministic
     let p_adj = run(ArtsVoiceMode::Adjusted);
-    let (adj, _) = p_adj.read_xa_channel_pcm("XA/XA2.XA", probe).expect("read");
+    let (adj, _) =
+        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA2.XA", probe)
+            .expect("read");
     assert!(
         adj.iter().any(|&s| s.unsigned_abs() > 1000),
         "adjusted mode silenced the probe channel"
     );
     assert_ne!(adj, retail_pcm, "adjusted mode left retail audio untouched");
     let p_adj2 = run(ArtsVoiceMode::Adjusted);
-    let (adj2, _) = p_adj2
-        .read_xa_channel_pcm("XA/XA2.XA", probe)
-        .expect("read");
+    let (adj2, _) =
+        legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj2, "XA/XA2.XA", probe)
+            .expect("read");
     assert_eq!(adj, adj2, "adjusted mode must be byte-deterministic");
 
     // The Super / Hyper / Miracle FANFARE bank. A Hyper Art fires no
@@ -91,14 +94,15 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
     // re-encode of a grunt also differs.
     let fan_chans = retail.xa_channels("XA/XA1.XA").expect("xa1 channels");
     for &c in fan_chans.iter().take(8) {
-        let Ok((r, _)) = retail.read_xa_channel_pcm("XA/XA1.XA", c) else {
+        let Ok((r, _)) =
+            legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&retail, "XA/XA1.XA", c)
+        else {
             continue;
         };
         if !r.iter().any(|&s| s.unsigned_abs() > 1000) {
             continue; // never voiced in retail
         }
-        let (a, _) = p_adj
-            .read_xa_channel_pcm("XA/XA1.XA", c)
+        let (a, _) = legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_adj, "XA/XA1.XA", c)
             .expect("read patched fanfare");
         let audible = |p: &[i16]| p.iter().filter(|s| s.unsigned_abs() > 200).count();
         // The signature special's channel pair plus the GENERIC
@@ -114,8 +118,7 @@ pub(super) fn arts_voice_modes_shape_the_shout_banks() {
         let sig = legaia_patcher::delilas_party::signature_fanfare_channels(0)
             .expect("Vahn's slot has a signature fanfare pair");
         let generic = legaia_art::hyper_fanfare::GENERIC_FANFARE_CHANNEL;
-        let (o, _) = p_orig
-            .read_xa_channel_pcm("XA/XA1.XA", c)
+        let (o, _) = legaia_patcher::delilas_xa_voice::read_xa_channel_pcm(&p_orig, "XA/XA1.XA", c)
             .expect("read original fanfare");
         if c == sig.0 || c == sig.1 || c == generic {
             for (mode, pcm) in [("adjusted", &a), ("original", &o)] {

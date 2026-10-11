@@ -73,7 +73,7 @@ fn is_japanese_exe(exe: &str) -> bool {
 /// Detect the disc's build. A disc whose `SYSTEM.CNF` is unreadable but which
 /// carries `SCUS_942.54` is the USA build.
 pub fn detect(patcher: &DiscPatcher) -> DiscBuild {
-    let exe = super::lift::boot_exe_name(patcher)
+    let exe = legaia_disc_patch::disc::boot_exe_name(patcher)
         .ok()
         .or_else(|| {
             patcher

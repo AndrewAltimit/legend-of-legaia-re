@@ -193,7 +193,7 @@ pub fn texture_palettes(patcher: &DiscPatcher, tim: &Tim) -> Result<TexturePalet
     if !is_system_ui_sheet(tim) {
         return Ok(TexturePalettes::default());
     }
-    let exe = legaia_translate::translation::lift::boot_exe_name(patcher)
+    let exe = legaia_disc_patch::disc::boot_exe_name(patcher)
         .unwrap_or_else(|_| "SCUS_942.54".to_string());
     let Some(scus) = patcher.read_named_file(&exe) else {
         return Ok(TexturePalettes::default());
