@@ -1,4 +1,5 @@
 use super::*;
+use legaia_save::minigame_save::COIN_BANK_MAX;
 
 fn hand(costs: [u16; 4]) -> [MuscleCard; 4] {
     [

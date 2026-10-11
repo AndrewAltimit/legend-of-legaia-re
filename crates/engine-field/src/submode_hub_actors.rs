@@ -80,6 +80,8 @@ use crate::dev_menu_leaves::{
     EquipPanelDraw, EquipPanelInput, EquipProps, ItemProps, equip_stat_panel,
 };
 
+use legaia_save::minigame_save::COIN_BANK_MAX;
+
 mod model;
 pub use model::*;
 mod panels;
@@ -127,9 +129,6 @@ pub const ACTOR_RETIRE: u32 = 0x8;
 
 /// The three submode values the dispatcher runs under (`DAT_801F2734`).
 pub const ACTIVE_SUBMODES: [i32; 3] = [1, 4, 7];
-
-/// Ceiling the coin exchange clamps the bank to.
-pub const COIN_BANK_MAX: i32 = 0x0098_967F;
 
 /// Gold per coin.
 pub const GOLD_PER_COIN: i32 = 100;

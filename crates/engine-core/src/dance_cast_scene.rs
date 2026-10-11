@@ -12,9 +12,9 @@
 //!   the ten live groups `FUN_8001E890` draws), every other one the
 //!   dance-hall scene's TMD pool ([`crate::dance_venue::DanceVenue`]).
 //! * **The pose** is the clip driver's: the track's ticks turned into the
-//!   1/16-frame cursor by [`legaia_engine_field::field_anim::clip_step`] on the record's
+//!   1/16-frame cursor by [`legaia_engine_vm::actor_tick::clip_step`] on the record's
 //!   own gate + divisor, the loop wrapping at the end tick
-//!   ([`legaia_engine_field::field_anim::clip_end_ticks`]), a move held on its last frame
+//!   ([`legaia_engine_vm::actor_tick::clip_end_ticks`]), a move held on its last frame
 //!   until it has run its length, and the record's sub-frame blend
 //!   ([`legaia_actor_formats::player_anm::blend_bone_transform`]). Each object is
 //!   `Rz.Ry.Rx . v + T`, then the actor's render scale (`+0x72`), its yaw
@@ -34,8 +34,8 @@ use std::sync::Arc;
 
 use crate::dance_venue::DanceVenue;
 use legaia_actor_formats::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transform};
-use legaia_engine_field::field_anim::{clip_end_ticks, clip_step};
 use legaia_engine_minigames::dance::{DanceBodyClip, DanceBodyFrame, DanceBodyModel, DanceGame};
+use legaia_engine_vm::actor_tick::{clip_end_ticks, clip_step};
 
 /// Live TMD groups of an active-party field mesh: groups 10 / 11 are the
 /// equipment templates, never drawn (`FUN_8001E890`).

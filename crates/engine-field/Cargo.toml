@@ -21,6 +21,7 @@ legaia-engine-battle.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
 legaia-mes.workspace = true
+legaia-save.workspace = true
 legaia-tmd.workspace = true
 legaia-actor-formats.workspace = true
 legaia-overlay-images.workspace = true

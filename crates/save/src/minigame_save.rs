@@ -42,6 +42,11 @@ pub const RETAIL_FISHING_PRIZES_OFFSET: usize = 0x32C;
 /// SC offset of the Point Card bank (`0x800845B4`).
 pub const RETAIL_POINT_CARD_OFFSET: usize = 0x474;
 
+/// Ceiling of the casino coin bank (`9_999_999`): every retail credit to
+/// [`MinigameSave::casino_coins`] - the coin exchange, a slot payout, a
+/// Muscle Dome contest tally - saturates here.
+pub const COIN_BANK_MAX: i32 = 0x0098_967F;
+
 /// Bytes of the `LGX7` body: nine little-endian words.
 pub const MINIGAME_SAVE_BODY_LEN: usize = 9 * 4;
 

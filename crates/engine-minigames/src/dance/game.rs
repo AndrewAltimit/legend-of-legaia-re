@@ -209,7 +209,7 @@ impl DanceGame {
 
     /// Attach the dance hall's choreography bank (the `other7` scene's MOVE
     /// ANM bundle, `legaia_engine_core::dance_venue::dance_clip_bank`): every descriptor
-    /// clip's length in ticks - [`legaia_engine_field::field_player_clip::clip_end_ticks`] on the
+    /// clip's length in ticks - [`legaia_engine_vm::actor_tick::clip_end_ticks`] on the
     /// record's frame count and the rate's per-record step - so a judge move
     /// holds the dancer for exactly as long as retail's clip driver plays it.
     ///
@@ -230,15 +230,14 @@ impl DanceGame {
                 else {
                     continue;
                 };
-                let step = legaia_engine_field::field_player_clip::clip_step(
+                let step = legaia_engine_vm::actor_tick::clip_step(
                     c.rate,
                     rec.blends(),
                     (rec.flag & 0xFF) as u8,
                 );
                 map.insert(
                     (id, c.rate),
-                    legaia_engine_field::field_player_clip::clip_end_ticks(rec.frame_count, step)
-                        .max(1),
+                    legaia_engine_vm::actor_tick::clip_end_ticks(rec.frame_count, step).max(1),
                 );
             }
         }

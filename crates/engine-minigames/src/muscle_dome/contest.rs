@@ -2,6 +2,7 @@
 //! Split out of `muscle_dome.rs`.
 
 use super::*;
+use legaia_save::minigame_save::COIN_BANK_MAX;
 
 // --- The contest: the ladder run that sits above a single leg ---------------
 
@@ -83,9 +84,6 @@ pub const COURSE_RAN_FIRST_FLAG_BASE: u16 = 0x130;
 /// The round a give-up has to land on for [`COURSE_RAN_FIRST_FLAG_BASE`] to
 /// be set (`beq a0, 1` at `0x801D1070`).
 pub const COURSE_RAN_FIRST_ROUND: u32 = 1;
-
-/// Ceiling the casino coin bank saturates at when a contest pays out.
-pub const COIN_BANK_MAX: i32 = legaia_engine_field::submode_hub_actors::COIN_BANK_MAX;
 
 /// Decode the course index out of the mode-24 sub-id word `_DAT_8007BAC0`:
 /// `((word - 1) & 0xFF) >> 4`.

@@ -184,7 +184,7 @@ impl PropAnim {
         // prop on this arm is also posed between keyframes. A minority of the
         // disc's posed props take it (`tests/field_prop_pose_sampler_disc.rs`
         // counts them).
-        let step = legaia_engine_field::field_anim::clip_step(
+        let step = legaia_engine_vm::actor_tick::clip_step(
             self.rate as u16,
             self.scaled_step,
             self.step_div,

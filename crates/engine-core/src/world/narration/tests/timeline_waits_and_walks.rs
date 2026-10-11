@@ -364,7 +364,8 @@ fn cutscene_timeline_npc_compass_walk_moves_the_placement_while_the_record_waits
 /// ungated record, four for a gated divisor-4 one, then steps past.
 #[test]
 fn cutscene_timeline_player_clip_latch_spin_holds_for_the_clip() {
-    use legaia_engine_field::field_anim::{CLIP_RATE, clip_end_ticks, clip_step};
+    use legaia_engine_field::field_anim::CLIP_RATE;
+    use legaia_engine_vm::actor_tick::{clip_end_ticks, clip_step};
     let frames = 10u16;
     for (gated, div, per_frame) in [(false, 0u8, 2usize), (true, 4, 4)] {
         let ticks = clip_end_ticks(frames, clip_step(CLIP_RATE, gated, div));

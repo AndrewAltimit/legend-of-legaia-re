@@ -190,12 +190,12 @@ impl SceneHost {
             .scene_clip_meta
             .iter()
             .map(|&(frames, gated, div)| {
-                let step = legaia_engine_field::field_anim::clip_step(
+                let step = legaia_engine_vm::actor_tick::clip_step(
                     legaia_engine_field::field_anim::CLIP_RATE,
                     gated,
                     div,
                 );
-                legaia_engine_field::field_anim::clip_end_ticks(frames, step)
+                legaia_engine_vm::actor_tick::clip_end_ticks(frames, step)
             })
             .collect();
         self.scene = Some(scene);

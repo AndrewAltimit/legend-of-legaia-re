@@ -363,7 +363,7 @@ pub struct CutsceneTimeline {
     pub npc_faces: Vec<TimelineNpcFace>,
     /// Ticks left on the **scene-bank** clip the timeline last poked onto the
     /// player (`A2 F8 <move_id>` with the party-bank bit down): the clip's
-    /// end-latch length at its own step (`crate::field_anim::clip_end_ticks`).
+    /// end-latch length at its own step (`legaia_engine_vm::actor_tick::clip_end_ticks`).
     /// Retail's clip tick `FUN_800204F8` latches the end flag `0x100` into
     /// the player's `+0x62` when the cursor reaches the last frame
     /// (`0x800206E4..0x8002072C`), and a record waits for it with

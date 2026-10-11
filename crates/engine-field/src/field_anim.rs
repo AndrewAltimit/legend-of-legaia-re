@@ -32,9 +32,7 @@ use legaia_anm::PoseFrame;
 /// every two engine ticks (one tick = one vsync, the frame step `1`).
 pub const CLIP_RATE: u16 = 8;
 
-/// The clip step and clip-end timing live in `crate::field_player_clip`
-/// so the minigame crate shares them.
-pub use crate::field_player_clip::{clip_end_ticks, clip_step};
+use legaia_engine_vm::actor_tick::clip_step;
 
 /// Looping playback over one field clip: all frames pre-decoded to the
 /// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's
@@ -117,7 +115,7 @@ impl FieldClipPlayer {
     }
 
     /// Engine ticks one pass of the clip takes: bind to end latch, which is
-    /// also the loop period. See [`clip_end_ticks`].
+    /// also the loop period. See [`legaia_engine_vm::actor_tick::clip_end_ticks`].
     pub fn loop_ticks(&self) -> u32 {
         let span = self.frames.len() as u32 * 16;
         if span == 0 {
@@ -677,54 +675,6 @@ mod tests {
         q.advance(1);
         assert_eq!(q.pose_key(), 0);
         assert_eq!(q.current_pose().bone_outputs[0].0[0], 100);
-    }
-
-    /// The step select of `FUN_800204F8` at the template rate: ungated
-    /// clips step by the rate, gated ones by `(rate*2 + div - 1) / div`.
-    #[test]
-    fn clip_step_matches_the_retail_select() {
-        assert_eq!(
-            clip_step(CLIP_RATE, false, 4),
-            8,
-            "ungated ignores the divisor"
-        );
-        let gated: Vec<u16> = [1u8, 2, 3, 4, 6]
-            .iter()
-            .map(|&d| clip_step(CLIP_RATE, true, d))
-            .collect();
-        assert_eq!(gated, vec![16, 8, 6, 4, 3]);
-        assert_eq!(clip_step(CLIP_RATE, true, 0), CLIP_RATE, "div 0 falls back");
-        // A script's `4C 41` rate (`16` = a door's one frame a tick).
-        assert_eq!(clip_step(16, true, 4), 8);
-    }
-
-    /// The end latch lands on the first tick whose cursor reaches the last
-    /// position; at the ungated step that is the old two-ticks-a-frame length,
-    /// at divisor 4 twice it, and the player's loop period agrees.
-    #[test]
-    fn clip_end_ticks_is_the_first_tick_at_the_last_position() {
-        for frames in 1u16..=20 {
-            for step in [16u16, 8, 6, 4, 3] {
-                let last = u32::from(frames) * 16 - 1;
-                let mut cursor = 0u32;
-                let mut ticks = 0u32;
-                loop {
-                    cursor += u32::from(step);
-                    ticks += 1;
-                    if cursor >= last {
-                        break;
-                    }
-                }
-                assert_eq!(
-                    clip_end_ticks(frames, step),
-                    ticks,
-                    "{frames} frames, step {step}"
-                );
-            }
-            assert_eq!(clip_end_ticks(frames, 8), u32::from(frames) * 2);
-            assert_eq!(clip_end_ticks(frames, 4), u32::from(frames) * 4);
-        }
-        assert_eq!(clip_end_ticks(0, 8), 0);
     }
 
     /// A gated divisor-4 record plays at half the ungated speed: four ticks a

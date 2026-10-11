@@ -294,7 +294,7 @@ impl World {
                         .minigames
                         .casino_coins
                         .saturating_add(coins as u32)
-                        .min(hub::COIN_BANK_MAX as u32);
+                        .min(legaia_save::minigame_save::COIN_BANK_MAX as u32);
                     self.party.money = self.party.money.saturating_sub(gold_cost).max(0);
                 }
                 HubAction::ClearCursorRow => self.field_vm.submode_screen.counter.cursor = 0,

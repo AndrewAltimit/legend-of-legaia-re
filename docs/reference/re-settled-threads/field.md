@@ -464,7 +464,7 @@ on the record's own flag word, and a stalled cursor never lets the spin through.
 **Port fidelity.** An actor's drawn clip and its latch cursor are two objects in the port where retail
 has one struct: the player's gesture is played by the host's `FieldPlayerAnim` off
 `World::locomotion.player_move_cues`, an NPC's by the host's clip player, and the latch is timed by the
-bank's cursor. Both take their step from `field_anim::clip_step` with the record's gate and divisor
+bank's cursor. Both take their step from `actor_tick::clip_step` with the record's gate and divisor
 and are sized from the scene ANM bundle where it resolves the poked id; a clip the bundle cannot name
 falls back to a stand-in length. No capture rules out another runtime writer of bit `8`; a script
 could set it with a `2B <t> 08` of its own, and none of the records read does.

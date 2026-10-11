@@ -70,6 +70,8 @@ mod tick;
 pub use tick::*;
 mod clip_fraction;
 pub use clip_fraction::*;
+mod clip_cursor;
+pub use clip_cursor::*;
 
 #[cfg(test)]
 mod tests;
