@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn full_party() -> [SlotState; 3] {

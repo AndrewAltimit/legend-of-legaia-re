@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Host that always returns a fixed 8-byte record.

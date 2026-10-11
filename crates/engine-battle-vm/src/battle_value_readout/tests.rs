@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// `battle_vahn_tri_somersault_super`: `242` on its drawn frame (timer

@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn region(x0: u8, z0: u8, x1: u8, z1: u8, rate: u8, base: u8, count: u8) -> EncounterRegion {

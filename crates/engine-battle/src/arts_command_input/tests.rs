@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// The seat loop's table `[0x0D, 0x10, 0x11, 0x0C]` plus Noa's swap and

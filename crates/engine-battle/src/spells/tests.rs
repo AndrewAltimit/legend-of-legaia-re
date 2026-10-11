@@ -1,4 +1,3 @@
-
 use super::*;
 
 fn alive_enemy(mag_def: u16, hp: u16) -> SpellSnapshot {

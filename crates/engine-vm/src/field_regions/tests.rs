@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// Build a `.MAP` `+0x10000` block: header up to `+0x12`, records at

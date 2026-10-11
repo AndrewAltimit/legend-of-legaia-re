@@ -1,4 +1,3 @@
-
 use super::*;
 
 /// The two ring stamps share [`cross_out_mark`]'s screen span and differ
