@@ -251,7 +251,7 @@ impl Camera {
         //     ease tail duplicates verbatim.
         {
             let mut eye = [g[3], g[4]];
-            legaia_engine_vm::battle_camera::apply_shake(
+            legaia_engine_battle_vm::battle_camera::apply_shake(
                 &mut eye,
                 &mut zone.shake_offset,
                 u32::from(world.camera_shake_amplitude()),

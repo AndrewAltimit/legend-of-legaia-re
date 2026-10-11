@@ -113,7 +113,7 @@ impl World {
     /// and colour-tween passes carry.
     ///
     /// REF: FUN_801DD784, FUN_801DD4C4, FUN_801DA930 (the kernels live in
-    /// [`legaia_engine_vm::field_actor_timers`])
+    /// [`legaia_engine_field::field_actor_timers`])
     /// The player actor's `+0x16` footing height, or `0` when there is no
     /// live player actor. The subtrahend of the camera-offset easing's target.
     pub fn camera_ease_player_footing(&self) -> i16 {
@@ -263,7 +263,7 @@ impl World {
     fn apply_eased_move(
         &mut self,
         target: crate::world::EasedMoveTarget,
-        frame: &legaia_engine_vm::field_actor_timers::EasedMoveFrame,
+        frame: &legaia_engine_field::field_actor_timers::EasedMoveFrame,
     ) {
         match target {
             crate::world::EasedMoveTarget::Player => {

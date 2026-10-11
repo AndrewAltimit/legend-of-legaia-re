@@ -3,7 +3,7 @@
 use super::*;
 use crate::muscle_dome::{DomeContest, DomePlay};
 use legaia_engine_menus::muscle_dome_session::{MuscleDomeSession, MusclePhase};
-use legaia_engine_vm::battle_cam_script as cam;
+use legaia_engine_battle_vm::battle_cam_script as cam;
 use std::sync::Arc;
 
 /// The dome's camera: one pose of the battle camera script, projected the
@@ -504,10 +504,10 @@ impl MuscleDomeSurface {
         };
         let won = beat.is_none() && session.phase() == MusclePhase::Won;
         let slot_of = |i: usize| if i == 0 { 0u8 } else { 3 };
-        let depth = legaia_engine_vm::battle_formulas::camera_height_for_frame(
+        let depth = legaia_engine_battle_vm::battle_formulas::camera_height_for_frame(
             slot_of(acting),
             slot_of(target),
-            legaia_engine_vm::battle_formulas::RETAIL_MONSTER_SLOT_BASE,
+            legaia_engine_battle_vm::battle_formulas::RETAIL_MONSTER_SLOT_BASE,
             |_| assets.size_class,
         );
         let mut formation = None;

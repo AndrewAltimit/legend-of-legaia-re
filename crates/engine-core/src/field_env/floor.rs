@@ -26,7 +26,7 @@ pub fn rotate_euler(rot: [u16; 3], v: [f32; 3]) -> [f32; 3] {
 ///
 /// The ladder is not static: field-VM op `0x4C` nibble-9 sub-`0xE` rewrites all
 /// sixteen rungs and sub-`0..2` sets one rung **oscillating** every frame
-/// (`FUN_801DDE34` -> `FUN_801DA930`, `legaia_engine_vm::field_actor_timers`),
+/// (`FUN_801DDE34` -> `FUN_801DA930`, `legaia_engine_field::field_actor_timers`),
 /// which is how `jou`'s organic interior floor undulates. Retail's per-cell
 /// terrain emitters re-read the scratchpad ladder every frame, so the drawn
 /// ground moves with it; the port bakes its draw list once at scene entry, so

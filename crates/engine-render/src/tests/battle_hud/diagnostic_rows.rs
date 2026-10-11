@@ -17,7 +17,7 @@ fn battle_hud_draws_for_includes_log_lines_below_slots() {
 
 /// The HUD's text popup is the **diagnostic** readout of a hit, not the retail
 /// one: retail throws its numeral off the effect atlas
-/// ([`legaia_engine_vm::battle_value_readout`]) over the actor that was struck,
+/// ([`legaia_engine_battle_vm::battle_value_readout`]) over the actor that was struck,
 /// so nothing about a landed hit reaches the default surface here. The anchor
 /// this asserts is therefore the diagnostic column's, and the retail seat is
 /// covered by the readout module's own tests.

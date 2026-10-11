@@ -28,7 +28,7 @@
 use legaia_engine_ui::gte::{
     CameraRelativePart, PartCameraPose, camera_relative_part, camera_view_rotation,
 };
-use legaia_engine_vm::psx_camera::camera_rotation;
+use legaia_engine_battle_vm::psx_camera::camera_rotation;
 use legaia_mednafen::SaveState;
 use legaia_mednafen::prim_pool;
 use std::path::PathBuf;

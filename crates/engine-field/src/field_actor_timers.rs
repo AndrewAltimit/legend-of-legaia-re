@@ -19,7 +19,7 @@
 //!
 //! REF: FUN_80020DE0 (the allocator every one of the three goes through),
 //!      FUN_801DE754, FUN_801DE698, FUN_801DDE34 (the three spawners, whose
-//!      operand decode lives in [`crate::field`]),
+//!      operand decode lives in [`legaia_engine_vm::field`]),
 //!      FUN_8003D2C4 (the OT link the bar emitter ends on)
 //!
 //! # Provenance
@@ -90,19 +90,6 @@ pub const SHUTTER_TEMPLATE_VA: u32 = 0x801F_2858;
 /// it together, which covers a 224-line screen twice over - see the module
 /// note.
 pub const SHUTTER_FULL_BAR: i16 = 0x73;
-
-/// Right edge of both quads (retail literal `0x140`).
-pub const SHUTTER_SCREEN_W: i16 = 0x140;
-
-/// Bottom edge retail hardcodes (`0xE0` = 224). The engine's screen-overlay
-/// stage is 240 lines, so the prim builder takes the stage height as a
-/// parameter and this constant is what a parity check compares against.
-pub const SHUTTER_RETAIL_SCREEN_H: i16 = 0xE0;
-
-/// The top bar's Y bias (retail writes `-4` into both of its top vertices, so
-/// the bar starts four lines above the screen and its visible height is
-/// `bar - 4`).
-pub const SHUTTER_TOP_BIAS: i16 = -4;
 
 /// The four-phase envelope behind the shutter blackout.
 ///
@@ -202,44 +189,6 @@ fn ramp(t: u16, d: i16) -> i16 {
         return 0;
     }
     ((i32::from(t) * i32::from(SHUTTER_FULL_BAR)) / i32::from(d)) as i16
-}
-
-/// One bar as retail lays its four vertices out: `[x0, y0, x1, y1]` with the
-/// quad spanning `x0..x1`, `y0..y1`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BarRect {
-    pub x0: i16,
-    pub y0: i16,
-    pub x1: i16,
-    pub y1: i16,
-}
-
-/// The two quads a bar height emits, top first.
-///
-/// REF: FUN_801DD784 (`0x801DD8F8..0x801DD9B4`) - two `0x05000000`-tagged
-/// packets, command byte `0x28` (`POLY_F4`, opaque), with the colour bytes
-/// **zeroed after** the `0x28808080` word is stored, so the fill is black and
-/// not the mid-grey the immediate suggests.
-///
-/// `screen_h` is the stage bottom the second bar is flush with. Retail's
-/// literal is [`SHUTTER_RETAIL_SCREEN_H`]; the engine's screen-overlay
-/// stage is 240 lines, so the host passes its own display height and the bar
-/// stays flush instead of floating 16 lines up.
-pub fn shutter_bar_rects(bar: i16, screen_h: i16) -> [BarRect; 2] {
-    [
-        BarRect {
-            x0: 0,
-            y0: SHUTTER_TOP_BIAS,
-            x1: SHUTTER_SCREEN_W,
-            y1: bar + SHUTTER_TOP_BIAS,
-        },
-        BarRect {
-            x0: 0,
-            y0: screen_h - bar,
-            x1: SHUTTER_SCREEN_W,
-            y1: screen_h,
-        },
-    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -494,6 +443,9 @@ impl FloorTierBob {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_render_kernels::shutter_bars::{
+        SHUTTER_RETAIL_SCREEN_H, SHUTTER_SCREEN_W, shutter_bar_rects,
+    };
 
     // -- the bar envelope ---------------------------------------------------
 

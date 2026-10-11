@@ -28,7 +28,7 @@
 //! battle formation seats - the lone party seat `(0, -800)` and the lone
 //! monster seat `(0, 800)` (`crate::battle_seats`) - at the battle world
 //! scale, and the frame is filmed by the **battle camera script**
-//! (`legaia_engine_vm::battle_cam_script`, `FUN_801D5854`), the same one an
+//! (`legaia_engine_battle_vm::battle_cam_script`, `FUN_801D5854`), the same one an
 //! ordinary fight runs: the far framing with its idle orbit on the prompts,
 //! the case-0 over-the-shoulder close-up on the fighter's command surfaces,
 //! case 1 on the attack cursor, case 6 on the approach, case 7 on the
@@ -99,7 +99,7 @@ mod tests {
     use super::*;
     use crate::muscle_dome::DomePlay;
     use legaia_asset::monster_archive::MonsterAnimation;
-    use legaia_engine_vm::battle_cam_script as cam;
+    use legaia_engine_battle_vm::battle_cam_script as cam;
 
     fn clip(frames: usize, rate: u32) -> DomeClip {
         DomeClip {

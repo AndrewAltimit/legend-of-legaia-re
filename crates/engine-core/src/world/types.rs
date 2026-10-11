@@ -110,7 +110,7 @@ impl FieldLedgeHop {
 /// `0x801F2840` pool actor, which is a clock plus a back-link to the actor
 /// it drives.
 ///
-/// The kernel is [`legaia_engine_vm::field_actor_timers::EasedMove`]
+/// The kernel is [`legaia_engine_field::field_actor_timers::EasedMove`]
 /// (`FUN_801DD4C4`); what the engine adds is retail's `+0x90` back-link,
 /// resolved at spawn to whichever of the two things the field host can
 /// address: the player's pool slot, or an NPC placement in
@@ -123,7 +123,7 @@ pub struct FieldEasedMove {
     /// `0x2000_0000` inverted-Y bit is consulted.
     pub target_flags: u32,
     /// The clock + endpoint triples.
-    pub ease: legaia_engine_vm::field_actor_timers::EasedMove,
+    pub ease: legaia_engine_field::field_actor_timers::EasedMove,
 }
 
 /// Which actor an eased move writes.

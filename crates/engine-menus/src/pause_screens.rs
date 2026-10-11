@@ -27,7 +27,7 @@
 use crate::input::PadButton;
 use crate::inventory_use::{InventoryUseInput, InventoryUseSession, InventoryUseState};
 use crate::spell_menu::{SpellMenuPhase, SpellMenuSession};
-use legaia_engine_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
+use legaia_engine_battle_vm::battle_formulas::{MpCostModifier, mp_cost_after_ability_bits};
 
 mod equip_model;
 mod items_session;

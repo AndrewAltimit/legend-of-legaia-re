@@ -9,6 +9,7 @@ name = "legaia_engine_render"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 glam.workspace = true

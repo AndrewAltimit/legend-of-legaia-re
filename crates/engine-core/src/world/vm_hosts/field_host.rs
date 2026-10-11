@@ -674,7 +674,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     // Each spawner allocates one pool actor from a plain template and fills
     // in its clock; the engine keeps the record on `World` instead and steps
     // it in `World::tick_field_timer_actors`. Kernels live in
-    // `legaia_engine_vm::field_actor_timers`.
+    // `legaia_engine_field::field_actor_timers`.
 
     /// Op `0x43` sub-`0xC` - the cinematic bar emitter (`FUN_801DE754`
     /// allocating `0x801F2858`, tick `FUN_801DD784`).
@@ -685,7 +685,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
     /// over the first is a script defect rather than an effect.
     fn op43_alloc_scripted_actor(&mut self, b1: u8, b2: u8, b3: u8) {
         self.world.presentation.cinematic_bars =
-            Some(legaia_engine_vm::field_actor_timers::ShutterBars::spawn(
+            Some(legaia_engine_field::field_actor_timers::ShutterBars::spawn(
                 i16::from(b1),
                 i16::from(b2),
                 i16::from(b3),
@@ -741,7 +741,7 @@ impl<'a> FieldHost for FieldHostImpl<'a> {
             .copied()
             .unwrap_or(0);
         self.world.terrain.floor_tier_bobs.push(
-            legaia_engine_vm::field_actor_timers::FloorTierBob::spawn(
+            legaia_engine_field::field_actor_timers::FloorTierBob::spawn(
                 u16::from(b1),
                 sub,
                 words[0],

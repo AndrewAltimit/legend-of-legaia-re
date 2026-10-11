@@ -1,7 +1,7 @@
 //! The intro quad descriptor table read out of the overlay.
 
-use legaia_engine_vm::battle_intro_styles::{self as styles};
-use legaia_engine_vm::battle_intro_transition::{INTRO_QUAD_DESC_STRIDE, IntroQuadDesc};
+use legaia_engine_battle_vm::battle_intro_styles::{self as styles};
+use legaia_engine_battle_vm::battle_intro_transition::{INTRO_QUAD_DESC_STRIDE, IntroQuadDesc};
 
 /// Overlay VA of the transition sprite descriptor table, inside PROT 0979
 /// `field_battle_intro`.
@@ -17,7 +17,7 @@ pub const INTRO_QUAD_TABLE_LEN: usize = 4;
 
 /// The parsed descriptor table.
 ///
-/// Held by value because [`legaia_engine_vm::battle_intro_styles::tick_curtain`]
+/// Held by value because [`legaia_engine_battle_vm::battle_intro_styles::tick_curtain`]
 /// **patches records in place** before every quad - that is retail's own
 /// mechanism, not a port shortcut - so the table is per-transition mutable
 /// state rather than a shared read-only asset.

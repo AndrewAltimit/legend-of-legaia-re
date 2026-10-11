@@ -9,6 +9,7 @@ name = "legaia_engine_effects"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-battle-vm.workspace = true
 legaia-render-kernels.workspace = true
 legaia-asset.workspace = true
 legaia-engine-battle.workspace = true

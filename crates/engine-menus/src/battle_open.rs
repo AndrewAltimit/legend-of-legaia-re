@@ -3,7 +3,7 @@
 //!
 //! Retail's flow state `0x0A` calls `FUN_801D9D3C`, which lays out the enemy-name
 //! labels and then reads `ctx[+0x290]` (the formation advantage
-//! [`legaia_engine_vm::battle_formulas::FormationAdvantage`] models) to pick a
+//! [`legaia_engine_battle_vm::battle_formulas::FormationAdvantage`] models) to pick a
 //! banner string. The arm at `0x801DA234` is three-way:
 //!
 //! | `ctx[+0x290]` | Banner | What follows |
@@ -30,7 +30,7 @@
 //! optional resolved template and falls back to the port's own wording, which
 //! is what a host without a disc-read string table shows.
 
-use legaia_engine_vm::battle_formulas::FormationAdvantage;
+use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
 
 /// Frames the open banner stays up, matching the `ctx[+0x6D6]` reseed at
 /// `0x801D0E34`: retail holds the intro `0x78` frames whenever the formation

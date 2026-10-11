@@ -842,7 +842,7 @@ pub fn battle_hud_draws_for(
     // plate class (kind `2`): pen `(x, y - 2)`, plate `(x - 8, y - 6)`.
     // An element whose content is empty (Spirit's target) draws nothing.
     if !frame.commit_log.is_empty() {
-        use legaia_engine_vm::battle_commit_log as log;
+        use legaia_engine_battle_vm::battle_commit_log as log;
         let width = |t: &str| font.layout_ascii(t).advance_x as u16;
         let commits: Vec<log::LogCommit> =
             frame.commit_log.iter().map(|r| r.commit(width)).collect();

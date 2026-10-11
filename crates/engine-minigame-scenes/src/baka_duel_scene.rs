@@ -48,7 +48,7 @@ use std::sync::Arc;
 
 use crate::baka_fighter::BakaFight;
 use legaia_asset::baka_opponents as bo;
-use legaia_engine_vm::psx_camera::{FieldCameraView, camera_rotation};
+use legaia_engine_battle_vm::psx_camera::{FieldCameraView, camera_rotation};
 
 /// The duel's camera and fighter-clip kernels live in the minigame crate.
 pub use legaia_engine_minigames::baka_duel::*;

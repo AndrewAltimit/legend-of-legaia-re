@@ -988,7 +988,7 @@ pub fn ground_shadow_src(inner: u32, outer: u32, radius: i16) -> [u8; 0x24] {
 /// the builder in mode `1` (the XZ plane, shape `0`) over
 /// [`SHADOW_SEGMENTS`] columns, drawn through `FUN_80043390` with
 /// [`SHADOW_FLAG_WORD`] - semi-transparent, subtractive. `inner` / `outer` /
-/// `radius` come from `legaia_engine_vm::battle_actor_draw::shadow_plan`.
+/// `radius` come from `legaia_engine_battle_vm::battle_actor_draw::shadow_plan`.
 ///
 /// PORT: FUN_80048A08 (the ground-shadow build and draw, `0x800491FC..0x800492BC`)
 pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::mesh::VramMesh {

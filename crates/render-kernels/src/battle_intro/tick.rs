@@ -2,9 +2,9 @@
 
 use super::*;
 use crate::screen_prim::ScreenPrim;
-use legaia_engine_vm::battle_intro_styles::{self as styles, IntroStyle};
-use legaia_engine_vm::battle_intro_swirl::{self as swirl};
-use legaia_engine_vm::battle_intro_tiles::{self as tiles};
+use legaia_engine_battle_vm::battle_intro_styles::{self as styles, IntroStyle};
+use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl};
+use legaia_engine_battle_vm::battle_intro_tiles::{self as tiles};
 
 impl BattleIntro {
     /// Bring the working set up to the live transition clock and emit its

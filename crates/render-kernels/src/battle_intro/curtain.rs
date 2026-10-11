@@ -5,7 +5,7 @@ use crate::screen_prim::{ScreenPrim, ScreenQuad};
 use crate::vram_capture::{
     FIELD_CAPTURE_COLS, FIELD_CAPTURE_ROWS, PSX_SCREEN_HEIGHT, PSX_SCREEN_WIDTH, VramRect,
 };
-use legaia_engine_vm::battle_intro_transition::IntroQuad;
+use legaia_engine_battle_vm::battle_intro_transition::IntroQuad;
 use legaia_tim::Vram;
 
 // ---------------------------------------------------------------------------
@@ -27,7 +27,7 @@ pub const CURTAIN_MIDPASS_RGB: u32 = 0x0080_8080;
 pub const CURTAIN_MIDPASS_DECAY_5: u16 = 0x10;
 
 /// The per-frame display wash the curtain arms
-/// (`legaia_engine_vm::battle_intro_styles::CURTAIN_WASH_RGB` = `0x80808`,
+/// (`legaia_engine_battle_vm::battle_intro_styles::CURTAIN_WASH_RGB` = `0x80808`,
 /// re-armed unconditionally at `0x801D1228..0x801D1230` on **every** frame),
 /// as a 5-bit-channel step: 8 per 8-bit channel is one 5-bit level, so an
 /// undrawn display pixel takes ~31 frames to reach black.

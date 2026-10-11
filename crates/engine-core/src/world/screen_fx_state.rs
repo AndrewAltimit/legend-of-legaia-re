@@ -66,7 +66,7 @@ pub struct ScreenFxState {
     /// its spawner is the one op that allocates it and its envelope retires
     /// itself; [`crate::world::World::tick_field_timer_actors`] steps it and
     /// [`crate::world::ScreenFxState::cinematic_bar`] is what the two hosts draw from.
-    pub(crate) cinematic_bars: Option<legaia_engine_vm::field_actor_timers::ShutterBars>,
+    pub(crate) cinematic_bars: Option<legaia_engine_field::field_actor_timers::ShutterBars>,
     /// This frame's bar height in scanlines, republished every tick so a
     /// renderer reads a value rather than re-stepping the envelope.
     pub cinematic_bar: i16,

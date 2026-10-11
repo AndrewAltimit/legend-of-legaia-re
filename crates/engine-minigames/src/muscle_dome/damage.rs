@@ -56,7 +56,7 @@ pub struct DomePlay {
 /// damage in the same order, so the mirror stays in step with it.
 ///
 /// PORT: FUN_801dd0ac / FUN_801dd864 / FUN_801ddb30 (through
-/// [`legaia_engine_vm::battle_formulas`])
+/// [`legaia_engine_battle_vm::battle_formulas`])
 #[derive(Debug, Clone)]
 pub struct DomeDamageModel {
     pub(super) move_power: Vec<MoveRecord>,
@@ -164,7 +164,7 @@ impl DomeDamageModel {
         // power zero.
         let power = match move_power::record_for_move_id(&self.move_power, &self.move_map, cmd) {
             Some(r) => r.power(),
-            None => legaia_engine_vm::battle_formulas::command_power_scalar(cmd) as i32,
+            None => legaia_engine_battle_vm::battle_formulas::command_power_scalar(cmd) as i32,
         };
         let hp = self.hp;
         let combatants = self.combatants;

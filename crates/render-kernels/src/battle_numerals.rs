@@ -1,7 +1,7 @@
 //! The battle value readout as **screen-space PSX primitives** - retail's own
 //! 24x24 numeral cells, sampled out of VRAM rather than restyled in a font.
 //!
-//! [`legaia_engine_vm::battle_value_readout`] pins the layout: where a landed
+//! [`legaia_engine_battle_vm::battle_value_readout`] pins the layout: where a landed
 //! hit's numeral pops in and rises to, which texel cell each decimal digit is
 //! (`digit_cell_u`, the strip runs `1234567890`), and the `N HIT` / `TOTAL` /
 //! `DAMAGE` cluster's label seats and 16-px value row. What it does *not* say
@@ -31,9 +31,9 @@
 //! tinting here double-applies it, and marking them semi-transparent puts a
 //! blend equation under art that has none.
 //!
-//! [`legaia_engine_vm::battle_value_readout`]: https://docs.rs/legaia-engine-vm
+//! [`legaia_engine_battle_vm::battle_value_readout`]: https://docs.rs/legaia-engine-vm
 
-use legaia_engine_vm::battle_value_readout as vr;
+use legaia_engine_battle_vm::battle_value_readout as vr;
 
 use crate::screen_prim::{ScreenPrim, ScreenQuad};
 
@@ -137,7 +137,7 @@ pub fn combo_cluster_prims(cluster: &vr::ComboCluster, ot_index: u32) -> Vec<Scr
 /// builder both hosts emit the banner through.
 ///
 /// `quads` is `World::battle_arts_banner_quads`, i.e. the pairs
-/// [`legaia_engine_vm::battle_action::flash_quads`] emits for this frame's
+/// [`legaia_engine_battle_vm::battle_action::flash_quads`] emits for this frame's
 /// layers. The emitter has already resolved every field a primitive needs -
 /// the GP0 code carries the semi-transparency, the grey word is the packet
 /// colour, and the CLUT / texture page are the readout's own - so this is a
@@ -147,7 +147,7 @@ pub fn combo_cluster_prims(cluster: &vr::ComboCluster, ot_index: u32) -> Vec<Scr
 /// The banner shares the value readout's ordering bucket
 /// ([`VALUE_READOUT_OT`]) because it shares its page.
 pub fn arts_banner_prims(
-    quads: &[legaia_engine_vm::battle_action::FlashQuad],
+    quads: &[legaia_engine_battle_vm::battle_action::FlashQuad],
     ot_index: u32,
 ) -> Vec<ScreenPrim> {
     quads
@@ -182,7 +182,7 @@ pub fn arts_banner_prims(
 
 /// Project `FUN_801DF6B8`'s view-space square through a host camera:
 /// `vp` is the column-major view-projection matrix of the battle camera
-/// alone (`legaia_engine_vm::battle_cam_script::battle_vp`, with no model
+/// alone (`legaia_engine_battle_vm::battle_cam_script::battle_vp`, with no model
 /// scale composed), `world_scale` what the host multiplies a PSX world
 /// coordinate by before it. The square's half-extent is laid along the
 /// camera's own right axis (row 0 of `vp`, normalised), which is how a
@@ -200,7 +200,7 @@ pub fn arts_banner_prims(
 /// `anchor` is a raw PSX point, `+Y` down, and `vp` is a draw matrix: every
 /// host view-projection ends in the `scale(1, -1, 1)` that cancels the
 /// per-model Y flip its draws carry
-/// (`legaia_engine_vm::battle_cam_script::battle_vp`), so a raw point goes
+/// (`legaia_engine_battle_vm::battle_cam_script::battle_vp`), so a raw point goes
 /// through it with its Y negated. Fed unflipped, a numeral's rise
 /// (`popup_anchor` lifts it `3/2` of the ring timer, toward `-Y`) read as a
 /// fall: the run sank through the floor and off the bottom of the stage.
@@ -296,7 +296,7 @@ mod tests {
     /// capture's display list seats the run.
     #[test]
     fn a_popup_rises_under_a_battle_draw_matrix() {
-        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 64.0,
             yaw: 2620.0,
@@ -324,7 +324,7 @@ mod tests {
     /// ring timers `224` and `288` with the half-extent unscaled.
     #[test]
     fn a_popup_grows_at_the_ring_timers_view_space_rate() {
-        use legaia_engine_vm::battle_cam_script::{BattleCamPose, battle_vp};
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPose, battle_vp};
         let pose = BattleCamPose {
             pitch: 0.0,
             yaw: 2925.0,

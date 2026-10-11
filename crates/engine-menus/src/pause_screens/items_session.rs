@@ -165,10 +165,10 @@ impl PauseItemsSession {
     /// before its Yes/No window ever opens.
     ///
     /// REF: FUN_80046898 (the gate; ported as
-    /// `legaia_engine_vm::battle_action::item_count_gate`)
+    /// `legaia_engine_battle_vm::battle_action::item_count_gate`)
     pub fn with_incense_window(mut self, window: i32) -> Self {
         self.incense_window = window;
-        self.incense_blocked = !legaia_engine_vm::battle_action::item_count_gate(window);
+        self.incense_blocked = !legaia_engine_battle_vm::battle_action::item_count_gate(window);
         self
     }
 
@@ -489,9 +489,9 @@ impl PauseItemsSession {
                         // once, and the Use list the route returns to greys
                         // the row off that word (`FUN_80046898`).
                         self.incense_window =
-                            legaia_engine_vm::battle_helpers::top_up_cooldown(self.incense_window);
+                            legaia_engine_battle_vm::battle_helpers::top_up_cooldown(self.incense_window);
                         self.incense_blocked =
-                            !legaia_engine_vm::battle_action::item_count_gate(self.incense_window);
+                            !legaia_engine_battle_vm::battle_action::item_count_gate(self.incense_window);
                         if let Some(id) = consumed {
                             self.take_one_copy(id);
                         }

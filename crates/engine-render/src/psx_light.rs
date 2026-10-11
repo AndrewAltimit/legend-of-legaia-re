@@ -229,7 +229,7 @@ mod tests {
     /// `(0x40, 0x40, 0x40)` on ordinary stages, `(0xFE, 0xFE, 0xFE)` on the
     /// `DAT_80078C1C` outdoor stages (probe
     /// `scripts/pcsx-redux/autorun_grid_far_colour.lua`; law + derivation in
-    /// `legaia_engine_vm::battle_ground_grid`). `ir0 > 1` extrapolates and
+    /// `legaia_engine_battle_vm::battle_ground_grid`). `ir0 > 1` extrapolates and
     /// the output clamp bounds it, exactly like the GTE colour FIFO.
     #[test]
     fn depth_cue_pins_the_battle_grid_far_colours() {

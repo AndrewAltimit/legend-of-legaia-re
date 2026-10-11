@@ -35,7 +35,7 @@ use crate::baka_fighter::ClipHeader;
 use legaia_asset::baka_opponents as bo;
 use legaia_engine_battle_vm::camera_rel_actor::normalize_camera_relative_params;
 use legaia_engine_battle_vm::camera_rel_glide::CameraRelGlide;
-use legaia_engine_vm::psx_camera::FieldCameraView;
+use legaia_engine_battle_vm::psx_camera::FieldCameraView;
 use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;
 
 // ---------------------------------------------------------------- camera
@@ -285,9 +285,9 @@ impl DuelCamera {
     /// world vertex by: [`FieldCameraView::vp`] times the Y negation it
     /// expects of a model matrix. Both hosts upload exactly this.
     pub fn vp_raw(&self, aspect: f32) -> [f32; 16] {
-        legaia_engine_vm::psx_camera::mat4_mul(
+        legaia_engine_battle_vm::psx_camera::mat4_mul(
             &self.view().vp(aspect),
-            &legaia_engine_vm::psx_camera::WORLD_FLIP,
+            &legaia_engine_battle_vm::psx_camera::WORLD_FLIP,
         )
     }
 }

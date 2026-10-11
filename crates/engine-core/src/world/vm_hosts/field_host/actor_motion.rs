@@ -206,7 +206,7 @@ impl FieldHostImpl<'_> {
         self.world.field_vm.eased_moves.push(FieldEasedMove {
             target,
             target_flags: ctx.flags,
-            ease: legaia_engine_vm::field_actor_timers::EasedMove::spawn(
+            ease: legaia_engine_field::field_actor_timers::EasedMove::spawn(
                 start,
                 [x as i16, y as i16, z as i16],
                 ticks as i16,

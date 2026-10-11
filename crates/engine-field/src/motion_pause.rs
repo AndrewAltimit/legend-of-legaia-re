@@ -55,7 +55,7 @@
 //! ## Wiring
 //!
 //! The engine's per-placement actor record for this routine is the ambient
-//! channel (`legaia_engine_vm::ambient_motion::AmbientMotion`): its
+//! channel (`legaia_engine_motion_vm::ambient_motion::AmbientMotion`): its
 //! `actor_flags` is the `+0x10` word, `requested_move` / `move_pair` are the
 //! `+0x5C` / `+0x88` pair, and `default_move` is the `0x801C6470` record. A
 //! channel exists only for a placement whose tail-section-1 stream bound, so

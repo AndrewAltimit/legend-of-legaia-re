@@ -5,7 +5,7 @@
 //! PORT: FUN_8003C6A4
 //! REF: FUN_80020DE0 (pool allocator the retail spawn goes through),
 //!      FUN_80037018 (the per-frame tick, ported as
-//!      `legaia_engine_vm::ambient_motion::zone_ramp_tick`),
+//!      `legaia_engine_motion_vm::ambient_motion::zone_ramp_tick`),
 //!      FUN_801DE840 (the op-0x43 sub-3..6 caller)
 //!
 //! ## "Sound register ramp" is a misnomer
@@ -46,7 +46,7 @@
 //!
 //! The descriptor's `+8` word is `0x80037018`, which `FUN_80020DE0` copies to
 //! the new actor's `+0x0C` - i.e. the per-frame handler. That handler is
-//! [`legaia_engine_vm::ambient_motion::zone_ramp_tick`]: it gates on the
+//! [`legaia_engine_motion_vm::ambient_motion::zone_ramp_tick`]: it gates on the
 //! player-engaged flag and the scratch system lock, AABB-tests the player
 //! against the zone, and stores
 //! `start + (end - start) * (player.z - z_lo) / (z_hi - z_lo)` through `+0x94`.
@@ -61,7 +61,7 @@
 //! disassembly of `0x80037018` and of the op-0x43 arm at `0x801DF628` are the
 //! spec; no Sony bytes live here.
 
-use legaia_engine_vm::ambient_motion::{ZoneRamp, ZoneRampTick, zone_ramp_tick};
+use legaia_engine_motion_vm::ambient_motion::{ZoneRamp, ZoneRampTick, zone_ramp_tick};
 
 /// Destination store width the field VM always requests (retail `a1 = 4`,
 /// which `FUN_80037018`'s `slti 5` arm turns into a `sw`).
@@ -351,14 +351,14 @@ mod tests {
             r.tick(0x40, r.z_lo, false),
             ZoneRampTick::Write {
                 value: 0x100,
-                width: legaia_engine_vm::ambient_motion::ZoneRampWidth::U32
+                width: legaia_engine_motion_vm::ambient_motion::ZoneRampWidth::U32
             }
         );
         assert_eq!(
             r.tick(0x40, r.z_hi, false),
             ZoneRampTick::Write {
                 value: 0x200,
-                width: legaia_engine_vm::ambient_motion::ZoneRampWidth::U32
+                width: legaia_engine_motion_vm::ambient_motion::ZoneRampWidth::U32
             }
         );
         let ZoneRampTick::Write { value, .. } = r.tick(0x40, mid_z, false) else {

@@ -68,7 +68,7 @@
 
 use std::sync::Arc;
 
-use legaia_engine_vm::field_actor_timers::FloorTierBob;
+use legaia_engine_field::field_actor_timers::FloorTierBob;
 
 use crate::field_env::{EnvDraw, FloorWave, PlacedWindowKey, PropPoseKey};
 use crate::scene::{ProtIndex, SceneHost, SceneTickEvent};

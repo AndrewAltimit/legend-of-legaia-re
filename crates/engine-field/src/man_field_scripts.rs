@@ -25,7 +25,7 @@
 //! bytes in (see [`legaia_asset::man_section::ManFile::scene_entry_script`]).
 //!
 //! This module pairs the MAN partition walk with the field-VM disassembler
-//! ([`legaia_engine_vm::field_disasm`]) so callers get a faithful,
+//! ([`legaia_asset::field_disasm`]) so callers get a faithful,
 //! opcode-aware instruction stream per record instead of a byte scan. The
 //! distinction matters for the scripted-encounter hunt: a naive search for
 //! a "yield" byte (`0x37` / `0x41`) hits every yield opcode **and** every
@@ -49,7 +49,7 @@
 //! (see [`crate::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
 use legaia_asset::man_section::{ActorPlacement, ManFile};
-use legaia_engine_vm::field_disasm::{
+use legaia_asset::field_disasm::{
     EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
 

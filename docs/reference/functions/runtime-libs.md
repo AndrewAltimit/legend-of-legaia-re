@@ -527,7 +527,7 @@ each spends its timer on something different:
 | `0x801F2858` | `FUN_801DD784` | `FUN_801DE754` | `43 0C` (5 bytes) | Two black screen quads - a shutter blackout |
 
 All three are ported in
-[`legaia_engine_vm::field_actor_timers`](../../../crates/engine-vm/README.md),
+[`legaia_engine_field::field_actor_timers`](../../../crates/engine-vm/README.md),
 spawned from the field host and stepped by
 `World::tick_field_timer_actors`.
 

@@ -230,7 +230,7 @@ pub struct FieldLocomotion {
     /// besides the position triple.
     ///
     /// `FUN_801DD4C4` stores `-Y` here on every frame of a move whose target
-    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_vm::field_actor_timers::EASE_TARGET_INVERT_Y)
+    /// carries [`EASE_TARGET_INVERT_Y`](legaia_engine_field::field_actor_timers::EASE_TARGET_INVERT_Y)
     /// (`0x801DD6A4..0x801DD6B8`: `lw v0,0x10(a2)` / `lui v1,0x2000` / `and` /
     /// `subu v0,zero,a1` / `sh v0,0x8e(a2)`). The consumer is the field-actor
     /// driver `FUN_8003BC08`, whose height arm tests the same flag **first**

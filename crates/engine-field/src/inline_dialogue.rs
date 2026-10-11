@@ -183,7 +183,7 @@ pub struct PropPlayerWalk {
 /// player's `+0x54` cursor stepping `2` per game tick up to `18` of a `0x14`
 /// budget.
 ///
-/// REF: FUN_8003774C (the walk kernel - ported as `legaia_engine_vm::motion_vm`,
+/// REF: FUN_8003774C (the walk kernel - ported as `legaia_engine_motion_vm::motion_vm`,
 /// whose `0x4C` arm this runs), FUN_801DE840 (the acquire arm)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TalkFaceRamp {
@@ -245,7 +245,7 @@ impl TalkFaceRamp {
     /// the new heading and whether this was the terminal frame - the one on
     /// which retail clears both halt bits.
     pub fn step(&mut self, x: i16, z: i16, yaw: u16, tx: i16, tz: i16, speed: u16) -> (u16, bool) {
-        use legaia_engine_vm::motion_vm;
+        use legaia_engine_motion_vm::motion_vm;
         let mut state = motion_vm::MotionState {
             world_x: x,
             world_z: z,

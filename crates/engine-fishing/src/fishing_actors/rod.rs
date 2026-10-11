@@ -42,7 +42,7 @@ pub const ROD_BASE_SCALE: i32 = 0x6000;
 pub const ROD_PROJECTION_H: u16 = 0xDC;
 
 /// The GTE screen centre `(OFX, OFY)` in whole pixels - global for the whole
-/// game ([`legaia_engine_vm::battle_cam_script::GTE_OFY`]); the fishing save
+/// game ([`legaia_engine_battle_vm::battle_cam_script::GTE_OFY`]); the fishing save
 /// state carries the same pair.
 pub const GTE_SCREEN_CENTRE: (i32, i32) = (160, 114);
 

@@ -787,7 +787,7 @@ fn a_direction_swing_does_not_resolve_at_power_zero() {
     let play = m.plays().last().copied().expect("one play logged");
     assert_eq!(
         play.power,
-        legaia_engine_vm::battle_formulas::command_power_scalar(0x0F) as i32,
+        legaia_engine_battle_vm::battle_formulas::command_power_scalar(0x0F) as i32,
         "the swing's tier is the melee scalar, not the empty table row"
     );
     assert!(play.power > 0);

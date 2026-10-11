@@ -182,7 +182,7 @@ pub struct Camera {
     /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
     pub zone: ZoneFollow,
     /// This frame's `apply_trigger == 0` Configure beats, as packed-component
-    /// snaps for the host's [`legaia_engine_vm::psx_camera::CutsceneCameraInterp`].
+    /// snaps for the host's [`legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp`].
     ///
     /// Retail's mover snaps the live camera globals to an `apply == 0` beat
     /// immediately. The field VM runs until yield, so a snap beat followed by
@@ -434,14 +434,14 @@ impl Camera {
 
     /// Take this frame's `apply_trigger == 0` Configure beats as packed
     /// component snaps, ready for
-    /// [`legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components`].
+    /// [`legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp::snap_components`].
     /// Both hosts call it once per frame, right before arming the glide;
     /// empty on every frame no snap beat executed. See
     /// [`Self::camera_snap_beats`].
     pub fn take_camera_snap_beats(&mut self) -> Vec<Vec<(usize, f32)>> {
         std::mem::take(&mut self.camera_snap_beats)
             .iter()
-            .map(|b| legaia_engine_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b))
+            .map(|b| legaia_engine_battle_vm::psx_camera::CutsceneCameraInterp::snap_components_for(b))
             .collect()
     }
 

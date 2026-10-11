@@ -27,6 +27,7 @@ pub mod prim_near_reject;
 pub mod scene_lighting;
 pub mod screen_prim;
 pub mod screen_prim_raster;
+pub mod shutter_bars;
 pub mod sprite_arm;
 pub mod streak_pass;
 pub mod vram_capture;

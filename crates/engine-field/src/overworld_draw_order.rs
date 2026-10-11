@@ -129,7 +129,7 @@ pub fn ground_flat_sz(corner_sz: [u32; 4]) -> f32 {
 
 /// `z = a * w + b` for every point through a perspective matrix whose depth
 /// row is `(0, 0, a, b)` over its `w` row `(0, 0, 1, 0)` (the retail
-/// projection, `legaia_engine_vm::psx_camera::psx_projection`), composed with
+/// projection, `legaia_engine_battle_vm::psx_camera::psx_projection`), composed with
 /// any affine view and model. Read off a column-major `clip = m * p`: the
 /// column with the largest `w` weight gives `a`, the translation column `b`.
 /// The shaders derive the pair from their `mvp` the same way, so a flat
@@ -229,7 +229,7 @@ mod tests {
 
     #[test]
     fn depth_affine_reads_the_projection_through_any_view() {
-        use legaia_engine_vm::psx_camera::{FieldCameraView, mat4_mul, mat4_scale};
+        use legaia_engine_battle_vm::psx_camera::{FieldCameraView, mat4_mul, mat4_scale};
         let view = FieldCameraView {
             focus: [100.0, 0.0, -50.0],
             pitch: 0.4,

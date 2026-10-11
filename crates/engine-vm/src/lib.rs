@@ -152,7 +152,6 @@ pub mod field;
 /// paths keep working.
 pub use legaia_asset::field_disasm;
 pub mod field_actor_billboard;
-pub mod field_actor_timers;
 pub mod field_helpers;
 pub mod field_ledge_hop_arc;
 pub use legaia_engine_motion_vm::motion_vm;

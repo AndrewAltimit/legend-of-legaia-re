@@ -453,8 +453,8 @@ pub struct BattleHudFrame<'a> {
     pub active_slot: Option<u8>,
     /// The **commit log** - one row per member who has committed a command
     /// this round (`engine-core::battle_hud::battle_commit_log`), laid out by
-    /// `legaia_engine_vm::battle_commit_log` and drawn as gold plates.
-    pub commit_log: &'a [legaia_engine_vm::battle_commit_log::CommitLogRow],
+    /// `legaia_engine_battle_vm::battle_commit_log` and drawn as gold plates.
+    pub commit_log: &'a [legaia_engine_battle_vm::battle_commit_log::CommitLogRow],
     /// The battle-intro enemy-name labels, `(label, pen x)`, pen y
     /// [`BATTLE_INTRO_NAME_Y`] (`engine-core::battle_hud::battle_intro_names`,
     /// retail `FUN_801D9D3C`). Empty outside the intro timer.

@@ -14,7 +14,7 @@
 /// spawned ([`crate::scene_live::LiveScene`]), so every room animates on the
 /// one kernel.
 pub fn step_floor_ladder(
-    bobs: &mut [legaia_engine_vm::field_actor_timers::FloorTierBob],
+    bobs: &mut [legaia_engine_field::field_actor_timers::FloorTierBob],
     lut: &mut [i16; 16],
     frame_delta: u8,
 ) {
@@ -139,7 +139,7 @@ pub struct FieldTerrain {
     /// Live floor-height-ladder oscillators (field-VM op `0x4C` nibble-9
     /// sub-`0..2`, retail template `0x801F27EC` / tick `FUN_801DA930`). Each
     /// drives one rung of [`crate::world::FieldTerrain::floor_height_lut`].
-    pub floor_tier_bobs: Vec<legaia_engine_vm::field_actor_timers::FloorTierBob>,
+    pub floor_tier_bobs: Vec<legaia_engine_field::field_actor_timers::FloorTierBob>,
     /// Player tile `(col, row)` on the previous live-loop field tick. A
     /// change between ticks is one "step" and drives the encounter roll,
     /// mirroring the retail per-step counter rather than a per-frame roll.

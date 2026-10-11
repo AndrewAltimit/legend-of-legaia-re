@@ -92,7 +92,7 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 /// 16-entry `i16` floor-elevation LUT (`sh v1,0x48(v0)` at `0x801DAA2C`,
 /// with `t1 = 0x1F800314` from the `lui`/`ori` pair at `0x801DA96C`), so
 /// `4C 9x` animates one rung of the ground the field walks on. See
-/// [`legaia_engine_vm::field_actor_timers`] and
+/// [`crate::field_actor_timers`] and
 /// `docs/subsystems/script-vm-menuctrl.md`.
 ///
 /// The field VM's `4C 9F` "register callback" op is really a teardown:

@@ -409,7 +409,7 @@ pub struct CutsceneTimeline {
 pub struct TimelinePlayerGlide {
     /// The walk leg: position seeded from the player, `op_accum` the spent
     /// units (`+0x54`), `speed` 1 (one unit per engine tick = per vsync).
-    pub state: legaia_engine_vm::motion_vm::MotionState,
+    pub state: legaia_engine_motion_vm::motion_vm::MotionState,
     /// Direction / divisor-selector byte.
     pub body0: u8,
     /// Length / divisor-selector byte.
@@ -430,7 +430,7 @@ pub struct TimelineNpcGlide {
     pub slot: u8,
     /// The walk leg: position seeded from the NPC, `op_accum` the spent
     /// units (`+0x54`), `speed` 1 (one unit per vsync).
-    pub state: legaia_engine_vm::motion_vm::MotionState,
+    pub state: legaia_engine_motion_vm::motion_vm::MotionState,
     /// Direction / divisor-selector byte.
     pub body0: u8,
     /// Length / divisor-selector byte.
@@ -463,7 +463,7 @@ pub struct TimelineFacing {
     /// The parked rotate leg: yaw seeded from the NPC's current heading,
     /// speed 1 (the engine ticks the timeline once per retail display frame,
     /// so the operand budget maps 1:1 to parked ticks).
-    pub state: legaia_engine_vm::motion_vm::MotionState,
+    pub state: legaia_engine_motion_vm::motion_vm::MotionState,
     /// The yield-op bytes re-encoded for the in-place kernel:
     /// `[0x38, dir|flags, budget|dir]`.
     pub program: [u8; 3],

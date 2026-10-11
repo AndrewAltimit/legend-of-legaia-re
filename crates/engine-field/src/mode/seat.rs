@@ -493,7 +493,7 @@ impl ModeSeat {
     /// REF: FUN_801CF5BC - the transition kernel whose `0x801CF8F8` store this
     /// gates the port's own word on. Deliberately a `REF:` and not a `PORT:`:
     /// the routine is already ported as
-    /// `legaia_engine_vm::battle_intro_transition::tick_transition`, and a
+    /// `legaia_engine_battle_vm::battle_intro_transition::tick_transition`, and a
     /// second anchor here would put an address on code that implements none
     /// of it.
     pub fn adopt_world_mode<W: ModeWorld + ?Sized>(&mut self, world: &W) -> Option<GameMode> {

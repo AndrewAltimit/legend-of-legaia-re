@@ -1,8 +1,8 @@
 //! Intro quads and fades as screen prims, and the placement rotation.
 
 use crate::screen_prim::{ScreenPrim, ScreenQuad, fade_prim};
-use legaia_engine_vm::battle_intro_styles::IntroFade;
-use legaia_engine_vm::battle_intro_transition::IntroQuad;
+use legaia_engine_battle_vm::battle_intro_styles::IntroFade;
+use legaia_engine_battle_vm::battle_intro_transition::IntroQuad;
 
 /// Convert one built transition quad into a screen-space primitive.
 ///
@@ -34,7 +34,7 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 /// The full-screen quad `FUN_80024EE4` pushes for a resolved fade.
 ///
 /// Both halves are retail's now. The **ramp** is
-/// [`legaia_engine_vm::battle_intro_styles::intro_fade`]; the **quad** is the
+/// [`legaia_engine_battle_vm::battle_intro_styles::intro_fade`]; the **quad** is the
 /// emitter's own six-word packet, corners taken from the scratchpad
 /// display-rect words (`_DAT_1F800378` / `_DAT_1F80037A`), which is the whole
 /// PSX display - so the port draws the whole display rect. Command byte
@@ -46,7 +46,7 @@ pub fn intro_quad_to_screen(q: &IntroQuad) -> ScreenQuad {
 /// additive styles ([`IntroStyle::SpinUpParticles`],
 /// [`IntroStyle::Swirl`]) topped out at a washed grey instead of a full
 /// white-out, and the subtractive ones never reached black. The OT layer is
-/// `a0` - [`legaia_engine_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
+/// `a0` - [`legaia_engine_battle_vm::battle_intro_styles::INTRO_FADE_LAYER`], the
 /// same `2` for all five styles - so that is what the bucket carries.
 /// The quad itself is [`legaia_engine_ui::screen_prim::fade_prim`], which is
 /// also what the browser play page emits: the fade is the one part of this

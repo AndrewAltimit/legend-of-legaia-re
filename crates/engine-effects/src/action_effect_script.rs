@@ -206,7 +206,7 @@ pub const MOVE_POWER_STRIDE: usize = 0x1A;
 /// impossible - the single-slot form always runs once.
 ///
 /// The scope byte is `+0x1DD` =
-/// `legaia_engine_vm::battle_action::BattleActor::active_target`, written and
+/// `legaia_engine_battle_vm::battle_action::BattleActor::active_target`, written and
 /// read across the live action SM (the attack band, the spirit band, the
 /// target cursor, `battle_round`); its group codes `8` / `9` are exactly the
 /// ones `battle_action::magic`'s cast-begin retarget pass and
@@ -790,7 +790,7 @@ impl HomingSlots {
             match s.phase {
                 2 => {
                     s.heading = heading_to(s.pos, t);
-                    let (sin, cos) = legaia_engine_vm::battle_action::motion::trig12(s.heading);
+                    let (sin, cos) = legaia_engine_battle_vm::battle_action::motion::trig12(s.heading);
                     // `(lut * speed * delta) << 3 >> 15`, delta one vsync.
                     s.pos[2] += (i32::from(cos) * speed * 8) >> 15;
                     s.pos[0] += (i32::from(sin) * speed * 8) >> 15;
@@ -831,7 +831,7 @@ impl HomingSlots {
 
 /// `FUN_80019B28(a.z, a.x, b.z, b.x)`.
 fn heading_to(a: [i32; 3], b: [i32; 3]) -> u16 {
-    legaia_engine_vm::battle_action::bearing_12bit_approx(
+    legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
         a[2] as i16,
         a[0] as i16,
         b[2] as i16,
@@ -893,7 +893,7 @@ pub struct EffectScriptActor {
     /// measures the separation over. `None` when the scope byte names no
     /// single actor; the [`APPROACH_CLAMPED_EFFECTS`] records then keep their
     /// authored offset.
-    pub approach: Option<legaia_engine_vm::battle_approach::ApproachPose>,
+    pub approach: Option<legaia_engine_battle_vm::battle_approach::ApproachPose>,
 }
 
 /// The direct branch's approach clamp (`0x801DEDC0..0x801DEDD0`): the scaled
@@ -908,11 +908,11 @@ pub struct EffectScriptActor {
 /// ([`RotationLut::a`]) the Z delta (`0x801DF5D8..0x801DF60C`).
 fn approach_clamped_z<L: RotationLut>(
     lut: &L,
-    pose: legaia_engine_vm::battle_approach::ApproachPose,
+    pose: legaia_engine_battle_vm::battle_approach::ApproachPose,
     requested: i16,
 ) -> i16 {
-    use legaia_engine_vm::battle_approach::{approach_angle, approach_distance};
-    let bearing = legaia_engine_vm::battle_action::bearing_12bit_approx(
+    use legaia_engine_battle_vm::battle_approach::{approach_angle, approach_distance};
+    let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
         pose.ref_z, pose.ref_x, pose.z, pose.x,
     );
     let a = approach_angle(bearing);
@@ -1353,7 +1353,7 @@ mod tests {
     /// target - keeps its authored offset.
     #[test]
     fn the_approach_effects_clamp_their_z_offset_into_the_separation() {
-        use legaia_engine_vm::battle_approach::ApproachPose;
+        use legaia_engine_battle_vm::battle_approach::ApproachPose;
         let lut = retail_rotation_lut();
         // Attacker 400 units down +Z from its target's seat, facing it.
         let pose = ApproachPose {

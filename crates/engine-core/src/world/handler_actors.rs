@@ -100,7 +100,7 @@ impl World {
     /// `LAB_801DA930` is the handler on spawn descriptor `0x801F27EC`, and
     /// what that tick drives is **one rung of the scene floor-height ladder**
     /// at `0x1F80035C`, not a fade - see
-    /// [`legaia_engine_vm::field_actor_timers::FloorTierBob`]. The engine keeps
+    /// [`legaia_engine_field::field_actor_timers::FloorTierBob`]. The engine keeps
     /// those records off the pool, so the callers that mean the retire
     /// (`4C 9F`, [`Self::man_load_actor_reset`]) clear
     /// [`crate::world::FieldTerrain::floor_tier_bobs`] alongside this sweep. Nothing

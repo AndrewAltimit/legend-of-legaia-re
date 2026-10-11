@@ -14,13 +14,13 @@
 //!   pitch the renderer can use to build a view matrix.
 //!
 //! The retail engine does the per-frame math via the third motion VM
-//! ([`legaia_engine_vm::motion_vm`]) and the move-VM ext sub-ops 0x06 / 0x36
+//! ([`legaia_engine_motion_vm::motion_vm`]) and the move-VM ext sub-ops 0x06 / 0x36
 //! / 0x39. This module assembles those primitives into a single Camera
 //! that's easy to drive from `legaia_engine_core::scene::SceneHost`.
 
 use crate::field_events::FieldEvent;
-use legaia_engine_vm::camera_mover::{AXIS_COUNT, CameraMover};
-use legaia_engine_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
+use legaia_engine_battle_vm::camera_mover::{AXIS_COUNT, CameraMover};
+use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, StepResult, step};
 use serde::{Deserialize, Serialize};
 
 pub use legaia_engine_battle_vm::retail_cam::RetailCamGlobals;

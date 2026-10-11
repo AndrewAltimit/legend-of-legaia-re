@@ -3,7 +3,7 @@
 use super::*;
 use crate::gte::{GteMat3, GteVec3, psx_cos, psx_sin};
 use crate::screen_prim::ScreenPrim;
-use legaia_engine_vm::battle_intro_swirl::{self as swirl, SwirlBandDraw, SwirlMesh};
+use legaia_engine_battle_vm::battle_intro_swirl::{self as swirl, SwirlBandDraw, SwirlMesh};
 
 // ---------------------------------------------------------------------------
 // The swirl's band submit (FUN_801D1A20)

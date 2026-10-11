@@ -4,7 +4,7 @@
 //! the same 1024x512 halfword page textures are read from, so a primitive can
 //! sample pixels the GPU drew moments earlier. Retail leans on that for the
 //! whole field-to-battle transition family - the curtain style
-//! (`legaia_engine_vm::battle_intro_styles::tick_curtain`) slices a *captured
+//! (`legaia_engine_battle_vm::battle_intro_styles::tick_curtain`) slices a *captured
 //! field frame* into 240 row strips and 320 column strips and stretches them
 //! apart, and the strips are ordinary textured quads whose texture page is the
 //! capture.

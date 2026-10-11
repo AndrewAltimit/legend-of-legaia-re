@@ -210,7 +210,7 @@ pub fn record_path_walk(
     pc: usize,
     flag_set: &dyn Fn(u16) -> bool,
 ) -> (RecordPathEnd, Vec<(bool, u16)>) {
-    use legaia_engine_vm::field_disasm::decode;
+    use legaia_asset::field_disasm::decode;
     let mut writes: Vec<(bool, u16)> = Vec::new();
     let mut pc = pc;
     for _ in 0..4096 {

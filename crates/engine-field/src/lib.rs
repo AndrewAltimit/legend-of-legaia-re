@@ -50,6 +50,7 @@ pub mod field_actor_clone;
 pub mod field_actor_kernels;
 pub mod field_actor_program;
 pub mod field_actor_reflect;
+pub mod field_actor_timers;
 pub mod field_anim;
 pub mod field_audio_release;
 pub mod field_events;

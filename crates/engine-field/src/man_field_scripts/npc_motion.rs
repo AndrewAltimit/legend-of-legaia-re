@@ -503,7 +503,7 @@ pub fn placement_initial_facing(man_file: &ManFile, man: &[u8], p: &ActorPlaceme
 pub fn facing_index_to_engine_heading(idx: u8) -> Option<i16> {
     // One law, one place: the same LUT the motion VM's `0x38` / `0x47` arms
     // resolve their headings through.
-    legaia_engine_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
+    legaia_engine_motion_vm::motion_vm::heading_lut_engine(idx).map(|h| h as i16)
 }
 
 /// The spawn tile the placement's prologue **relocates** the actor to under
