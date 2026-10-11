@@ -1,0 +1,6 @@
+legaia_patcher::delilas_dome	legaia_delilas_challenge::dome
+legaia_patcher::custom_items	legaia_delilas_challenge::custom_items
+legaia_patcher::delilas_cast	legaia_delilas_party::delilas_cast
+legaia_patcher::monster	legaia_disc_patch::monster
+legaia_patcher::translation	legaia_translate
+legaia_patcher::party_swap	legaia_party_swap

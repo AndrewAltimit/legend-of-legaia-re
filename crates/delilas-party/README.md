@@ -1,12 +1,8 @@
 # legaia-delilas-party
 
-The disc patcher's play-as-Delilas mod, split out of
-[`legaia-patcher`](../patcher/README.md): the playable party replaced by the
-Delilas siblings Gi / Lu / Che, while the ravine duels field Vahn / Noa /
-Gala. `legaia-patcher` depends on this crate, never the other way round, and
-re-exports every module at its old path (`legaia_patcher::delilas_party`,
-`legaia_patcher::nivora_field`, ...), so the CLI, the browser patcher and the
-disc-gated tests name the same paths they always did.
+The disc patcher's play-as-Delilas mod (`--delilas-party`): the playable party
+replaced by the Delilas siblings Gi / Lu / Che, while the ravine duels field
+Vahn / Noa / Gala.
 
 The model transforms are the pure kernels of
 [`legaia-party-swap`](../party-swap/README.md). This crate is the layer above
@@ -27,28 +23,36 @@ nothing in this crate embeds game data.
 | `delilas_voice_fx` | The `--delilas-arts-voice` modes, including the pitch / formant re-voice. |
 | `delilas_xa_voice` | The XA-sector voice write path, with the Form 2 EDC re-encoded. |
 | `enemy_anim_mirror` | Hero idles and Hyper chains written into the swapped monster blocks, so the duel-side heroes fight under their own clips. |
-| `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs. |
+| `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (the disc adapter over the `legaia-party-swap` kernel of the same name). |
+| `delilas_cast` | Routing a swapped hero's signature art into the retail enemy cast module: the SCUS queue hook, the staged caves and the word edits in cast modules 958 / 959 / 960. |
 
 The full mechanism reference is
-[`docs/tooling/randomizer.md`](../../docs/tooling/randomizer.md#delilas-party-swap).
+[`docs/tooling/randomizer-delilas.md`](../../docs/tooling/randomizer-delilas.md#delilas-party-swap).
 
-## The split line
+## What decides that a module sits here
 
-A module sits here when it closes over only the swap kernels, the arts
+It is part of the play-as-Delilas feature and it touches a disc. The model
+transforms that need no disc are one layer down, in
+[`legaia-party-swap`](../party-swap/README.md).
+
+This crate names the crates that own what it uses: the swap kernels, the arts
 `record[0]` helpers of [`legaia-arts-patch`](../arts-patch/README.md), the
-cast route and encoders of [`legaia-code-hooks`](../code-hooks/README.md),
-the portrait swap of [`legaia-texture-replace`](../texture-replace/README.md),
-the dialog export / import of [`legaia-translate`](../translate/README.md)
-and the `DiscPatcher` of [`legaia-disc-patch`](../disc-patch/README.md). The
-crate root aliases those modules at the `crate::<module>` paths the files
-were written against.
+encoders and arena map of [`legaia-code-hooks`](../code-hooks/README.md), the
+portrait swap of [`legaia-texture-replace`](../texture-replace/README.md),
+the dialog export / import of [`legaia-translate`](../translate/README.md),
+the `DiscPatcher` of [`legaia-disc-patch`](../disc-patch/README.md), and the
+audio codecs (`legaia-xa`, `legaia-vab`) the voice passes re-encode with.
 
-What stays in `legaia-patcher`: the CLI subcommands (`delilas-verify`,
-`delilas-audit`), the two Delilas mods that reach into the `apply` layer and
-the custom-item table - the Delilas Challenge (`delilas_challenge`) and the
-Muscle Dome fight (`delilas_dome`) - and the disc-gated oracles
+The Delilas Challenge dome course and the custom items are a different
+feature and live in
+[`legaia-delilas-challenge`](../delilas-challenge/README.md); the two are
+mutually exclusive on a disc and share no code.
+
+What stays in [`legaia-patcher`](../patcher/README.md): the CLI subcommands
+(`delilas-verify`, `delilas-audit`) and the disc-gated oracles
 (`crates/patcher/tests/delilas_*_real.rs`, `enemy_anim_mirror_real.rs`,
-`nivora_field_real.rs`).
+`nivora_field_real.rs`). The patcher re-exports the modules outside
+consumers use at `legaia_patcher::<module>`.
 
 ## See also
 

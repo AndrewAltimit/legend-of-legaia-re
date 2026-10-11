@@ -5,23 +5,29 @@ feature is built on the same foundation: same-size in-place sector edits with
 the EDC/ECC re-encoded (`disc::DiscPatcher` over `legaia_iso::write`), emitted
 as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
-That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md)
-(`disc`, `ppf`, `space_ledger`), which this crate re-exports at the old
-paths. Four patching families share that machinery (the translation
-pipeline itself is [`legaia-translate`](../translate/README.md), re-exported
-as `translation`, and the battle-model swap kernels are
-[`legaia-party-swap`](../party-swap/README.md), re-exported as `party_swap`;
-the image-replacement modules `texture`, `texture_palettes`,
-`battle_texture`, `monster_texture` and `save_icon` live in
-[`legaia-texture-replace`](../texture-replace/README.md), re-exported at
-their old paths; the MIPS encoders, the injection arenas and the
-self-contained code-hook mods live in
-[`legaia-code-hooks`](../code-hooks/README.md), likewise re-exported; the
-Tactical Arts edits `arts`, `arts_power`, `arts_ap_grant`, `oscillating_ap`
-and `super_art_*` live in [`legaia-arts-patch`](../arts-patch/README.md),
-re-exported at their old paths; and the play-as-Delilas mod - `delilas_party`
-and its voice, effect, signature-attack and field-scene modules - lives in
-[`legaia-delilas-party`](../delilas-party/README.md), also re-exported):
+That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md).
+This crate is the top of the family; the rule for what lives where:
+
+| Crate | Holds |
+|---|---|
+| [`legaia-disc-patch`](../disc-patch/README.md) | The write foundation: `DiscPatcher`, PPF, the free-space ledger, re-pack budgets, the monster-slot re-pack, the seeded `rng`. |
+| [`legaia-code-hooks`](../code-hooks/README.md) | The MIPS toolkit (`mips`, `mips_sim`), the shared injection-arena map (`arenas`) and the hook mods that are only a plan over those. |
+| [`legaia-party-swap`](../party-swap/README.md) | Disc-free model-transform kernels. |
+| [`legaia-arts-patch`](../arts-patch/README.md) | The Tactical Arts family: `arts`, `arts_power`, `arts_ap_grant`, `oscillating_ap`, `super_art_*`. |
+| [`legaia-texture-replace`](../texture-replace/README.md) | The image-replacement family: `texture`, `texture_palettes`, `battle_texture`, `monster_texture`, `save_icon`. |
+| [`legaia-translate`](../translate/README.md) | The language-pack pipeline. |
+| [`legaia-delilas-party`](../delilas-party/README.md) | The play-as-Delilas family: `delilas_party` and its cast-route, voice, effect, signature-attack and field-scene modules. |
+| [`legaia-delilas-challenge`](../delilas-challenge/README.md) | The Delilas Challenge family: the dome course, its enrollment script and the custom items. |
+| `legaia-patcher` (this crate) | The `apply` layer that sequences every edit onto a disc, the CLI, the randomizer's own data shuffles, and the hook mods whose builders reach into those. |
+
+Code inside the family names the owning crate. The `pub use` lines in this
+crate's root keep the modules outside consumers use (the browser patcher,
+the engine's runtime oracles) reachable at `legaia_patcher::<module>`,
+including `legaia_patcher::translation` and `legaia_patcher::party_swap` for
+those two whole crates. The module names used through the rest of this page
+are those paths.
+
+Four patching families share the machinery:
 
 - **The randomizer** - seeded reassignment of gameplay data: monster item
   drops, random-encounter formations, treasure-chest contents, steal items,
@@ -1407,9 +1413,10 @@ always-zero region, which can be boot-cleared) and repoint only `0xFD`'s
 
 The largest new-content family - play *as* Gi / Lu / Che while the ravine
 duels field Vahn / Noa / Gala. One orchestrator plus support modules, including the
-`party_swap` model-swap machinery. Every module in this table except
-`delilas_cast`, `party_swap` and `mips_sim` lives in
-[`legaia-delilas-party`](../delilas-party/README.md); this table is the map, the full mechanism reference is
+`party_swap` model-swap machinery. Every module in this table lives in
+[`legaia-delilas-party`](../delilas-party/README.md), except `party_swap`
+([`legaia-party-swap`](../party-swap/README.md)) and `mips_sim`
+([`legaia-code-hooks`](../code-hooks/README.md)); this table is the map, the full mechanism reference is
 [`docs/tooling/randomizer.md` § Delilas party swap](../../docs/tooling/randomizer.md#delilas-party-swap):
 
 | Module | Carries |
