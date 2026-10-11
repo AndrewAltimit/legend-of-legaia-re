@@ -294,7 +294,7 @@ impl World {
         let colour = colour & 0x00FF_FFFF;
         let record = self.field_vm.executing_object;
         let key = match target {
-            Some(crate::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
+            Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET) => ActorTintKey::Player,
             Some(t) => {
                 let view = self.channel_view();
                 let Some(ci) = crate::field_channels::resolve_target(view, t) else {

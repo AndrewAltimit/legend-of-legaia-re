@@ -31,10 +31,11 @@ use legaia_engine_core::dance_venue::{
     DanceVenue, DanceVenueEdge, sync_dance_venue, venue_camera, venue_cdname_stub,
     venue_sfx_vab_index,
 };
-use legaia_engine_core::scene::{ProtIndex, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_minigames::dance::{DanceGame, DanceMode, dance_scene_entry};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::ProtIndex;
 
 fn extracted_dir() -> Option<PathBuf> {
     let over = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);

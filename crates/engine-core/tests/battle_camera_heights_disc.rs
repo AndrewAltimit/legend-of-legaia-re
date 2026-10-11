@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn disc_path() -> Option<PathBuf> {
     let p = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

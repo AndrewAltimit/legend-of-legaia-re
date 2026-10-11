@@ -6,8 +6,9 @@
 //! Skips silently when `extracted/` or `LEGAIA_DISC_BIN` is missing.
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
@@ -136,7 +137,7 @@ fn town01_placement_pack_indices_resolve_in_loaded_pack() {
     // The environment meshes are the scene bundle entry's TMD pack, in scan
     // order (the same indexing `pack_index` uses).
     let bundle =
-        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+        legaia_engine_scene::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
     let bundle_entry = bundle.entry_idx();
 
     let mut shared: Vec<Scene> = Vec::new();
@@ -228,7 +229,7 @@ fn town01_dropped_placements_split_untextured_vs_missing_clut() {
         .expect("read placements")
         .expect("field map");
     let bundle =
-        legaia_engine_core::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
+        legaia_engine_scene::scene_bundle::find_bundle(&scene).expect("town01 has a scene bundle");
     let bundle_entry = bundle.entry_idx();
     let mut shared: Vec<Scene> = Vec::new();
     for name in FIELD_SHARED_BLOCKS {

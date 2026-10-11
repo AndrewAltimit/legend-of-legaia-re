@@ -17,10 +17,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_core::world::ambient::MAX_AMBIENT_PARTS;
 use legaia_engine_field::man_field_scripts::scene_entry_ambient_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// Game ticks per scene. Every retail tree settles inside the first ~200; the
 /// rest is headroom for a slow-cadence emitter to show growth if it has any.
@@ -68,7 +68,7 @@ fn run_scene(index: &ProtIndex, name: &str) -> Option<Run> {
         ..Default::default()
     };
     world.install_field_stagers(scripts.bytes);
-    world.set_vdf_buffer(legaia_engine_core::scene_bundle::find_vdf_buffer(&scene));
+    world.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(&scene));
     for arg in installs {
         world.spawn_ambient_record(arg as usize + 1, [0, 0, 0]);
     }

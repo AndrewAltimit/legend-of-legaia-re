@@ -66,7 +66,7 @@ pub const CORE_STATE_RESET: CoreStateReset = CoreStateReset {
 /// The retail INIT handlers are thin wrappers with one shared shape -
 /// optional state reset, `FUN_8003DE7C(0)` blocking read-wait, slot-A
 /// overlay load (`FUN_8003EBE4(param, 0)` =
-/// `legaia_engine_core::overlay_loader::load_overlay_a`), wait again, then a `jal`
+/// `legaia_engine_scene::overlay_loader::load_overlay_a`), wait again, then a `jal`
 /// into the freshly loaded overlay:
 ///
 /// | Mode | Handler | Overlay A param | Overlay entry |
@@ -130,7 +130,7 @@ pub struct ModeInitStage {
 // `0x80010AE4` table. The engine's minigames are resident Rust rules engines
 // entered as suspended in-place scene modes, which is also why the
 // warp-shared reset half of the retail body has no state to clear. Same
-// missing prerequisite as `legaia_engine_core::overlay_loader`.
+// missing prerequisite as `legaia_engine_scene::overlay_loader`.
 //
 // The reference scan sharpens what "no dispatcher" means here: `0x80025980`
 // has **no `jal` anywhere on the disc**. Its one reference of any form is the
@@ -217,7 +217,7 @@ pub enum ModeInitBare {
 // menu, and mode 16's `jal` target resolves per image - and mode 20 is the row
 // a battle-entry pass could take, which the port reaches through
 // `SceneMode::Battle` instead. The residency model is the same one
-// `legaia_engine_core::overlay_loader` is missing.
+// `legaia_engine_scene::overlay_loader` is missing.
 //
 // The `(mode, warp sub-id)` bridge ([`GameMode::scene_mode_with_warp`]) was
 // never the blocker here and the note that said so is superseded: it closes

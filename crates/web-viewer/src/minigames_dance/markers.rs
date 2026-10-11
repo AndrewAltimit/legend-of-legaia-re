@@ -154,7 +154,7 @@ pub(super) fn bake_dance_markers(
                 continue;
             };
             let entry = built.entry(res_tmd).or_insert_with(|| {
-                legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram)
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram)
             });
             let (vm, flat) = (&entry.0, &entry.1);
             if vm.positions.is_empty() {

@@ -18,7 +18,7 @@
 //!   depth-cue far colour (`DAT_80078C1C`,
 //!   [`legaia_engine_battle_vm::battle_ground_grid::OutdoorCueTable`]);
 //! * the **battle VRAM**: stage build + flame atlas (PROT 870,
-//!   [`legaia_engine_core::scene::upload_flame_atlas_into_vram`]) + per-slot
+//!   [`legaia_engine_scene::scene::upload_flame_atlas_into_vram`]) + per-slot
 //!   monster texture injection + the party texture bands, all into a
 //!   throwaway copy the page uploads while the fight runs - battle exit
 //!   re-uploads the untouched field VRAM (the restore
@@ -73,11 +73,11 @@
 //! channel, from the same player-file entries the native loader reads.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::scene::Scene;
-use legaia_engine_core::scene_resources::{
+use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
-use legaia_engine_mode::mode::SceneMode;
 use wasm_bindgen::prelude::*;
 
 mod actor_exports;
@@ -390,7 +390,7 @@ impl LegaiaRuntime {
         // declare the same pages + CLUT rows, and the DMA-every-TIM build
         // leaves the last sibling holding them (see the shared kernel's doc).
         let mut vram = res.vram.clone();
-        legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+        legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
             scene,
             stage_entry,
             &mut vram,
@@ -467,7 +467,7 @@ impl LegaiaRuntime {
         // Battle effect-texture atlas (PROT 870) into the battle copy only -
         // battle exit discards it, the field VRAM base is untouched.
         if let Err(e) =
-            legaia_engine_core::scene::upload_flame_atlas_into_vram(&host.index, &mut vram, true)
+            legaia_engine_scene::scene::upload_flame_atlas_into_vram(&host.index, &mut vram, true)
         {
             web_log(&format!("play battle: flame-atlas upload skipped: {e:#}"));
         }
@@ -505,7 +505,7 @@ impl LegaiaRuntime {
                 legaia_engine_core::fog_volume::stage_luminance(&vram, tmd, raw, &objects);
             // Every slot but 1 is the baked shell; slot 1 is the spun copy
             // (`SceneHost::battle_stage_layers`, the native window's split).
-            let layers = legaia_engine_core::scene::BattleStageLayers::split(&objects);
+            let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);
             backdrop = stage_shell_mesh(tmd, raw, *second, &layers.fixed);
             backdrop_spun = stage_slot_mesh(tmd, raw, &layers.spun);
             shell = Some(WebStageShell {
@@ -691,7 +691,7 @@ impl LegaiaRuntime {
         if objects == sh.objects {
             return;
         }
-        let layers = legaia_engine_core::scene::BattleStageLayers::split(&objects);
+        let layers = legaia_engine_core::scene_host::BattleStageLayers::split(&objects);
         br.backdrop = stage_shell_mesh(&sh.tmd, &sh.raw, sh.second, &layers.fixed);
         br.backdrop_spun = stage_slot_mesh(&sh.tmd, &sh.raw, &layers.spun);
         sh.objects = objects;

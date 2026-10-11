@@ -16,8 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {

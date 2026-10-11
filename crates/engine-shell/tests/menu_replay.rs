@@ -174,7 +174,7 @@ fn booted(scene: &str) -> Option<BootSession> {
     // controller and puts the world in `SceneMode::WorldMap`. Routing both
     // through `enter_field_live` would leave map01 in Field mode and make the
     // Save-row probe below assert nothing.
-    if legaia_engine_core::scene::is_world_map_scene(scene) {
+    if legaia_engine_scene::scene::is_world_map_scene(scene) {
         session
             .enter_world_map_live(scene, &FieldLiveOpts::default())
             .ok()?;

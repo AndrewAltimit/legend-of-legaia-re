@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
 use legaia_scene_formats::scene_event_scripts::move_stager_records;
 

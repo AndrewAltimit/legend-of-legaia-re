@@ -10,7 +10,7 @@ impl FieldHostImpl<'_> {
     /// model id a placement carries on [`World::field_npc_live_model`],
     /// which both play hosts already re-bind mid-scene from (the same seat
     /// motion op `0x0E` writes). The id stays raw: the `>= 0xF0` player-bank
-    /// select is [`crate::model_bank::resolve_model_id`]'s, the `4C 50`
+    /// select is [`legaia_engine_scene::model_bank::resolve_model_id`]'s, the `4C 50`
     /// arm's own `0x801E17AC..0x801E1824` select instruction for instruction.
     ///
     /// A placed object's bind context (an object-bind channel, its own op

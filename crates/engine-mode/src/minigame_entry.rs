@@ -40,7 +40,7 @@
 //!
 //! `sub_id` reads exactly like a map id - a small dense integer arriving on a
 //! warp opcode - and the engine used to route it as one, through
-//! `legaia_engine_core::scene::DefaultMapIdResolver` into a CDNAME-ordinal scene name.
+//! `legaia_engine_scene::scene::DefaultMapIdResolver` into a CDNAME-ordinal scene name.
 //! That resolver's own note conceded the id "maps to a code overlay at PROT
 //! `0x4d + map_id`" while still resolving it to a scene, calling the ordering
 //! "an approximation" for a retail table "in an uncaptured overlay". There is

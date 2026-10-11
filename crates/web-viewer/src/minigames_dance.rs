@@ -17,10 +17,10 @@ use std::collections::HashMap;
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_actor_formats::{character_pack, field_char_textures};
 use legaia_engine_core::dance_venue::{self, DanceVenue};
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::SceneResources;
 use legaia_engine_minigames::dance::dance_hit_sting_voices;
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::SceneResources;
 use legaia_minigame_formats::dance_art::{self, DanceWidget};
 use legaia_minigame_formats::dance_cast::{self, DanceCast, DanceClip};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
@@ -210,8 +210,10 @@ fn bake_dance_env(index: &ProtIndex, venue: &DanceVenue, origin: (f32, f32, f32)
                 .then(|| venue.frame0_bone_offsets(draw.anim_id, rtmd.tmd.objects.len()))
                 .flatten();
             match &offsets {
-                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
-                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => {
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o)
+                }
+                None => legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
@@ -232,7 +234,7 @@ fn bake_dance_env(index: &ProtIndex, venue: &DanceVenue, origin: (f32, f32, f32)
             // Ground sinks below the env floor art (`GROUND_SINK`) - the
             // stage floor and the walk grid share one plane.
             out.positions
-                .push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK - origin.1);
+                .push(p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK - origin.1);
             out.positions.push(p[2] - origin.2);
         }
         for uv in &hf.uvs {

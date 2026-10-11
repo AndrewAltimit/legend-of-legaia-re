@@ -12,7 +12,7 @@ pub struct EngineObs {
     pub floor_at_retail: Option<i32>,
     pub camera: CameraObs,
     /// The engine's track-select word after the settle window
-    /// ([`legaia_engine_core::scene::SceneHost::bgm_track_word`]), else the
+    /// ([`legaia_engine_core::scene_host::SceneHost::bgm_track_word`]), else the
     /// last track the director started.
     pub bgm_id: Option<u16>,
     /// A control op stopped or paused the track after its last start.

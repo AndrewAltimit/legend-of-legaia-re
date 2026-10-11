@@ -348,8 +348,9 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
 /// it", driving the real `SceneHost::tick` transition handler.
 #[test]
 fn world_map_scene_transition_auto_enters_world_map() {
-    use legaia_engine_core::scene::{SceneTickEvent, VecMapIdResolver};
+    use legaia_engine_core::scene_host::SceneTickEvent;
     use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene::scene::VecMapIdResolver;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -619,7 +620,7 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
 fn world_maps_decode_world_frame_terrain_placements() {
     use std::sync::Arc;
 
-    use legaia_engine_core::scene::{ProtIndex, Scene};
+    use legaia_engine_scene::scene::{ProtIndex, Scene};
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

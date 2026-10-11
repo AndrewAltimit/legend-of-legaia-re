@@ -357,7 +357,7 @@ pub fn battle_stage_banner(
     world: &crate::world::World,
     font: &legaia_font::Font,
 ) -> Option<(String, i32, i32)> {
-    use crate::battle_stage_module::{ARRIVAL_BANNER_CENTRE_X, ARRIVAL_BANNER_Y};
+    use legaia_engine_scene::battle_stage_module::{ARRIVAL_BANNER_CENTRE_X, ARRIVAL_BANNER_Y};
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
         return None;
     }

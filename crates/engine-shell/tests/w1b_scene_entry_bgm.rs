@@ -16,7 +16,7 @@
 //!    `0x35` never executes. Pinned by `voice_mask`: no start, no voices.
 //! 2. **No global-pool start hook.** Every real music cue is a global id
 //!    (`>= 2000`), so a `BgmDirector` that leaves
-//!    [`legaia_engine_core::scene::BgmDirector::start_owned_vab`] on the
+//!    [`legaia_engine_core::scene_host::BgmDirector::start_owned_vab`] on the
 //!    trait's no-op default drops the whole field corpus while looking
 //!    wired. Pinned by asserting the started id is `>= 2000`.
 //! 3. **No free-roam story staging.** `town01`'s entry script starts its
@@ -36,7 +36,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 use legaia_parity::audio_trace_oracle::{AudioTraceBuildOptions, build_engine_audio_trace};
 
 /// One retail second at 60 Hz - the same window the audio-trace oracle uses.

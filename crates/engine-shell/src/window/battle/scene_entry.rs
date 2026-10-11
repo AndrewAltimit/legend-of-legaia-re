@@ -41,7 +41,7 @@ pub(super) fn stage_shell_meshes(
 
 /// One copy of the given backdrop objects, textured and untextured halves -
 /// the mesh of a slot the backdrop draw transforms per frame, so nothing is
-/// baked in ([`legaia_engine_core::scene::BattleStageLayers`]).
+/// baked in ([`legaia_engine_core::scene_host::BattleStageLayers`]).
 pub(super) fn stage_slot_meshes(
     tmd: &legaia_tmd::Tmd,
     raw: &[u8],
@@ -109,7 +109,7 @@ impl PlayWindowApp {
         // DMA-every-TIM build leaves whichever sibling was written last
         // holding them. Retail only ever has the recorded stream resident.
         let mut vram = res.vram.clone();
-        let restored = legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+        let restored = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
             scene,
             stage_entry,
             &mut vram,
@@ -201,7 +201,7 @@ impl PlayWindowApp {
         // discards (the field VRAM base is untouched). Byte-verified against
         // live battle captures; soft-fails so a missing disc entry just leaves
         // the flame pages absent.
-        if let Err(e) = legaia_engine_core::scene::upload_flame_atlas_into_vram(
+        if let Err(e) = legaia_engine_scene::scene::upload_flame_atlas_into_vram(
             &self.session.host.index,
             &mut vram,
             true,

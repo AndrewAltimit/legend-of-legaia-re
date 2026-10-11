@@ -76,11 +76,11 @@ impl World {
     /// scene-bank index ([`Self::field_scene_bank`]); an operand in `-5..0`
     /// reaches the player head, which [`Self::global_tmd`] holds.
     pub fn field_pool_tmd(&self, operand: i16) -> Option<&Arc<GlobalTmd>> {
-        let slot = i32::from(operand) + i32::from(crate::model_bank::SCENE_BANK_BASE);
+        let slot = i32::from(operand) + i32::from(legaia_engine_scene::model_bank::SCENE_BANK_BASE);
         if slot < 0 {
             return None;
         }
-        let bank = slot - i32::from(crate::model_bank::SCENE_BANK_BASE);
+        let bank = slot - i32::from(legaia_engine_scene::model_bank::SCENE_BANK_BASE);
         if bank >= 0 {
             self.field_scene_bank.get(bank as usize)?.as_ref()
         } else {

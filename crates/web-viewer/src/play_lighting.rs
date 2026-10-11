@@ -85,7 +85,7 @@ impl LegaiaRuntime {
                         return Vec::new();
                     };
                     let (mut mesh, flat) =
-                        legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram);
+                        legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram);
                     let hit = sl::tag_emissive_hybrid(&rtmd.raw, &mut mesh, &flat, &res.vram);
                     let mut em = sl::hybrid_mesh_emitters(
                         &mesh.positions,

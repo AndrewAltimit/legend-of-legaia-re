@@ -30,14 +30,14 @@ pub(super) fn read_starting_inventory(
 /// (not an error) when the executable isn't reachable.
 #[cfg(not(target_arch = "wasm32"))]
 pub(super) fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
-    use legaia_engine_core::Vfs;
+    use legaia_engine_scene::vfs::Vfs;
     match source {
-        SceneSource::Extracted(root) => legaia_engine_core::DirVfs::new(*root)
+        SceneSource::Extracted(root) => legaia_engine_scene::vfs::DirVfs::new(*root)
             .ok()?
             .read("SCUS_942.54")
             .ok(),
         #[cfg(not(target_arch = "wasm32"))]
-        SceneSource::Disc(path) => legaia_engine_core::DiscVfs::open(path)
+        SceneSource::Disc(path) => legaia_engine_scene::vfs::DiscVfs::open(path)
             .ok()?
             .read("SCUS_942.54")
             .ok(),
@@ -54,7 +54,7 @@ pub(super) fn read_scus(source: &SceneSource<'_>) -> Option<Vec<u8>> {
 /// instead of the fixed-width placeholder. Returns `None` (never an error)
 /// when either half is unreachable.
 pub(super) fn read_dialog_font(
-    index: &legaia_engine_core::scene::ProtIndex,
+    index: &legaia_engine_scene::scene::ProtIndex,
     scus: &[u8],
 ) -> Option<legaia_font::Font> {
     let tim = index
@@ -73,7 +73,7 @@ pub(super) fn read_dialog_font(
 /// ([`legaia_font::Font::with_escape_icons`]). Unchanged when unreachable.
 pub fn attach_escape_icons(
     font: legaia_font::Font,
-    index: &legaia_engine_core::scene::ProtIndex,
+    index: &legaia_engine_scene::scene::ProtIndex,
     scus: &[u8],
 ) -> legaia_font::Font {
     use legaia_font::escape_icons::{ICON_PROT_DAT_LEN, ICON_PROT_DAT_OFFSET};

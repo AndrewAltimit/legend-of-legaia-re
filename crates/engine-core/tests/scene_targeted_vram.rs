@@ -12,8 +12,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BATTLE_BOOT_BLOCKS, BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 

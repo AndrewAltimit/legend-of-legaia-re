@@ -12,7 +12,7 @@
 //! convention).
 
 use legaia_engine_core::menu_runtime::MenuRuntime;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_menus::menu::MenuState;
 use std::path::PathBuf;
 

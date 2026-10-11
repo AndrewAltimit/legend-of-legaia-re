@@ -96,11 +96,11 @@ impl<'m> DrawCtx<'_, 'm> {
         let wm_moves = app.session.host.world.object_draw_displacements();
         let wm_turns = app.session.host.world.object_draw_turn_matrices();
         let wm_models = app.session.host.world.object_live_models();
-        let wm_swaps = legaia_engine_core::field_env::placed_model_swaps(
+        let wm_swaps = legaia_engine_scene::field_env::placed_model_swaps(
             &app.world_map_terrain_records,
             wm_models,
         );
-        let wm_color_swaps = legaia_engine_core::field_env::placed_model_swaps(
+        let wm_color_swaps = legaia_engine_scene::field_env::placed_model_swaps(
             &app.world_map_terrain_color_records,
             wm_models,
         );
@@ -108,7 +108,7 @@ impl<'m> DrawCtx<'_, 'm> {
             |records: &[Option<usize>], swaps: &[Option<usize>], i: usize, model: &Mat4| {
                 let record = records.get(i).copied().flatten();
                 let moved =
-                    Mat4::from_cols_array(&legaia_engine_core::field_env::live_placed_model(
+                    Mat4::from_cols_array(&legaia_engine_scene::field_env::live_placed_model(
                         &model.to_cols_array(),
                         record,
                         &wm_turns,

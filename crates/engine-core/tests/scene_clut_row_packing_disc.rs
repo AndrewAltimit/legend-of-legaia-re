@@ -25,7 +25,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 const SCENE: &str = "town0b";
 /// The placed house at tile `(37, 42)` - env-pack slot of placement 22.
@@ -61,7 +61,7 @@ fn a_densely_packed_clut_row_keeps_its_prims() {
         eprintln!("[skip] {SCENE} resources missing");
         return;
     };
-    let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+    let env_tmds = legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res);
 
     // --- The VRAM half: the row really is packed past the old bound. ---
     let packed = (0..legaia_tim::vram::VRAM_WIDTH)

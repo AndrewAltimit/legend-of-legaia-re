@@ -11,7 +11,7 @@
 //! round-start spin. No Sony bytes are asserted. Skips + passes when
 //! `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_minigame_scenes::baka_duel_scene::{self as ds, BakaDuelSurface};
 use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, roster_clip_headers};

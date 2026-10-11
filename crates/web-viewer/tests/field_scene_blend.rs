@@ -11,8 +11,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::build_hybrid_env_mesh;
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_scene::scene_assembly::build_hybrid_env_mesh;
 use legaia_tim::Vram;
 use legaia_tmd::mesh::{TSB_SEMI_TRANSPARENT_BIT, VramMesh};
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};

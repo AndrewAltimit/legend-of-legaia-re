@@ -39,11 +39,11 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{ActorCtrlKind, Insn, InsnInfo, LinearWalker};
 
 /// One decoded site: the record body that carries it plus the offset of the

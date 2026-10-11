@@ -70,7 +70,7 @@ impl PlayWindowApp {
         posed: &PosedPlacementMeshes,
         bundle: Option<&legaia_actor_formats::player_anm::PlayerAnmBundle>,
     ) -> Vec<PosedPropDraw> {
-        use legaia_engine_core::field_env;
+        use legaia_engine_scene::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
         };
@@ -146,9 +146,9 @@ impl PlayWindowApp {
     }
 
     /// Rebuild the cross-draw coplanar-offset map for the current scene: the
-    /// combined terrain + placed [`legaia_engine_core::field_env::EnvDraw`]
+    /// combined terrain + placed [`legaia_engine_scene::field_env::EnvDraw`]
     /// lists (field scenes) or the walk landmark + decoration lists (world
-    /// map), run through `legaia_engine_core::coplanar_draws`. Overlapping
+    /// map), run through `legaia_engine_scene::coplanar_draws`. Overlapping
     /// same-plane draws otherwise z-fight - retail painter-orders them
     /// through the ordering table, the port's depth buffer ties per pixel.
     ///
@@ -164,15 +164,15 @@ impl PlayWindowApp {
     /// runs in `build_field_render`.
     pub(super) fn follow_floor_placed_draws(
         &self,
-        draws: &mut [legaia_engine_core::field_env::EnvDraw],
-        binds: &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+        draws: &mut [legaia_engine_scene::field_env::EnvDraw],
+        binds: &std::collections::HashMap<(u8, u8), legaia_engine_scene::field_env::ObjectBind>,
     ) {
         let world = &self.session.host.world;
         let follow = world.object_floor_follow_records();
         if follow.is_empty() {
             return;
         }
-        legaia_engine_core::field_env::follow_floor_placed_draws(draws, binds, |r, x, z| {
+        legaia_engine_scene::field_env::follow_floor_placed_draws(draws, binds, |r, x, z| {
             world.object_floor_follow_y(&follow, r, x, z)
         });
     }
@@ -180,8 +180,8 @@ impl PlayWindowApp {
     pub(in crate::window) fn static_env_draws(
         &self,
         res: &SceneResources,
-    ) -> Vec<legaia_engine_core::field_env::EnvDraw> {
-        use legaia_engine_core::field_env;
+    ) -> Vec<legaia_engine_scene::field_env::EnvDraw> {
+        use legaia_engine_scene::field_env;
         let Some(scene) = self.session.host.scene.as_ref() else {
             return Vec::new();
         };
@@ -192,7 +192,7 @@ impl PlayWindowApp {
         }
         let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
         let mut draws: Vec<field_env::EnvDraw> = Vec::new();
-        if legaia_engine_core::scene::is_world_map_scene(&scene.name) {
+        if legaia_engine_scene::scene::is_world_map_scene(&scene.name) {
             let mut tiles = scene
                 .walk_object_placements(index)
                 .ok()
@@ -232,8 +232,8 @@ impl PlayWindowApp {
     pub(in crate::window) fn compute_coplanar_env_offsets(
         &self,
         res: &SceneResources,
-    ) -> std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]> {
-        use legaia_engine_core::coplanar_draws;
+    ) -> std::collections::HashMap<legaia_engine_scene::field_env::EnvDraw, [f32; 3]> {
+        use legaia_engine_scene::coplanar_draws;
         let draws = self.static_env_draws(res);
         if draws.is_empty() {
             return Default::default();
@@ -275,7 +275,7 @@ impl PlayWindowApp {
             .scene
             .as_ref()
             .and_then(|sc| sc.walk_heightfield(&self.session.host.index).ok().flatten());
-        legaia_engine_core::field_env::env_draws_world_aabb(&[&draws], res, ground.as_ref())
+        legaia_engine_scene::field_env::env_draws_world_aabb(&[&draws], res, ground.as_ref())
     }
 
     /// Build the occlusion-fade visibility gate's world-space occluder set
@@ -322,11 +322,11 @@ impl PlayWindowApp {
         placements: &[legaia_scene_formats::field_objects::Placement],
         flip_y: bool,
         binds: Option<
-            &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+            &std::collections::HashMap<(u8, u8), legaia_engine_scene::field_env::ObjectBind>,
         >,
         posed: Option<(&PosedPlacementMeshes, bool)>,
         record_binds: Option<
-            &std::collections::HashMap<(u8, u8), legaia_engine_core::field_env::ObjectBind>,
+            &std::collections::HashMap<(u8, u8), legaia_engine_scene::field_env::ObjectBind>,
         >,
     ) -> PlacedDrawList {
         let Some(scene) = self.session.host.scene.as_ref() else {
@@ -349,11 +349,11 @@ impl PlayWindowApp {
         // the web viewer's assembled scene view resolves the exact same
         // draws; this method only adds the uploaded-mesh bridge and the
         // render-frame model matrix.
-        let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+        let env_tmds = legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res);
         if env_tmds.is_empty() {
             return Default::default();
         }
-        let (mut env_draws, dropped) = legaia_engine_core::field_env::resolve_placed_env_draws(
+        let (mut env_draws, dropped) = legaia_engine_scene::field_env::resolve_placed_env_draws(
             &env_tmds, placements, floor_lut, binds,
         );
         // Story-hidden placed objects: a bind record's spawn prologue that
@@ -361,7 +361,7 @@ impl PlayWindowApp {
         // gate rocks) draws nothing, exactly as retail draws the actor rather
         // than the raw `.MAP` table.
         if let Some(binds) = binds {
-            legaia_engine_core::field_env::retain_visible_placed_draws(
+            legaia_engine_scene::field_env::retain_visible_placed_draws(
                 &mut env_draws,
                 binds,
                 &self.session.host.world.hidden_object_records(),
@@ -371,7 +371,7 @@ impl PlayWindowApp {
         // Render scale: a bind record's prologue can leave the actor's
         // `+0x72` at a non-unit value (town01's horizon backdrop draws at a
         // quarter), and retail's case-5 draw folds it into the model matrix.
-        let scales = legaia_engine_core::field_env::placed_render_scales(
+        let scales = legaia_engine_scene::field_env::placed_render_scales(
             &env_draws,
             binds,
             &self.session.host.world.object_render_scales(),
@@ -380,13 +380,13 @@ impl PlayWindowApp {
         if diag {
             for d in &dropped {
                 match d {
-                    legaia_engine_core::field_env::EnvDrawDrop::NoPackIndex {
+                    legaia_engine_scene::field_env::EnvDrawDrop::NoPackIndex {
                         world_x,
                         world_z,
                     } => {
                         log::info!("DIAG place drop: no pack_index at ({world_x}, {world_z})");
                     }
-                    legaia_engine_core::field_env::EnvDrawDrop::SlotOutOfRange {
+                    legaia_engine_scene::field_env::EnvDrawDrop::SlotOutOfRange {
                         pack_index,
                         world_x,
                         world_z,
@@ -399,7 +399,7 @@ impl PlayWindowApp {
                             world_z
                         );
                     }
-                    legaia_engine_core::field_env::EnvDrawDrop::Unbound {
+                    legaia_engine_scene::field_env::EnvDrawDrop::Unbound {
                         anchor,
                         world_x,
                         world_z,
@@ -427,7 +427,7 @@ impl PlayWindowApp {
         let mut floors = Vec::new();
         // Parallel to `draws`: which placed-object sweep owns each draw
         // (`Some` = the sub-area window sweep's, gated per frame on the
-        // world's windowed static-object list by `field_env::placed_draw_live`).
+        // world's windowed static-object list by `legaia_engine_core::scene_staging::placed_draw_live`).
         let mut window_keys = Vec::new();
         // Parallel to `draws`: the grid cell + cull radius the visible-tile
         // crop (`field_view_window::terrain_draw_visible`) tests per frame.
@@ -439,7 +439,7 @@ impl PlayWindowApp {
         // (`EnvDraw::view_skip`), re-placed against the camera every frame.
         let mut facing = Vec::new();
         let bind_records =
-            legaia_engine_core::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
+            legaia_engine_scene::field_env::placed_bind_records(&env_draws, binds.or(record_binds));
         for ((d, &scale), &record) in env_draws.iter().zip(&scales).zip(&bind_records) {
             // A bind with an anim id means the prop's TMD objects are that
             // clip's bones, and the clip is live (a house door swings open on
@@ -529,7 +529,7 @@ impl PlayWindowApp {
             }
             draws.push((mesh_idx, model));
             floors.push(d.floor);
-            window_keys.push(legaia_engine_core::field_env::placed_window_key(d, binds));
+            window_keys.push(legaia_engine_scene::field_env::placed_window_key(d, binds));
             cell_keys.push(legaia_engine_core::field_view_window::CellKey::of_draw(d));
             records.push(record);
             facing.push((d.view_skip != 0 && !flip_y).then_some((d.view_skip, rot)));

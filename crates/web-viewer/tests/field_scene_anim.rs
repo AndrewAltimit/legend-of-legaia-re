@@ -14,7 +14,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
 use legaia_web_viewer::field_scene::{
     build_field_scene, build_field_scene_live, tick_field_scene_vsync,

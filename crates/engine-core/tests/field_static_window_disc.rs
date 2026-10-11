@@ -21,9 +21,9 @@
 
 use std::collections::HashSet;
 
-use legaia_engine_core::field_env::{self, PlacedWindowKey};
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_regions::{self, CELL_BIND_OWNED, RegionTable};
+use legaia_engine_scene::field_env::{self, PlacedWindowKey};
 
 /// Rim Elm (both variants), a casino town, and three scenes whose region boxes
 /// leave some window-sweep placements outside every sub-area box.
@@ -187,7 +187,7 @@ fn retail_windowing_hides_only_window_placements_the_list_lacks() {
         assert!(
             e.keys
                 .iter()
-                .all(|k| field_env::placed_draw_live(k.as_ref(), sw)),
+                .all(|k| legaia_engine_core::scene_staging::placed_draw_live(k.as_ref(), sw)),
             "{name}: a draw is hidden with windowing off"
         );
         // Retail: only window-sweep placements the list does not hold drop.
@@ -200,7 +200,7 @@ fn retail_windowing_hides_only_window_placements_the_list_lacks() {
         let hidden: Vec<PlacedWindowKey> = e
             .keys
             .iter()
-            .filter(|k| !field_env::placed_draw_live(k.as_ref(), sw))
+            .filter(|k| !legaia_engine_core::scene_staging::placed_draw_live(k.as_ref(), sw))
             .map(|k| k.expect("a bound draw was hidden"))
             .collect();
         for k in &hidden {
@@ -226,7 +226,7 @@ fn retail_windowing_hides_only_window_placements_the_list_lacks() {
                 .recentre_field_window(i32::from(spawn.tile.0), i32::from(spawn.tile.1));
             let sw = &e.host.world.terrain.static_window;
             assert_eq!(
-                field_env::placed_draw_live(Some(k), sw),
+                legaia_engine_core::scene_staging::placed_draw_live(Some(k), sw),
                 spawn.drawn(),
                 "{name}: re-centre on {:?} (box {:?})",
                 spawn.tile,
@@ -268,13 +268,13 @@ fn default_windowing_hides_other_regions_and_the_seat_recentres() {
         .position(|d| d.env_slot == 37 && d.world_x == 8384 && d.world_z == 10176)
         .expect("retona places the cloud bowl");
     assert!(
-        !field_env::placed_draw_live(e.keys[bowl].as_ref(), sw),
+        !legaia_engine_core::scene_staging::placed_draw_live(e.keys[bowl].as_ref(), sw),
         "the cloud bowl is outside the cave's region box"
     );
     let retona_hidden = e
         .keys
         .iter()
-        .filter(|k| !field_env::placed_draw_live(k.as_ref(), sw))
+        .filter(|k| !legaia_engine_core::scene_staging::placed_draw_live(k.as_ref(), sw))
         .count();
 
     let mut e = enter(&disc, "town01");
@@ -288,7 +288,7 @@ fn default_windowing_hides_other_regions_and_the_seat_recentres() {
         .filter(|(d, k)| {
             (d.world_x - 4160).abs() <= 768
                 && (d.world_z - 11840).abs() <= 768
-                && !field_env::placed_draw_live(k.as_ref(), sw)
+                && !legaia_engine_core::scene_staging::placed_draw_live(k.as_ref(), sw)
         })
         .map(|(d, _)| (d.env_slot, d.world_x, d.world_z))
         .collect();

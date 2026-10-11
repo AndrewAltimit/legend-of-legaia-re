@@ -20,9 +20,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
-use legaia_engine_core::scene_bundle;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_scene::scene_bundle;
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");

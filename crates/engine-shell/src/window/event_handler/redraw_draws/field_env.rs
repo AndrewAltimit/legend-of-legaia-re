@@ -224,7 +224,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // Turn, then move: the shared `field_env::live_placed_model` the
         // overworld's landmarks go through too.
         let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
-            Mat4::from_cols_array(&legaia_engine_core::field_env::live_placed_model(
+            Mat4::from_cols_array(&legaia_engine_scene::field_env::live_placed_model(
                 &model.to_cols_array(),
                 record,
                 &object_turns,
@@ -241,11 +241,11 @@ impl<'m> DrawCtx<'_, 'm> {
         let object_tints = app.session.host.world.object_draw_tints();
         // A motion stream's model swap (op `0x0E`), per placed draw: the
         // shared first-placement-of-the-record rule (`placed_model_swaps`).
-        let object_swaps = legaia_engine_core::field_env::placed_model_swaps(
+        let object_swaps = legaia_engine_scene::field_env::placed_model_swaps(
             &app.field_placement_records,
             app.session.host.world.object_live_models(),
         );
-        let object_color_swaps = legaia_engine_core::field_env::placed_model_swaps(
+        let object_color_swaps = legaia_engine_scene::field_env::placed_model_swaps(
             &app.field_placement_color_records,
             app.session.host.world.object_live_models(),
         );
@@ -255,7 +255,7 @@ impl<'m> DrawCtx<'_, 'm> {
         };
         let place_near_culled = |mvp: &Mat4| {
             !app.field_debug_camera
-                && legaia_engine_core::field_env::placed_origin_near_culled(mvp.w_axis.w)
+                && legaia_engine_scene::field_env::placed_origin_near_culled(mvp.w_axis.w)
         };
         if layer_on("place") {
             // Diag bisect: `LEGAIA_DIAG_PLACE_RANGE=a..b` draws only
@@ -279,7 +279,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 {
                     continue;
                 }
-                if !legaia_engine_core::field_env::placed_draw_live(
+                if !legaia_engine_core::scene_staging::placed_draw_live(
                     app.field_placement_window_keys
                         .get(di)
                         .and_then(Option::as_ref),
@@ -389,7 +389,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 let model = &object_moved(model, record);
-                if !legaia_engine_core::field_env::placed_draw_live(
+                if !legaia_engine_core::scene_staging::placed_draw_live(
                     app.field_placement_color_window_keys
                         .get(di)
                         .and_then(Option::as_ref),

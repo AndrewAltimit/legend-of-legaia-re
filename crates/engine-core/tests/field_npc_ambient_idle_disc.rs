@@ -21,9 +21,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::man_section::parse as parse_man;
 
 fn extracted_dir() -> Option<PathBuf> {

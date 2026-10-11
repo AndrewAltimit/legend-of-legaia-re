@@ -30,7 +30,7 @@ pub struct CutsceneState {
     pub return_mode: Option<SceneMode>,
     /// The `fmv_id` whose playback just ended, parked here by
     /// [`crate::world::World::finish_cutscene`] for exactly one drain by
-    /// [`crate::scene::SceneHost::apply_pending_fmv_handoff`].
+    /// [`crate::scene_host::SceneHost::apply_pending_fmv_handoff`].
     ///
     /// Retail's post-play control transfer is not a world-only decision - the
     /// [`FmvHandoff::Field`](legaia_engine_system::movie::cutscene::FmvHandoff::Field) arm loads a

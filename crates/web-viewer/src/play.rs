@@ -1,10 +1,10 @@
 //! Browser **play** surface: the render half of [`crate::runtime::LegaiaRuntime`].
 //!
 //! [`crate::runtime`] owns the simulation (a real
-//! [`legaia_engine_core::scene::SceneHost`]: field VM, locomotion + collision,
+//! [`legaia_engine_core::scene_host::SceneHost`]: field VM, locomotion + collision,
 //! NPC motion, dialogue). This module is what the page draws: the assembled
 //! static map, the posed player, and the scene's posed NPCs - all resolved
-//! against the **same** [`legaia_engine_core::scene_resources::SceneResources`]
+//! against the **same** [`legaia_engine_scene::scene_resources::SceneResources`]
 //! the host already built at `enter_field_scene`, so nothing is decoded twice
 //! and the picture is of the world the engine is actually simulating.
 //!
@@ -29,9 +29,9 @@
 
 use super::*;
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::field_env::{self, EnvDraw, PropPoseKey};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_scene::field_env::{self, EnvDraw, PropPoseKey};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::SceneResources;
 
 mod dynamic_actor_mesh;
 mod field_mesh;
@@ -58,7 +58,7 @@ pub struct FieldRender {
     /// Which placed-object sweep owns each placement draw (parallel to
     /// [`Self::placements`]): `Some` for the sub-area window sweep's, which
     /// [`LegaiaRuntime::field_placement_live`] gates on the world's windowed
-    /// static-object list through [`field_env::placed_draw_live`] - the kernel
+    /// static-object list through [`legaia_engine_core::scene_staging::placed_draw_live`] - the kernel
     /// the native play-window asks per frame.
     pub window_keys: Vec<Option<field_env::PlacedWindowKey>>,
     /// Per-placement bind record (parallel to [`Self::placements`], `None` =
@@ -332,9 +332,9 @@ pub fn build_field_render(
     let mut combined: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
     combined.extend_from_slice(&terrain);
     combined.extend_from_slice(&placements);
-    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&combined, res);
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&combined, res);
     let coplanar_offsets =
-        legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
+        legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&combined, &planes);
     FieldRender {
         env_tmds,
         placements,

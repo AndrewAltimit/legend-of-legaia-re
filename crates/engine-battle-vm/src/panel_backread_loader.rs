@@ -145,7 +145,7 @@ pub fn backread_slice_rect(n: u32) -> (i16, i16, i16, i16) {
 ///
 /// PORT: FUN_801f6b24 (the 12-entry jump table at `0x801F6AA8`)
 /// REPLACED-BY: the scene host's synchronous whole-entry read
-/// (`legaia_engine_core::scene::ProtIndex::entry_bytes_extended`), which both
+/// (`legaia_engine_scene::scene::ProtIndex::entry_bytes_extended`), which both
 /// hosts' still-sheet builds call for extraction 1221 / 1222 - no sector read
 /// is in flight for a phase to wait on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,7 +201,7 @@ impl BackreadStep {
 ///
 /// PORT: FUN_801f6b24
 /// REPLACED-BY: the scene host's synchronous whole-entry read
-/// (`legaia_engine_core::scene::ProtIndex::entry_bytes_extended`) - the port
+/// (`legaia_engine_scene::scene::ProtIndex::entry_bytes_extended`) - the port
 /// never splits the still into 20-sector reads, so there is no poll to step.
 /// Retail's own call site is the `jal` at `0x80025404` in `FUN_80025358`.
 pub fn backread_tick(phase: i32, poll_complete: bool) -> (i32, bool) {

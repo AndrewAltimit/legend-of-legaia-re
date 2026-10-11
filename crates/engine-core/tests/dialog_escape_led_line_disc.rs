@@ -24,8 +24,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::man_field_scripts::placement_inline_prologue;
+use legaia_engine_scene::scene::is_world_map_scene;
 
 fn extracted_dir() -> Option<PathBuf> {
     ["extracted", "../extracted", "../../extracted"]

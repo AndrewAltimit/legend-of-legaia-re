@@ -30,9 +30,9 @@ use super::*;
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_actor_formats::{character_pack, field_char_textures};
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_scene_formats::field_objects::{FLAG_PLACED, WalkHeightfield};
 use legaia_tmd::mesh::{VramMesh, tmd_to_vram_mesh_field_hybrid};
 use std::collections::HashMap;
@@ -236,8 +236,8 @@ fn bake_env(
     let mut ranked: Vec<field_env::EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
     ranked.extend(terrain.iter().copied());
     ranked.extend(placements.iter().copied());
-    let planes = legaia_engine_core::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = legaia_engine_core::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
 
     let mut out = FishingEnv::default();
     let mut built: HashMap<(usize, u8), (VramMesh, Vec<u8>)> = HashMap::new();
@@ -253,8 +253,10 @@ fn bake_env(
                 })
                 .flatten();
             match &offsets {
-                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
-                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => {
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o)
+                }
+                None => legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             }
         });
         let (mesh, flat) = (&entry.0, &entry.1);
@@ -278,7 +280,7 @@ fn bake_env(
             // (`fishing_scene_height_at`, `fishing_scene_ground_json`) read.
             out.positions.extend_from_slice(&[
                 p[0],
-                p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK,
+                p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK,
                 p[2],
             ]);
         }

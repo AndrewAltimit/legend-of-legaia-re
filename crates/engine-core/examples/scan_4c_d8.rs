@@ -21,9 +21,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 /// One decoded `0x4C 0xD8` instruction site in a scene MAN.

@@ -96,7 +96,7 @@ pub const TUTORIAL_STAGE_ID: u8 = 1;
 /// ```
 ///
 /// (`-0x49b6` off a `lui 0x8008` base is `_DAT_8007B64A`, the stage-id byte
-/// [`crate::overlay_loader::battle_stage_overlay_entry`] maps.)
+/// [`legaia_engine_scene::overlay_loader::battle_stage_overlay_entry`] maps.)
 ///
 /// The setter is disc data, not code: a disc-wide field-VM flag census finds
 /// exactly **one** site writing this flag, in town01's own Tetsu sparring
@@ -954,7 +954,7 @@ impl BattleTutorialScript {
     /// Returns an empty script (not an error) when the entry can't be read, so
     /// a host booted against a partial disc still runs the battle - it just
     /// shows no boxes.
-    pub fn from_prot(index: &crate::scene::ProtIndex) -> Self {
+    pub fn from_prot(index: &legaia_engine_scene::scene::ProtIndex) -> Self {
         let Some(rec) =
             legaia_overlay_images::static_overlay::overlay_map().by_label("battle_tutorial")
         else {

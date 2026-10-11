@@ -4,7 +4,7 @@ use super::*;
 use legaia_engine_audio::AudioSink;
 // `AudioBgmDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
-use legaia_engine_core::scene::BgmDirector as _;
+use legaia_engine_core::scene_host::BgmDirector as _;
 
 /// What [`PlayWindowApp::service_title_attract`] wants done with the title
 /// screen's attract hand-off this frame.

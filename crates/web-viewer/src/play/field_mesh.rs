@@ -91,8 +91,10 @@ impl LegaiaRuntime {
                 .get(res_idx)
                 .ok_or_else(|| JsValue::from_str("field_mesh: tmd missing"))?;
             let (mut mesh, flat) = match &offsets {
-                Some(o) => legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o),
-                None => legaia_engine_core::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
+                Some(o) => {
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, o)
+                }
+                None => legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(rtmd, &res.vram),
             };
             // Enhanced lighting's emissive tags (TSB bit 13) - the native
             // window's env-mesh rule; the shaders read them only while the
@@ -166,10 +168,10 @@ impl LegaiaRuntime {
                 .ok_or_else(|| JsValue::from_str("field_mesh_lit: tmd missing"))?;
             let (mut mesh, mut flat, lit) = match &offsets {
                 Some(o) => {
-                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed_lit(rtmd, o)
                 }
                 None => {
-                    legaia_engine_core::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram)
+                    legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_lit(rtmd, &res.vram)
                 }
             };
             if legaia_engine_field::field_lit_mesh::has_lit_rows(&lit) {
@@ -283,7 +285,7 @@ impl LegaiaRuntime {
         let Some(m) = host.world.morphed_env_tmd(s, rtmd) else {
             return Vec::new();
         };
-        let (mesh, _) = legaia_engine_core::scene_assembly::build_hybrid_env_mesh(&m, &res.vram);
+        let (mesh, _) = legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(&m, &res.vram);
         mesh.positions.iter().flatten().copied().collect()
     }
 
@@ -347,7 +349,7 @@ impl LegaiaRuntime {
             return Vec::new();
         };
         let (mesh, _flat) =
-            legaia_engine_core::scene_assembly::build_hybrid_env_mesh_posed(rtmd, &offsets);
+            legaia_engine_scene::scene_assembly::build_hybrid_env_mesh_posed(rtmd, &offsets);
         mesh.positions.iter().flatten().copied().collect()
     }
 }

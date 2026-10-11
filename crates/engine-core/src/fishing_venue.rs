@@ -434,7 +434,7 @@ pub fn project_to_retail_screen(
 /// `_DAT_1F8003EC` floor buffer (tile records at `+0`, height/wall grid at
 /// `+0x4000`, cell grid at `+0x8000`). `None` when the current scene carries
 /// no field map.
-pub fn venue_floor_bytes(host: &crate::scene::SceneHost) -> Option<Vec<u8>> {
+pub fn venue_floor_bytes(host: &crate::scene_host::SceneHost) -> Option<Vec<u8>> {
     // The pond's own `.MAP` (the session's venue), as retail installs the
     // fishing scene's buffer behind `_DAT_1F8003EC`; the departure field's
     // only as a fallback for a session opened with no venue.
@@ -457,7 +457,7 @@ pub fn venue_floor_bytes(host: &crate::scene::SceneHost) -> Option<Vec<u8>> {
 /// venue floor all come off the host, so the native window and the browser
 /// play page run the identical frame and differ only in which
 /// [`legaia_engine_field::camera::Camera`] they apply the returned writes to.
-pub fn tick_fishing_venue_on_host(host: &mut crate::scene::SceneHost) -> VenueCameraWrites {
+pub fn tick_fishing_venue_on_host(host: &mut crate::scene_host::SceneHost) -> VenueCameraWrites {
     let in_fishing = host.world.mode == legaia_engine_mode::mode::SceneMode::Fishing;
     let held_packed = host.world.input.pad().rotate_right(8);
     let floor = if in_fishing && !host.world.minigames.fishing_venue.armed() {

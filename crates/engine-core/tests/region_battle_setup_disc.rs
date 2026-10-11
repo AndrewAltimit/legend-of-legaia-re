@@ -17,7 +17,8 @@ use std::path::PathBuf;
 use legaia_engine_battle::region_encounter::{
     region_battle_setup, region_encounter_table_from_man,
 };
-use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
 
 fn open_host() -> Option<(SceneHost, PathBuf)> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

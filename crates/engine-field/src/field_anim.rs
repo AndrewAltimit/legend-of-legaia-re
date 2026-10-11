@@ -158,7 +158,7 @@ impl FieldClipPlayer {
     }
 
     /// Pose from an externally ticked cursor - the world-owned
-    /// `legaia_engine_core::field_env::PropAnim` an NPC actor's `+0x62` word drives
+    /// `legaia_engine_scene::field_env::PropAnim` an NPC actor's `+0x62` word drives
     /// (`legaia_engine_core::world::World::sync_npc_clip`) - instead of this player's own
     /// free-running loop. `clamp` is the cursor's clamp bit (`+0x62 & 8`).
     pub fn set_cursor(&mut self, cursor: u32, clamp: bool) {

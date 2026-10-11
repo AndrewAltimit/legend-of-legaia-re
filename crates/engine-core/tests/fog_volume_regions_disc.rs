@@ -16,7 +16,7 @@
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_core::fog_volume::region_weight;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn open_host() -> Option<SceneHost> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;

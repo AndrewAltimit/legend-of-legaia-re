@@ -75,7 +75,7 @@ pub fn export_world_glb(
         let mut positions = Vec::with_capacity(hf.positions.len() * 3);
         for p in &hf.positions {
             positions.push(p[0]);
-            positions.push(p[1] + crate::coplanar_draws::GROUND_SINK);
+            positions.push(p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK);
             positions.push(p[2]);
         }
         let mut uvs = Vec::with_capacity(hf.uvs.len() * 2);
@@ -263,7 +263,7 @@ fn bake_vdf_pulse_anim(
     if let Some(scripts) = scene.find_event_scripts() {
         w.install_field_stagers(scripts.bytes);
     }
-    w.set_vdf_buffer(crate::scene_bundle::find_vdf_buffer(scene));
+    w.set_vdf_buffer(legaia_engine_scene::scene_bundle::find_vdf_buffer(scene));
     if let Ok(Some(man)) = scene.field_man_payload(index)
         && let Ok(mf) = legaia_scene_formats::man_section::parse(&man)
     {

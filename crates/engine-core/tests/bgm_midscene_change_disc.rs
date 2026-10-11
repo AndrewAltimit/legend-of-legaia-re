@@ -30,7 +30,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{BgmDirector, SceneHost};
+use legaia_engine_core::scene_host::{BgmDirector, SceneHost};
 use legaia_engine_field::field_events::FieldEvent;
 
 /// The scene whose cutscenes drove this: Biron Monastery. Its partition-2
@@ -81,8 +81,8 @@ impl BgmDirector for SplitDirector {
 /// carry, decoded with the opcode-aware walker (a raw byte scan would count
 /// dialog text as instructions).
 fn cutscene_bgm_ops(host: &SceneHost) -> Vec<(u16, u8)> {
-    use legaia_engine_core::man_field_scripts::scene_man_carriers;
     use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_engine_scene::man_field_scripts::scene_man_carriers;
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
     let scene = host.scene.as_ref().expect("scene loaded");

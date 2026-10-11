@@ -5,8 +5,8 @@
 
 use crate::BootSession;
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::{CutsceneMap, ProtIndex, Scene};
-use legaia_engine_core::scene_resources::FIELD_SHARED_BLOCKS;
+use legaia_engine_scene::scene::{CutsceneMap, ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS;
 use legaia_engine_session::boot::BootConfig;
 use std::path::{Path, PathBuf};
 

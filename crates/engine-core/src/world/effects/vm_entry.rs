@@ -69,7 +69,7 @@ impl World {
     /// prefix). Slicing from the script start keeps relative jumps wrapping
     /// against the slice base (index 0), matching the retail
     /// `buffer_base = script_start` convention. See
-    /// [`crate::scene::Scene::field_man_entry_script`].
+    /// [`legaia_engine_scene::scene::Scene::field_man_entry_script`].
     ///
     /// REF: FUN_8003ab2c (the port lives in `legaia_scene_formats::man_section`).
     pub fn load_field_script_at(&mut self, bytecode: Vec<u8>, pc: usize) {
@@ -144,7 +144,10 @@ impl World {
     ///
     /// Because `ensure_actor` preserves these fields across resets, the
     /// bindings survive the first field-VM actor-spawn opcode.
-    pub fn init_scene_animations(&mut self, resources: &crate::scene_resources::SceneResources) {
+    pub fn init_scene_animations(
+        &mut self,
+        resources: &legaia_engine_scene::scene_resources::SceneResources,
+    ) {
         for (i, actor) in self.actors.iter_mut().enumerate() {
             if i < resources.tmds.len() {
                 actor.tmd_binding = Some(i);

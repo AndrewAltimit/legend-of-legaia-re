@@ -80,7 +80,7 @@ impl FieldFloorWave {
         &mut self,
         world: &legaia_engine_core::world::World,
         lists: [&mut Vec<(usize, Mat4)>; 4],
-        placement_keys: [&[Option<legaia_engine_core::field_env::PlacedWindowKey>]; 2],
+        placement_keys: [&[Option<legaia_engine_scene::field_env::PlacedWindowKey>]; 2],
     ) -> usize {
         if self.base.is_none() {
             return 0;

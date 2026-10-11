@@ -25,8 +25,8 @@
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_fishing::minigame_floor::{POLAR_SHIFT, POLAR_TABLE_LEN, polar_offset};
+use legaia_engine_scene::vfs::Vfs;
 use legaia_minigame_formats::minigame_slot_scene::{
     ANGLE_FULL, COS_TABLE_VA, SIN_TABLE_VA, cos_4096, sin_4096,
 };
@@ -57,7 +57,7 @@ fn scus() -> Option<Vec<u8>> {
         return None;
     }
     Some(
-        legaia_engine_core::DiscVfs::open(&path)
+        legaia_engine_scene::vfs::DiscVfs::open(&path)
             .expect("open disc")
             .read("SCUS_942.54")
             .expect("SCUS_942.54 present"),

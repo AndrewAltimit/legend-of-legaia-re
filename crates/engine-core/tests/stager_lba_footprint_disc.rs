@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 
 fn extracted_root() -> Option<PathBuf> {

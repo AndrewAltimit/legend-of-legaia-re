@@ -17,10 +17,10 @@
 //! the installed table against a direct parse. Skips + passes when
 //! `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::menu_item_category::{CATEGORY_MATCH_SCORE, category_check};
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 fn disc_path() -> Option<PathBuf> {
@@ -36,7 +36,7 @@ fn booted_world(path: &PathBuf) -> World {
         .index
         .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("read PROT 0899 (extended)");
-    let scus = legaia_engine_core::DiscVfs::open(path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(path)
         .expect("open disc vfs")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

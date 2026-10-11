@@ -27,6 +27,7 @@ log.workspace = true
 env_logger.workspace = true
 legaia-art.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-session.workspace = true
 legaia-engine-screens.workspace = true

@@ -10,7 +10,7 @@
 //!   ([`settings_path`]) holding the disc path the user last picked.
 //! - [`validate_disc`] opens a candidate image the same way
 //!   [`crate::BootSession::open_disc`] will (`.cue` sheets resolve to their
-//!   `.bin`, the ISO9660 tree is walked by [`legaia_engine_core::DiscVfs`])
+//!   `.bin`, the ISO9660 tree is walked by [`legaia_engine_scene::vfs::DiscVfs`])
 //!   and checks it is the disc the engine runs on: `SYSTEM.CNF` boots
 //!   `SCUS_942.54` (Legend of Legaia, USA), and `PROT.DAT` is present.
 //! - [`decide`] turns the saved settings into [`LaunchDecision::Play`] or
@@ -158,7 +158,7 @@ impl fmt::Display for DiscProblem {
 /// boot. Opens the image through the same reader the game uses, so a disc
 /// that passes here is one [`crate::BootSession::open_disc`] accepts.
 pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> {
-    use legaia_engine_core::Vfs;
+    use legaia_engine_scene::vfs::Vfs;
 
     if !path.exists() {
         return Err(DiscProblem::Missing(path.to_path_buf()));
@@ -177,7 +177,8 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
         ));
     }
     let bin = legaia_iso::raw::resolve_disc_path(path).map_err(|e| unreadable(e.to_string()))?;
-    let vfs = legaia_engine_core::DiscVfs::open(&bin).map_err(|e| unreadable(format!("{e:#}")))?;
+    let vfs =
+        legaia_engine_scene::vfs::DiscVfs::open(&bin).map_err(|e| unreadable(format!("{e:#}")))?;
     let cnf = vfs
         .read("SYSTEM.CNF")
         .map_err(|_| wrong("no SYSTEM.CNF - not a PlayStation game disc".into()))?;

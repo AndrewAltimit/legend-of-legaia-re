@@ -46,7 +46,7 @@
 //! The bind's own record - a MAN partition-0 record - carries the actor's
 //! **animation id**, and a multi-object mesh is drawn *posed* by that clip
 //! rather than with its raw object-local vertices; the resolver lives in
-//! `legaia_engine_core::field_env` (it needs the MAN, which this module does
+//! `legaia_engine_scene::field_env` (it needs the MAN, which this module does
 //! not see). See `docs/subsystems/field-locomotion.md` ("The object bind").
 //!
 //! ## Coordinate convention (validated against a live `town01` save state)
@@ -391,7 +391,7 @@ pub struct Placement {
     /// and its field sibling `FUN_801F7088` in PROT 0900, same body) resolve a
     /// visible cell's world Y from the *average* of these four corners'
     /// LUT heights, not from the single cell nibble - the consumer-side math
-    /// lives in `legaia_engine_core::field_env`. A cell on a floor-tier edge
+    /// lives in `legaia_engine_scene::field_env`. A cell on a floor-tier edge
     /// therefore lands mid-slope, matching the ramp its mesh bakes; sampling
     /// only `(col, row)` snaps every edge cell a full tier up or down, which
     /// breaks terraced towns (Vidna) into stair-stepped plateaus.

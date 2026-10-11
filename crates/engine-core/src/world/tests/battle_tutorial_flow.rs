@@ -150,12 +150,16 @@ fn the_stage_id_resolver_matches_the_overlay_dispatch() {
     assert_eq!(stage_id_at_battle_entry(false), 0);
     assert_eq!(stage_id_at_battle_entry(true), TUTORIAL_STAGE_ID);
     assert_eq!(
-        crate::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(false)),
+        legaia_engine_scene::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(
+            false
+        )),
         None,
         "stage id 0 pages no overlay"
     );
     assert_eq!(
-        crate::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(true)),
+        legaia_engine_scene::overlay_loader::battle_stage_overlay_entry(stage_id_at_battle_entry(
+            true
+        )),
         Some(crate::battle_tutorial::OVERLAY_967_PROT_INDEX),
         "the armed stage id must resolve to the prompt overlay's PROT entry"
     );

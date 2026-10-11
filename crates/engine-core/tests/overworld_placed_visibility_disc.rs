@@ -9,8 +9,8 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::field_env;
 
 /// `(kingdom, .MAP records the cold entry must drop from the landmark layer)`.
 const CASES: &[(&str, &[u16])] = &[("map01", &[414, 349]), ("map02", &[]), ("map03", &[])];
@@ -41,7 +41,8 @@ fn overworld_landmarks_parked_by_their_prologue_are_not_drawn() {
         // The live world (both play hosts) and the static assembly's scratch
         // world agree on what the prologues hide.
         let live = host.world.hidden_object_records();
-        let staged = field_env::story_hidden_records_for_scene(scene, &host.index);
+        let staged =
+            legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index);
         for hidden in [&live, &staged] {
             let mut kept = all.clone();
             field_env::retain_visible_landmark_placements(&mut kept, &binds, hidden);

@@ -48,6 +48,7 @@ members = [
     "crates/engine-menus",
     "crates/engine-mode",
     "crates/engine-field",
+    "crates/engine-scene",
     "crates/engine-core",
     "crates/engine-effects",
     "crates/engine-fishing",
@@ -126,6 +127,7 @@ legaia-engine-core = { path = "crates/engine-core" }
 legaia-engine-effects = { path = "crates/engine-effects" }
 legaia-engine-field = { path = "crates/engine-field" }
 legaia-engine-mode = { path = "crates/engine-mode" }
+legaia-engine-scene = { path = "crates/engine-scene" }
 legaia-engine-dialog = { path = "crates/engine-dialog" }
 legaia-engine-menus = { path = "crates/engine-menus" }
 legaia-engine-system = { path = "crates/engine-system" }

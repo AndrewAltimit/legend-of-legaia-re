@@ -28,7 +28,8 @@ use std::path::PathBuf;
 
 use legaia_engine_battle::encounter::EncounterPhase;
 use legaia_engine_battle::region_encounter::{DEFAULT_GROUP_FLAG, EncounterRegion};
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 use legaia_scene_formats::man_section;
 
 /// Field scenes whose live region set sits behind at least one flag-gated

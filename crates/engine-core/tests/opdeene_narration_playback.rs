@@ -25,7 +25,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

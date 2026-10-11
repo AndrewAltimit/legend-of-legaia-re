@@ -25,7 +25,8 @@
 //! Disc-gated: skip-passes when `LEGAIA_DISC_BIN` is unset or `extracted/` is
 //! absent, per the repo convention.
 
-use legaia_engine_core::scene::{SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::is_world_map_scene;
 use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 

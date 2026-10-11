@@ -9,11 +9,11 @@
 //! No Sony bytes are asserted, only structural facts. Skips + passes
 //! when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_menus::menu_item_category::{
     CATEGORY_MATCH_SCORE, CategoryEntry, category_check, parse_category_table,
 };
+use legaia_engine_scene::vfs::Vfs;
 use legaia_game_tables::equip_stats::{EquipSlot, EquipStatTable};
 use std::path::PathBuf;
 
@@ -31,7 +31,7 @@ fn from_disc() -> Option<(Vec<CategoryEntry>, EquipStatTable)> {
         .expect("read PROT 0899 (extended)");
     let table = parse_category_table(&overlay).expect("category table parses");
 
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc vfs")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

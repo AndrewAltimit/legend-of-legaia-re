@@ -424,7 +424,7 @@ fn the_scripted_header_byte_is_a_minority_of_the_formation_corpus() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
         return;
     };
-    let Ok(mut host) = crate::scene::SceneHost::open_extracted(&dir) else {
+    let Ok(mut host) = crate::scene_host::SceneHost::open_extracted(&dir) else {
         eprintln!("[skip] SceneHost would not open");
         return;
     };

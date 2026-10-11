@@ -25,10 +25,10 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_menus::save_menu_atlas::{
     SYSTEM_UI_CLUT_EXT_TIM_OFFSET, SaveMenuAtlas, build_atlas,
 };
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
 
 /// Build the atlas exactly as a host does, from a panel slice rooted at

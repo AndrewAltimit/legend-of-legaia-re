@@ -91,9 +91,9 @@ fn window_vram_holds_the_retail_fog_texels() {
 fn scene_texels_win_over_the_pool() {
     let Some(extracted) = extracted() else { return };
     let vram = window_vram(&extracted, "dolk");
-    let index = legaia_engine_core::scene::ProtIndex::open_extracted(&extracted).expect("index");
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted).expect("index");
     let mut pool = legaia_tim::Vram::new();
-    legaia_engine_core::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
+    legaia_engine_scene::scene::upload_effect_textures_into_vram(&index, &mut pool, true)
         .expect("effect pool");
     let differing = (0..256)
         .flat_map(|y| (448..512).map(move |x| (x, y)))

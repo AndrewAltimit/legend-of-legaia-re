@@ -61,7 +61,7 @@ use legaia_disc_patch::rng::SplitMix64;
 
 /// On-disc footprint of a per-scene `.MAP` field-map file (PROT entry sized
 /// exactly this; the trigger block occupies the last `0x2000` bytes). Mirrors
-/// `legaia_engine_core::scene::FIELD_MAP_LEN`.
+/// `legaia_engine_scene::scene::FIELD_MAP_LEN`.
 pub const FIELD_MAP_LEN: usize = 0x12000;
 /// Byte offset of the `.MAP` trigger block (retail `*(_DAT_1F8003EC) + 0x10000`).
 pub const TRIGGER_BLOCK_OFFSET: usize = 0x10000;

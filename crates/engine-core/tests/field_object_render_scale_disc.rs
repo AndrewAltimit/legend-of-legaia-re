@@ -9,8 +9,8 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::field_env;
 
 #[test]
 fn town01_horizon_backdrop_draws_at_its_prologue_scale() {

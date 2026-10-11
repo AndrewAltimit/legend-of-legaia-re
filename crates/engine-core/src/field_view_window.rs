@@ -7,7 +7,7 @@
 //! one rectangle:
 //!
 //! - the **decoration pass** `FUN_801F7088` - the `0x2000`-gated per-cell pack
-//!   meshes (the port's terrain [`EnvDraw`](crate::field_env::EnvDraw) list);
+//!   meshes (the port's terrain [`EnvDraw`](legaia_engine_scene::field_env::EnvDraw) list);
 //! - the **ground emitters** `FUN_801F6D48` / `FUN_801F69EC` it calls at the
 //!   end (one or the other on `_DAT_8007BB4C`, same loop) - the `0x1000`-gated
 //!   textured ground quads (the port's walk-ground heightfield).
@@ -262,15 +262,15 @@ pub fn field_view_cells(world: &World, retail_framing: bool) -> Option<ViewCells
 /// `(mesh, matrix)` pairs keep one of these beside each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CellKey {
-    /// [`crate::field_env::EnvDraw::cell`].
+    /// [`legaia_engine_scene::field_env::EnvDraw::cell`].
     pub cell: (u8, u8),
-    /// [`crate::field_env::EnvDraw::cull_radius`].
+    /// [`legaia_engine_scene::field_env::EnvDraw::cull_radius`].
     pub cull_radius: u8,
 }
 
 impl CellKey {
     /// The key of one resolved draw.
-    pub fn of_draw(d: &crate::field_env::EnvDraw) -> Self {
+    pub fn of_draw(d: &legaia_engine_scene::field_env::EnvDraw) -> Self {
         CellKey {
             cell: d.cell,
             cull_radius: d.cull_radius,

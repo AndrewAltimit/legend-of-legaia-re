@@ -46,11 +46,11 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_env::{
+use legaia_engine_core::world::{FieldPropCollider, World};
+use legaia_engine_scene::field_env::{
     self, ANIM_CLAMP, ANIM_HOLD, ANIM_REVERSE, AnimCmd, PropAnimBank,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::world::{FieldPropCollider, World};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_system::input::PadButton;
 
 /// Rim Elm's two scene variants (they share one `.MAP`).
@@ -633,8 +633,8 @@ fn a_player_aimed_yield_does_not_halt_the_prop_that_issues_it() {
         return;
     }
     let extracted = extracted_dir().expect("gate checked it");
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     host.enter_field_scene("rayman", 0).expect("enter rayman");
     let w = &mut host.world;
     let Some((&anchor, _)) = w.props.bank.props.iter().find(|(_, s)| s.record == 4) else {

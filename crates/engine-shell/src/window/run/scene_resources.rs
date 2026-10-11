@@ -44,7 +44,7 @@ pub(in crate::window) fn build_window_scene_resources(
     // `enter_field_scene` kind selection so the rendered meshes match the
     // gameplay-side resources (otherwise the window draws the Field-mode
     // 2-mesh fallback while the host loaded the full 40-TMD pack).
-    let load_kind = if legaia_engine_core::scene::is_world_map_scene(&s.name) {
+    let load_kind = if legaia_engine_scene::scene::is_world_map_scene(&s.name) {
         SceneLoadKind::WorldMap
     } else {
         SceneLoadKind::Field
@@ -112,7 +112,7 @@ pub(in crate::window) fn build_window_scene_resources(
     // Without it the fog quads sampled all-zero texels and the shader
     // discarded every fragment. See `docs/subsystems/field-ambient-fx.md`.
     let mut effect_pool = legaia_tim::Vram::new();
-    match legaia_engine_core::scene::upload_effect_textures_into_vram(
+    match legaia_engine_scene::scene::upload_effect_textures_into_vram(
         &session.host.index,
         &mut effect_pool,
         true,

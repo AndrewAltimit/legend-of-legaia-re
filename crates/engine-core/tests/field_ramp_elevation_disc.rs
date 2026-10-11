@@ -22,8 +22,8 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{CELL_ELEVATION_OVERRIDE, World};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// `.MAP` object-grid offset (one `u16` cell per tile).
 const OBJECT_GRID_OFFSET: usize = 0x8000;

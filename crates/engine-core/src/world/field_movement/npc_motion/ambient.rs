@@ -522,7 +522,7 @@ impl World {
     ///   (`ambient_motion_op_census_disc`) measures 215 authored sites over
     ///   four scenes and zero of them names a model some placement in the same
     ///   scene binds - so the bytes come from the scene's own model bank
-    ///   ([`crate::model_bank::SceneModelBank`]) instead.
+    ///   ([`legaia_engine_scene::model_bank::SceneModelBank`]) instead.
     /// - [`AmbientEffect::MoveImage`] is applied: it is the same libgpu blit
     ///   the field VM's `4C 60` emitter queues, so it goes on the same
     ///   [`crate::world::AmbientFxState::script_vram_moves`] queue, which
@@ -593,9 +593,9 @@ impl World {
                     use legaia_engine_motion_vm::ambient_motion_ops::ModelBank as VmBank;
                     let id = match bank {
                         VmBank::Scene => offset,
-                        VmBank::Special => {
-                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
-                        }
+                        VmBank::Special => offset.wrapping_add(
+                            legaia_engine_scene::model_bank::SPECIAL_MODEL_THRESHOLD as i16,
+                        ),
                     };
                     self.npcs.models.insert(slot, id);
                 }
@@ -657,9 +657,9 @@ impl World {
                     use legaia_engine_motion_vm::ambient_motion_ops::ModelBank as VmBank;
                     let id = match bank {
                         VmBank::Scene => offset,
-                        VmBank::Special => {
-                            offset.wrapping_add(crate::model_bank::SPECIAL_MODEL_THRESHOLD as i16)
-                        }
+                        VmBank::Special => offset.wrapping_add(
+                            legaia_engine_scene::model_bank::SPECIAL_MODEL_THRESHOLD as i16,
+                        ),
                     };
                     self.npcs.object_models.insert(record, id);
                 }

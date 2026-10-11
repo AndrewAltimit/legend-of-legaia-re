@@ -411,7 +411,7 @@ impl LegaiaViewer {
 
     /// Build the mesh for the currently-selected kingdom pack slot: the
     /// **hybrid** stream of the shared pack kernel
-    /// ([`legaia_engine_core::scene_assembly::build_hybrid_pack_mesh`]) - the
+    /// ([`legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh`]) - the
     /// textured prims followed by the untextured `F*`/`G*` vertex-colour prims
     /// (Rim Elm's hut roofs, Karisto's colour-only landmarks) the textured
     /// builder alone drops. [`Self::build_kingdom_hybrid`] returns the same
@@ -469,7 +469,7 @@ impl LegaiaViewer {
         let end = *k.byte_ends.get(slot)?;
         let tmd_buf = k.pack.get(start..end)?;
         let tmd = legaia_tmd::parse(tmd_buf).ok()?;
-        Some(legaia_engine_core::scene_assembly::build_hybrid_pack_mesh(
+        Some(legaia_engine_scene::scene_assembly::build_hybrid_pack_mesh(
             &tmd, tmd_buf,
         ))
     }

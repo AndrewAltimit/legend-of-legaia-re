@@ -12,9 +12,10 @@
 use crate::cli::ConfigCmd;
 use crate::{AudioTraceArgs, ModeTraceArgs, PcmTraceArgs, VramOracleArgs, decode_str_frame_count};
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneTickEvent};
-use legaia_engine_core::scene_assets::SceneAssets;
-use legaia_engine_core::scene_resources::SceneResources;
+use legaia_engine_core::scene_host::SceneTickEvent;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_assets::SceneAssets;
+use legaia_engine_scene::scene_resources::SceneResources;
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_parity::audio_trace_oracle::{
     AudioTraceFrame, audio_trace_to_jsonl, engine_trace_from_paths, first_audio_trace_divergence,
@@ -68,7 +69,7 @@ fn open_index_from_args(
     disc: Option<&std::path::Path>,
 ) -> Result<ProtIndex> {
     if let Some(disc_path) = disc {
-        use legaia_engine_core::{DiscVfs, Vfs};
+        use legaia_engine_scene::vfs::{DiscVfs, Vfs};
         let vfs = DiscVfs::open(disc_path)
             .with_context(|| format!("open disc image {}", disc_path.display()))?;
         let prot_bytes = vfs

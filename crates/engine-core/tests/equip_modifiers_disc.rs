@@ -3,8 +3,8 @@
 //! byte-exact attack / defense bonuses - unlike the fabricated-id vanilla
 //! catalog. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_menus::equipment::equip_modifier_table_from_disc;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 #[test]
@@ -17,7 +17,7 @@ fn disc_modifier_table_uses_real_ids_and_stats() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -78,7 +78,7 @@ fn disc_equip_restrictions_gate_equip_session_item_list() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

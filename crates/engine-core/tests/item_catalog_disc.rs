@@ -7,9 +7,9 @@
 //! `Ra-Seru Meta $N` placeholders, so a live granted id (e.g. Healing Leaf
 //! `0x77`) never matched a catalog effect. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::items::{ItemCatalog, ItemEffect, ItemOutcome};
+use legaia_engine_scene::vfs::Vfs;
 use legaia_game_tables::item_effect::{ItemEffectTable, RestoreAmount};
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ fn vanilla_catalog_ids_match_the_real_item_table() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -69,7 +69,7 @@ fn curated_heal_amounts_match_the_disc_heal_table() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -132,7 +132,7 @@ fn water_line_stat_up_items_seed_and_apply_from_disc() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -210,7 +210,7 @@ fn elixir_battle_buffs_seed_and_ramp_from_disc() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -269,7 +269,7 @@ fn fury_boost_seeds_and_extends_the_ap_gauge_from_disc() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

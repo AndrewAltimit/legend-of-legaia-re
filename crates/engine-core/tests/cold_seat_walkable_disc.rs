@@ -40,8 +40,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::FIELD_COLD_SPAWN_XZ;
+use legaia_engine_scene::scene::{DefaultMapIdResolver, is_world_map_scene};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {

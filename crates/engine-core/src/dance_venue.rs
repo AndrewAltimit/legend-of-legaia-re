@@ -25,9 +25,6 @@
 //!
 //! See `docs/subsystems/minigame-dance.md` § Entering and leaving the hall.
 
-use crate::field_env::{self, EnvDraw};
-use crate::scene::{ProtIndex, Scene};
-use crate::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use crate::world::World;
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
@@ -36,6 +33,9 @@ use legaia_engine_minigames::dance::{
     DanceMode, DanceSceneEntry, dance_face_rig, dance_scene_entry,
 };
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_env::{self, EnvDraw};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 use legaia_minigame_formats::dance_art::{self, FaceRig};
 use legaia_tim::Vram;
 
@@ -457,8 +457,8 @@ fn venue_draws(index: &ProtIndex, scene: &Scene, res: &SceneResources) -> Vec<Ve
     let mut ranked: Vec<EnvDraw> = Vec::with_capacity(terrain.len() + placements.len());
     ranked.extend(terrain.iter().copied());
     ranked.extend(placements.iter().copied());
-    let planes = crate::coplanar_draws::draw_plane_summaries(&ranked, res);
-    let lifts = crate::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
+    let planes = legaia_engine_scene::coplanar_draws::draw_plane_summaries(&ranked, res);
+    let lifts = legaia_engine_scene::coplanar_draws::coplanar_draw_offsets(&ranked, &planes);
     ranked
         .into_iter()
         .map(|draw| VenueDraw {

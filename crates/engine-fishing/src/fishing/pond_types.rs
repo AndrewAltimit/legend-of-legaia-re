@@ -188,7 +188,7 @@ pub struct PondSession {
 pub struct PondVenue {
     /// The venue scene's `.MAP` buffer.
     pub map: Vec<u8>,
-    /// Its `+0x10000` region block (`legaia_engine_core::scene::Scene::field_map_region_block`).
+    /// Its `+0x10000` region block (`legaia_engine_scene::scene::Scene::field_map_region_block`).
     pub region_block: Option<Vec<u8>>,
     /// The angler's world `x` - the point the cast offsets from.
     pub anchor_x: i16,

@@ -13,7 +13,7 @@
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::MorphOwner;
 
 fn host() -> Option<SceneHost> {

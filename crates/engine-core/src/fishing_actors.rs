@@ -8,10 +8,10 @@ use legaia_engine_fishing::fishing_actors::*;
 /// Lift the three rods and the bend out of a loaded venue scene: the rod
 /// models off the scene's op-`0x0E` model bank, the bend off its type-7 VDF
 /// buffer. `None` when not one rod model resolves.
-pub fn rod_mesh_from_scene(scene: &crate::scene::Scene) -> Option<RodMesh> {
-    let bank = crate::model_bank::SceneModelBank::build(scene);
+pub fn rod_mesh_from_scene(scene: &legaia_engine_scene::scene::Scene) -> Option<RodMesh> {
+    let bank = legaia_engine_scene::model_bank::SceneModelBank::build(scene);
     let models = std::array::from_fn(|r| bank.tmd_bytes(scene, ROD_MODEL_BASE + r as i16));
-    let bend = crate::scene_bundle::find_vdf_buffer(scene)
+    let bend = legaia_engine_scene::scene_bundle::find_vdf_buffer(scene)
         .and_then(|buf| crate::world::vdf_entry(&buf, ROD_BEND_VDF_ENTRY).map(<[u8]>::to_vec));
     RodMesh::from_models(models, bend)
 }

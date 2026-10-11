@@ -16,8 +16,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{BuildOptions, SceneLoadKind, SceneResources};
 
 fn extracted_dir() -> Option<PathBuf> {
     let d = PathBuf::from("extracted");

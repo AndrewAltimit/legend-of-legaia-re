@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 
 #[derive(Default)]
 struct Starts(Vec<u16>);

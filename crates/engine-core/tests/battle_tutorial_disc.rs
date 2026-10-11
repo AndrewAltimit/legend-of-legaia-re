@@ -164,7 +164,7 @@ fn the_prot_index_loader_returns_the_same_corpus() {
         eprintln!("[skip] extracted/ or LEGAIA_DISC_BIN missing");
         return;
     };
-    let index = legaia_engine_core::scene::ProtIndex::open_extracted(&extracted)
+    let index = legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted)
         .expect("open extracted PROT index");
     let via_host = BattleTutorialScript::from_prot(&index);
     let via_archive =

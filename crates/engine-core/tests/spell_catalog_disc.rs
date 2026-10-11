@@ -5,7 +5,7 @@
 //! record byte-for-byte - which is what locks the target-byte decode. Skips
 //! without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 #[test]
@@ -18,7 +18,7 @@ fn disc_spell_catalog_matches_pinned_mp_and_target() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
@@ -73,7 +73,7 @@ fn disc_spell_catalog_covers_the_whole_player_seru_block() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

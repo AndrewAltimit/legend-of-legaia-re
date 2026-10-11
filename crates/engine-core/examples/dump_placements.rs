@@ -6,8 +6,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_field::man_field_scripts::{grid_byte_to_world, placement_spawn_relocation};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() -> anyhow::Result<()> {
     let extracted = PathBuf::from("extracted");

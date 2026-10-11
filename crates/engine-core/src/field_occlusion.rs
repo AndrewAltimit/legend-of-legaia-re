@@ -31,9 +31,9 @@
 //! `field_player_occluded` export (the page passes its orbit-camera eye,
 //! converted to retail Y-down).
 
-use crate::field_env::EnvDraw;
-use crate::scene_resources::SceneResources;
 use crate::world::World;
+use legaia_engine_scene::field_env::EnvDraw;
+use legaia_engine_scene::scene_resources::SceneResources;
 
 /// Half a standing character's height, world units (the mesh is ~130 tall).
 ///
@@ -499,7 +499,7 @@ fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_env::EnvDraw;
+    use legaia_engine_scene::field_env::EnvDraw;
 
     fn draw_at(x: i32, y: i32, z: i32, rot_y: u16) -> EnvDraw {
         EnvDraw {

@@ -7,8 +7,8 @@
 //! had Antidote/Medicine/Phoenix marked field-usable, but their on-disc flag
 //! byte is `0x84` (battle bit only) - status/death only matter in battle.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_menus::items::ItemCatalog;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 #[test]
@@ -21,7 +21,7 @@ fn effect_flags_correct_item_usability_gates() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

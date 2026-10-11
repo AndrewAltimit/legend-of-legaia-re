@@ -16,9 +16,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
-use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::battle_stage_module::{ARRIVAL_GROUND_BLANK, StageEffect};
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 use legaia_scene_formats::battle_backdrop::{GROUND_TSB, ground_grid_drawable};
@@ -107,7 +108,7 @@ fn the_cort_arena_draws_the_flesh_shell_after_the_arrival() {
     // The ground tile the grid samples is resident in the stage VRAM until
     // the hand-back's `MoveImage` blanks it.
     let mut vram = res.vram.clone();
-    legaia_engine_core::scene::upload_battle_stage_tims_into_vram(&scene, stage, &mut vram);
+    legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(&scene, stage, &mut vram);
     assert!(
         ground_grid_drawable(&vram),
         "the stage carries a ground tile"

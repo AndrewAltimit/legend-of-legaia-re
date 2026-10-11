@@ -16,7 +16,7 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_web_viewer::field_npc::build_npc_catalog_play;
 use legaia_web_viewer::play::build_field_render;
 use std::env;
@@ -55,7 +55,7 @@ fn play_render_state_matches_native_field_pipeline() {
         );
 
         // Native reference: the play-window's exact resolver calls.
-        let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+        let env_tmds = legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res);
         let floor_lut = scene.field_floor_height_lut(&host.index).ok().flatten();
         let placements = scene
             .field_object_placements(&host.index)
@@ -63,7 +63,7 @@ fn play_render_state_matches_native_field_pipeline() {
             .flatten()
             .unwrap_or_default();
         let binds = scene.field_object_binds(&host.index).ok().flatten();
-        let (mut native_placed, _) = legaia_engine_core::field_env::resolve_placed_env_draws(
+        let (mut native_placed, _) = legaia_engine_scene::field_env::resolve_placed_env_draws(
             &env_tmds,
             &placements,
             floor_lut,
@@ -73,13 +73,13 @@ fn play_render_state_matches_native_field_pipeline() {
         // resolve (`resolve_placement_draws`); mirror it here so the parity
         // claim covers the filter too.
         if let Some(binds) = binds.as_ref() {
-            legaia_engine_core::field_env::retain_visible_placed_draws(
+            legaia_engine_scene::field_env::retain_visible_placed_draws(
                 &mut native_placed,
                 binds,
                 &hidden,
             );
             let follow = host.world.object_floor_follow_records();
-            legaia_engine_core::field_env::follow_floor_placed_draws(
+            legaia_engine_scene::field_env::follow_floor_placed_draws(
                 &mut native_placed,
                 binds,
                 |r, x, z| host.world.object_floor_follow_y(&follow, r, x, z),
@@ -114,8 +114,11 @@ fn play_render_state_matches_native_field_pipeline() {
             .into_iter()
             .filter(|p| p.flags & legaia_scene_formats::field_objects::FLAG_PLACED == 0)
             .collect();
-        let (native_terrain_draws, _) =
-            legaia_engine_core::field_env::resolve_env_draws(&env_tmds, &native_terrain, floor_lut);
+        let (native_terrain_draws, _) = legaia_engine_scene::field_env::resolve_env_draws(
+            &env_tmds,
+            &native_terrain,
+            floor_lut,
+        );
         assert_eq!(
             f.terrain, native_terrain_draws,
             "{name}: terrain draws diverge (FLAG_PLACED records must not be \

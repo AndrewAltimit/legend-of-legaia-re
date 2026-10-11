@@ -13,7 +13,7 @@
 //!
 //! Disc-gated: skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::{BgmDirector, SceneHost};
+use legaia_engine_core::scene_host::{BgmDirector, SceneHost};
 
 #[derive(Default)]
 struct Calls(Vec<String>);
@@ -122,7 +122,6 @@ fn town0c_staging_swaps_gate_records_and_resets_between_picks() {
 
 #[test]
 fn static_story_evaluation_matches_the_live_world() {
-    use legaia_engine_core::field_env;
     let Some(mut host) = open_host() else {
         eprintln!("skip: LEGAIA_DISC_BIN unset");
         return;
@@ -134,7 +133,8 @@ fn static_story_evaluation_matches_the_live_world() {
         host.enter_field_scene(scene_name, 0).expect("enter");
         let live = host.world.hidden_object_records();
         let scene = host.scene.as_ref().expect("scene");
-        let statically = field_env::story_hidden_records_for_scene(scene, &host.index);
+        let statically =
+            legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index);
         assert_eq!(
             statically, live,
             "{scene_name}: static story evaluation diverges from the live world"
@@ -259,7 +259,7 @@ fn town0b_staging_is_the_night_attack() {
     // The static evaluator (site viewer, exporters) agrees.
     let scene = host.scene.as_ref().expect("scene");
     assert_eq!(
-        legaia_engine_core::field_env::story_hidden_records_for_scene(scene, &host.index),
+        legaia_engine_core::scene_staging::story_hidden_records_for_scene(scene, &host.index),
         hidden
     );
     // A later town01 pick resets the staging: day, theme 2016, wall intact.

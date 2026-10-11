@@ -30,7 +30,7 @@ impl World {
     /// Record the active scene label. Engines call this from the scene-load
     /// path (typically right before `install_encounter_for_scene`) so
     /// downstream consumers (HUD, diagnostics, save snapshots) can surface
-    /// the current scene without re-walking the [`crate::scene::SceneHost`].
+    /// the current scene without re-walking the [`crate::scene_host::SceneHost`].
     pub fn set_active_scene_label(&mut self, label: impl Into<String>) {
         self.active_scene_label = label.into();
     }
@@ -114,7 +114,7 @@ impl World {
     /// when no prompt is open.
     ///
     /// This is the one routing every host shares: the native window's
-    /// per-tick arm and [`crate::scene::SceneHost`]-driving sessions
+    /// per-tick arm and [`crate::scene_host::SceneHost`]-driving sessions
     /// (`BootSession::tick`, and so every headless driver) both call it. The
     /// browser page runs the same pair on its own two clocks - one edge per
     /// display frame into [`Self::step_name_entry`], the frame counter per

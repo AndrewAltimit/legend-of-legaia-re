@@ -14,7 +14,7 @@ impl FieldHostImpl<'_> {
     // REF: FUN_801DE840 (0x801E3108..0x801E31B0), FUN_8003C83C
     pub(super) fn op4c_n_e_sub_3_actor_sync_camera(&mut self, ctx: &mut FieldCtx, actor_id: u8) {
         let w = &mut *self.world;
-        let src = if actor_id == crate::field_env::PLAYER_ANCHOR_TARGET {
+        let src = if actor_id == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
             w.player_actor_slot
                 .and_then(|s| w.actors.get(usize::from(s)))
                 .map(|a| {
@@ -44,7 +44,7 @@ impl FieldHostImpl<'_> {
         let Some((x, z, heading)) = src else {
             return;
         };
-        if ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET)
+        if ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
             && w.field_vm.executing_channel.is_none()
         {
             let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
@@ -90,7 +90,7 @@ impl FieldHostImpl<'_> {
         let channel = self.world.field_vm.executing_channel;
         if player
             || (channel.is_none()
-                && ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET))
+                && ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET))
         {
             if let Some(slot) = self.world.player_actor_slot
                 && let Some(actor) = self.world.actors.get_mut(slot as usize)
@@ -141,14 +141,16 @@ impl FieldHostImpl<'_> {
                 .schedule_object_slot_ramp(record, ctx.field_8e, target, ticks);
             return;
         }
-        if sub != 0 || ctx.script_id != u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
+        if sub != 0
+            || ctx.script_id != u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+        {
             return;
         }
         use legaia_engine_motion_vm::ambient_motion::{RAMP_DEST_SCALE, Ramp, RampKind};
         let total = i32::from(ticks);
         self.world.locomotion.player_scale_ramps.install(Ramp {
             dest: RAMP_DEST_SCALE,
-            owner: u32::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+            owner: u32::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
             start: i32::from(ctx.field_72),
             end: i32::from(target),
             total,

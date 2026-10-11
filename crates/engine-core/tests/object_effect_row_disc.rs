@@ -10,7 +10,7 @@
 //! offset by `(op[5] * sin[yaw] + op[4] * cos[yaw]) >> 12`. No Sony bytes
 //! asserted beyond those derived halfwords.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// `(scene, partition-2 record, expected row 0)`.

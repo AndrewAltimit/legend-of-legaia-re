@@ -12,7 +12,7 @@
 //! `LEGAIA_DISC_BIN`.
 
 use legaia_engine_battle::levelup::{LevelUpTracker, StatGrowthCurve};
-use legaia_engine_core::Vfs;
+use legaia_engine_scene::vfs::Vfs;
 use legaia_game_tables::level_up_tables::{
     GROWTH_CHAR_COUNT, GROWTH_STAT_COUNT, growth_tables_from_scus,
 };
@@ -25,7 +25,7 @@ fn read_scus() -> Option<Vec<u8>> {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return None;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

@@ -94,7 +94,7 @@ pub fn build_atlas_from_prot_dat(prot_dat: &[u8]) -> Result<MenuGlyphAtlas> {
 /// Build a [`MenuGlyphAtlas`] from a buffer that already contains the
 /// menu-glyph TIM bytes starting at offset 0. Use when the caller
 /// fetched only the TIM slice from PROT.DAT (see
-/// [`legaia_engine_core::scene::ProtIndex::prot_dat_raw_bytes`] +
+/// [`legaia_engine_scene::scene::ProtIndex::prot_dat_raw_bytes`] +
 /// [`legaia_ui_formats::menu_glyph_atlas::TIM_SIZE`]) rather than the full
 /// PROT.DAT image.
 pub fn build_atlas_from_prot_dat_slice(tim_bytes: &[u8]) -> Result<MenuGlyphAtlas> {

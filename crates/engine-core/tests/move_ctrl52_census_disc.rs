@@ -34,7 +34,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_overlay_images::slot_b_module;
 use legaia_scene_formats::scene_event_scripts::move_stager_records;
 

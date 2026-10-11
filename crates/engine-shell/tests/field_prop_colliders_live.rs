@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
 

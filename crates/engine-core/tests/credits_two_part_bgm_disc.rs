@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
 
 fn extracted_dir() -> Option<PathBuf> {

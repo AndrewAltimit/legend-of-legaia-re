@@ -132,9 +132,9 @@ pub(super) fn run_to_transition(host: &mut SceneHost, budget: usize) -> Option<F
         if let Some(id) = host.world.active_fmv() {
             host.world.finish_cutscene();
             let scene = match host.apply_pending_fmv_handoff() {
-                Some(legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. }) => {
-                    Some(scene.to_string())
-                }
+                Some(legaia_engine_core::scene_host::FmvHandoffOutcome::Entered {
+                    scene, ..
+                }) => Some(scene.to_string()),
                 _ => None,
             };
             return Some(Fired::Fmv { id, scene });

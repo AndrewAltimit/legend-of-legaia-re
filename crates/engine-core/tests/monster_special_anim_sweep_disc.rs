@@ -209,9 +209,9 @@ const SCRIPTED_AI_CASTS: &[(u16, u8)] = &[
 ];
 
 fn scus() -> Option<Vec<u8>> {
-    use legaia_engine_core::Vfs;
+    use legaia_engine_scene::vfs::Vfs;
     let path = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);
-    legaia_engine_core::DiscVfs::open(&path)
+    legaia_engine_scene::vfs::DiscVfs::open(&path)
         .ok()?
         .read("SCUS_942.54")
         .ok()

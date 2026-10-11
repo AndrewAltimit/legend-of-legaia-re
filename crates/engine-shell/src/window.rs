@@ -9,15 +9,15 @@ use glam::{Mat4, Vec3, Vec4};
 use legaia_anm::AnimPlayer;
 use legaia_engine_audio::AudioSink;
 use legaia_engine_core::menu_runtime::MenuRuntime;
-use legaia_engine_core::scene::Scene;
-use legaia_engine_core::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_render::{
     CaptureImage, ColorSceneDraw, RenderTarget, Scene as RenderScene, SceneDraw, TextOverlay,
     UploadedColorMesh, UploadedFontAtlas, UploadedVram, UploadedVramMesh,
     window::{EngineWindow, orbit_camera_mvp},
+};
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 use legaia_engine_ui::{
     HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,

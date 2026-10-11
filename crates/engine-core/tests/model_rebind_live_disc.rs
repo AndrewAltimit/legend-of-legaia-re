@@ -4,7 +4,7 @@
 //! the scripted-motion VM's op `0x0E` records a model id on the world
 //! (`World::field_npc_live_model`), and each host turns that id into a mesh
 //! through the scene's own model bank
-//! ([`legaia_engine_core::model_bank::SceneModelBank::tmd_bytes`]) - the
+//! ([`legaia_engine_scene::model_bank::SceneModelBank::tmd_bytes`]) - the
 //! native window in `upload_assets`, the browser through its
 //! `play_npc_live_model` export. Both read the same world field and call the
 //! same resolver, so pinning the resolver pins both.
@@ -16,9 +16,10 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing.
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::model_bank::SceneModelBank;
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::model_bank::SceneModelBank;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

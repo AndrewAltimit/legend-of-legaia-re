@@ -358,7 +358,7 @@ impl World {
 
     /// Cold-boot guard: seed the retail new-game defaults **only when no
     /// party or save was ever loaded** (the roster is empty). Fired by
-    /// [`crate::scene::SceneHost::enter_field_scene`] when the host carries a
+    /// [`crate::scene_host::SceneHost::enter_field_scene`] when the host carries a
     /// [`NewGameDefaults`], so entering a scene directly - native
     /// `play-window --scene X` or the browser play page's scene picker -
     /// never leaves the pause menu reading a zeroed scaffold party.
@@ -420,7 +420,7 @@ impl World {
 /// | `brightness_ref` | `_DAT_8008457C` | `0xD7` (full-brightness reference the battle fades clamp against) |
 /// | `voice_volume` | `_DAT_80084580` | `200` (voice/SFX volume config) |
 /// | `audio_level` | `_DAT_8007B910` | `0xD7` - the live **audio level**: `FUN_800267A8` reads it at `0x800267B0` and passes `(level << 15) >> 16` to the libsnd volume shim `FUN_80062004`. The field was called `screen_brightness`, which the cell never was |
-/// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene::bgm_reattach_volume`]) |
+/// | `bgm_volume_raw` | `DAT_8007B6EC` | `-1` (field-BGM volume; see [`crate::scene_host::bgm_reattach_volume`]) |
 ///
 /// REF: FUN_800267A8, FUN_80062004
 ///
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(d.bgm_volume_raw, -1);
         // The level the BGM re-attach (FUN_80019898) derives from the
         // boot-value raw global.
-        assert_eq!(crate::scene::bgm_reattach_volume(d.bgm_volume_raw), -1);
+        assert_eq!(crate::scene_host::bgm_reattach_volume(d.bgm_volume_raw), -1);
     }
 
     fn vahn() -> StartingChar {

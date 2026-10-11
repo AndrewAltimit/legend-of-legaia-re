@@ -10,7 +10,7 @@
 //! Only structural facts are asserted - counts, positions and non-emptiness,
 //! never text. Skips and passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_minigames::slot_machine::{COIN_ENTRY_LABEL_VAS, COIN_ENTRY_ORIGIN};
 
 fn host() -> Option<SceneHost> {

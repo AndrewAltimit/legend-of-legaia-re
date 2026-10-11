@@ -104,7 +104,7 @@ impl SimStepper {
 /// engine camera cannot know (VR first-person gaze, the page's debug orbit),
 /// else the camera's own ([`Camera::compass_azimuth_units`]).
 ///
-/// The native session always ran this before [`crate::scene::SceneHost::tick`];
+/// The native session always ran this before [`crate::scene_host::SceneHost::tick`];
 /// the browser page ran it after, so its locomotion read the azimuth the
 /// camera had one tick earlier.
 pub fn camera_before_world_tick(

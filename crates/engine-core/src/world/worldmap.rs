@@ -163,7 +163,7 @@ impl World {
     /// Collision is **not** a separate unknown: the retail world-map-walk
     /// overlay's locomotion is the same `FUN_801d01b0` as the field, colliding
     /// against the same `_DAT_1f8003ec + 0x4000` walkability grid
-    /// ([`Self::field_tile_is_wall`]) which [`crate::scene::SceneHost::enter_field_scene`]
+    /// ([`Self::field_tile_is_wall`]) which [`crate::scene_host::SceneHost::enter_field_scene`]
     /// already loads from the scene's MAP file. Stepping runs through the shared
     /// [`Self::advance_with_collision`], so walls stop the overworld player
     /// exactly as on the field.
@@ -592,7 +592,7 @@ impl World {
     /// the auto-engage-on-walkover trigger in `Self::tick_world_map` (the
     /// player stepping onto a `Portal` entity's tile fires it). Replaces any
     /// previously installed set. This is the disc-placement seeding path
-    /// ([`crate::scene::SceneHost::enter_world_map_scene`] feeds it the
+    /// ([`crate::scene_host::SceneHost::enter_world_map_scene`] feeds it the
     /// classified actor placements + their spawn positions).
     pub fn install_world_map_entities_at(
         &mut self,
@@ -720,7 +720,7 @@ impl World {
     /// (the `Dialog` op the placement walker found) opens that text against the
     /// scene's MES container - sets [`crate::world::DialogState::current`] and emits
     /// [`FieldEvent::OpenDialog`], which the host renders through
-    /// [`crate::scene::SceneHost::open_pending_dialog`], the same panel path
+    /// [`crate::scene_host::SceneHost::open_pending_dialog`], the same panel path
     /// the field VM's op `0x3F` feeds.
     ///
     /// No-op while walking (a held direction is a movement frame, not a

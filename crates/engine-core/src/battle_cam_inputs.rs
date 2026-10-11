@@ -732,7 +732,7 @@ impl World {
     /// The battle camera's current pose, or the shared boot pose before the
     /// first tick armed it. While a battle-stage module owns the camera
     /// globals (the Cort arrival / form transition,
-    /// [`crate::battle_stage_module`]) this is the module's camera instead,
+    /// [`legaia_engine_scene::battle_stage_module`]) this is the module's camera instead,
     /// so both hosts draw what it frames.
     pub fn battle_cam_pose(&self) -> script::BattleCamPose {
         if let Some(c) = self.battle.stage_camera.as_ref() {

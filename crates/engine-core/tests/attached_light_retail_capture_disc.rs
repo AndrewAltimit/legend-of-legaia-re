@@ -37,7 +37,7 @@
 //! `extracted/`, or the save library directory.
 
 use legaia_engine_battle_vm::psx_camera::FieldCameraView;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::ScriptActorRef;
 use std::path::PathBuf;
 

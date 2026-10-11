@@ -232,7 +232,7 @@ struct KingdomPack {
     /// The kingdom's slot-5 **CLUT-walk** shimmer (ocean head + the seven
     /// shoreline / river cells), installed into [`Self::vram`] by the engine
     /// kernel every play host runs
-    /// (`legaia_engine_core::clut_walk_anim::ClutWalkAnim::install`) and
+    /// (`legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install`) and
     /// stepped by [`LegaiaViewer::kingdom_clut_tick`]. `None` until
     /// `set_scene_kingdom` resolves it (raw PROT.DAT loads have no CDNAME
     /// block to resolve against).
@@ -348,7 +348,7 @@ pub struct LegaiaViewer {
     field_npcs: Option<field_npc::FieldNpcPack>,
     /// Cached engine-core PROT index over the loaded disc (built on the
     /// first `set_scene_field`; cleared on `load_disc`).
-    prot_index: Option<std::sync::Arc<legaia_engine_core::scene::ProtIndex>>,
+    prot_index: Option<std::sync::Arc<legaia_engine_scene::scene::ProtIndex>>,
     /// CDNAME.TXT contents captured at `load_disc` time (the stored `disc`
     /// buffer only retains PROT.DAT, but the full-scene assembler needs the
     /// scene-name -> block map). `None` on raw PROT.DAT / single-TIM loads.
@@ -519,7 +519,7 @@ pub fn find_asset_table_offset(buf: &[u8]) -> Option<usize> {
 /// Extended on-disc footprint of a field `.MAP` file (object-record table +
 /// collision/floor grid at `+0x4000` + object-index grid at `+0x8000`). The
 /// walk-view `.MAP` entry is identified by this exact footprint, matching
-/// `legaia_engine_core::scene::FIELD_MAP_LEN`.
+/// `legaia_engine_scene::scene::FIELD_MAP_LEN`.
 const WALK_FIELD_MAP_LEN: usize = 0x12000;
 
 /// Resolve + build the walk-view continent ground heightfield for the kingdom

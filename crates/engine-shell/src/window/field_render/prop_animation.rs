@@ -188,7 +188,7 @@ impl PlayWindowApp {
                 .map(|s| s.record);
             let base = match record.and_then(|r| turns.get(&r)) {
                 Some(t) => Mat4::from_cols_array(
-                    &legaia_engine_core::field_env::turn_placed_model(&p.model.to_cols_array(), t),
+                    &legaia_engine_scene::field_env::turn_placed_model(&p.model.to_cols_array(), t),
                 ),
                 None => p.model,
             };
@@ -239,7 +239,7 @@ impl PlayWindowApp {
             let Some((tmd, raw)) = p.baked.tmd.and_then(|i| self.field_posed_tmds.get(i)) else {
                 continue;
             };
-            let Some(offsets) = legaia_engine_core::field_env::prop_bone_offsets(
+            let Some(offsets) = legaia_engine_scene::field_env::prop_bone_offsets(
                 bundle,
                 p.anim_id,
                 key,
@@ -315,12 +315,12 @@ impl PlayWindowApp {
         ) else {
             return Vec::new();
         };
-        let env_tmds = legaia_engine_core::field_env::env_pack_tmd_indices(scene, res);
+        let env_tmds = legaia_engine_scene::field_env::env_pack_tmd_indices(scene, res);
         let floor_lut = scene
             .field_floor_height_lut(&self.session.host.index)
             .ok()
             .flatten();
-        let (draws, _) = legaia_engine_core::field_env::resolve_placed_env_draws(
+        let (draws, _) = legaia_engine_scene::field_env::resolve_placed_env_draws(
             &env_tmds,
             &placements,
             floor_lut,

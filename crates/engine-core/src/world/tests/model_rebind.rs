@@ -44,8 +44,8 @@ fn a_player_bank_operand_comes_back_in_the_raw_id_space() {
     with_ambient(&mut w, 7, vec![0x0E, 0xF2, 0x00]);
     w.tick_field_npc_ambient();
     assert_eq!(w.field_npc_live_model(7), Some(0xF2));
-    let r = crate::model_bank::resolve_model_id(0xF2);
-    assert_eq!(r.bank, crate::model_bank::ModelBank::Player);
+    let r = legaia_engine_scene::model_bank::resolve_model_id(0xF2);
+    assert_eq!(r.bank, legaia_engine_scene::model_bank::ModelBank::Player);
     assert_eq!(r.index, 2);
     assert!(
         r.translucent,

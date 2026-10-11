@@ -28,7 +28,7 @@
 //!
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::Path;
 
 fn open_index() -> Option<ProtIndex> {
@@ -174,7 +174,7 @@ fn taiku_count4_bundle_registers_its_whole_pack_in_order() {
     assert!(pool[..3].iter().all(|m| m.bytes.len() == 100));
     assert!(pool[3].bytes.len() > 100);
 
-    let a = legaia_engine_core::scene_assembly::assemble_field_scene(&index, "taiku")
+    let a = legaia_engine_core::scene_staging::assemble_field_scene(&index, "taiku")
         .expect("assemble taiku");
     let env_offsets: Vec<usize> = a.env_tmds.iter().map(|&i| a.res.tmds[i].offset).collect();
     let pool_offsets: Vec<usize> = pool.iter().map(|m| m.offset).collect();

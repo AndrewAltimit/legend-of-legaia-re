@@ -509,7 +509,7 @@ pub mod item_use_battle_event;
 ///    cross-validation point for `map01`'s field-pack RAM
 ///    residency, as `map01` is one of the seven mid-game
 ///    FMV-trigger field scenes documented in
-///    `legaia_engine_core::scene::FMV_TRIGGER_FIELD_SCENES`.
+///    `legaia_engine_scene::scene::FMV_TRIGGER_FIELD_SCENES`.
 /// 4. **BGM ID is `2000` (global pool index `0`) for every save** -
 ///    the FMV trigger path resets the BGM selector to the start of
 ///    the global pool.

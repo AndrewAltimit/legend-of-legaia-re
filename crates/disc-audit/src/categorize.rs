@@ -44,7 +44,7 @@ pub enum Class {
     /// `count = 2` and `word_offsets = [3, 0x208B]` read as three chunks of
     /// type `0x00`. See [`docs/formats/data-field.md`].
     ///
-    /// The variant survives only because `legaia_engine_core::scene_bundle`
+    /// The variant survives only because `legaia_engine_scene::scene_bundle`
     /// still names it in a `matches!`; nothing produces it.
     DataFieldTruncated,
     /// The standalone TIM-pack heuristic - `byte[3]==0x01 && byte[2]<0x10`,

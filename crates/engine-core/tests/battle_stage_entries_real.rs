@@ -13,7 +13,7 @@
 //! "scan the block for the dome" sweep has to reject.
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 fn extracted_dir() -> Option<PathBuf> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
@@ -119,7 +119,7 @@ fn town01_battle_stage_is_prot_7_not_the_blocks_first_stream() {
 
 #[test]
 fn battle_stage_overlay_entry_matches_the_plus_0x47_band() {
-    use legaia_engine_core::overlay_loader::battle_stage_overlay_entry;
+    use legaia_engine_scene::overlay_loader::battle_stage_overlay_entry;
     // Stage id 0 = no stage overlay (the `beq v1, zero` arm of FUN_800520F0).
     assert_eq!(battle_stage_overlay_entry(0), None);
     // The Tetsu tutorial battle: `_DAT_8007B64A = 1`, loader-B tracker 0x48.
@@ -133,8 +133,8 @@ fn battle_stage_overlay_entry_matches_the_plus_0x47_band() {
 /// returns `None` and the battle renders with no backdrop at all.
 #[test]
 fn town01_battle_build_surfaces_the_stage_mesh() {
-    use legaia_engine_core::scene::Scene;
-    use legaia_engine_core::scene_resources::{
+    use legaia_engine_scene::scene::Scene;
+    use legaia_engine_scene::scene_resources::{
         BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
     };
 
@@ -255,8 +255,8 @@ fn rim_elms_four_stage_streams_all_claim_the_same_vram() {
 /// no longer load-bearing and this test is the thing that says so.
 #[test]
 fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
-    use legaia_engine_core::scene::Scene;
-    use legaia_engine_core::scene_resources::{
+    use legaia_engine_scene::scene::Scene;
+    use legaia_engine_scene::scene_resources::{
         BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
     };
 
@@ -317,7 +317,7 @@ fn the_selected_stage_entry_owns_its_vram_after_the_reupload() {
     );
 
     let mut vram = res.vram.clone();
-    let n = legaia_engine_core::scene::upload_battle_stage_tims_into_vram(
+    let n = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram(
         &scene,
         stage_entry,
         &mut vram,

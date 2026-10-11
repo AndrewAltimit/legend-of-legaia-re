@@ -35,7 +35,7 @@ fn overlay() -> Option<Vec<u8>> {
         return None;
     }
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");

@@ -11,7 +11,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (CI has no Sony disc).
 
-use legaia_engine_core::scene::{BgmDirector, SceneHost};
+use legaia_engine_core::scene_host::{BgmDirector, SceneHost};
 use legaia_engine_field::field_events::FieldEvent;
 
 /// Records which director hook each dispatched event hit.
@@ -98,7 +98,7 @@ fn route_bgm_events_dispatches_global_start_through_owned_vab() {
     // sub-op 4 is a re-attach, routed as a resume).
     host.world.pending_field_events.push(FieldEvent::Bgm {
         text_id: 2016,
-        sub_op: legaia_engine_core::scene::BGM_SUB_OP_ENGINE_STOP,
+        sub_op: legaia_engine_core::scene_host::BGM_SUB_OP_ENGINE_STOP,
     });
     let mut rec2 = RecordingBgm::default();
     host.route_bgm_events(&mut rec2).expect("route stop");
@@ -118,12 +118,12 @@ fn a_scene_local_start_plays_the_retail_fallback_bank() {
     };
     host.load_scene("teien").expect("load teien");
     let fallback = host
-        .music_bank_entry_bytes(legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID)
+        .music_bank_entry_bytes(legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID)
         .expect("read")
         .expect("the fallback id resolves");
     assert_eq!(
         legaia_engine_system::music_labels::prot_entry_for_bgm_id(
-            legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID
+            legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID
         ),
         Some(990),
         "raw 992 = extraction 990"

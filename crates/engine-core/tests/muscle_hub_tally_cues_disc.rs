@@ -9,7 +9,7 @@
 //! and that the world's tail stager names that bank. No Sony bytes are
 //! asserted. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_minigames::muscle_dome::{HUB_TALLY_CUE_STAGGER, HUB_TALLY_CUES};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_minigame_formats::minigame_sfx::{

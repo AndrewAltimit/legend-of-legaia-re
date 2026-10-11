@@ -3,7 +3,7 @@
 use super::*;
 
 /// Bake the command ring's three marks into `atlas` from the battle effect
-/// atlas (PROT 870, the entry `legaia_engine_core::scene::host::upload_flame_atlas_into_vram`
+/// atlas (PROT 870, the entry `legaia_engine_core::scene_host::host::upload_flame_atlas_into_vram`
 /// uploads on battle entry): the TIM whose image lands on page `(448, 0)`,
 /// each mark decoded through its own 16-colour palette on CLUT row 476.
 ///

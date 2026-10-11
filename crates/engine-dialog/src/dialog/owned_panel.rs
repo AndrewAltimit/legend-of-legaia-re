@@ -196,7 +196,7 @@ impl OwnedDialogPanel {
 
     /// Open a picker the moment its prompt's page waits instead of on the
     /// press retail waits for. A port-only mode for the simplified dialogue
-    /// panel (`legaia_engine_core::scene::SceneHost::open_pending_dialog`), whose host
+    /// panel (`legaia_engine_core::scene_host::SceneHost::open_pending_dialog`), whose host
     /// has a choice commit but no page-turn press to open the menu with.
     pub fn opening_menu_at_wait(mut self) -> Self {
         self.menu_opens_at_wait = true;

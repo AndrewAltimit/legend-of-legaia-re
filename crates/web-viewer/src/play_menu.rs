@@ -233,7 +233,7 @@ mod blip_tests {
     #[test]
     fn a_press_the_refusal_box_swallows_does_not_blip() {
         let mut rt = LegaiaRuntime::new();
-        let host = legaia_engine_core::scene::SceneHost::from_prot_bytes(
+        let host = legaia_engine_core::scene_host::SceneHost::from_prot_bytes(
             crate::play_fmv::tests::synthetic_prot(),
             None,
         )

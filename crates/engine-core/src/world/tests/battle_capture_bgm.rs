@@ -230,7 +230,7 @@ fn battle_bgm_with_silent_field_stops_on_finish() {
         evs.iter().any(|e| matches!(
             e,
             FieldEvent::Bgm {
-                sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
                 ..
             }
         )),

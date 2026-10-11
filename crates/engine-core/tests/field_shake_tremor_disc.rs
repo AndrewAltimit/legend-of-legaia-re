@@ -18,7 +18,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 const TREMOR_FLAG: u16 = 0x360;
 const TREMOR_SLOT: usize = 1;

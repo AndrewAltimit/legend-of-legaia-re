@@ -135,7 +135,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;

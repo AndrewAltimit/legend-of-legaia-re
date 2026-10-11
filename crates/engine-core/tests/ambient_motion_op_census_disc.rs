@@ -18,8 +18,8 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` / extracted assets are missing
 //! (CLAUDE.md disc-gated convention).
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
@@ -97,7 +97,7 @@ fn census() -> Option<(Census, WalkStats)> {
 
 /// What op `0x0E`'s operands actually name, per scene, against **the scene's
 /// model bank** - the pool ids `DAT_8007C018[5..]` that
-/// [`legaia_engine_core::model_bank::SceneModelBank`] reconstructs in retail's
+/// [`legaia_engine_scene::model_bank::SceneModelBank`] reconstructs in retail's
 /// own registration order - and against the set of models that scene's
 /// placements already bind.
 ///
@@ -185,7 +185,7 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
         // Does the target resolve in the scene's model bank? That is the
         // second half of the cost: a target the bank does not hold could not
         // be materialised at all.
-        let bank = legaia_engine_core::model_bank::SceneModelBank::build(&scene);
+        let bank = legaia_engine_scene::model_bank::SceneModelBank::build(&scene);
         let resolved = targets
             .iter()
             .filter(|&&id| bank.source_for_model_id(id).is_some())
@@ -193,8 +193,8 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
         let player_bank = targets
             .iter()
             .filter(|&&id| {
-                legaia_engine_core::model_bank::resolve_model_id(id).bank
-                    == legaia_engine_core::model_bank::ModelBank::Player
+                legaia_engine_scene::model_bank::resolve_model_id(id).bank
+                    == legaia_engine_scene::model_bank::ModelBank::Player
             })
             .count();
         total_sites += sites;
@@ -203,8 +203,8 @@ fn model_swap_operands_against_the_placement_model_set_or_skip() {
             .iter()
             .filter(|&&id| {
                 bank.source_for_model_id(id).is_none()
-                    && legaia_engine_core::model_bank::resolve_model_id(id).bank
-                        != legaia_engine_core::model_bank::ModelBank::Player
+                    && legaia_engine_scene::model_bank::resolve_model_id(id).bank
+                        != legaia_engine_scene::model_bank::ModelBank::Player
             })
             .map(|id| swaps.get(id).copied().unwrap_or(0))
             .sum::<usize>();

@@ -2,7 +2,7 @@
 
 use super::*;
 
-use legaia_engine_core::field_env::{FloorAnchor, FloorWave};
+use legaia_engine_scene::field_env::{FloorAnchor, FloorWave};
 
 #[path = "field_render/floor_wave.rs"]
 mod floor_wave;
@@ -21,22 +21,22 @@ pub(super) const LIT_VARIANT_TAG: usize = 1 << 30;
 
 /// One baked placed-object draw list: the `(mesh, model)` draws, the floor
 /// rungs each draw's Y came from, and which placed-object sweep owns each draw
-/// ([`legaia_engine_core::field_env::placed_window_key`]), and each draw's
+/// ([`legaia_engine_scene::field_env::placed_window_key`]), and each draw's
 /// grid cell + cull radius for the visible-tile crop
 /// ([`legaia_engine_core::field_view_window::CellKey`]), and each draw's bind
-/// record ([`legaia_engine_core::field_env::placed_bind_records`] - the key of
+/// record ([`legaia_engine_scene::field_env::placed_bind_records`] - the key of
 /// its live scripted displacement), all parallel.
 pub(super) type PlacedDrawList = (
     Vec<(usize, Mat4)>,
     Vec<FloorAnchor>,
-    Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+    Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
     Vec<legaia_engine_core::field_view_window::CellKey>,
     Vec<Option<usize>>,
     Vec<Option<CameraFacing>>,
 );
 
 /// A camera-facing terrain / decoration cell
-/// ([`legaia_engine_core::field_env::EnvDraw::view_skip`]): the record's
+/// ([`legaia_engine_scene::field_env::EnvDraw::view_skip`]): the record's
 /// `0x380` bits and the cell's own rotation-and-scale, kept so the frame can
 /// rebuild the cell's model as `T(pos) * K * rot` against this frame's camera
 /// (`legaia_render_kernels::gte::decoration_cell_basis`).
@@ -190,7 +190,7 @@ impl PlayWindowApp {
             log::info!("cutscene: {outcome}");
             if matches!(
                 outcome,
-                legaia_engine_core::scene::FmvHandoffOutcome::Entered { .. }
+                legaia_engine_core::scene_host::FmvHandoffOutcome::Entered { .. }
             ) {
                 self.rebuild_scene_render_state();
             }

@@ -1180,7 +1180,7 @@ impl Op49WindowSite {
 /// Same contract as [`system_flag_census`] / [`motion_flag_census`]: scenes
 /// without a resolvable MAN are skipped (best-effort over the CDNAME scene
 /// set, all bundle forms incl. scripted-table + v12-embedded via
-/// `legaia_engine_core::scene::Scene::field_man_payload`); site order preserves scene /
+/// `legaia_engine_scene::scene::Scene::field_man_payload`); site order preserves scene /
 /// partition / record discovery order. Descriptor bytes are read from the
 /// full MAN buffer (the retail picker reads through `_DAT_8007B450` into the
 /// resident MAN, not the instruction footprint); sites whose descriptor

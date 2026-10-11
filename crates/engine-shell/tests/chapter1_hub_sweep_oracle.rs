@@ -48,12 +48,13 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::WorldMapEntityConfig;
 use legaia_engine_field::man_field_scripts::{
     overworld_portal_sites, partition2_record_gates, scene_destinations,
 };
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 // ---------------------------------------------------------------------
 // Discovery + shared drive helpers

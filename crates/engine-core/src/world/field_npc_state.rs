@@ -163,7 +163,7 @@ pub struct FieldNpcState {
     /// scripted-motion VM's op `0x0E` re-bound this actor's mesh to, in the
     /// raw operand space both model-pool consumers share (`< 0xF0` = the
     /// scene bank, `>= 0xF0` = the player bank at `operand - 0xF0`; see
-    /// [`crate::model_bank::resolve_model_id`]).
+    /// [`legaia_engine_scene::model_bank::resolve_model_id`]).
     ///
     /// Absent = the actor still draws the mesh its placement's
     /// `model_index` named, which is every actor until a script swaps one.
@@ -247,7 +247,7 @@ pub struct FieldNpcState {
     /// touch's play-once-and-clamp lid, the `4C 36` already-opened snap -
     /// poses that way instead of looping. Bound by
     /// [`crate::world::World::bind_npc_clip_cursor`].
-    pub clip_cursors: std::collections::BTreeMap<u8, crate::field_env::PropAnim>,
+    pub clip_cursors: std::collections::BTreeMap<u8, legaia_engine_scene::field_env::PropAnim>,
     /// Slots whose [`Self::clip_cursors`] entry the world bound itself, from
     /// the scene bundle's record header at the poke
     /// ([`crate::world::World::bind_npc_scene_clip`]): their cursor keeps the

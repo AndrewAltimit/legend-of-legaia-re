@@ -189,7 +189,7 @@ fn real_tables_drive_the_rival_dancers() {
 /// locks that the runtime entry point resolves a real, scoreable chart.
 #[test]
 fn playwindow_load_path_enters_and_scores_a_dance() {
-    use legaia_engine_core::scene::SceneHost;
+    use legaia_engine_core::scene_host::SceneHost;
     use legaia_engine_core::world::World;
     use legaia_engine_mode::mode::SceneMode;
     use legaia_engine_system::input::PadButton;

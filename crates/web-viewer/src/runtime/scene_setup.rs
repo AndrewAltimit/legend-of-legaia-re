@@ -30,7 +30,7 @@ impl LegaiaRuntime {
         // The title theme hands the score to the field: stop it so the
         // prologue's own BGM (or its scripted silence) owns the audio.
         if let Some(d) = self.scene_host.director_mut() {
-            use legaia_engine_core::scene::BgmDirector;
+            use legaia_engine_core::scene_host::BgmDirector;
             d.stop();
         }
         let Some(host) = self.scene_host.host_mut() else {
@@ -74,7 +74,7 @@ impl LegaiaRuntime {
         // `town01` re-enter through here too, and a card Load's resume is not
         // a picker visit either.
         host.world.stage_picker_entry(name, resume);
-        let world_map = legaia_engine_core::scene::is_world_map_scene(name);
+        let world_map = legaia_engine_scene::scene::is_world_map_scene(name);
         if world_map {
             host.enter_world_map_scene(name)
                 .map_err(|e| format!("enter_field({name}): {e:#}"))?;
@@ -137,7 +137,7 @@ impl LegaiaRuntime {
         // latch, so the scene's own op-`0x35` start is honoured (and re-stages
         // its track's bank) even if it names the track already playing. No
         // scene bank is staged: retail loads a bank only with its track
-        // (`legaia_engine_core::scene::SCENE_LOCAL_BGM_FALLBACK_ID`).
+        // (`legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
         // New scene -> drop any SFX cues still queued for the old one (the
         // native boot's `clear_sfx` on scene entry).
         self.on_scene_change_audio();
@@ -196,7 +196,7 @@ impl LegaiaRuntime {
             ));
         };
         let name = scene.name.clone();
-        let is_world_map = legaia_engine_core::scene::is_world_map_scene(&name);
+        let is_world_map = legaia_engine_scene::scene::is_world_map_scene(&name);
         let follow = host.world.object_floor_follow_records();
         self.field = Some(crate::play::build_field_render(
             &host.index,
@@ -235,11 +235,11 @@ impl LegaiaRuntime {
         {
             let frame_step = host.world.clock.frame_step.max(1);
             // One resolve + park for every host
-            // (`legaia_engine_core::clut_walk_anim::ClutWalkAnim::install`):
+            // (`legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install`):
             // the type-6 table on a field scene, the kingdom's slot-5 table
             // on an overworld, the Drake complement rows, and the legacy
             // ocean-head fallback.
-            if let Some(install) = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+            if let Some(install) = legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install(
                 scene,
                 &host.index,
                 &mut res.vram,

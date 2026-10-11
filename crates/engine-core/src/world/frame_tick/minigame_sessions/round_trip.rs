@@ -40,7 +40,7 @@ impl World {
     /// not every game's exit is, so without one shared exit an entered
     /// minigame can still strand the player in a mode with the BGM running.
     ///
-    /// That is the invariant [`crate::scene::SceneHost::drain_minigame_warp`]
+    /// That is the invariant [`crate::scene_host::SceneHost::drain_minigame_warp`]
     /// already states for its *failure* arms - "a script that armed a warp must
     /// never be left in a mode with no exit" - and it has to hold for the
     /// successful ones too, on every host, or a reachable minigame is a

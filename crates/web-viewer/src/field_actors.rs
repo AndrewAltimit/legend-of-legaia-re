@@ -13,7 +13,7 @@
 //! pages run over those accessors.
 
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::collections::HashMap;
 
 use crate::play::{NpcClip, NpcRender};

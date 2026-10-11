@@ -250,14 +250,14 @@ fn the_venue_rods_are_scene_models_0x19_to_0x1b_with_a_tip_the_bend_moves() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");
             return;
         }
     };
-    let scene = legaia_engine_core::scene::Scene::load(&host.index, "other1").expect("other1");
+    let scene = legaia_engine_scene::scene::Scene::load(&host.index, "other1").expect("other1");
     let mesh = rod_mesh_from_scene(&scene).expect("the venue carries its rods");
     assert_eq!(ROD_MODEL_BASE, 0x19);
     assert_eq!(ROD_BEND_VDF_ENTRY, 0);
@@ -303,14 +303,14 @@ fn the_venue_rods_draw_in_the_cast_pose_around_the_line_tip() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");
             return;
         }
     };
-    let scene = legaia_engine_core::scene::Scene::load(&host.index, "other1").expect("other1");
+    let scene = legaia_engine_scene::scene::Scene::load(&host.index, "other1").expect("other1");
     let mesh = rod_mesh_from_scene(&scene).expect("the venue carries its rods");
     for r in 0..3 {
         let prims = &mesh.prims[r];

@@ -6,7 +6,7 @@
 //! Usage: sample_floor_ring <scene> <world_x> <world_z> [ring_psx...]
 
 use legaia_engine_core::glb_export::FloorSampler;
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

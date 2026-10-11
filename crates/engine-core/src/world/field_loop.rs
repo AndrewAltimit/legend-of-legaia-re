@@ -211,7 +211,7 @@ impl World {
     /// Restore the field track stashed by [`World::swap_to_battle_bgm`] when
     /// a battle ends. No-op unless a battle swap is active. Queues a
     /// `FieldEvent::Bgm` start for the stashed track, or a stop
-    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
+    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) when no field track was
     /// playing at encounter start.
     pub(crate) fn restore_field_bgm(&mut self) {
         if !self.audio.battle_bgm_active {
@@ -230,7 +230,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -241,7 +241,7 @@ impl World {
     /// The three minigames whose overlay init loads a track of its own - the
     /// dance chart loops, the Baka Fighter overture, the Muscle Dome battle
     /// theme - call this from the shared door-warp entry
-    /// ([`crate::scene::SceneHost::drain_minigame_warp`]), so **both** hosts
+    /// ([`crate::scene_host::SceneHost::drain_minigame_warp`]), so **both** hosts
     /// start the same music on the same frame. The slot machine and fishing
     /// pass `None` and inherit the host scene's BGM, which is retail's own
     /// behaviour for those two.
@@ -267,7 +267,7 @@ impl World {
     /// Resume the field track a minigame's own music displaced, on the
     /// mode-24 return warp. No-op unless [`Self::swap_to_minigame_bgm`] armed
     /// the swap. A scene that had no track at entry gets a stop
-    /// ([`crate::scene::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
+    /// ([`crate::scene_host::BGM_SUB_OP_ENGINE_STOP`]) rather than being left with the minigame's music running under the
     /// field.
     pub(crate) fn restore_minigame_bgm(&mut self) {
         if !self.audio.minigame_bgm_active {
@@ -286,7 +286,7 @@ impl World {
                 self.audio.current_bgm = None;
                 self.pending_field_events.push(FieldEvent::Bgm {
                     text_id: 0,
-                    sub_op: crate::scene::BGM_SUB_OP_ENGINE_STOP,
+                    sub_op: crate::scene_host::BGM_SUB_OP_ENGINE_STOP,
                 });
             }
         }
@@ -600,7 +600,9 @@ impl World {
         // The stage id as battle init leaves it: the tutorial arm
         // `enter_battle` consumed, or the `0xB5` override (`FUN_80055B6C`,
         // `0x80055D2C..0x80055D44`), which pages the arrival module in.
-        if let Some(stage) = crate::battle_stage_module::battle_init_stage_override(lead_monster) {
+        if let Some(stage) =
+            legaia_engine_scene::battle_stage_module::battle_init_stage_override(lead_monster)
+        {
             self.battle.stage_id = stage;
         }
         let stage_set = self.battle.stage_id != 0;
@@ -671,7 +673,7 @@ impl World {
     ///
     /// This is the warp-arrival placement: a door transition (field-VM op
     /// `0x3F`) carries the destination entry tile in its trailing bytes, and
-    /// [`crate::scene::SceneHost::tick`] calls this after the destination
+    /// [`crate::scene_host::SceneHost::tick`] calls this after the destination
     /// scene loads so the player stands at the door it arrived through
     /// instead of the cold-boot spawn. The floor height is sampled so the
     /// player lands on the destination's terrain tier rather than `y = 0`.
@@ -836,7 +838,7 @@ impl World {
         }
         let target = *self.field_bytecode.get(pc + 1)?;
         let bit = *self.field_bytecode.get(pc + 2)? & 0x1F;
-        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
         let ci = crate::field_channels::resolve_target(&self.field_vm.channels, target)?;
@@ -903,7 +905,7 @@ impl World {
         let pc = self.field_pc;
         let op = *self.field_bytecode.get(pc)?;
         let target = *self.field_bytecode.get(pc + 1)?;
-        if target == crate::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
+        if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET || target == 0xFB {
             return None;
         }
         let clip_control = op == 0xAB
@@ -1238,7 +1240,7 @@ mod cross_context_cflag_tests {
         let mut w = World::default();
         let mut leaf = channel(1, 1);
         leaf.object_bind = true;
-        leaf.ctx.local_flags = crate::field_env::ANIM_SPAWN_FLAGS;
+        leaf.ctx.local_flags = legaia_engine_scene::field_env::ANIM_SPAWN_FLAGS;
         leaf.ctx.field_72 = 0x1000;
         let mut block = channel(6, 6);
         block.object_bind = true;

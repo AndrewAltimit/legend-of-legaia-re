@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_regions::{REGION_RECORD_STRIDE, RegionTable, ZONE_RECORD_STRIDE};
 
 fn extracted_dir() -> Option<PathBuf> {

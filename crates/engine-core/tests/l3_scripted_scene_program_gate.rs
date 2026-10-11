@@ -355,7 +355,8 @@ fn a_real_scene_load_seats_the_program_the_seeded_flag_names() {
         eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
         return;
     };
-    use legaia_engine_core::scene::{DefaultMapIdResolver, SceneHost};
+    use legaia_engine_core::scene_host::SceneHost;
+    use legaia_engine_scene::scene::DefaultMapIdResolver;
 
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.set_map_resolver(Box::new(DefaultMapIdResolver::from_index(&host.index)));

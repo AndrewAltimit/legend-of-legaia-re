@@ -33,7 +33,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use legaia_engine_audio::{Sequencer, Spu, SpuAllocator, VabBank};
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 use legaia_seq::Seq;
 use serde::{Deserialize, Serialize};
 

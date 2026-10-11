@@ -21,9 +21,10 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost, is_world_map_scene};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::{placement_inline_prologue, scene_destinations};
+use legaia_engine_scene::scene::{ProtIndex, Scene, is_world_map_scene};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 

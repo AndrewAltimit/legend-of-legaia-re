@@ -22,8 +22,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
@@ -59,7 +59,7 @@ pub fn vram_to_le_bytes(vram: &legaia_tim::Vram) -> Vec<u8> {
 /// oracle would report the terrain pages (grass / water) as a phantom gap the
 /// engine doesn't actually have.
 pub fn oracle_load_kind(scene_name: &str) -> SceneLoadKind {
-    if legaia_engine_core::scene::is_world_map_scene(scene_name) {
+    if legaia_engine_scene::scene::is_world_map_scene(scene_name) {
         SceneLoadKind::WorldMap
     } else {
         SceneLoadKind::Field
@@ -127,7 +127,7 @@ pub fn build_engine_vram_bytes_prepass_with_kind(
     // effect *pixels* field-resident but uploads their CLUTs (rows 473..=478)
     // at battle entry, so writing the CLUTs here would be a wrong static upload.
     // Soft-fail: a scene without the cluster just stays as-is.
-    let _ = legaia_engine_core::scene::upload_effect_textures_into_vram(
+    let _ = legaia_engine_scene::scene::upload_effect_textures_into_vram(
         &index,
         &mut resources.vram,
         false,
@@ -267,7 +267,7 @@ pub fn clear_world_map_clut_cycle_rows(mask: &mut [bool]) {
 
 /// Refine a per-scene static mask with **cross-scene** evidence for the
 /// global shared effect-texture band (`befect_data`, see
-/// [`legaia_engine_core::scene::effect_texture_image_rects`]): a cell inside
+/// [`legaia_engine_scene::scene::effect_texture_image_rects`]): a cell inside
 /// those rects stays static only if every capture of **every** scene holds
 /// the same word there. The band is one global disc source uploaded
 /// identically for all field scenes, but a few of its pixels are
@@ -373,7 +373,7 @@ pub fn first_static_upload_divergence(
 
 fn open_index(extracted_root: &Path, disc: Option<&Path>) -> Result<ProtIndex> {
     if let Some(disc_path) = disc {
-        use legaia_engine_core::{DiscVfs, Vfs};
+        use legaia_engine_scene::vfs::{DiscVfs, Vfs};
         let vfs = DiscVfs::open(disc_path)
             .with_context(|| format!("open disc image {}", disc_path.display()))?;
         let prot_bytes = vfs

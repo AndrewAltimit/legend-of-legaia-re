@@ -11,9 +11,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{PROLOGUE_HANDOFF_BIT, PROLOGUE_HANDOFF_FLAG, World};
 use legaia_engine_field::man_field_scripts::walk_partition_gflag_sites;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

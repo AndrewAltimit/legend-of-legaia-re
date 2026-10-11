@@ -11,7 +11,7 @@ pub struct FieldPropState {
     /// `.MAP` object grid - the engine's source for the **actor-collision
     /// arms** of the movement probe (retail `FUN_801CFC40`). Installed at
     /// field-scene entry from
-    /// [`crate::scene::Scene::field_object_placements`] (each placement's
+    /// [`legaia_engine_scene::scene::Scene::field_object_placements`] (each placement's
     /// [`collider_x`](legaia_scene_formats::field_objects::Placement::collider_x) /
     /// `collider_z` = spawn position + the record's collision-footprint
     /// offset, live-verified against the spawned static actors of catalogued
@@ -31,10 +31,10 @@ pub struct FieldPropState {
     /// Per-scene bank of placed-prop animation + interaction runtimes (the
     /// door swings, the searchable cupboards), keyed by the placement's
     /// footprint-anchor tile. Built at field-scene entry
-    /// ([`crate::field_env::PropAnimBank::build`]); clips advance every field
+    /// ([`legaia_engine_scene::field_env::PropAnimBank::build`]); clips advance every field
     /// tick, and a touched / interacted prop's bind record runs through the
     /// field VM ([`crate::world::World::start_prop_interaction`]).
-    pub bank: crate::field_env::PropAnimBank,
+    pub bank: legaia_engine_scene::field_env::PropAnimBank,
     /// A prop the movement probe touched this tick (the `FUN_801CFC40`
     /// static-arm hit whose result bit `4` the locomotion auto-posts through
     /// `FUN_801D5B5C`): the anchor key of the touched [`crate::world::FieldPropState::bank`]

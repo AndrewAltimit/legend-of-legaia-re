@@ -17,7 +17,7 @@
 //! the windowed world-map cutscene camera (which reads this staged state)
 //! frames the retail fly-in.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -52,7 +52,7 @@ impl World {
     /// box (`0x23 MoveTo 0x7F,0x7F` behind a `SysFlag.Test`, e.g. town01's
     /// gate rocks `P0[18..21]` until flag `0x147` sets) or zero render scale
     /// (`0x4C 0x40 0x00`). The placed-object draw resolvers consult this via
-    /// [`crate::field_env::retain_visible_placed_draws`] - the `.MAP` table
+    /// [`legaia_engine_scene::field_env::retain_visible_placed_draws`] - the `.MAP` table
     /// alone says where a placed object *can* stand, the bind record's
     /// prologue says whether it currently *does*.
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
@@ -210,7 +210,7 @@ impl World {
     ///
     /// Hosts pair each entry with the bind-time angles
     /// ([`Self::object_bind_rot`]) through
-    /// [`crate::field_env::object_turn_matrix`]. Unturned objects are not
+    /// [`legaia_engine_scene::field_env::object_turn_matrix`]. Unturned objects are not
     /// listed.
     // REF: FUN_8001ADA4 (case 5 composes the actor's angles), FUN_8003A55C
     pub fn object_draw_turns(&self) -> std::collections::HashMap<usize, [u16; 3]> {
@@ -228,15 +228,18 @@ impl World {
     }
 
     /// [`Self::object_draw_turns`] as the rotation each turned record's draws
-    /// take about their own origin ([`crate::field_env::object_turn_matrix`]):
+    /// take about their own origin ([`legaia_engine_scene::field_env::object_turn_matrix`]):
     /// the one table both hosts fold into their placed draws
-    /// ([`crate::field_env::turn_placed_model`]).
+    /// ([`legaia_engine_scene::field_env::turn_placed_model`]).
     pub fn object_draw_turn_matrices(&self) -> std::collections::HashMap<usize, [f32; 16]> {
         self.object_draw_turns()
             .into_iter()
             .filter_map(|(record, live)| {
                 let seed = self.object_bind_rot(record)?;
-                Some((record, crate::field_env::object_turn_matrix(seed, live)))
+                Some((
+                    record,
+                    legaia_engine_scene::field_env::object_turn_matrix(seed, live),
+                ))
             })
             .collect()
     }

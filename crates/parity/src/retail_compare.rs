@@ -39,7 +39,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 use legaia_engine_core::world::SeededVramRect;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_mednafen::{PsxGpu, SaveState as MednafenState};
@@ -169,7 +169,7 @@ impl StateClass {
 
     fn classify(mode: u8, scene: &str, has_player: bool) -> Self {
         match mode {
-            0x03 if legaia_engine_core::scene::is_world_map_scene(scene) => StateClass::WorldMap,
+            0x03 if legaia_engine_scene::scene::is_world_map_scene(scene) => StateClass::WorldMap,
             0x03 if has_player && !scene.is_empty() => StateClass::Field,
             0x02 => StateClass::FieldInit,
             0x14 | 0x15 => StateClass::Battle,

@@ -18,9 +18,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::ambient_effect_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

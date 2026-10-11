@@ -27,7 +27,7 @@
 //! Disc-gated: the course ladder and the damage model both come off the
 //! disc. Skips + passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_menus::muscle_dome_session::{MuscleCard, MuscleDomeSession, MusclePhase};
 use legaia_engine_minigames::muscle_dome::{

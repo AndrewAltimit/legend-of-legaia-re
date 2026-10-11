@@ -341,15 +341,15 @@ fn w1c_arts_swing_ladder() {
         ART_BAND_FIRST, ART_BAND_LAST, ArtMouthOverride, ArtMouthTables, FaceFrameTables,
         battle_face_tracks,
     };
-    use legaia_engine_core::Vfs;
-    let vfs = legaia_engine_core::DiscVfs::open(&disc).expect("open disc");
+    use legaia_engine_scene::vfs::Vfs;
+    let vfs = legaia_engine_scene::vfs::DiscVfs::open(&disc).expect("open disc");
     let scus = vfs.read("SCUS_942.54").expect("read SCUS");
     let frames = FaceFrameTables::from_scus(&scus).expect("face-frame tables parse");
     let art_tables = ArtMouthTables::from_scus(&scus).expect("art-mouth override table parses");
 
     // Vahn's per-action entry tracks, straight out of his player battle file.
     let prot = vfs.read("PROT.DAT").expect("read PROT.DAT");
-    let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, None).expect("PROT index");
+    let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, None).expect("PROT index");
     let vahn = index
         .entry_bytes_extended(863)
         .expect("Vahn's player battle file (PROT 863)");

@@ -82,9 +82,9 @@
 //! hands the mode back when the session ends.
 //!
 //! That is the whole of what the eleven states order. States 2 and 6 call
-//! `FUN_8003EBE4`, which `legaia_engine_core::overlay_loader` already carries as a
+//! `FUN_8003EBE4`, which `legaia_engine_scene::overlay_loader` already carries as a
 //! replacement (on-demand PROT resolution through
-//! `legaia_engine_core::scene::ProtIndex`); states 1, 3, 5, 7 and 9 only wait on those
+//! `legaia_engine_scene::scene::ProtIndex`); states 1, 3, 5, 7 and 9 only wait on those
 //! loads; state 8 picks which MIPS image to DMA into slot B. The engine
 //! resolves a PROT entry when it needs the bytes and has no RAM window to page
 //! into, so there is no swap to sequence and no mid-swap frame for the cover

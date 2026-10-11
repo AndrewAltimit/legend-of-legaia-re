@@ -233,7 +233,7 @@ pub(super) fn cmd_play_window_with_record(
     // it `--scene map01` entered the overworld as a plain field scene here
     // unless `--world-map` was also passed. The flag still forces the
     // world-map entry for any other label.
-    let world_map = world_map || legaia_engine_core::scene::is_world_map_scene(scene);
+    let world_map = world_map || legaia_engine_scene::scene::is_world_map_scene(scene);
     // `--resume-save`: land an LGSF file through the card-load path instead
     // of the door entry below - the order the retail comparison corpus's
     // headless channels seed with, so its image channel frames the same

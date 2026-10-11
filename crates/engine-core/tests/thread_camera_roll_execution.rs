@@ -42,11 +42,11 @@
 //!
 //! Skips and passes without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::partition_record_span;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_vm::field::{
     ActorSearchResult, CameraParam, FieldActorFxHost, FieldActorHost, FieldActorSpawnHost,
     FieldAudioHost, FieldCameraHost, FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost,

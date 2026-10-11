@@ -13,9 +13,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::assemble_field_scene;
+use legaia_engine_core::scene_staging::assemble_field_scene;
 use legaia_engine_field::field_lit_mesh::{draw_rotation, has_lit_rows, shade_lit_rows};
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_render_kernels::field_light::FieldLight;
 
 fn extracted_root() -> Option<PathBuf> {
@@ -34,7 +34,7 @@ fn extracted_root() -> Option<PathBuf> {
 }
 
 /// Mean shaded colour of one pack's lit vertices, drawn unrotated.
-fn mean_lit_shade(a: &legaia_engine_core::scene_assembly::AssembledScene, slot: usize) -> f32 {
+fn mean_lit_shade(a: &legaia_engine_scene::scene_assembly::AssembledScene, slot: usize) -> f32 {
     let res_idx = a.env_tmds[slot];
     let rtmd = &a.res.tmds[res_idx];
     let (mesh, lit) = rtmd.build_filtered_vram_mesh_lit_vertices(&a.res.vram);

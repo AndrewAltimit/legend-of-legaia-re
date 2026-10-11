@@ -1,4 +1,4 @@
-//! The [`legaia_engine_core::scene::BgmDirector`] both hosts run: one director
+//! The [`legaia_engine_core::scene_host::BgmDirector`] both hosts run: one director
 //! generic over the audio output ([`legaia_engine_audio::AudioSink`]) - the
 //! native cpal [`legaia_engine_audio::AudioOut`] or the browser's
 //! `WebAudioOut`.
@@ -27,7 +27,7 @@ use legaia_engine_audio::{
     ArtsShoutBank, AudioSink, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank,
     SfxFireBatch, SfxScheduler, VabBank, XaClipBank,
 };
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 use legaia_engine_core::world::{SharedRegionBank, SideBandBank};
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;

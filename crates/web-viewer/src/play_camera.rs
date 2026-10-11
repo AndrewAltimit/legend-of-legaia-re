@@ -53,7 +53,7 @@ impl LegaiaRuntime {
         }
         const EMPTY: ([f32; 3], [f32; 3]) = ([-1.0; 3], [1.0; 3]);
         let out = match (self.field.as_ref(), self.res()) {
-            (Some(f), Some(res)) => legaia_engine_core::field_env::env_draws_world_aabb(
+            (Some(f), Some(res)) => legaia_engine_scene::field_env::env_draws_world_aabb(
                 &[&f.terrain, &f.placements],
                 res,
                 f.ground.as_ref(),

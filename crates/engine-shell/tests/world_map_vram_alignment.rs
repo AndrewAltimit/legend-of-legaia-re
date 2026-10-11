@@ -18,7 +18,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene_resources::SceneLoadKind;
+use legaia_engine_scene::scene_resources::SceneLoadKind;
 use legaia_parity::vram_oracle::{
     TEXPAGE_Y_START, build_engine_vram_bytes_prepass_with_kind, oracle_load_kind,
 };

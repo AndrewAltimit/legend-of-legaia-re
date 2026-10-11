@@ -6,7 +6,7 @@
 //! Usage: `cargo run -p legaia-engine-core --example dump_prop_scripts -- town01`
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm;
 use legaia_scene_formats::man_section::ManFile;
 

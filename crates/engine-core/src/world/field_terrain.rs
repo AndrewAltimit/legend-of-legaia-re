@@ -70,7 +70,7 @@ pub struct FieldTerrain {
     /// The 16-entry floor-height LUT the collision grid's low nibble indexes
     /// (retail `DAT_1F80035C`, filled from the MAN header by `FUN_8003AEB0` as
     /// 16 negated `s16` elevation tiers). Resolved per-scene into here from
-    /// [`crate::scene::SceneAssets::field_floor_height_lut`]; consumed by
+    /// [`crate::scene_host::SceneAssets::field_floor_height_lut`]; consumed by
     /// [`crate::world::World::sample_field_floor_height`] (the port of `FUN_80019278`). All
     /// zero until a field scene supplies it.
     pub floor_height_lut: [i16; 16],

@@ -125,11 +125,11 @@ fn main() -> anyhow::Result<()> {
         }
 
         // Which engine TIM covers the queried cell (image or CLUT rect)?
-        use legaia_engine_core::scene::Scene;
-        use legaia_engine_core::scene_resources::FIELD_SHARED_BLOCKS;
+        use legaia_engine_scene::scene::Scene;
+        use legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS;
         let prot = std::fs::read(extracted.join("PROT.DAT"))?;
         let cdname = std::fs::read_to_string(extracted.join("CDNAME.TXT"))?;
-        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
         let mut scenes: Vec<(String, Scene)> =
             vec![(scene_name.clone(), Scene::load(&index, &scene_name)?)];
         for name in FIELD_SHARED_BLOCKS {
@@ -207,13 +207,13 @@ fn main() -> anyhow::Result<()> {
     // Which upload writes the first divergence? Rebuild the scene resources
     // without the effect-texture pass and compare the word before/after.
     if let Some(&(dx, dy, ..)) = divergences.first() {
-        use legaia_engine_core::scene::{Scene, upload_effect_textures_into_vram};
-        use legaia_engine_core::scene_resources::{
+        use legaia_engine_scene::scene::{Scene, upload_effect_textures_into_vram};
+        use legaia_engine_scene::scene_resources::{
             BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
         };
         let prot = std::fs::read(extracted.join("PROT.DAT"))?;
         let cdname = std::fs::read_to_string(extracted.join("CDNAME.TXT"))?;
-        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, Some(&cdname))?;
         let scene = Scene::load(&index, &scene_name)?;
         let mut shared = Vec::new();
         for name in FIELD_SHARED_BLOCKS {
@@ -222,7 +222,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         let shared_refs: Vec<&Scene> = shared.iter().collect();
-        let kind = if legaia_engine_core::scene::is_world_map_scene(&scene_name) {
+        let kind = if legaia_engine_scene::scene::is_world_map_scene(&scene_name) {
             SceneLoadKind::WorldMap
         } else {
             SceneLoadKind::Field

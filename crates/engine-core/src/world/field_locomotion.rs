@@ -263,7 +263,7 @@ pub struct FieldLocomotion {
     /// scene's own ANM bundle (retail `*(0x8007B888)`), indexed by record:
     /// [`legaia_engine_vm::actor_tick::clip_end_ticks`] of the record's frame count at
     /// its own step ([`legaia_engine_vm::actor_tick::clip_step`] - the gated records
-    /// play slower). Seeded by [`crate::scene::SceneHost::load_scene`]; read
+    /// play slower). Seeded by [`crate::scene_host::SceneHost::load_scene`]; read
     /// by the cutscene timeline to time the end latch of a scene-bank clip it
     /// pokes onto the player without a host-owned clip player. Empty when the
     /// scene carries no bundle; `0` for a record with no frames.

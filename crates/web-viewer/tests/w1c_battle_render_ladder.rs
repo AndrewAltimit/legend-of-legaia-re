@@ -60,7 +60,7 @@ use legaia_engine_battle_vm::battle_intro_particles::IntroEnv;
 use legaia_engine_battle_vm::battle_intro_styles::{
     INTRO_FADE_RAMPS, IntroStyle, IntroStyleInputs, intro_duration_frames, select_intro_style,
 };
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_system::input::PadButton;
 use legaia_render_kernels::battle_intro::{BattleIntro, IntroQuadTable, parse_tile_corner_table};
 use legaia_web_viewer::runtime::LegaiaRuntime;

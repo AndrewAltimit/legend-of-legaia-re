@@ -26,7 +26,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 const SCENE: &str = "koin6";
 /// The two cribbed babies - `koin6`'s bit-22 NPC placements.

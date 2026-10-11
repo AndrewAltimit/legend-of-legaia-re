@@ -393,7 +393,11 @@ impl ScriptGate {
     /// run there, and the engine first stands on that PC the tick before
     /// its own first pass. Returns `true` on the tick a context was
     /// installed.
-    pub fn drive_resume(&self, host: &mut legaia_engine_core::scene::SceneHost, tick: u64) -> bool {
+    pub fn drive_resume(
+        &self,
+        host: &mut legaia_engine_core::scene_host::SceneHost,
+        tick: u64,
+    ) -> bool {
         if self.resumed_early.get() {
             return false;
         }
@@ -704,7 +708,10 @@ pub const SCRIPT_RESUME_TICK: u64 = crate::retail_compare::SETTLE_TICKS;
 /// op-`0x35` words of the arm that spawns the record, when that arm scored it
 /// ([`legaia_engine_field::man_field_scripts::walk_spawn_scores`]), are
 /// replayed first. Returns `true` when a context was installed.
-pub fn resume_record(host: &mut legaia_engine_core::scene::SceneHost, gate: &ScriptGate) -> bool {
+pub fn resume_record(
+    host: &mut legaia_engine_core::scene_host::SceneHost,
+    gate: &ScriptGate,
+) -> bool {
     if let Some(c) = gate.context(&host.world) {
         return match c.kind {
             EngineContextKind::Channel(_) => engage_placement(&mut host.world, gate),

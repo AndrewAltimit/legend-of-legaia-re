@@ -960,7 +960,7 @@ mod cross_host {
     fn write_save_into_card_native(
         card: &mut MountedCard,
         s: &mut NativeSession,
-        index: &legaia_engine_core::scene::ProtIndex,
+        index: &legaia_engine_scene::scene::ProtIndex,
     ) {
         let sf = s.host.world.save_full();
         let resume = s.current_resume();

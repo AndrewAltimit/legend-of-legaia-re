@@ -769,9 +769,9 @@ impl World {
     pub fn morphed_env_tmd(
         &self,
         pack_slot: usize,
-        rtmd: &crate::scene_resources::ResolvedTmd,
-    ) -> Option<crate::scene_resources::ResolvedTmd> {
-        let mut morphed: Option<crate::scene_resources::ResolvedTmd> = None;
+        rtmd: &legaia_engine_scene::scene_resources::ResolvedTmd,
+    ) -> Option<legaia_engine_scene::scene_resources::ResolvedTmd> {
+        let mut morphed: Option<legaia_engine_scene::scene_resources::ResolvedTmd> = None;
         for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
             if let Some(deltas) =
                 self.current_morph_deltas(pack_slot, group as u32, obj.vertices.len())

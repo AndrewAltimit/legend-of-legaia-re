@@ -27,7 +27,7 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_vm::field::{
     FieldActorFxHost, FieldActorHost, FieldActorSpawnHost, FieldAudioHost, FieldCameraHost,
     FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost, FieldFlagsHost, FieldHaltHost,

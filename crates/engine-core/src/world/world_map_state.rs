@@ -58,7 +58,7 @@ pub struct WorldMapState {
     /// per-tile step detection. `None` until the first world-map tick seeds it.
     pub last_tile: Option<(i32, i32)>,
     /// The tile a debug seat put a **standing** player on
-    /// ([`crate::scene::SceneHost::debug_seat_standing`]). Portal auto-engage
+    /// ([`crate::scene_host::SceneHost::debug_seat_standing`]). Portal auto-engage
     /// skips it until the player steps off: a capture of a player stood on a
     /// portal tile is one whose portal has already fired, so re-engaging it on
     /// the first tick would cross the door a second time. `None` otherwise.

@@ -7,7 +7,7 @@ use super::*;
 /// `+0x72` write-or-ramp) aimed at the player anchor `0xF8`.
 pub(in crate::world) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
     bytecode.get(pc) == Some(&0xCC)
-        && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
+        && bytecode.get(pc + 1) == Some(&legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
         && bytecode.get(pc + 2) == Some(&0x40)
 }
 
@@ -16,7 +16,7 @@ pub(in crate::world) fn is_player_scale_op(bytecode: &[u8], pc: usize) -> bool {
 /// Five shipped sites raise or lower the player's object-effect gate this way.
 pub(in crate::world) fn is_player_effect_gate_op(bytecode: &[u8], pc: usize) -> bool {
     bytecode.get(pc) == Some(&0xCC)
-        && bytecode.get(pc + 1) == Some(&crate::field_env::PLAYER_ANCHOR_TARGET)
+        && bytecode.get(pc + 1) == Some(&legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
         && matches!(bytecode.get(pc + 2), Some(&(0xC2 | 0x45)))
 }
 
@@ -48,7 +48,7 @@ pub(in crate::world) fn field_step_routed(
     // the same stand-in, which `look_key` reads as the player.
     if is_player_effect_gate_op(bytecode, pc) {
         let mut player_ctx = FieldCtx {
-            script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+            script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
             flags: 0x0100_0000,
             field_42: host.world.field_vm.player_field_42,
             ..Default::default()
@@ -66,7 +66,7 @@ pub(in crate::world) fn field_step_routed(
         return vm::field::step(host, ctx, bytecode, pc);
     };
     let mut player_ctx = FieldCtx {
-        script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+        script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
         flags: 0x0100_0000,
         field_72: host.world.actors[slot].move_state.field_72,
         ..Default::default()

@@ -38,7 +38,7 @@ fn extracted_dir() -> Option<PathBuf> {
 
 /// Decode a MAN from a scene-entry file: the bare `scene_asset_table` at 0,
 /// the scripted-table wrapper, or the v12-embedded 0x800-aligned fallback
-/// (the same resolution order as `legaia_engine_core::scene_bundle`).
+/// (the same resolution order as `legaia_engine_scene::scene_bundle`).
 fn load_man_from_scene(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut candidates: Vec<usize> = Vec::new();
     if legaia_scene_formats::scene_asset_table::detect(bytes).is_some() {

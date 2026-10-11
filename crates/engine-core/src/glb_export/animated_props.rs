@@ -14,7 +14,7 @@ pub struct PropGlb {
     pub frame_count: u16,
     /// `true` when retail leaves this prop's clip **free-running** - the bind
     /// record's spawn pass keeps the template's looping playback flags
-    /// ([`crate::field_env::prop_spawn_free_runs`]: the windmill, whose sails
+    /// ([`legaia_engine_scene::field_env::prop_spawn_free_runs`]: the windmill, whose sails
     /// spin forever under the unconditional anim tick) - so a builder should
     /// free-loop it. `false` for a prop whose spawn pass parks the clip held
     /// (a door/cupboard swing, a drawer slide): retail advances those only
@@ -90,7 +90,7 @@ pub fn export_animated_prop_glbs(
             return None;
         };
         let bind = binds.get(anchor)?;
-        Some(crate::field_env::prop_spawn_free_runs(
+        Some(legaia_engine_scene::field_env::prop_spawn_free_runs(
             mf,
             man,
             bind.record as usize,

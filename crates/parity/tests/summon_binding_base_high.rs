@@ -26,8 +26,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_effects::summon::summon_stager_prot_entry;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_mednafen::SaveState;
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_ram_image::{ScenarioManifest, extract::ram_slice};

@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 
 /// Frames to run each scene's prescript before giving up on a BGM start.
 /// Scene prescripts that start music do so in their opening frames.

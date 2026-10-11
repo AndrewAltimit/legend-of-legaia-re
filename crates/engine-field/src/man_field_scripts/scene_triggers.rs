@@ -9,7 +9,7 @@ use super::*;
 /// A field/overworld scene's controller script lists every place it can warp to
 /// as a `0x3F` op that carries the destination scene **name** directly in the
 /// bytecode (plus an `index` id and an entry tile). This is the disc-sourced
-/// counterpart to `legaia_engine_core::scene::DefaultMapIdResolver`'s positional guess: the
+/// counterpart to `legaia_engine_scene::scene::DefaultMapIdResolver`'s positional guess: the
 /// destination names are *in the data*, not in an uncaptured overlay. (The
 /// separate `0x3E` door-warp carries only a 7-id scene-*type* selector, whose
 /// name resolution does still live in an uncaptured handler.)
@@ -72,7 +72,7 @@ pub fn scene_destinations(man_file: &ManFile, man: &[u8]) -> Vec<SceneDestinatio
 ///
 /// See `legaia_engine_core::world::WorldMapEntityConfig::OverworldPortal` (the runtime
 /// entity this seeds) and the drain in
-/// `legaia_engine_core::scene::SceneHost::tick`.
+/// `legaia_engine_core::scene_host::SceneHost::tick`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverworldPortalSite {
     /// Overworld trigger tile X the player walks onto (the `.MAP` kind-1

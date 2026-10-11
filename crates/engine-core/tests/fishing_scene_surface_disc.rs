@@ -9,7 +9,7 @@
 //! `LEGAIA_DISC_BIN`.
 
 use legaia_engine_core::fishing_scene::FishingSurface;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_overlay_images::static_overlay;
 

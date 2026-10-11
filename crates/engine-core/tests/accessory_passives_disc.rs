@@ -13,8 +13,8 @@
 //! party-wide).
 
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
-use legaia_engine_core::Vfs;
 use legaia_engine_core::world::World;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 fn passives_from_disc() -> Option<AccessoryPassives> {
@@ -22,7 +22,7 @@ fn passives_from_disc() -> Option<AccessoryPassives> {
     if !path.is_file() {
         return None;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

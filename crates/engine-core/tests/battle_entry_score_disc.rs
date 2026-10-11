@@ -13,9 +13,9 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::walk_battle_entry_scores;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -29,7 +29,7 @@
 //!
 //! Skips + passes when `LEGAIA_DISC_BIN` or `extracted/` is missing.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_scene_formats::field_disasm as census;
 use legaia_scene_formats::man_section;

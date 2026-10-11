@@ -261,9 +261,9 @@ impl World {
 
     /// Frame count to size a **cross-context** clip cursor with when the scene
     /// ANM bundle cannot name the poked clip
-    /// ([`crate::field_env::PropAnimBank::bind_actor_clip`]): the live
+    /// ([`legaia_engine_scene::field_env::PropAnimBank::bind_actor_clip`]): the live
     /// locomotion clip's length if a host has installed a player clip player,
-    /// else [`crate::field_env::PLAYER_CLIP_STANDIN_FRAMES`]. It sets how long
+    /// else [`legaia_engine_scene::field_env::PLAYER_CLIP_STANDIN_FRAMES`]. It sets how long
     /// the script's end-latch spin waits, so it only has to be finite and of
     /// the right order - the frames the player actually *sees* are the host
     /// clip player's, which is a different object.
@@ -273,7 +273,7 @@ impl World {
             .as_ref()
             .map(|a| a.active_frame_count() as u16)
             .filter(|n| *n > 0)
-            .unwrap_or(crate::field_env::PLAYER_CLIP_STANDIN_FRAMES)
+            .unwrap_or(legaia_engine_scene::field_env::PLAYER_CLIP_STANDIN_FRAMES)
     }
 
     /// The size the player's figure draws at, as a factor of its mesh:

@@ -11,7 +11,7 @@
 //! Disc-gated: the door warp loads the arena and battle overlays. Skips and
 //! passes when `LEGAIA_DISC_BIN` is unset.
 
-use legaia_engine_core::scene::{MinigameWarpOutcome, SceneHost};
+use legaia_engine_core::scene_host::{MinigameWarpOutcome, SceneHost};
 use legaia_engine_mode::minigame_entry::MinigameSubId;
 use legaia_engine_mode::mode::SceneMode;
 

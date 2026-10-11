@@ -39,7 +39,7 @@ impl World {
 
     /// Load the per-scene base collision/floor grid from the field map file's
     /// `+0x4000` region (the `DATA\FIELD\<scene>.MAP` slice exposed by
-    /// [`crate::scene::Scene::field_collision_grid`]). `grid` is the raw
+    /// [`legaia_engine_scene::scene::Scene::field_collision_grid`]). `grid` is the raw
     /// `0x80 x 0x80` byte grid: high nibble = sub-cell wall bits, low nibble =
     /// floor-elevation tier - the same byte format the runtime grid uses, so
     /// it copies verbatim. The field-VM `0x4C` nibble-7 ops then layer

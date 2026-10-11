@@ -11,10 +11,10 @@
 //! Skips without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_battle::battle_stats::{EquipmentTable, StatRecord, StatusModifiers};
-use legaia_engine_core::Vfs;
 use legaia_engine_menus::equip_session::EquipSession;
 use legaia_engine_menus::equipment::{DiscEquipInfo, EquipSlot};
 use legaia_engine_menus::item_bag::ItemBag;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 fn scus() -> Option<Vec<u8>> {
@@ -22,7 +22,7 @@ fn scus() -> Option<Vec<u8>> {
     if !path.is_file() {
         return None;
     }
-    legaia_engine_core::DiscVfs::open(&path)
+    legaia_engine_scene::vfs::DiscVfs::open(&path)
         .ok()?
         .read("SCUS_942.54")
         .ok()

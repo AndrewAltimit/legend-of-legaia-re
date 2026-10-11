@@ -177,7 +177,7 @@ impl crate::world::World {
     }
 }
 
-impl crate::scene::SceneHost {
+impl crate::scene_host::SceneHost {
     /// [`crate::world::World::code_lock_lines`] with the header read off the
     /// user's disc (the field overlay, extraction entry `0897`). The native
     /// window and the browser play page both draw this.

@@ -115,7 +115,7 @@ pub struct SceneInstance {
     /// A full render-frame rotation quaternion `[x, y, z, w]`, emitted as
     /// the node's `rotation` verbatim and taking precedence over
     /// [`Self::rot_y`]. The world exporter fills it from the placement's
-    /// three authored angles (`legaia_engine_core::scene_assembly::draw_rotation_quat`),
+    /// three authored angles (`legaia_engine_scene::scene_assembly::draw_rotation_quat`),
     /// so a pitched or rolled record is not stood upright; the page export
     /// session fills it the same way for a tilted draw
     /// (`scene_export_add_instance_euler`) and leaves it `None` for the

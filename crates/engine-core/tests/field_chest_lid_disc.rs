@@ -20,7 +20,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
 
 /// West Voz Forest - nine chests in one scene.
@@ -142,7 +142,7 @@ fn chest_lid_is_shut_then_opens_once_and_stays_open() {
         "a re-entered opened chest poses open"
     );
     assert_ne!(
-        flags & legaia_engine_core::field_env::ANIM_HOLD,
+        flags & legaia_engine_scene::field_env::ANIM_HOLD,
         0,
         "and holds there"
     );

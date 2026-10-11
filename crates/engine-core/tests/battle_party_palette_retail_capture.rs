@@ -22,8 +22,8 @@ use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_engine_core::battle_party_form::{
     PartyFormSources, VramWriteLog, build_party_battle_form,
 };
-use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_core::world::World;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_mednafen::SaveState;
 use legaia_prot::archive::Archive;
 use std::path::{Path, PathBuf};

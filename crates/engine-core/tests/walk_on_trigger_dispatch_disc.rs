@@ -19,7 +19,7 @@
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md
 //! convention).
 
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::World;
 use legaia_engine_menus::name_entry::NameEntryInput;
 use std::path::PathBuf;

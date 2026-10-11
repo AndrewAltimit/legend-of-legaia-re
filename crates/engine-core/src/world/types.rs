@@ -306,7 +306,7 @@ pub enum WorldMapEntityKind {
 
 /// Render-agnostic snapshot of one placed overworld entity, produced by
 /// [`World::world_map_entity_markers`]. The disc-sourced placement seeding
-/// ([`crate::scene::SceneHost::enter_world_map_scene`]) installs each entity
+/// ([`crate::scene_host::SceneHost::enter_world_map_scene`]) installs each entity
 /// with a world position and a [`WorldMapEntityConfig`]; this pairs the
 /// position with its coarse [`WorldMapEntityKind`] so a host can draw a marker
 /// at each on-map portal / NPC / encounter zone.
@@ -976,7 +976,7 @@ pub enum WorldMapEntityConfig {
     ///
     /// `sub_id` is the op's `op0 - 100`, which selects a *code overlay*, not a
     /// scene - so this variant never reaches a
-    /// [`crate::scene::MapIdResolver`]. It is sourced from the placement
+    /// [`legaia_engine_scene::scene::MapIdResolver`]. It is sourced from the placement
     /// classifier's `PlacementKind::Portal`, which `is_genuine_warp` gates to
     /// `op0` in `100..=106`; on the three overworld scenes the only such
     /// placements are the `map02` / `map03` fishing signboards (`sub_id 0`).
@@ -1003,7 +1003,7 @@ pub enum WorldMapEntityConfig {
         /// Destination CDNAME scene label (e.g. `"keikoku"`, `"rikuroa"`).
         scene_name: String,
         /// The `0x3F` op's `i16` destination index (story/entry id; the
-        /// wider [`crate::scene::SceneDestinationResolver`] key, not the
+        /// wider [`legaia_engine_scene::scene::SceneDestinationResolver`] key, not the
         /// door-warp `map_id`).
         index: i16,
         /// Arrival entry-tile X byte at the destination (`& 0x7F` tile).

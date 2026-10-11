@@ -32,11 +32,12 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_engine_core::scene::{Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::actor_handler::ActorHandler;
 use legaia_engine_field::field_actor_reflect::{
     ReflectActor, ReflectOutcome, spawn_controller, tick_reflection,
 };
+use legaia_engine_scene::scene::Scene;
 use legaia_scene_formats::field_disasm::LinearWalker;
 use legaia_scene_formats::man_section::parse as parse_man;
 use std::path::PathBuf;

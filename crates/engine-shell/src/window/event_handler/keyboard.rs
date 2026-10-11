@@ -118,12 +118,12 @@ impl PlayWindowApp {
                 .session
                 .host
                 .world
-                .global_tmd(legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX as i16)
+                .global_tmd(legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX as i16)
                 .is_some()
             {
-                legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX
+                legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX
             } else {
-                legaia_engine_core::scene::ETMD_TAIL_FIRE_MODEL_INDEX
+                legaia_engine_core::scene_host::ETMD_TAIL_FIRE_MODEL_INDEX
             };
             self.session
                 .host
@@ -183,7 +183,7 @@ impl PlayWindowApp {
                     self.session.host.world.spawn_summon(
                         &overlay,
                         &bytes,
-                        legaia_engine_core::scene::GIMARD_TAIL_FIRE_MODEL_INDEX,
+                        legaia_engine_core::scene_host::GIMARD_TAIL_FIRE_MODEL_INDEX,
                         origin,
                     );
                     log::info!(

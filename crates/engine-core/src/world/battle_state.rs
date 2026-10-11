@@ -43,7 +43,7 @@ pub struct BattleState {
     /// raw CDNAME `#define` number (`town01` = `3`, `map01` = `0x55`; every
     /// catalogued save state reads the define of the scene named at
     /// `0x80084548`). It is the raw-TOC index, **two above** the extraction
-    /// index `crate::scene::Scene::start` carries. Stamped by the scene host
+    /// index `legaia_engine_scene::scene::Scene::start` carries. Stamped by the scene host
     /// on every scene load; battle init's map-gated arms key on it (the
     /// alternate monster seat family, the formation roll's scripted ambush,
     /// the intro style picker).
@@ -479,12 +479,12 @@ pub struct BattleState {
     /// [`crate::world::World::battle_stage_id`].
     pub stage_id: u8,
     /// PROT 0968's own data words while it runs.
-    pub(crate) arrival: crate::battle_stage_module::ArrivalState,
+    pub(crate) arrival: legaia_engine_scene::battle_stage_module::ArrivalState,
     /// The backdrop actors' object table has had slot 1 copied over slot 0 -
     /// the arrival's hand-back rebind
-    /// ([`crate::battle_stage_module::StageEffect::RebindBackdrop`]). Both
+    /// ([`legaia_engine_scene::battle_stage_module::StageEffect::RebindBackdrop`]). Both
     /// hosts build the stage shell from
-    /// [`crate::scene::SceneHost::battle_stage_object_indices`], which reads
+    /// [`crate::scene_host::SceneHost::battle_stage_object_indices`], which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
     /// The sparring fight's first round start is waiting on the battle open
@@ -529,11 +529,11 @@ pub struct BattleState {
     /// entry.
     pub vram_loads: crate::battle_party_form::VramWriteLog,
     /// PROT 0969's own data words while it runs.
-    pub(crate) form_transition: crate::battle_stage_module::FormTransitionState,
+    pub(crate) form_transition: legaia_engine_scene::battle_stage_module::FormTransitionState,
     /// The camera globals a stage module owns while it runs; `None` when the
     /// phase-scripted battle camera owns them. `World::battle_cam_pose`
     /// reads this first, so both hosts draw the module's camera.
-    pub stage_camera: Option<crate::battle_stage_module::StageCamera>,
+    pub stage_camera: Option<legaia_engine_scene::battle_stage_module::StageCamera>,
     /// The arrival's boss-name banner, `(text, pen x, pen y)` - up from its
     /// phase 5 until the round opens (retail's text actor, swept by flow
     /// state `0x0B`'s `FUN_800355F0`). Measured by the host's font, so the
@@ -734,7 +734,7 @@ pub struct BattleState {
     /// Bumped by every [`crate::world::World::enter_battle`]: the identity of
     /// the fight in progress. Per-battle work that lives outside the world -
     /// the scene host's party battle-form install
-    /// ([`crate::scene::SceneHost::ensure_battle_party_forms`]) - keys on it,
+    /// ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) - keys on it,
     /// so two fights with no field tick between them still install twice.
     /// Not a retail word.
     pub entry_serial: u32,

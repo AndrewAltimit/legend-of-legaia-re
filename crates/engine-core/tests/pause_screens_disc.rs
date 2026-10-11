@@ -5,11 +5,11 @@
 //! Structural assertions only (the description strings are Sony text and
 //! stay uncommitted). Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_core::field_menu_dispatch::{FieldMenuSubsession, build_pause_items_session};
 use legaia_engine_core::world::World;
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::pause_screens::{items_screen_model, magic_screen_model};
+use legaia_engine_scene::vfs::Vfs;
 use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
@@ -18,7 +18,7 @@ fn disc_scus() -> Option<Vec<u8>> {
     if !path.is_file() {
         return None;
     }
-    legaia_engine_core::DiscVfs::open(&path)
+    legaia_engine_scene::vfs::DiscVfs::open(&path)
         .ok()?
         .read("SCUS_942.54")
         .ok()
@@ -165,7 +165,7 @@ fn arrange_rank_table_parses_from_menu_overlay() {
         return;
     };
     let prot =
-        legaia_engine_core::scene::ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+        legaia_engine_scene::scene::ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
     let overlay = prot
         .entry_bytes_extended(legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32)
         .expect("menu overlay entry bytes");

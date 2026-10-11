@@ -18,8 +18,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::man_field_scripts::scene_destinations;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_scene_formats::scene_asset_table;
 
 fn extracted_prot() -> Option<PathBuf> {
@@ -96,7 +97,7 @@ fn map01_controller_lists_its_overworld_destinations() {
     // gate should never surface a string that isn't an actual scene).
     if let Some(root) = extracted_root() {
         let index =
-            legaia_engine_core::scene::ProtIndex::open_extracted(&root).expect("prot index");
+            legaia_engine_scene::scene::ProtIndex::open_extracted(&root).expect("prot index");
         let known: std::collections::BTreeSet<String> =
             index.cdname_scene_names().into_iter().collect();
         for d in &dests {

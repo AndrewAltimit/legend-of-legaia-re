@@ -31,7 +31,7 @@
 //! Structural assertions only (grid bits, tiles, opcodes) - no Sony bytes.
 //! Skip-passes without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 

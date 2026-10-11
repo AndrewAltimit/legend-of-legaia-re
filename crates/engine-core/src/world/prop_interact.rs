@@ -8,7 +8,7 @@
 //! through the inline field-VM runner ([`legaia_engine_field::inline_dialogue`]) with a
 //! **prop binding**: the executing context's `local_flags`/`flags`/`field_6a`
 //! are the prop actor's `+0x62` / `+0x10` / `+0x6A`, synced into the
-//! [`crate::field_env::PropAnimBank`] entry around every VM slice - so
+//! [`legaia_engine_scene::field_env::PropAnimBank`] entry around every VM slice - so
 //!
 //! - the record's `2B`/`2C` LFlag ops drive the clip (the swing),
 //! - its `2D 08` end-latch spin **parks** the run until the per-frame anim
@@ -462,9 +462,9 @@ impl World {
                 // REF: FUN_8003C83C, FUN_801DE840 (the halted-target early-out)
                 let player_target = b & 0x80 != 0
                     && vm::field::peek_extended(&id.bytecode, id.pc)
-                        == Some(crate::field_env::PLAYER_ANCHOR_TARGET);
+                        == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET);
                 let mut player_ctx = legaia_engine_vm::field::FieldCtx {
-                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
                     flags: 0x0100_0000,
                     ..Default::default()
                 };
@@ -756,9 +756,11 @@ impl World {
     /// REF: FUN_800204F8
     pub(crate) fn bind_player_script_clip(&mut self, move_id: u8) {
         let fallback = self.player_clip_frames_hint();
-        self.props
-            .bank
-            .bind_actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET, move_id, fallback);
+        self.props.bank.bind_actor_clip(
+            legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET,
+            move_id,
+            fallback,
+        );
         let pick = self.field_player_script_clip(move_id);
         if let Some(id) = self.player_move_cue(&pick) {
             self.locomotion.player_move_cues.push(id);
@@ -836,7 +838,7 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::field_env::{PropAnim, PropAnimState, PropProgram};
+    use legaia_engine_scene::field_env::{PropAnim, PropAnimState, PropProgram};
 
     /// A prop whose run makes the **player** play a clip and waits for it -
     /// the shape of `chitei2` P0[33], the transport switch: `A2 F8 04`
@@ -878,7 +880,7 @@ mod tests {
     /// touched.
     #[test]
     fn clip_word_pokes_swing_a_placed_objects_bound_clip() {
-        use crate::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
+        use legaia_engine_scene::field_env::{ANIM_CLAMP, ANIM_END, ANIM_HOLD, ANIM_REVERSE};
         let mut w = World::new();
         let prop = |record: usize| {
             let mut anim = PropAnim::spawned(2, 6, false, 0);
@@ -974,7 +976,7 @@ mod tests {
         assert_eq!(
             w.props
                 .bank
-                .actor_clip(crate::field_env::PLAYER_ANCHOR_TARGET)
+                .actor_clip(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
                 .map(|a| a.anim_id),
             Some(4),
             "the ExecMove binds the player's clip cursor"

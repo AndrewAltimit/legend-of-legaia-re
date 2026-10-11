@@ -18,8 +18,8 @@ use std::sync::Arc;
 
 use legaia_engine_core::dance_cast_scene::{DanceCastAssets, DanceCastSurface, resolve_clip};
 use legaia_engine_core::dance_venue::DanceVenue;
-use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_minigames::dance::{DEMO_POS, DanceBodyModel, DanceGame, DanceMode};
+use legaia_engine_scene::scene::ProtIndex;
 
 fn extracted_dir() -> Option<PathBuf> {
     let over = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from);

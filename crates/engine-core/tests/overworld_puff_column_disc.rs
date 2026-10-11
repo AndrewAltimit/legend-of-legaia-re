@@ -20,9 +20,9 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{FrameClock, World};
 use legaia_engine_field::man_field_scripts::scene_entry_ambient_installs;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 const COLUMN_X: i16 = 9152;
 const SPAWN_Z: i16 = 10432;

@@ -16,7 +16,7 @@
 use legaia_engine_core::field_submode_code_lock::{
     CODE_LOCK_RECORD, CODE_LOCK_RESULT_FLAG, CODE_LOCK_SLOT,
 };
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_scene_formats::field_disasm::{self as fd, InsnInfo};
 use std::path::PathBuf;
 

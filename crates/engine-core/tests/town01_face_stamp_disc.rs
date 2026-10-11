@@ -18,10 +18,10 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{ScriptVramMove, World};
 use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, MenuCtrlKind};
 
 fn extracted_dir() -> Option<PathBuf> {

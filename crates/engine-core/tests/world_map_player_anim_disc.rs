@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use legaia_actor_formats::character_pack;
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_engine_core::npc_catalog::scene_anm_bundle;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_anim::FieldPlayerAnim;
 use legaia_engine_system::input::PadButton;
 

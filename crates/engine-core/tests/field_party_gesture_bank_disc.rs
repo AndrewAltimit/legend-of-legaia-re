@@ -15,7 +15,7 @@
 //! member's bit, ticks the scene host through it, and checks each party
 //! re-target. Skip-passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, man_script_spans};
 

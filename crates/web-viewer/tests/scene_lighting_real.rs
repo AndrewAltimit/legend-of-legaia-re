@@ -8,8 +8,9 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN` / `extracted/`.
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::{assemble_field_scene, build_hybrid_env_mesh};
+use legaia_engine_core::scene_staging::assemble_field_scene;
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_scene::scene_assembly::build_hybrid_env_mesh;
 use legaia_render_kernels::scene_lighting as sl;
 use std::path::PathBuf;
 

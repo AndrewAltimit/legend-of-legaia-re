@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::field_ground;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 const SCENE: &str = "jouina";
 
@@ -83,7 +83,7 @@ fn the_drawn_ground_is_the_walked_ground_and_the_player_rides_it() {
         .position(|p| p[0] == f32::from(x) && p[2] == f32::from(z))
         .expect("a ground vertex at the tile corner");
 
-    let sink = legaia_engine_core::coplanar_draws::GROUND_SINK;
+    let sink = legaia_engine_scene::coplanar_draws::GROUND_SINK;
     let mut ground_moved = false;
     let mut player_moved = false;
     let y0 = host.world.actors[slot].move_state.world_y;

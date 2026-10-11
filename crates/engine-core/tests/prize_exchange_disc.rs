@@ -38,7 +38,7 @@ fn menu_overlay() -> Option<Vec<u8>> {
         return None;
     }
     let disc = std::env::var_os("LEGAIA_DISC_BIN")?;
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");
@@ -75,8 +75,8 @@ fn koin1_prize_counter_interact_arms_the_exchange_through_the_runner() {
     let Some(overlay) = menu_overlay() else {
         return;
     };
-    let mut host =
-        legaia_engine_core::scene::SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    let mut host = legaia_engine_core::scene_host::SceneHost::open_extracted(&extracted)
+        .expect("open SceneHost");
     host.enter_field_scene("koin1", 0).expect("enter koin1");
     host.world.install_menu_overlay_tables(&overlay);
     assert!(

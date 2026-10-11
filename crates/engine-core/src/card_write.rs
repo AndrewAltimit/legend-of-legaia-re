@@ -92,7 +92,10 @@ pub fn card_save_index(card: &MountedCard, block: u8) -> u32 {
 /// `None` when the sheet cannot be read or the slot is one the sheet does not
 /// cover - the block-identity write then leaves the icon region as found
 /// rather than stamping a wrong one.
-pub fn retail_block_icon(index: &crate::scene::ProtIndex, slot: u32) -> Option<RetailBlockIcon> {
+pub fn retail_block_icon(
+    index: &legaia_engine_scene::scene::ProtIndex,
+    slot: u32,
+) -> Option<RetailBlockIcon> {
     let entry = index
         .entry_bytes(legaia_ui_formats::save_icon::PROT_ENTRY as u32)
         .ok()?;
@@ -146,7 +149,7 @@ pub fn write_save_into_card(
     block: u8,
     sf: &SaveFile,
     resume: &SaveResume,
-    index: Option<&crate::scene::ProtIndex>,
+    index: Option<&legaia_engine_scene::scene::ProtIndex>,
 ) -> Result<CardWrite, String> {
     let save_slot = card_save_index(card, block);
     let icon = index.and_then(|i| retail_block_icon(i, save_slot));

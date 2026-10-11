@@ -344,7 +344,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     pub fn route_world_sfx(
         &mut self,
         world: &mut legaia_engine_core::world::World,
-        index: &legaia_engine_core::scene::ProtIndex,
+        index: &legaia_engine_scene::scene::ProtIndex,
     ) {
         let ops = world.take_sfx_ring_ops();
         // One `World::tick` is one vsync, and the scheduler ticks once per
@@ -404,7 +404,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     pub fn enqueue_battle_cues(
         &mut self,
         cues: &[legaia_engine_battle::battle_events::BattleSfxCue],
-        index: &legaia_engine_core::scene::ProtIndex,
+        index: &legaia_engine_scene::scene::ProtIndex,
     ) {
         if cues
             .iter()

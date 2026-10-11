@@ -331,7 +331,7 @@ fn an_object_bind_prologue_turn_reaches_the_draw() {
         0.0, 0.0, 1.0, 0.0, //
         5.0, 6.0, 7.0, 1.0,
     ];
-    let turned = crate::field_env::turn_placed_model(&model, &m);
+    let turned = legaia_engine_scene::field_env::turn_placed_model(&model, &m);
     assert_eq!(&turned[12..16], &[5.0, 6.0, 7.0, 1.0], "origin kept");
     let a = f32::from(0x600u16 - 320) * std::f32::consts::TAU / 4096.0;
     assert!((turned[0] - a.cos()).abs() < 1e-5);

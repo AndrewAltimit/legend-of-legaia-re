@@ -20,7 +20,7 @@
 //! Run: `cargo run -p legaia-engine-shell --release --example field_static_actor_probe`
 //! Requires `extracted/`, `scripts/scenarios.toml`, `saves/library`.
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_mednafen::SaveState;
 use legaia_parity::capture_observations::field_pack_intra_transition::read_pool_slot_name;
 use legaia_ram_image::ScenarioManifest;

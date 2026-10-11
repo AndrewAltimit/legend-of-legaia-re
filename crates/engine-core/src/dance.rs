@@ -1,7 +1,7 @@
 //! Noa's dance rhythm minigame. The rules engine (beat clock, judge, groove
 //! gauge, the floor cast and sprite-part pools, the camera track) lives in
 //! `legaia_engine_minigames::dance`; this file keeps
-//! the one step that reads the disc through a [`crate::scene::ProtIndex`]:
+//! the one step that reads the disc through a [`legaia_engine_scene::scene::ProtIndex`]:
 //! staging the HUD art into a scene's VRAM.
 
 use legaia_engine_minigames::dance::*;
@@ -24,7 +24,7 @@ use legaia_engine_minigames::dance::*;
 /// rect filter on. Soft-fails to `0` when the entry is absent or carries no
 /// member at a named page, which leaves a host on its placeholder text.
 pub fn stage_dance_hud_vram(
-    index: &crate::scene::ProtIndex,
+    index: &legaia_engine_scene::scene::ProtIndex,
     rects: &[DanceHudRect],
     vram: &mut legaia_tim::Vram,
 ) -> usize {

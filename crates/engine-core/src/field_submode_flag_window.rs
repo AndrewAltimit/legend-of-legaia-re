@@ -293,7 +293,7 @@ impl crate::world::World {
     }
 }
 
-impl crate::scene::SceneHost {
+impl crate::scene_host::SceneHost {
     /// [`crate::world::World::flag_window_lines`] with the legend read off the
     /// user's disc (the field overlay, extraction entry `0897`). The native
     /// window and the browser play page both draw this.

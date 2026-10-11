@@ -28,9 +28,9 @@
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 
 use super::World;
-use crate::field_env::{ANIM_CLAMP, PropAnim};
 use legaia_engine_field::field_anim::FieldClipPlayer;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_env::{ANIM_CLAMP, PropAnim};
 
 /// The anim-speed step every host ticks the effect scene-graphs at - the
 /// per-part wait-timer drain `0x0400` both hosts already passed by hand.
@@ -451,7 +451,7 @@ impl World {
     pub(crate) fn npc_live_clip_for_target(
         &self,
         target: u8,
-    ) -> Option<Option<crate::field_env::PropAnim>> {
+    ) -> Option<Option<legaia_engine_scene::field_env::PropAnim>> {
         let chans = if self.field_vm.channels.is_empty() {
             &self.field_vm.stepping_view
         } else {

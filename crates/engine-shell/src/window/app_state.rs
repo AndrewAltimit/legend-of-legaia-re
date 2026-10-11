@@ -335,12 +335,12 @@ pub(super) struct PlayWindowApp {
     /// `field_placement_color_draws` (parallel lists): `Some` for the sub-area
     /// window sweep's placements, which the per-frame pass gates on the
     /// world's windowed static-object list through
-    /// `field_env::placed_draw_live` - the same kernel the browser play page
+    /// `legaia_engine_core::scene_staging::placed_draw_live` - the same kernel the browser play page
     /// asks.
     pub(super) field_placement_window_keys:
-        Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+        Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
     pub(super) field_placement_color_window_keys:
-        Vec<Option<legaia_engine_core::field_env::PlacedWindowKey>>,
+        Vec<Option<legaia_engine_scene::field_env::PlacedWindowKey>>,
     /// Grid cell + record cull radius per `field_placement_draws` entry, for
     /// the placed-object actor cull (`field_view_window::placed_actor_visible`).
     pub(super) field_placement_cell_keys: Vec<legaia_engine_core::field_view_window::CellKey>,
@@ -383,13 +383,13 @@ pub(super) struct PlayWindowApp {
     /// [`field_render::FieldFloorWave`].
     pub(super) field_floor_wave: field_render::FieldFloorWave,
     /// Cross-draw coplanar-surface offsets for the current scene's resolved
-    /// [`legaia_engine_core::field_env::EnvDraw`] lists (terrain + placed
-    /// layers combined), from `legaia_engine_core::coplanar_draws`. Applied to
+    /// [`legaia_engine_scene::field_env::EnvDraw`] lists (terrain + placed
+    /// layers combined), from `legaia_engine_scene::coplanar_draws`. Applied to
     /// each matching draw's world translation so overlapping same-plane tiles
     /// resolve to a stable winner instead of z-fighting (retail painter-orders
     /// them through the ordering table). Rebuilt per scene in `upload_assets`.
     pub(super) coplanar_env_offsets:
-        std::collections::HashMap<legaia_engine_core::field_env::EnvDraw, [f32; 3]>,
+        std::collections::HashMap<legaia_engine_scene::field_env::EnvDraw, [f32; 3]>,
     /// Terrain tiles whose mesh is untextured (`F*`/`G*` vertex-colour prims
     /// only): `(index into `color_meshes`, world model)`, resolved through the
     /// colour-mesh bridge the same way `field_placement_color_draws` is. The
@@ -1116,12 +1116,12 @@ pub(super) struct FieldLitMeshes {
     pub(super) light: Option<legaia_render_kernels::field_light::FieldLight>,
 }
 
-/// The scene's CLUT-walk shimmer (`legaia_engine_core::clut_walk_anim`, the
+/// The scene's CLUT-walk shimmer (`legaia_engine_scene::clut_walk_anim`, the
 /// one stepper both hosts run) and this host's vsync count toward the next
 /// retail game tick (a game tick spans `World::clock.frame_step` vsyncs - the
 /// retail `DAT_1F800393` factor).
 pub(super) struct WaterAnim {
-    pub(super) anim: legaia_engine_core::clut_walk_anim::ClutWalkAnim,
+    pub(super) anim: legaia_engine_scene::clut_walk_anim::ClutWalkAnim,
     pub(super) vsyncs_to_game_tick: u32,
 }
 

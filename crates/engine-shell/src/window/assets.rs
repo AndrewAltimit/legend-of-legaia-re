@@ -628,7 +628,7 @@ impl PlayWindowApp {
             .scene
             .as_ref()
             .and_then(|scene| {
-                legaia_engine_core::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
+                legaia_engine_scene::scene_bundle::find_bundle(scene).map(|b| b.entry_idx())
             })
             .map(|bundle_entry| {
                 res.tmds
@@ -647,7 +647,7 @@ impl PlayWindowApp {
             .scene
             .as_ref()
             .map(|scene| {
-                legaia_engine_core::field_env::env_pack_tmd_indices(scene, &res)
+                legaia_engine_scene::field_env::env_pack_tmd_indices(scene, &res)
                     .into_iter()
                     .map(|ti| tmd_src_index.iter().position(|&x| x == ti))
                     .collect()
@@ -852,7 +852,7 @@ impl PlayWindowApp {
             .host
             .scene
             .as_ref()
-            .map(|s| legaia_engine_core::field_env::env_pack_tmd_indices(s, &res))
+            .map(|s| legaia_engine_scene::field_env::env_pack_tmd_indices(s, &res))
             .unwrap_or_default();
         let bridge = |src: &[usize]| -> Vec<Option<usize>> {
             env_tmds

@@ -36,7 +36,7 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_zone::{
     CameraZoneConfig, ComposeInputs, atan_q11, compose, sqrt0_lut,

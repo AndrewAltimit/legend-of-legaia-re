@@ -10,7 +10,7 @@
 //! into the world's casino coin bank. No Sony bytes are asserted, only
 //! structural facts. Skips + passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_minigames::slot_machine::{
     BONUS_SPIN_UP_FRAMES, REEL_COUNT, SPIN_UP_FRAMES, SlotMachine, SlotPhase,

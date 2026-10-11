@@ -31,9 +31,9 @@ pub(crate) fn run_world(
     extracted_root: &Path,
     with_move_vm: bool,
 ) -> Result<()> {
-    use legaia_engine_core::scene::ProtIndex;
     use legaia_engine_core::world::World;
     use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene::scene::ProtIndex;
 
     if max_actors == 0 {
         anyhow::bail!("max_actors must be >= 1");

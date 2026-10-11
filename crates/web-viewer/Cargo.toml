@@ -34,6 +34,7 @@ glam.workspace = true
 legaia-font.workspace = true
 legaia-save.workspace = true
 legaia-engine-core.workspace = true
+legaia-engine-scene.workspace = true
 legaia-engine-audio = { workspace = true, features = ["audio-webaudio"] }
 legaia-engine-session.workspace = true
 legaia-engine-screens.workspace = true

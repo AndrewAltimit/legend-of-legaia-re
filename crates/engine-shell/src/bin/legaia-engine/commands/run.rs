@@ -318,7 +318,7 @@ pub(crate) fn cmd_config(cmd: ConfigCmd) -> Result<()> {
             println!("binding saved: {key} → {btn} ({})", config_file.display());
         }
         ConfigCmd::DumpCutsceneMap { out } => {
-            let map = legaia_engine_core::scene::CutsceneMap::from_heuristic();
+            let map = legaia_engine_scene::scene::CutsceneMap::from_heuristic();
             let toml_doc = map.to_toml_string();
             if out.as_os_str() == "-" {
                 print!("{toml_doc}");

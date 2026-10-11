@@ -42,7 +42,7 @@ impl World {
     /// The **one** question a host asks per slot per scene load. Both hosts
     /// ask it: the native window's `upload_assets` and the browser's
     /// `play_npc_live_model` export, each feeding the id to
-    /// [`crate::model_bank::SceneModelBank::tmd_bytes`] to materialise the
+    /// [`legaia_engine_scene::model_bank::SceneModelBank::tmd_bytes`] to materialise the
     /// mesh. Retail needs no equivalent - it reloads the mesh inside
     /// `FUN_80024E08` - but the port's mesh lives on the host, so the id has
     /// to cross that boundary.

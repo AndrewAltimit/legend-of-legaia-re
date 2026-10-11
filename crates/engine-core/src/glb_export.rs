@@ -20,20 +20,20 @@
 //!   opt-in upgrades, not required parts.
 //!
 //! Everything composes through the same kernels the browser pages render
-//! with ([`crate::scene_assembly`], [`crate::npc_catalog`],
+//! with ([`legaia_engine_scene::scene_assembly`], [`crate::npc_catalog`],
 //! `legaia_actor_formats::scene_gltf` / `character_gltf`), so the exported files
 //! match the on-screen viewers. The output contains Sony-derived asset data:
 //! it is user-generated, local, and must never be committed or redistributed.
 
 use crate::npc_catalog::{NpcCatalog, scene_anm_bundle};
-use crate::scene::{ProtIndex, Scene};
-use crate::scene_assembly::{
-    AssembledScene, build_hybrid_env_mesh, build_hybrid_env_mesh_posed, draw_rot_y_radians,
-    draw_rotation_quat, draw_translation, is_sky_mesh,
-};
 use legaia_actor_formats::character_gltf::{CharacterClip, build_character_glb_hybrid};
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
 use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_assembly::{
+    AssembledScene, build_hybrid_env_mesh, build_hybrid_env_mesh_posed, draw_rot_y_radians,
+    draw_rotation_quat, draw_translation, is_sky_mesh,
+};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 

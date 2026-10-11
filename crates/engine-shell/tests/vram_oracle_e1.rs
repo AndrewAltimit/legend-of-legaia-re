@@ -159,16 +159,16 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
         let prot = std::fs::read(extracted.join("PROT.DAT")).expect("read PROT.DAT");
         let cdname =
             std::fs::read_to_string(extracted.join("CDNAME.TXT")).expect("read CDNAME.TXT");
-        let index = legaia_engine_core::scene::ProtIndex::from_bytes(prot, Some(&cdname))
+        let index = legaia_engine_scene::scene::ProtIndex::from_bytes(prot, Some(&cdname))
             .expect("build ProtIndex");
-        let mut rects = legaia_engine_core::scene::effect_texture_image_rects(&index)
+        let mut rects = legaia_engine_scene::scene::effect_texture_image_rects(&index)
             .expect("befect effect-texture rects");
         // The `init_data` shared UI-tile pages are journey-dependent
         // residency (overworld transit leaves kingdom-bundle content over
         // parts of the rect), so they get the same pooled cross-scene
         // treatment as the befect band - see `block_image_rects`.
         rects.extend(
-            legaia_engine_core::scene::block_image_rects(&index, "init_data")
+            legaia_engine_scene::scene::block_image_rects(&index, "init_data")
                 .expect("init_data block rects"),
         );
         rects
@@ -192,7 +192,7 @@ fn vram_oracle_e1_all_scenarios_byte_exact() {
         // World-map scenes: the walk-view runtime animates segments of the
         // kingdom terrain CLUT rows (palette cycling), so their resident
         // words are animation phase, not static texture.
-        if legaia_engine_core::scene::is_world_map_scene(scene_name) {
+        if legaia_engine_scene::scene::is_world_map_scene(scene_name) {
             clear_world_map_clut_cycle_rows(&mut mask);
         }
 

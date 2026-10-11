@@ -68,7 +68,7 @@ pub struct MinigameState {
     pub fishing_exchange: Option<legaia_engine_fishing::fishing::PrizeExchange>,
     /// The two point-exchange venue pages (`0` Buma, `1` Vidna) PROT 0972
     /// carries beside the session tables, decoded by
-    /// [`crate::scene::SceneHost::enter_fishing_from_overlay`] - the one
+    /// [`crate::scene_host::SceneHost::enter_fishing_from_overlay`] - the one
     /// entry the door warp and both play hosts' launchers share. `None` until
     /// a fishing session has been entered on a disc whose pages decode.
     pub fishing_prize_venues: Option<[legaia_engine_fishing::fishing::PrizeExchange; 2]>,
@@ -189,7 +189,7 @@ pub struct MinigameState {
     pub winnings: u32,
     /// Pending **mode-24 minigame door-warp** (field-VM op `0x3E`, `op0 >=
     /// 100`): `Some(sub_id)` for the frame the arm ran on. Drained by
-    /// [`crate::scene::SceneHost::tick`], which decodes it with
+    /// [`crate::scene_host::SceneHost::tick`], which decodes it with
     /// [`legaia_engine_mode::minigame_entry::MinigameSubId`] and enters that minigame.
     ///
     /// **Not a map id.** `sub_id` selects a code overlay, not a scene - the op

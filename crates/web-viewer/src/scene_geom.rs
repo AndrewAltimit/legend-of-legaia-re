@@ -157,7 +157,7 @@ impl LegaiaViewer {
         let mut out = Vec::with_capacity(hf.positions.len() * 3);
         for p in &hf.positions {
             out.push(p[0]);
-            out.push(p[1] + legaia_engine_core::coplanar_draws::GROUND_SINK);
+            out.push(p[1] + legaia_engine_scene::coplanar_draws::GROUND_SINK);
             out.push(p[2]);
         }
         out
@@ -766,13 +766,13 @@ impl LegaiaViewer {
         };
         k.clut_anim = None;
         for name in ["map01", "map02", "map03"] {
-            let Ok(scene) = legaia_engine_core::scene::Scene::load(&index, name) else {
+            let Ok(scene) = legaia_engine_scene::scene::Scene::load(&index, name) else {
                 continue;
             };
             if !(scene.start..scene.end).contains(&prot_base) {
                 continue;
             }
-            if let Some(install) = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+            if let Some(install) = legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install(
                 &scene,
                 &index,
                 &mut k.vram,

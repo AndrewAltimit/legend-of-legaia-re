@@ -989,7 +989,7 @@ impl World {
     /// player mesh: a change raises
     /// [`crate::world::FieldLocomotion::player_rig_dirty`], and both play
     /// hosts drain it ([`Self::take_player_rig_change`]) and rebuild the rig
-    /// from [`crate::scene::SceneHost::player_rig_mesh`].
+    /// from [`crate::scene_host::SceneHost::player_rig_mesh`].
     ///
     /// REF: FUN_80024E08 (the re-stage; the port for a placement is
     /// `FieldHostImpl::op4c_n5_sub0_set_actor_model`), FUN_8003C83C
@@ -1005,7 +1005,7 @@ impl World {
 
     /// Take the "the player's model changed" signal a mid-scene `CC F8 50`
     /// raises. A host that sees `true` rebuilds the player's rig from
-    /// [`crate::scene::SceneHost::player_rig_mesh`].
+    /// [`crate::scene_host::SceneHost::player_rig_mesh`].
     pub fn take_player_rig_change(&mut self) -> bool {
         std::mem::take(&mut self.locomotion.player_rig_dirty)
     }

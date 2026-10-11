@@ -14,13 +14,13 @@ impl PlayWindowApp {
             return;
         }
         self.face_tables_attempted = true;
-        use legaia_engine_core::Vfs;
+        use legaia_engine_scene::vfs::Vfs;
         let scus = if let Some(root) = self.extracted_root.as_deref() {
-            legaia_engine_core::DirVfs::new(root)
+            legaia_engine_scene::vfs::DirVfs::new(root)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else if let Some(disc) = self.disc_path.as_deref() {
-            legaia_engine_core::DiscVfs::open(disc)
+            legaia_engine_scene::vfs::DiscVfs::open(disc)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else {
@@ -46,13 +46,13 @@ impl PlayWindowApp {
         if self.seru_names.is_some() {
             return;
         }
-        use legaia_engine_core::Vfs;
+        use legaia_engine_scene::vfs::Vfs;
         let scus = if let Some(root) = self.extracted_root.as_deref() {
-            legaia_engine_core::DirVfs::new(root)
+            legaia_engine_scene::vfs::DirVfs::new(root)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else if let Some(disc) = self.disc_path.as_deref() {
-            legaia_engine_core::DiscVfs::open(disc)
+            legaia_engine_scene::vfs::DiscVfs::open(disc)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else {

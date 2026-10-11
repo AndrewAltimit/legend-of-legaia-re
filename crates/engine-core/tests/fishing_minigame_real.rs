@@ -10,7 +10,7 @@
 //! resolution. No Sony bytes are asserted, only structural facts. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_fishing::fishing::{FLIGHT_FRAMES, PondEvent, PondPhase, WINDUP_FRAMES};
 use legaia_engine_mode::mode::SceneMode;

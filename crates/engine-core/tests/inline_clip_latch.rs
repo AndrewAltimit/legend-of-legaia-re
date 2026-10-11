@@ -5,7 +5,7 @@
 //! ([`docs/subsystems/script-vm.md`]). Bit `8` of the clip-control word
 //! `actor+0x62` is that latch, and what sets it is the per-frame anim tick
 //! `FUN_800204F8` when a clip cursor reaches an end - ported at
-//! [`legaia_engine_core::field_env::PropAnim::tick`]. A `0x80`-prefix target
+//! [`legaia_engine_scene::field_env::PropAnim::tick`]. A `0x80`-prefix target
 //! makes the word belong to *another* actor than the record being dispatched
 //! (`FUN_8003C83C`: `0xF8` resolves to the live player), so the runner's job is
 //! to bind that actor's word around the op and then wait - not to write the
@@ -20,8 +20,8 @@
 //!
 //! Disc-free: the records here are hand-written field-VM bytecode.
 
-use legaia_engine_core::field_env::{ANIM_END, ANIM_HOLD, ANIM_SPAWN_RATE, PLAYER_ANCHOR_TARGET};
 use legaia_engine_core::world::World;
+use legaia_engine_scene::field_env::{ANIM_END, ANIM_HOLD, ANIM_SPAWN_RATE, PLAYER_ANCHOR_TARGET};
 
 /// The story flag the beat *behind* the spin sets - the observable that says
 /// the spin fell through.

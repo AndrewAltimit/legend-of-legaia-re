@@ -12,8 +12,8 @@
 
 #![cfg(not(target_arch = "wasm32"))]
 
-use legaia_engine_core::scene::ProtIndex;
-use legaia_engine_core::scene_assembly::build_hybrid_env_mesh;
+use legaia_engine_scene::scene::ProtIndex;
+use legaia_engine_scene::scene_assembly::build_hybrid_env_mesh;
 use legaia_web_viewer::disc::{extract_cdname_txt, extract_prot_dat};
 use legaia_web_viewer::field_scene::build_field_scene;
 use std::env;
@@ -294,8 +294,8 @@ fn system_ui_bundle_recovers_row510_samplers() {
 /// same `field_env` kernel, and the decoration half must be a real share of it.
 #[test]
 fn world_map_scenes_include_the_walk_decoration_layer() {
-    use legaia_engine_core::field_env;
-    use legaia_engine_core::scene::Scene;
+    use legaia_engine_scene::field_env;
+    use legaia_engine_scene::scene::Scene;
 
     /// The three kingdom world maps.
     const KINGDOMS: &[&str] = &["map01", "map02", "map03"];
@@ -327,7 +327,8 @@ fn world_map_scenes_include_the_walk_decoration_layer() {
             .field_object_binds(&index)
             .expect("field_object_binds")
         {
-            let hidden = field_env::story_hidden_records_for_scene(&scene, &index);
+            let hidden =
+                legaia_engine_core::scene_staging::story_hidden_records_for_scene(&scene, &index);
             field_env::retain_visible_landmark_placements(&mut landmarks, &binds, &hidden);
         }
         let deco = scene

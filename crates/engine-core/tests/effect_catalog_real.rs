@@ -12,7 +12,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_vm::effect_vm::EffectCatalog;
 
 const PROT_EFECT_DAT_ENTRY: u32 = 873;

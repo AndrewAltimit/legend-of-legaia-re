@@ -241,7 +241,7 @@ pub fn spawn_object_channels(
 /// channels is this* - and neither special is one, hence the `None`s. The
 /// engine models the specials where their state actually lives: a poked
 /// actor's clip words are
-/// [`crate::field_env::PropAnimBank::actor_clips`] (keyed by this same target
+/// [`legaia_engine_scene::field_env::PropAnimBank::actor_clips`] (keyed by this same target
 /// byte), and the cutscene timeline carries its own player-anchor completion
 /// model. Widening this function instead would re-route both.
 // REF: FUN_8003C83C

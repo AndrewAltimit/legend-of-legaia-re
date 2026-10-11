@@ -225,12 +225,12 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// Enter `scene` live through whichever entry the scene's own label
-    /// names: an overworld label ([`legaia_engine_core::scene::is_world_map_scene`])
+    /// names: an overworld label ([`legaia_engine_scene::scene::is_world_map_scene`])
     /// through [`Self::enter_world_map_live`], anything else through
     /// [`Self::enter_field_live`]. The same one-predicate branch the browser
     /// play page's `enter_field` and the in-world door transition take.
     pub fn enter_scene_live(&mut self, scene: &str, opts: &FieldLiveOpts) -> Result<SceneMode> {
-        if legaia_engine_core::scene::is_world_map_scene(scene) {
+        if legaia_engine_scene::scene::is_world_map_scene(scene) {
             self.enter_world_map_live(scene, opts)
         } else {
             self.enter_field_live(scene, opts)
@@ -316,7 +316,7 @@ impl<S: AudioSink> BootSession<S> {
     }
 
     /// Where a save written now would resume
-    /// ([`legaia_engine_core::scene::SceneHost::current_resume`], the one
+    /// ([`legaia_engine_core::scene_host::SceneHost::current_resume`], the one
     /// derivation the page's card and LGSF writers call too).
     pub fn current_resume(&self) -> legaia_save::SaveResume {
         self.host.current_resume()

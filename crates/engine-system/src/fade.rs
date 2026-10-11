@@ -536,7 +536,7 @@ pub const PROLOGUE_LIT_AMBIENT: u8 = 0x20;
 /// [`PROLOGUE_LIT_AMBIENT`]. The baked rows keep their own words (the
 /// `4C E6` rewrite grades them in the renderer's palette mode). `lit` is the
 /// per-vertex mask from
-/// `legaia_engine_core::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
+/// `legaia_engine_scene::scene_resources::ResolvedTmd::build_filtered_vram_mesh_lit`,
 /// parallel to `colors`.
 ///
 /// The mask is the point: a lit row and a baked word authored at exactly

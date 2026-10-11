@@ -25,7 +25,7 @@ pub(super) const DEPTH_CLEAR: f32 = 0.0;
 /// the whole view volume - resolution stays proportional to view depth
 /// (`~z * 2^-23`) instead of collapsing quadratically toward the far plane,
 /// which is what lets the sub-unit coplanar-separation nudges
-/// (`legaia_tmd::mesh::coplanar`, `legaia_engine_core::coplanar_draws`)
+/// (`legaia_tmd::mesh::coplanar`, `legaia_engine_scene::coplanar_draws`)
 /// resolve at every camera distance up to the engine-wide `SCENE_FAR`.
 /// Callers never build reversed projections themselves - the renderer's two
 /// MVP upload sites apply this centrally, so every camera (orbit, field

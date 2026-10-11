@@ -180,7 +180,7 @@ fn next_game_climbs_the_disc_roster() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    let host = match legaia_engine_core::scene::SceneHost::open_disc(&disc) {
+    let host = match legaia_engine_core::scene_host::SceneHost::open_disc(&disc) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");

@@ -18,9 +18,9 @@ use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
 use legaia_engine_core::fog_particles::{
     FOG_CAP_DEFAULT, FOG_CLUT, FOG_LEFT_UV_ROW, FOG_RIGHT_UV_ROW, FOG_TPAGE, FOG_UV_ROWS,
 };
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_field::man_field_scripts::partition_record_span;
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::boot::BootSession;
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};

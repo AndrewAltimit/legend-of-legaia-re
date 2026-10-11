@@ -12,7 +12,7 @@ pub struct ShopState {
     pub item_shop_data: Option<legaia_engine_menus::shop_catalog::ShopItemData>,
     /// Gold shops located in the active scene's MAN, priced from
     /// [`crate::world::ShopState::item_shop_data`]. Repopulated on each field-scene entry by
-    /// [`crate::scene::SceneHost::enter_field_scene`]; empty when the scene has
+    /// [`crate::scene_host::SceneHost::enter_field_scene`]; empty when the scene has
     /// no merchant or the disc isn't available. The field-menu shop-open path
     /// picks from these instead of a hand-authored stock list.
     pub scene_shops: Vec<legaia_engine_menus::shop_catalog::SceneShop>,

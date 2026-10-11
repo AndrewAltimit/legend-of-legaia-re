@@ -16,9 +16,9 @@
 //! Skips without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_battle_vm::battle_action::ActionState;
-use legaia_engine_core::Vfs;
 use legaia_engine_core::world::World;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 fn scus() -> Option<Vec<u8>> {
@@ -28,7 +28,7 @@ fn scus() -> Option<Vec<u8>> {
         return None;
     }
     Some(
-        legaia_engine_core::DiscVfs::open(&path)
+        legaia_engine_scene::vfs::DiscVfs::open(&path)
             .expect("open disc")
             .read("SCUS_942.54")
             .expect("SCUS_942.54 present"),
@@ -186,7 +186,7 @@ fn the_boot_catalog_resolves_every_monster_special_the_archive_casts() {
     let catalog = legaia_engine_battle::retail_magic::seru_magic_catalog_from_scus(&scus)
         .expect("SCUS parses as a PSX-EXE");
 
-    let host = legaia_engine_core::scene::SceneHost::open_disc(&path).expect("open the disc");
+    let host = legaia_engine_core::scene_host::SceneHost::open_disc(&path).expect("open the disc");
     let archive = host
         .index
         .entry_bytes(MONSTER_ARCHIVE_PROT_INDEX)

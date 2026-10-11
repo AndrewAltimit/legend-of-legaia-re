@@ -19,7 +19,7 @@ use legaia_engine_core::battle_hud::{
     SUBDRAW_STEP_COUNT, SubdrawStep, placement_record as rec, subdraw_step,
     subdraw_steps as step_of,
 };
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 
 fn extracted_root() -> Option<PathBuf> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

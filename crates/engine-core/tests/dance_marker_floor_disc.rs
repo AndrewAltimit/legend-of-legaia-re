@@ -18,9 +18,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_field::field_regions::parse_tile_triggers;
 use legaia_engine_fishing::minigame_floor::{FloorGrid, MarkerFloor, height_ramp};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// `.MAP` primary trigger block, and the `+0x12000` fallback.
 const TRIGGER_BLOCK_OFFSET: usize = 0x10000;

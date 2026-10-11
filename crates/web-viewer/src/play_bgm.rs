@@ -1,13 +1,13 @@
 //! The play page's BGM: the field VM's op-`0x35` events route into the
 //! page's [`crate::play_sfx::PageDirector`] - the native window's
 //! `AudioBgmDirector` (`crates/engine-session/src/bgm.rs`), one
-//! implementation of `legaia_engine_core::scene::BgmDirector` for both hosts,
+//! implementation of `legaia_engine_core::scene_host::BgmDirector` for both hosts,
 //! so a start / pause / stop lands the same way on each. What stays here is
 //! the page's own hand-off timing: the title -> load hand-off and the start
 //! owed to an audio output that arrived late.
 
 use crate::runtime::LegaiaRuntime;
-use legaia_engine_core::scene::BgmDirector;
+use legaia_engine_core::scene_host::BgmDirector;
 use wasm_bindgen::prelude::*;
 
 /// The title -> load hand-off.
@@ -59,7 +59,7 @@ impl LegaiaRuntime {
     /// Start the world's last-routed op-`0x35` track
     /// (`World::audio.current_bgm`) through the page's director - a
     /// scene-local id plays retail's fallback track
-    /// ([`legaia_engine_core::scene::bgm_bank_id`]), as the native
+    /// ([`legaia_engine_core::scene_host::bgm_bank_id`]), as the native
     /// `BootSession::restore_field_bgm` plays it. Returns whether it started.
     pub(crate) fn start_world_bgm(&mut self) -> bool {
         let Some(host) = self.scene_host.host() else {
@@ -69,7 +69,7 @@ impl LegaiaRuntime {
             return false;
         };
         let Ok(Some(entry)) =
-            host.music_bank_entry_bytes(legaia_engine_core::scene::bgm_bank_id(id))
+            host.music_bank_entry_bytes(legaia_engine_core::scene_host::bgm_bank_id(id))
         else {
             return false;
         };

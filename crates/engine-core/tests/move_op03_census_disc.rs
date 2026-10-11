@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_effects::summon::summon_stager_prot_entry;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
 use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};

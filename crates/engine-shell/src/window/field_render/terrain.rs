@@ -89,7 +89,7 @@ impl PlayWindowApp {
             .ok()
             .flatten();
         if let Some(binds) = binds.as_ref() {
-            legaia_engine_core::field_env::retain_visible_landmark_placements(
+            legaia_engine_scene::field_env::retain_visible_landmark_placements(
                 &mut landmarks,
                 binds,
                 &self.session.host.world.hidden_object_records(),
@@ -158,7 +158,7 @@ impl PlayWindowApp {
         // ocean-head fallback.
         let scene = self.session.host.scene.as_ref()?;
         let base = self.cpu_vram_base.as_mut()?;
-        let install = legaia_engine_core::clut_walk_anim::ClutWalkAnim::install(
+        let install = legaia_engine_scene::clut_walk_anim::ClutWalkAnim::install(
             scene,
             &self.session.host.index,
             base,
@@ -200,7 +200,7 @@ impl PlayWindowApp {
     ///
     /// The CPU VRAM is re-uploaded only when at least one copy fired, so
     /// the whole-VRAM upload runs a few times a second, not every frame.
-    // REF: FUN_8001ada4 - stepped by `legaia_engine_core::clut_walk_anim`.
+    // REF: FUN_8001ada4 - stepped by `legaia_engine_scene::clut_walk_anim`.
     pub(in crate::window) fn advance_ocean_animation(&mut self) {
         // While a battle is up the GPU texture holds the BATTLE VRAM (party
         // band + palettes + monster pages); the water cells aren't visible
@@ -221,7 +221,7 @@ impl PlayWindowApp {
             return;
         };
         // A retail game tick lands every `dt` vsyncs; the stepper banks `dt`
-        // on each (`legaia_engine_core::clut_walk_anim`).
+        // on each (`legaia_engine_scene::clut_walk_anim`).
         w.vsyncs_to_game_tick += 1;
         if w.vsyncs_to_game_tick < dt {
             return;

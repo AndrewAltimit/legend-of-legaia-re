@@ -29,9 +29,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::field_env;
-use legaia_engine_core::scene::{ProtIndex, Scene};
-use legaia_engine_core::scene_resources::{
+use legaia_engine_scene::field_env;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 use legaia_tmd::descriptor::Descriptor;

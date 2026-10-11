@@ -21,8 +21,9 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost};
+use legaia_engine_core::scene_host::{BgmDirector, SceneHost};
 use legaia_engine_field::field_events::FieldEvent;
+use legaia_engine_scene::scene::DefaultMapIdResolver;
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../../extracted"] {
@@ -113,8 +114,8 @@ impl BgmDirector for LatchDirector {
 /// Every `Bgm { text_id, sub_op }` the scene's MAN carries, decoded with the
 /// opcode-aware walker across all three record partitions.
 fn scene_bgm_ops(host: &SceneHost) -> Vec<(u16, u8)> {
-    use legaia_engine_core::man_field_scripts::scene_man_carriers;
     use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_engine_scene::man_field_scripts::scene_man_carriers;
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
     let Some(scene) = host.scene.as_ref() else {

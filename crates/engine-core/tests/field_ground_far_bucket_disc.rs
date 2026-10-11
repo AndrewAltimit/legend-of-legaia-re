@@ -15,7 +15,7 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use legaia_engine_core::field_ground;
-use legaia_engine_core::scene::{ProtIndex, Scene};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use std::path::Path;
 
 fn open_index() -> Option<ProtIndex> {

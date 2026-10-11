@@ -274,13 +274,13 @@ impl PlayWindowApp {
     /// is reachable. Used to resolve the backdrop's second-copy transform;
     /// `None` just means the port falls back to the default half turn.
     fn scus_bytes(&self) -> Option<Vec<u8>> {
-        use legaia_engine_core::Vfs;
+        use legaia_engine_scene::vfs::Vfs;
         if let Some(root) = self.extracted_root.as_deref() {
-            legaia_engine_core::DirVfs::new(root)
+            legaia_engine_scene::vfs::DirVfs::new(root)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else if let Some(disc) = self.disc_path.as_deref() {
-            legaia_engine_core::DiscVfs::open(disc)
+            legaia_engine_scene::vfs::DiscVfs::open(disc)
                 .ok()
                 .and_then(|v| v.read("SCUS_942.54").ok())
         } else {

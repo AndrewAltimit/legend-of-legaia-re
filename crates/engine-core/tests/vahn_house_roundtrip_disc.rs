@@ -27,7 +27,7 @@
 //! Structural assertions only (tiles, coords) - no Sony bytes. Skip-passes
 //! without `LEGAIA_DISC_BIN` / `extracted/` (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
 use std::path::PathBuf;
 
@@ -141,7 +141,8 @@ fn vahn_house_exit_is_a_kind0_map_record() {
     let Some(host) = open_host() else {
         return;
     };
-    let scene = legaia_engine_core::scene::Scene::load(&host.index, "town01").expect("load town01");
+    let scene =
+        legaia_engine_scene::scene::Scene::load(&host.index, "town01").expect("load town01");
     let (primary, fallback) = scene
         .field_intra_scene_teleports(&host.index)
         .expect("kind-0 table");

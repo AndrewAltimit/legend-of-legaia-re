@@ -8,9 +8,9 @@
 //! [`crate::world::ShopState::scene_shops`] with the priced inventory. Skips without
 //! `LEGAIA_DISC_BIN` (CLAUDE.md convention).
 
-use legaia_engine_core::Vfs;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_menus::shop_catalog::{self, ShopItemData};
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 /// Rim Elm Variety Store stock (order-independent), pinned from a live capture.
@@ -28,7 +28,7 @@ fn disc_path() -> Option<PathBuf> {
 }
 
 fn read_scus(path: &std::path::Path) -> Option<Vec<u8>> {
-    legaia_engine_core::DiscVfs::open(path)
+    legaia_engine_scene::vfs::DiscVfs::open(path)
         .ok()?
         .read("SCUS_942.54")
         .ok()

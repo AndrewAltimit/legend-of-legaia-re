@@ -16,7 +16,7 @@
 //! No Sony bytes are asserted, only structural facts and arithmetic. Skips +
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 
 /// Every gate open, so a course runs its declared length.
 fn open_flags() -> legaia_engine_minigames::muscle_dome::ContestFlags {

@@ -9,7 +9,6 @@
 //!
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::new_game::starting_record;
 use legaia_engine_core::world::World;
@@ -19,6 +18,7 @@ use legaia_engine_field::dev_menu_leaves::{
 };
 use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
 use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 /// Panel-window record the entry list paints. Taken from `submode_hub_actors`
@@ -38,7 +38,7 @@ fn disc_scus() -> Option<Vec<u8>> {
         return None;
     }
     Some(
-        legaia_engine_core::DiscVfs::open(&path)
+        legaia_engine_scene::vfs::DiscVfs::open(&path)
             .expect("open disc")
             .read("SCUS_942.54")
             .expect("SCUS_942.54 present"),

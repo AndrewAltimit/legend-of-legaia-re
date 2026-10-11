@@ -12,7 +12,7 @@
 //!
 //! Skip-passes without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::MorphOwner;
 
 const TREE_SLOT: u8 = 50;

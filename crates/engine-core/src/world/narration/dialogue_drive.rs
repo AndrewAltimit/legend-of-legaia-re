@@ -271,7 +271,8 @@ impl World {
             // dispatcher's halted-target early-out (`0x801DE90C..0x801DE940`)
             // returns an extended op aimed at it at its own PC: the dialog SM
             // sees a PC that did not move and retries next frame.
-            if id.face_ramp.is_some() && ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            if id.face_ramp.is_some()
+                && ext_target == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
             {
                 break;
             }
@@ -325,7 +326,7 @@ impl World {
                 && let Some(target) = ext_target
                 && let Some(&move_id) = id.bytecode.get(id.pc + 2)
             {
-                if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                     host.world.bind_player_script_clip(move_id);
                 } else {
                     let fallback = host.world.player_clip_frames_hint();
@@ -344,7 +345,7 @@ impl World {
             // writes.
             //
             // A field NPC never poked with a clip gets its cursor on first use
-            // ([`crate::field_env::PropAnimBank::actor_clip_or_live`]). Any
+            // ([`legaia_engine_scene::field_env::PropAnimBank::actor_clip_or_live`]). Any
             // other target the port has no cursor for falls through to the
             // record's own word - the op has to land somewhere, and the
             // spin's timeout net covers the rest.
@@ -353,7 +354,7 @@ impl World {
                 .filter(|_| matches!(b & 0x7F, 0x2B..=0x2D))
                 .filter(|&target| {
                     let hint = host.world.player_clip_frames_hint();
-                    let flags = if target == crate::field_env::PLAYER_ANCHOR_TARGET {
+                    let flags = if target == legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET {
                         Some(host.world.props.bank.player_clip(hint).flags)
                     } else if let Some(live) = host.world.npc_live_clip_for_target(target) {
                         // A field NPC never poked with a clip: its own
@@ -420,7 +421,8 @@ impl World {
             // prop runner already take the seat arm.
             // REF: FUN_8003C83C, FUN_801DE840 (0x23 / 4C 51 / 4D arms)
             let op = b & 0x7F;
-            let player_seat = ext_target == Some(crate::field_env::PLAYER_ANCHOR_TARGET)
+            let player_seat = ext_target
+                == Some(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
                 && (op == 0x23
                     || op == 0x4D
                     || (op == 0x4C && id.bytecode.get(id.pc + 2) == Some(&0x51)));
@@ -452,7 +454,7 @@ impl World {
                     .and_then(|slot| host.world.actors.get(usize::from(slot)))
                     .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
                 let mut player_ctx = legaia_engine_vm::field::FieldCtx {
-                    script_id: u16::from(crate::field_env::PLAYER_ANCHOR_TARGET),
+                    script_id: u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET),
                     flags: 0x0100_0000,
                     world_x: px as u16,
                     world_z: pz as u16,

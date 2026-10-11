@@ -35,7 +35,7 @@ use legaia_actor_formats::battle_char_assembly as bca;
 use legaia_actor_formats::face_anim::FaceTracks;
 use legaia_actor_formats::monster_archive::MonsterAnimation;
 
-use crate::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 
 /// Extraction PROT of Vahn's player battle file; character `c` is `+ c`.
 pub const PLAYER_BATTLE_FILE_BASE: u32 = 863;
@@ -197,7 +197,7 @@ impl VramSink for VramWriteLog {
 }
 
 /// A battle's whole party form set, built and installed once per fight by
-/// the engine ([`crate::scene::SceneHost::ensure_battle_party_forms`]) and
+/// the engine ([`crate::scene_host::SceneHost::ensure_battle_party_forms`]) and
 /// kept for the renderers: the forms carry the meshes, rest poses and face
 /// tracks a host draws, [`Self::vram_writes`] the pixels it samples. By the
 /// time a host reads this, the clips, art bank and art records have already
@@ -215,7 +215,7 @@ pub struct BattlePartyForms {
 /// VRAM writes are recorded, not applied; a renderer replays them.
 ///
 /// This is the injection point for a session that holds a [`World`] but no
-/// [`crate::scene::SceneHost`] (and so no disc index): it calls this itself
+/// [`crate::scene_host::SceneHost`] (and so no disc index): it calls this itself
 /// after [`crate::world::World::enter_battle`]. A world with no disc behind
 /// it has no player files to assemble, and its party fights with no clips
 /// and no arts.

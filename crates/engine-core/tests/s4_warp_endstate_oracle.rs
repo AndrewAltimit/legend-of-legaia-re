@@ -16,10 +16,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::World;
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 /// The captured S4 warp end-state: world `(3264, 3520)` = tile `(25, 27)`.
 const S4_LAND: (u16, u16) = (3264, 3520);

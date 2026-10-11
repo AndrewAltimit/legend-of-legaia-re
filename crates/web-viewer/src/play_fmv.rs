@@ -70,7 +70,7 @@
 
 #[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::InputState;
 #[cfg(test)]
@@ -396,7 +396,7 @@ impl LegaiaRuntime {
     /// native window's director runs for the attract.
     fn fmv_stop_score(&mut self) {
         if let Some(d) = self.scene_host.director_mut() {
-            use legaia_engine_core::scene::BgmDirector;
+            use legaia_engine_core::scene_host::BgmDirector;
             d.stop();
         }
     }
@@ -545,8 +545,10 @@ impl LegaiaRuntime {
                 // edge. The session's hand-off also runs the scene swap's
                 // camera-globals reset and SFX-queue clear, as on a door.
                 if let Some(outcome) = session.apply_pending_fmv_handoff() {
-                    if let legaia_engine_core::scene::FmvHandoffOutcome::Entered { scene, .. } =
-                        &outcome
+                    if let legaia_engine_core::scene_host::FmvHandoffOutcome::Entered {
+                        scene,
+                        ..
+                    } = &outcome
                     {
                         fmv_handoff_scene = (*scene).to_string();
                     }
@@ -774,7 +776,7 @@ impl LegaiaRuntime {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use legaia_engine_core::scene::SceneHost;
+    use legaia_engine_core::scene_host::SceneHost;
     use legaia_engine_system::movie::cutscene::fmv_skip_edge_hit as skip_edge_hit;
 
     /// A one-frame 320x224 movie at 15 fps standing in for an installed one.

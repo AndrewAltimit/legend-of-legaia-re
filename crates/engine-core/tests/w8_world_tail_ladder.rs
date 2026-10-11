@@ -21,14 +21,15 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::man_field_scripts::scene_man_carriers;
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
 use legaia_engine_fishing::fishing::{
     FLIGHT_FRAMES, FishingRecord, PondPhase, PondSession, WINDUP_FRAMES,
 };
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_system::input::PadButton;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
 use legaia_minigame_formats::fishing_species::{

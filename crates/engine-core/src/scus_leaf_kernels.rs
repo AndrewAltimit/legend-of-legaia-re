@@ -16,7 +16,7 @@
 //! Those three are live: the SFX-cue delay set and the timed sound arm are the
 //! field VM's own op `0x36` sub-`4` and op `0x35` sub-`5` bodies
 //! (`legaia_engine_core::world::vm_hosts`), and the scene control-block reset
-//! runs from [`crate::scene::SceneHost::load_scene`]. The other four carry
+//! runs from [`crate::scene_host::SceneHost::load_scene`]. The other four carry
 //! their `PORT` tag and their own per-item wiring disclosure on the item:
 //! [`init_identity_index_list`], [`StagedCharacterSelector::set_pair`],
 //! [`seed_boot_offset_table`] and [`text_line_count`].
@@ -501,7 +501,7 @@ pub const SCENE_RESET_CLEARED_GLOBALS: [u32; 2] = [0x8007_B630, 0x8007_B450];
 impl crate::world::World {
     /// Allocate + reset the scene control block. `FUN_8003A024`.
     ///
-    /// Called from [`crate::scene::SceneHost::load_scene`], which is where
+    /// Called from [`crate::scene_host::SceneHost::load_scene`], which is where
     /// retail runs it: the block is re-allocated per scene and the per-scene
     /// contents are installed afterwards by `FUN_8003A110` from the scene MAN.
     ///

@@ -160,7 +160,7 @@ pub fn coin_counter_lines(
     out
 }
 
-impl crate::scene::SceneHost {
+impl crate::scene_host::SceneHost {
     /// [`coin_counter_lines`] with the labels read off the user's disc (the
     /// field overlay, extraction entry `0897`). The native window and the
     /// browser play page both draw this, through

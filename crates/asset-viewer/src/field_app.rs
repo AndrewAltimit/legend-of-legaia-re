@@ -30,9 +30,9 @@ pub(crate) fn run_field(
     initial_record: usize,
     cycle_records: bool,
 ) -> Result<()> {
-    use legaia_engine_core::scene::{ProtIndex, Scene};
     use legaia_engine_core::world::World;
     use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_scene::scene::{ProtIndex, Scene};
 
     if max_actors == 0 {
         anyhow::bail!("max_actors must be >= 1");
@@ -104,7 +104,7 @@ pub(crate) fn run_field(
     // Pull the MES container if the scene has one. Cloning the SceneMes
     // (which owns its bytes) decouples the FieldApp from `scene`'s
     // borrow lifetime so the panel can outlive the loader's local data.
-    let scene_assets = legaia_engine_core::scene_assets::SceneAssets::build(&scene);
+    let scene_assets = legaia_engine_scene::scene_assets::SceneAssets::build(&scene);
     let scene_mes = scene_assets.mes.clone();
     if scene_mes.is_some() {
         log::info!("field scene: scene MES container present - dialog opcodes will render");

@@ -15,9 +15,10 @@ use std::path::PathBuf;
 use legaia_engine_core::place_name_banner::{
     PLACE_NAME_BANNER_FLAG, man_scene_name_bytes, record_leading_flag_writes,
 };
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_core::world::WorldMapEntityConfig;
 use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_dir() -> Option<PathBuf> {
     for p in ["extracted", "../extracted", "../../extracted"] {
@@ -123,7 +124,7 @@ fn every_named_scene_announces_itself_when_the_flag_is_armed() {
 /// MAN loader turns the flag into the banner.
 #[test]
 fn walking_into_rim_elm_from_the_overworld_raises_the_banner() {
-    use legaia_engine_core::scene::SceneTickEvent;
+    use legaia_engine_core::scene_host::SceneTickEvent;
     use legaia_engine_system::input::PadButton;
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

@@ -414,7 +414,7 @@ pub(super) const MODEL_BANK_BASE: u32 = 0x8007_B6F8;
 
 /// Each bind record's `(record +0x50, scene-bank model id)`, off the
 /// **first** field actor in list order that carries it: the one a motion
-/// stream is bound to (`FUN_8003A9D4`, [`legaia_engine_core::field_env::stream_bound_draws`]),
+/// stream is bound to (`FUN_8003A9D4`, [`legaia_engine_scene::field_env::stream_bound_draws`]),
 /// whose `+0x64` less the bank base is the model the stream's op `0x0E` last
 /// swapped in.
 pub fn retail_object_models(ram: &[u8]) -> Vec<(u16, i16)> {

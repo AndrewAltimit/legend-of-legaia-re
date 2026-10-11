@@ -54,7 +54,9 @@ impl World {
     /// else the placement channel whose context id it is.
     pub(in crate::world) fn heading_owner(&self, ctx: &FieldCtx) -> Option<HeadingOwner> {
         let channel = self.field_vm.executing_channel;
-        if channel.is_none() && ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET) {
+        if channel.is_none()
+            && ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
+        {
             return Some(HeadingOwner::Player);
         }
         channel
@@ -98,7 +100,7 @@ impl FieldHostImpl<'_> {
     /// which never reads the look.
     fn look_key(&self, ctx: &FieldCtx) -> Option<legaia_engine_field::actor_look::LookKey> {
         use legaia_engine_field::actor_look::LookKey;
-        if ctx.script_id == u16::from(crate::field_env::PLAYER_ANCHOR_TARGET)
+        if ctx.script_id == u16::from(legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET)
             || self.ctx_is_player(ctx)
         {
             return Some(LookKey::Player);

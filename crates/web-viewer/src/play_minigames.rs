@@ -46,8 +46,8 @@
 //! Per-game exports live in the sibling modules
 //! [`crate::play_minigame_slots`] and [`crate::play_minigame_arena`].
 
-use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_engine_ui::{self as ui, SpriteDraw, TextDraw};
 
 use crate::minigames::LegaiaMinigames;

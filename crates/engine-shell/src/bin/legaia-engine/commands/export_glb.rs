@@ -11,7 +11,7 @@ use legaia_engine_core::glb_export::{
     items_manifest, party_manifest, world_manifest,
 };
 use legaia_engine_core::npc_catalog::catalog_scene_npcs;
-use legaia_engine_core::scene_assembly::assemble_field_scene;
+use legaia_engine_core::scene_staging::assemble_field_scene;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cmd_export_glb(
@@ -47,7 +47,7 @@ pub(crate) fn cmd_export_glb(
         index
             .cdname_scene_names()
             .into_iter()
-            .filter(|n| !legaia_engine_core::scene::is_cutscene_label(n))
+            .filter(|n| !legaia_engine_scene::scene::is_cutscene_label(n))
             .collect()
     } else {
         scenes.to_vec()
@@ -280,12 +280,12 @@ fn export_items(
     extracted_root: &Path,
     disc: Option<&Path>,
 ) -> Result<()> {
-    use legaia_engine_core::Vfs;
+    use legaia_engine_scene::vfs::Vfs;
     let scus: Option<Vec<u8>> = match disc {
-        Some(path) => legaia_engine_core::DiscVfs::open(path)
+        Some(path) => legaia_engine_scene::vfs::DiscVfs::open(path)
             .ok()
             .and_then(|v| v.read("SCUS_942.54").ok()),
-        None => legaia_engine_core::DirVfs::new(extracted_root)
+        None => legaia_engine_scene::vfs::DirVfs::new(extracted_root)
             .ok()
             .and_then(|v| v.read("SCUS_942.54").ok()),
     };

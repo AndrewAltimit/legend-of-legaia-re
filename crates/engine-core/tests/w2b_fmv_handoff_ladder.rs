@@ -35,9 +35,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use legaia_engine_core::scene::{ProtIndex, Scene, SceneHost};
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::man_field_scripts::scene_fmv_triggers;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_system::movie::cutscene::{FmvHandoff, fmv_post_play_handoff};
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -69,18 +69,18 @@ pub struct DiscTables {
     /// (`crate::world::World::enemy_move_predamage`); when `None` (disc-free /
     /// synthetic battles) that path falls back to the MP-scaled placeholder, so
     /// the RNG stream and determinism trace are unchanged. Installed lazily from
-    /// the disc by [`crate::scene::SceneHost`].
+    /// the disc by [`crate::scene_host::SceneHost`].
     pub move_power: Option<legaia_engine_battle::move_power::MovePowerCatalog>,
     /// Raw bytes of the battle-action overlay (PROT 0898) the [`move_power`]
     /// catalog was parsed from, retained so the move-FX render path can read the
     /// `0x801f6324` prototype records' move-VM bytecode (the catalog holds only
     /// the parsed tables). Installed alongside [`move_power`] by
-    /// [`crate::scene::SceneHost`]; `None` in disc-free battles (move FX simply
+    /// [`crate::scene_host::SceneHost`]; `None` in disc-free battles (move FX simply
     /// don't spawn). `Arc` so cloning `World` stays cheap.
     pub move_power_overlay: Option<Arc<[u8]>>,
     /// Each player summon cast's attack name - the `rec[0]` string of its
     /// `summon.dat` (PROT 0893) actor record, the text a summon module's
-    /// caption arm prints. Installed by [`crate::scene::SceneHost`] with the
+    /// caption arm prints. Installed by [`crate::scene_host::SceneHost`] with the
     /// cast-effect pool; empty disc-free.
     pub(crate) summon_attack_names: Arc<std::collections::BTreeMap<u8, String>>,
     /// `summon.dat` (PROT 0893) itself, for the texture slots a player
@@ -104,13 +104,13 @@ pub struct DiscTables {
     /// `None` (disc-free / synthetic battles) keeps the neutral 100% multiplier,
     /// so the damage and determinism trace are unchanged. Installed lazily from
     /// the same PROT 0898 overlay as [`crate::world::DiscTables::move_power`] by
-    /// [`crate::scene::SceneHost`].
+    /// [`crate::scene_host::SceneHost`].
     pub element_affinity: Option<legaia_game_tables::element_affinity::ElementAffinity>,
     /// Per-character battle-camera height table
     /// ([`legaia_game_tables::battle_camera_table`], runtime VA `0x801F4D2C`) - the
     /// `TR.y` the submenu close-up framing (`FUN_801D5854` case `0`) reads for
     /// whichever character is acting. Installed from the same PROT 0898
-    /// overlay as [`crate::world::DiscTables::move_power`] by [`crate::scene::SceneHost`]; `None`
+    /// overlay as [`crate::world::DiscTables::move_power`] by [`crate::scene_host::SceneHost`]; `None`
     /// on disc-free hosts, which leaves the camera on its single traced
     /// fallback height so an unpinned character frames like the measured case
     /// instead of jumping.
@@ -123,7 +123,7 @@ pub struct DiscTables {
     ///
     /// Sibling static data in the same PROT 0898 overlay as
     /// [`crate::world::DiscTables::move_power`], installed by
-    /// [`crate::scene::SceneHost`]. `None` on a disc-free host, which is the
+    /// [`crate::scene_host::SceneHost`]. `None` on a disc-free host, which is the
     /// gate that keeps the stager
     /// ([`crate::world::World::stage_seru_side_effect`]) from running at
     /// all - so a synthetic battle stages nothing and draws no `rand()`.

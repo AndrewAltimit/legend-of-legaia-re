@@ -183,12 +183,12 @@ fn save_full_load_full_round_trips_v2_extension() {
 
 #[test]
 fn cutscene_str_routing_resolves_op_scenes_to_mv_files() {
-    use legaia_engine_core::scene::{cutscene_label_for_str, cutscene_str_for};
+    use legaia_engine_scene::scene::{cutscene_label_for_str, cutscene_str_for};
     // 5 op* scenes + 1 ed* scene cover all 6 disc-side MV*.STR files.
     assert_eq!(cutscene_str_for("opdeene"), Some("MOV/MV1.STR"));
     assert_eq!(cutscene_str_for("edteien"), Some("MOV/MV6.STR"));
     // Round-trip every known pairing.
-    for &(label, path) in legaia_engine_core::scene::FMV_CUTSCENE_SCENES.iter() {
+    for &(label, path) in legaia_engine_scene::scene::FMV_CUTSCENE_SCENES.iter() {
         assert_eq!(cutscene_str_for(label), Some(path));
         assert_eq!(cutscene_label_for_str(path), Some(label));
     }

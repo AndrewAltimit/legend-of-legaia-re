@@ -290,7 +290,7 @@ impl World {
                 legaia_engine_effects::summon::SummonScene::spawn_parts(
                     &[],
                     &module.bytes,
-                    crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                    crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
                     [0; 3],
                 )
             });

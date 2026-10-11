@@ -3,7 +3,7 @@
 //! The formation banner, its hold timers and wording live in
 //! [`legaia_engine_menus::battle_open`]. This module holds what reads the
 //! user's `PROT.DAT` through a
-//! [`crate::scene::ProtIndex`]: the battle overlay's labels and the cast
+//! [`legaia_engine_scene::scene::ProtIndex`]: the battle overlay's labels and the cast
 //! trigger's anim-pair lists.
 
 use legaia_ui_formats::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};
@@ -20,7 +20,9 @@ use legaia_ui_formats::battle_ui_strings::{BattleUiStrings, OVERLAY_BASE_VA};
 ///
 /// An entry that will not resolve yields an empty table rather than an error,
 /// so a host with a partial extraction falls back to the port's wording.
-pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiStrings {
+pub fn battle_ui_strings_from_prot(
+    index: &legaia_engine_scene::scene::ProtIndex,
+) -> BattleUiStrings {
     let mut out = BattleUiStrings::default();
     let Some(rec) = legaia_overlay_images::static_overlay::overlay_map().by_label("battle_action")
     else {
@@ -51,7 +53,7 @@ pub fn battle_ui_strings_from_prot(index: &crate::scene::ProtIndex) -> BattleUiS
 /// the SCUS half at boot and the overlay half on top only when a player battle
 /// was requested, the page the other way round at disc load.
 pub fn battle_ui_strings_for_disc(
-    index: &crate::scene::ProtIndex,
+    index: &legaia_engine_scene::scene::ProtIndex,
     scus: Option<&[u8]>,
 ) -> BattleUiStrings {
     let mut out = battle_ui_strings_from_prot(index);
@@ -66,7 +68,7 @@ pub fn battle_ui_strings_for_disc(
 /// battle-overlay image [`battle_ui_strings_from_prot`] reads. Empty when the
 /// entry will not resolve.
 pub fn spell_anim_pairs_from_prot(
-    index: &crate::scene::ProtIndex,
+    index: &legaia_engine_scene::scene::ProtIndex,
 ) -> legaia_game_tables::spell_anim_pairs::SpellAnimPairs {
     use legaia_game_tables::spell_anim_pairs::SpellAnimPairs;
     let Some(rec) = legaia_overlay_images::static_overlay::overlay_map().by_label("battle_action")

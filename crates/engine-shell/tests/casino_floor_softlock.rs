@@ -42,7 +42,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_mode::minigame_entry::MinigameSubId;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::PadButton;

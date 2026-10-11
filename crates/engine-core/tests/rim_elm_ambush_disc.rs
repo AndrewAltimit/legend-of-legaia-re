@@ -17,7 +17,7 @@
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
 use legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN;
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_menus::battle_input::BattleCommand;
 use legaia_engine_mode::mode::SceneMode;
 use std::path::PathBuf;

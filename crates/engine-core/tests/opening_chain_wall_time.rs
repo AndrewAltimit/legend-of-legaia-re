@@ -48,7 +48,7 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// Engine sim ticks per second - the rate both hosts drive `World::tick` at,

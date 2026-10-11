@@ -12,7 +12,7 @@
 //! ever moved onto the entry tile the test would say so). Skips without
 //! `extracted/` + `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
+use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::FIELD_COLD_SPAWN_XZ;
 use std::path::PathBuf;
 
@@ -174,8 +174,8 @@ fn named_warp_preserves_story_flags_and_bag() {
 /// streaming actor's `0x46`-frame countdown (`FUN_80021934`) and the host
 /// commits it on the hand-off tick, so the entry is the first event other
 /// than `Stepped` within the hold's span.
-fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene::SceneTickEvent {
-    use legaia_engine_core::scene::SceneTickEvent;
+fn tick_through_hold(host: &mut SceneHost) -> legaia_engine_core::scene_host::SceneTickEvent {
+    use legaia_engine_core::scene_host::SceneTickEvent;
     for _ in 0..200 {
         match host.tick().expect("transition tick") {
             SceneTickEvent::Stepped => {}

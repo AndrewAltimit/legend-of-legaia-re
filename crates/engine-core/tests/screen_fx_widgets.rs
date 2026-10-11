@@ -205,9 +205,9 @@ fn an_idle_scene_emits_nothing() {
 
 mod on_disc {
     use super::*;
-    use legaia_engine_core::man_field_scripts::scene_man_carriers;
-    use legaia_engine_core::scene::{ProtIndex, Scene};
     use legaia_engine_field::man_field_scripts::partition_record_span;
+    use legaia_engine_scene::man_field_scripts::scene_man_carriers;
+    use legaia_engine_scene::scene::{ProtIndex, Scene};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     use std::path::PathBuf;
     use std::sync::Arc;

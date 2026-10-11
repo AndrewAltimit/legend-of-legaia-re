@@ -10,7 +10,7 @@ pub struct FieldVmState {
     /// frame" state. Read by [`crate::world::World::man_load_actor_reset`] through
     /// [`legaia_engine_field::field_submode::scene_actor_initial_state`], which forces the
     /// spawned scene actor's state word to `1` when it is set. Mirrors of the
-    /// same word live on [`crate::cd_dma`] and [`crate::overlay_loader`]; this
+    /// same word live on [`legaia_engine_scene::cd_dma`] and [`legaia_engine_scene::overlay_loader`]; this
     /// is the field-side copy.
     pub(crate) mode_flags: u32,
     /// The op-`0x49` submode context block (`0x801F2734..`), in the order

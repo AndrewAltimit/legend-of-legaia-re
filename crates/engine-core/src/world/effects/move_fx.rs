@@ -12,7 +12,7 @@ impl World {
     /// `+0x02 flags`, `+0x04` bytecode) staged by the shared `FUN_80021B04`
     /// machinery. This parses those records out of the retained battle-action
     /// overlay (PROT 0898) and spawns them as a [`legaia_engine_effects::summon::SummonScene`]
-    /// with model base `crate::scene::EFFECT_MODEL_LIBRARY_BASE` (the engine's
+    /// with model base `crate::scene_host::EFFECT_MODEL_LIBRARY_BASE` (the engine's
     /// fixed-library analogue of the retail `gp[0x754] = party_count + 2`; see
     /// that constant's docs), so each mesh part resolves to
     /// `global_tmd_pool[model_sel + 3]` - the PROT 0871 effect-model library,
@@ -93,7 +93,7 @@ impl World {
                         Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
                             &parts,
                             &overlay,
-                            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                            crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
                             origin,
                         ));
                     // Surface the move's presentation fields for the
@@ -228,7 +228,7 @@ impl World {
         let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
             &parts,
             &overlay,
-            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         );
         scene.pose_parts(rot, scale);
@@ -283,7 +283,7 @@ impl World {
             let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
-                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
                 pos,
             );
             scene.push_parts(
@@ -343,7 +343,7 @@ impl World {
             let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                 &[],
                 &overlay,
-                crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
                 b.pos,
             );
             for req in requests {

@@ -4,7 +4,7 @@
 //! decode (8 strictly-ascending non-zero steps) and install into the World
 //! so a summon cast can level its spell. Skips without `LEGAIA_DISC_BIN`.
 
-use legaia_engine_core::Vfs;
+use legaia_engine_scene::vfs::Vfs;
 use std::path::PathBuf;
 
 #[test]
@@ -17,7 +17,7 @@ fn disc_magic_xp_thresholds_decode_and_install() {
         eprintln!("[skip] LEGAIA_DISC_BIN is not a file");
         return;
     }
-    let scus = legaia_engine_core::DiscVfs::open(&path)
+    let scus = legaia_engine_scene::vfs::DiscVfs::open(&path)
         .expect("open disc")
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");

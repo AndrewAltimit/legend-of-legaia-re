@@ -21,7 +21,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_vm::move_vm::{ActorState, MoveHost, StepResult, step};
 use legaia_scene_formats::scene_event_scripts::move_stager_records;
 
@@ -142,10 +142,10 @@ fn census_move_ext_sub_op_2c_carriers() {
                 }
             }
         }
-        if let Some(bundle) = legaia_engine_core::scene_bundle::find_bundle(scene)
+        if let Some(bundle) = legaia_engine_scene::scene_bundle::find_bundle(scene)
             && let Ok(extended) = host.index.entry_bytes_extended(bundle.entry_idx())
             && let Ok(Some(payload)) =
-                legaia_engine_core::scene_bundle::extract_move_payload(&bundle, &extended)
+                legaia_engine_scene::scene_bundle::extract_move_payload(&bundle, &extended)
         {
             let hits = aligned_pair_hits(&words_of(&payload));
             if hits > 0 {

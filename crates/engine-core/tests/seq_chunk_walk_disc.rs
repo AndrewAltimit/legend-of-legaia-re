@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_system::chunk_install::seq_chunk_offset;
 
 fn extracted_dir() -> Option<PathBuf> {

@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_core::scene::ProtIndex;
+use legaia_engine_scene::scene::ProtIndex;
 use legaia_mednafen::{PsxGpu, SaveState, VRAM_WIDTH};
 use legaia_ram_image::ScenarioManifest;
 

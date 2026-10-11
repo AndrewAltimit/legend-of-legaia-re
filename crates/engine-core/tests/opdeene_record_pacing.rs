@@ -16,7 +16,7 @@
 //!
 //! Skip-passes without disc data (CLAUDE.md convention).
 
-use legaia_engine_core::scene::SceneHost;
+use legaia_engine_core::scene_host::SceneHost;
 use std::path::PathBuf;
 
 /// Retail display frames from the record's arrival on `+0x289` to its `3F`.

@@ -170,7 +170,7 @@ impl World {
         self.casting.active_summon = Some(legaia_engine_effects::summon::SummonScene::spawn_parts(
             &module.parts,
             &module.bytes,
-            crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+            crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
             origin,
         ));
         true
@@ -282,7 +282,7 @@ impl World {
                     let mut scene = legaia_engine_effects::summon::SummonScene::spawn_parts(
                         &[],
                         &bytes,
-                        crate::scene::EFFECT_MODEL_LIBRARY_BASE,
+                        crate::scene_host::EFFECT_MODEL_LIBRARY_BASE,
                         pos,
                     );
                     scene.push_parts(&picked, &bytes, pos, rot);
