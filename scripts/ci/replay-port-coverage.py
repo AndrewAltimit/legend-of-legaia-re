@@ -264,7 +264,7 @@ CANONICAL_LADDERS = [
     # commit.
     ("w1d_world_map_render_ladder", "legaia-engine-core"),
     ("w1d_dev_menu_equip_ladder", "legaia-web-viewer"),
-    ("w1e_audio_session_ladder", "legaia-engine-audio"),
+    ("audio_session_ladder", "legaia-engine-audio"),
     ("w1e_scene_bgm_transition_ladder", "legaia-engine-core"),
     ("w1f1_battle_tutorial_ladder", "legaia-engine-core"),
     ("w1f1_fishing_pond_ladder", "legaia-engine-core"),
@@ -405,7 +405,7 @@ CANONICAL_LADDERS = [
     # 8001eef0). `cdname_retail_parse_disc` runs the lossy retail CDNAME
     # reader over the real file (8001d8fc). All four disc-gated skip-pass.
     #
-    # `w2c_battle_fx_ladder` walks the move-FX streak counter through the
+    # `battle_fx_ladder` walks the move-FX streak counter through the
     # production dispatcher so the chained ribbon (801e1d98) is reached the
     # way a host reaches it - by the counter falling below 0x201, not by a
     # direct call. Disc-free.
@@ -415,7 +415,7 @@ CANONICAL_LADDERS = [
     # / add, 8004313c and friends). Keys on ~/.mednafen/sav like
     # real_card_roundtrip, not on the disc; skip-passes without a card.
     ("pause_menu_compose", "legaia-engine-ui"),
-    ("w2c_battle_fx_ladder", "legaia-engine-ui"),
+    ("battle_fx_ladder", "legaia-engine-ui"),
     ("dome_ladder_and_hub_real", "legaia-web-viewer"),
     ("character_pack_real", "legaia-asset"),
     ("boot_overlay_disc", "legaia-asset"),
@@ -656,7 +656,7 @@ CANONICAL_LADDERS = [
     # round, `8003cb54`), `battle_always_resolves` (the results frame's panel
     # read, `801d84c0`), `battle_member_step_back` (the ring cancel's cursor
     # step, `801d32bc`), `w4a_shop_quantity_stepper` + the engine-ui
-    # `w4a_shop_quantity_compose` (the stepper session and window 35,
+    # `shop_quantity_compose` (the stepper session and window 35,
     # `801db7f4` / `801d5510`), `fishing_hub_and_floor_window_disc` (the venue
     # hub's help pages, `801d72a0`), `play_ringside_still_disc` (a dome leg won
     # by pad on the page, `801d1288`), `attached_light_page_prims` (the page's
@@ -674,7 +674,7 @@ CANONICAL_LADDERS = [
     ("battle_always_resolves", "legaia-engine-core"),
     ("battle_member_step_back", "legaia-engine-core"),
     ("w4a_shop_quantity_stepper", "legaia-engine-core"),
-    ("w4a_shop_quantity_compose", "legaia-engine-ui"),
+    ("shop_quantity_compose", "legaia-engine-ui"),
     ("fishing_hub_and_floor_window_disc", "legaia-engine-core"),
     ("play_ringside_still_disc", "legaia-web-viewer"),
     ("attached_light_page_prims", "legaia-web-viewer"),

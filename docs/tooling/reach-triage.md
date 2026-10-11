@@ -143,7 +143,7 @@ and each has a union member that lifts it.
 | `bin/`-resident code | No `#[test]` can *call* into a `bin/` target. | The same spawn route: a ladder that runs the subcommand covers it. The native window's composition is library code (`crates/engine-shell/src/window/`). |
 | native minigames | The window opens each from `WindowEvent::KeyboardInput` (`K` dance, `U` how-to, `L` fishing, `O` slots, `M` Muscle Dome, `B` Baka, `P` prize exchange); `--pad-script` writes a pad word and that handler never runs. | `--key-script` (`TICK:KEY`), composed with `--pad-script`; `w5_native_minigame_ladder` asserts each rung's captured frame differs from the same tick with nothing open. Needs a display. |
 | the standalone minigames page | Neither `minigame_replay` nor `play_compose_ladder` drives it. | Its own oracles in `crates/web-viewer/tests/`. |
-| the BGM route | No pad ladder holds a `BgmDirector`: `critical_path_replay`, `minigame_replay` and `play_compose_ladder` never call `SceneHost::route_bgm_events`, and the `BootSession` ladders set `enable_audio: false`. Every `0x35` sub-op arm and the mixer path are unentered by construction. | `w1e_scene_bgm_transition_ladder` and `crates/engine-audio/tests/w1e_audio_session_ladder.rs` (through `legaia_engine_audio::TestAudioSink`). They are session-shaped, not pad-driven. |
+| the BGM route | No pad ladder holds a `BgmDirector`: `critical_path_replay`, `minigame_replay` and `play_compose_ladder` never call `SceneHost::route_bgm_events`, and the `BootSession` ladders set `enable_audio: false`. Every `0x35` sub-op arm and the mixer path are unentered by construction. | `w1e_scene_bgm_transition_ladder` and `crates/engine-audio/tests/audio_session_ladder.rs` (through `legaia_engine_audio::TestAudioSink`). They are session-shaped, not pad-driven. |
 | `mdec` | The play page has no STR playback (its FMV arm auto-skips). | A spawned `play-str` run. |
 | render-pass callers | A row whose only callers are render passes needs a **composing** ladder; no headless fixture reaches it however deep it walks. | See [the fog rows](#a-render-pass-row-needs-a-composing-ladder-not-a-deeper-one). |
 
@@ -1338,7 +1338,7 @@ remaining proposal would still move:
 |---|---|---|
 | FMV | *built* | `w1a_fmv_ladder` plays every retail `fmv_id` and spawns `CARGO_BIN_EXE_mdec`; one `mdec` row is left |
 | Baka Fighter hub | *built* | `w1b_hub_ladder` opens the op-`0x49` submode screens; no `baka_hub_actors.rs` row is left |
-| audio | *built* | `w1e_audio_session_ladder` attaches the mixer; one `engine-audio` row is left |
+| audio | *built* | `audio_session_ladder` attaches the mixer; one `engine-audio` row is left |
 | world-map panels | *built* | `w1d_world_map_render_ladder` and the dev-menu ladder between them; the panel-actor cluster is gone |
 | boot chain | *built* | `w3c_boot_logos_ladder` opens the publisher-logo phase - the one stage every other member starts after |
 | field fog | *built* | `w1h_fog_page_prims` composes the page's screen-prim pass over a scene whose entry script raises the gate; the `fog_particles.rs` trio is the one cluster no *headless* member could have taken |

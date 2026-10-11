@@ -5,8 +5,8 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-engine-ui --test integration <name>::`.
 
+mod battle_fx_ladder;
 mod camera_relative_retail_oracle;
+mod numeral_host_parity;
 mod pause_menu_compose;
-mod w2b_numeral_host_parity;
-mod w2c_battle_fx_ladder;
-mod w4a_shop_quantity_compose;
+mod shop_quantity_compose;
