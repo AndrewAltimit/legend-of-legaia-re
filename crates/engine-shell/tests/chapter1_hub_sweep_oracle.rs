@@ -52,7 +52,7 @@ use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
 use legaia_engine_field::man_field_scripts::{
     overworld_portal_sites, partition2_record_gates, scene_destinations,
 };
-use legaia_engine_field::world_map_state::WorldMapEntityConfig;
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 

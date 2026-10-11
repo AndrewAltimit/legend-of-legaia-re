@@ -65,9 +65,11 @@ fn town01_man_entry_script_resolves_and_arm_lives_in_partition_one() {
 
     // The encounter table also resolves from the same MAN (formation index 4 =
     // the lone Tetsu, per docs/formats/encounter.md).
-    let enc = scene
-        .field_man_encounter_table(&index, "town01")
+    let man_bytes = scene
+        .field_man_payload(&index)
         .expect("encounter resolve")
+        .expect("town01 resolves a MAN");
+    let enc = legaia_engine_battle::encounter_man::scene_encounter_from_man("town01", &man_bytes)
         .expect("town01 encounter table is Some");
     assert!(enc.1.len() >= 5, "town01 has the expected formation set");
 

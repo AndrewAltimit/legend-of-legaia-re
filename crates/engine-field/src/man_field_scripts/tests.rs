@@ -417,7 +417,7 @@ fn man_with_placements(records: &[Vec<u8>]) -> (ManFile, Vec<u8>) {
 
 #[test]
 fn derive_field_carriers_maps_sparring_carrier_and_npcs() {
-    use legaia_engine_battle::encounter_record::{
+    use legaia_scene_formats::encounter_record::{
         RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
         RIM_ELM_TRAINING_FORMATION_ID,
     };

@@ -19,13 +19,13 @@ use legaia_engine_battle::battle_stage_module::{
 use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_battle::monster_catalog::{
     FormationDef, FormationSlot, FormationTable, MonsterCatalog, MonsterDef,
 };
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
+use legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 
 const BOSS_NAME: &str = "Boss";
 

@@ -567,7 +567,7 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
 #[test]
 fn v0_1_battle_leg_reaches_battle_from_new_game() {
     use legaia_engine_system::input::PadButton;
-    const TETSU: u16 = legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+    const TETSU: u16 = legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
@@ -720,9 +720,9 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
 /// for the opening). From there the walk is fully emergent.
 #[test]
 fn v0_1_battle_leg_walk_talk_accept() {
-    use legaia_engine_battle::encounter_record::RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS as TUT;
     use legaia_engine_system::input::PadButton;
-    const TETSU: u16 = legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
+    use legaia_scene_formats::encounter_record::RIM_ELM_SPARRING_CARRIER_TUTORIAL_POS as TUT;
+    const TETSU: u16 = legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID as u16;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");

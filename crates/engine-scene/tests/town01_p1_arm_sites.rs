@@ -117,7 +117,7 @@ fn town01_partition1_scripts_walk_and_report_arm_sites() {
         eprintln!(
             "[tetsu] no inline [count=1][id=0x4F] literal at any P1 yield site \
              - supports the indexed-formation-table install path (formation index {})",
-            legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID
+            legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID
         );
     }
 

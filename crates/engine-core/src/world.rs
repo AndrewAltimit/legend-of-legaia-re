@@ -91,6 +91,7 @@ mod minigame_state;
 mod screen_fx_state;
 mod state;
 mod types;
+mod world_map_state;
 mod world_toggles;
 
 pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
@@ -122,9 +123,7 @@ use legaia_engine_field::field_script_actor_state::{
     FieldAttachedLight, FieldScriptActorState, FieldScriptArc, ScriptActorRef,
 };
 use legaia_engine_field::move_vm_globals::{FieldNpcMotion, MoveVmGlobals};
-use legaia_engine_field::world_map_state::{
-    WorldMapEncounterState, WorldMapEntityConfig, WorldMapState,
-};
+use legaia_engine_field::world_map_entity_config::{WorldMapEncounterState, WorldMapEntityConfig};
 use legaia_engine_menus::party_state::PartyState;
 use legaia_engine_menus::shop_state::ShopState;
 use legaia_engine_minigames::tile_board_state::TileBoardState;
@@ -136,6 +135,7 @@ pub use minigame_state::{FishingCaptionText, MinigameState, pond_event_cues};
 pub use screen_fx_state::{ClearColourRamp, ScreenFxState};
 pub use state::*;
 pub use types::*;
+pub use world_map_state::WorldMapState;
 pub use world_toggles::WorldToggles;
 
 mod actors;

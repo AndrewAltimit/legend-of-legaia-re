@@ -43,7 +43,7 @@ resolve a link into a dependent crate.
 - `spells` / `retail_magic` - spell catalog and cast resolver; the retail
   player Seru-magic table pinned from `SCUS_942.54`.
 - `monster_catalog` - monster definitions and formation tables.
-- `encounter` / `encounter_man` / `encounter_record` / `encounter_registry`
+- `encounter` / `encounter_man` / `encounter_formation` / `encounter_registry`
   / `region_encounter` - per-scene encounter tables (built from MAN bytes),
   the retail encounter record, and the step- and region-keyed triggers
   (`FUN_801D9E1C`).

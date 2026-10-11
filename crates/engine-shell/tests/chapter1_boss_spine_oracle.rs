@@ -69,7 +69,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::scene_host::{SceneHost, SceneTickEvent};
-use legaia_engine_field::world_map_state::WorldMapEntityConfig;
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 

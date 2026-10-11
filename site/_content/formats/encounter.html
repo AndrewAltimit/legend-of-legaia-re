@@ -15,7 +15,7 @@
     <dt>Size / stride</dt><dd>4 + <code>count</code> bytes; MAN rows use a fixed 8-byte stride</dd>
     <dt>Pointer slot</dt><dd><code>actor[+0x94]</code> names the armed record; no magic word</dd>
     <dt>Destination</dt><dd>formation cell <code>0x8007BD0C..0F</code> (four monster-id slots)</dd>
-    <dt>Parser / engine</dt><dd><code>legaia_scene_formats::man_section</code>, <code>engine-battle::encounter_record</code>, <code>engine-battle::region_encounter</code></dd>
+    <dt>Parser / engine</dt><dd><code>legaia_scene_formats::man_section</code>, <code>scene-formats::encounter_record</code>, <code>engine-battle::region_encounter</code></dd>
     <dt>Confidence</dt><dd>Confirmed (record, reader, both arming paths); Inferred for how each inline opcode packs its three header bytes</dd>
     <dt>Used by</dt><dd><a href="../subsystems/battle.html">battle loader</a>, <a href="../subsystems/world-map.html">world-map entity tick</a>, <a href="../tooling/randomizer.html#encounters">encounter randomizer</a></dd>
   </dl>
@@ -285,7 +285,7 @@
 <section class="doc-section" id="files">
   <h2>In the port</h2>
   <ul class="bullets">
-    <li><code>crates/engine-battle::encounter_record</code> - <code>EncounterRecord</code>, <code>expand_battle_id</code>, the Rim Elm carrier constants.</li>
+    <li><code>crates/scene-formats::encounter_record</code> - <code>EncounterRecord</code>, <code>expand_battle_id</code>, the Rim Elm carrier constants.</li>
     <li><code>crates/engine-battle::region_encounter</code> / <code>encounter_man</code> - the region roll and the MAN formation table.</li>
     <li><code>crates/engine-vm</code> - the field-VM dispatcher port writes the actor pointer slot.</li>
     <li><code>legaia_scene_formats::man_section</code> - MAN section walker + formation / region row decoders.</li>

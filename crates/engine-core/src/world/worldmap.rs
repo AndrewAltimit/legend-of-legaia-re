@@ -180,7 +180,7 @@ impl World {
     /// the per-actor draw reads as its render scale - and `_DAT_8007B6A8`
     /// forces the slow step `5`, so a retail frame at the overworld's frame
     /// step `3` walks `10` units ([`WORLD_MAP_FRAME_STEP`], paid out over
-    /// three vsync ticks through [`legaia_engine_field::world_map_state::WorldMapState::walk_carry`]).
+    /// three vsync ticks through [`legaia_engine_field::world_map_entity_config::WorldMapState::walk_carry`]).
     ///
     /// No-op without a live player actor, while a dialog owns the frame, in the
     /// top-view debug camera, or while the player's movement-disabled flag
@@ -358,7 +358,7 @@ impl World {
     /// (`world >> 7`); each step drives one
     /// [`legaia_engine_battle::region_encounter::RegionEncounterTracker::on_step`] against the
     /// player's current position. A trigger latches
-    /// [`legaia_engine_field::world_map_state::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
+    /// [`legaia_engine_field::world_map_entity_config::WorldMapState::pending_encounter`], which [`Self::tick_world_map`]
     /// resolves into a battle. The RNG comes from the world's shared
     /// deterministic source, drawn only on the trigger branch, so replays stay
     /// bit-identical. No-op without a player actor or region tracker.
@@ -1161,7 +1161,7 @@ impl World {
     /// overworld-entrance engage the entity SM emitted (walk-onto its tile),
     /// leaving every other queued field event in place. `None` when no
     /// world-map transition is queued. The returned `slot` indexes
-    /// [`legaia_engine_field::world_map_state::WorldMapState::entity_configs`], where the
+    /// [`legaia_engine_field::world_map_entity_config::WorldMapState::entity_configs`], where the
     /// [`WorldMapEntityConfig::OverworldPortal`] that raised it carries the
     /// real CDNAME destination - `dest_index` is only that entrance's `0x3F`
     /// index, never a door-warp map id.

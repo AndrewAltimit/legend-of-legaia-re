@@ -68,7 +68,7 @@ fn install_encounter_for_scene_replaces_active_session() {
 
 #[test]
 fn install_encounter_from_record_registers_and_arms() {
-    use legaia_engine_battle::encounter_record::EncounterRecord;
+    use legaia_scene_formats::encounter_record::EncounterRecord;
     let mut world = World::new();
     // mc2-shaped record: two monsters, both id 4.
     let record = EncounterRecord {
@@ -367,7 +367,7 @@ fn drain_pending_scripted_encounter_only_when_queued() {
 
 #[test]
 fn install_encounter_from_record_empty_returns_none() {
-    use legaia_engine_battle::encounter_record::EncounterRecord;
+    use legaia_scene_formats::encounter_record::EncounterRecord;
     let mut world = World::new();
     let id = world.install_encounter_from_record("map01", &EncounterRecord::EMPTY);
     assert!(id.is_none());
@@ -402,10 +402,10 @@ fn install_man_formation_forces_registered_row() {
 
 #[test]
 fn field_carrier_engage_launches_battle_and_returns_to_field() {
-    use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
     use legaia_engine_battle::monster_catalog::{
         FormationDef, FormationSlot, MonsterCatalog, MonsterDef,
     };
+    use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
     let mut world = World {
         party: legaia_engine_menus::party_state::PartyState {
@@ -497,8 +497,8 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
 
 #[test]
 fn field_carrier_unengaged_never_fires() {
-    use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+    use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
     let mut world = World {
         party: legaia_engine_menus::party_state::PartyState {

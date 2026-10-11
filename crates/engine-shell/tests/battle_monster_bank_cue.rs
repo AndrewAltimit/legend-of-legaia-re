@@ -15,11 +15,11 @@
 use std::path::PathBuf;
 
 use legaia_engine_audio::{SfxBank, Spu};
-use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::boot::BootSession;
 use legaia_engine_system::sound_state::SfxRingOp;
+use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
 /// `(VAB slot, monster.snd bank)` pairs.
 type MonsterBanks = Vec<(u8, u16)>;

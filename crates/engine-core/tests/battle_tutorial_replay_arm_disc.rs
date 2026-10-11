@@ -11,11 +11,11 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 use legaia_engine_core::battle_tutorial::TUTORIAL_ARM_FLAG;
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::walk_battle_entry_arms;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {

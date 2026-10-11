@@ -31,7 +31,7 @@ pub struct EncounterState {
     pub pending_scripted: Option<Vec<u8>>,
     /// When `true`, the field VM's bare arm-encounter op (`0x37`/`0x41`) is
     /// treated as a scripted-encounter install: the record window overlaying
-    /// the opcode is parsed as an [`crate::encounter_record::EncounterRecord`]
+    /// the opcode is parsed as an [`legaia_scene_formats::encounter_record::EncounterRecord`]
     /// and installed via `World::install_scripted_encounter`, which then
     /// disarms (fire-once). Default `false` so generic script yields are never
     /// mistaken for encounter arms. See `World::arm_scripted_encounter`.

@@ -229,7 +229,7 @@ impl World {
         self.tables.monster_catalog = catalog;
     }
 
-    /// Install a [`legaia_engine_battle::encounter_record::EncounterRecord`] decoded from
+    /// Install a [`legaia_scene_formats::encounter_record::EncounterRecord`] decoded from
     /// an on-disc byte slice as the next encounter for the active scene.
     ///
     /// Mirrors the retail flow at `0x801DA620..0x801DA678`: the parsed
@@ -244,12 +244,15 @@ impl World {
     pub fn install_encounter_from_record(
         &mut self,
         scene_label: &str,
-        record: &legaia_engine_battle::encounter_record::EncounterRecord,
+        record: &legaia_scene_formats::encounter_record::EncounterRecord,
     ) -> Option<u16> {
         if record.is_empty() {
             return None;
         }
-        let formation = record.to_formation_def(scene_label);
+        let formation = legaia_engine_battle::encounter_formation::formation_def_from_record(
+            &record,
+            scene_label,
+        );
         let formation_id = formation.formation_id;
         self.tables.formation_table.insert(formation);
 
@@ -275,7 +278,7 @@ impl World {
     /// a formation **by index** into the per-scene formation table - the
     /// mechanism the Rim Elm Tetsu tutorial fight uses. The per-scene formations
     /// load from the MAN asset into a contiguous 8-byte-stride table
-    /// (`[3 reserved][count][<=4 ids]`, see [`legaia_engine_battle::encounter_record`] /
+    /// (`[3 reserved][count][<=4 ids]`, see [`legaia_scene_formats::encounter_record`] /
     /// `docs/formats/encounter.md`); a carrier entity arms its encounter by
     /// pointing `actor[+0x94]` at one entry (`table_base + index*8`), and
     /// `FUN_801DA51C` copies that record into the formation cell on confirm. The

@@ -46,14 +46,14 @@
 //! whether any P1 script carries an inline `[count=1][id=0x4F]` Tetsu
 //! literal at a real yield boundary - which adjudicates the inline-literal
 //! hypothesis against the indexed-formation-table hypothesis
-//! (see [`legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
+//! (see [`legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID`]).
 
 use legaia_scene_formats::field_disasm::{
     EffectKind, FlagKind, InsnInfo, LinearWalker, MenuCtrlKind, YieldKind, scene_change_name,
 };
 use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
-use legaia_engine_battle::encounter_record::EncounterRecord;
+use legaia_scene_formats::encounter_record::EncounterRecord;
 
 /// Inclusive `op0` range a genuine field-VM warp (`scene_transition`) uses.
 ///

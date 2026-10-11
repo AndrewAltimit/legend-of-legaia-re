@@ -198,7 +198,7 @@ pub struct RegionBattleSetup {
     /// battle-stage variant. Battle init `FUN_800513F0` loads the backdrop
     /// from PROT entry `scene_index + variant` through `FUN_8001FA88`
     /// (`0x80051A0C..0x80051A3C`), `scene_index` being the CDNAME index word
-    /// `0x80084540` - see [`battle_stage_entry_for_variant`].
+    /// `0x80084540` - see [`legaia_scene_formats::battle_backdrop::battle_stage_entry_for_variant`].
     pub stage_variant: u8,
     /// `_DAT_8007B64B = (region[+8] >> 5) & 1` (`0x801DA09C..0x801DA0AC`):
     /// battle init keeps the backdrop shell's object 1 when set
@@ -246,20 +246,6 @@ pub fn region_battle_setup(bytes: &RegionSetupBytes) -> RegionBattleSetup {
         });
     }
     setup
-}
-
-/// The PROT extraction index of the battle backdrop a stage variant names:
-/// battle init passes `scene_index + variant` to `FUN_8001FA88`
-/// (`0x80051A20..0x80051A3C`), which reads raw TOC entry `a0 + 5`
-/// (`addiu a1, s0, 5` at `0x8001FAF0`) - extraction index `a0 + 3`.
-/// `scene_index` is the CDNAME `#define` number of the field scene
-/// (`0x80084540`).
-///
-/// REF: FUN_800513F0, FUN_8001FA88
-pub fn battle_stage_entry_for_variant(scene_index: u32, variant: u8) -> u32 {
-    scene_index
-        + u32::from(variant & 0x7F)
-        + legaia_scene_formats::battle_backdrop::RUNTIME_ID_TO_PROT_OFFSET
 }
 
 impl EncounterRegion {

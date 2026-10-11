@@ -109,7 +109,7 @@ pub fn encounter_table_from_man(scene_label: &str, man_bytes: &[u8]) -> Option<E
         // The runtime formation-id slot is the row index (NOT the
         // synthetic-from-ids hash). Engines that route through the
         // formation table by id can swap to the synthetic id by
-        // converting the row to a [`crate::encounter_record::EncounterRecord`]
+        // converting the row to a [`legaia_scene_formats::encounter_record::EncounterRecord`]
         // first.
         let weight_u16 = weight.min(u16::MAX as u32) as u16;
         table.push(EncounterEntry::new(i as u16, weight_u16));
@@ -180,13 +180,13 @@ pub fn scene_encounter_from_man(
     Some((table, defs))
 }
 
-/// Resolve a formation row to its [`crate::encounter_record::EncounterRecord`]
+/// Resolve a formation row to its [`legaia_scene_formats::encounter_record::EncounterRecord`]
 /// shape. Useful for engines that have a roll result and want to install
 /// it via `legaia_engine_core::world::World::install_encounter_from_record`.
 pub fn formation_record_for_row(
     man_bytes: &[u8],
     row_index: usize,
-) -> Option<crate::encounter_record::EncounterRecord> {
+) -> Option<legaia_scene_formats::encounter_record::EncounterRecord> {
     let man = man_section::parse(man_bytes).ok()?;
     let body = man.encounter_section_body(man_bytes)?;
     let es = man_section::parse_encounter_section(body).ok()?;
@@ -203,13 +203,13 @@ pub fn formation_record_for_row(
     // EncounterRecord::parse reads bytes [0..3] as the opcode header,
     // [3] as count, [4..4+count] as ids - matches the on-disc formation
     // row prefix exactly.
-    crate::encounter_record::EncounterRecord::parse(raw)
+    legaia_scene_formats::encounter_record::EncounterRecord::parse(raw)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encounter_record::EncounterRecord;
+    use legaia_scene_formats::encounter_record::EncounterRecord;
 
     /// Hand-build a minimal MAN buffer with one section-0 encounter:
     /// 2 formations, 1 default-gated region covering both. Mirrors the

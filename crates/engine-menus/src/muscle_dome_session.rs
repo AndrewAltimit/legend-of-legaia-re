@@ -11,7 +11,7 @@
 //! It is **not** turn-limited, and the `"Turns Left: N  HP Left: P%"` strip
 //! is not its HUD. That strip's draw sites gate on `*(u8*)0x8007BD0C ==
 //! 0xB6`, and `0x8007BD0C` is the four-slot monster-id formation cell
-//! (`legaia_engine_battle::encounter_record`,
+//! (`legaia_scene_formats::encounter_record`,
 //! `legaia_parity::capture_observations::battle_init_overlay::FORMATION_CELL_ADDR`),
 //! so the gate reads "the first enemy is monster `0xB6`" - Koru, the game's
 //! one four-turn timed boss. The dome's own roster tops out at id `0xAA`, so

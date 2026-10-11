@@ -224,18 +224,18 @@ impl SceneHost {
         // load the destination.
         //
         // The `slot` points back at the engaged entity's config, and only an
-        // [`legaia_engine_field::world_map_state::WorldMapEntityConfig::OverworldPortal`] raises the
+        // [`legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal`] raises the
         // event: it carries the exact CDNAME destination + arrival tile (the
         // `map01` `0x3F` bridge), so it loads that scene and seats the player
         // at the entry tile - the same arrival semantics as the named `0x3F`
         // warp above. `dest_index` is that entrance's `0x3F` index and is
         // **not** resolved as a map id; the door-warp id space belongs to
-        // [`legaia_engine_field::world_map_state::WorldMapEntityConfig::MinigameDoor`], which arms the
+        // [`legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::MinigameDoor`], which arms the
         // minigame warp drained below instead of raising this event.
         if let Some((dest_index, slot)) = self.world.take_world_map_transition() {
             self.world.pending_scene_transition = None;
             if let Some(
-                legaia_engine_field::world_map_state::WorldMapEntityConfig::OverworldPortal {
+                legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
                     scene_name,
                     entry_x,
                     entry_z,

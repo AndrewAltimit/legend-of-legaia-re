@@ -51,13 +51,6 @@ fn the_setup_half_on_the_long_layout() {
 }
 
 #[test]
-fn the_stage_entry_is_the_scene_index_plus_the_variant_plus_three() {
-    // map01 is CDNAME 85 and fights on extraction 88 with variant 0.
-    assert_eq!(battle_stage_entry_for_variant(85, 0), 88);
-    assert_eq!(battle_stage_entry_for_variant(3, 1), 7);
-}
-
-#[test]
 fn world_to_tile_is_arithmetic_shift() {
     assert_eq!(RegionEncounterTable::world_to_tile(0), 0);
     assert_eq!(RegionEncounterTable::world_to_tile(127), 0);

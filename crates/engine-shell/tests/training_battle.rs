@@ -16,14 +16,14 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_battle::encounter_record::{
-    RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
-};
 use legaia_engine_battle::monster_catalog::catalog_from_monster_archive;
 use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::boot::BootSession;
+use legaia_scene_formats::encounter_record::{
+    RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
+};
 
 const SCENE: &str = "town01";
 

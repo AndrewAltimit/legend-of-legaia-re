@@ -23,8 +23,8 @@
 use legaia_engine_battle::battle_stage_module::{
     battle_init_stage_override, boss_transition_stage_id,
 };
-use legaia_engine_battle::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 use legaia_engine_scene::overlay_loader::battle_stage_overlay_entry;
+use legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID;
 
 #[test]
 fn the_two_stage_arms_fire_on_their_own_guards_and_map_to_968_and_969() {

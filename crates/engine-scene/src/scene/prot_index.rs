@@ -364,7 +364,7 @@ impl ProtIndex {
     /// The PROT entry the battle backdrop comes from when the fight starts in
     /// a region whose stage variant is `variant` (`region[+8] & 0x1F`, retail
     /// `_DAT_8007BD60`): scene `scene_name`'s CDNAME index plus the variant
-    /// plus three ([`legaia_engine_battle::region_encounter::battle_stage_entry_for_variant`]:
+    /// plus three ([`legaia_scene_formats::battle_backdrop::battle_stage_entry_for_variant`]:
     /// battle init `FUN_800513F0` hands `scene_index + variant` to the
     /// loader `FUN_8001FA88`). `None` when the scene has no CDNAME block or the
     /// named entry is not a `scene_tmd_stream`, so a caller can fall back to
@@ -372,7 +372,7 @@ impl ProtIndex {
     pub fn battle_stage_entry_for_region(&self, scene_name: &str, variant: u8) -> Option<u32> {
         let map = self.cdname.as_ref()?;
         let (raw_start, _) = cdname::block_range_for_name(map, scene_name)?;
-        let idx = legaia_engine_battle::region_encounter::battle_stage_entry_for_variant(
+        let idx = legaia_scene_formats::battle_backdrop::battle_stage_entry_for_variant(
             raw_start, variant,
         );
         self.entry_bytes(idx)

@@ -17,7 +17,7 @@ use legaia_engine_core::place_name_banner::{
 };
 use legaia_engine_core::scene_host::SceneHost;
 use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
-use legaia_engine_field::world_map_state::WorldMapEntityConfig;
+use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 
 fn extracted_dir() -> Option<PathBuf> {

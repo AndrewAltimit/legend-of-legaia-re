@@ -89,7 +89,7 @@ The carriers are the per-scene field-VM script bundles ([`scene-v12-table.md`](s
 
 The reader copies `monster_ids[0..count]` into the formation cell `0x8007BD0C..0x8007BD0F`, one byte per slot. Slots beyond `count` stay zero, and `monster_count == 0` leaves the whole cell clear (no monsters spawn).
 
-Parsers: `legaia_scene_formats::man_section::FormationRecord` (the MAN row, keeps `+0..+2` as `header_bytes`) and [`EncounterRecord`](../../crates/engine-battle/src/encounter_record.rs) (the runtime window: `COUNT_OFFSET = 3`, `IDS_OFFSET = 4`). Both reject `count > 4`.
+Parsers: `legaia_scene_formats::man_section::FormationRecord` (the MAN row, keeps `+0..+2` as `header_bytes`) and [`EncounterRecord`](../../crates/scene-formats/src/encounter_record.rs) (the runtime window: `COUNT_OFFSET = 3`, `IDS_OFFSET = 4`). Both reject `count > 4`.
 
 ## Reader
 
@@ -238,7 +238,7 @@ Not an inline `[count=1][0x4F]` operand: an opcode-aware walk of town01's partit
 
 ### The carrier entity
 
-The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) and locked by `crates/engine-scene/tests/rim_elm_sparring_carrier.rs`.
+The actor that installs this fight is the one town01 partition-1 placement at **tile (76, 65)** with **model byte `0x6A`**, mirrored as `RIM_ELM_SPARRING_CARRIER_TILE` / `RIM_ELM_SPARRING_CARRIER_MODEL` in [`encounter_record.rs`](../../crates/scene-formats/src/encounter_record.rs) and locked by `crates/engine-scene/tests/rim_elm_sparring_carrier.rs`.
 
 **The install is disc-visible.** The sparring prompt is an ordinary MES-embedded **option picker** (`legaia_mes::scan_pickers` / `Picker::jump_target`; runner in [`script-vm.md`](../subsystems/script-vm.md#the-interaction-cursor-one-record-two-consecutive-scripts)), four options wide. The fight option's branch runs `3E FF 04`: partition-1 **record 10**, offset `+0x07F7`, three instructions past the `4A 10 00` `WaitFrames 16` at `+0x07EE`. It is the only `3E FF` in the scene's talk records. The other three options run a talk reply and no fight.
 
@@ -629,7 +629,7 @@ The encounter randomizer relies on this to leave boss fights untouched (`legaia_
 ## Files referencing this format
 
 - [`crates/scene-formats/src/man_section.rs`](../../crates/scene-formats/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
-- [`crates/engine-battle/src/encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
+- [`crates/scene-formats/src/encounter_record.rs`](../../crates/scene-formats/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
 - [`crates/engine-battle/src/region_encounter.rs`](../../crates/engine-battle/src/region_encounter.rs) - the `FUN_801D9E1C` roll.
 - [`crates/engine-field/src/camera_zone.rs`](../../crates/engine-field/src/camera_zone.rs) - camera-region loader, composer, ease, snap, focus clamp.
 - [`crates/engine-vm`](../../crates/engine-vm/) - the field-VM dispatcher port that reads the operand and writes the actor pointer slot.

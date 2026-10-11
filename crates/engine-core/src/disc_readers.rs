@@ -7,4 +7,5 @@
 
 pub mod battle_open;
 pub mod dance;
+pub mod encounter_man;
 pub mod fishing_actors;

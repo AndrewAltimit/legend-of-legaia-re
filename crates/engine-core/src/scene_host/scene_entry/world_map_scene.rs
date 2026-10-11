@@ -47,7 +47,7 @@ impl SceneHost {
         // Each interactive placement → (config, spawn world position). The
         // positions drive the auto-engage-on-walkover trigger; Plain
         // (decorative / model-only) placements are skipped.
-        let mut entities: Vec<(legaia_engine_field::world_map_state::WorldMapEntityConfig, (i16, i16))> = man_bytes
+        let mut entities: Vec<(legaia_engine_field::world_map_entity_config::WorldMapEntityConfig, (i16, i16))> = man_bytes
             .as_ref()
             .and_then(|man| {
                 legaia_scene_formats::man_section::parse(man)
@@ -68,14 +68,14 @@ impl SceneHost {
                             // overworld scenes the disc's only such placements
                             // are the `map02` / `map03` fishing signboards.
                             PlacementKind::Portal { target_map } => {
-                                legaia_engine_field::world_map_state::WorldMapEntityConfig::MinigameDoor {
+                                legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::MinigameDoor {
                                     sub_id: target_map,
                                 }
                             }
                             PlacementKind::Npc {
                                 interact_id,
                                 dialog_inline,
-                            } => legaia_engine_field::world_map_state::WorldMapEntityConfig::Npc {
+                            } => legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::Npc {
                                 interact_id: interact_id.unwrap_or(0),
                                 // No `text_id` from the MAN classifier: the `0x3F`
                                 // op it was sourced from is the scene-change
@@ -165,7 +165,7 @@ impl SceneHost {
                     ),
                 };
                 entities.push((
-                    legaia_engine_field::world_map_state::WorldMapEntityConfig::OverworldPortal {
+                    legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
                         scene_name,
                         index,
                         entry_x,
@@ -208,7 +208,7 @@ impl SceneHost {
                     };
                     let tile = (contact.0 >> 7, contact.1 >> 7);
                     let dup = entities.iter().any(|(cfg, pos)| {
-                        matches!(cfg, legaia_engine_field::world_map_state::WorldMapEntityConfig::OverworldPortal {
+                        matches!(cfg, legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
                             scene_name: s, ..
                         } if *s == scene_name)
                             && (pos.0 >> 7, pos.1 >> 7) == tile
@@ -217,7 +217,7 @@ impl SceneHost {
                         continue;
                     }
                     entities.push((
-                        legaia_engine_field::world_map_state::WorldMapEntityConfig::OverworldPortal {
+                        legaia_engine_field::world_map_entity_config::WorldMapEntityConfig::OverworldPortal {
                             scene_name,
                             index,
                             entry_x,

@@ -14,10 +14,8 @@ path = "src/lib.rs"
 anyhow.workspace = true
 serde.workspace = true
 toml = { workspace = true, features = ["display"] }
-legaia-engine-battle.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-field.workspace = true
-legaia-engine-mode.workspace = true
 legaia-engine-system.workspace = true
 legaia-engine-vm.workspace = true
 legaia-render-kernels.workspace = true
@@ -36,6 +34,12 @@ legaia-tim.workspace = true
 legaia-tmd.workspace = true
 legaia-ui-formats.workspace = true
 legaia-vab.workspace = true
+
+[dev-dependencies]
+# Named only by tests: the encounter tables a scene MAN decodes into, and the
+# mode seat's staged-index sentinel the load-entry plan is checked against.
+legaia-engine-battle.workspace = true
+legaia-engine-mode.workspace = true
 
 [[test]]
 name = "integration"

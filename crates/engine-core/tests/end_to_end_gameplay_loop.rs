@@ -35,7 +35,6 @@
 use legaia_engine_battle::encounter::{
     EncounterEntry, EncounterSession, EncounterTable, EncounterTracker,
 };
-use legaia_engine_battle::encounter_record::{EncounterRecord, FORMATION_SLOTS};
 use legaia_engine_battle::levelup::{StatGain, StatGrowthCurve};
 use legaia_engine_battle::monster_catalog::{
     FormationDef, MonsterCatalog, vanilla_formation_table, vanilla_monster_catalog,
@@ -46,6 +45,7 @@ use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::rand::psyq_rand_step;
 use legaia_save::{CharacterRecord, HpMpSp, Party, SaveExt, SaveExtV2, SaveFile};
+use legaia_scene_formats::encounter_record::{EncounterRecord, FORMATION_SLOTS};
 
 const ATTACKER_ATK: i32 = 35;
 const TARGET_DEF: i32 = 8;

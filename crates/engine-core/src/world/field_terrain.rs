@@ -155,7 +155,7 @@ pub struct FieldTerrain {
     pub(crate) step_tile: Option<(i16, i16)>,
     /// Region-keyed random-encounter state for the current FIELD scene (the
     /// same [`legaia_engine_battle::region_encounter`] `FUN_801D9E1C` port the overworld
-    /// uses, [`legaia_engine_field::world_map_state::WorldMapState::region_tracker`]). When set,
+    /// uses, [`legaia_engine_field::world_map_entity_config::WorldMapState::region_tracker`]). When set,
     /// [`crate::world::World::on_field_step`] rolls against the player's *active region*
     /// (per-region rate increment + formation-range pick) and drives the
     /// trigger through the [`legaia_engine_battle::encounter::EncounterSession`]'s

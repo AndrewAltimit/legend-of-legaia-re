@@ -242,12 +242,15 @@ pub fn run_engine_battle(
             // fight installed from another table, or a scene whose rows the
             // engine does not register. Register the cell as its own
             // formation, with the archive's stats for its ids.
-            let rec = legaia_engine_battle::encounter_record::EncounterRecord::new(
+            let rec = legaia_scene_formats::encounter_record::EncounterRecord::new(
                 battle.monster_ids.len() as u8,
                 &battle.monster_ids,
             )
             .context("formation cell does not fit a record")?;
-            let mut def = rec.to_formation_def(retail.scene.clone());
+            let mut def = legaia_engine_battle::encounter_formation::formation_def_from_record(
+                &rec,
+                retail.scene.clone(),
+            );
             let mut id = def.formation_id;
             while world.tables.formation_table.formation(id).is_some() {
                 id = id.wrapping_add(1);

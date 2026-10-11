@@ -20,12 +20,12 @@
 //!
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
-use legaia_engine_battle::encounter_record::{
-    RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
-};
 use legaia_engine_dialog::dialog::OwnedDialogPanel;
 use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placement};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
+use legaia_scene_formats::encounter_record::{
+    RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
+};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -187,7 +187,7 @@ fn town01_p1_10_carries_the_tetsu_3e_ff_04_install() {
     assert_eq!(record.count, 1, "row 4 is a lone-monster formation");
     assert_eq!(
         record.monster_ids[0],
-        legaia_engine_battle::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID,
+        legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_OPPONENT_ID,
         "row 4's lone slot is Tetsu"
     );
 

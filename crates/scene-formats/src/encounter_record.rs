@@ -27,7 +27,7 @@
 //! (0x37/0x41, 0x38, 0x43, 0x47, 0x4C). Random-encounter triggers
 //! (rate-roll on `_DAT_8007B5F8`) may populate the formation cell via a
 //! different path that bypasses `actor[+0x94]` - that's an open thread.
-//! The [`EncounterRegistry`](crate::encounter_registry) abstraction is a
+//! The `EncounterRegistry` (`legaia_engine_battle::encounter_registry`) abstraction is a
 //! port-side composition layer that lets engines synthesize per-scene
 //! tables until disc-side decoding catches up.
 //!
@@ -220,31 +220,6 @@ impl EncounterRecord {
         *cell = [0; FORMATION_SLOTS];
         let n = self.count as usize;
         cell[..n].copy_from_slice(&self.monster_ids[..n]);
-    }
-
-    /// Convert this record into a [`FormationDef`] suitable for the runtime
-    /// battle session.
-    ///
-    /// The retail engine identifies a battle by the bytes of the formation
-    /// cell - there is no separate "formation id" on disc. We synthesize one
-    /// from the cell bytes (`monster_ids` packed little-endian into the low
-    /// 32 bits, then folded into the u16 id space) so engines can register
-    /// and look up the formation in [`FormationTable`].
-    ///
-    /// Engines that need a stable / human-meaningful id should prefer
-    /// constructing the [`FormationDef`] manually; this method is for the
-    /// "decode an on-disc record and play it" path.
-    pub fn to_formation_def(
-        &self,
-        label: impl Into<String>,
-    ) -> crate::monster_catalog::FormationDef {
-        use crate::monster_catalog::{FormationDef, FormationSlot};
-        let slots: Vec<FormationSlot> = self
-            .active_ids()
-            .map(|id| FormationSlot::new(id as u16))
-            .collect();
-        let formation_id = self.synthetic_formation_id();
-        FormationDef::new(formation_id, slots).with_label(label)
     }
 
     /// Synthetic formation id derived from `monster_ids`. Two records with
@@ -522,35 +497,12 @@ mod tests {
     }
 
     #[test]
-    fn to_formation_def_yields_one_slot_per_active_id() {
-        let r = EncounterRecord {
-            count: 2,
-            monster_ids: [0x04, 0x07, 0, 0],
-        };
-        let f = r.to_formation_def("test_scene");
-        assert_eq!(f.slots.len(), 2);
-        assert_eq!(f.slots[0].monster_id, 4);
-        assert_eq!(f.slots[1].monster_id, 7);
-        assert_eq!(f.label, "test_scene");
-    }
-
-    #[test]
-    fn to_formation_def_empty_record_has_no_slots() {
-        let f = EncounterRecord::EMPTY.to_formation_def("empty");
-        assert!(f.slots.is_empty());
-    }
-
-    #[test]
     fn rim_elm_training_is_a_lone_opponent() {
         let r = EncounterRecord::rim_elm_training();
         assert_eq!(r.count, 1);
         assert_eq!(r.monster_ids[0], RIM_ELM_TRAINING_OPPONENT_ID);
         assert_eq!(r.monster_ids[0], 0x4F);
         assert_eq!(r.monster_ids[1..], [0, 0, 0]);
-        // Resolves to a single-slot formation carrying the training id.
-        let f = r.to_formation_def("town01");
-        assert_eq!(f.slots.len(), 1);
-        assert_eq!(f.slots[0].monster_id, 0x4F);
     }
 
     #[test]

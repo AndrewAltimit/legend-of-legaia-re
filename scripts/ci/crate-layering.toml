@@ -70,7 +70,6 @@ deps = ["engine-battle", "engine-battle-vm", "engine-vm", "render-kernels"]
 [crates.engine-field]
 role = "World-free field kernels"
 deps = [
-    "engine-battle",
     "engine-battle-vm",
     "engine-dialog",
     "engine-mode",
@@ -141,12 +140,6 @@ from = "render-kernels"
 to = "engine-battle-vm"
 items = ["psx_camera", "battle_cam_script", "battle_intro_*"]
 reason = "the projection constants and the battle-intro model types the draw kernels consume are defined beside the battle camera"
-
-[[coupling]]
-from = "engine-field"
-to = "engine-battle"
-items = ["encounter_record"]
-reason = "the MAN field-script decoders build EncounterRecord, whose formation expansion needs the monster catalog"
 
 [[coupling]]
 from = "engine-effects"

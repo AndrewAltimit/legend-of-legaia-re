@@ -585,7 +585,11 @@ impl SceneHost {
         // falls back to the synthetic registry (`install_encounter_for_scene`).
         self.world.set_active_scene_label(name);
         let man_encounter = match self.scene.as_ref() {
-            Some(scene) => match scene.field_man_encounter_table(&self.index, name) {
+            Some(scene) => match crate::disc_readers::encounter_man::field_man_encounter_table(
+                scene,
+                &self.index,
+                name,
+            ) {
                 Ok(v) => v,
                 Err(err) => {
                     eprintln!("[scene] MAN encounter-table resolve skipped: {err:#}");

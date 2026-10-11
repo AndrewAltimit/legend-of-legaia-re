@@ -14,6 +14,7 @@
 pub mod battle_backdrop;
 pub mod clut_walk;
 pub mod cutscene_text;
+pub mod encounter_record;
 pub mod field_disasm;
 pub mod field_map;
 pub mod field_objects;

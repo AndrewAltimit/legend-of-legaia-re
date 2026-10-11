@@ -175,7 +175,7 @@ pub enum FieldEvent {
     /// dropped record is included so engines can log / diagnose.
     ActorSpawnFailed { record: Vec<u8> },
     /// An overworld town / dungeon entrance
-    /// (`crate::world_map_state::WorldMapEntityConfig::OverworldPortal`) reached its
+    /// (`crate::world_map_entity_config::WorldMapEntityConfig::OverworldPortal`) reached its
     /// scene-transition state. `slot` is the overworld entity index, whose
     /// config row carries the CDNAME destination + arrival tile; `dest_index`
     /// echoes that entrance's `0x3F` named-scene-change index so a host
@@ -183,7 +183,7 @@ pub enum FieldEvent {
     ///
     /// **Not a map id.** The `0x3E` door-warp id space is a mode-24 minigame
     /// sub-id and never reaches this event - a
-    /// `crate::world_map_state::WorldMapEntityConfig::MinigameDoor` arms
+    /// `crate::world_map_entity_config::WorldMapEntityConfig::MinigameDoor` arms
     /// `World::minigames.pending_warp` instead.
     WorldMapTransition { dest_index: u16, slot: u8 },
 }

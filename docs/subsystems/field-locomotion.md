@@ -1447,7 +1447,7 @@ Every field / town scene carries its MAN in a [`scene_asset_table`](../formats/s
 
 ### Encounters
 
-The MAN's section 0 carries the scene's **random-encounter table** (`FUN_8003AEB0` installs it into `_DAT_801C6EA4 + 0x20`; [`encounter.md`](../formats/encounter.md)). `Scene::field_man_encounter_table` decodes it via `scene_encounter_from_man`, and `SceneHost::enter_field_scene` installs it (`World::install_man_encounter`): the per-formation rows become `EncounterEntry`s keyed by row index, and the matching `FormationDef`s are merged into the formation table.
+The MAN's section 0 carries the scene's **random-encounter table** (`FUN_8003AEB0` installs it into `_DAT_801C6EA4 + 0x20`; [`encounter.md`](../formats/encounter.md)). `engine-core::disc_readers::encounter_man::field_man_encounter_table` decodes it via `scene_encounter_from_man`, and `SceneHost::enter_field_scene` installs it (`World::install_man_encounter`): the per-formation rows become `EncounterEntry`s keyed by row index, and the matching `FormationDef`s are merged into the formation table.
 
 The MAN carries monster ids but not stat blocks, so the host installs the stat catalog separately; scenes whose bundle has no MAN keep the synthetic `EncounterRegistry` fallback. Towns carry encounters too: `town01`'s section declares **7 formations** at a low mean trigger rate (`6/256`), gated by its region records. Disc-gated: `crates/engine-core/tests/field_man_encounter_disc.rs`.
 

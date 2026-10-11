@@ -100,11 +100,11 @@ fn town01_dialog_boxes_pack_at_most_three_lines() {
 
 #[test]
 fn rim_elm_sparring_opening_packs_three_pages_then_a_four_option_menu() {
-    use legaia_engine_battle::encounter_record::{
-        RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
-    };
     use legaia_engine_field::man_field_scripts::{PlacementKind, classify_placements};
     use legaia_mes::{Dispatch, pack_boxes};
+    use legaia_scene_formats::encounter_record::{
+        RIM_ELM_SPARRING_CARRIER_MODEL, RIM_ELM_SPARRING_CARRIER_TILE,
+    };
     use legaia_scene_formats::man_section::parse as parse_man;
 
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

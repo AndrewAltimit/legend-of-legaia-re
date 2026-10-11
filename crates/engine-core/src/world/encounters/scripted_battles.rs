@@ -87,7 +87,7 @@ impl World {
     ///
     /// While armed, the field VM's bare arm-encounter op (`0x37`/`0x41`) hands
     /// the record window overlaying the opcode to the host, which parses it as
-    /// an [`legaia_engine_battle::encounter_record::EncounterRecord`] and routes it through
+    /// an [`legaia_scene_formats::encounter_record::EncounterRecord`] and routes it through
     /// [`Self::install_scripted_encounter`]. See
     /// [`legaia_engine_battle::encounter_state::EncounterState::scripted_armed`] for why this gate exists (there is no
     /// dedicated encounter opcode; the consuming entity SM is the retail
@@ -100,7 +100,7 @@ impl World {
     /// VM forwarded at the bare arm-encounter op (`0x37`/`0x41`); the record
     /// overlays the opcode (`[opcode][op1][op2][count][ids..]`).
     ///
-    /// The window is parsed as an [`legaia_engine_battle::encounter_record::EncounterRecord`]
+    /// The window is parsed as an [`legaia_scene_formats::encounter_record::EncounterRecord`]
     /// (`[flag][_][_][count][ids..]`) and, when it carries at least one
     /// monster, installed against the active scene via
     /// [`Self::install_encounter_from_record`] - so the next
@@ -117,7 +117,7 @@ impl World {
             .push(FieldEvent::ScriptedEncounter {
                 record: record_bytes.to_vec(),
             });
-        let record = legaia_engine_battle::encounter_record::EncounterRecord::parse(record_bytes)?;
+        let record = legaia_scene_formats::encounter_record::EncounterRecord::parse(record_bytes)?;
         if record.is_empty() {
             return None;
         }

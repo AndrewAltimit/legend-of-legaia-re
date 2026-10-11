@@ -197,6 +197,18 @@ impl MirrorXTable {
     }
 }
 
+/// The PROT extraction index of the battle backdrop a stage variant names:
+/// battle init passes `scene_index + variant` to `FUN_8001FA88`
+/// (`0x80051A20..0x80051A3C`), which reads raw TOC entry `a0 + 5`
+/// (`addiu a1, s0, 5` at `0x8001FAF0`) - extraction index `a0 + 3`.
+/// `scene_index` is the CDNAME `#define` number of the field scene
+/// (`0x80084540`).
+///
+/// REF: FUN_800513F0, FUN_8001FA88
+pub fn battle_stage_entry_for_variant(scene_index: u32, variant: u8) -> u32 {
+    scene_index + u32::from(variant & 0x7F) + RUNTIME_ID_TO_PROT_OFFSET
+}
+
 /// Retail's stage id for a PROT extraction index, or `None` for the first
 /// three entries, which are below the id space.
 pub fn runtime_stage_id(prot_index: u32) -> Option<u16> {
@@ -673,6 +685,13 @@ pub fn build_ground_grid_sized(width: i32, height: i32) -> legaia_tmd::mesh::Vra
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_stage_entry_is_the_scene_index_plus_the_variant_plus_three() {
+        // map01 is CDNAME 85 and fights on extraction 88 with variant 0.
+        assert_eq!(battle_stage_entry_for_variant(85, 0), 88);
+        assert_eq!(battle_stage_entry_for_variant(3, 1), 7);
+    }
 
     #[test]
     fn object_one_is_dropped_from_the_draw_list() {

@@ -1569,7 +1569,6 @@ version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
- "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-dialog",
  "legaia-engine-mode",
@@ -2187,6 +2186,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-vm",
  "legaia-overlay-images",
+ "legaia-scene-formats",
  "legaia-tim",
  "legaia-tmd",
  "serde_json",

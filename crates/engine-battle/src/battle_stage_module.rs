@@ -117,7 +117,7 @@ pub mod records {
 ///
 /// `FUN_80055B6C` compares the formation cell's first monster id
 /// (`_DAT_8007BD0C`) against
-/// [`crate::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
+/// [`legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID`] and writes stage
 /// id `2` (extraction entry 968) on a match - `0x80055D2C..0x80055D44`:
 /// `lbu v1,-0x42f4(v1); li v0,0xb5; bne v1,v0; li v0,0x2;
 /// sb v0,-0x49b6(at)`. No other condition: the override is a property of the
@@ -131,7 +131,9 @@ pub mod records {
 ///
 /// REF: FUN_80055B6C (the `0xB5 -> 2` stage-override arm at `0x80055D2C`)
 pub fn battle_init_stage_override(formation_slot0_monster_id: u8) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID).then_some(2)
+    (formation_slot0_monster_id
+        == legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID)
+        .then_some(2)
 }
 
 /// Stage id the **mid-battle** boss-transition writer selects, or `None`
@@ -189,7 +191,8 @@ pub fn boss_transition_stage_id(
     formation_slot0_monster_id: u8,
     first_monster_seat_liveness: u16,
 ) -> Option<u8> {
-    (formation_slot0_monster_id == crate::encounter_record::BOSS_TRANSITION_MONSTER_ID
+    (formation_slot0_monster_id
+        == legaia_scene_formats::encounter_record::BOSS_TRANSITION_MONSTER_ID
         && first_monster_seat_liveness == 0)
         .then_some(3)
 }
