@@ -1690,7 +1690,7 @@ Not this path: the arts shout (`FUN_8004C140`, `XA2` / `XA4` / `XA6`) plays on
 both hosts, and `cast_item_give` (`FUN_8003D53C(char_kind + 0x19, 0, 0x5A)`) is
 dropped at the `BattleActionHost` trait default. Oracles:
 `engine-core/tests/cast_voice_head_cue_disc.rs`,
-`engine-shell/tests/cast_voice_lazy_stage.rs`.
+`engine-session/tests/cast_voice_lazy_stage.rs`.
 
 ### Minigames
 

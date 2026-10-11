@@ -39,7 +39,7 @@ pub struct FieldLocomotion {
     /// the existing locomotion oracles (and BFS nav drivers, which keep the
     /// centre test regardless) are bit-identical; enable it for
     /// retail-faithful wall standoff. Validated against the wall-press
-    /// captures by `engine-shell/tests/field_collision_discriminator.rs`.
+    /// captures by `parity/tests/field_collision_discriminator.rs`.
     pub leading_edge_wall_probes: bool,
     /// Accumulated walked amount the field walk-regen tick drains (retail
     /// `_DAT_801F2274`). [`crate::world::World::step_field_locomotion`] bumps it on every

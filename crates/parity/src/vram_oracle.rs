@@ -252,7 +252,7 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// The destination-cell set is kingdom-universal (the operand table is the
 /// same file in all three bundles): the resident Sebucus / Karisto captures
 /// hold strip-frame content at the same cells
-/// (`crates/engine-shell/tests/world_map_ocean_clut_live.rs`).
+/// (`crates/parity/tests/world_map_ocean_clut_live.rs`).
 pub const WORLD_MAP_CLUT_CYCLE_CELLS: [(usize, std::ops::Range<usize>); 4] =
     [(500, 48..64), (506, 0..48), (508, 0..48), (509, 32..48)];
 

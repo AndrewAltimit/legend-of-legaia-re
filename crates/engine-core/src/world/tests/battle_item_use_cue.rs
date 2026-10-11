@@ -3,7 +3,7 @@
 //! The ring-commit clip stamp is pinned through the pad in
 //! `crates/engine-core/tests/battle_command_arms_reachable.rs`; the
 //! disc-gated end-to-end twin (real clips, real cue tracks) is
-//! `crates/engine-shell/tests/battle_item_use_presentation.rs`.
+//! `crates/engine-session/tests/battle_item_use_presentation.rs`.
 
 use super::*;
 use crate::world::vm_hosts::BattleHostImpl;

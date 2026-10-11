@@ -79,7 +79,7 @@
 //! (descriptor list) and `0x801F2804` (shift table). The two LUT
 //! reproductions here ([`atan_q11`], [`sqrt0`]) are pinned entry-for-entry
 //! against `SCUS_942.54` by the disc-gated oracle in
-//! `crates/engine-shell/tests/field_camera_zone_oracle.rs`.
+//! `crates/parity/tests/field_camera_zone_oracle.rs`.
 
 use crate::field_regions::ZONE_RECORD_STRIDE;
 use legaia_engine_battle_vm::battle_action::motion::trig12;

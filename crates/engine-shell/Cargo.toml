@@ -84,8 +84,6 @@ libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-legaia-lzs.workspace = true
-legaia-mes.workspace = true
 # chapter1_spine_oracle Part A reads pcsx-redux .sstate anchors (scene / mode /
 # player position) off the save library.
 legaia-pcsx-redux.workspace = true

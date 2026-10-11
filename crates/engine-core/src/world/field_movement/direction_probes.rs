@@ -154,7 +154,7 @@ impl World {
     /// is false for the oracle that carried it: on the live grid of both
     /// wall-press captures the resolver hands back exactly the held cardinal
     /// at the captured rest position, so the pinned legs of
-    /// `engine-shell/tests/field_collision_discriminator.rs` are
+    /// `parity/tests/field_collision_discriminator.rs` are
     /// slide-neutral. The same grid carries thousands of sliding positions,
     /// and `wall_slide_wire_skids_where_the_bare_stepper_sticks` drives one
     /// of them through this path against the bare stepper.

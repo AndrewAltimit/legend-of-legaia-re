@@ -273,7 +273,7 @@ them.
 Port: `ProtIndex::battle_stage_entry_for_scene`, consumed by each host's
 `build_battle_stage`. Tests
 `crates/engine-core/tests/battle_stage_entries_real.rs` (disc) and
-`crates/engine-shell/tests/battle_stage_live.rs` (save library).
+`crates/parity/tests/battle_stage_live.rs` (save library).
 
 <a id="backdrop-shell---two-copies-of-one-mesh"></a>
 

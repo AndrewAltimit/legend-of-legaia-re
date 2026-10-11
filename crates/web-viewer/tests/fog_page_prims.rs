@@ -10,7 +10,7 @@
 //! the pass had only ever carried the field-to-battle transition.
 //!
 //! The scene is the first the census in
-//! `crates/engine-shell/tests/fog_gate_census.rs` finds raising the gate
+//! `crates/engine-session/tests/fog_gate_census.rs` finds raising the gate
 //! from its entry script; re-derived here from the same walk so the two
 //! oracles cannot pick different scenes.
 //!

@@ -86,7 +86,7 @@ Its repro is `fixed/opurud_field_save_zeroes_party_records`; it needs the
 library card the `@PRO-00` label names.
 
 The soak reaches the round trip only where a random walk takes it. Its
-library-wide sibling is `engine-shell/tests/save_roundtrip_library.rs`: every
+library-wide sibling is `engine-session/tests/save_roundtrip_library.rs`: every
 Legaia save on the library cards is loaded through the card path both hosts
 take (`MountedCard::save_at`, then `BootSession::resume_save`), checked field
 for field against the block it came from, played on, and saved through a

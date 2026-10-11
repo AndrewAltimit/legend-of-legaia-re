@@ -2,7 +2,7 @@
 //! overlay-967 hook dispatcher (`FUN_801F6B70`) and the prompt-box emitter
 //! (`FUN_801F747C`).
 //!
-//! `crates/engine-shell/tests/training_battle.rs` reaches the Rim Elm sparring
+//! `crates/engine-session/tests/training_battle.rs` reaches the Rim Elm sparring
 //! *fight* five ways but never primes the tutorial, so promoting that file to a
 //! coverage export would not execute either routine. This ladder primes the
 //! machine, walks a real encounter into a battle, and then drives the command

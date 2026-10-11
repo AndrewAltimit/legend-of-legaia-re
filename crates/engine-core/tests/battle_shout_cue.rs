@@ -4,7 +4,7 @@
 //! character slot and that art's record action constant - and a synthetic
 //! entry with no matched record queues none (the retail silent-art
 //! degradation). The disc-gated sibling
-//! (`engine-shell/tests/arts_shout_battle.rs`) carries the cue through the XA
+//! (`engine-session/tests/arts_shout_battle.rs`) carries the cue through the XA
 //! clip bank into the audio mix.
 //!
 //! The pad path here is the one a player actually walks under the retail

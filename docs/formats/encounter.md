@@ -247,7 +247,7 @@ Interaction records are mostly message text whose bytes alias opcodes (a literal
 **Engine port.**
 
 - `man_field_scripts::derive_field_carriers` walks the partition-1 placements and maps each interactable actor to a `FieldCarrierConfig`: the sparring partner becomes a `ScriptedEncounter` for formation `4`, every other talk NPC a plain `Npc`.
-- Tile and model alone do not make the carrier. `town0b`, `town0c` and `town0d` place Tetsu on the same tile with talk-only records, so the carrier is installed only when the placement's own record names row `4` in a scripted-battle op (`man_field_scripts::record_battle_entry_rows`; `crates/engine-shell/tests/town0b_battle_softlock.rs`).
+- Tile and model alone do not make the carrier. `town0b`, `town0c` and `town0d` place Tetsu on the same tile with talk-only records, so the carrier is installed only when the placement's own record names row `4` in a scripted-battle op (`man_field_scripts::record_battle_entry_rows`; `crates/parity/tests/town0b_battle_softlock.rs`).
 - `World::install_field_carriers_from_man` installs the set on every field entry (`enter_field_scene`).
 - Talking to the carrier opens its dialogue. `spar_menu_of` scans each option's branch for the `3E FF` prefix, and `World::carriers.menu` engages only when the cursor sits on the fight option (`world/types.rs`, `world/field_carriers.rs`). Keying on the disc op rather than a label keeps it correct on PAL discs and translation packs.
 - `World::install_man_formation(RIM_ELM_TRAINING_FORMATION_ID)` installs the existing row as the forced next encounter, so the scene's merged stats stand (Tetsu's HP 999). `EncounterRecord::rim_elm_training()` is the equivalent hand-built window for the arm-seam path.
@@ -380,7 +380,7 @@ The roll is ported as [`region_encounter`](../../crates/engine-battle/src/region
 - `RegionEncounterTracker::select_group(flag_test)` re-runs the condition walk each step from the live flag bank, so a flag set mid-scene swaps the region set on the next step.
 - `RegionEncounterTracker::on_step(world_x, world_z, rng)` reduces the position to a tile, picks the first matching region of the active group, subtracts the scaled rate and, at `<= 0`, rolls uniformly from `[base, base + count)` with the one-step anti-repeat and the `0x3ce + rng%0x1e7 - rng%0x1e7` reset. The no-trigger path consumes no RNG, as in retail.
 - The **overworld** installs the tracker through `World::set_world_map_regions` (rolled in `live_world_map_tick`). A **field** scene installs it at entry through `World::set_field_regions`; `World::on_field_step` feeds a trigger into the [`EncounterSession`](../../crates/engine-battle/src/encounter.rs) transition / grace state machine. A MAN with no region section falls back to the mean-rate session. Pinned by `crates/engine-core/tests/field_region_encounter_disc.rs`.
-- **Scripted formations override the roll.** `World::install_man_formation` and `World::install_encounter_from_record` set `scripted_formation_pending`, which `on_field_step` checks before the region path. That is what starts the Tetsu fight in town01, whose effective random rate is 0% (`crates/engine-shell/tests/training_battle.rs`).
+- **Scripted formations override the roll.** `World::install_man_formation` and `World::install_encounter_from_record` set `scripted_formation_pending`, which `on_field_step` checks before the region path. That is what starts the Tetsu fight in town01, whose effective random rate is 0% (`crates/engine-session/tests/training_battle.rs`).
 
 ### Encounter control block (`_DAT_801C6EA4`)
 
@@ -550,7 +550,7 @@ Roll has no entry; the follow camera never rolls. Each value steps by `delta >> 
 - **One divergence:** a scripted shot handing the camera back snaps, as a backstop for a script that ends a shot without a `[4C 39]` / `[4C 3E]` arm.
 - **The visible tile window** follows retail's order: re-stamped from the field draw-context primer `FUN_801DE37C` (`mode_entry_init::field_draw_context`) on every field entry through `Camera::reset_globals_for_scene_entry`, then replaced by a mask-kind record's side-write or by op `0x46` (`Camera::route_camera_events` → `ZoneFollow::view_window`).
 
-Oracles: `crates/engine-shell/tests/field_camera_zone_oracle.rs` grades the port per walkable save state in three tiers (zone selection, compose against retail's staging descriptor, live pose with mid-glide states classified separately). `crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and asserts the hold-across-a-walk rule on `edbylon`.
+Oracles: `crates/parity/tests/field_camera_zone_oracle.rs` grades the port per walkable save state in three tiers (zone selection, compose against retail's staging descriptor, live pose with mid-glide states classified separately). `crates/engine-core/tests/field_camera_zone_arms_disc.rs` censuses the arms disc-wide and asserts the hold-across-a-walk rule on `edbylon`.
 
 ### The scratchpad window `0x1F8003E8..EB`
 

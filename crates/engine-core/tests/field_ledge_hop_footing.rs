@@ -13,7 +13,7 @@
 //! floor tier read as a step and fired a hop on a wall press - the player flew
 //! `96` units through the wall. `World::field_actor_footing` is the repair;
 //! these are its pins. The wall-press half is the disc-free twin of
-//! `engine-shell/tests/field_collision_discriminator.rs`, whose crate boundary
+//! `parity/tests/field_collision_discriminator.rs`, whose crate boundary
 //! is what hid the regression in the first place.
 //!
 //! Disc-free: every world here is synthetic.

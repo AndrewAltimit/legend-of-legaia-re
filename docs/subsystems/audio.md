@@ -263,7 +263,7 @@ comparison corpus compares against a state's `0x8007BAC8`
 The track is **script-selected, not table-driven**: nothing maps a scene to a
 track. The scene's own event script picks it with an op-`0x35` operand, so the
 resolution is recovered by running the scene's prescript and observing the
-emitted id - `crates/engine-shell/tests/bgm_scene_resolution.rs` does this
+emitted id - `crates/engine-session/tests/bgm_scene_resolution.rs` does this
 across the CDNAME corpus.
 
 The law that sweep establishes: **every scene that starts BGM selects a
@@ -1487,7 +1487,7 @@ channel (`remix_channel`), as libsnd's re-key does. Against the mednafen states
 `title_screen_new_game`, `sebucus_overworld_resident` and
 `karisto_overworld_resident`, every sounding BGM voice's pitch, ADSR words,
 left and right volume and reverb send is one the engine programs for the same
-track (`engine-shell/tests/mednafen_voice_parity.rs`).
+track (`parity/tests/mednafen_voice_parity.rs`).
 
 **Monaural.** libsnd's mono mode (`_DAT_801CE330 == 1`, the options screen's
 "Sound: Monaural") sounds each voice at the larger of its two volumes on both
@@ -1803,7 +1803,7 @@ The engine wires this end-to-end:
 - **Playback** (`engine-audio` / `engine-session`): `AudioDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
-`OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
+`OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-session/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
 
 ### The second shout trigger - the animation cue track (`FUN_800508DC`)
 
@@ -2199,7 +2199,7 @@ anything read off a captured envelope.
 | Voice mask + sample start, one frame | mednafen save state (`.mc`) SPU section | music starts at all; master volume; reverb setup | hard floor, weak beyond it |
 | Per-vsync voice state | PCSX-Redux save-state dump per vsync | pitch / ADSR-word vocabulary of the sounding voices | good for register writes, not for envelopes |
 | Key-on census | PCSX-Redux breakpoint on `SpuSetKey` | every note the score keys, with timing | exact |
-| Per-voice programming | mednafen states | pitch, ADSR words, L/R volume, reverb send of each BGM voice | exact per state (`engine-shell/tests/mednafen_voice_parity.rs`) |
+| Per-voice programming | mednafen states | pitch, ADSR words, L/R volume, reverb send of each BGM voice | exact per state (`parity/tests/mednafen_voice_parity.rs`) |
 
 ### Capture shapes and the trace record
 
@@ -2243,8 +2243,8 @@ Entry points:
 - Library: [`legaia_parity::audio_trace_oracle`](../../crates/parity/src/audio_trace_oracle.rs) - `build_engine_audio_trace`, `load_runtime_audio_trace_from_save`, `load_runtime_audio_trace_jsonl`, `first_audio_trace_divergence`, `first_audio_trace_divergence_multi`, JSONL round-trip.
 - CLI: `legaia-engine audio-trace --scene NAME` (explicit), `--scenario LABEL` (single-snapshot vs `.mc{slot}` SPU), `--retail-jsonl PATH` (multi-frame vs PCSX-Redux capture), `--per-voice`, `--retail-keyon-csv`.
 - Disc-gated tests:
-  - [`audio_trace`](../../crates/engine-shell/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
-  - [`audio_trace_multi`](../../crates/engine-shell/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
+  - [`audio_trace`](../../crates/parity/tests/audio_trace.rs) - auto-discovers scenarios with both `expected_active_scene` and an on-disk `.mc{slot}` save.
+  - [`audio_trace_multi`](../../crates/parity/tests/audio_trace_multi.rs) - same scenario walk but skips unless `LEGAIA_AUDIO_TRACE_JSONL_DIR` points at a directory containing `<label>.jsonl` files from the PCSX-Redux probe.
 
 ### Why `converged` is not the audio oracle's fidelity measure
 

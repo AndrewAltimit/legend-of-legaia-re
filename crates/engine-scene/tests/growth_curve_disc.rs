@@ -6,7 +6,7 @@
 //! retail victory applier `FUN_801E9504`) as per-level `StatGrowthCurve`s for
 //! Vahn / Noa / Gala. This test closes the loop at the *engine* level (the asset
 //! parser is covered by `crates/asset/tests/level_up_tables_real.rs`; the full
-//! boot install by `crates/engine-shell/tests/new_game_seed.rs`): it validates
+//! boot install by `crates/engine-session/tests/new_game_seed.rs`): it validates
 //! the installed curve against the new-game starting-party seed (each stat's
 //! level-1 `start`) and against the byte-pinned Noa L2->L3 capture. Skips without
 //! `LEGAIA_DISC_BIN`.

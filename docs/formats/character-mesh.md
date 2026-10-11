@@ -525,7 +525,7 @@ Live-pinned against a full-party capture: each party render node's anim
 context (`node +0x4C`, consumed by `FUN_80047430` → `FUN_8004AD80`) points its
 `+0x88` stream pointer at `record0_image + action_table[0] + 0xAC`, and the
 stream byte-matches the disc decode
-(`crates/engine-shell/tests/battle_party_pose_live.rs`). No PROT 1203 record
+(`crates/parity/tests/battle_party_pose_live.rs`). No PROT 1203 record
 is resident in battle RAM.
 
 The inline `record[0]` streams are raw packed (`2 + parts * frames * 9`

@@ -946,7 +946,7 @@ engine-ext and block-identity writers are the other siblings.
 hosts: save number, payload, engine ext, resume fields, block identity,
 directory claim.
 
-`engine-shell/tests/save_roundtrip_library.rs` holds the whole block to a
+`engine-session/tests/save_roundtrip_library.rs` holds the whole block to a
 round trip: every save on the library cards is lifted through the card reader,
 landed with `BootSession::resume_save`, saved through `write_save_into_card`
 after the scene has run, and loaded again. The two `save_full` readings must

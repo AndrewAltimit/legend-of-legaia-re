@@ -557,9 +557,9 @@ shared region, and route each cue through
   table, PROT → the bank each cue's category names, then descriptor → a
   one-shot through the from-scratch SPU.
 
-Tests (disc-gated): `sfx_cue_resident_bank` (engine-shell) - routed cues key a
+Tests (disc-gated): `sfx_cue_resident_bank` (engine-session) - routed cues key a
 voice via the tone-index path and both banks pack inside the reserved region.
-`sfx_shared_region` (engine-shell) - walks the residency through field, battle
+`sfx_shared_region` (engine-session) - walks the residency through field, battle
 and three minigames, checks every named bank fits above slot 0, and keys
 `0x2E` / `0x2F` out of PROT 0876. `play_sfx_channel` (web-viewer) - in town a
 category-`0` cue sounds out of PROT 0868 and a category-`6` cue out of PROT
@@ -629,8 +629,8 @@ The per-mode occupant of the shared region is engine state, not a table
 (`World::sync_sfx_residency`).
 
 Tests: `sfx_table_real` pins layout + anchors against the real executable;
-`sfx_table_live` (engine-shell) validates the parse against live RAM and feeds
-`SfxBank::from_descriptors`; `sfx_vab_bank` (engine-shell) checks the slot-1
+`sfx_table_live` (parity) validates the parse against live RAM and feeds
+`SfxBank::from_descriptors`; `sfx_vab_bank` (parity) checks the slot-1
 side - SFX programs resolve in the `music_01` bank, the live bank is
 byte-identical to the disc bank, and the bank varies per scene.
 

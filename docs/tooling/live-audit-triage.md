@@ -326,7 +326,7 @@ Every row is landed. What each wire had to be:
   symbol half.
 - **`field_actor_dir_blocked`** (`801cfc40`). The actor arm sits in the per-axis
   step gate beside the wall arm `World::field_dir_blocked`, so NPCs block the
-  player; covered by `crates/engine-shell/tests/field_collision_discriminator.rs`.
+  player; covered by `crates/parity/tests/field_collision_discriminator.rs`.
 - **`tick_walk_regen`** (`801d0b90`). `World::tick_field_walk_regen`, from the
   field frame tick, gated on the retail `0x20` step cost.
 - **`advance_battle_mode`** (`801e295c`). The action state machine's `case 0xFF`;

@@ -79,7 +79,7 @@ Consequence for measurement: a whole line's pixel width is exactly the sum of
 its per-byte advances, with no per-line fudge term. `"Do not remove MEMORY
 CARD"` (the save screen's memory-card warning) measures **164 px**; the engine
 asserts that number against a disc-decoded font in
-`engine-shell/tests/dialog_font_metrics.rs`.
+`engine-session/tests/dialog_font_metrics.rs`.
 
 Bytes `widths[0x00..=0x1F]` overlap with three actor-name strings ("Meta", "Terra", "Ozma") that live at `0x80073F24..0x80073F3B`; only entries `0x20..=0xFF` are meaningful for glyph advance.
 

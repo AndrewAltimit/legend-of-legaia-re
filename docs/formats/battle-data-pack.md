@@ -652,7 +652,7 @@ assembled blob's side tables. The retail consumers are the battle render node's 
 loader rewrites the in-RAM action table to absolute pointers and points the entry's `+0x88` at
 `entry + 0xAC`. In a full-party capture every party slot's anim context sits at
 `record0_image + action_table[0]` and the whole idle stream byte-matches the disc decode
-(`crates/engine-shell/tests/battle_party_pose_live.rs`).
+(`crates/parity/tests/battle_party_pose_live.rs`).
 
 **The PROT 1203 ANM bundle is not the battle pose source.** No 1203 record is resident in battle
 RAM, and its banks are authored against PROT 1204's own object order (see
@@ -963,7 +963,7 @@ still on screen" stands in for them.
 Disc-gated validation: `crates/actor-formats/tests/face_anim_real.rs` (table anchors; track census over
 `record[0]`, swing and art-bank entries; override-table census - 40 live records, in-range
 non-neutral frames, the empty rows where retail has no flap, in-band stamps for every reachable
-counter) and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
+counter) and `crates/parity/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
 byte-exact stamped frame at the documented rects).
 
 ### Equipment-variant track (entry `+0xA4`) + `FUN_8004CCD4`
@@ -1116,7 +1116,7 @@ among the present battle party (the band selector - *not* the character id). The
 live-verified for all four playable characters: a Noa + Terra party capture
 (`terra_party_battle`) byte-matches both bands at 100% with Terra (char id 4, player file 0866)
 banding at her ordinal like any other member - there is no special "4th band"
-(`crates/engine-shell/tests/battle_char_texture_live.rs`).
+(`crates/parity/tests/battle_char_texture_live.rs`).
 
 Per member the loader issues up to seven upload blocks through `FUN_80053B9C`
 (`ghidra/scripts/funcs/80052fa0.txt` / `80053b9c.txt`):
@@ -1152,7 +1152,7 @@ precisely the pages and CLUT row the registration-time mesh relocation `FUN_8005
 ([`character-mesh.md` § Battle render](character-mesh.md#battle-render-load-time-tsbcba-relocation)).
 Unflagged sections upload nothing; their band area keeps whatever the other blocks wrote.
 
-**Validation** (disc + save-library gated `engine-shell/tests/battle_char_texture_live.rs`):
+**Validation** (disc + save-library gated `parity/tests/battle_char_texture_live.rs`):
 decoding the player files with the live party ids (`DAT_8007BD10`) and equipped item ids (char
 record `+0x196`) and comparing every block against captured battle VRAM reproduces the bands at
 **99.7-100 %** per member across the `party_battle_gobu_gobu` and `noa_levelup_fight_pre` captures

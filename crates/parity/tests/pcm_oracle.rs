@@ -23,7 +23,7 @@
 //!      drift, envelope shape divergence, cross-fade timing mismatch -
 //!      is treated as tolerable for now, matching the
 //!      `NoFrameMatched`-as-soft-drift policy in
-//!      `crates/engine-shell/tests/audio_trace.rs`.
+//!      `crates/parity/tests/audio_trace.rs`.
 //!
 //! Skip-pass cases (CLAUDE.md disc-gated convention):
 //!   - `LEGAIA_DISC_BIN` unset.

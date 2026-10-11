@@ -3,6 +3,8 @@ name = "legaia-engine-session"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_session"
@@ -31,6 +33,17 @@ legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 
 [dev-dependencies]
+legaia-actor-formats.workspace = true
+legaia-engine-battle-vm.workspace = true
+legaia-lzs.workspace = true
+legaia-mes.workspace = true
+legaia-prot.workspace = true
+legaia-scene-formats.workspace = true
+legaia-tim.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-minigame-formats.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -334,7 +334,7 @@ the same state by name:
 
 - `World::teardown_battle_effects` runs at battle entry, at battle exit (`World::finish_battle`, or `World::resolve_game_over_hold` when a wipe holds the frozen frame) and at every scene load (`SceneHost::load_scene`).
 - It resets the `efect.dat` pool and every battle-scoped member of `World::casting`: the summon / cast-module, move-FX and effect-script scene-graphs, the streak block and its trail texpage, the cast band's pending requests and stager. Only the installed cast-effect data pool is kept.
-- `World::battle_effect_residue` names whatever of that is still live. The soak harness's `effect_residue` detector and `engine-shell/tests/battle_effect_teardown_disc.rs` read it on the first frame past each exit and scene load.
+- `World::battle_effect_residue` names whatever of that is still live. The soak harness's `effect_residue` detector and `engine-session/tests/battle_effect_teardown_disc.rs` read it on the first frame past each exit and scene load.
 
 One teardown is earlier than the mode switch. The engine stages a cast
 module's spawn records as data and runs its tick body separately

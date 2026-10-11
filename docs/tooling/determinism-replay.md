@@ -148,10 +148,10 @@ Runs in CI without `LEGAIA_DISC_BIN`.
 
 The replay format is a peer to the existing parity gates:
 
-- [`vram_oracle_e1`](../../crates/engine-shell/tests/vram_oracle_e1.rs)
+- [`vram_oracle_e1`](../../crates/parity/tests/vram_oracle_e1.rs)
   compares engine VRAM against retail mednafen captures (byte-exact in
   the texpage region).
-- [`mode_trace_e3`](../../crates/engine-shell/tests/mode_trace_e3.rs)
+- [`mode_trace_e3`](../../crates/parity/tests/mode_trace_e3.rs)
   compares engine `(scene_mode, active_scene)` per frame against retail
   snapshots.
 - `determinism_j2` compares engine traces against *themselves*, no

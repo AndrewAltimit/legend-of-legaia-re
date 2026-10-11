@@ -366,7 +366,7 @@ impl World {
     /// (wall) nibbles of one byte are addressed under two different
     /// world-to-cell mappings by their two retail consumers. See
     /// `docs/subsystems/field-locomotion.md` ("Collision") and the
-    /// disc-gated `engine-shell/tests/field_collision_discriminator.rs`.
+    /// disc-gated `parity/tests/field_collision_discriminator.rs`.
     ///
     /// Retail tests **three leading-edge footprint probes** through this
     /// sampler (47-48 units ahead, ±16 lateral; per-direction table

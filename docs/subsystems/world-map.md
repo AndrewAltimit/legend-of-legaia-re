@@ -1538,7 +1538,7 @@ world-map arm hands both hosts the pose as `FieldCameraFrame::WorldMapWalk`
 (the eye trio in retail GTE units, the 6x scale applied as a world transform
 about the player). `camera_view::world_map_walk_view` is the fallback pose for
 a world with no field terrain loaded. Oracle:
-`crates/engine-shell/tests/world_map_zone_camera_oracle.rs` enters each
+`crates/parity/tests/world_map_zone_camera_oracle.rs` enters each
 library overworld state's scene, seats the player on the state's position and
 asserts the live pose and resolved frame equal retail's words.
 
@@ -2470,7 +2470,7 @@ wrap-around. The real interval is `ceil(hold / dt) * dt` vsyncs.
 | `(48, 500)` | 4 | 6 | row 498, `x = 160..208` |
 
 The cycle is live-verified on all three kingdoms
-(`crates/engine-shell/tests/world_map_ocean_clut_live.rs`); `clut_walk_real`
+(`crates/parity/tests/world_map_ocean_clut_live.rs`); `clut_walk_real`
 pins the entry set against all three bundles. A ten-state `map01` capture
 census agrees: every animating column falls inside a destination cell, and
 row 507, which no entry targets, is static. Row 508's `[32..47] == [0..15]`

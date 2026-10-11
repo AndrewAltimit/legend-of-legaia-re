@@ -45,6 +45,11 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+legaia-actor-formats.workspace = true
+legaia-iso.workspace = true
+legaia-mdec.workspace = true
+legaia-render-kernels.workspace = true
+legaia-tmd.workspace = true
 flate2.workspace = true
 legaia-game-tables.workspace = true
 legaia-overlay-images.workspace = true

@@ -88,7 +88,7 @@ The battle TMD is a set of object-local pieces (head, torso, limbs), not one pre
 - `expand_animation_for_objects` duplicates each `200+` equipment extra's **attach-bone** channel onto it (the assembler's `anm_bones` map), so duplicate weapon / Ra-Seru pieces coincide with their attach piece.
 - The PROT 1203 ANM (`other5`) is not this pose source. Its banks (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own object order, which differs from the assembled tag order, so it is the rest pose of the **1204 fallback mesh only** (identity object→bone).
 
-Pinned live and cross-pipeline in `crates/engine-shell/tests/battle_party_pose_live.rs`.
+Pinned live and cross-pipeline in `crates/parity/tests/battle_party_pose_live.rs`.
 
 #### Palette
 

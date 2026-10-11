@@ -318,7 +318,7 @@ Provenance: `ghidra/scripts/funcs/80046494.txt`; the three tables are static `SC
 
 `scripts/pcsx-redux/autorun_w3b_field_slide.lua` taps the resolver's return landing `0x801D03F4` and records `(player +0x14, +0x18, remapped held mask, returned mask)` per call, driving the pad with `probe.pad_force`. On `s3_rimelm_freeroam` the resolver answers the held mask on 261 of 276 calls and widens it on 15 - all on one held-`LEFT` run down the town01 exterior wall, `0x8000` becoming `0xC000`, `(3248, 3520)` to `(3102, 3296)`.
 
-Six of those rows plus two unwidened controls are the retail pin in `engine-shell/tests/field_collision_discriminator.rs` (`wall_slide_matches_retail_resolver_rows`). The two wall-press rest positions pinned in the same file are slide-neutral (the resolver returns the held cardinal there), so the rests and the slide are pinned independently.
+Six of those rows plus two unwidened controls are the retail pin in `parity/tests/field_collision_discriminator.rs` (`wall_slide_matches_retail_resolver_rows`). The two wall-press rest positions pinned in the same file are slide-neutral (the resolver returns the held cardinal there), so the rests and the slide are pinned independently.
 
 ### `gp+0x2D8` is authored, not computed
 
@@ -395,7 +395,7 @@ The last ends at `0x801F2274`, a `lw` / `sw` scalar. The bases are pinned in [`l
 - A hit links the pair mutually at `+0x98`, posts `func_0x8003d038(other[+0x50])`, and contributes result bit `1` (`flags & 0x40020000` class) or `4` (static prop). `func_0x8003d038` stores the touched bind-record index into `DAT_80073F1C` unless the per-record `DAT_801C6470` byte is `0x8C`; the motion-VM wait-for-touch opcode at `0x8003882C` consumes and resets it.
 - When the actor table is full (`_DAT_8007b6b8 == 0x20`) the whole call delegates to the `FUN_801cf9f4` box-test variant.
 
-The static anchor is live-verified against four catalogued captures (town01 records 315 and 137 - the latter the correction arm - town0c 331, koin3 116): the live actor position equals the placement spawn position and the live-computed centre equals the disc-computed one (`engine-shell/tests/field_prop_colliders_live.rs`).
+The static anchor is live-verified against four catalogued captures (town01 records 315 and 137 - the latter the correction arm - town0c 331, koin3 116): the live actor position equals the placement spawn position and the live-computed centre equals the disc-computed one (`parity/tests/field_prop_colliders_live.rs`).
 
 **The candidate table is rebuilt per frame by `FUN_801cf754`** (`ghidra/scripts/funcs/overlay_0897_door2_801cf754.txt`). It walks the actor list at the scene control block's `+0x0C` (the controller loads `0x8007C354` into `s6` at `0x801D0344`; every `jal 0x801cf754` site takes `lw a1,0xc(v0)`), culls to +-`0x180` of the player, caps at `0x20` entries, and **skips any actor whose `+0x10 & 3 != 0`**. `FUN_801cf9f4` applies the same skip inline (`0x801cfa4c`). Those two bits are the placed-prop collision / touch kill switch, and prop bind scripts author them:
 
@@ -458,7 +458,7 @@ The port's collision is the same per-axis stepper over the same tables. What eac
 | Touch post `FUN_801d5b5c` | engaged flag, parked-script resume (`world/prop_interact.rs`), facing save / restore | Modelled except the touch counters (see [Open](#open)). |
 | `FUN_801cfc40`'s `+0x98` link bookkeeping and the table-full delegation | - | Not modelled; no return value depends on them. |
 
-**Captures the wall model rests on.** Two cheat-free Rim Elm wall-press captures (scenarios `rimelm_wall_press_left` / `rimelm_wall_press_down`, parked in the `town0c` variant, whose `.MAP` is byte-identical to `town01`'s) pin the derivation; disc-gated `engine-shell/tests/field_collision_discriminator.rs`:
+**Captures the wall model rests on.** Two cheat-free Rim Elm wall-press captures (scenarios `rimelm_wall_press_left` / `rimelm_wall_press_down`, parked in the `town0c` variant, whose `.MAP` is byte-identical to `town01`'s) pin the derivation; disc-gated `parity/tests/field_collision_discriminator.rs`:
 
 - **Down press** (world `Z-`): the player rests at `(3386, 2606)`, whose plain floor-indexed cell `(26, 20)` is an all-quads wall byte. Under the biased read that byte covers `z` in `[2432, 2560)`, one tile north, exactly where the `Z-` probe (`z-48 = 2558`) blocks: blocked while `z <= 2607`, resting at 2606 on the even step parity. Plain floor indexing is refuted.
 - **Left press**: the player rests at `(1838, 2526)` against the full-height wall column at grid col 13; the probe `x-47 = 1791` reads the column's last wall sub-cell, and one 2-unit step shallower reads clear.
@@ -638,7 +638,7 @@ Deliberate differences:
 
 Coverage: `engine-core/tests/field_ledge_hop_wired.rs` (the whole flight on a synthetic grid: take-off, peak above both endpoints, exact landing, lock release, reap); `field_ledge_hop_footing.rs` (what the rise is measured from - flat non-zero ground classifies nothing, an authored step does, and a wall press on a non-zero-tier floor starts no hop); disc-gated `field_ledge_hop_disc.rs` (an authored ledge in a real scene's `.MAP`).
 
-Authored ledges are common - retail's predicate finds candidates in most field scenes, Rim Elm included. The full-scene wall-press legs in `engine-shell/tests/field_collision_discriminator.rs` also catch a misclassifying hop, as a 42-unit overshoot into the wall.
+Authored ledges are common - retail's predicate finds candidates in most field scenes, Rim Elm included. The full-scene wall-press legs in `parity/tests/field_collision_discriminator.rs` also catch a misclassifying hop, as a 42-unit overshoot into the wall.
 
 ## Where the collision grid comes from
 
