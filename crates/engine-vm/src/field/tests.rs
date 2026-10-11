@@ -796,14 +796,7 @@ impl FieldActorHost for TestHost {
         self.n4_ctx_ramps.push((sub, target, ticks));
     }
 
-    fn write_actor_look(
-        &mut self,
-        _ctx: &mut FieldCtx,
-        b1: u8,
-        w94: i16,
-        w96: i16,
-        w98: i16,
-    ) {
+    fn write_actor_look(&mut self, _ctx: &mut FieldCtx, b1: u8, w94: i16, w96: i16, w98: i16) {
         self.n4_sub5_immediate.push((b1, w94, w96, w98));
     }
 
@@ -871,12 +864,7 @@ impl FieldActorSpawnHost for TestHost {
         self.mark_flag_8_calls.push(ctx.script_id);
     }
 
-    fn op34_sub2_capture_pc(
-        &mut self,
-        _ctx: &FieldCtx,
-        b1: u8,
-        captured_pc_offset: usize,
-    ) -> bool {
+    fn op34_sub2_capture_pc(&mut self, _ctx: &FieldCtx, b1: u8, captured_pc_offset: usize) -> bool {
         // Match the original's gates: only capture when b1 == 0x40 AND
         // the simulated lookup hits. Hosts model the lookup themselves.
         if self.op34_sub2_capture_match && b1 == 0x40 {
@@ -951,12 +939,7 @@ impl FieldActorFxHost for TestHost {
             .push((model_id, anim_frame, tween_frames));
     }
 
-    fn install_reflection(
-        &mut self,
-        _ctx: &mut FieldCtx,
-        source_id: u8,
-        words: [i16; 6],
-    ) -> bool {
+    fn install_reflection(&mut self, _ctx: &mut FieldCtx, source_id: u8, words: [i16; 6]) -> bool {
         self.n8_sub6_reflection_installs.push((source_id, words));
         self.n8_sub6_source_present
     }

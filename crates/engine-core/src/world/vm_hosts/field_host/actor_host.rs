@@ -12,14 +12,7 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     /// [`legaia_engine_field::actor_look`].
     ///
     /// PORT: FUN_801DE840 (the nibble-4 sub-5 immediate arm)
-    fn write_actor_look(
-        &mut self,
-        ctx: &mut FieldCtx,
-        b1: u8,
-        w94: i16,
-        w96: i16,
-        w98: i16,
-    ) {
+    fn write_actor_look(&mut self, ctx: &mut FieldCtx, b1: u8, w94: i16, w96: i16, w98: i16) {
         if let Some(key) = self.look_key(ctx) {
             self.world.npcs.looks.write(key, b1, [w94, w96, w98]);
         }

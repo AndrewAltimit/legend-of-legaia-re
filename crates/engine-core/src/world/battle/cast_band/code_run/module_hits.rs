@@ -4,7 +4,6 @@
 use super::*;
 
 impl World {
-
     /// Run the band's two whole-row AoE stagers - PROT 0927 (Juggernaut,
     /// `FUN_801F85A8`) and PROT 0966 (Evil Seru Magic, `FUN_801F8D64`) -
     /// which is where those two casts' damage actually lands in retail.

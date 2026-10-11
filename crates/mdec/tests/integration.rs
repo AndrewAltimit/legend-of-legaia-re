@@ -5,7 +5,7 @@
 //! one per file. Run a single file's tests with
 //! `cargo test -p legaia-mdec --test integration <name>::`.
 
+mod fmv_ladder;
 mod mdec_robustness_fuzz;
 mod st_ring_real_str;
 mod str_player_segment;
-mod fmv_ladder;

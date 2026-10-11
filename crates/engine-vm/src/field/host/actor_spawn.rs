@@ -107,12 +107,7 @@ pub trait FieldActorSpawnHost {
     ///
     /// The default impl returns `false` so hosts without an actor pool
     /// just fall through to the `Advance` path.
-    fn op34_sub2_capture_pc(
-        &mut self,
-        ctx: &FieldCtx,
-        b1: u8,
-        captured_pc_offset: usize,
-    ) -> bool {
+    fn op34_sub2_capture_pc(&mut self, ctx: &FieldCtx, b1: u8, captured_pc_offset: usize) -> bool {
         let _ = (ctx, b1, captured_pc_offset);
         false
     }

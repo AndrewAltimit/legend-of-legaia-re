@@ -104,13 +104,7 @@ impl FieldHostImpl<'_> {
         }
     }
 
-    pub(super) fn ramp_ctx_slot(
-        &mut self,
-        ctx: &mut FieldCtx,
-        sub: u8,
-        target: i16,
-        ticks: u16,
-    ) {
+    pub(super) fn ramp_ctx_slot(&mut self, ctx: &mut FieldCtx, sub: u8, target: i16, ticks: u16) {
         // Sub-8: a heading tween on a placement, from its live heading
         // (retail space) - the `FUN_8003C5F0` ramp the scheduler lerps.
         if sub == 8 {

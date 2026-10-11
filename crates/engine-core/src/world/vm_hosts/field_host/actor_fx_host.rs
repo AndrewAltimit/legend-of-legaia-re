@@ -17,12 +17,7 @@ impl<'a> FieldActorFxHost for FieldHostImpl<'a> {
     // `4C 86` / `4C 87` - the reflection controller's install and teardown,
     // consecutive slots of the nibble-8 sub-table.
     // REF: FUN_801E573C, FUN_8003CF40
-    fn install_reflection(
-        &mut self,
-        ctx: &mut FieldCtx,
-        source_id: u8,
-        words: [i16; 6],
-    ) -> bool {
+    fn install_reflection(&mut self, ctx: &mut FieldCtx, source_id: u8, words: [i16; 6]) -> bool {
         // Retail's `a0` is the executing context itself - `FUN_801DE840`'s
         // third argument - so the script that issues the op is the mirror
         // image, and the operand byte names what it reflects.

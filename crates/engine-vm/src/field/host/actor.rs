@@ -174,14 +174,7 @@ pub trait FieldActorHost {
     /// lets the host write them. Default impl is a no-op.
     ///
     /// PC advances by 11 (= `header_size + 10`).
-    fn write_actor_look(
-        &mut self,
-        ctx: &mut FieldCtx,
-        b1: u8,
-        w94: i16,
-        w96: i16,
-        w98: i16,
-    ) {
+    fn write_actor_look(&mut self, ctx: &mut FieldCtx, b1: u8, w94: i16, w96: i16, w98: i16) {
         let _ = (ctx, b1, w94, w96, w98);
     }
 

@@ -26,12 +26,7 @@ impl FieldHostImpl<'_> {
     /// `FieldPlayerHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
-    pub(super) fn set_actor_model(
-        &mut self,
-        ctx: &mut FieldCtx,
-        value: i16,
-        _high: bool,
-    ) {
+    pub(super) fn set_actor_model(&mut self, ctx: &mut FieldCtx, value: i16, _high: bool) {
         ctx.model_id = value as u16;
         ctx.move_id = 0;
         ctx.flags &= 0xffff_efff;
@@ -48,12 +43,7 @@ impl FieldHostImpl<'_> {
         }
     }
 
-    pub(super) fn allocate_child_actors(
-        &mut self,
-        _ctx: &mut FieldCtx,
-        count: u8,
-        tail: &[u8],
-    ) {
+    pub(super) fn allocate_child_actors(&mut self, _ctx: &mut FieldCtx, count: u8, tail: &[u8]) {
         // In the spawned opening-cutscene context (target 0xF8) this op is the
         // inline-narration text-draw, not an actor spawn - the separate
         // `CutsceneNarration` presenter owns those pages. Suppress the spawn

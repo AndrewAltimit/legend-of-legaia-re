@@ -115,12 +115,7 @@ pub trait FieldActorFxHost {
     /// branch is taken.
     ///
     /// The default impl returns `false` (no actor pool).
-    fn install_reflection(
-        &mut self,
-        ctx: &mut FieldCtx,
-        source_id: u8,
-        words: [i16; 6],
-    ) -> bool {
+    fn install_reflection(&mut self, ctx: &mut FieldCtx, source_id: u8, words: [i16; 6]) -> bool {
         let _ = (ctx, source_id, words);
         false
     }
