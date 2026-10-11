@@ -34,7 +34,6 @@ DEFINING_DOC_ROOTS = (
 SPLIT_MODULES = frozenset({
     "crates/disc-audit/src/byte_account",
     "crates/engine-battle-vm/src/battle_cam_script",
-    "crates/engine-core/src/muscle_dome",
     "crates/engine-minigames/src/muscle_dome",
     "crates/engine-minigames/src/dance",
     "crates/engine-menus/src/save_select",
@@ -49,7 +48,6 @@ SPLIT_MODULES = frozenset({
     "crates/engine-core/src/world/battle/cast_band",
     "crates/engine-core/src/world/frame_tick",
     "crates/engine-core/src/battle_hud",
-    "crates/engine-core/src/pause_screens",
     "crates/engine-minigames/src/baka_fighter",
     "crates/parity/src/retail_compare_battle",
     "crates/engine-menus/src/pause_screens",
