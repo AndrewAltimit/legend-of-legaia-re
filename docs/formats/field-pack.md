@@ -243,7 +243,7 @@ saves sharing a town overlay there.
 
 Disc-gated coverage: `town01_field_pack_save_documents_active_scene_and_ram_base` and
 `town01_vs_town0c_diff_lights_up_field_pack_pool` in
-[`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs).
+[`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs).
 
 ## Tooling
 

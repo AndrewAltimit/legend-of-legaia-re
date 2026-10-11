@@ -8,4 +8,3 @@
 mod anchor_load;
 mod resident_patch_manifest;
 mod scratchpad_read;
-mod super_art_queue_replace;

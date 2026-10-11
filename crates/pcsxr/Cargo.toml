@@ -30,9 +30,6 @@ flate2.workspace = true
 legaia-mednafen.workspace = true
 serde_json.workspace = true
 
-[dev-dependencies]
-legaia-art.workspace = true
-
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

@@ -732,7 +732,7 @@ base), with `model_sel` reading `-1` (transform node) / `5` (library mesh):
 the summon part-record format, sourced from the battle overlay rather than a
 per-spell stager. The widget family is therefore **ending-scene-exclusive**,
 and `FUN_80021DF4` is the live part render-tail. Disc + library gated test
-`firetail_movefx_liveness` (crate `legaia-mednafen`).
+`firetail_movefx_liveness` (crate `legaia-parity`).
 
 ### Interior addresses in the widget band
 

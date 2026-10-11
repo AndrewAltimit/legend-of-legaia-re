@@ -272,7 +272,7 @@ Battle actor records are `0x2D4` bytes; slot 0 is at `0x800EC9E8`. A quiet-frame
 | `+0x1F4` | 18 B | Per-clip counters; zero pre-anim, a stamped run of `0x11` bytes mid-anim |
 | `+0x234` | 16 B | 4-deep **history queue** of entry pointers (4 x `u32`). Pre-anim `0x8015CC30`, mid-anim `0x801621D0` (`+0x55A0`: a different entry, paged in for the strike) |
 
-`FUN_80047430` implements the queue's back-shift: when a new entry activates, `actor[+0x234]` receives the new pointer and the previous values shift down through `+0x238..+0x244`. `FUN_80049348` shadows the head into the render context (`ctx+0x4C = actor[+0x234 + i*4]`). The offsets are codified as [`engine_core::capture_observations::battle_action_animation`](../../crates/engine-system/src/capture_observations.rs) and exercised by `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window` in `crates/mednafen/tests/real_saves.rs`.
+`FUN_80047430` implements the queue's back-shift: when a new entry activates, `actor[+0x234]` receives the new pointer and the previous values shift down through `+0x238..+0x244`. `FUN_80049348` shadows the head into the render context (`ctx+0x4C = actor[+0x234 + i*4]`). The offsets are codified as [`engine_core::capture_observations::battle_action_animation`](../../crates/engine-system/src/capture_observations.rs) and exercised by `battle_action_anim_pair_pins_dispatch_pointer_table_and_anim_pc_window` in `crates/parity/tests/real_saves.rs`.
 
 The entry at the mid-strike pointer opens `u32 0x18, 0, 0, 4, 5, 0x00299307, 0x0140017E`. Its first byte `0x18` is the action tag and falls in the "other" row below.
 

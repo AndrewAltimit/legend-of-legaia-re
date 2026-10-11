@@ -142,7 +142,7 @@ This crate exists to make that workflow scriptable.
   save state (e.g. validating an in-engine VM trace against the retail
   result).
 - CLI binary for the per-PR manual workflow.
-- Disc-gated integration tests under `tests/real_saves.rs` skip cleanly
+- Disc-gated integration tests in `crates/parity/tests/real_saves.rs` skip cleanly
   when `LEGAIA_MEDNAFEN_DIR` is unset.
 - Library-gated save oracles that pin a runtime invariant against the
   content-hashed backup corpus (`saves/library/mednafen/`, resolved via each

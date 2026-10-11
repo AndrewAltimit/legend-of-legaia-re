@@ -67,7 +67,7 @@ fn move_fx_prototype_entries_are_summon_format_records() {
     }
 
     // The enemy Gimard "Fire Tail" record, cross-referencing the live-capture
-    // finding (`crates/mednafen/tests/firetail_movefx_liveness.rs`): proto
+    // finding (`crates/parity/tests/firetail_movefx_liveness.rs`): proto
     // entries 0 / 0x30 / 0x31 all point at VA 0x801F5484, the record a live
     // Fire-Tail part-actor carries at +0x48 (model_sel 5).
     for id in [0usize, 0x30, 0x31] {

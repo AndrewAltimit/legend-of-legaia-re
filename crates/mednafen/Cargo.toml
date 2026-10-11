@@ -35,8 +35,6 @@ serde_json.workspace = true
 toml = { workspace = true, features = ["display"] }
 
 [dev-dependencies]
-legaia-engine-core.workspace = true
-legaia-game-tables.workspace = true
 legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 

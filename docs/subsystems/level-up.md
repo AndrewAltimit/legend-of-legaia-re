@@ -464,7 +464,7 @@ The arm is entered from the pause menu's Item command (`jal 0x800402F4` at `0x80
 
 Which character it writes comes from the class alone. See [item-effect-table.md](../formats/item-effect-table.md#arts-books-class-111213-the-tier-is-an-art-id) for the roster-slot derivation and for why the picked target is ignored.
 
-Tests: the disc-gated `fire_book_use_diff_pins_vahn_record_write` in [`crates/mednafen/tests/real_saves.rs`](../../crates/mednafen/tests/real_saves.rs) asserts exactly one record-internal region at the documented offset; three unit tests in `legaia_save::character` (`displayed_skills_*`) exercise the accessor's round-trip and the `MAX_DISPLAYED_SKILLS` clamp.
+Tests: the disc-gated `fire_book_use_diff_pins_vahn_record_write` in [`crates/parity/tests/real_saves.rs`](../../crates/parity/tests/real_saves.rs) asserts exactly one record-internal region at the documented offset; three unit tests in `legaia_save::character` (`displayed_skills_*`) exercise the accessor's round-trip and the `MAX_DISPLAYED_SKILLS` clamp.
 
 <a id="open-items"></a>
 <a id="cross-character-delta-search-negative-finding"></a>

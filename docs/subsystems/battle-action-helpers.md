@@ -598,7 +598,7 @@ Spawn sites in the over-read tail belong to neighbouring stagers. Their `lui/add
 
 All five are player casts, and a player cast renders the namesake creature rather than keeping stager parts alive. The Cort enemy path does run live stager parts, but holds only `-1` nodes: every live pooled part-actor carries `actor[+0x48]` pointing into the trimmed record table at a `-1` record (RAM first word == file first word), with the spawn-time `+0x56` / `+0x5A` zeros rebound post-spawn by the move-VM ops (`+0x56 = 4` / `+0x5A = 2` dominate mid-cast) and `actor[+0x64] = 0` throughout.
 
-So the `0x4000` / `0x4001` draw behaviour has **no live exerciser in the catalogued corpus**. Pinning it needs a frame-stepped capture inside an *enemy* stager-spawn window whose stager carries a `0x4000` record (`crates/mednafen/tests/summon_render_mode_node.rs`).
+So the `0x4000` / `0x4001` draw behaviour has **no live exerciser in the catalogued corpus**. Pinning it needs a frame-stepped capture inside an *enemy* stager-spawn window whose stager carries a `0x4000` record (`crates/parity/tests/summon_render_mode_node.rs`).
 
 ### Cast dispatchers `0x801F1ED4` and `0x801F2160`
 

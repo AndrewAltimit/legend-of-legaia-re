@@ -981,7 +981,7 @@ Owning pages:
   `FUN_801EF9E4`, writes the target Super's `find` bytes into the queue, retargets the char-index
   register, and reads the tail-replaced queue back at the return site - 15/15 byte-exact, with the two
   hand-driven combos (Noa's Miracle, Vahn's Tri-Somersault) as positive controls. One post-applier
-  library state per character is re-checked by `crates/pcsxr/tests/super_art_queue_replace.rs`.
+  library state per character is re-checked by `crates/parity/tests/super_art_queue_replace.rs`.
 
 Owning page:
 [battle-action.md](../../subsystems/battle-action.md#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4).
@@ -1371,7 +1371,7 @@ part-actor.
   carry `-1` records (`+0x56 = 4` / `+0x5A = 2` after move-VM rebinding), and the three Sim-Seru
   player-cast states hold no live stager part at all (zero RAM references to any stager record while
   the stager is byte-resident at slot B). An enemy casting a Sim-Seru creature would seat one
-  (`crates/mednafen/tests/summon_render_mode_node.rs`). The node's behaviour is decoded statically
+  (`crates/parity/tests/summon_render_mode_node.rs`). The node's behaviour is decoded statically
   (next block).
 
 **Part render modes (`FUN_80021DF4`)**

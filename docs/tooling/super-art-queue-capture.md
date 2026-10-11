@@ -177,7 +177,7 @@ end-to-end execution - Vahn's Rolling Combo `1A 2F 30`, Noa's Triple Lizard
 `1A 2E 2E 2E`, Gala's Back Punch x3 `1A 2B 2B 2B`) are cataloged in
 [`scripts/scenarios.toml`](../../scripts/scenarios.toml)
 (`super_queue_replace_*`) with library backups, and
-`crates/pcsxr/tests/super_art_queue_replace.rs` re-derives the queue check
+`crates/parity/tests/super_art_queue_replace.rs` re-derives the queue check
 from them (skip-passes without the library).
 
 The two knobs worth knowing: `LEGAIA_DRY=1` logs the natural `(a0, a1)` +

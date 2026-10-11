@@ -531,7 +531,7 @@ Both matchers run against a flat **directional command string** with no connecto
 
   Every resident string is byte-identical to `super_art.rs`'s modeled `find` / `replace` fields, and every resident replace preserves its find minus the final `[19, art]` pair then appends `[1A, finisher…]` - the pairing law locked by `super_art.rs`'s `replace_preserves_find_prefix_and_finisher_tail` test.
   The resident-table read validates the *strings* for all 15, and the *runtime queue effect* is live-executed for all 15 too - the in-the-wild Noa Miracle / Vahn Tri-Somersault captures above plus a per-Super applier-injection sweep
-  (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/pcsxr/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
+  (probe `autorun_super_art_queue_inject.lua`; each post-`FUN_801EF9E4` queue at `actor[+0x1DF]` is byte-identical to `super_art.rs`'s `replace`, re-checkable via the `super_queue_replace_*` library states + `crates/parity/tests/super_art_queue_replace.rs`; see [`super-art-queue-capture.md`](../tooling/super-art-queue-capture.md#result---all-15-supers-live-executed-injection-probe)).
   The modeled tables feed the live path through `miracle_row_for` / `super_rows_for`, which project them into the resident row shapes; the queue arithmetic itself is the byte applier's, not `SuperMatcher`'s (see [the retail queue-builder](#the-retail-queue-builder-fun_801eed1c-and-super-applier-fun_801ef9e4) below).
 
 ## Port

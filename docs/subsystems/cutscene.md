@@ -934,7 +934,7 @@ The states were produced through the **debug menu**, not by stepping a scene's t
 `(fmv_id, game_mode)` tuple, and the per-scene assignment comes from the disc walk above. It is
 codified at `legaia_engine_core::capture_observations::cutscene_trigger_corpus` and exercised by
 the disc-gated test
-`crates/mednafen/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
+`crates/parity/tests/real_saves.rs::cutscene_trigger_corpus_pins_fmv_id_across_nine_saves`.
 
 ### Engine port of the trigger flow
 

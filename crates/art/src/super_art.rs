@@ -40,7 +40,7 @@
 //! queue - all 15 byte-identical to the `replace` fields below (PCSX-Redux
 //! probe `autorun_super_art_queue_inject.lua`; runbook
 //! `docs/tooling/super-art-queue-capture.md`; re-checkable via
-//! `crates/pcsxr/tests/super_art_queue_replace.rs`).
+//! `crates/parity/tests/super_art_queue_replace.rs`).
 
 use crate::queue::{ActionConstant, ActionQueue, Character};
 

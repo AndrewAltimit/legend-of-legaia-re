@@ -2301,7 +2301,7 @@ topics = ["battle", "summon", "stager", "overlay", "loader-B", "spell 0x91", "ev
 # retargeted to the owning character's table index). One state per
 # character, each a previously-unexecuted Super; the full 15/15 sweep's
 # CSV lives with the capture run. Checked by
-# crates/pcsxr/tests/super_art_queue_replace.rs.
+# crates/parity/tests/super_art_queue_replace.rs.
 # ----------------------------------------------------------------------
 [[scenarios]]
 label = "super_queue_replace_vahn_rolling_combo"
