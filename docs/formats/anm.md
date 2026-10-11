@@ -173,7 +173,7 @@ The cursor `actor+0x68` is in **1/16-frame units**: `FUN_8001B964` poses from `f
 | `0x0100` | End latch, set by the tick on reaching either end |
 | `0x0200` | Restart request, consumed by the next tick |
 
-Scripts drive all of it through the field-VM ops `0x22 <id>` (SET_ANIM), `0x2B` / `0x2C` / `0x2D` (set / clear / spin on a bit of `actor+0x62`), `0x4C` nibble-4 sub-1 (the rate) and `0x4C` nibble-3 sub-5 / sub-6 (the two pose snaps). This is what swings a town's house doors open; see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip). Engine port: `legaia_engine_core::field_env::PropAnim`.
+Scripts drive all of it through the field-VM ops `0x22 <id>` (SET_ANIM), `0x2B` / `0x2C` / `0x2D` (set / clear / spin on a bit of `actor+0x62`), `0x4C` nibble-4 sub-1 (the rate) and `0x4C` nibble-3 sub-5 / sub-6 (the two pose snaps). This is what swings a town's house doors open; see [`field-locomotion.md`](../subsystems/field-locomotion.md#the-door-swing-how-a-bind-script-drives-the-clip). Engine port: `legaia_engine_scene::field_env::PropAnim`.
 
 The driver reads four header bytes (`ghidra/scripts/funcs/800204f8.txt`): the bone count at clip `+0`, the gate at `+1`, the frame count at `+2` and the divisor at `+6`.
 
