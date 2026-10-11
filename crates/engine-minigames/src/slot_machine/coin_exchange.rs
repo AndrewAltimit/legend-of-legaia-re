@@ -62,7 +62,7 @@ pub fn coin_entry_value(digits: &[i8]) -> i32 {
 ///
 /// This is the quote half of the counter's entry panel
 /// ([`coin_entry_panel`]); the sale itself commits in the state machine
-/// (`legaia_engine_vm::baka_hub_actors::coin_exchange`, state 3).
+/// (`legaia_engine_field::submode_hub_actors::coin_exchange`, state 3).
 // PORT: FUN_801e6f70 (`0x801E7138..0x801E7174`, the cost and its two gates)
 pub fn coin_exchange_quote(digits: &[i8], gold: i32, stock: i32) -> CoinQuote {
     let coins = coin_entry_value(digits);

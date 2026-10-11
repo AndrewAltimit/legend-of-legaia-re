@@ -437,7 +437,7 @@ fn rung7_sub_list_handoff(w: &mut World) -> Result<(), String> {
 /// range it covers out of the world's own system-flag bank, and its confirm
 /// commits the picked row back into that same bank.
 fn rung8_flag_window(w: &mut World) -> Result<(), String> {
-    use legaia_engine_vm::world_map_panel_actors::FlagWindowDescriptor;
+    use legaia_engine_field::world_map_panel_actors::FlagWindowDescriptor;
     // Own the whole span the picker scans, so the row it remembers is this
     // rung's and not whatever an earlier rung left in the shared bank. The
     // list draws bottom-up and does not wrap, so remembering row 3 (screen
@@ -590,7 +590,7 @@ fn rung11_soft_reset(w: &mut World) -> Result<(), String> {
     let mut at_rest = false;
     for _ in 0..512 {
         frame(w, 0);
-        if ctrl(w).panels.slide == legaia_engine_vm::world_map_panel_actors::SOFT_RESET_SLIDE_REST {
+        if ctrl(w).panels.slide == legaia_engine_field::world_map_panel_actors::SOFT_RESET_SLIDE_REST {
             at_rest = true;
             break;
         }
@@ -613,7 +613,7 @@ fn rung11_soft_reset(w: &mut World) -> Result<(), String> {
     let mut reached = false;
     for _ in 0..512 {
         frame(w, 0);
-        if ctrl(w).panels.slide >= legaia_engine_vm::world_map_panel_actors::SOFT_RESET_RELOAD_AT {
+        if ctrl(w).panels.slide >= legaia_engine_field::world_map_panel_actors::SOFT_RESET_RELOAD_AT {
             reached = true;
             break;
         }
@@ -730,7 +730,7 @@ fn w1d_world_map_render_ladder() {
 fn w1d_dev_menu_cancel_runs_the_row_action_dispatcher() {
     use legaia_engine_core::dev_menu::{PACK_CIRCLE, PACK_DOWN};
     use legaia_engine_core::dev_menu_host::{DevMenuSession, DevPage};
-    use legaia_engine_vm::world_map_overlay::ListPickerPhase;
+    use legaia_engine_field::dev_menu_leaves::ListPickerPhase;
 
     let mut s = DevMenuSession::new();
     let mut none: [&mut [u8]; 0] = [];
@@ -852,7 +852,7 @@ fn w1d_dev_menu_equip_commit_swaps_bag_and_slot() {
 #[test]
 fn w1d_submode_frame_loop_reaches_the_equipment_sub_panel() {
     use legaia_engine_core::actor_handler::ActorHandler;
-    use legaia_engine_vm::baka_hub_actors::{HubDraw, HubPainter, slot, window};
+    use legaia_engine_field::submode_hub_actors::{HubDraw, HubPainter, slot, window};
 
     let mut w = World::new();
     w.man_load_actor_reset();

@@ -71,7 +71,7 @@ sub-screen handler in `save_subscreen.rs`.
 gate fires only where the name is ambiguous, so a name with exactly one in-tree
 definition is never gated - and if `std` also defines it on a common type, every
 call site in the workspace becomes an in-edge. `Rect12::to_le_bytes` in
-`crates/engine-vm/src/title_prim.rs` was the case: it was the only in-tree
+`crates/engine-menus/src/title_prim.rs` was the case: it was the only in-tree
 `fn to_le_bytes`, so each `x.to_le_bytes()` on an integer anywhere in a
 reachable function linked to it. Uniqueness reads like precision here and is the
 opposite.
@@ -98,7 +98,7 @@ identifier to any free function of that name, which is how a function value
 reaches `map` / `sort_by_key`. It does not distinguish a function value from a
 **struct field** of the same name: the field `stat_deltas` in
 `crates/engine-battle/src/seru_stats.rs` links to the free `stat_deltas` in
-`crates/engine-vm/src/world_map_overlay.rs`. Nor from a **local binding**: a
+`crates/engine-field/src/dev_menu_leaves.rs`. Nor from a **local binding**: a
 free function called `gate` collects an in-edge from every reachable function
 that merely names a local `gate`, which is why the whole of
 `battle_attack_camera.rs` read live from six unrelated callers. A short,
@@ -294,7 +294,7 @@ Nothing in either audit looks at whether the body under the tag matches the
 instruction stream, and nothing ever will: reachability and fidelity are
 independent properties.
 
-`exec_sprite_descriptor` (`800198e0`, `crates/engine-vm/src/title_prim.rs`) is
+`exec_sprite_descriptor` (`800198e0`, `crates/engine-menus/src/title_prim.rs`) is
 the worked example. Its disclosure held exactly as written - no host implements
 `PrimHost`, every `exec_*` in the file is test-only - and re-reading
 `FUN_800198E0` against the disassembly turned up three divergences in the port
@@ -345,19 +345,19 @@ recognisable: match the mechanism, apply the same fix.
 | `801da6b4` | `engine-battle-vm/src/battle_action/target_cursor.rs` | FALSE-EDGE | Module `PORT:` / `REPLACED-BY:` pair moved onto `target_cursor_highlight`; the module was live through the cursor constants and `cursor_cue`, which both battle hosts use and which are not the port. The replacement verdict stands. |
 | `80018db0` | `engine-audio/src/footstep.rs` | FALSE-EDGE | `FootstepCadence::tick` renamed `tick_cadence`; the crate's own `lib.rs` re-exports the type and calls `spu.tick()`, so the gate passed. |
 | `801e0080` | `engine-vm/src/battle_scatter.rs` (since deleted - the routine is the effect-VM walker) | FALSE-EDGE | `rotate_offset` renamed `scatter_rotate_offset`; the live `rotate_offset` is `engine-core::action_effect_script`'s same-named free function, which gained its first host caller when the effect-script walk was wired into the battle tick. |
-| `800198e0`, `80058298`, `80058490` | `engine-vm/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
+| `800198e0`, `80058298`, `80058490` | `engine-menus/src/title_prim.rs` | FALSE-EDGE | Module tag moved onto `exec_sprite_descriptor` / `exec_clear_image` / `exec_move_image`; the file was live through `Rect12::to_le_bytes`. |
 | `800468a4`, `80057914` | `engine-vm/src/vram_rect_copy.rs` | FALSE-EDGE | Module tag moved onto `enqueue` / `build_packet`, each with its own tag; the file was live through `op43_sub12_calls`, which no tag covered. Both helpers have a host now (`World::apply_vram_rect_copies`), so the split no longer hides an unwired half. |
 | `80053cb8` | `engine-battle-vm/src/battle_formulas/stat_init.rs` | STALE-TAG | `LegaiaMinigames::muscle_player_fighter`, under a `#[wasm_bindgen]` root, calls `init_party_battle_stats`, which calls `equip_stat_bonuses`. |
 | `801d0750` | `engine-minigames/src/dance_tutorial.rs` | FALSE-EDGE | `countdown_frame` renamed `tutorial_countdown_frame`; the live `countdown_frame` is the Baka chrome's same-named free function. |
-| `801e5b4c` | `engine-vm/src/world_map_overlay.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `baka_hub_actors::entry_list` calls it where retail's only `jal` sits. |
-| `801ead98` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
-| `801eca08` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
-| `801ed710` | `engine-vm/src/world_map_overlay.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
+| `801e5b4c` | `engine-field/src/dev_menu_leaves.rs` | RESOLVED | `resolve_equip_slot` was already reached through `dev_equip_commit::commit_equip`. The rest of the address is now reached too: `equip_stat_panel` is the whole sub-draw and `baka_hub_actors::entry_list` calls it where retail's only `jal` sits. |
+| `801ead98` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | Module tags and the impl-less type tags dropped for per-item anchors. |
+| `801eca08` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | `cursor_step` renamed `dev_menu_cursor_step`; the live `cursor_step` is `engine-minigames/src/baka_cabinet.rs`'s same-named free function. |
+| `801ed710` | `engine-field/src/dev_menu_leaves.rs` | STALE-TAG | `records_screen` / `decompose_play_time` are reached from `dev_records_model` in `engine-shell/src/window/dev_menu.rs` -> `PlayWindowApp::build_dev_records_draws` -> `tick_dev_menu`. |
 | `8001fa68`, `800203ec`, `80020424`, `80020454`, `800204a4` | `engine-vm/src/scus_core_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `ActorNodePool::new` / `::default`. |
 | `800421d4`, `80042310`, `800423e0`, `80042ee0`, `80042f4c`, `80043048`, `8004313c` | `save/src/retail_inventory.rs` | FALSE-EDGE | Cleared by the receiver gate; the collisions were `RetailInventory` / `ItemWindow` methods reached through the crate's `lib.rs` re-export. |
 | `80046870` | `engine-battle-vm/src/battle_helpers.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was `ScreenOrient::from_byte`. |
 | `801d71b8` | `engine-battle-vm/src/battle_attack_camera.rs` | FALSE-EDGE | `gate` renamed `attack_camera_gate`; a free function named `gate` is reached by the bare-identifier edge from every function that merely *mentions* one. |
-| `801d2ebc` | `engine-vm/src/world_map_overlay.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
+| `801d2ebc` | `engine-field/src/dev_menu_leaves.rs` | FALSE-EDGE | Cleared when the countdown scheduler moved to `escape_timer.rs`, which has a caller; the collision was `EscapeTimer::tick`. |
 | `801d6d38`, `801d8a58`, `801d98f0`, `801dae24`, `801daef4`, `801dafd4`, `801dbc5c`, `801dc6b4`, `801dd12c`, `801dd1b8`, `801dd26c`, `801e4f40` | `engine-menus/src/save_subscreen.rs` | FALSE-EDGE | Cleared by the receiver gate; the chain was `session.tick(` -> `BattleTutorial::tick` -> `dispatch(` -> `SaveScreenMachine::dispatch`. |
 | `801db380`, `801db7f4`, `801dbd94` | `engine-menus/src/shop.rs` | FALSE-EDGE | Cleared by the receiver gate; the collision was the session constructors' `new(`. |
 | `800508dc` | `engine-battle/src/anim_cue.rs` | FALSE-EDGE, then wired | `AnimCueState::tick` is named `tick_cues`: in `engine-audio`, whose `lib.rs` re-exported the type and called `spu.tick()`, the receiver gate passed - the shape of `footstep.rs` above. The module is in `engine-core` and `World::step_actor_anim_cues` calls it per animation frame. |
@@ -398,7 +398,7 @@ collision, because a collision can always be found and a caller cannot.
 <a id="superseded-rows"></a>
 ## Wired but inert at runtime: `emit_horizon`
 
-`801d7ea0` (`emit_horizon`, `crates/engine-vm/src/world_map_horizon.rs`) is the
+`801d7ea0` (`emit_horizon`, `crates/engine-field/src/world_map_horizon.rs`) is the
 worked example of *wired, inert at runtime*: its tag needed a rewrite rather
 than a deletion. `emit_horizon` is statically reachable through three unambiguous
 non-test hops, so a tag clause reading "reached only from tests" is false - but

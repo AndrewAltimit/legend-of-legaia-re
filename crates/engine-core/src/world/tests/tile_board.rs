@@ -36,7 +36,7 @@ fn tile_board_step_cues_clips_and_facing() {
     w.set_pad(input::PadButton::Right.mask());
     let _ = w.tick();
     assert!(w.take_sfx_ring_ops().contains(&SfxRingOp::Push(0x21)));
-    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_RUN);
+    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_RUN);
     assert_eq!(w.locomotion.player_clip, 3, "leader 0: 3 + 0 * 7");
     // Column + 1 walks X+: retail octant 6, the engine's quarter turn.
     assert_eq!(w.actors[0].move_state.render_26, 0x400);
@@ -44,7 +44,7 @@ fn tile_board_step_cues_clips_and_facing() {
         w.set_pad(0);
         let _ = w.tick();
     }
-    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_IDLE);
     assert_eq!(w.locomotion.player_clip, 2);
     // Walk to the east edge and push into it.
     pad_held(&mut w, input::PadButton::Right.mask(), 20);

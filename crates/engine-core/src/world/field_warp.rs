@@ -8,10 +8,10 @@
 //! runs, and the player is seated at the destination on the frame the timer
 //! runs out - the bottom of the fade to black - followed by a `0x28`-frame
 //! hold before the pad comes back. See
-//! [`legaia_engine_vm::field_warp_tile`] for the byte-level reading.
+//! [`legaia_engine_field::field_warp_tile`] for the byte-level reading.
 
 use super::*;
-use vm::field_warp_tile as warp_tile;
+use legaia_engine_field::field_warp_tile as warp_tile;
 
 /// What one frame of the warp timer did, for the scene host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,7 +185,7 @@ impl World {
     /// REF: FUN_801D1EC4
     pub fn field_walk_on_clip_reset(&mut self) {
         if self.party.scene_save_allowed {
-            self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+            self.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_IDLE;
             self.locomotion.player_party_bank = true;
         }
     }
@@ -196,9 +196,9 @@ impl World {
     /// op-`4C CE` clip override is dropped (SCUS `0x8003B6F0`,
     /// `sw zero, _DAT_8007B6AC`) - both inside the map init `FUN_8003AEB0`.
     pub fn reset_field_warp_and_clip(&mut self) {
-        self.locomotion.warp = vm::field_warp_tile::WarpTimer::default();
+        self.locomotion.warp = legaia_engine_field::field_warp_tile::WarpTimer::default();
         self.locomotion.warp_fade_in_in = None;
-        self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+        self.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_IDLE;
         self.locomotion.player_party_bank = true;
         self.locomotion.clip_override = 0;
         self.locomotion.player_live_model = None;
@@ -278,7 +278,7 @@ mod tests {
             "sentinel cleared on the landing tick"
         );
         // The hold keeps the pad off after the landing.
-        assert!(vm::field_warp_tile::pad_suppressed(&w.locomotion.warp));
+        assert!(legaia_engine_field::field_warp_tile::pad_suppressed(&w.locomotion.warp));
     }
 
     #[test]

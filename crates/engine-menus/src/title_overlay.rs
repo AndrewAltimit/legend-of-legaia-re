@@ -19,7 +19,7 @@
 //! second copy.
 //!
 //! Hosting it in the menu overlay's image is what made
-//! [`super::menu`] describe it as the *menu's* dispatcher. That reading is
+//! [`crate::menu`] describe it as the *menu's* dispatcher. That reading is
 //! falsified by the routine's own operands: it writes only `0x02..=0x18`
 //! to its sub-mode word (inside the jump table's `sltiu v0,s2,0x19`
 //! bound), never the pause-menu / shop screens `menu.rs` enumerates, and
@@ -177,6 +177,9 @@
 
 #![forbid(unsafe_code)]
 
+use legaia_engine_system::mode_entry_init::ENTRY_WORD_COLD_BOOT;
+
+mod draw_list;
 mod menu;
 mod state_layout;
 mod submode;
@@ -184,6 +187,7 @@ mod tick;
 mod tick_types;
 mod transitions;
 
+pub use draw_list::*;
 pub use menu::*;
 pub use state_layout::*;
 pub use submode::*;

@@ -139,7 +139,7 @@ pub struct FieldNpcState {
     /// `0x801C6470`, statically harvested from the scene MAN's tail-section-1
     /// streams ([`crate::man_field_scripts::motion_default_move_writes`]).
     /// The table the interaction motion-pause kick (`FUN_8003C9AC`, ported at
-    /// [`legaia_engine_vm::motion_pause`]) reloads a moving-class actor's
+    /// [`legaia_engine_field::motion_pause`]) reloads a moving-class actor's
     /// requested-move pair from.
     pub default_moves: std::collections::BTreeMap<u8, [u8; 2]>,
     /// In-flight field-NPC walk legs, keyed by placement `slot`. Stepped once

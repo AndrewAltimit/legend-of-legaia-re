@@ -975,7 +975,7 @@ arc, and the raw out-of-range hold on every wrap-crossing leg.
 record to). The walk/anim ops (`0x02`, `0x03`/`0x19`/`0x20`, `0x18` phase
 1/3) reload the actor's requested-move pair `+0x88`/`+0x5C` from the
 record while it is set, and the motion-pause kick `FUN_8003C9AC` (ported at
-`legaia_engine_vm::motion_pause`) sweeps the same table - see
+`legaia_engine_field::motion_pause`) sweeps the same table - see
 [the motion-pause kick](#the-motion-pause-kick). The engine statically harvests each
 stream's first `0x17` per bound placement
 (`man_field_scripts::motion_default_move_writes` →

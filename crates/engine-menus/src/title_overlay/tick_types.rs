@@ -15,23 +15,6 @@ pub const INIT_SENTINEL_STORE_PC: u32 = 0x801D_D97C;
 /// default sub-mode `0x02`, before the sentinel arm overwrites it.
 pub const INIT_DEFAULT_STORE_PC: u32 = 0x801D_D920;
 
-/// Address of the boot entry word retail's `init.pak` raises before the
-/// title overlay's first tick (`FUN_801CE9C0`, `sw s2,-0x4500(s0)` at
-/// `0x801CEB84` with `s0 = 0x80080000`). `Init` reads it at `0x801DD968`
-/// and the shared epilogue reads it again at `0x801DFED8`; both send the
-/// tick past sub-mode `0x02`.
-pub const ENTRY_WORD_ADDR: u32 = 0x8007_BB00;
-
-/// The value `init.pak` leaves in [`ENTRY_WORD_ADDR`] on a cold boot.
-/// `Init` takes the `0x11` arm on any non-zero value, and additionally
-/// streams the title assets when it reads exactly this.
-pub const ENTRY_WORD_COLD_BOOT: u32 = 1;
-
-/// The value the word carries when the title is re-entered from the
-/// attract movie (capture; see `docs/subsystems/boot.md`). Still non-zero,
-/// so the `0x11` arm holds, but the asset stream is skipped.
-pub const ENTRY_WORD_FROM_ATTRACT: u32 = 2;
-
 /// `_DAT_8007BAB4` - the pre-attract hold `AttractDelay` (`0x11`) spends
 /// at `8 * frame_scalar` per frame before handing to `AttractIdle`.
 ///

@@ -10,10 +10,10 @@
 //! runs at the pen the caller left, once per drawn entry, over the character
 //! the caller published - not the list position.
 
-use legaia_engine_vm::baka_hub_actors::{
+use legaia_engine_field::submode_hub_actors::{
     HubActor, HubDraw, HubEnv, HubEquipEnv, HubEquipRecord, HubGrid, HubPainter,
 };
-use legaia_engine_vm::world_map_overlay::{
+use legaia_engine_field::dev_menu_leaves::{
     EQUIP_COL_CURRENT, EQUIP_COL_LABEL, EQUIP_LABEL_VAS, EQUIP_ROW_PITCH, EquipPanelDraw,
     EquipProps, ItemProps,
 };

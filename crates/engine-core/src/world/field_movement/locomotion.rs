@@ -185,7 +185,7 @@ impl World {
         // The player tick drains the post-warp hold before any of its gates
         // (`FUN_801D1344` at `0x801D1618..0x801D1630`).
         let ratio = self.move_vm.ramp_ratio.max(1);
-        vm::field_warp_tile::drain_post_warp_hold(&mut self.locomotion.warp, ratio);
+        legaia_engine_field::field_warp_tile::drain_post_warp_hold(&mut self.locomotion.warp, ratio);
         // BOTH dialogue channels, through the shared predicate. The ordinary
         // NPC talk runs the field-VM inline runner, which holds a box open
         // without a `current_dialog` whenever the record selects its segment
@@ -236,7 +236,7 @@ impl World {
         // channel's per-tick reset of the clip base still runs after each
         // settle ([`Self::tick_field_system_channel_clip_reset`]) and leaves
         // the idle base `2` for the next one.
-        if vm::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
+        if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
             return;
         }
 
@@ -258,7 +258,7 @@ impl World {
         // player's clip: idle, walk or run off this frame's direction and base
         // step, the scene sentinel under `_DAT_8007B6A8`
         // (`0x801D0424..0x801D04A4`). The same frames raise the party-bank bit.
-        if let Some(base) = vm::field_player_clip::locomotion_clip_base(
+        if let Some(base) = legaia_engine_field::field_player_clip::locomotion_clip_base(
             self.locomotion.player_clip,
             dir_bits,
             self.field_base_step(),
@@ -786,7 +786,7 @@ impl World {
         // the actor actually walked this frame - and on the warp pair: no
         // warp in flight, no post-warp hold (`0x801D1C6C..0x801D1C88`).
         let (dx, dz) = self.locomotion.step_delta;
-        let warp_quiet = !vm::field_warp_tile::pad_suppressed(&self.locomotion.warp);
+        let warp_quiet = !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp);
         if hop_allowed && warp_quiet && (dx != 0 || dz != 0) && self.try_field_ledge_hop(slot) {
             // A frame that starts a hop returns before the tail
             // (`j 0x801D1EB0` at `0x801D1CC0`).
@@ -805,7 +805,7 @@ impl World {
     /// for the system channel `0x8007E694`; the rest of the routine is the
     /// per-actor script / dialogue stepper)
     pub(crate) fn field_system_channel_clip_reset(&mut self) {
-        self.locomotion.clip_base = vm::field_player_clip::BASE_IDLE;
+        self.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_IDLE;
     }
 
     /// Whether the field player is **movement-locked** at the point of the
@@ -883,10 +883,10 @@ impl World {
     /// port models, so the bind always runs.
     ///
     /// REF: FUN_801D1BA0 (the tail is ported as
-    /// [`vm::field_player_clip::settle_clip_pick`])
+    /// [`legaia_engine_field::field_player_clip::settle_clip_pick`])
     pub(crate) fn field_settle_clip_tail(&mut self) {
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
-        let pick = vm::field_player_clip::settle_clip_pick(
+        let pick = legaia_engine_field::field_player_clip::settle_clip_pick(
             self.locomotion.clip_base,
             leader,
             self.locomotion.clip_override,
@@ -909,8 +909,8 @@ impl World {
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
         self.locomotion.clip_base = base;
         let flag = self.locomotion.player_party_bank;
-        let pick = vm::field_player_clip::SettleClipPick {
-            clip: base.wrapping_add(leader.wrapping_mul(vm::field_player_clip::BANK_STRIDE)),
+        let pick = legaia_engine_field::field_player_clip::SettleClipPick {
+            clip: base.wrapping_add(leader.wrapping_mul(legaia_engine_field::field_player_clip::BANK_STRIDE)),
             party_flag: flag,
             binds: true,
             bind_party_flag: flag,
@@ -923,7 +923,7 @@ impl World {
     /// at the player ([`Self::field_player_script_clip`]).
     pub(super) fn apply_player_clip_pick(
         &mut self,
-        pick: &vm::field_player_clip::SettleClipPick,
+        pick: &legaia_engine_field::field_player_clip::SettleClipPick,
         leader: u16,
     ) {
         self.locomotion.player_clip = pick.clip as i16;
@@ -931,9 +931,9 @@ impl World {
         if !pick.binds {
             return;
         }
-        let slot = vm::field_player_clip::party_bank_slot(pick, leader);
+        let slot = legaia_engine_field::field_player_clip::party_bank_slot(pick, leader);
         let scene = match pick.bound() {
-            Some((vm::field_player_clip::ClipBank::Scene, record)) => Some(record),
+            Some((legaia_engine_field::field_player_clip::ClipBank::Scene, record)) => Some(record),
             _ => None,
         };
         if let Some(anim) = &mut self.locomotion.player_anim {
@@ -950,7 +950,7 @@ impl World {
     /// word rather than on the calling script's context.
     ///
     /// Bit `24` (`0x01000000`) is the player's **party-bank** bit
-    /// ([`vm::field_player_clip::PARTY_BANK_FLAG`]), which the settle tail's
+    /// ([`legaia_engine_field::field_player_clip::PARTY_BANK_FLAG`]), which the settle tail's
     /// clip pick reads: raised, the clip base strides into the leader's
     /// locomotion bank; dropped, it binds a scene-bank record instead. The
     /// port keeps that bit as [`crate::world::FieldLocomotion::player_party_bank`],
@@ -960,7 +960,7 @@ impl World {
     ///
     /// REF: FUN_801DE840 (ops `0x31` / `0x32`), FUN_8003C83C (the `0xF8` arm)
     pub fn field_player_cflag(&mut self, bit: u8, set: bool) -> bool {
-        if 1u32 << (bit & 0x1F) != vm::field_player_clip::PARTY_BANK_FLAG {
+        if 1u32 << (bit & 0x1F) != legaia_engine_field::field_player_clip::PARTY_BANK_FLAG {
             return false;
         }
         self.locomotion.player_party_bank = set;
@@ -1016,9 +1016,9 @@ impl World {
     /// REF: FUN_800204F8 (`0x80020524..0x800205A8`, the bank select)
     pub(crate) fn player_move_cue(
         &self,
-        pick: &vm::field_player_clip::SettleClipPick,
+        pick: &legaia_engine_field::field_player_clip::SettleClipPick,
     ) -> Option<u8> {
-        let Some((vm::field_player_clip::ClipBank::Scene, _)) = pick.bound() else {
+        let Some((legaia_engine_field::field_player_clip::ClipBank::Scene, _)) = pick.bound() else {
             return None;
         };
         u8::try_from(pick.clip).ok().filter(|&id| id > 2)
@@ -1036,14 +1036,14 @@ impl World {
     /// always runs.
     ///
     /// REF: FUN_801DE840 (the two player arms; the pick is
-    /// [`vm::field_player_clip::settle_clip_pick`])
+    /// [`legaia_engine_field::field_player_clip::settle_clip_pick`])
     pub fn field_player_script_clip(
         &mut self,
         move_id: u8,
-    ) -> vm::field_player_clip::SettleClipPick {
+    ) -> legaia_engine_field::field_player_clip::SettleClipPick {
         self.locomotion.clip_base = u16::from(move_id);
         let leader = self.locomotion.player_anim.as_ref().map_or(0, |a| a.leader);
-        let pick = vm::field_player_clip::settle_clip_pick(
+        let pick = legaia_engine_field::field_player_clip::settle_clip_pick(
             self.locomotion.clip_base,
             leader,
             self.locomotion.clip_override,

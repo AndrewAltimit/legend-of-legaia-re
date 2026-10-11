@@ -25,7 +25,7 @@
 //!
 //! The menu half runs retail's own law: [`TitleSession::tick`] packs its
 //! booleans into the repacked pad word and steps
-//! [`legaia_engine_vm::title_overlay::TitleMenuState`], the port of the
+//! [`crate::title_overlay::TitleMenuState`], the port of the
 //! title tick's `AttractIdle` (`0x10`) block. That gets both hosts the
 //! retail cursor step + wrap, the `Start | L1 | Cross` confirm mask, the
 //! `0x21` / `0x20` cue pair, and the attract countdown's input-freeze
@@ -47,7 +47,7 @@
 //!   and the tick's shared epilogue rewrites `0x02` to `0x10` again at
 //!   `0x801DFEF8`. The "`0x02 -> 0x14` is the default graph" reading is
 //!   falsified; the executable graph is
-//!   [`legaia_engine_vm::title_overlay::TitleTickState`].
+//!   [`crate::title_overlay::TitleTickState`].
 //! - `continue_enabled` skipping the CONTINUE row has no retail
 //!   counterpart - retail always lets the row be picked and lets the
 //!   save screen say "No data". It is a port guard, applied on top of the
@@ -151,7 +151,7 @@ pub struct TitleSession {
     pub continue_enabled: bool,
     /// Retail's title-menu state: the row counter, the attract countdown
     /// and the last cue. Stepped once per frame in [`Self::tick`].
-    menu: legaia_engine_vm::title_overlay::TitleMenuState,
+    menu: crate::title_overlay::TitleMenuState,
     /// Whether the attract countdown may fire. Off by default and set by
     /// each host for itself; both shipped hosts set it. See the module
     /// docs for why it is not on by default.
@@ -166,7 +166,7 @@ pub struct TitleSession {
     /// `_DAT_8007BB00` and running `Init`, not by writing a sub-mode - so
     /// the boot lands in `0x11` `AttractDelay` and then `0x10`
     /// `AttractIdle`, which is what a cold-boot capture sees.
-    tick: legaia_engine_vm::title_overlay::TitleTickState,
+    tick: crate::title_overlay::TitleTickState,
 }
 
 impl TitleSession {
@@ -177,9 +177,9 @@ impl TitleSession {
             },
             fade_in_frames: 90,
             blink_period: 30,
-            rows: legaia_engine_vm::title_overlay::TITLE_MENU_ROWS,
+            rows: crate::title_overlay::TITLE_MENU_ROWS,
             continue_enabled: true,
-            menu: legaia_engine_vm::title_overlay::TitleMenuState::new(),
+            menu: crate::title_overlay::TitleMenuState::new(),
             attract_enabled: false,
             attract_from_prompt: false,
             tick: Self::cold_boot_tick(),
@@ -193,8 +193,8 @@ impl TitleSession {
     /// sub-mode is *derived* from `_DAT_8007BB00` by executing `Init`
     /// (`0x801DD820`), never written by hand, so the port cannot drift into
     /// the `0x02` graph retail's `init.pak` makes unreachable.
-    fn cold_boot_tick() -> legaia_engine_vm::title_overlay::TitleTickState {
-        use legaia_engine_vm::title_overlay::{
+    fn cold_boot_tick() -> crate::title_overlay::TitleTickState {
+        use crate::title_overlay::{
             ATTRACT_DELAY_SEED, TitleCardStatus, TitleTickPad, TitleTickState,
         };
         let mut tick = TitleTickState::cold_boot();
@@ -315,7 +315,7 @@ impl TitleSession {
                 }
             }
             TitlePhase::PressStart { blink_phase } => {
-                use legaia_engine_vm::title_overlay::{
+                use crate::title_overlay::{
                     ATTRACT_FMV_ID, ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE,
                 };
                 self.phase = TitlePhase::PressStart {
@@ -375,10 +375,10 @@ impl TitleSession {
                     edge,
                     held,
                     1,
-                    legaia_engine_vm::title_overlay::TITLE_MENU_ROWS,
+                    crate::title_overlay::TITLE_MENU_ROWS,
                 );
                 for e in stepped {
-                    use legaia_engine_vm::title_overlay::TitleMenuEvent as Vm;
+                    use crate::title_overlay::TitleMenuEvent as Vm;
                     match e {
                         Vm::CursorMoved { row } => {
                             // The port's one deviation from the retail
@@ -398,10 +398,10 @@ impl TitleSession {
                             // `ContinueFadeIn` (`0x801DDC5C`).
                             self.tick.row_counter = row as i32;
                             let _ = self.tick.step(
-                                legaia_engine_vm::title_overlay::TitleTickPad::from_edge(
-                                    legaia_engine_vm::title_overlay::PADMASK_START_L1_CROSS,
+                                crate::title_overlay::TitleTickPad::from_edge(
+                                    crate::title_overlay::PADMASK_START_L1_CROSS,
                                 ),
-                                legaia_engine_vm::title_overlay::TitleCardStatus::default(),
+                                crate::title_overlay::TitleCardStatus::default(),
                             );
                             let outcome = match row {
                                 0 => TitleOutcome::NewGame,
@@ -425,7 +425,7 @@ impl TitleSession {
                                 // opening movie: `_DAT_8007BA78 = 0` then
                                 // master game mode `0x1A`.
                                 self.phase = TitlePhase::Attract {
-                                    fmv_id: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                                    fmv_id: crate::title_overlay::ATTRACT_FMV_ID,
                                     playing: false,
                                 };
                             }
@@ -433,7 +433,7 @@ impl TitleSession {
                             // is nothing to hand the screen to and the
                             // session must not sit under the input freeze.
                             self.menu.countdown =
-                                legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE as i32;
+                                crate::title_overlay::COUNTDOWN_RESET_VALUE as i32;
                         }
                     }
                 }
@@ -450,7 +450,7 @@ impl TitleSession {
     /// session is not in [`TitlePhase::Attract`] or a host already took
     /// it. Always [`ATTRACT_FMV_ID`] on retail.
     ///
-    /// [`ATTRACT_FMV_ID`]: legaia_engine_vm::title_overlay::ATTRACT_FMV_ID
+    /// [`ATTRACT_FMV_ID`]: crate::title_overlay::ATTRACT_FMV_ID
     pub fn attract_pending(&self) -> Option<i16> {
         match self.phase {
             TitlePhase::Attract {
@@ -489,7 +489,7 @@ impl TitleSession {
     /// Start prompt.
     pub fn finish_attract(&mut self) {
         if matches!(self.phase, TitlePhase::Attract { .. }) {
-            self.menu = legaia_engine_vm::title_overlay::TitleMenuState::new();
+            self.menu = crate::title_overlay::TitleMenuState::new();
             // Retail re-enters the front-end through `Init` with the entry
             // word still non-zero, so the sub-mode walks `0x11` -> `0x10`
             // again rather than resuming where the movie interrupted it.
@@ -513,10 +513,10 @@ impl TitleSession {
     fn pad_words(input: TitleInput) -> (u16, u16) {
         let mut w = 0u16;
         if input.up {
-            w |= legaia_engine_vm::title_overlay::PADMASK_CURSOR_PREV;
+            w |= crate::title_overlay::PADMASK_CURSOR_PREV;
         }
         if input.down {
-            w |= legaia_engine_vm::title_overlay::PADMASK_CURSOR_NEXT;
+            w |= crate::title_overlay::PADMASK_CURSOR_NEXT;
         }
         if input.cross {
             w |= 0x0040;
@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn attract_fires_from_the_prompt_and_returns_to_it() {
-        use legaia_engine_vm::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
+        use crate::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
         let mut s = TitleSession::new();
         s.attract_enabled = true;
         s.skip_fade_in();
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn prompt_countdown_re_arms_on_any_input_and_only_fires_when_enabled() {
-        use legaia_engine_vm::title_overlay::COUNTDOWN_RESET_VALUE;
+        use crate::title_overlay::COUNTDOWN_RESET_VALUE;
         let reset = COUNTDOWN_RESET_VALUE as i32;
         let mut s = TitleSession::new();
         s.skip_fade_in();
@@ -780,7 +780,7 @@ mod tests {
 
     #[test]
     fn prompt_ignores_start_inside_the_freeze_band() {
-        use legaia_engine_vm::title_overlay::{ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE};
+        use crate::title_overlay::{ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE};
         let mut s = TitleSession::new();
         s.attract_enabled = true;
         s.skip_fade_in();

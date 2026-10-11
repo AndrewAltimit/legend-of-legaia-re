@@ -18,7 +18,7 @@
 //!
 //! Bytecode is hand-authored - no Sony bytes.
 
-use legaia_engine_vm::escape_timer::EscapeTimer;
+use legaia_engine_field::escape_timer::EscapeTimer;
 use legaia_engine_vm::field::{FieldCtx, FieldHost, StepResult, step};
 
 /// Minimal host: records the one hook this chain needs.

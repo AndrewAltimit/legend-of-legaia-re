@@ -18,7 +18,7 @@
 //! - [`refresh_region_attributes`] - `FUN_800180EC`, the per-tile refresh:
 //!   rebuilds the region-type bitmask (`_DAT_8007B8F4` - the bank the
 //!   field-VM op `0x42` mode 0 tests via
-//!   [`crate::field::FieldHost::extra_flags`]) by ORing
+//!   [`legaia_engine_vm::field::FieldHost::extra_flags`]) by ORing
 //!   `1 << type` for every region containing the tile, and latches the last
 //!   type-0/1 region's raw box bytes into the scratchpad attribute block
 //!   (`0x1F800384..87` + type at `0x1F80037C`). Falls back to the full-map

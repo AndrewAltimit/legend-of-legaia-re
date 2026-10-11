@@ -2238,7 +2238,7 @@ A survey of the high-reference `0x801F` VA band the field overlay shares with th
 | `0x801D32BC` | REAL (small) | Field opcode-arm helper: `if ((v0 >> 16) == 0x100) func_0x800430AC(*(u8*)(s6+1)); return pc + 3`. Aliases a 98-insn `battle_action(898)` body. | `overlay_0897_801d32bc.txt` |
 | `0x801DBC30` / `0x801DBB8C` | WRONG IMAGE | Real entries, but in PROT 0898 (the party-panel pair). The `overlay_0897_*` dumps at these VAs list PROT 0897's `0x801EA448` / `0x801EA3A4` (the `0xE818` re-key) and then a PROT 0898 loop. See [§ below](#the-overlay_0897_801dbc30-dump-is-a-chimera-of-two-prot-entries). | dumps as named |
 | `0x801D0D38` | REAL, render-track | Party-roster panel renderer (op-`0x49` submode family) - see [§ below](#party-roster-panel-renderers). Its direct `overlay_0897_801d0d38` dump is a truncated alias; the full body is in the cutscene-dialogue / mapview field captures. | `overlay_cutscene_dialogue_801d0d38.txt` |
-| `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_vm::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
+| `0x801D095C` | REAL, render-track | Passive-ability indicator HUD above the player - **not** a roster panel; see [§ below](#the-passive-ability-indicator-hud-fun_801d095c). Ported: `legaia_engine_field::field_passive_hud`. | `overlay_cutscene_dialogue_801d095c.txt` |
 | `0x801E4470` | REAL, render-track | Attached-sprite projection tick - documented in [`actor-vm.md`](actor-vm.md). Ported: `legaia_engine_vm::field_actor_billboard`. | `overlay_cutscene_dialogue_801e4470.txt` |
 
 `FUN_801F2098` is a byte-for-byte VA-aliased duplicate of the living-slot scanner already documented as `FUN_801DB8B4` in [`battle-formulas.md`](battle-formulas.md) (Rust `battle_formulas::round::needs_retarget`): starting at `&DAT_801C937C` it returns the lowest actor slot `3..=6` whose HP field `+0x14C` is nonzero, else `7`. It is not re-ported.
@@ -2258,7 +2258,7 @@ Its layout half - average the members' projected screen X, centre, then relax ov
 
 ### The op-`0x49` subsystem actor (`FUN_801F1278` / `FUN_801F159C`)
 
-The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_vm::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
+The STATE_RESUME "Done writer (field-overlay `FUN_801F159C`-class)" named above is the dispatcher of the subsystem actor that op `0x49` and the field menu button both spawn. It is not a party picker: its default handler is slot `7` of the table `PTR_FUN_801F33B4`, the state pick `FUN_801F1F4C`, which moves the actor on to the pause-menu session `0x30`; a sub-op whose `0x801F33A4` byte is not `-1` replaces that `7` with its own screen. Ported as `legaia_engine_field::field_subsystem_enter` (the installer) and `field_state_pick` (slot `7`).
 
 - **Enter** `FUN_801F1278(actor)`: suspends field input (`FUN_801DE190`, sets `_DAT_8007C364+0x10` bit `0x80000`, clears pad latch `_DAT_1F800394` bit `0x8000`), forces the submode context `_DAT_801C6EA4+0x3E = 1`, saves the caller's `+0x50` into `+0x40` and installs handler `7` (the state pick), seeds three roster cells `_DAT_801C6EA4+0x36/+0x38/+0x3A` from the roster `DAT_80084594` (count) / `DAT_80084598..A` (member ids), homes the cursor (`+0x46=0xA0`,`+0x48=0x58`), and if a parked op-`0x49` operand `_DAT_8007B450` is live remaps `+0x50` through the sub-op table `&DAT_801F33A4` (below).
 - **Resume / close** `FUN_801F159C(actor)`: active only while submode state `DAT_801F2734 ∈ {1,4,7}`; re-arms via `FUN_801F1278` when a pad flag is set, dispatches the per-frame handler `PTR_FUN_801F33B4[actor+0x50]`, and on confirm (`_DAT_801C6EA4+0x3E == 0`) sets the actor yield bit (`+0x10 |= 8`), releases the pad latch, and drops the field/tile-board busy flag (`_DAT_8007B450` / `_DAT_8007C364+0x10 &= ~0x80000`).
@@ -2309,7 +2309,7 @@ real caller is not a script: the walk tick `FUN_801D0B90` stores the static
 record `0x801F2278`, whose first byte is `0x0B`, into `_DAT_8007B450` on the
 tick the Incense window reaches zero, so the enter half's table read lands on
 this row ([field-menu.md](field-menu.md#command-sub-flows-use--throw-out--arrange)). The "sub-menu"
-name described the state machine's shape, not what it draws. Port: `legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`, with
+name described the state machine's shape, not what it draws. Port: `legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`, with
 the disc pin in `crates/engine-core/tests/w1b_hub_tables_disc.rs`.
 
 #### Sub-op `2`: the code lock
@@ -2336,7 +2336,7 @@ at `(0x40, 0x90)`, whose painter `FUN_801F17D8` prints the prompt string
 `0x801CF09C` and one system-UI cell `0x37 + symbol` per entered symbol, `0x20`
 apart, `0x10` below and right of the window origin.
 
-Port: `legaia_engine_vm::code_lock_actor` (the state machine),
+Port: `legaia_engine_field::code_lock_actor` (the state machine),
 `legaia_engine_core::field_submode_code_lock` (the slot on the submode
 driver, the flag write, the window's lines), drawn on both play hosts through
 `SceneHost::code_lock_lines`; the disc-gated `code_lock_doman_disc` runs
@@ -2371,7 +2371,7 @@ Which descriptor a state machine installs is therefore what selects its
 painter, not the caller: the coin counter's confirm installs the record whose
 painter is `FUN_801F1890` (the three-line panel), and the sub-menu's idle and
 confirm both install `FUN_801F1B64` (the single label). Port:
-`legaia_engine_vm::baka_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
+`legaia_engine_field::submode_hub_actors::{PANEL_WINDOW_TABLE, window, panel_windows}`.
 
 The install sites, read from the dispatchers' own instructions: the coin
 counter builds `a0 = 0x801F3360` and calls `FUN_801E9B3C` at `0x801F0CC0`
@@ -2544,7 +2544,7 @@ is an immediate:
   `0x49` at `x + 2` on a 10-pixel pitch, starting at `y + (5 - 5*n)` for `n`
   set bits - i.e. the column is centred on the anchor.
 
-Ported: [`legaia_engine_vm::field_passive_hud`](../../crates/engine-vm/src/field_passive_hud.rs).
+Ported: [`legaia_engine_field::field_passive_hud`](../../crates/engine-field/src/field_passive_hud.rs).
 `see ghidra/scripts/funcs/overlay_cutscene_dialogue_801d095c.txt`.
 
 ## Field dialogue has no opcode
@@ -2904,7 +2904,7 @@ The library is `legaia_asset::field_disasm::{decode, LinearWalker, find_fmv_trig
 
 ## FMV-trigger sites - exhaustive backward sweep
 
-A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
+A grep across every Ghidra dump in the corpus for writes to the global game-mode word `_DAT_8007B83C = 0x1A` (the `StrInit` mode that boots the str_fmv overlay) finds only the field-VM op plus the title-attract path (pinned at two PCs in the title overlay). The sites are codified in [`legaia_engine_system::cutscene_trigger`](../../crates/engine-system/src/cutscene_trigger.rs) as `FMV_TRIGGER_SITES`:
 
 | Label | Function | Mode-write addr | FMV-id source | Trigger condition |
 |---|---|---|---|---|

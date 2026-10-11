@@ -119,7 +119,7 @@ pub const WATER_TILE_CLASSES: [(u32, i32, i32); 3] =
 // `+0x8000` per-tile cell word (`andi v1,v1,0x4000` at `0x801D3374`, over a
 // halfword loaded through the scratchpad scene pointer at `0x801D3330`), and
 // the class word is then rebuilt by `FUN_800180EC` - the region-kind mask
-// [`legaia_engine_vm::field_regions::refresh_region_attributes`] already ports - called
+// [`legaia_engine_field::field_regions::refresh_region_attributes`] already ports - called
 // at `0x801D3384` with the same tile pair. `FUN_801D7030`'s probe is a
 // separate read with a separate consequence.
 pub fn water_tile_class(flags: u32) -> Option<(i32, i32)> {

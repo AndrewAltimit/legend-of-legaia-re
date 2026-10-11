@@ -302,7 +302,7 @@ impl PanelActorHost {
     }
 
     /// Release a brightness flash parked at the hold phase
-    /// ([`legaia_engine_vm::world_map_panel_actors::FADE_FLASH_HOLD_PHASE`]),
+    /// ([`crate::world_map_panel_actors::FADE_FLASH_HOLD_PHASE`]),
     /// the way retail's menu overlay does when its save/load UI finishes.
     ///
     /// The release is **gated on an outstanding save screen** because that is
@@ -361,7 +361,7 @@ impl PanelActorHost {
     ///
     /// The one id this host *does* follow is `0`, the close tick
     /// ([`PanelActorKind::CloseTick`]): its body is ported
-    /// ([`legaia_engine_vm::baka_hub_actors::close_tick`]) and it is the
+    /// ([`crate::submode_hub_actors::close_tick`]) and it is the
     /// handler every such exit names, so the actor stays installed for it and
     /// retires when the tick clears the completion gate.
     fn retire(&mut self, frame: &mut PanelFrame, exit: ActorExit) {
@@ -375,7 +375,7 @@ impl PanelActorHost {
         self.travel = None;
         self.save_screen = None;
         self.timer = 0;
-        if exit.next_handler == legaia_engine_vm::baka_hub_actors::slot::CLOSE_TICK {
+        if exit.next_handler == crate::submode_hub_actors::slot::CLOSE_TICK {
             self.kind = Some(PanelActorKind::CloseTick);
             return;
         }
@@ -396,7 +396,7 @@ impl PanelActorHost {
     /// only while the input lock `_DAT_8007BB80` is down
     /// (`0x801F2184..0x801F21A0`) - so a locked frame keeps the actor up.
     fn tick_close_tick(&mut self, frame: &mut PanelFrame) {
-        use legaia_engine_vm::baka_hub_actors::{
+        use crate::submode_hub_actors::{
             self as hub, HubAction, HubActor, HubEnv, HubGrid,
         };
         let mut actor = HubActor {
@@ -550,7 +550,7 @@ impl PanelActorHost {
     }
 
     fn tick_soft_reset(&mut self, frame_delta: i32, pad_held: u16, frame: &mut PanelFrame) {
-        use legaia_engine_vm::world_map_panel_actors::{SoftResetEffect, SoftResetInput};
+        use crate::world_map_panel_actors::{SoftResetEffect, SoftResetInput};
         let (phase, slide, out) = soft_reset_tick(
             self.phase,
             SoftResetInput {
@@ -643,7 +643,7 @@ impl PanelActorHost {
                 // `FUN_80035BD0(0)` (`0x801EE9AC`) then `FUN_80035B50(0x25)`
                 // (`0x801EE9B4`): the move cue overwrites, the restore pushes.
                 TextBoxEffect::PlaySfx(s) => frame.sfx.push(
-                    if s == legaia_engine_vm::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
+                    if s == crate::world_map_panel_actors::TEXT_BOX_MOVE_SFX {
                         crate::sound_state::SfxRingOp::ReplaceLast(s as i16)
                     } else {
                         crate::sound_state::SfxRingOp::Push(s as i16)
@@ -692,7 +692,7 @@ impl PanelActorHost {
                     }
                 }
                 FlagWindowEffect::SizePanel { y, height } => {
-                    let i = legaia_engine_vm::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX;
+                    let i = crate::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX;
                     if let Some(d) = self.windows.descriptors.get_mut(i) {
                         d.y = y as i16;
                         d.height = height as i16;
@@ -734,7 +734,7 @@ impl PanelActorHost {
         frame.clear_warp_hold = out.clear_warp_hold;
         frame.restore_player = out.restore_player;
         if out.spawn_flash {
-            frame.brightness = Some(legaia_engine_vm::world_map_panel_actors::BRIGHTNESS_MAX);
+            frame.brightness = Some(crate::world_map_panel_actors::BRIGHTNESS_MAX);
         }
         if out.unfound {
             frame.travel_unfound = true;

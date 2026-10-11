@@ -6,7 +6,7 @@ impl World {
     /// Open one op-`0x49` sub-screen on the submode driver actor.
     ///
     /// `handler` is a `PTR_FUN_801F33B4` index (see
-    /// [`legaia_engine_vm::baka_hub_actors::slot`]) and `window` the
+    /// [`legaia_engine_field::submode_hub_actors::slot`]) and `window` the
     /// panel-window record whose painter draws it, if one is known.
     ///
     /// Retail's enter path also seeds the cursor context's completion gate to
@@ -70,7 +70,7 @@ impl World {
     }
 
     /// Open the casino **coin counter** - buy coins with party gold at
-    /// [`legaia_engine_vm::baka_hub_actors::GOLD_PER_COIN`] each.
+    /// [`legaia_engine_field::submode_hub_actors::GOLD_PER_COIN`] each.
     ///
     /// Handler slot `0x25`. No window is pinned: the counter's own arms
     /// install `PANEL_COIN_IDLE` and `PANEL_COIN_CONFIRM`, and those
@@ -152,7 +152,7 @@ impl World {
         let lock_edge = env.pad_edge;
         let lock_blocked = env.input_blocked != 0;
         let lock_delta = env.frame_delta;
-        let flag_pad = legaia_engine_vm::world_map_panel::CursorPad {
+        let flag_pad = legaia_engine_field::world_map_panel::CursorPad {
             held: env.pad_edge,
             pressed: env.pad_repeat,
             action_a_mask: SUBMODE_ACCEPT_MASK,
@@ -204,7 +204,7 @@ impl World {
                     &mut flag_writes,
                 )
             } else if a.state == SOFT_RESET_SLOT {
-                use legaia_engine_vm::world_map_panel_actors::{SoftResetInput, soft_reset_tick};
+                use legaia_engine_field::world_map_panel_actors::{SoftResetInput, soft_reset_tick};
                 let (phase, slide, fx) = soft_reset_tick(
                     soft_reset.phase,
                     SoftResetInput {

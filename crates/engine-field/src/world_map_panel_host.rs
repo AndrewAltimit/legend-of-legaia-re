@@ -1,10 +1,10 @@
 //! Host for the world-map band's **panel windows and panel actors**.
 //!
-//! [`legaia_engine_vm::world_map_panel`] ports the three shared leaves of the
+//! [`crate::world_map_panel`] ports the three shared leaves of the
 //! field overlay's world-map band - the panel command-script interpreter
 //! (`FUN_801E9B3C`), the shared list cursor (`FUN_801E9DC8`) and the dev-menu
 //! row-action dispatcher (`FUN_801EA9B0`) - and
-//! [`legaia_engine_vm::world_map_panel_actors`] ports the six `ctx[+0x54]`
+//! [`crate::world_map_panel_actors`] ports the six `ctx[+0x54]`
 //! phase machines that sit on top of them. Both were hostless: they modelled a
 //! screen the engine did not have. This module is that screen's simulation
 //! half, hung off [`crate::world_map::WorldMapController`] and driven once a
@@ -31,9 +31,9 @@
 //!    handler id into `ctx[+0x50]`, which `FUN_801F159C` turns back into a
 //!    function pointer through the 52-entry `PTR_FUN_801F33B4`. The
 //!    dispatcher itself is ported
-//!    ([`legaia_engine_vm::baka_hub_actors::hub_dispatch`]) but takes the
+//!    ([`crate::submode_hub_actors::hub_dispatch`]) but takes the
 //!    resolved handler as a closure, and only seven of the table's slots are
-//!    read out ([`legaia_engine_vm::baka_hub_actors::slot`]) - `0x1A`, which
+//!    read out ([`crate::submode_hub_actors::slot`]) - `0x1A`, which
 //!    the sub-list / text-box / flag-window exits hand back to, and not the
 //!    `0x29` / `0x2B` the fade/flash exits pick. So [`ActorExit::apply`] makes
 //!    all four stores here and [`PanelActorHost::retire`] drops the actor,
@@ -70,13 +70,13 @@
 //! [`packed_pad`] does the conversion and every entry point here takes packed
 //! words only.
 
-use legaia_engine_vm::travel_art_actor::{
+use crate::travel_art_actor::{
     TravelArt, TravelArtActor, TravelDestination, destination_for, find_visited_map,
 };
-use legaia_engine_vm::world_map_panel::{
+use crate::world_map_panel::{
     CursorPad, PanelCommand, PanelDescriptor, PanelEffect, run_panel_script,
 };
-use legaia_engine_vm::world_map_panel_actors::{
+use crate::world_map_panel_actors::{
     ActorExit, BRIGHTNESS_MAX, FLASH_COUNTER_DONE_STEP, FLASH_COUNTER_SEED_A, FLASH_COUNTER_SEED_B,
     FadeFlashEffect, FadeFlashInput, FillFadeEffect, FillFadeInput, FlagWindowDescriptor,
     FlagWindowEffect, FlagWindowInput, HudDecision, HudInput, SubListEffect, SubListInput,

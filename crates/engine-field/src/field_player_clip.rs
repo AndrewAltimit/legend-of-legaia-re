@@ -10,7 +10,7 @@
 //!    `FUN_801D01B0` writes it every frame it runs
 //!    (`0x801D0424..0x801D04A4`, see [`locomotion_clip_base`]); the hop phase
 //!    machine `FUN_801D2298` writes `6` / `7` / `1`
-//!    ([`crate::field_ledge_hop_arc::hop_phase`]); the walk-on dispatcher
+//!    ([`legaia_engine_vm::field_ledge_hop_arc::hop_phase`]); the walk-on dispatcher
 //!    `FUN_801D1EC4` writes `2` under the scene flag `_DAT_8007B6A8`
 //!    (`0x801D21AC`); scene entry seeds `2` (SCUS `0x8003B364`).
 //! 2. **The settle tail picks the clip.** Every grounded frame that did not
@@ -187,7 +187,7 @@ impl SettleClipPick {
 /// ```
 ///
 /// The arithmetic is the same as the unreferenced helper `FUN_801E58A8`
-/// ([`crate::menu_actor_seed::actor_clip_pick`], which stays the port of that
+/// ([`crate::pooled_actor_seed::actor_clip_pick`], which stays the port of that
 /// retail-unreachable copy); this is the copy retail actually runs, and it
 /// adds the two bind gates (`0x801D1E2C..0x801D1E4C`)
 /// and the override arm's clear-bind-restore of the flag

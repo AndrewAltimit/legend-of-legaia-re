@@ -35,8 +35,8 @@ pub struct ClutCellFx {
 /// loads the cell out of VRAM (the handler's `+0x54 == 0` init block).
 #[derive(Debug, Clone)]
 pub struct ClutBlendFx {
-    pub record: legaia_engine_vm::world_map_clut_fade::FadeRecord,
-    pub fade: Option<legaia_engine_vm::world_map_clut_fade::ClutBlendFade>,
+    pub record: legaia_engine_field::clut_fade_actor::FadeRecord,
+    pub fade: Option<legaia_engine_field::clut_fade_actor::ClutBlendFade>,
 }
 
 /// Read one 16x1 CLUT cell out of software VRAM (the `StoreImage`
@@ -91,7 +91,7 @@ impl World {
     /// Spawn the single-source CLUT blend fade from field-VM `4C DB`'s
     /// operand stream (`record` starts at the `0xDB` byte, the pointer
     /// retail stores at actor `+0x90`; offsets `+1..=+0xB` are the record
-    /// [`legaia_engine_vm::world_map_clut_fade::FadeRecord`] decodes).
+    /// [`legaia_engine_field::clut_fade_actor::FadeRecord`] decodes).
     /// Stepped against the host's software VRAM by [`Self::step_clut_fx`].
     /// A record shorter than twelve bytes is dropped.
     ///
@@ -101,7 +101,7 @@ impl World {
         if record.len() < 12 {
             return;
         }
-        let record = legaia_engine_vm::world_map_clut_fade::FadeRecord::from_bytes(record);
+        let record = legaia_engine_field::clut_fade_actor::FadeRecord::from_bytes(record);
         self.ambient
             .clut_blend_fx
             .push(ClutBlendFx { record, fade: None });
@@ -189,12 +189,12 @@ impl World {
     /// The `4C DB` blend fades' share of [`Self::step_clut_fx`]: per game
     /// tick, load the cell on the first one, advance the accumulator by `dt`
     /// vsyncs and write the returned row back to the same cell; a
-    /// [`legaia_engine_vm::world_map_clut_fade::FadeStep::Done`] row is
+    /// [`legaia_engine_field::clut_fade_actor::FadeStep::Done`] row is
     /// written and the fade retires (retail sets `+0x10 |= 8`).
     ///
     /// REF: FUN_801E4D8C (the per-tick handler the kernel ports)
     fn step_clut_blend_fx(&mut self, vram: &mut legaia_tim::Vram, ticks: u32, dt: u8) -> bool {
-        use legaia_engine_vm::world_map_clut_fade::{ClutBlendFade, FadeStep};
+        use legaia_engine_field::clut_fade_actor::{ClutBlendFade, FadeStep};
         let mut wrote = false;
         let mut still = Vec::new();
         for mut fx in std::mem::take(&mut self.ambient.clut_blend_fx) {

@@ -8,7 +8,7 @@ use super::*;
 /// Field-scene carrier entities: the per-entity FUN_801DA51C state machines ticked in field scenes and their battle / engage handoffs.
 pub struct FieldCarrierState {
     /// Per-entity **field** state machines - the same `FUN_801DA51C` SM the
-    /// overworld uses ([`vm::world_map`]), but ticked in [`crate::world::SceneMode::Field`]
+    /// overworld uses ([`legaia_engine_field::world_map_entity`]), but ticked in [`crate::world::SceneMode::Field`]
     /// for the scene's MAN-placed actors. A scripted-encounter carrier (the
     /// Rim Elm Tetsu fight) sits Idle until [`crate::world::World::engage_field_carrier`]
     /// (the dialogue-accept) advances it to `Activating`; the next
@@ -16,7 +16,7 @@ pub struct FieldCarrierState {
     /// battle, mirroring retail's state-1 `entity[+0x94]` copy + `case 2/3`
     /// fall-through battle handoff. Empty unless
     /// [`crate::world::World::install_field_carriers`] seeded them.
-    pub(crate) entities: Vec<vm::world_map::WorldMapEntityCtx>,
+    pub(crate) entities: Vec<legaia_engine_field::world_map_entity::WorldMapEntityCtx>,
     /// Per-carrier role config, paired by index with [`crate::world::FieldCarrierState::entities`].
     pub configs: Vec<FieldCarrierConfig>,
     /// Field carrier battle pending resolution: the MAN `formation_id` a

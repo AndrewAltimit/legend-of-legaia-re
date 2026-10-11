@@ -43,7 +43,7 @@ use legaia_engine_core::man_field_scripts::{
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{EasedMoveTarget, SceneMode, World};
 use legaia_engine_vm::field::FieldCtx;
-use legaia_engine_vm::field_actor_reflect::{HALF_TURN, REFLECT_HANDLER, tile_of};
+use legaia_engine_field::field_actor_reflect::{HALF_TURN, REFLECT_HANDLER, tile_of};
 use legaia_engine_vm::field_disasm::{EffectKind, Insn, InsnInfo, LinearWalker, MenuCtrlKind};
 
 /// The placement index the executing script owns in every fixture below.

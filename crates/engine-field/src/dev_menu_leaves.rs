@@ -555,7 +555,7 @@ pub enum StatDelta {
 ///
 /// Wired: [`equip_stat_panel`] is the whole sub-draw and runs this twice - once
 /// over the live loadout, once over the trial one - and
-/// [`crate::baka_hub_actors::entry_list`] calls it where the `jal` sits. The
+/// [`crate::submode_hub_actors::entry_list`] calls it where the `jal` sits. The
 /// live path is `World::tick_submode_screen` -> `HubPainter::EntryList` ->
 /// `entry_list`.
 /// PORT: FUN_801E5B4C (aggregation loops)
@@ -839,7 +839,7 @@ pub fn equip_candidate(mode: u32, cursor: i32, inventory: &[u8]) -> EquipCandida
 ///
 /// PORT: FUN_801E5B4C
 ///
-/// Wired: [`crate::baka_hub_actors::entry_list`] calls this where retail's
+/// Wired: [`crate::submode_hub_actors::entry_list`] calls this where retail's
 /// `jal 0x801F1778` sits, once per drawn entry. Its own caller chain is
 /// `World::tick_submode_screen` -> `HubPainter::EntryList`.
 pub fn equip_stat_panel(

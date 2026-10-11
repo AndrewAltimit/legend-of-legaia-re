@@ -159,7 +159,7 @@ pub const SUBMODE_BACK_MASK: u32 = crate::dev_menu::PACK_CIRCLE as u32;
 /// (`FUN_801F1950`).
 ///
 /// Not the coin counter's: that screen installs
-/// [`legaia_engine_vm::baka_hub_actors::PANEL_COIN_CONFIRM`], which names the
+/// [`legaia_engine_field::submode_hub_actors::PANEL_COIN_CONFIRM`], which names the
 /// three-line record. Kept because a host that wants the Yes/No panel by
 /// itself has no descriptor to install.
 pub const COIN_PANEL_WINDOW: usize = hub::window::TWO_OPTION;
@@ -183,7 +183,7 @@ pub use crate::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS;
 /// The handler slot an op-`0x49` sub-op opens.
 ///
 /// This is retail's own selection: the 14-byte table
-/// [`legaia_engine_vm::baka_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`,
+/// [`legaia_engine_field::submode_hub_actors::OP49_SUBOP_SLOTS`] at `0x801F33A4`,
 /// which the submode enter half indexes with the parked operand's first byte.
 /// The engine previously had no mapping and opened the close tick for every
 /// sub-op, so every screen but the three dedicated ones closed itself

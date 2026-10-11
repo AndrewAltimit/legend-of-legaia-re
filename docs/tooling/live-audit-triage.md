@@ -233,7 +233,7 @@ verdicts; `engine-core` re-exports them.
 | `80024e80` | `spawn_fade` | `crates/engine-system/src/fade.rs` | WIRE (wired) |
 | `80026018` | `minigame_return_warp` | `crates/engine-core/src/world/frame_tick/minigame_sessions/round_trip.rs` | WIRE (wired) |
 | `80038050` | `confirm_menu` | `crates/engine-dialog/src/dialog.rs` | FALSE INERT |
-| `8003a55c` | `MapObject` | `crates/engine-vm/src/field_regions.rs` | FALSE INERT |
+| `8003a55c` | `MapObject` | `crates/engine-field/src/field_regions.rs` | FALSE INERT |
 | `8003ebe4` / `8003ec70` | `load_overlay_a` / `load_overlay_b` + module | `crates/engine-core/src/overlay_loader.rs` | DISCLOSE |
 | `800520f0` | `battle_stage_overlay_entry` | `crates/engine-core/src/overlay_loader.rs` | DISCLOSE |
 | `801cea3c` | `fmv_post_play_handoff` | `crates/engine-system/src/cutscene.rs` | WIRE (wired) |
@@ -266,15 +266,15 @@ verdicts; `engine-core` re-exports them.
 | `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/scus_core_helpers.rs` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs` | REPLACE |
 | `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs` | FALSE INERT |
-| `8003c9ac` | `motion_pause_kick` + module | `crates/engine-vm/src/motion_pause.rs` | WIRE (wired) |
+| `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `801d829c` | `build_camera_angle_tween` | `crates/engine-battle-vm/src/battle_camera.rs` | WIRE (wired) |
 | `801d9d30` | `apply_shake` | `crates/engine-battle-vm/src/battle_camera.rs` | DISCLOSE |
 | `801e0088` | `child_billboards` / `pass2_brightness` | `crates/engine-vm/src/effect_vm/pool.rs` | FALSE INERT |
-| `801e36c4` | `exec_centered_bar` | `crates/engine-vm/src/title_prim.rs` | DISCLOSE |
-| `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-vm/src/title_prim.rs` | DISCLOSE |
-| `801e3ee0` | `exec_centered_text` | `crates/engine-vm/src/title_prim.rs` | DISCLOSE |
+| `801e36c4` | `exec_centered_bar` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
+| `801e373c` | `init_card_state` / `exec_card_init` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
+| `801e3ee0` | `exec_centered_text` | `crates/engine-menus/src/title_prim.rs` | DISCLOSE |
 | `801f0348` | `camera_height_from_size_class` | `crates/engine-battle-vm/src/battle_formulas/round.rs` | DELETE |
 
 ### `FALSE INERT` evidence

@@ -27,7 +27,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use legaia_engine_core::input::PadButton;
-use legaia_engine_vm::world_map_panel_actors::SUBLIST_CONFIRM_SFX;
+use legaia_engine_field::world_map_panel_actors::SUBLIST_CONFIRM_SFX;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 fn tick(rt: &mut LegaiaRuntime, n: usize) {

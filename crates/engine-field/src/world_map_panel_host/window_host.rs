@@ -51,12 +51,12 @@ impl PanelScripts {
     /// Each script is the smallest command sequence that makes the actor above
     /// it observable: the sub-list opens its panel and resizes the party panel
     /// (which is what exercises
-    /// [`legaia_engine_vm::world_map_panel::party_panel_geometry`]), the close
+    /// [`crate::world_map_panel::party_panel_geometry`]), the close
     /// script closes it, the fill-fade script clears the screen, and the
     /// flag-window script opens descriptor `14` at the geometry the picker
     /// just wrote into it.
     pub fn stand_in() -> Self {
-        use legaia_engine_vm::world_map_panel_actors as actors;
+        use crate::world_map_panel_actors as actors;
         let mut s = Self::default();
         let cmd = |op: u16, panel: i16, operand: u32| PanelCommand { op, panel, operand };
         // Open at the descriptor position, then run the party-panel resize.

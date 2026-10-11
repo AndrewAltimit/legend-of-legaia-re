@@ -25,7 +25,7 @@
 //!
 //! This test decodes the three operand blocks off the disc, checks them
 //! against the captured spawn words, and replays the captured source samples
-//! through the port's tick (`legaia_engine_vm::field_actor_reflect`),
+//! through the port's tick (`legaia_engine_field::field_actor_reflect`),
 //! asserting the captured destination.
 //!
 //! REF: FUN_801E573C (spawner), FUN_801E5154 (tick)
@@ -36,7 +36,7 @@ use legaia_asset::field_disasm::LinearWalker;
 use legaia_asset::man_section::parse as parse_man;
 use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::scene::{Scene, SceneHost};
-use legaia_engine_vm::field_actor_reflect::{
+use legaia_engine_field::field_actor_reflect::{
     ReflectActor, ReflectOutcome, spawn_controller, tick_reflection,
 };
 use std::path::PathBuf;

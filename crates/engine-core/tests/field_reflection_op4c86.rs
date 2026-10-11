@@ -20,7 +20,7 @@ use legaia_engine_core::actor_handler::ActorHandler;
 use legaia_engine_core::field_channels::FieldChannel;
 use legaia_engine_core::world::{EasedMoveTarget, World};
 use legaia_engine_vm::field::FieldCtx;
-use legaia_engine_vm::field_actor_reflect::REFLECT_HANDLER;
+use legaia_engine_field::field_actor_reflect::REFLECT_HANDLER;
 
 const INSTALL: [u8; 15] = [
     0x4C, 0x86, 0x00, 0x00, 0xA0, 0x37, 0x1E, 0x00, 0x5A, 0x00, 0x26, 0x00, 0x6E, 0x00, 0xF8,

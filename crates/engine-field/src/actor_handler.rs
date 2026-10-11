@@ -104,7 +104,7 @@ pub const VA_SUBMODE_DRIVER: u32 = crate::field_submode::SUBMODE_DRIVER_HANDLER;
 ///
 /// `4C 87` was named alongside it and is a different teardown: its arm
 /// `0x801E2284` materialises `0x801E5154`, the reflection-callback tick
-/// ([`legaia_engine_vm::field_actor_reflect`]), not this handler. The two
+/// ([`crate::field_actor_reflect`]), not this handler. The two
 /// ops share only the tail at `0x801E2DC4`. Its install sibling is `4C 86`
 /// (`0x801E2250`, through the spawner `FUN_801E573C`) - the nibble-8
 /// sub-table at `0x801CEF48` puts the pair at consecutive slots 6 and 7.
@@ -123,8 +123,8 @@ pub const VA_CLIP_FADE: u32 = crate::field_actor_clone::CLONE_HANDLER;
 /// `FUN_801E5154` - the **reflection controller** tick, the handler on the
 /// field-overlay descriptor `0x801F2948` that the field VM's `4C 86` spawner
 /// `FUN_801E573C` allocates from (and that `4C 87` retires). Its body is
-/// [`legaia_engine_vm::field_actor_reflect::tick_reflection`].
-pub const VA_REFLECTION: u32 = legaia_engine_vm::field_actor_reflect::REFLECT_HANDLER;
+/// [`crate::field_actor_reflect::tick_reflection`].
+pub const VA_REFLECTION: u32 = crate::field_actor_reflect::REFLECT_HANDLER;
 
 /// `FUN_801DBE9C` - the handler on the fixed scene-actor template
 /// `0x801F2810` that `FUN_801DE478` spawns from (field `0x023FF8`, word `+8`).
@@ -228,7 +228,7 @@ pub enum HandlerKernel {
     /// `legaia_engine_core::world::World::tick_handler_actors` over the clones the field
     /// VM's op `0x4C` sub-1 sub-op `0x14` spawns.
     ClipFade,
-    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`], run by
+    /// [`crate::field_actor_reflect::tick_reflection`], run by
     /// `legaia_engine_core::world::World::tick_handler_actors` over the mirror pairs the
     /// field VM's `4C 86` arm installs.
     Reflection,

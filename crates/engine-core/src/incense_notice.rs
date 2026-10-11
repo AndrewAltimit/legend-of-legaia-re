@@ -16,7 +16,7 @@
 //! The driver's enter half `FUN_801F1278` maps the record's kind byte through
 //! the sub-op table at `0x801F33A4` (`lb v0,0(v0)` at `0x801F1468`): kind
 //! `0x0B` -> handler slot `0x32`, which is `FUN_801F1E48`. That handler is a
-//! three-state notice (`legaia_engine_vm::baka_hub_actors::submenu`):
+//! three-state notice (`legaia_engine_field::submode_hub_actors::submenu`):
 //!
 //! - state `0` installs descriptor `0x801F3294` (show window record `16`) and
 //!   clears `_DAT_8007B888`;
@@ -50,7 +50,7 @@
 //!
 //! REF: FUN_801D0B90, FUN_801F1278, FUN_801F1E48, FUN_801F1B64
 
-use legaia_engine_vm::baka_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
+use legaia_engine_field::submode_hub_actors::{self as hub, HubAction, HubActor, HubEnv, HubGrid};
 
 use crate::world::World;
 
@@ -206,7 +206,7 @@ impl World {
     /// panel installs and confirm cue, and close the notice (releasing the
     /// movement lock) once it hands back. No-op with no notice up.
     ///
-    /// REF: FUN_801F1E48 (body: [`legaia_engine_vm::baka_hub_actors::submenu`])
+    /// REF: FUN_801F1E48 (body: [`legaia_engine_field::submode_hub_actors::submenu`])
     pub fn tick_incense_notice(&mut self) {
         let Some(mut notice) = self.locomotion.incense_notice.take() else {
             return;

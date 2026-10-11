@@ -33,7 +33,7 @@ use legaia_engine_core::world_map::WorldMapController;
 use legaia_engine_core::world_map_panel_host::{
     FLASH_RELEASE_COUNTER, FLASH_RELEASE_COUNTER_ALT, PanelActorKind, SaveScreenOutcome,
 };
-use legaia_engine_vm::world_map_panel_actors::{BRIGHTNESS_MAX, FADE_FLASH_HOLD_PHASE};
+use legaia_engine_field::world_map_panel_actors::{BRIGHTNESS_MAX, FADE_FLASH_HOLD_PHASE};
 
 /// Descriptor `FUN_801D841C` passes to `FUN_80020DE0`.
 const SAVE_SCREEN_DESCRIPTOR: u32 = 0x8007_06BC;

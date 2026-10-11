@@ -39,8 +39,8 @@ use legaia_engine_core::world::World;
 use legaia_engine_core::world_map_panel_host::{
     PanelActorHost, PanelActorKind, PanelFlagStore, VisitedMap, packed_pad,
 };
-use legaia_engine_vm::travel_art_actor::TravelArt;
-use legaia_engine_vm::world_map_panel_actors::BRIGHTNESS_MAX;
+use legaia_engine_field::travel_art_actor::TravelArt;
+use legaia_engine_field::world_map_panel_actors::BRIGHTNESS_MAX;
 
 /// The three retail overworld scene bases, whose kingdom indices are `0/1/2`
 /// (`world_map::kingdom_index_for_scene_base`).
@@ -397,7 +397,7 @@ fn rula_lifts_the_player_actor_and_lands_it_at_the_stored_tile() {
     }
     assert!(warped, "the art resolved and retired");
     assert!(
-        min_y < legaia_engine_vm::travel_art_actor::RULA_LIFT_EXIT_Y,
+        min_y < legaia_engine_field::travel_art_actor::RULA_LIFT_EXIT_Y,
         "the lift moved the player actor above -0x618 (min Y {min_y})"
     );
     assert!(lifted_flag, "the lift raised the player's +0x10 bit 0");

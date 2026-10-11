@@ -20,7 +20,7 @@
 //! ```
 //!
 //! `+0x5C` is the actor's requested move-table id (the field-VM op 0x22
-//! target, [`crate::field::FieldCtx::move_id`]; the actor tick
+//! target, [`legaia_engine_vm::field::FieldCtx::move_id`]; the actor tick
 //! `FUN_8003BC08` runs the move-table consumer while it is `> 0`), and
 //! `+0x88` is the motion-VM mirror the `FUN_80038158` interpreter writes in
 //! lock-step with every `+0x5C` store. The table record's first byte is the

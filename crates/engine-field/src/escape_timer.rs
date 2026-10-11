@@ -16,12 +16,12 @@
 //! holds a zeroed readout for [`EXPIRED_HOLD`] frames after expiry and then
 //! kills the actor, ending the countdown - is [`EscapeTimerHud`].
 //!
-//! The installer half lives in [`crate::field`] (`FUN_801DE840` case 0xD sub
+//! The installer half lives in [`legaia_engine_vm::field`] (`FUN_801DE840` case 0xD sub
 //! 3, which writes the duration / threshold / packed-flag-word triple);
 //! `legaia_engine_core::World` joins the two through its
 //! `schedule_timed_flags` host hook and its per-frame `tick_escape_timer`.
 //!
-//! Split out of [`crate::world_map_overlay`], whose other four addresses are
+//! Split out of [`crate::dev_menu_leaves`], whose other four addresses are
 //! the developer-menu / records-screen leaves and have no engine caller.
 //! Written from the disassembly; no Sony bytes live here.
 

@@ -59,7 +59,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 | Which of PROT 0978 / 0979 / 0980 is the dance overlay? | resolved (**only** 0980) | `disassembly` | 0978 is `field_back_read`, the staged background loader; 0979 is the battle-intro image; 0980 is the dance overlay. |
 | The front-end mode chain, re-derived independently | resolved (the six stores, the four-word edge and the INIT hand-offs all hold) | `disassembly` | A three-form opcode scan for stores to the mode word over 84 images finds **53** store sites, and every row of the boot chain, the mode-change edge's four cleared `gp` words and the per-handler INIT hand-offs match it. Mode 18's hand-off is `li v0,0x13` at `0x801CE8D4` then the store at `0x801CE8DC`, inside `0x801CE844` in PROT 0902. |
 | Which mode does the retail title screen run under? | resolved (**card** mode `0x17`, not `0x10`) | `disassembly` | The front end is a chain of six mode stores, each written by the handler that hands off, not by a table's `next` field: `0x8001D5B8` -> `0x10`, `0x801CEC94` -> `0x11`, `0x801CF4D4` -> `0x16`, `0x80025974` -> `0x17`, `0x801DFC00` -> `0x02`, `0x80025E50` -> `0x03`. Mode `0x10` is one frame of logo INIT; the alternate arm at `0x801CF4E4` is the dev CONFIG route on the entry word. `0x80025974` is `li v0,0x17` + `sh v0,-0x47c4(at)` at `0x8002596C`; `0x801CEC94` is the `sh` in a `jal` delay slot. See [`boot.md`](../../subsystems/boot.md). |
-| What reads the title entry word `_DAT_8007BB00`? | resolved (two readers, both real) | `disassembly` | `0x801CF4B0` in the boot image and `0x801DD97C` in the title overlay. The port's counterpart is `title_overlay::ENTRY_WORD_ADDR`. |
+| What reads the title entry word `_DAT_8007BB00`? | resolved (two readers, both real) | `disassembly` | `0x801CF4B0` in the boot image and `0x801DD97C` in the title overlay. The port's counterpart is `mode_entry_init::ENTRY_WORD_ADDR`. |
 | What does a mode-change edge clear? | resolved (**four** gp words, not three) | `disassembly` | The edge at `0x800161F4` clears `0x8007B938` alongside the words at `gp+0x538` and `gp+0x55C`; `gp+0x564` and `gp+0x494` are mode *copies*, not cleared state. |
 | `_DAT_8007B8C2` - how many writers? | resolved (exactly one) | `disassembly` | `main()` at `0x80015F08` (`sh v0,0x5aa(gp)`), confirmed across 70 access sites in 84 images. The build-mode selector is set once at startup and never re-written, which is what makes the dev/retail fork in `FUN_8001F87C` a load-time decision. |
 | `_DAT_8007B8C2` polarity, and its writer | resolved (`!= 0` is retail, `== 0` is dev) | `disassembly` + `capture` | [details ↓](#_dat_8007b8c2-polarity-and-its-writer) |
@@ -1050,7 +1050,7 @@ Owning page: [`boot.md`](../../subsystems/boot.md#the-per-logo-quads).
 - **Entry:** a cold boot reaches `0x10` through `0x11`
   ([above](#a-cold-boot-always-shows-title-sub-mode-0x10)).
 
-Port: `legaia_engine_vm::title_overlay`'s executable half, driven by `engine-core::title` on both
+Port: `legaia_engine_menus::title_overlay`'s executable half, driven by `engine-core::title` on both
 hosts.
 
 ### `FUN_801E5A08`, the per-slot equip applier
@@ -1070,7 +1070,7 @@ hosts.
 - No `jal`, data word or `addiu` materialisation of `0x801E5A08` exists in any image. The live
   equip confirm is `FUN_801D9C14`'s candidate arm.
 
-Port: `legaia_engine_vm::dev_equip_commit::commit_equip`.
+Port: `legaia_engine_field::dev_equip_commit::commit_equip`.
 
 ### The dead Return view mode
 

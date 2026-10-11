@@ -233,9 +233,9 @@ impl World {
     ///   reboot also replays the boot logos on the way; the port does not.
     pub(super) fn apply_soft_reset_effects(
         &mut self,
-        fx: &[legaia_engine_vm::world_map_panel_actors::SoftResetEffect],
+        fx: &[legaia_engine_field::world_map_panel_actors::SoftResetEffect],
     ) {
-        use legaia_engine_vm::world_map_panel_actors::SoftResetEffect as Fx;
+        use legaia_engine_field::world_map_panel_actors::SoftResetEffect as Fx;
         for e in fx {
             match *e {
                 Fx::DrawRecords { y } => {

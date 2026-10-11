@@ -3,7 +3,7 @@
 use super::*;
 
 /// Bag + audio bindings the ported per-slot applier
-/// ([`legaia_engine_vm::dev_equip_commit::commit_equip`]) needs, backed by
+/// ([`legaia_engine_field::dev_equip_commit::commit_equip`]) needs, backed by
 /// an [`EquipSession`]'s own inventory map.
 ///
 /// Retail's bag index space is a slot index into the 256-entry bag; the
@@ -16,11 +16,11 @@ pub(super) struct SessionEquipHost<'a> {
     pub(super) sfx: Option<u8>,
 }
 
-impl legaia_engine_vm::dev_equip_commit::EquipCommitHost for SessionEquipHost<'_> {
+impl legaia_engine_field::dev_equip_commit::EquipCommitHost for SessionEquipHost<'_> {
     fn find_in_bag(&self, item_id: u8) -> u16 {
         match self.inventory.get(&item_id) {
             Some(qty) if *qty > 0 => item_id as u16,
-            _ => legaia_engine_vm::dev_equip_commit::BAG_MISS,
+            _ => legaia_engine_field::dev_equip_commit::BAG_MISS,
         }
     }
 

@@ -3,6 +3,8 @@ name = "legaia-engine-field"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_engine_field"
@@ -21,3 +23,7 @@ legaia-engine-vm.workspace = true
 legaia-mes.workspace = true
 legaia-tmd.workspace = true
 serde.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

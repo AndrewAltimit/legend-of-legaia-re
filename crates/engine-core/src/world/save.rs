@@ -756,7 +756,7 @@ impl World {
     ///    (`0x801D16A8..0x801D16B8`), while a kind-0 warp's timer
     ///    `_DAT_8007B6B0` runs, and while its post-warp pad hold
     ///    `_DAT_8007B6B4` drains (`0x801D16C8..0x801D16E4`,
-    ///    [`legaia_engine_vm::field_warp_tile::pad_suppressed`]). The engine
+    ///    [`legaia_engine_field::field_warp_tile::pad_suppressed`]). The engine
     ///    already held the player still through the warp; the menu button
     ///    stayed live through it. No shipped script issues `2E 0A`, so the
     ///    lock's writer is not a field-VM op.
@@ -808,7 +808,7 @@ impl World {
     fn field_menu_press_reaches_accept(&self) -> bool {
         self.scene_mode_takes_menu_open()
             && self.flags.story_flags & FIELD_SYSTEM_LOCK_BIT == 0
-            && !legaia_engine_vm::field_warp_tile::pad_suppressed(&self.locomotion.warp)
+            && !legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp)
             && !self.cutscene.opening_chain_active
             && !self.dialogue_owns_input()
             && !self.script_context_engages_player()
@@ -816,7 +816,7 @@ impl World {
             && !self.shops.prize_exchange_open
             && !self.cutscene_narration_active()
             && self.cutscene.card.is_none()
-            && self.field_menu_button_state() == legaia_engine_vm::field_state_pick::STATE_NORMAL
+            && self.field_menu_button_state() == legaia_engine_field::field_state_pick::STATE_NORMAL
     }
 
     /// The handler id the menu button's subsystem actor moves on to.
@@ -834,9 +834,9 @@ impl World {
     /// retail's zero.
     ///
     /// PORT driver for FUN_801F1F4C (the kernel is
-    /// `legaia_engine_vm::field_state_pick::state_pick`)
+    /// `legaia_engine_field::field_state_pick::state_pick`)
     pub fn field_menu_button_state(&self) -> u16 {
-        use legaia_engine_vm::field_state_pick::{StatePickInputs, state_pick};
+        use legaia_engine_field::field_state_pick::{StatePickInputs, state_pick};
         let debug = self
             .world_map
             .ctrl
@@ -849,7 +849,7 @@ impl World {
         };
         state_pick(
             inputs,
-            legaia_engine_vm::field_subsystem_enter::STATE_PICK_HANDLER,
+            legaia_engine_field::field_subsystem_enter::STATE_PICK_HANDLER,
         )
         .actor_state
     }

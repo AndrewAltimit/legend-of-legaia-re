@@ -463,7 +463,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     );
     assert_eq!(
         world.carriers.entities[0].state,
-        vm::world_map::EntityState::Terminal as u16,
+        legaia_engine_field::world_map_entity::EntityState::Terminal as u16,
         "carrier retired to Terminal after the transition"
     );
 
@@ -481,7 +481,7 @@ fn field_carrier_engage_launches_battle_and_returns_to_field() {
     // The carrier stays Terminal - the scripted fight fires exactly once.
     assert_eq!(
         world.carriers.entities[0].state,
-        vm::world_map::EntityState::Terminal as u16
+        legaia_engine_field::world_map_entity::EntityState::Terminal as u16
     );
 }
 

@@ -372,7 +372,7 @@ composes them.
   loaded `Scene` - `scene_man_carriers` and the scene-name entry points of
   the system-flag, op-`0x49` window and motion-flag censuses.
 - **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
-  entity SM (`legaia_engine_vm::world_map`) in `SceneMode::Field` as well as
+  entity SM (`legaia_engine_field::world_map_entity`) in `SceneMode::Field` as well as
   on the overworld. `install_field_carriers([FieldCarrierConfig])` places the
   scene's carriers; a `ScriptedEncounter { formation_id }` sits Idle (towns
   run a 0% random rate, so its host gate disables self-firing) until

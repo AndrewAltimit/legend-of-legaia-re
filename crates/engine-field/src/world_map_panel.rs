@@ -21,7 +21,7 @@
 //! indexed by the panel index the script record carries. The two fields the
 //! script system reads back are `+0x08` (x) and `+0x0A` (y); `+0x0E` is the
 //! height the sizing arms write. That is the same descriptor
-//! [`crate::world_map_overlay::panel_geometry`] sizes from the list-picker
+//! [`crate::dev_menu_leaves::panel_geometry`] sizes from the list-picker
 //! side.
 //!
 //! ## Source
@@ -338,7 +338,7 @@ impl CursorOutcome {
 /// the destination list (`FUN_801EF014`), the text-box dispatcher
 /// (`FUN_801EE90C`, which calls it as `(cursor, 2, wrap = true)`) and the
 /// dev-menu list picker `FUN_801ECA08`, whose swap-wrap cursor
-/// ([`crate::world_map_overlay::dev_menu_cursor_step`]) is the *dev menu's own* copy of
+/// ([`crate::dev_menu_leaves::dev_menu_cursor_step`]) is the *dev menu's own* copy of
 /// this behaviour with the range expressed as an inclusive row span.
 ///
 /// Order of business, exactly as retail runs it:
@@ -450,7 +450,7 @@ pub const DEV_MENU_ACTION_RESULT: i32 = 1;
 ///
 /// Wired: `legaia_engine_core::dev_menu_host::DevMenuSession::tick` runs this
 /// on its cancel leg and uses both halves of the result - the park phase and
-/// the factor [`crate::world_map_overlay::list_body_draws`] multiplies.
+/// the factor [`crate::dev_menu_leaves::list_body_draws`] multiplies.
 pub fn dev_menu_action(row: i16) -> (Option<i16>, i32) {
     if (row as u16 as u32) >= DEV_MENU_ACTION_ROWS as u32 {
         return (Some(DEV_MENU_ACTION_PARK_PHASE), DEV_MENU_ACTION_RESULT);

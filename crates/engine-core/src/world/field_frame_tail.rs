@@ -356,7 +356,7 @@ impl World {
         self.channel_view()
             .iter()
             .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
-            .map(|c| c.ctx.flags & legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG != 0)
+            .map(|c| c.ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0)
     }
 
     /// Whether NPC `slot`'s clip ids name records of the party locomotion
@@ -484,7 +484,6 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm as vm;
 
     #[test]
     fn npc_clips_run_on_the_field_only() {
@@ -583,7 +582,7 @@ mod tests {
         let scene = crate::field_anim::synth_anm_bundle(&scene_recs);
         let mut w = World::new();
         w.mode = SceneMode::Field;
-        let party = vm::field_player_clip::PARTY_BANK_FLAG;
+        let party = legaia_engine_field::field_player_clip::PARTY_BANK_FLAG;
         w.field_vm.channels.push(party_channel(3, party));
 
         w.npcs.anim_cues.insert(3, (1, 5, Vec::new()));
@@ -609,7 +608,7 @@ mod tests {
         w.mode = SceneMode::Field;
         w.field_vm
             .channels
-            .push(party_channel(3, vm::field_player_clip::PARTY_BANK_FLAG));
+            .push(party_channel(3, legaia_engine_field::field_player_clip::PARTY_BANK_FLAG));
         let ten = FieldClipPlayer::from_record(&loco, 0).unwrap();
         w.bind_npc_clip_cursor(3, 1, &ten);
         w.npcs.anim_cues.insert(3, (1, 2, Vec::new()));

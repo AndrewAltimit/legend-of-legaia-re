@@ -990,7 +990,7 @@ impl PlayWindowApp {
                     TitlePhase::PressStart { .. } => (false, 0),
                 };
                 let phase_id =
-                    legaia_engine_render::title_text_phase(s.retail_submode(), menu_open);
+                    legaia_engine_menus::title_overlay::title_text_phase(s.retail_submode(), menu_open);
                 // When the title-screen atlas is uploaded, the
                 // main-menu rows render through the sprite path,
                 // sampling NEW GAME / CONTINUE sub-rects from the
@@ -1280,7 +1280,7 @@ impl PlayWindowApp {
     /// Retail's `AttractIdle` (`0x10`) arm zeroes the FMV index and writes
     /// master game mode `0x1A`, i.e. hands the screen to `fmv_id 0`
     /// (`MV1.STR`) and comes back to the title afterwards
-    /// (`legaia_engine_vm::title_overlay::ATTRACT_FMV_ID`;
+    /// (`legaia_engine_menus::title_overlay::ATTRACT_FMV_ID`;
     /// `cutscene_trigger::TITLE_TICK_INLINE`). This runs the same movie
     /// through the window's own MDEC path and calls `finish_attract` once its
     /// frames drain - the drain itself is the redraw handler's, which clears
@@ -1314,7 +1314,7 @@ impl PlayWindowApp {
             // The attract slot is the skippable movie; ask the shared test
             // rather than spelling the button set out a second time.
             if legaia_engine_core::cutscene::fmv_skip_edge_hit(
-                legaia_engine_vm::title_overlay::ATTRACT_FMV_ID,
+                legaia_engine_menus::title_overlay::ATTRACT_FMV_ID,
                 pressed,
             ) {
                 session.finish_attract();

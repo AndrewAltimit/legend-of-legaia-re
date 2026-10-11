@@ -22,7 +22,7 @@ impl World {
     /// REF: FUN_801DE840 case 0xD sub 3 (the installer)
     pub fn schedule_timed_flags(&mut self, ab: u32, cd: u32, ef: u32) {
         self.battle.escape_timer_flag_word = ab;
-        self.battle.escape_timer = vm::escape_timer::EscapeTimer {
+        self.battle.escape_timer = legaia_engine_field::escape_timer::EscapeTimer {
             remaining: cd as i32,
             warn_threshold: ef as i32,
             armed: cd != 0,
@@ -80,7 +80,7 @@ impl World {
     /// per display frame.
     ///
     /// REF: FUN_801D2EBC (scheduler + HUD decomposition; the ports are
-    /// `legaia_engine_vm::escape_timer::EscapeTimer` and `timer_ink`)
+    /// `legaia_engine_field::escape_timer::EscapeTimer` and `timer_ink`)
     pub(super) fn tick_escape_timer(&mut self) {
         // The countdown runs for exactly as long as its HUD actor lives: the
         // arming op spawns it, and after expiry it holds a zeroed readout
@@ -90,7 +90,7 @@ impl World {
                 self.battle.escape_timer_hud = None;
                 return;
             }
-            self.battle.escape_timer_actor = Some(vm::escape_timer::EscapeTimerHud::default());
+            self.battle.escape_timer_actor = Some(legaia_engine_field::escape_timer::EscapeTimerHud::default());
         }
         let busy = self.escape_timer_busy();
         let flag_word = self.battle.escape_timer_flag_word;

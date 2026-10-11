@@ -112,7 +112,7 @@ impl LegaiaRuntime {
             let plan = self.seat_enter(legaia_engine_core::mode::GameMode::MainInit);
             debug_assert!(
                 matches!(plan, Some(legaia_engine_core::mode::ModeInitPlan::Stage(st))
-                    if st.overlay_entry == legaia_engine_vm::title_overlay::FIELD_SCENE_INIT_PC),
+                    if st.overlay_entry == legaia_engine_menus::title_overlay::FIELD_SCENE_INIT_PC),
                 "MAIN INIT's plan should name the per-scene initializer"
             );
         }

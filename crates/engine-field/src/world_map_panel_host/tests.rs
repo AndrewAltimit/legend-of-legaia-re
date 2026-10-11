@@ -1,5 +1,5 @@
 use super::*;
-use legaia_engine_vm::world_map_panel_actors::{
+use crate::world_map_panel_actors::{
     HUD_SUPPRESS_PAD_MASK, HUD_Y_BOTTOM, SOFT_RESET_PAD_MASK, SOFT_RESET_SLIDE_REST,
     SOFT_RESET_SLIDE_START,
 };
@@ -69,7 +69,7 @@ fn a_suppressed_tick_changes_no_state() {
 /// no readout, a state whose countdown already expired (`0`) shows it.
 #[test]
 fn the_phase_hold_lands_retails_countdown_at_the_capture_tick() {
-    use legaia_engine_vm::world_map_panel_actors::HUD_IDLE_FRAMES_NEAR as IDLE;
+    use crate::world_map_panel_actors::HUD_IDLE_FRAMES_NEAR as IDLE;
     const CAPTURE: u64 = 120;
     for retail in [0i16, 1, 0x25, 0x26, IDLE] {
         let mut hud = FieldPartyHud::new();
@@ -96,7 +96,7 @@ fn the_phase_hold_lands_retails_countdown_at_the_capture_tick() {
 /// brings it down so the capture still reads retail's countdown.
 #[test]
 fn the_countdown_cap_lands_a_short_retail_value_under_a_long_idle() {
-    use legaia_engine_vm::world_map_panel_actors::hud_idle_frames;
+    use crate::world_map_panel_actors::hud_idle_frames;
     const CAPTURE: u64 = 120;
     let idle = hud_idle_frames(1, false);
     assert!(i64::from(idle) > CAPTURE as i64);
@@ -170,7 +170,7 @@ fn the_sub_list_opens_a_window_and_sizes_the_party_panel() {
     // `op 12` wrote the party panel descriptor: height = 3*56 - 7.
     let party = h
         .windows
-        .descriptor(legaia_engine_vm::world_map_panel::PARTY_PANEL_INDEX);
+        .descriptor(crate::world_map_panel::PARTY_PANEL_INDEX);
     assert_eq!(party.height, 3 * 56 - 7);
     assert_eq!(party.y, 202 - party.height);
 }
@@ -225,12 +225,12 @@ fn the_flag_window_sizes_its_panel_and_commits_a_flag() {
     // Phase 0 sized descriptor 14 from the row count and opened it.
     let d = h
         .windows
-        .descriptor(legaia_engine_vm::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX as i16);
+        .descriptor(crate::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX as i16);
     assert_eq!(d.height, 4 * 16);
     assert_eq!(d.y, (8 - 4) * 16 + 0x48);
     assert!(
         h.windows
-            .is_open(legaia_engine_vm::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX as i16)
+            .is_open(crate::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX as i16)
     );
     // The scan found flag 3 set, remembered it, and the range clear wiped
     // the whole span.
@@ -291,7 +291,7 @@ fn the_text_box_confirm_asks_for_the_party_restore() {
 fn the_fill_fade_closes_every_window_and_runs_to_its_exit() {
     let mut h = PanelActorHost::new();
     h.windows
-        .run_script(legaia_engine_vm::world_map_panel_actors::SUBLIST_OPEN_SCRIPT);
+        .run_script(crate::world_map_panel_actors::SUBLIST_OPEN_SCRIPT);
     assert!(h.windows.is_open(SUBLIST_PANEL_INDEX));
     h.install(PanelActorKind::FillFade, 0x11);
     let mut f = Flags::default();
@@ -332,7 +332,7 @@ fn the_fill_fade_exit_runs_the_close_tick_before_retiring() {
     assert_eq!(h.scene_field_40, 0x11, "the old id is parked");
     // A locked input keeps the completion gate up, so the actor stays.
     h.windows
-        .run_script(legaia_engine_vm::world_map_panel_actors::SUBLIST_OPEN_SCRIPT);
+        .run_script(crate::world_map_panel_actors::SUBLIST_OPEN_SCRIPT);
     h.input_locked = true;
     let ticks = h.text_actor_ticks;
     assert!(!h.tick(0, 0, 1, &mut f).retired);

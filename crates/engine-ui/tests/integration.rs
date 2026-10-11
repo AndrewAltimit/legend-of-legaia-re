@@ -7,6 +7,7 @@
 
 mod battle_fx_ladder;
 mod camera_relative_retail_oracle;
+mod field_hud_stand_in;
 mod numeral_host_parity;
 mod pause_menu_compose;
 mod shop_quantity_compose;

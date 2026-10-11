@@ -47,7 +47,7 @@ use legaia_engine_core::field_submode_screen::{
     SUBMODE_ACCEPT_MASK, SUBMODE_BACK_MASK, slot_for_op49_sub_op,
 };
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::baka_hub_actors::{
+use legaia_engine_field::submode_hub_actors::{
     self as hub, GOLD_PER_COIN, HubAction, HubDraw, HubPainter, PAD_CURSOR_UP, PICK_ACCEPT, slot,
     window,
 };

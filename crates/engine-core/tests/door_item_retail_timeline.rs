@@ -32,7 +32,7 @@
 use legaia_engine_core::region_encounter::{RegionBattleSetup, WorldMapReturn};
 use legaia_engine_core::world::pause_session::PauseSessionStage;
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::travel_art_actor::TravelArt;
+use legaia_engine_field::travel_art_actor::TravelArt;
 
 fn toc_map() -> legaia_prot::cdname::IndexMap {
     let mut map = legaia_prot::cdname::IndexMap::new();

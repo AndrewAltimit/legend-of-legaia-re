@@ -234,9 +234,9 @@ pub struct BattleState {
     /// (`SCHEDULE_TIMED_FLAGS`). Retail keeps it in three globals -
     /// `_DAT_800845A0` remaining, `_DAT_800845BC` below-threshold trigger,
     /// `_DAT_800845B8` armed - which is the triple
-    /// [`legaia_engine_vm::escape_timer::EscapeTimer`] models.
+    /// [`legaia_engine_field::escape_timer::EscapeTimer`] models.
     /// [`crate::world::World::tick_escape_timer`] drains it once per retail frame.
-    pub escape_timer: vm::escape_timer::EscapeTimer,
+    pub escape_timer: legaia_engine_field::escape_timer::EscapeTimer,
     /// The packed flag word the same installer writes to `_DAT_800845C0`:
     /// low half = the below-threshold flag, high half = the expiry flag.
     /// Both are masked to 12 bits before they reach the system-flag bank.
@@ -247,10 +247,10 @@ pub struct BattleState {
     /// `FUN_801D2EBC` decomposes and colours the readout in the same
     /// function that drains the counter, so the values are a per-frame
     /// product of the tick rather than something a renderer derives.
-    pub escape_timer_hud: Option<(i32, i32, i32, vm::escape_timer::TimerInk)>,
+    pub escape_timer_hud: Option<(i32, i32, i32, legaia_engine_field::escape_timer::TimerInk)>,
     /// The HUD actor that owns the countdown (`FUN_801D2EBC` is its handler):
     /// alive from the arming op until its expired readout's hold runs out.
-    pub(crate) escape_timer_actor: Option<vm::escape_timer::EscapeTimerHud>,
+    pub(crate) escape_timer_actor: Option<legaia_engine_field::escape_timer::EscapeTimerHud>,
     /// Per-actor status-effect tracker (Toxic / Numb / Venom /
     /// Sleep / Confuse / Curse / Stone / Faint). Populated by
     /// [`crate::world::World::fold_battle_event`] on `ApplyArtStrike` events whose

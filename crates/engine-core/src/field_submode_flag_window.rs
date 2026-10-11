@@ -13,7 +13,7 @@
 //! against a field state's VRAM), so each destination is a floor: the current
 //! one remembered, the pick committed as the only set flag.
 //!
-//! The picker had a port (`legaia_engine_vm::world_map_panel_actors::flag_window_tick`)
+//! The picker had a port (`legaia_engine_field::world_map_panel_actors::flag_window_tick`)
 //! hosted only by `crate::world_map_panel_host` behind a world-map pad chord,
 //! while the field path fell into [`crate::field_submode_screen`]'s empty
 //! default arm: the dispatcher retired the actor on its first frame, the script
@@ -45,9 +45,9 @@
 //! `0x801CF0C4` at `(x + w + 0x34, y + h - 0x1E)` / `(.., y + h - 0x0E)`, and a
 //! `0x9C x 0x20` widget frame at `(x + w + 0x10, y + h - 0x20)`.
 
-use legaia_engine_vm::baka_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot};
-use legaia_engine_vm::world_map_panel::CursorPad;
-use legaia_engine_vm::world_map_panel_actors::{
+use legaia_engine_field::submode_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot};
+use legaia_engine_field::world_map_panel::CursorPad;
+use legaia_engine_field::world_map_panel_actors::{
     FLAG_WINDOW_SCRIPT, FlagWindowDescriptor, FlagWindowEffect, FlagWindowInput, flag_window_tick,
 };
 
@@ -154,7 +154,7 @@ pub fn flag_window_slot(
 }
 
 /// The windows descriptor `va` installs, with the picker's own descriptor
-/// added to the ones [`legaia_engine_vm::baka_hub_actors::panel_windows`]
+/// added to the ones [`legaia_engine_field::submode_hub_actors::panel_windows`]
 /// knows.
 pub fn installed_windows(va: u32) -> Vec<usize> {
     if va == FLAG_WINDOW_SCRIPT {
@@ -162,7 +162,7 @@ pub fn installed_windows(va: u32) -> Vec<usize> {
     } else if va == crate::field_submode_code_lock::CODE_LOCK_PANEL {
         vec![crate::field_submode_code_lock::CODE_LOCK_RECORD]
     } else {
-        legaia_engine_vm::baka_hub_actors::panel_windows(va).to_vec()
+        legaia_engine_field::submode_hub_actors::panel_windows(va).to_vec()
     }
 }
 
@@ -329,7 +329,7 @@ pub const FLAG_WINDOW_EXIT_SLOT: u16 = slot::DRAW_TICK;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::world_map_panel_actors::flag_window_panel_geometry;
+    use legaia_engine_field::world_map_panel_actors::flag_window_panel_geometry;
 
     fn pad(edge: u32) -> CursorPad {
         CursorPad {

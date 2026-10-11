@@ -17,7 +17,7 @@
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::shop::{ShopInventory, ShopItem, ShopSession};
 use legaia_engine_core::world::World;
-use legaia_engine_vm::menu::{MenuInput, MenuState};
+use legaia_engine_menus::menu::{MenuInput, MenuState};
 use legaia_prot::archive::Archive;
 use std::path::PathBuf;
 

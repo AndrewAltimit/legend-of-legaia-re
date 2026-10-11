@@ -18,7 +18,7 @@
 //! Skips + passes when `LEGAIA_DISC_BIN` is unset (CLAUDE.md disc-gated
 //! convention).
 
-use legaia_engine_vm::baka_hub_actors as hub;
+use legaia_engine_field::submode_hub_actors as hub;
 
 /// The field overlay that owns the `0x801F0000+` submode band. PROT 0897 at
 /// base `0x801CE818` (`0x4F800` bytes) is the image that reaches it; the

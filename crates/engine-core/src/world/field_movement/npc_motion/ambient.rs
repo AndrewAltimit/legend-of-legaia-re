@@ -193,7 +193,7 @@ impl World {
             // partition-1 placement it seats (`0x8003A3A4..0x8003A3B4`), so
             // the channel's `+0x10` word starts with it - the gate the
             // motion-pause kick (`Self::kick_field_npc_motion_pause`) tests.
-            vm.actor_flags |= vm::motion_pause::MOVING_CLASS;
+            vm.actor_flags |= legaia_engine_field::motion_pause::MOVING_CLASS;
             // Per-actor RNG stream: retail draws from one global `rand()`,
             // so identical neighbours never step in lockstep. Deriving the
             // seed from the slot keeps that property and keeps a replay

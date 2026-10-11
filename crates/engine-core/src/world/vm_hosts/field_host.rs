@@ -64,7 +64,7 @@ impl FieldHostImpl<'_> {
     ///
     /// REF: FUN_801DE840 (the player-identity compares), FUN_8003A1E4
     fn ctx_is_player(&self, ctx: &FieldCtx) -> bool {
-        ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0
+        ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0
             && self.world.field_vm.executing_channel.is_none()
             && !self.world.field_vm.entry_prerun
     }

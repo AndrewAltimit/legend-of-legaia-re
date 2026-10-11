@@ -353,7 +353,7 @@ fn facing_nibble_glide_speed(man_file: &ManFile, man: &[u8], p: &ActorPlacement)
 /// Retail: `[0x17, b1, b2]` writes `DAT_801C6470[actor_id*4] = b1` /
 /// `[actor_id*4 + 1] = b2` (guarded `actor_id < 0x8C`) - the per-actor
 /// default-move table the interaction motion-pause kick `FUN_8003C9AC`
-/// (ported at `legaia_engine_vm::motion_pause`) reloads every moving-class
+/// (ported at `crate::motion_pause`) reloads every moving-class
 /// actor's `+0x88`/`+0x5C` requested-move pair from, and the wander/step ops
 /// consult for their move-anim override. The variant-swap preamble reseeds a
 /// record to the `0x8C` sentinel, so a stream's own `0x17` (always its first

@@ -101,7 +101,7 @@ impl PlayWindowApp {
             let mode = legaia_engine_core::world_map_panel_host::field_hud_view_mode(
                 &self.session.host.world,
             );
-            let idle = legaia_engine_vm::world_map_panel_actors::hud_idle_frames(mode, false);
+            let idle = legaia_engine_field::world_map_panel_actors::hud_idle_frames(mode, false);
             if legaia_engine_core::world_map_panel_host::hud_phase_hold(
                 self.tick_no,
                 sc.capture_tick,
@@ -172,7 +172,7 @@ impl PlayWindowApp {
         if self.field_party_hud_suppressed() {
             return Default::default();
         }
-        let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
+        let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {
             return Default::default();

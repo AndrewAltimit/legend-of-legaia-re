@@ -129,7 +129,7 @@ pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
                 // gesture (`B2 <id> 18` .. `B1 <id> 18`).
                 flags: PLACEMENT_CLASS_BIT
                     | if p.model_index >= 0xF0 {
-                        legaia_engine_vm::field_player_clip::PARTY_BANK_FLAG
+                        legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
                     } else {
                         0
                     },

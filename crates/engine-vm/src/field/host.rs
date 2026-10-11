@@ -2094,7 +2094,7 @@ pub trait FieldHost {
     /// `FUN_801E57F0` (field overlay, 17 instructions) spawns descriptor
     /// `0x801F2930` through `FUN_80020DE0`, stores the operand pointer at
     /// `+0x90` and clears `+0x54`. The descriptor's handler is `0x801E4D8C`,
-    /// the CLUT blend-to-target fade ([`crate::world_map_clut_fade`]), which
+    /// the CLUT blend-to-target fade ([`legaia_engine_field::clut_fade_actor`]), which
     /// reads its 12-byte record through `+0x90`. (The Ghidra dump filed
     /// under this address is data rendered as code; the bytes in PROT 0897
     /// at this VA are the routine above.)
@@ -2463,7 +2463,7 @@ pub trait FieldHost {
     /// `0x801F2948` and writes `+0x90 = executing ctx`, `+0x94 = resolved
     /// actor`, `+0x54 = 0` and `+0x80 .. +0x8A = w0 .. w5`. Its per-frame
     /// body is `FUN_801E5154`
-    /// ([`crate::field_actor_reflect::tick_reflection`]), which mirrors the
+    /// ([`legaia_engine_field::field_actor_reflect::tick_reflection`]), which mirrors the
     /// `+0x94` end's pose onto the `+0x90` end while the `+0x94` end stands
     /// inside the tile rect `w2..w4` x `w3..w5`. So the six words are the
     /// controller's mirror line plus tracking rect, **not** a transform for

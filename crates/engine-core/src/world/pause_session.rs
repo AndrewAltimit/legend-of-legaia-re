@@ -5,7 +5,7 @@
 //! The menu button (`FUN_801D01B0`, `0x801D0250..0x801D0328`) spawns it; its
 //! installer `FUN_801F1278` stores handler id `7` (`0x801F140C`), and handler
 //! `7` - `FUN_801F1F4C`, ported as
-//! [`legaia_engine_vm::field_state_pick::state_pick`] - moves it on to handler
+//! [`legaia_engine_field::field_state_pick::state_pick`] - moves it on to handler
 //! `0x30`, the session `FUN_801ED308`. The session ramps the screen, spawns the
 //! menu (`FUN_801D841C`) and parks until the menu's exit code
 //! `_DAT_8007B43C` reaches `6`. The menu's close adds `3` to the code its Use
@@ -19,10 +19,10 @@
 //! applies the closed menu's outcome. What this module runs is the rest:
 //! [`World::begin_pause_session_exit`] seeds the session at the park phase with
 //! the counter the close left, [`World::tick_pause_session`] runs the retail
-//! ramp-down ([`legaia_engine_vm::world_map_panel_actors::fade_flash_tick`])
+//! ramp-down ([`legaia_engine_field::world_map_panel_actors::fade_flash_tick`])
 //! to its terminal arm, installs the travel art the arm's handler id names
 //! ([`TravelArt::for_handler_id`]) and runs it
-//! ([`legaia_engine_vm::travel_art_actor::TravelArtActor::tick`]) until its
+//! ([`legaia_engine_field::travel_art_actor::TravelArtActor::tick`]) until its
 //! resolve issues the scene transition.
 //!
 //! The resolve reads three words retail keeps at `0x80084624` / `0x80084628`
@@ -49,8 +49,8 @@
 //! matches it, but it names no scene. A region record with an all-zero
 //! return triple (station3's, conc3's) stores exactly that word.
 
-use legaia_engine_vm::travel_art_actor::{self as ta, TravelArt, TravelArtActor};
-use legaia_engine_vm::world_map_panel_actors::{
+use legaia_engine_field::travel_art_actor::{self as ta, TravelArt, TravelArtActor};
+use legaia_engine_field::world_map_panel_actors::{
     self as wmpa, FadeFlashEffect, FadeFlashInput, fade_flash_tick,
 };
 

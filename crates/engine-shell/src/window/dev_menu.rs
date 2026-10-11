@@ -23,7 +23,7 @@
 //! [`legaia_engine_render::record_counters`], which rebases the retail
 //! save-block displacements onto a bare record; the clamping and the H:MM:SS
 //! decomposition are the ported model
-//! (`legaia_engine_vm::world_map_overlay::records_screen`).
+//! (`legaia_engine_field::dev_menu_leaves::records_screen`).
 //!
 //! The lifetime battle / escape counters and the treasure census are state the
 //! engine does not keep, so those read zero and the treasure line stays hidden
@@ -210,8 +210,8 @@ impl PlayWindowApp {
 fn dev_records_model(
     records: &[&[u8]],
     play_time_seconds: u32,
-) -> legaia_engine_vm::world_map_overlay::RecordsScreen {
-    use legaia_engine_vm::world_map_overlay::{CharRecordStats, records_screen};
+) -> legaia_engine_field::dev_menu_leaves::RecordsScreen {
+    use legaia_engine_field::dev_menu_leaves::{CharRecordStats, records_screen};
     let mut chars = [CharRecordStats::default(); 3];
     for (slot, out) in chars.iter_mut().enumerate() {
         let Some(c) = records
@@ -240,7 +240,7 @@ fn dev_records_model(
 /// Project the ported model onto the draw builder's view, with the caller-owned
 /// heading strings attached.
 fn records_view(
-    model: &legaia_engine_vm::world_map_overlay::RecordsScreen,
+    model: &legaia_engine_field::dev_menu_leaves::RecordsScreen,
 ) -> legaia_engine_render::RecordsScreenView<'static> {
     legaia_engine_render::RecordsScreenView {
         battles: model.battles,

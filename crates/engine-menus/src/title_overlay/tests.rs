@@ -1,4 +1,5 @@
 use super::*;
+use legaia_engine_system::mode_entry_init::ENTRY_WORD_FROM_ATTRACT;
 
 #[test]
 fn table_length_matches_jt_entry_count() {
@@ -214,7 +215,7 @@ fn every_static_target_mode_is_in_range() {
 
 #[test]
 fn master_game_mode_constants_align_with_cutscene_trigger() {
-    use crate::cutscene_trigger;
+    use legaia_engine_system::cutscene_trigger;
     assert_eq!(MASTER_GAME_MODE_ADDR, cutscene_trigger::GAME_MODE_ADDR);
     assert_eq!(MASTER_GAME_MODE_STR_INIT, cutscene_trigger::STR_INIT_MODE);
 }
@@ -481,8 +482,8 @@ fn the_attract_arm_lives_only_in_attract_idle() {
     let lo = TitleOverlaySubMode::AttractIdle.handler_pc();
     let hi = TitleOverlaySubMode::ContinueFadeIn.handler_pc();
     assert!(lo < SUBMODE_COUNTDOWN_DECR_PC && SUBMODE_COUNTDOWN_DECR_PC < hi);
-    assert!(lo < crate::cutscene_trigger::TITLE_TICK_INLINE.mode_write_addr);
-    assert!(crate::cutscene_trigger::TITLE_TICK_INLINE.mode_write_addr < hi);
+    assert!(lo < legaia_engine_system::cutscene_trigger::TITLE_TICK_INLINE.mode_write_addr);
+    assert!(legaia_engine_system::cutscene_trigger::TITLE_TICK_INLINE.mode_write_addr < hi);
     assert_eq!(ATTRACT_FMV_ID, 0);
 }
 

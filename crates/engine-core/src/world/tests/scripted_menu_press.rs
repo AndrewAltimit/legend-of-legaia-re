@@ -136,7 +136,7 @@ fn closing_the_menu_resumes_the_parked_op_once() {
 fn every_scripted_press_row_is_a_minus_one_table_row() {
     for &k in &OP49_PARK_PRESERVING_SUB_OPS {
         assert_eq!(
-            legaia_engine_vm::baka_hub_actors::slot_for_sub_op(k),
+            legaia_engine_field::submode_hub_actors::slot_for_sub_op(k),
             None,
             "sub-op {k:#x} names a handler, so the enter half overwrites +0x50"
         );

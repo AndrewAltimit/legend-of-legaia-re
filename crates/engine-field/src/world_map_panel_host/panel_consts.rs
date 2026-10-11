@@ -23,9 +23,9 @@ pub const PANEL_ACTION_B: u32 = 0x0020;
 ///
 /// Retail's array is overlay data at `0x801F2B98`; the engine sizes it to
 /// cover every index the ported arms address - the flag window's `14`
-/// ([`legaia_engine_vm::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX`])
+/// ([`crate::world_map_panel_actors::FLAG_WINDOW_PANEL_INDEX`])
 /// and the party panel's `7`
-/// ([`legaia_engine_vm::world_map_panel::PARTY_PANEL_INDEX`]).
+/// ([`crate::world_map_panel::PARTY_PANEL_INDEX`]).
 pub const PANEL_SLOTS: usize = 16;
 
 /// Panel index the port's stand-in sub-list script opens.

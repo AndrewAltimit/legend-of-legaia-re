@@ -54,12 +54,12 @@
 //! selecting the next handler.
 //!
 //! That last one is a *table* gap, not a dispatcher gap. The dispatcher
-//! `FUN_801F159C` **is** ported, as [`crate::baka_hub_actors::hub_dispatch`],
+//! `FUN_801F159C` **is** ported, as [`crate::submode_hub_actors::hub_dispatch`],
 //! but it takes `PTR_FUN_801F33B4[actor.state]` as a caller-supplied closure -
 //! the 52-entry table itself is what resolves a handler id, and
-//! [`crate::baka_hub_actors::slot`] names seven of its entries. The sub-list,
+//! [`crate::submode_hub_actors::slot`] names seven of its entries. The sub-list,
 //! text-box and flag-window exits all hand back to id `0x1A`, which is one of
-//! the seven ([`crate::baka_hub_actors::slot::DRAW_TICK`]); the fade/flash
+//! the seven ([`crate::submode_hub_actors::slot::DRAW_TICK`]); the fade/flash
 //! exits pick `0x29` and `0x2B`, which are not. Following an exit therefore
 //! needs the rest of that table read out of the overlay image first, so the
 //! host applies the stores and records the pair.

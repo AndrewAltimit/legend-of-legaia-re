@@ -34,7 +34,7 @@
 //! routing, alpha-OR pass) is a faithful port of the disassembled
 //! control flow; the *implementation* (real wgpu draws) lives in the
 //! engine layer that owns VRAM. Same pattern as
-//! [`crate::actor_tick`] / [`crate::field`] / etc. - the VM defines
+//! [`legaia_engine_vm::actor_tick`] / [`legaia_engine_vm::field`] / etc. - the VM defines
 //! shapes and dispatch; the engine fulfils the host trait.
 //!
 //! ## What's deferred

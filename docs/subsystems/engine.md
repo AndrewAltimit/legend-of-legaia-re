@@ -382,8 +382,8 @@ Every VM is ported handler by handler: the handler is dumped from Ghidra, writte
 | Effect VM | `FUN_801DE914` / `FUN_801DFDF0` / `FUN_801E0080` | `engine-vm/src/effect_vm.rs` | [effect-vm](effect-vm.md) |
 | Actor VM (window widgets) | `FUN_801D6628`, 13 opcodes | `engine-vm/src/lib.rs` | [actor-vm](actor-vm.md) |
 | Battle action SM | `FUN_801E295C` | `engine-battle-vm/src/battle_action.rs`, `BattleActionHost` | [battle-action](battle-action.md) |
-| World-map entity SM | `FUN_801DA51C` | `engine-vm/src/world_map.rs` | [world-map](world-map.md) |
-| Title sub-mode dispatcher | `FUN_801DD35C`, 25-entry JT at `0x801CF244` | `engine-vm/src/title_overlay.rs` | [boot](boot.md#sub-mode-dispatcher) |
+| World-map entity SM | `FUN_801DA51C` | `engine-field/src/world_map_entity.rs` | [world-map](world-map.md) |
+| Title sub-mode dispatcher | `FUN_801DD35C`, 25-entry JT at `0x801CF244` | `engine-menus/src/title_overlay.rs` | [boot](boot.md#sub-mode-dispatcher) |
 
 Per-VM notes that are not on the owning pages:
 
@@ -392,7 +392,7 @@ Per-VM notes that are not on the owning pages:
 - **Effect VM.** A slot pool (`Pool`) of 28-byte `MasterSlot`s and 32-byte `ChildSlot`s; `Pool::init_head` / `Pool::spawn` port `FUN_801DE914` / `FUN_801DFDF0`, and the per-frame walker `FUN_801E0080` is `Pool::tick_retail` (pass 1) + `Pool::child_billboards` (pass 2). The walker's only host callback is `EffectHost::next_random`.
 - **Battle action SM.** A per-frame edge-triggered state machine with 47 explicit states across the bands Attack `0x14..0x20`, Magic / Item `0x28..0x2E`, Summon `0x32..0x38`, Spirit `0x3C..0x40` / `0x46..0x48`, Done `0x50..0x52` / `0x5A`, Run / Capture `0x64..0x6B`, Magic-capture `0x6E..0x71`, terminal `0xFD` / `0xFF`. The Tactical-Arts strike band reads per-strike power bytes, hit timing, status effects and hit cues from `BattleActionHost::art_record` and surfaces them through `apply_art_strike(ArtStrikeInfo)`.
 - **Title dispatcher.** `TitleTickState::step` executes the graph, including all 56 `state[+0x204] = N` stores with their guards. Master game mode `0x02` has **two** writers: `LaunchGame` (`0x06`) at `0x801DFC00` on the NEW GAME route and `LaunchFade` (`0x16`) at `0x801DFAFC` on the load route.
-- **SCUS sprite-emit primitives** (`engine-vm/src/title_prim.rs`). Ports of the three SCUS helpers the title tick calls: `FUN_80058298` (`ClearImage` fill-rect), `FUN_80058490` (`MoveImage` VRAM copy), `FUN_800198E0` (sprite-descriptor dispatcher with tag-`0x11` + alpha-OR pre-pass + width-divisor variants), behind a `PrimHost` trait. The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
+- **SCUS sprite-emit primitives** (`engine-menus/src/title_prim.rs`). Ports of the three SCUS helpers the title tick calls: `FUN_80058298` (`ClearImage` fill-rect), `FUN_80058490` (`MoveImage` VRAM copy), `FUN_800198E0` (sprite-descriptor dispatcher with tag-`0x11` + alpha-OR pre-pass + width-divisor variants), behind a `PrimHost` trait. The overlay-side helpers (`FUN_801E1C1C` and friends, shared across the menu / battle / shop / save UI overlays) are a separate port.
 
 ## Gameplay systems
 

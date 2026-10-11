@@ -62,7 +62,7 @@
 //!
 //! `_DAT_8007B81C` is a **pointer** to a `0x1000`-entry `i16` trig table,
 //! indexed `(angle & 0xFFF)`. It is the same pointer the move VM and
-//! effect VM index (see [`crate::move_vm::host`]); the caller supplies the
+//! effect VM index (see [`legaia_engine_vm::move_vm::host`]); the caller supplies the
 //! samples so this module stays disc-free and unit-testable.
 //!
 //! ## Source

@@ -1,7 +1,7 @@
 //! World-map dev-menu scrolling list-body renderer - the layout skeleton of
 //! `FUN_801EAD98`. The row model, the CLOSED gating, the fixed-width decimal
 //! formatter and the camera-word decode are ported renderer-free in
-//! `legaia_engine_vm::world_map_overlay` (`DevMenuRow`, `format_fixed_decimal`,
+//! `legaia_engine_field::dev_menu_leaves` (`DevMenuRow`, `format_fixed_decimal`,
 //! `decode_camera_readout`); this module ports the *draw* half: the vertical
 //! list geometry every one of the 24 switch arms funnels through.
 //!

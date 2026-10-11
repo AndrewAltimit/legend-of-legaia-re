@@ -876,7 +876,7 @@ decode rect's VRAM origin, resolved in `legaia_mdec::str_player`.
 ### Static FMV-trigger sites - exhaustive
 
 Three sites write `_DAT_8007B83C = 0x1A` in retail, all codified in
-[`legaia_engine_vm::cutscene_trigger`](../../crates/engine-vm/src/cutscene_trigger.rs) as
+[`legaia_engine_system::cutscene_trigger`](../../crates/engine-system/src/cutscene_trigger.rs) as
 `FMV_TRIGGER_SITES`:
 
 | Site | Function | Mode-write addr | FMV-id source | Trigger condition |
@@ -1050,7 +1050,7 @@ An exec-breakpoint on the record dispatcher `FUN_8003BDE0` across the whole open
   same tick, so an arrival spawns the opening record immediately. `gate = 1` spawns the P2
   record; `gate = 0` records are object-binds consumed at scene init (`FUN_8003A55C`) and never
   spawn. Engine:
-  [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-vm/src/field_regions.rs),
+  [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs),
   [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs), `SceneHost`'s
   `spawn_arrival_trigger_record`.
 

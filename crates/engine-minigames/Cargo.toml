@@ -9,6 +9,7 @@ name = "legaia_engine_minigames"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-battle-vm.workspace = true

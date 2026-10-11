@@ -1,5 +1,5 @@
 //! Engine-side menu runtime - wires
-//! [`legaia_engine_vm::menu::MenuCtx`] / [`legaia_engine_vm::menu::step`] to
+//! [`legaia_engine_menus::menu::MenuCtx`] / [`legaia_engine_menus::menu::step`] to
 //! a [`crate::world::World`] and to disk-backed save / load slots.
 //!
 //! [`MenuRuntime`] owns the menu ctx, a save-slot directory, and a small
@@ -17,8 +17,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use legaia_engine_vm::menu::{MenuCtx, MenuHost, open, step};
-pub use legaia_engine_vm::menu::{MenuInput, MenuState};
+use legaia_engine_menus::menu::{MenuCtx, MenuHost, open, step};
+pub use legaia_engine_menus::menu::{MenuInput, MenuState};
 use legaia_save::{EquipmentSlots, Party, SpellList};
 
 use crate::equipment::DiscEquipInfo;

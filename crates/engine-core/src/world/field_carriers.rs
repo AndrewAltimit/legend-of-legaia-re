@@ -13,7 +13,7 @@ impl World {
     pub const TRIGGER_WALK_TOUCH_SLOT_BASE: u8 = 0xC0;
 
     /// Place the scene's field entity SMs (all Idle). One
-    /// [`vm::world_map::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
+    /// [`legaia_engine_field::world_map_entity::WorldMapEntityCtx`] per [`FieldCarrierConfig`], so a
     /// scripted-encounter carrier can be advanced via
     /// [`Self::engage_field_carrier`] and ticked by
     /// `Self::tick_field_carriers`. Replaces any previously installed set.
@@ -23,7 +23,7 @@ impl World {
     /// same per-entity records from the scene's MAN actor-placement partition.
     pub fn install_field_carriers(&mut self, configs: Vec<FieldCarrierConfig>) {
         self.carriers.entities = (0..configs.len())
-            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .map(|_| legaia_engine_field::world_map_entity::WorldMapEntityCtx::default())
             .collect();
         self.carriers.configs = configs;
         self.carriers.pending_battle = None;
@@ -268,7 +268,7 @@ impl World {
         // Per-NPC default-move pairs: the motion op-`0x17` writes into the
         // retail per-actor table at `0x801C6470`, statically harvested from
         // the MAN's tail-section-1 streams. Feeds the interaction
-        // motion-pause kick (`legaia_engine_vm::motion_pause`) a real table.
+        // motion-pause kick (`legaia_engine_field::motion_pause`) a real table.
         // REF: FUN_80038158 (case 0x17), FUN_8003C9AC
         for (slot, pair) in crate::man_field_scripts::motion_default_move_writes(man_file, man) {
             self.npcs.default_moves.insert(slot, pair);
@@ -627,9 +627,9 @@ impl World {
     /// REF: FUN_801DA51C
     pub fn engage_field_carrier(&mut self, idx: usize) {
         if let Some(ctx) = self.carriers.entities.get_mut(idx)
-            && ctx.state == vm::world_map::EntityState::Idle as u16
+            && ctx.state == legaia_engine_field::world_map_entity::EntityState::Idle as u16
         {
-            ctx.state = vm::world_map::EntityState::Activating as u16;
+            ctx.state = legaia_engine_field::world_map_entity::EntityState::Activating as u16;
         }
     }
 
@@ -646,7 +646,7 @@ impl World {
             let mut carriers = std::mem::take(&mut self.carriers.entities);
             for (idx, ctx) in carriers.iter_mut().enumerate() {
                 let mut host = FieldCarrierHostImpl { world: self };
-                vm::world_map::step(idx, ctx, &mut host);
+                legaia_engine_field::world_map_entity::step(idx, ctx, &mut host);
             }
             self.carriers.entities = carriers;
         }

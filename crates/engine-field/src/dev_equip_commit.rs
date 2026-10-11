@@ -2,7 +2,7 @@
 //! accepted item pick.
 //!
 //! `FUN_801E5A08` in the field overlay (PROT 0897, base `0x801CE818`, file
-//! `+0x171F0`). Its sibling [`crate::world_map_overlay`] carries the *browse*
+//! `+0x171F0`). Its sibling [`crate::dev_menu_leaves`] carries the *browse*
 //! half (row model, stat aggregation, slot resolution); this module is the
 //! commit that mutates the character record.
 //!
@@ -27,7 +27,7 @@
 //! 3. Destination slot. When the caller's `slot` argument is `>= 4` the slot
 //!    is `slot + 1` verbatim; otherwise it is resolved from the item's
 //!    equipment-table record byte `+7` exactly as
-//!    [`crate::world_map_overlay::resolve_equip_slot`] does (the item table
+//!    [`crate::dev_menu_leaves::resolve_equip_slot`] does (the item table
 //!    `0x80074368 + id*0xC` byte `+1` indexes the equipment table
 //!    `0x80074F68 + n*8`).
 //! 4. The prior occupant of that slot, read from the character record at
@@ -42,7 +42,7 @@
 //!
 //! `see ghidra/scripts/funcs/801e5a08.txt`
 
-use crate::world_map_overlay::resolve_equip_slot;
+use crate::dev_menu_leaves::resolve_equip_slot;
 
 /// The bag-scan miss sentinel `FUN_80042EE0` returns when an id is absent.
 pub const BAG_MISS: u16 = 0x100;

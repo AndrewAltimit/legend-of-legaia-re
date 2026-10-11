@@ -12,7 +12,7 @@
 //! host places it - so this pass keeps only the glide's.
 
 use super::World;
-use legaia_engine_vm::motion_pause::MOVING_CLASS;
+use legaia_engine_field::motion_pause::MOVING_CLASS;
 use legaia_engine_vm::motion_vm::{
     FieldActorHeight, FieldActorInputs, field_actor_plan, rotate_toward_clamped,
 };

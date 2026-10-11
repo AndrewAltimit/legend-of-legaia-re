@@ -243,8 +243,8 @@ fn build_dev_menu_draws(session: &DevMenuSession, font: &legaia_font::Font) -> V
 fn dev_records_model(
     records: &[&[u8]],
     play_time_seconds: u32,
-) -> legaia_engine_vm::world_map_overlay::RecordsScreen {
-    use legaia_engine_vm::world_map_overlay::{CharRecordStats, records_screen};
+) -> legaia_engine_field::dev_menu_leaves::RecordsScreen {
+    use legaia_engine_field::dev_menu_leaves::{CharRecordStats, records_screen};
     let mut chars = [CharRecordStats::default(); 3];
     for (slot, out) in chars.iter_mut().enumerate() {
         let Some(c) = records.get(slot).and_then(|r| ui::record_counters(r)) else {
@@ -270,7 +270,7 @@ fn dev_records_model(
 /// Project the ported model onto the draw builder's view, with the host-owned
 /// heading strings attached.
 fn records_view(
-    model: &legaia_engine_vm::world_map_overlay::RecordsScreen,
+    model: &legaia_engine_field::dev_menu_leaves::RecordsScreen,
 ) -> ui::RecordsScreenView<'static> {
     ui::RecordsScreenView {
         battles: model.battles,

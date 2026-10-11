@@ -16,6 +16,7 @@
 
 pub mod chunk_install;
 pub mod cutscene;
+pub mod cutscene_trigger;
 pub mod draw_census;
 pub mod fade;
 pub mod fade_ramp;

@@ -91,7 +91,6 @@ pub mod actor_tick;
 pub use legaia_engine_motion_vm::ambient_motion;
 pub use legaia_engine_motion_vm::ambient_motion_ops;
 pub mod anim_vm;
-pub mod baka_hub_actors;
 pub use legaia_engine_battle_vm::battle_action;
 pub use legaia_engine_battle_vm::battle_actor_draw;
 pub use legaia_engine_battle_vm::battle_actor_tick;
@@ -145,11 +144,7 @@ pub use legaia_engine_battle_vm::seru_magic_ticks;
 // --- W1-D ---
 pub use legaia_engine_battle_vm::cast_arm_ticks;
 // --- end W1-D ---
-pub mod code_lock_actor;
-pub mod cutscene_trigger;
-pub mod dev_equip_commit;
 pub mod effect_vm;
-pub mod escape_timer;
 pub mod field;
 /// The field-VM bytecode disassembler now lives in the Track-1 `asset` crate
 /// (it is a side-effect-free width/format decoder); re-exported here so the
@@ -157,24 +152,9 @@ pub mod field;
 /// paths keep working.
 pub use legaia_asset::field_disasm;
 pub mod field_actor_billboard;
-pub mod field_actor_reflect;
 pub mod field_actor_timers;
 pub mod field_helpers;
 pub mod field_ledge_hop_arc;
-pub mod field_passive_hud;
-pub mod field_player_clip;
-pub mod field_regions;
-pub mod field_state_pick;
-pub mod field_subsystem_enter;
-/// Former name of [`field_subsystem_enter`], from when `FUN_801F1278` was read
-/// as a party picker. Kept so existing intra-doc links resolve.
-#[doc(hidden)]
-pub use field_subsystem_enter as field_party_cursor;
-pub mod field_warp_tile;
-pub mod gameover_banner;
-pub mod menu;
-pub mod menu_actor_seed;
-pub mod motion_pause;
 pub use legaia_engine_motion_vm::motion_vm;
 pub mod move_buffer;
 pub mod move_ext_strip;
@@ -183,20 +163,9 @@ pub mod move_vm;
 pub mod move_vm_overlay_ext;
 pub use legaia_engine_battle_vm::psx_camera;
 pub mod scus_core_helpers;
-pub mod title_overlay;
-pub mod title_prim;
-pub mod travel_art_actor;
 pub mod vdf_morph;
 pub mod vram_rect_copy;
-pub mod world_map;
 
-pub mod world_map_clut_fade;
-pub mod world_map_dev_menu;
-pub mod world_map_dim;
-pub mod world_map_horizon;
-pub mod world_map_overlay;
-pub mod world_map_panel;
-pub mod world_map_panel_actors;
 
 /// Width of one bytecode instruction in bytes.
 pub const INSN_SIZE: usize = 4;

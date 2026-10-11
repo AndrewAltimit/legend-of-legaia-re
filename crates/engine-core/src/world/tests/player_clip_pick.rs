@@ -42,7 +42,7 @@ fn op_4c_ce_stores_the_clip_override() {
 #[test]
 fn the_override_points_the_settle_pick_at_the_scene_bank() {
     let mut w = world_with_anim();
-    w.locomotion.clip_base = vm::field_player_clip::BASE_WALK;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_WALK;
     w.field_settle_clip_tail();
     assert_eq!(scene_record(&w), None, "no override: the party bank");
     // `jagaroom`'s `4C CE 24`: walk base 1 binds scene clip 0x24 = record
@@ -53,7 +53,7 @@ fn the_override_points_the_settle_pick_at_the_scene_bank() {
     assert_eq!(scene_record(&w), Some(0x23));
     assert!(w.locomotion.player_party_bank);
     // Run (base 3) rides the same offset.
-    w.locomotion.clip_base = vm::field_player_clip::BASE_RUN;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_RUN;
     w.field_settle_clip_tail();
     assert_eq!(scene_record(&w), Some(0x25));
 }
@@ -61,7 +61,7 @@ fn the_override_points_the_settle_pick_at_the_scene_bank() {
 #[test]
 fn the_scene_sentinel_binds_scene_record_leader() {
     let mut w = world_with_anim();
-    w.locomotion.clip_base = vm::field_player_clip::BASE_SCENE_SENTINEL;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_SCENE_SENTINEL;
     w.field_settle_clip_tail();
     assert_eq!(scene_record(&w), Some(0), "leader 0 -> clip 1 -> record 0");
     assert!(!w.locomotion.player_party_bank);
@@ -164,11 +164,11 @@ fn a_script_dropped_party_bank_bit_sends_the_next_pick_to_the_scene_bank() {
 fn the_system_channel_reset_idles_a_player_who_opened_a_talk_running() {
     let mut w = world_with_anim();
     // The talk's first tick: the pad step stored run, the settle bound it.
-    w.locomotion.clip_base = vm::field_player_clip::BASE_RUN;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_RUN;
     w.field_settle_clip_tail();
     assert_eq!(w.locomotion.player_clip, 3);
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_IDLE);
     // The box is up from here on: the pad step is skipped and the lock
     // closes the reset, so the settle binds the base the first tick left.
     w.dialog.current = Some(DialogRequest {
@@ -183,9 +183,9 @@ fn the_system_channel_reset_idles_a_player_who_opened_a_talk_running() {
     assert_eq!(w.locomotion.player_clip, 2, "idle through the talk");
     // A base something else writes while the box is up stays put: retail's
     // reset does not run under the lock (the poked-walk capture).
-    w.locomotion.clip_base = vm::field_player_clip::BASE_WALK;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_WALK;
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_WALK);
+    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_WALK);
 }
 
 /// The movement-lock bit, a ledge hop and the tile board each close the
@@ -200,9 +200,9 @@ fn the_reset_runs_through_a_warp_but_not_under_a_lock() {
     assert!(!w.field_player_movement_locked());
     w.arm_field_warp((10, 10));
     assert!(!w.field_player_movement_locked(), "a warp is not a lock");
-    w.locomotion.clip_base = vm::field_player_clip::BASE_WALK;
+    w.locomotion.clip_base = legaia_engine_field::field_player_clip::BASE_WALK;
     w.tick_field_system_channel_clip_reset();
-    assert_eq!(w.locomotion.clip_base, vm::field_player_clip::BASE_IDLE);
+    assert_eq!(w.locomotion.clip_base, legaia_engine_field::field_player_clip::BASE_IDLE);
 }
 
 /// `CC F8 50 lo hi`: op `4C 50` aimed at the player writes the player's

@@ -473,7 +473,7 @@ impl<'a> EffectHost for EffectHostImpl<'a> {
 
 // --- field VM host ---------------------------------------------------------
 
-/// Bridge between the ported world-map entity SM ([`vm::world_map::step`]) and
+/// Bridge between the ported world-map entity SM ([`legaia_engine_field::world_map_entity::step`]) and
 /// the [`World`]. One is constructed per [`Self::tick_world_map`]; the entity
 /// `Vec` is taken out of the world while the SM runs so the bridge can hold a
 /// `&mut World`, then put back.
@@ -481,7 +481,7 @@ pub(super) struct WorldMapEntityHostImpl<'a> {
     pub(super) world: &'a mut World,
 }
 
-impl<'a> vm::world_map::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
+impl<'a> legaia_engine_field::world_map_entity::WorldMapEntityHost for WorldMapEntityHostImpl<'a> {
     fn activation_gate_open(&self) -> bool {
         // Retail gates the SM body on `_DAT_8007b868 == 0` (door/portal open).
         // The port's world has no closed-portal state yet, so the body
@@ -594,7 +594,7 @@ pub(super) struct FieldCarrierHostImpl<'a> {
     pub(super) world: &'a mut World,
 }
 
-impl<'a> vm::world_map::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
+impl<'a> legaia_engine_field::world_map_entity::WorldMapEntityHost for FieldCarrierHostImpl<'a> {
     fn activation_gate_open(&self) -> bool {
         true
     }

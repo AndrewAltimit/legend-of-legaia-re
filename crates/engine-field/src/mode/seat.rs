@@ -140,7 +140,7 @@ pub fn init_successor(mode: GameMode) -> Option<GameMode> {
 /// route: it writes `CONFIG INIT`, the debug menu, instead.
 ///
 /// The chain's last two steps are the title dispatcher's own NEW GAME store
-/// (`0x801DFC00`, `legaia_engine_vm::title_overlay`) and mode 2's hand-off.
+/// (`0x801DFC00`, `legaia_engine_menus::title_overlay`) and mode 2's hand-off.
 pub const BOOT_MODE_CHAIN: &[ModeWordStore] = &[
     ModeWordStore {
         store_pc: 0x8001_D5B8,
@@ -285,7 +285,7 @@ pub struct ModeSeat {
     /// front end and the debug menu ([`Self::boot_handoff`]), and the flag the
     /// title dispatcher's `Init` reads to route to `0x11` instead of the
     /// retail-unreachable `0x02` (`0x801DD97C`,
-    /// [`legaia_engine_vm::title_overlay::ENTRY_WORD_ADDR`]). `init.pak`
+    /// [`legaia_engine_system::mode_entry_init::ENTRY_WORD_ADDR`]). `init.pak`
     /// raises it itself on a cold boot, which is why the seat opens with it
     /// set.
     pub(super) entry_word: u32,
@@ -311,7 +311,7 @@ impl ModeSeat {
             driver: ModeDriver::new(start),
             previous: start,
             edges: 0,
-            entry_word: legaia_engine_vm::title_overlay::ENTRY_WORD_COLD_BOOT,
+            entry_word: legaia_engine_system::mode_entry_init::ENTRY_WORD_COLD_BOOT,
             title_row: 0,
         }
     }

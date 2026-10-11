@@ -11,12 +11,12 @@ pub struct WorldMapState {
     /// `None` otherwise.
     pub ctrl: Option<WorldMapController>,
     /// Per-entity world-map state machines (the port of `FUN_801DA51C` in
-    /// [`vm::world_map`]). One [`vm::world_map::WorldMapEntityCtx`] per
+    /// [`legaia_engine_field::world_map_entity`]). One [`legaia_engine_field::world_map_entity::WorldMapEntityCtx`] per
     /// installed overworld entity (encounter zones / town portals / NPCs).
     /// Empty unless [`crate::world::World::install_world_map_entities`] seeded them, so
     /// world-map mode without gameplay (camera-only) keeps ticking untouched.
     /// Driven each [`crate::world::SceneMode::WorldMap`] tick by `Self::tick_world_map`.
-    pub(crate) entities: Vec<vm::world_map::WorldMapEntityCtx>,
+    pub(crate) entities: Vec<legaia_engine_field::world_map_entity::WorldMapEntityCtx>,
     /// Per-entity role config, paired by index with [`crate::world::WorldMapState::entities`].
     /// Empty (or shorter than the entity list) means an entity has no specific
     /// role: its encounters fall back to [`crate::world::WorldMapState::encounter`]'s shared

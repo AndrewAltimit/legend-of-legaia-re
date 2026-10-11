@@ -1,6 +1,6 @@
 //! The interaction motion-pause kick over the field NPC channels.
 //!
-//! Retail's `FUN_8003C9AC` (ported at [`legaia_engine_vm::motion_pause`])
+//! Retail's `FUN_8003C9AC` (ported at [`legaia_engine_field::motion_pause`])
 //! walks the scene actor list and, for each moving-class actor with a
 //! motion stream, reloads the requested-move pair `+0x5C` / `+0x88` from the
 //! actor's `0x801C6470` record. The engine keeps those fields on each
@@ -8,7 +8,7 @@
 //! port's actor view, runs it, and writes the reloads back.
 
 use super::World;
-use legaia_engine_vm::motion_pause::{
+use legaia_engine_field::motion_pause::{
     PAUSE_SENTINEL, PAUSE_TABLE_STRIDE, PauseKickActor, motion_pause_kick,
 };
 
@@ -36,7 +36,7 @@ impl World {
     /// never shows the standing clip, while one parked in a wait or pick
     /// phase does. [`Self::tick_field_npc_ambient`] is that consumer.
     ///
-    /// REF: FUN_8003C9AC (the kick, `legaia_engine_vm::motion_pause`),
+    /// REF: FUN_8003C9AC (the kick, `legaia_engine_field::motion_pause`),
     /// FUN_801D5B5C (caller `0x801D5BF0`), FUN_8003BDE0 (caller `0x8003C0D4`),
     /// FUN_800204F8 (the `+0x5C` consumer, in `tick_field_npc_ambient`)
     pub fn kick_field_npc_motion_pause(&mut self) -> usize {
@@ -82,7 +82,7 @@ mod tests {
     /// `code` with op `0x17`'s record already installed.
     fn channel(slot: u8, default_move: [u8; 2], code: Vec<u8>) -> FieldNpcAmbient {
         let mut m = vm::ambient_motion::AmbientMotion::new(u32::from(slot), 0);
-        m.actor_flags |= vm::motion_pause::MOVING_CLASS;
+        m.actor_flags |= legaia_engine_field::motion_pause::MOVING_CLASS;
         m.default_move = default_move;
         FieldNpcAmbient {
             defers: false,

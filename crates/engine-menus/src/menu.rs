@@ -6,7 +6,7 @@
 //! **This module is not a port of `FUN_801DD35C`, and used to say it was.**
 //! That routine is the *title-screen* tick - one resident copy, PROT 0899
 //! file `+0xEB44` - and the module that describes it is
-//! [`super::title_overlay`], which carries the `PORT:` tag for it. Two
+//! [`crate::title_overlay`], which carries the `PORT:` tag for it. Two
 //! things falsify the old reading, both read off the disassembly in
 //! `overlay_menu_801dd35c.txt` (12104 bytes / 3026 instructions,
 //! `entry=801dd35c`; `overlay_menu_801de234.txt` is the same dump requested
@@ -27,7 +27,7 @@
 //!
 //! What this module actually is: the engine's own screen graph for the
 //! pause menu, shop and inn - a state machine driven by input plus a frame
-//! counter, in the shape of [`super::battle_action`]'s. Its state bytes are
+//! counter, in the shape of [`legaia_engine_battle_vm::battle_action`]'s. Its state bytes are
 //! engine-chosen (one of them, `MenuState::ShopTrade`, is a randomizer
 //! feature retail has no screen for), and the per-screen behaviour is
 //! retail-sourced from the subsystem page for each screen - `shop.md`,

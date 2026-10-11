@@ -5,7 +5,7 @@
 //!
 //! This is the draw half of `FUN_801D0D38`. The decision half - whether the
 //! HUD is up this frame and which of the two rows it takes - is the ported
-//! kernel [`legaia_engine_vm::world_map_panel_actors::field_hud_tick`]; hosts
+//! kernel [`legaia_engine_field::world_map_panel_actors::field_hud_tick`]; hosts
 //! run that first and call [`field_party_hud_draws_for`] only on its
 //! `HudDecision::Draw { y }` arm, passing that `y`.
 //!
@@ -105,8 +105,11 @@ pub const PLATE_BOTTOM_DY: i32 = 0x28;
 /// `None` would park its readout at the bottom of every frame while another
 /// host draws it at the top. This is the value that asserts the common answer
 /// - the player is below the dodge line - one step clear of the threshold.
-pub const NO_PROJECTION_STAND_IN: i16 =
-    legaia_engine_vm::world_map_panel_actors::HUD_DODGE_THRESHOLD;
+///
+/// Equal to `legaia_engine_field::world_map_panel_actors::HUD_DODGE_THRESHOLD`
+/// (`engine-field` sits above this crate, so the value is restated here and
+/// `engine-core`'s `field_party_hud_stand_in` test pins the two together).
+pub const NO_PROJECTION_STAND_IN: i16 = 0x30;
 
 /// The scrim colour: retail's quad is flat **black** and semi-transparent in
 /// PSX blend mode 0, i.e. `0.5*background`. An alpha-blended black rect with
@@ -136,7 +139,7 @@ pub struct FieldPartyHudFrame<'a> {
     /// The present party, left to right. Empty draws nothing.
     pub members: &'a [FieldHudMember<'a>],
     /// The decision's row
-    /// ([`legaia_engine_vm::world_map_panel_actors::HudDecision::Draw`]).
+    /// ([`legaia_engine_field::world_map_panel_actors::HudDecision::Draw`]).
     pub y: i32,
     /// The resident system-UI atlas. With it the `LV`/`HP`/`MP` labels, the
     /// `/` and the numerals blit retail's own cells; without it they degrade

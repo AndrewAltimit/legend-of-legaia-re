@@ -15,8 +15,8 @@ use legaia_engine_core::equipment::{DiscEquipInfo, equip_modifier_table_from_dis
 use legaia_engine_core::field_submode_screen::RETAIL_WEAPON_SLOTS;
 use legaia_engine_core::new_game::starting_record;
 use legaia_engine_core::world::World;
-use legaia_engine_vm::baka_hub_actors::{HubDraw, slot};
-use legaia_engine_vm::world_map_overlay::{
+use legaia_engine_field::submode_hub_actors::{HubDraw, slot};
+use legaia_engine_field::dev_menu_leaves::{
     EQUIP_INK_REJECT, EQUIP_MODE_DIRECT, EQUIP_REJECT_VA, EquipPanelDraw,
 };
 use std::path::PathBuf;
@@ -24,7 +24,7 @@ use std::path::PathBuf;
 /// Panel-window record the entry list paints. Taken from `baka_hub_actors`
 /// rather than spelled here: the record table's base was off by four records,
 /// and a literal at every call site is what hid it.
-const ENTRY_LIST_WINDOW: usize = legaia_engine_vm::baka_hub_actors::window::ENTRY_LIST;
+const ENTRY_LIST_WINDOW: usize = legaia_engine_field::submode_hub_actors::window::ENTRY_LIST;
 
 /// Chaos Breaker: Vahn-only (`+6` mask `1`), weapon slot (`+7 & 0x60 = 0x40`).
 const ID_CHAOS_BREAKER: u8 = 0x27;

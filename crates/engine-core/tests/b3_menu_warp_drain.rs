@@ -61,7 +61,7 @@ fn run_until_transition(w: &mut World, max: usize) -> Option<usize> {
 #[test]
 fn a_staged_door_of_wind_warp_runs_rula_then_transitions() {
     use legaia_engine_core::world::pause_session::PauseSessionStage;
-    use legaia_engine_vm::travel_art_actor::TravelArt;
+    use legaia_engine_field::travel_art_actor::TravelArt;
     let mut w = world_with_player();
     w.menu.pending_warp = Some(StagedWarp {
         scene_id: 0x55,
@@ -167,7 +167,7 @@ fn a_head_define_word_is_a_miss() {
 #[test]
 fn a_staged_escape_runs_riremito_back_to_the_visited_kingdom_tile() {
     use legaia_engine_core::world::pause_session::PauseSessionStage;
-    use legaia_engine_vm::travel_art_actor::TravelArt;
+    use legaia_engine_field::travel_art_actor::TravelArt;
     let mut w = world_with_player();
     w.enter_world_map();
     w.world_map

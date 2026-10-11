@@ -9,7 +9,7 @@
 //! five minigame-named dumps are **byte-identical**. That is not five copies -
 //! it is the same resident field-overlay code seen through five RAM-derived
 //! captures, the artifact [`docs/tooling/dump-corpus-integrity.md`] catalogues
-//! and that the sibling port [`crate::field_party_cursor`] already diagnoses
+//! and that the sibling port [`crate::field_subsystem_enter`] already diagnoses
 //! at `FUN_801F1278`. The statically extracted Baka Fighter overlay is PROT
 //! 976 at base `0x801CE818` and `0xE000` bytes long, so it does not reach
 //! `0x801F0ADC` at all; PROT 0897 (`0x4F800` bytes at the same base) does.
@@ -24,7 +24,7 @@
 //!
 //! The dispatcher `FUN_801F159C` is the **resume / close half of the field
 //! VM's op-`0x49` submode** ([`docs/subsystems/script-vm.md`]); the enter half
-//! is `FUN_801F1278` ([`crate::field_party_cursor`]). It indexes the 52-entry
+//! is `FUN_801F1278` ([`crate::field_subsystem_enter`]). It indexes the 52-entry
 //! table `PTR_FUN_801F33B4` by the actor's `+0x50` word.
 //!
 //! The routines here come from **two** tables, and conflating them is the
@@ -76,7 +76,7 @@
 //! Host: `legaia_engine_core::field_submode_screen` runs the dispatcher over
 //! the live `SubmodeDriver` pool actor every field frame.
 
-use crate::world_map_overlay::{
+use crate::dev_menu_leaves::{
     EquipPanelDraw, EquipPanelInput, EquipProps, ItemProps, equip_stat_panel,
 };
 

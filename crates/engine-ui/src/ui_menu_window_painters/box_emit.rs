@@ -41,7 +41,7 @@ pub const BOX_EMIT_MAX_Y: i32 = 0xF0;
 // through `0x801DDF2C`), which retail never enters: `init.pak` raises the entry
 // word `_DAT_8007BB00` before the hand-off, so `Init` takes its `0x11` arm, and
 // the shared epilogue rewrites a left-over `0x02` to `0x10` (capture-confirmed;
-// see `legaia_engine_vm::title_overlay`). The arm's box - mode `0x44`, RGB word
+// see `legaia_engine_menus::title_overlay`). The arm's box - mode `0x44`, RGB word
 // `0x02202020`, rect `(0x7C, 0x6B, 0x3C, 0x1A)` behind its two rows - is behind
 // a constant `y` of `0x6B` besides, so even a host that entered the arm would
 // never see the guard clip.

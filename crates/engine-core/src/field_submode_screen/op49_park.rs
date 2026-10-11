@@ -91,7 +91,7 @@ impl World {
 
     /// Record the op-`0x49` operand's payload bytes for the screen this arm
     /// opens - retail's `_DAT_8007B450 + 1..=3`, read through the parked
-    /// pointer by [`legaia_engine_vm::baka_hub_actors::start_menu`].
+    /// pointer by [`legaia_engine_field::submode_hub_actors::start_menu`].
     ///
     /// `instr` is the instruction from its opcode byte, so `instr[1]` is the
     /// sub-op (the byte the park points at) and `instr[2..=4]` are the three

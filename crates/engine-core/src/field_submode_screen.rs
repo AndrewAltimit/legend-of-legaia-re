@@ -1,7 +1,7 @@
 //! Host for the field overlay's **op-`0x49` submode screens**: the missing
 //! caller that walks the submode driver actor and invokes its `+0x50` handler.
 //!
-//! [`legaia_engine_vm::baka_hub_actors`] carries the dispatcher `FUN_801F159C`,
+//! [`legaia_engine_field::submode_hub_actors`] carries the dispatcher `FUN_801F159C`,
 //! its `PTR_FUN_801F33B4` state machines and the `PANEL_WINDOW_TABLE` painters.
 //! None of them can run without three things this module supplies: an actor
 //! with a `+0x50` handler id, the submode cursor context `DAT_801C6EA4` the
@@ -43,11 +43,11 @@
 //! FUN_801D9C3C (the spawn), FUN_801E9B3C (the panel install this records
 //! rather than performs)
 
-use legaia_engine_vm::baka_hub_actors::{
+use legaia_engine_field::submode_hub_actors::{
     self as hub, ACTOR_RETIRE, CoinCounter, HubAction, HubActor, HubDraw, HubEnv, HubEquipEnv,
     HubEquipRecord, HubFrame, HubGrid, HubPainter, slot,
 };
-use legaia_engine_vm::world_map_overlay::{EquipProps, ItemProps};
+use legaia_engine_field::dev_menu_leaves::{EquipProps, ItemProps};
 
 use crate::actor_handler::ActorHandler;
 use crate::equipment::{DiscEquipEntry, DiscEquipInfo, EquipSlot};
@@ -112,7 +112,7 @@ pub struct SubmodeScreen {
     /// The panel-window records the last installed descriptor names, which is
     /// how retail decides which painter draws: a state machine calls
     /// `FUN_801E9B3C` with a descriptor, and the descriptor's entries carry
-    /// the window indices ([`legaia_engine_vm::baka_hub_actors::panel_windows`]).
+    /// the window indices ([`legaia_engine_field::submode_hub_actors::panel_windows`]).
     ///
     /// The engine previously took the window from the *caller* at open time
     /// and never read the installs at all, so the coin counter drew the
@@ -206,7 +206,7 @@ pub struct SubmodeScreen {
     /// Slot `0x23`'s picker state ([`crate::field_submode_flag_window`]).
     pub flag_window: crate::field_submode_flag_window::FlagWindowState,
     /// Slot `0x21`'s lock state ([`crate::field_submode_code_lock`]).
-    pub code_lock: legaia_engine_vm::code_lock_actor::CodeLockActor,
+    pub code_lock: legaia_engine_field::code_lock_actor::CodeLockActor,
     /// The coin counter's entry panel this frame - the painter of record
     /// [`crate::slot_machine::COIN_ENTRY_WINDOW`], which lives in
     /// `slot_machine` rather than beside the other painters because it reads
@@ -235,7 +235,7 @@ pub const SOFT_RESET_RECORDS_X: i32 = 0x20;
 /// button, fades to white and reloads the executable, so it never hands the
 /// frame back: the op stays parked until the title takes over.
 ///
-/// The phase machine is `legaia_engine_vm::world_map_panel_actors::soft_reset_tick`
+/// The phase machine is `legaia_engine_field::world_map_panel_actors::soft_reset_tick`
 /// (`FUN_801EDF00`); this is the per-screen state it runs over.
 // REF: FUN_801EDF00 (soft_reset_tick), FUN_801ED710 (the records screen),
 // FUN_801D58F0 (the white fade), FUN_80017714 (the executable reload)

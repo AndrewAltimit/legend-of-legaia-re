@@ -303,7 +303,7 @@ impl World {
     /// Step every live **reflection pair**.
     ///
     /// PORT driver for FUN_801E5154 (the kernel is
-    /// [`legaia_engine_vm::field_actor_reflect::tick_reflection`])
+    /// [`legaia_engine_field::field_actor_reflect::tick_reflection`])
     ///
     /// One pass per game tick, over the pool slots the `4C 86` arm seated
     /// through [`Self::spawn_reflection_controller`]. Each pair reads its
@@ -323,7 +323,7 @@ impl World {
     /// no per-seat clip cursor here, so that copy has nowhere to land and
     /// the gate's only input is the live model id.
     fn tick_reflection_controllers(&mut self) {
-        use legaia_engine_vm::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
+        use legaia_engine_field::field_actor_reflect::{ReflectOutcome, flags, tick_reflection};
 
         let live: Vec<(usize, crate::world::ReflectionLink)> = self
             .actors
@@ -360,8 +360,8 @@ impl World {
     fn reflect_seat_read(
         &self,
         seat: crate::world::EasedMoveTarget,
-    ) -> Option<legaia_engine_vm::field_actor_reflect::ReflectActor> {
-        use legaia_engine_vm::field_actor_reflect::ReflectActor;
+    ) -> Option<legaia_engine_field::field_actor_reflect::ReflectActor> {
+        use legaia_engine_field::field_actor_reflect::ReflectActor;
         match seat {
             crate::world::EasedMoveTarget::Player => {
                 let slot = self.player_actor_slot? as usize;
@@ -392,7 +392,7 @@ impl World {
     fn reflect_seat_write(
         &mut self,
         seat: crate::world::EasedMoveTarget,
-        mirrored: &legaia_engine_vm::field_actor_reflect::ReflectActor,
+        mirrored: &legaia_engine_field::field_actor_reflect::ReflectActor,
     ) {
         match seat {
             crate::world::EasedMoveTarget::Player => {

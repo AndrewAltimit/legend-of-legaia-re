@@ -134,7 +134,7 @@ impl World {
                 // the run clip - `_DAT_8007BDD8 = 3`, `+0x5C = leader * 7 +
                 // 3`, bind (`0x801EF998..0x801EF9D0`).
                 self.push_sfx_cue(crate::tile_board::STEP_SFX);
-                self.field_player_strided_clip(vm::field_player_clip::BASE_RUN);
+                self.field_player_strided_clip(legaia_engine_field::field_player_clip::BASE_RUN);
                 self.board.target = Some((tx, tz));
                 // State 4 stores state 2 and falls straight into it
                 // (`sh s3,0x54(s4)` at `0x801EFA84`, then `0x801EFA88`), so
@@ -179,7 +179,7 @@ impl World {
         }
         if nx == tx && nz == tz {
             self.board.target = None;
-            self.field_player_strided_clip(vm::field_player_clip::BASE_IDLE);
+            self.field_player_strided_clip(legaia_engine_field::field_player_clip::BASE_IDLE);
             self.tile_board_arrival();
         }
     }

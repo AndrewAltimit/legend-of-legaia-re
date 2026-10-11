@@ -109,7 +109,7 @@ pub struct SaveScreenSpawn {
 /// WIRED: the sole `jal` to `0x801D841C` in the corpus is `0x801ED3DC`, inside
 /// `FUN_801ED308`, the world-map panel brightness fade/flash actor. That
 /// function is ported and live as
-/// `legaia_engine_vm::world_map_panel_actors::fade_flash_tick`, its phase-1
+/// `crate::world_map_panel_actors::fade_flash_tick`, its phase-1
 /// arm emits `FadeFlashEffect::SpawnSaveScreen` where the `jal` sits, and
 /// `legaia_engine_core::world_map_panel_host::PanelActorHost` calls this from
 /// that arm's handler. The call path is `World::tick` ->

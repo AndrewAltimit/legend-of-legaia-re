@@ -31,7 +31,7 @@ VRAM; **OT** = the GPU ordering table.
 | Walk frame | Field chain `FUN_801D1344` -> `FUN_801D01B0`, collision `FUN_801CFE4C` | `World::tick_world_map`, `step_world_map_locomotion`, `advance_with_collision` |
 | Walk camera | Field zone camera (`FUN_801DAB90` / `FUN_801DB510`) | `camera::zone_camera_scene`, `FieldCameraFrame::WorldMapWalk` |
 | Random encounters | Region roll `FUN_801D9E1C` | `World::live_world_map_tick`, `set_world_map_regions` |
-| Entity / encounter SM | `FUN_801DA51C` | `legaia_engine_vm::world_map::step` |
+| Entity / encounter SM | `FUN_801DA51C` | `legaia_engine_field::world_map_entity::step` |
 | Town / dungeon entrances | `.MAP` walk-on trigger -> MAN `P2` record -> field-VM `0x3F` | `OverworldPortal` entities, `overworld_portal_sites` |
 | Ground | `FUN_801F89B8` (PROT 0901), heights via `FUN_80019278` | `Scene::walk_heightfield`, `build_ground_heightfield` |
 | Decorations / landmarks | `FUN_801F69D8` cell sweep; `FUN_8003A55C` placed actors | `parse_walk_decorations`, `walk_object_placements` |
@@ -263,7 +263,7 @@ The bytes are at PROT 0897 file offset `0x18DC4`. The single call site is the
 branch pair at `0x801E7794..0x801E77B8` inside `FUN_801E76D4` (top view on
 **and** `DAT_801F2B95 & 1`), so retail reaches it only behind the debug flag.
 
-Port: `legaia_engine_vm::world_map_dim::emit_screen_dim`, gated by
+Port: `legaia_engine_field::world_map_dim::emit_screen_dim`, gated by
 `WorldMapController::run_screen_dim` and called once per frame from the
 world-map tick.
 
@@ -388,7 +388,7 @@ exits through `move v0,s1`).
 #### Engine port
 
 The renderer-free dev-menu leaves live in
-`legaia_engine_vm::world_map_overlay`:
+`legaia_engine_field::dev_menu_leaves`:
 
 - `panel_geometry`, `dev_menu_cursor_step` (swap-wrap), `list_body_draws` (the
   phase x gate draw gate);
@@ -427,7 +427,7 @@ the `0x17` clamp). The per-character portrait / separator icons
 status page's LV/HP/MP icons.
 
 The escape-timer scheduler `FUN_801D2EBC`, a leaf of the same overlay, has its
-own module `legaia_engine_vm::escape_timer`: the field VM's `0x4C 0xD3`
+own module `legaia_engine_field::escape_timer`: the field VM's `0x4C 0xD3`
 installer reaches `World::schedule_timed_flags` and
 `World::tick_escape_timer` drains the counter once per retail frame
 ([`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-0xd00xdf---party-state--inverted-y-mirror-cluster)).
@@ -531,7 +531,7 @@ linear flow. It is the same body.
 
 #### Engine port
 
-`legaia_engine_vm::world_map_panel` carries all three: `PanelCommand` /
+`legaia_engine_field::world_map_panel` carries all three: `PanelCommand` /
 `PanelEffect` / `decode_panel_command` / `run_panel_script` /
 `party_panel_geometry` for `FUN_801E9B3C`, `list_cursor_input` for
 `FUN_801E9DC8`, and `dev_menu_action` for `FUN_801EA9B0`'s bound, park-phase
@@ -675,7 +675,7 @@ primitives.
 
 #### Engine port
 
-`legaia_engine_vm::world_map_panel_actors` carries all seven as pure
+`legaia_engine_field::world_map_panel_actors` carries all seven as pure
 phase-transition kernels: `fade_flash_tick`, `sub_list_tick`,
 `soft_reset_tick`, `fill_fade_tick`, `text_box_tick`, `flag_window_tick` and
 `field_hud_tick`. Each returns its next phase plus an effect list naming the
@@ -713,7 +713,7 @@ Three inputs are the **port's**, not retail's:
 - **The handler-id table.** `FUN_801F159C` turns a retiring actor's new
   `ctx[+0x50]` into a function pointer through the 52-entry
   `PTR_FUN_801F33B4`. The dispatcher is ported
-  (`legaia_engine_vm::baka_hub_actors::hub_dispatch`) but takes the resolved
+  (`legaia_engine_field::submode_hub_actors::hub_dispatch`) but takes the resolved
   handler as a closure, and seven of the table's slots are read out of the
   image. The sub-list, text-box and flag-window exits hand back to slot
   `0x1A`, one of the seven; the fade/flash exits pick `0x29` and `0x2B`, which
@@ -772,7 +772,7 @@ Rows step `0x0E`, or `0x0D` while the op-`0x49` descriptor cell
   `(x + 0x0C, y + 8)` under ink `9`. Kind `2` draws the plain three rows. Any
   other kind draws nothing (the arm at `0x801E6280` branches to the epilogue).
 
-Port: `legaia_engine_vm::world_map_overlay::equip_stat_panel` is the whole
+Port: `legaia_engine_field::dev_menu_leaves::equip_stat_panel` is the whole
 sub-draw, composing `aggregate_slot_stats` (twice), `can_equip`,
 `resolve_equip_slot` and `stat_deltas`. `baka_hub_actors::entry_list` calls it
 where the `jal` sits and splices its rows in as `HubDraw::EntrySubPanel`. The
@@ -927,7 +927,7 @@ overlay data region `0x801F28F0..0x801F2Fxx` and the context `_DAT_801C6EA4`.
   `_DAT_801F2E8C` clamps to `[1, 255]`, the BGM index `_DAT_801F2E90` cycles
   the sentinel-terminated (`0x58`) table at `0x801F2E94`, and later arms poke
   per-character party records. Port: the two integer bounding kernels and the
-  pad-edge decode, `legaia_engine_vm::world_map_dev_menu` (`wrap12_step`,
+  pad-edge decode, `legaia_engine_field::dev_menu_adjust` (`wrap12_step`,
   `clamp1_255_step`, `pad_step`); the table-cycle and party-record arms are
   not ported.
 
@@ -1107,7 +1107,7 @@ battle stage packs
 
 #### From-scratch port - both overworld and field
 
-The port is `legaia_engine_vm::world_map::step` (host trait
+The port is `legaia_engine_field::world_map_entity::step` (host trait
 `WorldMapEntityHost`). `legaia_engine_core::World` ticks it in two modes:
 
 - **`SceneMode::WorldMap`** (`tick_world_map`): one `WorldMapEntityCtx` per
@@ -2542,7 +2542,7 @@ interpolates `base + (end - base) * acc / duration` per channel and
 bytes, frees the scratch and sets flag bit `0x8`. Two retail quirks are kept:
 the endpoint uses a **logical** shift over a possibly-negative product, and
 the per-tick term an **unsigned** `divu`. Port (arithmetic):
-`legaia_engine_vm::world_map_clut_fade::ClutBlendFade`.
+`legaia_engine_field::clut_fade_actor::ClutBlendFade`.
 
 Both families end in the statically-linked libgpu (`MoveImage`
 `FUN_80058490`, which patches the static 5-word GP0 packet template at
@@ -2729,7 +2729,7 @@ advances only by `tick * step` per call; the per-row `+= 0x10` is loop scratch.
 The emitter is called by a direct `jal` from SCUS. A reference sweep of the
 overlay alone misses the cross-program call; sweep SCUS to find the caller.
 
-Port: `legaia_engine_vm::world_map_horizon::emit_horizon`, driven from the
+Port: `legaia_engine_field::world_map_horizon::emit_horizon`, driven from the
 controller's gate consumer (`WorldMapController::run_horizon_emitter`).
 
 ### Gate-arm chain - `FUN_801D1344` -> `FUN_801D8258`

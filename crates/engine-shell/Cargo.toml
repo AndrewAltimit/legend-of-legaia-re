@@ -17,6 +17,8 @@ name = "legaia-launch"
 path = "src/bin/legaia-launch.rs"
 
 [dependencies]
+legaia-engine-menus.workspace = true
+legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true

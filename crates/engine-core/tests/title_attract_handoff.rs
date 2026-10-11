@@ -15,7 +15,7 @@
 //! exists to catch.
 
 use legaia_engine_core::title::{TitleEvent, TitleInput, TitlePhase, TitleSession};
-use legaia_engine_vm::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
+use legaia_engine_menus::title_overlay::{ATTRACT_FMV_ID, COUNTDOWN_RESET_VALUE};
 
 /// A session sitting on the live menu with the attract armed.
 fn armed() -> TitleSession {
@@ -147,7 +147,7 @@ fn a_cold_boot_session_reports_the_retail_sub_mode() {
     // The session derives its entry sub-mode by running retail's `Init`
     // with the boot entry word raised, so it lands on `0x10` - never the
     // `0x02` text menu, whose handler `init.pak` makes unreachable.
-    use legaia_engine_vm::title_overlay::TitleOverlaySubMode;
+    use legaia_engine_menus::title_overlay::TitleOverlaySubMode;
     let s = TitleSession::new();
     assert_eq!(s.retail_submode(), TitleOverlaySubMode::AttractIdle as u8);
     assert_ne!(s.retail_submode(), TitleOverlaySubMode::TextMenu as u8);
@@ -155,7 +155,7 @@ fn a_cold_boot_session_reports_the_retail_sub_mode() {
 
 #[test]
 fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
-    use legaia_engine_vm::title_overlay::TitleOverlaySubMode;
+    use legaia_engine_menus::title_overlay::TitleOverlaySubMode;
     // Row 0 (NEW GAME, where the cursor opens) -> 0x16 LaunchFade.
     let mut s = armed();
     s.tick(TitleInput {
@@ -190,7 +190,7 @@ fn each_confirmed_row_moves_the_retail_sub_mode_where_retail_moves_it() {
 
 #[test]
 fn returning_from_the_attract_re_enters_through_init() {
-    use legaia_engine_vm::title_overlay::TitleOverlaySubMode;
+    use legaia_engine_menus::title_overlay::TitleOverlaySubMode;
     let mut s = armed();
     assert!(idle_until_attract(&mut s));
     s.mark_attract_started();

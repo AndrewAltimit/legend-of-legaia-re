@@ -27,7 +27,7 @@ use legaia_engine_audio::WebAudioOut;
 use legaia_engine_core::menu_runtime::MenuRuntime;
 use legaia_engine_core::scene::{SceneHost, SceneTickEvent};
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::menu::{MenuInput, open as menu_open};
+use legaia_engine_menus::menu::{MenuInput, open as menu_open};
 use wasm_bindgen::prelude::*;
 
 use crate::play::{FieldRender, PlayerRig};
@@ -157,7 +157,7 @@ pub struct LegaiaRuntime {
     /// stage space. Resolved in `tick_field_party_hud` because the anchor
     /// needs the frame's view-projection (a `&mut self` read) and the draw
     /// pass does not have one; see [`crate::play_field_hud`].
-    pub(crate) passive_hud_icons: Vec<legaia_engine_vm::field_passive_hud::HudIcon>,
+    pub(crate) passive_hud_icons: Vec<legaia_engine_field::field_passive_hud::HudIcon>,
     /// The lead's projected stage-Y (240-line PSX space) the page reports
     /// each frame off its own view-projection ([`Self::set_field_player_screen_y`]),
     /// the twin of the native window's `field_hud_projected_player_y`. `None`

@@ -14,7 +14,7 @@ use legaia_engine_core::field_submode_screen::{
     Op49ParkOwner, SUBMODE_ACCEPT_MASK, slot_for_op49_sub_op,
 };
 use legaia_engine_core::world::World;
-use legaia_engine_vm::baka_hub_actors::{GOLD_PER_COIN, PICK_ACCEPT, slot};
+use legaia_engine_field::submode_hub_actors::{GOLD_PER_COIN, PICK_ACCEPT, slot};
 
 /// The raw PSX pad word a host sends for a **packed** Legaia mask - the
 /// submode masks are packed, `World::input` holds the raw word.
@@ -106,7 +106,7 @@ fn the_coin_counter_draws_the_panel_its_own_descriptor_installs() {
             0,
             10,
             10,
-            legaia_engine_vm::baka_hub_actors::window::THREE_LINE
+            legaia_engine_field::submode_hub_actors::window::THREE_LINE
         ],
         "the confirm program opens record 11 over the entry panel"
     );

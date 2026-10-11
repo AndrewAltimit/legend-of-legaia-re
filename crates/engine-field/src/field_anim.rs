@@ -32,9 +32,9 @@ use legaia_asset::player_anm::{BoneTransform, PlayerAnmBundle, blend_bone_transf
 /// every two engine ticks (one tick = one vsync, the frame step `1`).
 pub const CLIP_RATE: u16 = 8;
 
-/// The clip step and clip-end timing live in `legaia_engine_vm::field_player_clip`
+/// The clip step and clip-end timing live in `crate::field_player_clip`
 /// so the minigame crate shares them.
-pub use legaia_engine_vm::field_player_clip::{clip_end_ticks, clip_step};
+pub use crate::field_player_clip::{clip_end_ticks, clip_step};
 
 /// Looping playback over one field clip: all frames pre-decoded to the
 /// `(translation, rotation)` pairs [`PoseFrame`] carries, walked by retail's

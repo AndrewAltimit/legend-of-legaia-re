@@ -162,8 +162,8 @@ pub fn field_party_hud_members(world: &crate::world::World) -> Vec<FieldHudMembe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legaia_engine_vm::travel_art_actor::TravelArt;
-    use legaia_engine_vm::world_map_panel_actors::{FlagWindowDescriptor, HudDecision};
+    use legaia_engine_field::travel_art_actor::TravelArt;
+    use legaia_engine_field::world_map_panel_actors::{FlagWindowDescriptor, HudDecision};
 
     /// The Field HP Display option is the HUD's mode word, on the overworld
     /// as in a town: Immediate waits `0x28` frames, Gradual `0xA0`, Display
@@ -232,7 +232,7 @@ mod tests {
         }
         // The last held frame armed the full countdown; the released frames
         // spend it, and the one that takes it to zero draws.
-        let idle = i32::from(legaia_engine_vm::world_map_panel_actors::hud_idle_frames(
+        let idle = i32::from(legaia_engine_field::world_map_panel_actors::hud_idle_frames(
             0, false,
         ));
         assert_eq!(

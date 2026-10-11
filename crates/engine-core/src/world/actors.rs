@@ -683,7 +683,7 @@ impl World {
     /// a tile rect.
     ///
     /// PORT: FUN_801E573C (the plan kernel is
-    /// [`legaia_engine_vm::field_actor_reflect::spawn_controller`])
+    /// [`legaia_engine_field::field_actor_reflect::spawn_controller`])
     /// REF: FUN_8003C83C (the arm's id resolve), FUN_80020DE0 (the allocation),
     /// REF: FUN_801E5154 (the tick [`Self::tick_handler_actors`] then runs)
     ///
@@ -731,9 +731,9 @@ impl World {
             return None;
         }
         let slot = self.spawn_handler_actor(crate::actor_handler::ActorHandler::Reflection)?;
-        let controller = legaia_engine_vm::field_actor_reflect::spawn_controller(words);
+        let controller = legaia_engine_field::field_actor_reflect::spawn_controller(words);
         let a = &mut self.actors[slot];
-        a.state_54 = legaia_engine_vm::field_actor_reflect::REFLECT_INITIAL_STATE;
+        a.state_54 = legaia_engine_field::field_actor_reflect::REFLECT_INITIAL_STATE;
         a.reflection = Some(crate::world::ReflectionLink {
             destination,
             source,

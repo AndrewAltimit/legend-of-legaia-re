@@ -14,7 +14,7 @@
 //!
 //! ## The actor contract
 //!
-//! The state machine is [`legaia_engine_vm::code_lock_actor::CodeLockActor`].
+//! The state machine is [`legaia_engine_field::code_lock_actor::CodeLockActor`].
 //! Retail keeps its phase in the driver actor's `+0x54` ([`HubActor::sub`]),
 //! the entry cursor in `_DAT_8007BB88`, and the entered symbols in the
 //! dispatcher context `DAT_801C6EA4 + 0x54..0x58` ([`HubGrid::columns`]). The
@@ -37,8 +37,8 @@
 //! have no system-UI sprite pass for those records, so a cell is drawn as the
 //! button's letter.
 
-use legaia_engine_vm::baka_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot, window};
-use legaia_engine_vm::code_lock_actor::{CODE_LEN, CodeLockActor};
+use legaia_engine_field::submode_hub_actors::{HubAction, HubActor, HubFrame, HubGrid, slot, window};
+use legaia_engine_field::code_lock_actor::{CODE_LEN, CodeLockActor};
 
 use crate::field_submode_flag_window::{FIELD_OVERLAY_BASE, FlagWindowLine, FlagWrite};
 

@@ -9,6 +9,7 @@ name = "legaia_engine_fishing"
 path = "src/lib.rs"
 
 [dependencies]
+legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-system.workspace = true
 legaia-asset.workspace = true

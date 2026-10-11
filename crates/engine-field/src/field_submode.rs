@@ -322,7 +322,7 @@ pub struct CardRequest {
 /// is the front-end entry word, its two retail readers are `init.pak`'s
 /// hand-off arm (`0x801CF4B0`, ported at `legaia_engine_core::mode::ModeSeat::boot_handoff`)
 /// and the title dispatcher's `Init` routing (`0x801DD97C`, already ported as
-/// `legaia_engine_vm::title_overlay::ENTRY_WORD_ADDR`), and the seat now holds
+/// `legaia_engine_system::mode_entry_init::ENTRY_WORD_ADDR`), and the seat now holds
 /// the word both of them read.
 pub const fn request_card_mode() -> CardRequest {
     CardRequest {

@@ -154,7 +154,7 @@ pub struct ReflectionLink {
     pub source: EasedMoveTarget,
     /// `+0x80 .. +0x8A` - the mirror line and the tracking rect, as the
     /// spawner laid them out.
-    pub controller: legaia_engine_vm::field_actor_reflect::ReflectController,
+    pub controller: legaia_engine_field::field_actor_reflect::ReflectController,
 }
 
 /// Render-agnostic snapshot of one live effect-pool master slot, produced by

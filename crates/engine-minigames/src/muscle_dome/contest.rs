@@ -85,7 +85,7 @@ pub const COURSE_RAN_FIRST_FLAG_BASE: u16 = 0x130;
 pub const COURSE_RAN_FIRST_ROUND: u32 = 1;
 
 /// Ceiling the casino coin bank saturates at when a contest pays out.
-pub const COIN_BANK_MAX: i32 = legaia_engine_vm::baka_hub_actors::COIN_BANK_MAX;
+pub const COIN_BANK_MAX: i32 = legaia_engine_field::submode_hub_actors::COIN_BANK_MAX;
 
 /// Decode the course index out of the mode-24 sub-id word `_DAT_8007BAC0`:
 /// `((word - 1) & 0xFF) >> 4`.

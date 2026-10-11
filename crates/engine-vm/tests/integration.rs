@@ -23,6 +23,4 @@ mod camera_mover_recomp_oracle;
 mod cast_chain_bodies_real;
 mod cast_module_trampoline_bodies;
 mod effect_vm_real_efect;
-mod hub_entry_sub_panel;
 mod move_vm_overlay_ext_real_data;
-mod w2_timed_flag_scheduler_chain;

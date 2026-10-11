@@ -183,7 +183,7 @@ pub struct PondSession {
 /// Retail reads both regions off the one resident scene buffer
 /// (`*_DAT_1F8003EC`); the port keeps the same buffer and the parsed
 /// `+0x10000` region block beside it, because
-/// [`legaia_engine_vm::field_regions::RegionTable`] borrows rather than owns.
+/// [`legaia_engine_field::field_regions::RegionTable`] borrows rather than owns.
 #[derive(Debug, Clone)]
 pub struct PondVenue {
     /// The venue scene's `.MAP` buffer.

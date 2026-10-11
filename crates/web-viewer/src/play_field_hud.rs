@@ -2,7 +2,7 @@
 //! retail keeps in the top-left of every walkable frame.
 //!
 //! Pure wiring, like the rest of the play page's overlays: the decision is
-//! [`legaia_engine_vm::world_map_panel_actors::field_hud_tick`] driven through
+//! [`legaia_engine_field::world_map_panel_actors::field_hud_tick`] driven through
 //! [`legaia_engine_core::world_map_panel_host::FieldPartyHud`], the rows come
 //! from `field_party_hud_members`, and the geometry is
 //! [`legaia_engine_ui::field_party_hud::field_party_hud_draws_for`] - the same
@@ -212,7 +212,7 @@ impl LegaiaRuntime {
         if self.field_party_hud_suppressed() {
             return empty;
         }
-        let Some(legaia_engine_vm::world_map_panel_actors::HudDecision::Draw { y }) =
+        let Some(legaia_engine_field::world_map_panel_actors::HudDecision::Draw { y }) =
             self.field_party_hud.decision()
         else {
             return empty;

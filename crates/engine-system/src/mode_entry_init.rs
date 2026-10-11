@@ -649,6 +649,27 @@ pub const fn duel_overlay_init() -> DuelOverlayInit {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The boot entry word `init.pak` leaves for the title overlay
+// ---------------------------------------------------------------------------
+
+/// Address of the boot entry word retail's `init.pak` raises before the
+/// title overlay's first tick (`FUN_801CE9C0`, `sw s2,-0x4500(s0)` at
+/// `0x801CEB84` with `s0 = 0x80080000`). The title dispatcher's `Init` reads it at `0x801DD968`
+/// and the shared epilogue reads it again at `0x801DFED8`; both send the
+/// tick past sub-mode `0x02`.
+pub const ENTRY_WORD_ADDR: u32 = 0x8007_BB00;
+
+/// The value `init.pak` leaves in [`ENTRY_WORD_ADDR`] on a cold boot.
+/// `Init` takes the `0x11` arm on any non-zero value, and additionally
+/// streams the title assets when it reads exactly this.
+pub const ENTRY_WORD_COLD_BOOT: u32 = 1;
+
+/// The value the word carries when the title is re-entered from the
+/// attract movie (capture; see `docs/subsystems/boot.md`). Still non-zero,
+/// so the `0x11` arm holds, but the asset stream is skipped.
+pub const ENTRY_WORD_FROM_ATTRACT: u32 = 2;
+
 #[cfg(test)]
 mod tests {
     use super::*;

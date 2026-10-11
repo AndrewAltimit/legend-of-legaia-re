@@ -29,7 +29,7 @@ use legaia_engine_core::man_field_scripts::{
 };
 use legaia_engine_core::scene::{ProtIndex, Scene};
 use legaia_engine_core::world::{SceneMode, World};
-use legaia_engine_vm::escape_timer::TimerInk;
+use legaia_engine_field::escape_timer::TimerInk;
 use legaia_engine_vm::field_disasm::{ActorCtrlKind, Insn, InsnInfo, LinearWalker};
 
 /// Frames a single `4C D3` carrier is driven for when its own duration is

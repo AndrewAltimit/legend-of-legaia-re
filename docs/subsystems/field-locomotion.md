@@ -254,7 +254,7 @@ While the pad controller runs it rewrites the base before the next settle and th
 
 #### Engine port of the clip pick
 
-The pad step writes `World::locomotion.clip_base` through `legaia_engine_vm::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
+The pad step writes `World::locomotion.clip_base` through `legaia_engine_field::field_player_clip::locomotion_clip_base`; the hop tick applies the phase machine's stamps; `World::field_settle_clip_tail` runs `settle_clip_pick` and hands the bank slot to `FieldPlayerAnim::select_retail_slot`. Both play hosts build the player's clips with `FieldPlayerAnim::from_locomotion_bank`, which loads the leader's whole seven-record bank.
 
 The system channel's store is `World::tick_field_system_channel_clip_reset`, run once per field tick after the settle and skipped while `World::field_player_movement_locked` holds (the `0x80000` bit, an open dialogue, a cutscene timeline, the tile board, a ledge hop or a scripted arc). A kind-0 warp is not a lock, so its ticks idle.
 
@@ -530,7 +530,7 @@ The glide (`0x801D1C30..0x801D1C68`: `jal 0x80019278`, `subu a0, v0, v1`, two `s
 
 **The tail.** Every frame that did not start a hop, with `+0x9e <= 0x10`, ends in the animation tail - the locked arm included, so it runs through a hop: `jal 0x801D1EC4`, then the [clip pick](#the-clip-base-and-the-settle-tail) into `+0x5C` from `_DAT_8007BDD8`, `_DAT_8007B8F8 * 7` and `_DAT_8007B6AC`, and `FUN_800204F8` (`0x801D1D80..0x801D1EAC`).
 
-The bind call is skipped when scratchpad `0x1F800394 & 0x400` is set or the picked clip is `0`. The arithmetic is byte-for-byte the unreferenced field-overlay helper `FUN_801E58A8` (`legaia_engine_vm::menu_actor_seed::actor_clip_pick`) plus the two bind gates; the override arm clears the party-bank bit around the bind and restores it after.
+The bind call is skipped when scratchpad `0x1F800394 & 0x400` is set or the picked clip is `0`. The arithmetic is byte-for-byte the unreferenced field-overlay helper `FUN_801E58A8` (`legaia_engine_field::pooled_actor_seed::actor_clip_pick`) plus the two bind gates; the override arm clears the party-bank bit around the bind and restores it after.
 
 ### `FUN_801d1878` - probe and post
 
@@ -727,7 +727,7 @@ The `.MAP` file's `+0x10000..+0x12000` region is a per-tile trigger block. For k
 | 2 | `[tile_x][tile_z][coarse: i8][quads: u8]` | **Elevation override** for a ramp / staircase tile ([above](#floor-height-two-models)): `coarse` x `-0x20`, four 2-bit sub-cell steps in `quads` x `-0x10`. |
 | 3 | `[x0, z0, x1, z1, type, 0, 0, 0]` | **Region AABB** - the resumable point-in-AABB scan `FUN_80017FBC` (body at `+0x1000E`, count at `+0x10010`). Region types feed the bitmask `_DAT_8007B8F4` and the camera zone query `FUN_801DBA20`. |
 
-The per-tile lookup `FUN_801D5630(kind, x, z)` scans the `+0x10000` block first and **falls back to the `+0x12000` window**. Port: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-vm/src/field_regions.rs), `IntraSceneTeleport`, `RegionTable`, and [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
+The per-tile lookup `FUN_801D5630(kind, x, z)` scans the `+0x10000` block first and **falls back to the `+0x12000` window**. Port: [`field_regions::TileTrigger` / `parse_tile_triggers` / `lookup_tile_trigger`](../../crates/engine-field/src/field_regions.rs), `IntraSceneTeleport`, `RegionTable`, and [`Scene::field_tile_triggers`](../../crates/engine-core/src/scene/scene_ty.rs). See [`cutscene.md`](cutscene.md#record-spawn-mechanisms-live-probe-pinned) for the opening-chain use.
 
 #### The walk-on dispatcher `FUN_801D1EC4`
 
@@ -843,7 +843,7 @@ From `s3_rimelm_freeroam` with Down held, a position poke onto `town01`'s kind-0
 
 So the landing is `38` vsyncs after the crossing and the pad returns `40` vsyncs after that. The `-1000` sentinel lives for the rest of the landing tick only - it is gone before the next tick's readers (op `0x4C 2x`'s facing turn, the settle's hop gate) look, in any scene whose system channel runs `FUN_801DA51C`. The clip id `+0x5C` reads `2` (idle) from vsync 64 to 136 while Down stays held, and `1` again from 140. Each drain tick also stores the clamped `0` at `0x801D1630` after the `-2` at `0x801D162C` when the hold is already empty.
 
-**Port.** `legaia_engine_vm::field_warp_tile` carries the timer, the landing, the hold drain, the pad gate and the sentinel clear (`clear_landed_sentinel`); `World::arm_field_warp` / `World::tick_field_warp` apply them. `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame; the kind-0 arm itself is `SceneHost::dispatch_intra_scene_teleport`. `tick_field_warp` ends every frame with the clear.
+**Port.** `legaia_engine_field::field_warp_tile` carries the timer, the landing, the hold drain, the pad gate and the sentinel clear (`clear_landed_sentinel`); `World::arm_field_warp` / `World::tick_field_warp` apply them. `SceneHost::dispatch_walk_on_trigger` ticks the warp before its tile compare and runs the landing tile's kind-1 record on the landing frame; the kind-0 arm itself is `SceneHost::dispatch_intra_scene_teleport`. `tick_field_warp` ends every frame with the clear.
 
 The pad-off ticks bind the idle clip through `World::field_system_channel_clip_reset`; `engine-core/tests/field_player_clip_disc.rs` pins the captured sequence (walk on the crossing frame, idle through the `0x26` timer and the hold, walk again `0x28` frames after the landing with Down still held).
 
@@ -1193,7 +1193,7 @@ So the state space is **four programs on a stride of ten**, entered at `1` / `11
 
 Programs 0 and 1 are **openers**, 2 and 3 their **closers**, and a flag in the shared bank `DAT_80085758` is the handshake that survives the scene boundary between them.
 
-The openers belong to the two travel arts: the only `jal 0x801D5A24` sites on the disc besides the loader are phase 0 of the Riremito handler `FUN_801EE094` (`0x801EE110`, program 1) and of the Rula handler `FUN_801EE328` (`0x801EE3A4`, program 0) - see [`travel_art_actor`](../../crates/engine-vm/src/travel_art_actor.rs). The opener plays in the scene being left. The closer is spawned by the scene MAN loader `FUN_8003AEB0` in the scene arrived at, gated on the flag the opener set (bits are MSB-first, so `0x8008575A & 0x01` is flag `0x17` and `0x80085759 & 0x08` is flag `0x0C`):
+The openers belong to the two travel arts: the only `jal 0x801D5A24` sites on the disc besides the loader are phase 0 of the Riremito handler `FUN_801EE094` (`0x801EE110`, program 1) and of the Rula handler `FUN_801EE328` (`0x801EE3A4`, program 0) - see [`travel_art_actor`](../../crates/engine-field/src/travel_art_actor.rs). The opener plays in the scene being left. The closer is spawned by the scene MAN loader `FUN_8003AEB0` in the scene arrived at, gated on the flag the opener set (bits are MSB-first, so `0x8008575A & 0x01` is flag `0x17` and `0x80085759 & 0x08` is flag `0x0C`):
 
 | loader site | gate | spawns |
 |---|---|---|
@@ -1246,7 +1246,7 @@ The "flash" both arts spawn is one stack template handed to `FUN_80024E80(templa
 
 **Port.** Both play hosts run the chain through the world tick. A host that closes its pause menu on a Door use stages the destination (`World::menu.pending_warp` / `pending_escape`); `World::drain_staged_menu_warp` hands it to the session (`World::begin_pause_session_exit`); `World::tick_pause_session` runs `FUN_801ED308`'s ramp-down (`fade_flash_tick`) to its phase-6 or phase-7 arm, installs the art that arm's handler id names (`TravelArt::for_handler_id`), runs it, spawns its fade, and on the resolve frame issues the scene transition the scene host drains.
 
-The handler-`7` hop is `legaia_engine_vm::field_state_pick::state_pick` behind `World::field_menu_button_state`; `World::field_menu_open_allowed` opens only when it picks `0x30` (the debug word is the overworld controller's `debug_enabled`). Two differences: the menu itself is the hosts' `MenuRuntime`, so the session starts at its park phase, not phase 0; and a destination that does not resolve drops the use before the art is installed, where retail would run the art and park in `UNFIND MAP NUMBER` with the opener still holding the player. The world-map debug sub-list's hand-off still installs Riremito on the overworld panel host.
+The handler-`7` hop is `legaia_engine_field::field_state_pick::state_pick` behind `World::field_menu_button_state`; `World::field_menu_open_allowed` opens only when it picks `0x30` (the debug word is the overworld controller's `debug_enabled`). Two differences: the menu itself is the hosts' `MenuRuntime`, so the session starts at its park phase, not phase 0; and a destination that does not resolve drops the use before the art is installed, where retail would run the art and park in `UNFIND MAP NUMBER` with the opener still holding the player. The world-map debug sub-list's hand-off still installs Riremito on the overworld panel host.
 
 ### A Door use, captured
 

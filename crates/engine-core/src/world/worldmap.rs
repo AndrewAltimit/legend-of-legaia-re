@@ -43,14 +43,14 @@ impl World {
     ///
     /// When overworld entities are installed
     /// ([`Self::install_world_map_entities`]) it also steps each one through
-    /// the ported entity SM ([`vm::world_map::step`]): the Idle state drains
+    /// the ported entity SM ([`legaia_engine_field::world_map_entity::step`]): the Idle state drains
     /// the shared encounter countdown and, when it reaches zero with
     /// encounters enabled, latches the configured formation, which this method
     /// then resolves into a battle ([`SceneMode::WorldMap`] → [`SceneMode::Battle`],
     /// returning to the world map on victory). Interactions / portal
     /// transitions surface as [`FieldEvent::FieldInteract`] for the host.
     ///
-    /// The per-entity SM itself is ported in [`vm::world_map`]; the encounter
+    /// The per-entity SM itself is ported in [`legaia_engine_field::world_map_entity`]; the encounter
     /// formation resolver it gates is the retail BGM/asset resolver.
     ///
     /// REF: FUN_801DA51C
@@ -123,7 +123,7 @@ impl World {
             let mut entities = std::mem::take(&mut self.world_map.entities);
             for (idx, ctx) in entities.iter_mut().enumerate() {
                 let mut host = WorldMapEntityHostImpl { world: self };
-                vm::world_map::step(idx, ctx, &mut host);
+                legaia_engine_field::world_map_entity::step(idx, ctx, &mut host);
             }
             self.world_map.entities = entities;
         }
@@ -248,7 +248,7 @@ impl World {
         // The clip base the settle tail strides into the player's clip -
         // the same slice of `FUN_801D01B0` the field step runs, since the
         // overworld runs that very controller.
-        if let Some(base) = vm::field_player_clip::locomotion_clip_base(
+        if let Some(base) = legaia_engine_field::field_player_clip::locomotion_clip_base(
             self.locomotion.player_clip,
             dir_bits,
             self.field_base_step(),
@@ -561,7 +561,7 @@ impl World {
     /// configured via [`Self::set_world_map_encounter`].
     pub fn install_world_map_entities(&mut self, count: usize) {
         self.world_map.entities = (0..count)
-            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .map(|_| legaia_engine_field::world_map_entity::WorldMapEntityCtx::default())
             .collect();
         self.world_map.entity_configs.clear();
     }
@@ -572,7 +572,7 @@ impl World {
     /// previously installed set.
     pub fn install_world_map_entities_with_configs(&mut self, configs: Vec<WorldMapEntityConfig>) {
         self.world_map.entities = (0..configs.len())
-            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .map(|_| legaia_engine_field::world_map_entity::WorldMapEntityCtx::default())
             .collect();
         self.world_map.entity_configs = configs;
         self.world_map.entity_positions.clear();
@@ -590,7 +590,7 @@ impl World {
         entities: Vec<(WorldMapEntityConfig, (i16, i16))>,
     ) {
         self.world_map.entities = (0..entities.len())
-            .map(|_| vm::world_map::WorldMapEntityCtx::default())
+            .map(|_| legaia_engine_field::world_map_entity::WorldMapEntityCtx::default())
             .collect();
         self.world_map.entity_positions = entities.iter().map(|(_, pos)| *pos).collect();
         self.world_map.entity_configs = entities.into_iter().map(|(cfg, _)| cfg).collect();
@@ -672,7 +672,7 @@ impl World {
         // mutable `engage` borrow.
         let mut to_engage: Vec<usize> = Vec::new();
         for (idx, ctx) in self.world_map.entities.iter().enumerate() {
-            if ctx.state != vm::world_map::EntityState::Idle as u16 {
+            if ctx.state != legaia_engine_field::world_map_entity::EntityState::Idle as u16 {
                 continue;
             }
             if !matches!(
@@ -745,8 +745,8 @@ impl World {
     /// party's stored tile, binds the pad chords that install a panel actor,
     /// steps whichever actor is up, and applies what the frame produced. The
     /// phase machines themselves are the ports in
-    /// [`legaia_engine_vm::world_map_panel_actors`]; the window system under
-    /// them is [`legaia_engine_vm::world_map_panel`].
+    /// [`legaia_engine_field::world_map_panel_actors`]; the window system under
+    /// them is [`legaia_engine_field::world_map_panel`].
     ///
     /// **The chords are the port's, not retail's.** Retail reaches this band
     /// from debug branches inside the world-map controller; the engine gates
@@ -765,11 +765,11 @@ impl World {
     ///
     /// The sub-list's own row-1 confirm takes retail's state-3 hand-off, which
     /// the port binds to installing the Riremito travel art
-    /// ([`legaia_engine_vm::travel_art_actor`]) - the art then warps the party
+    /// ([`legaia_engine_field::travel_art_actor`]) - the art then warps the party
     /// back to the tile recorded before the screen opened.
     fn tick_world_map_panels(&mut self) {
         use crate::world_map_panel_host::{PanelActorKind, packed_pad};
-        use legaia_engine_vm::travel_art_actor::TravelArt;
+        use legaia_engine_field::travel_art_actor::TravelArt;
 
         if self.world_map.ctrl.is_none() {
             return;
@@ -965,7 +965,7 @@ impl World {
     /// (`0x801EE268..0x801EE294`).
     ///
     /// REF: FUN_801EE328, FUN_801EE094 (the kernel is
-    /// `legaia_engine_vm::travel_art_actor::TravelArtActor::tick`)
+    /// `legaia_engine_field::travel_art_actor::TravelArtActor::tick`)
     fn apply_travel_art_frame(&mut self, frame: &crate::world_map_panel_host::PanelFrame) {
         self.apply_travel_art_outputs(
             frame.travel_queue_program,
@@ -985,7 +985,7 @@ impl World {
         lift_player_y: Option<i16>,
         restore_player: bool,
     ) {
-        use legaia_engine_vm::travel_art_actor as ta;
+        use legaia_engine_field::travel_art_actor as ta;
         if let Some(program) = queue_program {
             self.system_flag_set(u16::from(crate::field_actor_program::FLAG_PLAYER_BUSY));
             if self.spawn_scene_program(program).is_some() {
@@ -1134,7 +1134,7 @@ impl World {
         if let Some(ctx) = self.world_map.entities.get_mut(idx) {
             // State 2 = Transitioning: the SM fires `on_scene_transition` and
             // retires the entity on the next tick.
-            ctx.state = vm::world_map::EntityState::Transitioning as u16;
+            ctx.state = legaia_engine_field::world_map_entity::EntityState::Transitioning as u16;
         }
     }
 

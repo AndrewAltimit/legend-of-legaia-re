@@ -120,13 +120,13 @@ impl LureActor {
     /// 1. [`walk_grid_overhead`] over the `+0x4000` grid's **high** nibble -
     ///    a hit drifts the `x` accumulator by `frame_step << 11`.
     /// 2. the `+0x8000` cell word's [`CELL_WATER_BIT`]; on water, the region
-    ///    walk ([`legaia_engine_vm::field_regions::refresh_region_attributes`] - retail's
+    ///    walk ([`legaia_engine_field::field_regions::refresh_region_attributes`] - retail's
     ///    `FUN_800180EC`, called at `0x801D3384`, writing `_DAT_8007B8F4`)
     ///    yields the region-kind mask [`water_tile_class`] classifies.
     pub fn probe(
         &mut self,
         map: &[u8],
-        region: Option<&legaia_engine_vm::field_regions::RegionTable<'_>>,
+        region: Option<&legaia_engine_field::field_regions::RegionTable<'_>>,
         cast_counter: i32,
         frame_step: i32,
     ) -> LureProbe {
@@ -139,7 +139,7 @@ impl LureActor {
         // `walk_grid_overhead` indexes from the grid's own base, so it takes
         // the `+0x4000` block rather than the whole map.
         let walk = map
-            .get(legaia_engine_vm::field_regions::MAP_WALK_GRID_OFFSET..)
+            .get(legaia_engine_field::field_regions::MAP_WALK_GRID_OFFSET..)
             .unwrap_or(&[]);
         if walk_grid_overhead(walk, x as i32, self.z as i32) {
             let push = fs << LURE_DRIFT_SHIFT;
@@ -154,7 +154,7 @@ impl LureActor {
             return out;
         }
         out.water = true;
-        let (mask, _attrs) = legaia_engine_vm::field_regions::refresh_region_attributes(
+        let (mask, _attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
             region, tile_x, tile_z, false,
         );
         if let Some((bonus, weight)) = water_tile_class(mask) {

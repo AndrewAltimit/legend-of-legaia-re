@@ -904,7 +904,7 @@ impl World {
                         // when a scene-bank clip has played its frames; a
                         // party-bank clip (the locomotion loops) is not timed.
                         tl.player_clip_ticks = match pick.bound() {
-                            Some((vm::field_player_clip::ClipBank::Scene, record)) => host
+                            Some((legaia_engine_field::field_player_clip::ClipBank::Scene, record)) => host
                                 .world
                                 .locomotion
                                 .scene_clip_ticks

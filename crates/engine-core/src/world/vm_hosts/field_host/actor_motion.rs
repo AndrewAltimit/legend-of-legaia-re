@@ -312,7 +312,7 @@ impl FieldHostImpl<'_> {
                 .npcs
                 .anim_cues
                 .insert(slot, (1, move_id, Vec::new()));
-            let party_bank = ctx.flags & vm::field_player_clip::PARTY_BANK_FLAG != 0;
+            let party_bank = ctx.flags & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG != 0;
             self.world.bind_npc_scene_clip(
                 slot,
                 move_id,

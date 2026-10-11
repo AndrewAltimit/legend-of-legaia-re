@@ -472,7 +472,7 @@ apart; Noa (`120`) and Gala (`80`) seed the cap at `100` while their agility
 cells carry the per-character value.
 
 **Port.** The control flow is mirrored in
-`crates/engine-vm/src/title_overlay/state_layout.rs`
+`crates/engine-menus/src/title_overlay/state_layout.rs`
 (`MASTER_GAME_MODE_FIELD_LAUNCH` = 2, `MASTER_GAME_MODE_FIELD_RUN` = 3,
 `FIELD_SCENE_INIT_PC`, `MENU_INDEX_NEW_GAME`) and `World::begin_new_game`
 (`crates/engine-core/src/world/state.rs`), which clears the story flags and
@@ -977,8 +977,8 @@ counter has three stepping writers in the title tick and two more in `init.pak`
 never reset, so a later title (after a party wipe or a backed-out Continue)
 opens on whichever row it last held this power-on.
 
-**Port.** `legaia_engine_vm::title_overlay`
-([source](../../crates/engine-vm/src/title_overlay.rs)) pins the jump table,
+**Port.** `legaia_engine_menus::title_overlay`
+([source](../../crates/engine-menus/src/title_overlay.rs)) pins the jump table,
 the state-struct offsets, every handler body and all 56 `state[+0x204] = N`
 stores; `TitleTickState::step` executes the graph one arm per sub-mode plus the
 shared epilogue. Exported launch constants: `MASTER_GAME_MODE_FIELD_LAUNCH`,
@@ -1231,7 +1231,7 @@ Two functions carry the screen:
 
 The title tick reaches three SCUS-side helpers to emit GPU primitives:
 
-| Helper | Role | Port (`legaia_engine_vm::title_prim`) |
+| Helper | Role | Port (`legaia_engine_menus::title_prim`) |
 |---|---|---|
 | `FUN_80058298` | `ClearImage` rect-fill queue (37 instructions) | `exec_clear_image(host, rect, r, g, b)` |
 | `FUN_80058490` | `MoveImage` VRAM-to-VRAM copy (49 instructions) | `exec_move_image(host, src, dst_x, dst_y)`, early-out on zero extent like the original's `li v0, -1` path |
@@ -1246,7 +1246,7 @@ logging). `init.pak` uses the same helper for its logo uploads.
 `Rect12 { x, y, w, h }` capture the wire shapes; the `PrimHost` trait abstracts
 the engine callbacks (`queue_clear_rect`, `queue_move_image`, `emit_sprite`,
 `stp_or_gate_set`, plus the defaulted `stp_or_pixels`). The module
-([source](../../crates/engine-vm/src/title_prim.rs)) also carries ports of the
+([source](../../crates/engine-menus/src/title_prim.rs)) also carries ports of the
 menu overlay's box / centred-text drawers `FUN_801E36C4`, `FUN_801E3EE0` and
 `FUN_801E373C`.
 

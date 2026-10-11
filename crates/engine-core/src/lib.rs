@@ -79,7 +79,7 @@ pub use legaia_engine_field::field_lit_mesh;
 pub use legaia_engine_menus::field_menu;
 pub mod field_menu_dispatch;
 pub mod field_occlusion;
-pub use legaia_engine_vm::field_regions;
+pub use legaia_engine_field::field_regions;
 pub mod field_view_window;
 pub mod fishing_actors;
 pub mod fishing_exchange_input;

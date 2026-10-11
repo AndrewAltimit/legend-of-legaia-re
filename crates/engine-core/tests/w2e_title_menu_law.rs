@@ -5,7 +5,7 @@
 //! read off `FUN_801DD35C`'s `AttractIdle` block, not off the port.
 
 use legaia_engine_core::title::{TitleEvent, TitleInput, TitleOutcome, TitlePhase, TitleSession};
-use legaia_engine_vm::title_overlay::{
+use legaia_engine_menus::title_overlay::{
     ATTRACT_INPUT_FREEZE_BELOW, COUNTDOWN_RESET_VALUE, TITLE_MENU_ROWS, TITLE_SFX_CONFIRM,
     TITLE_SFX_CURSOR_MOVE,
 };
