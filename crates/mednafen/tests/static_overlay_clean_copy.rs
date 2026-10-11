@@ -1,7 +1,7 @@
 //! Disc + save-state-gated clean-copy proof for the static overlay pipeline.
 //!
 //! This is the decisive experiment behind the static overlay-extraction
-//! pipeline (`legaia_asset::static_overlay`, `docs/tooling/static-overlay-pipeline.md`):
+//! pipeline (`legaia_overlay_images::static_overlay`, `docs/tooling/static-overlay-pipeline.md`):
 //! a runtime overlay extracted statically from `PROT.DAT` is byte-identical to
 //! the image the runtime DMAs into the `0x801C0000+` overlay window. PSX
 //! overlays are clean copies of a fixed-VA-linked blob (FlushCache + jump, no
@@ -24,9 +24,9 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::static_overlay::{self, OverlayRecord};
 use legaia_mednafen::container::SaveState;
 use legaia_mednafen::extract::ram_slice;
+use legaia_overlay_images::static_overlay::{self, OverlayRecord};
 use legaia_prot::archive::Archive;
 
 const OVERLAY_LO: u32 = 0x801C_0000;

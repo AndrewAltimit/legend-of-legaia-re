@@ -1,5 +1,5 @@
 //! Disc-gated fixture for the casino slot machine's **bonus round and its
-//! marquee** - the gate the five `legaia_asset::minigame_slot_scene` kernels
+//! marquee** - the gate the five `legaia_minigame_formats::minigame_slot_scene` kernels
 //! behind it sit on (`FUN_801CEC94`, `FUN_801CFFF0`, `FUN_801D069C`,
 //! `FUN_801D0FA8`, `FUN_801D3230`).
 //!
@@ -34,9 +34,9 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_asset::minigame_art;
-use legaia_asset::minigame_slot_scene as slot;
-use legaia_asset::slot_payout;
+use legaia_minigame_formats::minigame_art;
+use legaia_minigame_formats::minigame_slot_scene as slot;
+use legaia_minigame_formats::slot_payout;
 
 /// The slot overlay (PROT 0975) as the CLI reads it: the raw entry file. The
 /// scene tables are addressed by **file** offset (`PAYLINE_TABLE_OFFSET` =

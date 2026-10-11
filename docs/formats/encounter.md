@@ -203,7 +203,7 @@ The cell keeps its last formation until the next install; victory does not clear
 
 One byte carries two unrelated things, written by the two halves of the encounter path:
 
-- **Low bits - the stage id.** The random roll overwrites the whole byte with `region[+8] & 0x1F` (`FUN_801D9E1C`, `0x801DA064..0x801DA070`). The backdrop picker reads `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the battle stage; see [`legaia_asset::battle_backdrop`](../../crates/asset/src/battle_backdrop.rs).
+- **Low bits - the stage id.** The random roll overwrites the whole byte with `region[+8] & 0x1F` (`FUN_801D9E1C`, `0x801DA064..0x801DA070`). The backdrop picker reads `word[0x80084540] + (byte[0x8007BD60] & 0x7F)` to select the battle stage; see [`legaia_asset::battle_backdrop`](../../crates/scene-formats/src/battle_backdrop.rs).
 - **Bit `0x80` - "this fight is scripted".** Raised by the confirm state when `record[+0]` is non-zero. The roll writes the byte first and the confirm state ORs into it afterwards, so the two never race.
 
 Consumers of bit `0x80`:
@@ -397,7 +397,7 @@ A 100-byte block allocated by `FUN_8003A024` and filled per scene by `FUN_8003A1
 
 ## The MAN header and section chain
 
-The encounter data is the `Man` asset in each scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle, descriptor index 2. The asset dispatcher `FUN_8001F05C` LZS-decompresses it into the heap buffer at `_DAT_8007B898`. `FUN_8003AEB0` (called from `FUN_801D6704` and the sibling scene loaders) walks the header, writes the section-0 pointer into `ctrl[+0x20]` and calls `FUN_8003A110`. The header is byte-exact across all 80 retail `scene_asset_table` bundles. Parser: [`legaia_asset::man_section`](../../crates/asset/src/man_section.rs).
+The encounter data is the `Man` asset in each scene's [`scene_asset_table`](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle) bundle, descriptor index 2. The asset dispatcher `FUN_8001F05C` LZS-decompresses it into the heap buffer at `_DAT_8007B898`. `FUN_8003AEB0` (called from `FUN_801D6704` and the sibling scene loaders) walks the header, writes the section-0 pointer into `ctrl[+0x20]` and calls `FUN_8003A110`. The header is byte-exact across all 80 retail `scene_asset_table` bundles. Parser: [`legaia_asset::man_section`](../../crates/scene-formats/src/man_section.rs).
 
 | Offset | Size | Field | Meaning |
 |---|---|---|---|
@@ -628,7 +628,7 @@ The encounter randomizer relies on this to leave boss fights untouched (`legaia_
 
 ## Files referencing this format
 
-- [`crates/asset/src/man_section.rs`](../../crates/asset/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
+- [`crates/scene-formats/src/man_section.rs`](../../crates/scene-formats/src/man_section.rs) - MAN header walker, section chain, formation / condition / region record parsers.
 - [`crates/engine-battle/src/encounter_record.rs`](../../crates/engine-battle/src/encounter_record.rs) - the runtime `EncounterRecord` parser and `expand_battle_id`.
 - [`crates/engine-battle/src/region_encounter.rs`](../../crates/engine-battle/src/region_encounter.rs) - the `FUN_801D9E1C` roll.
 - [`crates/engine-field/src/camera_zone.rs`](../../crates/engine-field/src/camera_zone.rs) - camera-region loader, composer, ease, snap, focus clamp.

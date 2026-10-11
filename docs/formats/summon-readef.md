@@ -544,7 +544,7 @@ unreachable through the enemy path.
 
 `readef.DAT`'s 78 slots are 26 three-slot groups, and a monster record's
 `+0x1C` is the group index (`legaia_asset::monster_archive::MonsterRecord::readef_group`;
-disc-gated census in `crates/asset/tests/monster_readef_group_real.rs`).
+disc-gated census in `crates/battle-models/tests/monster_readef_group_real.rs`).
 Across the 186 populated records the byte never leaves `0..=25`, which is
 itself the check that the group reading is the right one - a base outside
 `0..=75` would seek past the end of the file.

@@ -1338,7 +1338,7 @@ rather than blitting the full quad:
   colour-coded - bright for the cursor row, dim otherwise - with no arrow or
   cursor mark.
 
-**Port.** [`legaia_asset::title_pak`](../../crates/asset/src/title_pak.rs)
+**Port.** [`legaia_asset::title_pak`](../../crates/ui-formats/src/title_pak.rs)
 parses the entry: `extract_title_tim(&prot_0890_bytes, TITLE_TIM_OFFSET)`
 returns a zero-copy slice + decoded VRAM rects, and the `TITLE_BAND_*` constants
 pin the sub-rects above (disc-gated `extracts_real_title_tim_when_disc_extracted`).
@@ -1413,7 +1413,7 @@ CLUT and pixel data are byte-identical to live RAM after boot; only the `RECT`
 fields are rewritten at runtime. On disc each TIM has CLUT `fb=(0, 480+N)` and
 pixel `fb=(640..800, 0..256)`.
 
-Parser: [`legaia_asset::init_pak`](../../crates/asset/src/init_pak.rs) -
+Parser: [`legaia_asset::init_pak`](../../crates/ui-formats/src/init_pak.rs) -
 `parse(&prot_0895_bytes)` returns a struct view over the four logos (disc-gated
 `parses_real_init_pak_when_disc_extracted`).
 

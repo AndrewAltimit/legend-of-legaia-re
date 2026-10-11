@@ -38,7 +38,7 @@ The two entries in `PROT.DAT`'s TOC head - **raw TOC entries 0 and 1**, the regi
 extraction index space skips (extraction entry `p` = raw entry `p + 2`; see
 [prot.md](prot.md)) - are both TIM-packs. Together they are the **boot-resident
 system-UI bundle**: raw entry 0 (sectors 3..55) declares 20 members, raw entry 1 one.
-Parser: `legaia_asset::system_ui_bundle`; disc pins in `crates/asset/tests/system_ui_bundle_real.rs`.
+Parser: `legaia_asset::system_ui_bundle`; disc pins in `crates/ui-formats/tests/system_ui_bundle_real.rs`.
 
 Raw entry 0's members, in table order: the boot cursor (`PROT.DAT[0x01858]`), the
 system-UI sprite sheet (`0x018E0`, image `(896,256)` 64×192), UI elements

@@ -9,7 +9,7 @@ overlay's data segment, not a scene MAN section, effect bundle, or actor
 spawn record.
 
 Parser + `jal`-site scanner: `legaia_asset::widget_script`. Disc pins in
-`crates/asset/tests/widget_script_real.rs`. Interpreter port:
+`crates/game-tables/tests/widget_script_real.rs`. Interpreter port:
 `legaia_engine_vm::run`; engine host + trigger wiring:
 `legaia_engine_core::menu_widget` (see
 [actor-vm.md](../subsystems/actor-vm.md#where-the-programs-live)).

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use legaia_asset::{categorize, validate};
+use legaia_container_formats::validate;
+use legaia_disc_audit::categorize;
 use legaia_prot::cdname;
 
 pub(crate) fn validate_blocks(
@@ -63,7 +64,7 @@ pub(crate) fn validate_blocks(
         // Pick the best count: highest one that yields layout_ok with at
         // least one descriptor decoding cleanly to a known magic OR all
         // descriptors decoding without error.
-        let mut best: Option<(usize, legaia_asset::ContainerReport)> = None;
+        let mut best: Option<(usize, legaia_container_formats::ContainerReport)> = None;
         for &n in &counts {
             if raw.len() < 8 + n * 8 {
                 continue;

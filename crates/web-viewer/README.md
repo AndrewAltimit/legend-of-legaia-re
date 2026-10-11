@@ -868,7 +868,7 @@ grip is open, a `fused` one carries its limb. Completeness over purity: no
 equipped section yields nothing. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-is-still-separable---by-palette-not-by-geometry).
 Disc-gated oracles: `tests/equipment_view_real.rs` plus the 81-record sweep
-in `crates/asset/tests/equip_item_real.rs`.
+in `crates/battle-models/tests/equip_item_real.rs`.
 
 `equipped_item_only_glb(section)` is the second download beside it: the
 **item alone** - no host limb, no skin, no unchanged default geometry - the
@@ -888,8 +888,8 @@ file holds; `equipped_mesh_item_mask(section)` (per-vertex `0 / 1 / 2`:
 outside the section / left behind / item) is the pre-repair view of the
 same cut. Background:
 [`docs/formats/battle-data-pack.md`](../../docs/formats/battle-data-pack.md#the-item-alone---an-opinionated-cut-with-a-committed-rule-table);
-sweep + table integrity in `crates/asset/tests/equip_isolate_real.rs`, the
-grip sweep in `crates/asset/tests/equip_repair_real.rs`.
+sweep + table integrity in `crates/battle-models/tests/equip_isolate_real.rs`, the
+grip sweep in `crates/battle-models/tests/equip_repair_real.rs`.
 
 The characters page's **equipment panel** - every slot, every piece as its
 own card - runs on `equipment_item_card_json(slot, section, id)` /

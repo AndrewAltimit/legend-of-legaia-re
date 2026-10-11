@@ -2,7 +2,7 @@
 
 Every asset the game loads is tagged with a one-byte **type** that says what it is - a texture, a mesh, dialog text, an animation bank. `FUN_8001F05C` is the one routine that turns that byte into an action: allocate a buffer, decompress or copy the bytes, and register the result with the right subsystem. Both containers on the disc ([asset descriptor tables](asset-descriptor.md) and [DATA_FIELD streams](data-field.md)) store the byte the same way, packed into a `type_size` word, and both reach this dispatcher.
 
-Implementation: `legaia_asset::AssetType` in [`crates/asset/src/lib.rs`](../../crates/asset/src/lib.rs). Source: `ghidra/scripts/funcs/8001f05c.txt`.
+Implementation: `legaia_asset::AssetType` in [`crates/container-formats/src/lib.rs`](../../crates/container-formats/src/lib.rs). Source: `ghidra/scripts/funcs/8001f05c.txt`.
 
 ## The `type_size` word
 

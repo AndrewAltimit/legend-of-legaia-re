@@ -9,7 +9,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::{AssetType, categorize, parse_streaming};
+use legaia_container_formats::{AssetType, parse_streaming};
+use legaia_disc_audit::categorize;
 use legaia_iso::iso9660;
 use legaia_iso::raw::{RawDisc, USER_DATA_SIZE};
 use legaia_prot::archive::Archive;
@@ -157,7 +158,7 @@ const EXPECTED_CLASS_COUNTS: &[(&str, usize)] = &[
     // each entry's own sectors leaves the 88 bare tables untouched and the
     // carrier entries classed as what they are: event-script prescripts.
     // Pinned at 0 so a reader or detector regression that resurrects the
-    // phantom fails here (see `crates/asset/tests/scene_asset_table_walk_real.rs`).
+    // phantom fails here (see `crates/disc-audit/tests/scene_asset_table_walk_real.rs`).
     ("scene_scripted_asset_table", 0),
     // `scene_event_scripts` 78 → **101**: one per scene block, at slot 2.
     // The missing 23 were falling through to a byte-histogram class because
@@ -329,7 +330,8 @@ fn validation_suite_full_pipeline() {
                             continue;
                         }
                         let chunk_data = &entry_buf[data_start..data_end];
-                        if let Ok(items) = legaia_asset::pack::extract_pack(chunk_data) {
+                        if let Ok(items) = legaia_container_formats::pack::extract_pack(chunk_data)
+                        {
                             total_subassets += items.len();
                         }
                     }
@@ -399,7 +401,7 @@ fn validation_suite_full_pipeline() {
     archive
         .read_entry(&pinned, &mut entry_buf)
         .expect("re-read");
-    let scene = legaia_asset::scene_tmd_stream::detect(&entry_buf)
+    let scene = legaia_scene_formats::scene_tmd_stream::detect(&entry_buf)
         .expect("retock should detect as scene_tmd_stream");
     assert!(
         scene.tmd_nobj >= 1 && scene.tmd_nobj <= 16,

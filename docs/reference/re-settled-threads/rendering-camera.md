@@ -155,6 +155,6 @@ beat records), while a linear census walks partition 1:
   subset that runs. Both find the same eight scenes, and neither reaches a roll operand outside the
   angle space, which marks the resuming sweep's impossible operands (`26708`) as data.
 - Oracle: `crates/engine-core/tests/thread_camera_roll_execution.rs`; the linear modes are kept as a
-  negative record in `crates/asset/tests/thread_camera_roll_census.rs`.
+  negative record in `crates/scene-formats/tests/thread_camera_roll_census.rs`.
 
 Owning page: [`cutscene.md`](../../subsystems/cutscene.md).

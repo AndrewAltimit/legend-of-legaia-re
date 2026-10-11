@@ -31,7 +31,7 @@ the entries as geometry and are falsified; see
 | Clip selector + clock | `FUN_800204F8` |
 | Animated draw | `FUN_8001B964` (render mode `actor[+0x56] == 1`) |
 | Entry decoder | `FUN_8001BE80` |
-| Parser | `legaia_asset::world_map_overlay` ([source](../../crates/asset/src/world_map_overlay.rs)) |
+| Parser | `legaia_asset::world_map_overlay` ([source](../../crates/scene-formats/src/world_map_overlay.rs)) |
 | Confidence | Confirmed - every field pinned to the instruction that reads it, container byte-verified against live RAM |
 
 ```mermaid

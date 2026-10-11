@@ -210,7 +210,7 @@ and `0xAE` both reach `0x801F78B8` (the `beq` at `0x801F825C` and the `bne` at
 `0x801F8E90`), so ids `0xB0`, `0xB1` and `0xB2` share it.
 
 The port carries the map as data (`cast_arm_ticks::CAPTURE_TRAMPOLINES`,
-`capture_tick_body`), and `crates/asset/tests/cast_module_data_rows_real.rs`
+`capture_tick_body`), and `crates/overlay-images/tests/cast_module_data_rows_real.rs`
 re-derives each row off the disc from the `0x801CF56C` arm and the
 trampoline's own `jal` set.
 
@@ -367,7 +367,7 @@ image. The run-by-run boundaries are on
 All 64 entries carry a
 [`static-overlays.toml`](../../crates/asset/data/static-overlays.toml) row and
 an extracted image. The base cross-check in
-`crates/asset/tests/static_overlay_extract.rs` counts each image's
+`crates/overlay-images/tests/static_overlay_extract.rs` counts each image's
 `lui 0x801f` / `0x8020` + `addiu` pairs and asks how many resolve **inside**
 the image. References that legitimately leave the image are excluded rather
 than counted against the base, which lets the acceptance floor sit at 0.90
@@ -1019,7 +1019,7 @@ Verdicts:
   record pointer and a scale literal. The spawn pool produces its whole
   output. Scope rows under `[slot_b_spawn_stagers]` in
   `scripts/ci/port-catalog-ignore.toml`;
-  `crates/asset/tests/cast_module_data_rows_real.rs` re-derives per row that
+  `crates/overlay-images/tests/cast_module_data_rows_real.rs` re-derives per row that
   the routine frame-matches in its owning image, that its spawn count is the
   one below, and that it calls no damage wrapper.
 - **PORT**: reads or writes simulation state (a damage roll with the HP

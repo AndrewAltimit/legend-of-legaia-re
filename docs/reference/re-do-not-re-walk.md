@@ -1401,9 +1401,9 @@ no multi-sub-stream caller to find. A structural feature that only ever appears
 at the end of a buffer is a claim about the reader's bounds until it is shown
 somewhere that is not immediately before another entry of the same class.
 `sub_streams` and `WalkSource::Continuation` stay in
-[`scene_tmd_stream.rs`](../../crates/asset/src/scene_tmd_stream.rs) as
+[`scene_tmd_stream.rs`](../../crates/scene-formats/src/scene_tmd_stream.rs) as
 regression detectors, with disc-gated coverage in
-`crates/asset/tests/scene_tmd_stream_real.rs`. Corrected layout:
+`crates/disc-audit/tests/scene_tmd_stream_real.rs`. Corrected layout:
 [`scene-bundles.md`](../formats/scene-bundles.md#one-entry-one-stream-the-falsified-two-list-shape).
 
 ### "The backdrop shell is drawn once, so no completion exists"

@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use crate::ModeArg;
 use anyhow::Result;
-use legaia_asset::{AssetType, DecodeMode, Descriptor, decode, parse_player_lzs, parse_streaming};
+use legaia_container_formats::{
+    AssetType, DecodeMode, Descriptor, decode, parse_player_lzs, parse_streaming,
+};
 
 pub(crate) fn describe(input: &PathBuf, count: usize) -> Result<()> {
     let raw = crate::cli_io::read_input(input)?;
@@ -263,7 +265,7 @@ pub(crate) fn extract_streaming(input: &PathBuf, out: &PathBuf, save_trailer: bo
         std::fs::create_dir_all(&chunk_dir)?;
 
         if is_pack {
-            match legaia_asset::pack::extract_pack(chunk_data) {
+            match legaia_container_formats::pack::extract_pack(chunk_data) {
                 Ok(items) => {
                     println!(
                         "chunk @ 0x{:08X}  type={:<8}  size={:>9}  ->  {} sub-assets",

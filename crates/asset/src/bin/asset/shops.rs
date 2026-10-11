@@ -12,8 +12,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_asset::{item_names, shop_stock};
+use legaia_game_tables::item_names;
 use legaia_prot::{archive::Archive, cdname};
+use legaia_scene_formats::shop_stock;
 
 /// A CD sector's 12-byte sync pattern, for the "you fed me the disc image"
 /// guard - the same mix-up `field-disasm scan-prot` catches.

@@ -5,8 +5,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use legaia_asset::formation_census::FormationCensus;
-use legaia_asset::seru_side_effect::{
+use legaia_disc_audit::formation_census::FormationCensus;
+use legaia_game_tables::seru_side_effect::{
     SIDE_EFFECT_BANDS, SIDE_EFFECT_TABLE_FILE_OFFSET, SeruSideEffectTable, SideEffectKind,
 };
 

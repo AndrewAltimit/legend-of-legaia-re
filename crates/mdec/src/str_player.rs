@@ -37,7 +37,7 @@
 //! | `+0x18` | width | `801cf28c` - the `DISPENV` width |
 //! | `+0x1C` | height | `801cf168` (second buffer at `fb_y + height`), `801cf2c8` (display rect `h = height * 2`) |
 //!
-//! `legaia_asset::fmv_dispatch::FmvEntry` keeps six of the eight (it drops
+//! `legaia_game_tables::fmv_dispatch::FmvEntry` keeps six of the eight (it drops
 //! `fb_x` / `fb_y`); this module is where those two get their meaning. The
 //! record is playback-only, and there are no undecoded bytes left in it.
 //!
@@ -117,7 +117,7 @@ pub struct Rect {
 /// One 32-byte FMV dispatch slot, in the play loop's own terms.
 ///
 /// Field-for-field the record documented in
-/// `legaia_asset::fmv_dispatch`; kept here so `legaia-mdec` can drive a
+/// `legaia_game_tables::fmv_dispatch`; kept here so `legaia-mdec` can drive a
 /// segment without depending on the asset crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FmvSlot {

@@ -2,7 +2,7 @@
 
 Each field scene ships a small **walk-on tile-trigger file**, dev filename `DATA\FIELD\<scene>.PCH`. It lists tiles that fire a scripted event when the player steps on them, and it extends the trigger block inside the scene's `.MAP` file: same header shape, same record forms, consulted second. Every one of the 97 retail files is exactly one `0x800`-byte sector and populates a single record kind.
 
-Parser: [`crates/asset/src/scene_v12_table.rs`](../../crates/asset/src/scene_v12_table.rs) (`legaia_asset::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
+Parser: [`crates/scene-formats/src/scene_v12_table.rs`](../../crates/scene-formats/src/scene_v12_table.rs) (`legaia_asset::scene_v12_table`). CLI: `asset scene-v12 <PROT-entry>` (single), `asset scene-v12-scan <dir>` (bulk).
 
 ## At a glance
 
@@ -34,7 +34,7 @@ flowchart TD
     t2 --> spawn
 ```
 
-The suffix pool is in `SCUS_942.54`: `0x8007B3BC` `.MAP`, `0x8007B3C4` `.PCH`, `0x8007B3CC` `.LZS`. The position law is asserted by the disc-gated `scene_v12_position_law_and_lzs_sibling` in `crates/asset/tests/scene_v12_corpus.rs`; defines are raw indices ([`cdname.md` § numbering space](cdname.md#numbering-space)). Three scenes have no `.PCH` at slot 1: `opurud`, `opkorout`, `edson` - op-`0x44`-driven cutscene scenes with no trigger tiles.
+The suffix pool is in `SCUS_942.54`: `0x8007B3BC` `.MAP`, `0x8007B3C4` `.PCH`, `0x8007B3CC` `.LZS`. The position law is asserted by the disc-gated `scene_v12_position_law_and_lzs_sibling` in `crates/scene-formats/tests/scene_v12_corpus.rs`; defines are raw indices ([`cdname.md` § numbering space](cdname.md#numbering-space)). Three scenes have no `.PCH` at slot 1: `opurud`, `opkorout`, `edson` - op-`0x44`-driven cutscene scenes with no trigger tiles.
 
 **Naming caveat.** Extraction *filename* labels apply defines as extraction indices and are shifted +2, so a filename names the wrong scene:
 

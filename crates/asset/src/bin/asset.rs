@@ -105,7 +105,9 @@ fn account_cmd(
     keep_claims: bool,
     json: bool,
 ) -> Result<()> {
-    use legaia_asset::byte_account::{AccountOptions, account, prot_index_from_name, render_text};
+    use legaia_disc_audit::byte_account::{
+        AccountOptions, account, prot_index_from_name, render_text,
+    };
 
     let path = resolve_prot_entry(input, prot_dir)?;
     let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
@@ -119,7 +121,7 @@ fn account_cmd(
         label: name,
         funcs_dir: funcs,
         // The overlay walkers need the sibling entries to measure this image's
-        // inherited tail (`legaia_asset::inherited_tail`); this is the same
+        // inherited tail (`legaia_disc_audit::inherited_tail`); this is the same
         // directory the bare-index form resolves against.
         prot_dir: prot_dir.is_dir().then(|| prot_dir.to_path_buf()),
         depth,

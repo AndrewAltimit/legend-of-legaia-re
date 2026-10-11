@@ -2,7 +2,7 @@
 
 A pack is the simplest container on the disc: a count, a table of offsets, then the members back to back. It is how several textures or several meshes travel as one unit - the data payload of a `TIM_LIST` or `TMD` chunk inside a [DATA_FIELD stream](data-field.md), or a whole PROT entry on its own. Offsets are counted in 4-byte words, and there is no per-member size: a member ends where the next one starts.
 
-Implementation: [`crates/asset/src/pack.rs`](../../crates/asset/src/pack.rs) (`parse_pack`, `extract_pack`).
+Implementation: [`crates/container-formats/src/pack.rs`](../../crates/container-formats/src/pack.rs) (`parse_pack`, `extract_pack`).
 
 ## Layout
 

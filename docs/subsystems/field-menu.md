@@ -1777,7 +1777,7 @@ drivers, and `0x801DB510` is interior to `FUN_801DB380`.
 starts at `_DAT_8007B450 + record[2] + 3`, where `record[2]` is a skip count
 the record owns. For a shop record `[count][count x item_id][ASCII name]` that
 lands on the vendor name
-([`legaia_asset::shop_stock`](../../crates/asset/src/shop_stock.rs)), which is
+([`legaia_asset::shop_stock`](../../crates/scene-formats/src/shop_stock.rs)), which is
 why window 33 is the vendor plate in a shop and a prompt line here.
 
 Small sub-screen ticks on the same phase protocol:

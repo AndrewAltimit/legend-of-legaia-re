@@ -543,7 +543,7 @@ if let Some(eb) = effect_bundle::detect(&buf) {
 }
 ```
 
-Implementation: `crates/asset/src/effect_bundle.rs`.
+Implementation: `crates/container-formats/src/effect_bundle.rs`.
 
 ### The `0x01059B84` word is not this bundle's sibling magic
 

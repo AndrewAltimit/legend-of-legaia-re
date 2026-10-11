@@ -49,7 +49,7 @@ impl Mesh {
     /// appended indices are emitted in reverse corner order to keep the
     /// copy's facing consistent with the original. This is the mesh-side
     /// equivalent of the draw-mode swap retail performs for the same case
-    /// (see `legaia_asset::battle_backdrop`).
+    /// (see `legaia_scene_formats::battle_backdrop`).
     pub fn append_scaled(&mut self, src: &Mesh, scale: [f32; 3]) {
         let base = self.positions.len() as u32;
         self.positions.extend(

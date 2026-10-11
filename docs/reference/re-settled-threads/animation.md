@@ -61,7 +61,7 @@ nibble-packed translation plus three byte angles, decoded as the retail sampler 
 
 Port: `legaia_asset::player_anm` - `BoneTransform::decode` (one entry, pinned by
 `bone_transform_decode_signed_12bit` on town01 record 17) and `PlayerAnmBundle::sample_bone` (the
-two-frame blend); the size invariant is the disc-gated `crates/asset/tests/player_anm_real.rs`.
+two-frame blend); the size invariant is the disc-gated `crates/battle-models/tests/player_anm_real.rs`.
 The site characters page runs the same `(t, r)` pipeline.
 
 Owning page: [`anm.md`](../../formats/anm.md).

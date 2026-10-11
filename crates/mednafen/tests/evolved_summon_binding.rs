@@ -31,10 +31,10 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 use legaia_engine_core::scene::ProtIndex;
 use legaia_engine_core::summon::summon_stager_prot_entry;
 use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
+use legaia_overlay_images::summon_overlay::{self, SUMMON_OVERLAY_LINK_BASE};
 
 /// `(scenario label, loader-B id, extraction entry, spell id)` for the
 /// catalogued evolved-Seru player casts backed by **mednafen** states (eight of

@@ -37,9 +37,9 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
 use legaia_engine_core::scene::ProtIndex;
 use legaia_mednafen::{SaveState, ScenarioManifest, extract::ram_slice};
+use legaia_overlay_images::summon_overlay::SUMMON_OVERLAY_LINK_BASE;
 
 const FIRETAIL: &[&str] = &["battle_gimard_tail_fire_a", "battle_gimard_tail_fire_b"];
 

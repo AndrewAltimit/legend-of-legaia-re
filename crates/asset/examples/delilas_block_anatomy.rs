@@ -3,7 +3,7 @@
 //! by parsing the TMD for its true byte length.
 //! Run: cargo run --release -p legaia-asset --example delilas_block_anatomy -- extracted/PROT/0867_battle_data.BIN
 
-use legaia_asset::monster_archive;
+use legaia_battle_models::monster_archive;
 
 fn main() -> anyhow::Result<()> {
     let path = std::env::args()

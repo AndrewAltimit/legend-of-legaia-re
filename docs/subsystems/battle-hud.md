@@ -130,7 +130,7 @@ Port pins: [`engine-ui::battle_chrome`](../../crates/engine-ui/src/battle_chrome
 ### One sheet, one 3-slice, two palettes
 
 The whole chrome samples the **resident system-UI TIM**
-([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/asset/src/title_pak.rs),
+([`title_pak::OVERLAY_SYSTEM_UI_TIM_OFFSET`](../../crates/ui-formats/src/title_pak.rs),
 `PROT.DAT` `0x18E0`). Its pixels upload to VRAM page `(896, 256)` and its CLUT
 block packs into VRAM row **511** as side-by-side 16-entry sub-palettes. The
 chrome plates use the first sixteen; the
@@ -150,7 +150,7 @@ tiles** at two sheet rows:
 | `v = 64` | `(208,64)` / `(192,64)` / `(216,64)` | 12 (carved gold) | actor-name plaque |
 
 The `v = 64` row is the art
-[`title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`](../../crates/asset/src/title_pak.rs)
+[`title_pak::OVERLAY_SYSTEM_UI_TAB_CAP_L`](../../crates/ui-formats/src/title_pak.rs)
 pins as the field menu's tab banner: the battle plaque and the pause menu's
 title tab are one asset (`battle_chrome::gold_plate_matches_tab_banner`).
 
@@ -188,7 +188,7 @@ plate run, so its record (`w = 88`, `h = 50`) insets by `(-5, -6)` and widens by
 The table is **disc data** - initialised rodata in the executable's data
 segment. The runtime writes back only the measured width, the string pointer
 and the live seat while an element slides. The disc-gated oracle
-`crates/asset/tests/screen_elements_real.rs` re-decodes it off the user's
+`crates/ui-formats/tests/screen_elements_real.rs` re-decodes it off the user's
 `SCUS_942.54` and asserts each seat above.
 
 ### The actor-name plaque
@@ -614,7 +614,7 @@ Every sprite the chrome draws comes out of one array: the widget-class table at
 run's end is structural: `0x800732A4 + 0x9D * 0x0C` is exactly `0x80073A00`,
 the frame tile-set pool the class arms read next. Parser
 `legaia_asset::ui_widgets`; disc-gated oracle
-`crates/asset/tests/ui_widgets_real.rs`.
+`crates/ui-formats/tests/ui_widgets_real.rs`.
 
 A placement record's two frame-style bytes are indices into this table. Style
 `0x01` is widget record `0x01`, the blue plate body; style `0x02` is record
@@ -1380,7 +1380,7 @@ the blue plate 3-slice, the 8x16 `/` separator and the 8x12 numerals are baked
 into the shared sprite atlas and drawn 1:1 - the first three off the system-UI
 sheet (sub-palettes 0 / 4 / 5), the numerals off the menu-glyph atlas through
 sub-palette 13. Source rects live in
-[`title_pak`](../../crates/asset/src/title_pak.rs) as
+[`title_pak`](../../crates/ui-formats/src/title_pak.rs) as
 `OVERLAY_SYSTEM_UI_BATTLE_*`; atlas seats in
 [`save_menu_atlas`](../../crates/engine-menus/src/save_menu_atlas.rs) as
 `ATLAS_RECT_BATTLE_*`, all at their natural sheet coordinates except the

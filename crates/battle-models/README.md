@@ -14,6 +14,11 @@ per-module rows keep describing them.
   kernel), `battle_char_pack` (the `other5` battle-form mesh pack),
   `battle_char_palette` (the in-battle party CLUTs), `face_anim` (battle
   facial animation) and `me_archive` (the `"ME"` keyframe-stream archive).
+- **Field form** - `character_pack` (the PROT 0874 section-0 field mesh
+  pack), `player_anm` (the party locomotion and per-scene NPC animation
+  bundles), `field_char_textures` (PROT 0874 section 2) and `befect_cluster`
+  (the `befect_data` cluster those sections sit in). `player_file_annex`
+  reads a player battle file whose slot region is annexed outside PROT.
 - **Side-band** - `summon_readef` (the `summon.dat` / `readef.DAT` streaming
   slots) and `summon_creatures` (the Seru-magic summon to `battle_data`
   creature map).
@@ -28,3 +33,8 @@ The equipment-isolation override table `equip_isolate` compiles in sits at
 [`character-mesh.md`](../../docs/formats/character-mesh.md),
 [`monster-animation.md`](../../docs/formats/monster-animation.md) and
 [`summon-readef.md`](../../docs/formats/summon-readef.md) carry the layouts.
+
+Sits on [`legaia-container-formats`](../container-formats/README.md) (the
+descriptor decode and pack the field pack is read through) and
+[`legaia-game-tables`](../game-tables/README.md). It must not depend on the
+scene, UI or minigame format crates, nor on `legaia-disc-audit`.

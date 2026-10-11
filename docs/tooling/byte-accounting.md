@@ -467,7 +467,7 @@ boundary a bound the container states.
 
 The claims are therefore `pad`, with the boundary as their end. Two guard rails
 keep that from being a way to buy percentage points, and both are asserted by
-`crates/asset/tests/byte_account_entries.rs` against the raw file rather than
+`crates/disc-audit/tests/byte_account_entries.rs` against the raw file rather than
 against the parser: a claim covers only the slot's maximal all-zero **suffix**,
 so a walker that stopped early inside live content leaves that content as
 residue; and every claim ends on a multiple of the stride. The same rule, one
@@ -583,7 +583,7 @@ and the reciprocal divide at `801cee2c`..`801cee54` wraps the cursor `mod 81`,
 which is the record count. Ten rows are drawn per page. The loop is inside
 `FUN_801CED68`
 (`see ghidra/scripts/funcs/overlay_other3_dev_0974_801ced68.txt`). Parser
-[`legaia_asset::other3_roster`](../../crates/asset/src/other3_roster.rs);
+[`legaia_asset::other3_roster`](../../crates/disc-audit/src/other3_roster.rs);
 `claim_other3_roster` claims each record at the stride, padding included, because
 the stride is what the loop advances by.
 
@@ -626,7 +626,7 @@ it.
 | `0898` | `0x27CCC` up to `0x801F6734`, claimed | the two five-byte per-command scalars at `0x801F64E4` / `0x801F64EC` (`FUN_801EC3E4`), the Miracle Art trigger rows at `0x801F64F4` (`FUN_801EED1C`), the Super Art replace strings at `0x801F65E8` (`FUN_801EF9E4`), the monster casts' opening-shot bytes at `0x801F66D8` (`FUN_801E9FD4`) and the four status-guard masks at `0x801F672C` (`FUN_801F0450`) | - each is a [consumer-pinned row](#a-runtime-index-states-its-stride-and-a-consumer-its-count) whose extent comes from an index domain, a loop or the next formed address ([below](#the-battle-overlays-command-tables)) |
 | `0927` / `0912` / `0895` | claimed | spawn records | `0912`'s is formed in a saved register fifty-nine words above its call ([`slot-b-module-layout.md`](../formats/slot-b-module-layout.md#resolving-the-pointer-a-spawn-call-is-handed)); `0927`'s and `0895`'s chain exactly onto a pointer-credited record ([below](#a-record-chain-pinned-at-both-ends)) |
 | `0896` | `0x855B` up, about 470 B | the SJIS-bearing words at `0x801DD34B` and the short record runs at `0x801DD44D` / `0x801DD49D` | their consumers are the foreign build's routines, whose callee layouts are not the USA SCUS ones the record rules key on. The `a0`-formed pool from `0x801DD554` is claimed: it is twenty-eight window programs for the image's own interpreter `FUN_801D896C` ([below](#the-window-programs-are-read-off-their-interpreters-calls)) |
-| `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/asset/src/byte_account/pinned.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
+| `0970` | `0x801D0E9C`, 2816 B, claimed as dead data | an AC VLC lookup table - every word is zero or `(len << 26) \| (run << 10) \| level`, the MPEG-1 run / level form - directly above the MDEC / DMA register-pointer block, running to the uninitialised region at `0x801D199C` | nothing reads it: no word, `jal`, `j` or `lui` pair names an address in it in any image (`find-address-word-refs.py --prot`), no `gp`, `lui` + load or base-plus-displacement access reaches it, the register block's own loads stop at `0x801D0E98`, and the overlay's decoder reads the separate table `FUN_801F1A00` unpacks at `0x801E0A00`. It is claimed shape-checked under that name ([`byte_account`](../../crates/disc-audit/src/byte_account/pinned.rs), `claim_str_dead_vlc_table`), not as a structure a consumer walks |
 
 The `0970` row used to start at `0x2534` and was taken by one reading for
 uninitialised data and by the shape classifier for code; it is neither. Its
@@ -650,7 +650,7 @@ formed at `0x801CFEE8`, `0x801CFFC0`, `0x801D009C`) and the interact facing
 compass at `0x801F2254` (eight points, formed at `0x801D0834`); each extent
 runs to the next formed base, and the last ends at the `lw`/`sw` scalar
 `0x801F2274`. The bases are
-[`legaia_asset::field_probe_tables`](../../crates/asset/src/field_probe_tables.rs)
+[`legaia_asset::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs)
 consts, claimed only when `check` re-derives each from its `lui` pairs.
 
 Three rows left this table on one rule each. `0898`'s 3512-byte head is
@@ -674,7 +674,7 @@ scan cannot find; unlike the cast band, this module calls it with an internal
 An overlay's rodata string pool has no header and no count, so no walker can
 reach it the way a container walker reaches a record. What makes a byte run a
 string *of this image* is that the image's own code computes its address - the
-same `lui`-pair test ([`formed_addresses`](../../crates/asset/src/byte_account/code_scan.rs))
+same `lui`-pair test ([`formed_addresses`](../../crates/disc-audit/src/byte_account/code_scan.rs))
 the uninitialised-data claim rests on - and what bounds it is its own NUL. The
 walker claims a NUL-terminated run at every formed address when three quarters
 of its bytes are printable ASCII, and follows one level of indirection: where a
@@ -725,12 +725,12 @@ is the next table's base or a zero pad word below it. `0x801CF1CC` (179 arms,
 index `lbu(0x8007BD0C + $s7) - 4`, `jr` at `0x801EA9FC`) and `0x801CF49C` (5
 arms, the battle context's `+0x28A` phase byte) are two of them; the other
 twenty, and the seven head strings whose addresses the overlay forms, are
-`pub const` rows in [`legaia_asset::battle_jump_tables`](../../crates/asset/src/battle_jump_tables.rs),
+`pub const` rows in [`legaia_asset::battle_jump_tables`](../../crates/disc-audit/src/battle_jump_tables.rs),
 each carrying its base-forming site, its `jr` and its index expression.
 
 The rows are claimed only when `battle_jump_tables::check` re-derives every one
 from the image's own instructions, and a disc-gated test
-(`crates/asset/tests/battle_jump_tables_real.rs`) holds each table to the dump
+(`crates/disc-audit/tests/battle_jump_tables_real.rs`) holds each table to the dump
 corpus: all 850 arms land inside the dumped extent that also holds the table's
 own `jr`, per `scripts/ghidra-analysis/dump-extent-attribution.csv`.
 
@@ -748,7 +748,7 @@ switch-table rule finds all twenty-four.
 ### A switch table is read off its dispatch
 
 The `0898` idiom is the compiler's, not the overlay's, so it is also a rule:
-[`legaia_asset::switch_tables`](../../crates/asset/src/switch_tables.rs) walks
+[`legaia_asset::switch_tables`](../../crates/disc-audit/src/switch_tables.rs) walks
 back from every `jr` that is not `$ra` to the `lw` that loads its target, the
 `addu` that forms the slot, and the two operands of that `addu` - a `lui`
 (`+ addiu`, or the `lw`'s own displacement) for the base, an `sll` by two (or
@@ -757,7 +757,7 @@ an `sllv` by a register just set to two) for the index - and then to the
 is kept only when every arm is a word-aligned VA inside the image's own content
 and the dispatch sits below the inherited tail. On `0898` it reproduces every
 row `battle_jump_tables` pins by hand plus the two above
-(`crates/asset/tests/overlay_data_consumers_real.rs`); across the mapped
+(`crates/disc-audit/tests/overlay_data_consumers_real.rs`); across the mapped
 overlays it claims the field overlay's thirty-one tables, the menu's, the
 minigame images' and the slot-B modules' `switch`es by the same measurement.
 
@@ -825,7 +825,7 @@ about these bytes. The rule moves a handful of other extents from `short` or
 ### The formed-address test follows the register
 
 Every claim above that rests on "the image's own code forms this address" reads
-it off [`lui_forms`](../../crates/asset/src/byte_account/code_scan.rs): the `lui`
+it off [`lui_forms`](../../crates/disc-audit/src/byte_account/code_scan.rs): the `lui`
 register is carried through copies, through one indexing `addu` (the
 `lui at,hi; addu at,at,rX; lw rY,lo(at)` array form, whose `hi + lo` is the
 array's base - reported separately by `indexed_addresses`, since it is not the
@@ -895,7 +895,7 @@ templates.
 
 ### A counted loop states its array's length
 
-[`loop_bounded_arrays`](../../crates/asset/src/byte_account/code_scan.rs) claims an array
+[`loop_bounded_arrays`](../../crates/disc-audit/src/byte_account/code_scan.rs) claims an array
 when the loop that walks it states the count: a backward `bnez`/`beqz` whose
 test is `slti`/`sltiu i, N` at most three words above it, `i` zeroed within
 eight words before the loop and bumped by one inside it, an `addu` of `i` (or
@@ -915,7 +915,7 @@ pointer bump and a runtime index have rules of their own, below.
 Most of an overlay's data segment is indexed at a **runtime** value - an actor
 field, a menu cursor, a script operand - so the counted-loop rule above sees
 none of it. The index arithmetic still states the element size, and
-[`byte_account::arrays`](../../crates/asset/src/byte_account/arrays.rs) reads it:
+[`byte_account::arrays`](../../crates/disc-audit/src/byte_account/arrays.rs) reads it:
 at every `addu` in a dumped function whose one operand is a formed base (an
 `addiu` completing a `lui` pair, or the bare `lui` of the `lui at,hi; addu
 at,at,rX; lw y,lo(at)` form), the other operand is evaluated backwards as
@@ -968,7 +968,7 @@ Some tables defeat both array rules for reasons the rules are right to refuse,
 and each is pinned instead by the instructions that consume it, re-checked
 against the image's own words before the claim is made
 (`CONSUMER_PINNED_TABLES` in
-[`byte_account`](../../crates/asset/src/byte_account.rs)). Every `lui` site a
+[`byte_account`](../../crates/disc-audit/src/byte_account.rs)). Every `lui` site a
 row cites must still form the address it names, and a loop-stated count must
 still be the immediate at its site; a row that disagrees gets a note and no
 claim.
@@ -1111,7 +1111,7 @@ so in a note rather than silently counting a donor's code as this entry's
 residue.
 
 The two sides are held to each other cut for cut
-(`crates/asset/tests/inherited_tail_real.rs`) and they agree on every mapped
+(`crates/disc-audit/tests/inherited_tail_real.rs`) and they agree on every mapped
 image. PROT `0944` used to be the one exception, and the disagreement was in the
 own-content figure both sides call, not in either tail implementation: this
 side chained `0944`'s top record's **zero padding** (`0x1988..0x199C`) as a
@@ -1154,7 +1154,7 @@ first bundle, `0004`, has no earlier entry long enough, and its slack is zero,
 the buffer as first allocated. The donors are ordinary neighbours: PROT `0013`'s
 slack is PROT `0005`'s bytes, `0061`'s is `0053`'s.
 
-The claim is [`inherited_tail::buffer_run`](../../crates/asset/src/inherited_tail.rs):
+The claim is [`inherited_tail::buffer_run`](../../crates/disc-audit/src/inherited_tail.rs):
 after the walkers run, the slack above an entry's highest claim is tested
 **whole** against the prediction, and claimed `inherited_tail` naming each
 donor, or not at all. All-zero slack stays the `zero_pad` it already is. It
@@ -1162,7 +1162,7 @@ applies to every entry with no `static-overlays.toml` row, because those
 entries' parsers state their content end outright; it closed the fifteen
 `lzs_container` tails, the `pack` tail and the `bse_bank` tail by the same
 measurement. A mapped overlay is cut by the same rule both instruments share
-([`inherited_tail::tails_in`](../../crates/asset/src/inherited_tail.rs), the
+([`inherited_tail::tails_in`](../../crates/disc-audit/src/inherited_tail.rs), the
 Python `tail_cuts` in `disc-coverage.py`): the sibling comparison above, then
 the buffer suffix (`buffer_suffix_start`, at least `0x40` bytes) wherever it
 cuts lower or no sibling cuts at all. That is how PROT `0898`'s last 1605 bytes
@@ -1492,7 +1492,7 @@ while edited) reports `STALE` and names the re-sweep, instead of a `REGRESSION` 
 
 ## Tests
 
-`crates/asset/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`
+`crates/disc-audit/tests/byte_account_entries.rs` accounts a fixed set of entries off `extracted/PROT`
 and asserts a floor on each one's accounted share, plus the invariants that make the figure
 meaningful (claims stay inside the buffer, residue plus accounted equals the size, `structural`
 never exceeds `accounted`). It skips and passes without extracted data, like every other
@@ -1509,13 +1509,13 @@ report walker `generic`, which was a true statement about the instrument and a f
 disc, and it would have failed the moment a walker landed. Pin the absence of a binding only where
 the absence is itself the finding.
 
-`crates/asset/tests/packer_buffer_slack_real.rs` holds the packer-buffer prediction to every
+`crates/disc-audit/tests/packer_buffer_slack_real.rs` holds the packer-buffer prediction to every
 scene bundle: each bundle's content ends inside its last sector, and the slack above it is
-reproduced byte for byte or the test names the bundle. `crates/asset/tests/battle_jump_tables_real.rs`
+reproduced byte for byte or the test names the bundle. `crates/disc-audit/tests/battle_jump_tables_real.rs`
 re-derives every `0898` head-table row from the image's instructions and holds every arm to the
 dumped extent of its own dispatcher.
 
-`crates/asset/tests/slot_b_module_layout_real.rs` covers the module band over all 64 entries: no
+`crates/disc-audit/tests/slot_b_module_layout_real.rs` covers the module band over all 64 entries: no
 claimed record overlaps a framed function, every claimed record's start is an address some spawn
 call in the image really hands over in `$a2` (re-derived from the raw words, not taken from the
 parser), and the band is non-vacuous. Same skip-and-pass gating.

@@ -160,7 +160,7 @@ if let Some(p) = field_pack::scene_pack(&entry_bytes) {
 
 `scene_pack` gates on the pack anchor (`word_offset[0] * 4 == 4 + 4*count`), monotonic
 offsets, and - when a chunk header is present - a legal type byte whose declared size
-fits the buffer. Disc-gated coverage: `crates/asset/tests/field_pack_real.rs` pins the
+fits the buffer. Disc-gated coverage: `crates/scene-formats/tests/field_pack_real.rs` pins the
 carrier positions, the chunk-header arithmetic, the type-byte / member-magic agreement,
 and the two-Rim-Elm shared prefix.
 

@@ -66,7 +66,7 @@ pub fn save_title_digits(slot: u32) -> [u8; 2] {
 /// The per-slot portrait a save block carries as its memory-card icon.
 ///
 /// Source it from the disc's portrait sheet
-/// (`legaia_asset::save_icon::SaveIconSheet::tile_block_pixels` +
+/// (`legaia_ui_formats::save_icon::SaveIconSheet::tile_block_pixels` +
 /// `tile_clut_bytes` for the same slot); this crate stays disc-free, so the
 /// caller supplies the bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

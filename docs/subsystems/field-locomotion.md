@@ -386,7 +386,7 @@ Before the wall probes, `FUN_801cfe4c` makes three calls to `FUN_801cfc40` with 
 | `0x801F2214` | `0x239FC` | 4 | leading-edge wall probes | `0x801CFEE8`, `0x801CFFC0`, `0x801D009C` |
 | `0x801F2254` | `0x23A3C` | 8 points | interact facing compass, `+-64` | `0x801D0834` |
 
-The last ends at `0x801F2274`, a `lw` / `sw` scalar. The bases are pinned in [`legaia_asset::field_probe_tables`](../../crates/asset/src/field_probe_tables.rs), each re-derived from its `lui` pairs.
+The last ends at `0x801F2274`, a `lw` / `sw` scalar. The bases are pinned in [`legaia_asset::field_probe_tables`](../../crates/disc-audit/src/field_probe_tables.rs), each re-derived from its `lui` pairs.
 
 `FUN_801cfc40(actor, scene, dx, dz, ex, ez)` walks the **collision candidate table** `DAT_801c93c8` (count `_DAT_8007b6b8`) and box-tests the probe point against each other actor:
 
@@ -879,7 +879,7 @@ That builder reads three angles at `a0+0x00` / `+0x02` / `+0x04` (`lhu` at `0x80
 
 NPCs and event triggers ride a sibling path (`FUN_8003a1e4`, partition-1 records, the `0x7F,0x7F` parked-sentinel decode). The actor pool they draw from holds **143 slots** of `0xD8` stride (`FUN_800203EC` seeds the free stack `0x8E` down to `0` inclusive; list heads `0x8007C34C..0x36C`) - see [`field-ambient-fx.md`](field-ambient-fx.md).
 
-Parser: [`legaia_asset::field_objects`](../../crates/asset/src/field_objects.rs) (`parse_placements` + `pack_mesh_index`); the engine reads it via `Scene::field_object_placements`.
+Parser: [`legaia_asset::field_objects`](../../crates/scene-formats/src/field_objects.rs) (`parse_placements` + `pack_mesh_index`); the engine reads it via `Scene::field_object_placements`.
 
 ### The object bind: which sweep owns the object, and its rest pose
 

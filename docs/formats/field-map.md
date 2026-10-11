@@ -7,7 +7,7 @@ verbatim into that buffer, so a region's file offset and its runtime offset are
 the same number.
 
 Detection class: `field_map`. Container parser + region map:
-[`crates/asset/src/field_map.rs`](../../crates/asset/src/field_map.rs).
+[`crates/scene-formats/src/field_map.rs`](../../crates/scene-formats/src/field_map.rs).
 Confidence: **Confirmed** - every offset below is read off a consumer's
 disassembly, and the region sizes sum to the on-disc footprint with nothing
 left over.

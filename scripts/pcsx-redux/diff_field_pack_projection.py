@@ -44,7 +44,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Mirror crates/asset/src/field_pack.rs::CANONICAL_SCHEMA. Byte-identical
+# Mirror crates/scene-formats/src/field_pack.rs::CANONICAL_SCHEMA. Byte-identical
 # across every field-pack file (MD5 edcfdf1575889d63d2077c396089d7f3),
 # anchored on slots[0]==0x60 and slots[96]==0x16651.
 #

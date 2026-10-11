@@ -657,7 +657,7 @@ fn town01_vs_town0c_diff_lights_up_field_pack_pool() {
     // different CDNAME blocks. The diff should surface a sizable region
     // around the per-scene field-pack base + descriptor pool. This is
     // the dynamic complement to the static schema docs in
-    // `crates/asset/src/field_pack.rs`.
+    // `crates/scene-formats/src/field_pack.rs`.
     if !require_slot_scenes("town01_vs_town0c", &[(0, "town0c"), (2, "town01")]) {
         return;
     }
@@ -795,8 +795,8 @@ fn fmv_overlay_residency_in_mc1_pins_compact_table_address() {
     let s = SaveState::from_path(&p1).unwrap();
     let r = s.main_ram().unwrap();
 
-    use legaia_asset::str_fmv_table;
     use legaia_engine_core::capture_observations::str_fmv_overlay;
+    use legaia_game_tables::str_fmv_table;
 
     if !str_fmv_overlay::is_resident(r) {
         eprintln!(

@@ -17,7 +17,7 @@ so the inn you reach in game is the retail script, not an engine routine.
 | What restores the party? | Three `4C 82 <slot>` ops, one per party slot, in the same record. |
 | Port entry | `World::trigger_field_interact` -> `step_inline_dialogue` -> `legaia_engine_vm::field::step`. |
 | Cost scanner | `legaia_asset::inn_costs`, run at scene load into `SceneHost::scene_inn_cost`. |
-| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/asset/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
+| Oracles | `crates/engine-core/tests/inn_stay_field_vm_disc.rs`, `crates/scene-formats/tests/inn_costs_disc.rs`, `crates/engine-core/tests/inn_cost_scene_disc.rs` (all disc-gated). |
 
 ```mermaid
 flowchart TD
@@ -166,7 +166,7 @@ The shared scanner is [`legaia_asset::inn_costs`]: a byte scan (robust to the
 dialogue-picker jump tables that desync a linear walk) for a gold compare
 whose literal reappears as the magnitude of a negative `ADD_MONEY` within a
 few ops of the gate (retail sites sit 7..~16 bytes apart). Swept disc-wide
-by `crates/asset/tests/inn_costs_disc.rs`: the pair resolves in the inn /
+by `crates/scene-formats/tests/inn_costs_disc.rs`: the pair resolves in the inn /
 paid-lodging scenes (e.g. the 200 G innkeeper sites in the `ropeway` and
 `balden` blocks, `rayman2`'s 200 G stay, `retock`'s 240 G stay), the paid
 tours and the 3,000 G `station3` train ticket (sub-3, u16 costs), and the

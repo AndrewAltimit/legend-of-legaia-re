@@ -83,7 +83,7 @@ pub fn cmd_clut_trace(
     json_out: Option<&Path>,
     include_tmd_body: bool,
 ) -> Result<()> {
-    use legaia_asset::battle_data_pack;
+    use legaia_battle_models::battle_data_pack;
 
     let pack_bytes = std::fs::read(pack_path)
         .with_context(|| format!("reading PROT entry {}", pack_path.display()))?;

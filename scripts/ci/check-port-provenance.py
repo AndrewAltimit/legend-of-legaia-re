@@ -699,7 +699,7 @@ def consensus(dumps: list[Dump]) -> list[Dump]:
 # `module-orphan` sees the siblings it saw before the move and a waiver keyed on
 # the old path keeps matching. Only the displayed `file:line` names the child.
 SPLIT_MODULES = frozenset({
-    "crates/asset/src/byte_account",
+    "crates/disc-audit/src/byte_account",
     "crates/engine-battle-vm/src/battle_cam_script",
     "crates/engine-core/src/muscle_dome",
     "crates/engine-minigames/src/muscle_dome",

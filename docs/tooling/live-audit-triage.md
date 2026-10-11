@@ -345,7 +345,7 @@ Every row is landed. What each wire had to be:
   fight. A Muscle Dome round is an ordinary battle that ends on a knockout, so
   wiring it *into the dome* would have been a bug; `engine-core::timed_fight`
   gates it on the formation's first monster seat and both hosts draw the strip.
-- **`tile_for_slot`** (`801e1934`, `crates/asset/src/save_icon.rs`).
+- **`tile_for_slot`** (`801e1934`, `crates/ui-formats/src/save_icon.rs`).
   The card-block icon writer in `engine-core::card_write` routes through it;
   retail's VRAM x is `0x3C0 + slot * 4` halfwords.
 

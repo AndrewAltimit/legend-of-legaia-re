@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use legaia_asset::boot_overlay as boot;
-use legaia_asset::minigame_art;
-use legaia_asset::minigame_slot_scene as slot;
+use legaia_minigame_formats::minigame_art;
+use legaia_minigame_formats::minigame_slot_scene as slot;
+use legaia_overlay_images::boot_overlay as boot;
 
 use crate::cli_io::write_rgba_png;
 
@@ -272,7 +272,7 @@ fn crop_rgba(page: &minigame_art::Sprite, x: usize, y: usize, w: usize, h: usize
 /// (PROT 0975 overlay + PROT 1200 art pack) - the output directory is
 /// Sony-derived and must stay out of the repo, like `extracted/` itself.
 pub(crate) fn slot_art_cmd(overlay: &Path, art: &Path, out: &Path) -> Result<()> {
-    use legaia_asset::slot_payout;
+    use legaia_minigame_formats::slot_payout;
 
     let ov = std::fs::read(overlay).with_context(|| format!("read {}", overlay.display()))?;
     let art_raw = std::fs::read(art).with_context(|| format!("read {}", art.display()))?;

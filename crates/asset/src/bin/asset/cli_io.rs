@@ -18,8 +18,11 @@ pub(crate) fn read_input(path: impl AsRef<Path>) -> Result<Vec<u8>> {
 /// have a type-0x03 (MAN) descriptor.
 pub(crate) fn load_man_bytes(
     buf: &[u8],
-) -> Result<(Vec<u8>, legaia_asset::scene_asset_table::DescriptorRecord)> {
-    let table = legaia_asset::scene_asset_table::detect(buf)
+) -> Result<(
+    Vec<u8>,
+    legaia_scene_formats::scene_asset_table::DescriptorRecord,
+)> {
+    let table = legaia_scene_formats::scene_asset_table::detect(buf)
         .ok_or_else(|| anyhow::anyhow!("not a scene_asset_table"))?;
     let man = table
         .descriptors

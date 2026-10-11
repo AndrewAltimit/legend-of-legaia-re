@@ -1,0 +1,29 @@
+[package]
+name = "legaia-scene-formats"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
+
+[lib]
+name = "legaia_scene_formats"
+path = "src/lib.rs"
+
+[dependencies]
+png.workspace = true
+serde.workspace = true
+legaia-bytes.workspace = true
+legaia-container-formats.workspace = true
+legaia-lzs.workspace = true
+legaia-overlay-images.workspace = true
+legaia-tim.workspace = true
+legaia-tmd.workspace = true
+
+[dev-dependencies]
+legaia-game-tables.workspace = true
+legaia-prot.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

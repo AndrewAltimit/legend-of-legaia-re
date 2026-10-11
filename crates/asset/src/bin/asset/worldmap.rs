@@ -4,7 +4,7 @@ use anyhow::Result;
 
 pub(crate) fn worldmap_menu_cmd(scus: &Path, json: bool) -> Result<()> {
     let bytes = crate::cli_io::read_input(scus)?;
-    let menu = legaia_asset::worldmap_menu::parse_scus(&bytes)?;
+    let menu = legaia_game_tables::worldmap_menu::parse_scus(&bytes)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&menu)?);
         return Ok(());
@@ -55,7 +55,7 @@ pub(crate) fn slot4_png_cmd(
     style: &str,
     axes: &str,
 ) -> Result<()> {
-    use legaia_asset::{kingdom_bundle, world_map_overlay};
+    use legaia_scene_formats::{kingdom_bundle, world_map_overlay};
 
     if input.is_some() == from_raw.is_some() {
         anyhow::bail!("exactly one of --input or --from-raw is required");
@@ -242,7 +242,7 @@ pub(crate) fn kingdom_slot_cmd(
     out: Option<&Path>,
     wireframe_obj: Option<&Path>,
 ) -> Result<()> {
-    use legaia_asset::{kingdom_bundle, world_map_overlay};
+    use legaia_scene_formats::{kingdom_bundle, world_map_overlay};
 
     let buf = crate::cli_io::read_input(input)?;
     let bundle = kingdom_bundle::parse(&buf).ok_or_else(|| {
@@ -347,7 +347,7 @@ pub(crate) fn kingdom_slot_cmd(
 /// at 1.
 pub(crate) fn write_wireframe_obj(
     path: &Path,
-    lines: &[legaia_asset::world_map_overlay::WireframeLine],
+    lines: &[legaia_scene_formats::world_map_overlay::WireframeLine],
 ) -> Result<()> {
     let mut s = String::new();
     s.push_str("# slot-4 wireframe (top-down X-Z)\n");

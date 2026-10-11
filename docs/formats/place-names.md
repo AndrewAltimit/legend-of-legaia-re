@@ -30,7 +30,7 @@ edits all three together. Disc pins in `crates/patcher/tests/place_names_real.rs
 | 3 | the banner on entering a scene (a text balloon the MAN loader spawns), and the save-screen location row | each scene MAN's **section 2** | bare `strlen + 1` NUL-terminated string |
 
 Sites 2 and 3 both live in a scene MAN and are reached through the section
-chain [`man_section`](../../crates/asset/src/man_section.rs) already walks - no
+chain [`man_section`](../../crates/scene-formats/src/man_section.rs) already walks - no
 byte hunt is needed for either.
 
 The three name spaces are **not** the same set. Site 1 holds 16 names; site 2
@@ -234,6 +234,6 @@ live RAM on a patched disc.
 ## See also
 
 - [`worldmap-menu`](../subsystems/field-menu.md) / `legaia_asset::worldmap_menu` - site 1's table and its placement records.
-- [`man_section`](../../crates/asset/src/man_section.rs) - the section chain both MAN-resident carriers hang off.
+- [`man_section`](../../crates/scene-formats/src/man_section.rs) - the section chain both MAN-resident carriers hang off.
 - [`world-map.md`](../subsystems/world-map.md) - the world-map band the label pass belongs to.
 - [`randomizer.md`](../tooling/randomizer.md#location-names) - the `--rename-location` editor.

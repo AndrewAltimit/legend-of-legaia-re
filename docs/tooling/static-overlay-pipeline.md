@@ -467,7 +467,7 @@ the field overlay puts `FUN_801D6704` (MAIN_INIT) at `base+0x07eec` (a clean
 prologue) and the field/event VM `FUN_801DE840` at `base+0x10028`; the battle
 overlay puts the per-actor state machine `FUN_801E295C` at `base+0x14144`. These
 anchors are asserted against the disc bytes in
-[`crates/asset/tests/static_overlay_extract.rs`](../../crates/asset/tests/static_overlay_extract.rs)
+[`crates/overlay-images/tests/static_overlay_extract.rs`](../../crates/overlay-images/tests/static_overlay_extract.rs)
 and against live RAM in the clean-copy test.
 
 ### A map row is not an import

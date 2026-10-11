@@ -1,6 +1,6 @@
 //! Disc-gated cross-validation of the equipment-slot model: the static
 //! `SCUS_942.54` equip-stat table (`DAT_80074F68`, parsed by
-//! `legaia_asset::equip_stats`) against the curated gamedata armor/weapon/
+//! `legaia_game_tables::equip_stats`) against the curated gamedata armor/weapon/
 //! accessory tables.
 //!
 //! This adjudicates a long-standing residual that claimed the disc table's
@@ -29,8 +29,8 @@
 
 use std::path::PathBuf;
 
-use legaia_asset::equip_stats::{EquipSlot, EquipStatTable};
-use legaia_asset::item_names::ItemNameTable;
+use legaia_game_tables::equip_stats::{EquipSlot, EquipStatTable};
+use legaia_game_tables::item_names::ItemNameTable;
 use legaia_gamedata::Database;
 
 /// Disc equip-table item names bucketed by the four `+7` slot categories.

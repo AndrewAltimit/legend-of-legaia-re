@@ -11,6 +11,7 @@ they always did.
 
 | Module | Covers |
 |---|---|
+| `boot_overlay` | Boot-time overlay and side-band asset resolution. See [`boot.md`](../../docs/subsystems/boot.md). |
 | `mips_overlay` | Per-PROT MIPS-code-likelihood detection. See [`mips-overlay.md`](../../docs/formats/mips-overlay.md). |
 | `overlay_ptr_table` | The sister detector for pointer-table-led overlay entries. See [`overlay-ptr-table.md`](../../docs/formats/overlay-ptr-table.md). |
 | `static_overlay` | The static-overlay map and the extraction of each clean-copy runtime overlay at its statically-recovered base. See [`static-overlay-pipeline.md`](../../docs/tooling/static-overlay-pipeline.md). |
@@ -34,9 +35,10 @@ siblings plus `legaia-bytes` and `legaia-lzs`. None reaches the asset
 dispatcher, the DATA_FIELD stream, the pack and bundle formats or the scene
 formats, which is what lets the cluster sit below `legaia-asset`.
 
-What stays in `legaia-asset`: `inherited_tail` and `switch_tables`, which
-read overlay images too but lean on the byte-accounting walk, and
-`byte_account` itself, which consumes every reader here.
+What lives above, in [`legaia-disc-audit`](../disc-audit/README.md):
+`inherited_tail` and `switch_tables`, which read overlay images too but lean
+on the byte-accounting walk, and `byte_account` itself, which consumes every
+reader here.
 
 The static-overlay map this crate embeds stays at
 `crates/asset/data/static-overlays.toml` - the path the analysis scripts and
@@ -44,7 +46,7 @@ the docs open by name.
 
 ## See also
 
-- [`crates/asset`](../asset/README.md) - the format hub this was split from.
+- [`crates/asset`](../asset/README.md) - the `asset` CLI and the old import paths.
 - [`crates/game-tables`](../game-tables/README.md) - the static data tables,
   the overlay-resident ones (`move_power`, `menu_windows`, `widget_script`)
   among them.

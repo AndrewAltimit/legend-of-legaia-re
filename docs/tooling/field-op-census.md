@@ -50,7 +50,7 @@ first-opcode offset its **own** partition's header shape gives. The three
 differ, and applying one formula to all three starts a whole record class three
 bytes late and desyncs it - which is how an entire class of door records goes
 missing from a census. See `partition_record_span` in
-[`field_disasm/census.rs`](../../crates/asset/src/field_disasm/census.rs).
+[`field_disasm/census.rs`](../../crates/scene-formats/src/field_disasm/census.rs).
 
 ## `clean` versus `total`, and what a zero means
 

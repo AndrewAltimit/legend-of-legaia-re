@@ -1095,7 +1095,7 @@ an optional short placement word) but presents differently: the pages show **sim
 centered, while the parent script continues; a later card block whose pages are blank clears the
 card. `map01`'s fly-in uses it for the "twilight of humanity" card and its clear.
 
-The parser is [`legaia_asset::cutscene_text`](../../crates/asset/src/cutscene_text.rs)
+The parser is [`legaia_asset::cutscene_text`](../../crates/scene-formats/src/cutscene_text.rs)
 (`parse_narration` / `narration_pages`), which distinguishes `NarrationKind::Crawl`
 (`op0 = 0x80`) from `NarrationKind::Card` (`op0 = 0x89`); the engine surfaces a card via
 `World::cutscene.card`. It decodes the runtime disc bytes - no narration text is in the repo.
@@ -1565,7 +1565,7 @@ a per-frame step budget and a frame cap:
 the VM into them.
 [`World::install_cutscene_timeline_record`](../../crates/engine-core/src/world/narration.rs)
 parses each block into a `NarrationSite` (`op_offset` +
-[`byte_span`](../../crates/asset/src/cutscene_text.rs) end + pages + kind). When the PC reaches
+[`byte_span`](../../crates/scene-formats/src/cutscene_text.rs) end + pages + kind). When the PC reaches
 a crawl site the stepper installs the pages on the roller and **advances the PC past the
 block** - for every block, the last included. The two holds are the retail ones
 ([above](#where-a-record-waits-for-its-crawl)): `CutsceneTimeline::narration_pc` /

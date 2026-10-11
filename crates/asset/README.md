@@ -1,20 +1,27 @@
 # legaia-asset
 
-Legaia asset descriptor parser, dispatcher, and the structural detectors
-that classify raw PROT entries.
+The `asset` command-line tool, plus the old import paths of the format
+crates this crate was divided into.
 
-The game's loader (`FUN_8001f05c` in `SCUS_942.54`) takes a buffer plus a
-single `u32` packing `(type << 24) | (size & 0xFFFFFF)` and dispatches to a
-type-specific handler. Each asset can be either LZS-compressed (the
-common case - handled by `FUN_8001a55c` via [`legaia-lzs`]) or stored raw
-(handled by `FUN_8001a8b0`, a sized memcpy).
+No format is defined here any more. The library is a set of transitional
+aliases that keep `legaia_asset::<module>` resolving; each module lives in
+the crate that owns it:
 
-The static data tables live in [`legaia-game-tables`](../game-tables/README.md),
-the battle model formats in
-[`legaia-battle-models`](../battle-models/README.md) and the code-overlay
-image formats in [`legaia-overlay-images`](../overlay-images/README.md); this
-crate re-exports all three at their old paths, and the rows below still describe them as
-`legaia_asset::<module>`.
+| Crate | Holds |
+|---|---|
+| [`legaia-container-formats`](../container-formats/README.md) | Asset-type dispatcher, descriptor, DATA_FIELD stream, pack, container-level detectors and scanners. |
+| [`legaia-scene-formats`](../scene-formats/README.md) | Scene bundles, MAN, the field-VM disassembler, field objects and maps, world-map formats. |
+| [`legaia-minigame-formats`](../minigame-formats/README.md) | The minigames' tables, art packs and scene. |
+| [`legaia-ui-formats`](../ui-formats/README.md) | Title / system-UI packs, glyph atlas, save icons, screen-element and widget tables. |
+| [`legaia-sound-formats`](../sound-formats/README.md) | SFX descriptor bank, multi-bank VAB, sound pack, VAB-prefixed scene stream. |
+| [`legaia-battle-models`](../battle-models/README.md) | Monster archive, player battle files, the field character pack and its animation. |
+| [`legaia-game-tables`](../game-tables/README.md) | Static data tables from `SCUS_942.54` and the overlays. |
+| [`legaia-overlay-images`](../overlay-images/README.md) | Code-overlay image formats. |
+| [`legaia-disc-audit`](../disc-audit/README.md) | Byte accounting, classification, TIM catalogs, censuses. |
+
+New code names the owning crate. The per-module reference below predates the
+division and still writes `legaia_asset::<module>`; the aliases make those
+paths valid, and the table above says where each one lives.
 
 ## Contents
 
@@ -428,7 +435,7 @@ second actor a per-stage transform that closes the authored half.
   `runtime_stage_id` converts between the table's id space and PROT
   extraction indices.
 
-Corpus sweep in `crates/asset/tests/battle_backdrop_real.rs`. See
+Corpus sweep in `crates/disc-audit/tests/battle_backdrop_real.rs`. See
 [`battle.md`](../../docs/subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
 
 ### `battle_camera_table`

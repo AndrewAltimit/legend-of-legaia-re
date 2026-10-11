@@ -4,7 +4,7 @@
 rows that back cue ids `>= 0x200` while a battle is on screen, in exactly the
 row format the static `SCUS_942.54` table uses for ids `< 0x200`
 ([`sfx-table.md`](sfx-table.md)). Detection class: `bse_bank`. Parser
-[`crates/asset/src/bse_bank.rs`](../../crates/asset/src/bse_bank.rs).
+[`crates/sound-formats/src/bse_bank.rs`](../../crates/sound-formats/src/bse_bank.rs).
 Confidence: **Confirmed** (disassembly) for the identification, the header
 word, the stride, the record columns and the row-to-cue-id mapping.
 

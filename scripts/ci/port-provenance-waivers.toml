@@ -915,7 +915,7 @@ rather than a size.
 # and the reason says what the words were.
 
 [[waiver]]
-key = "module-orphan:crates/asset/src/lib.rs:8001fe70"
+key = "module-orphan:crates/container-formats/src/lib.rs:8001fe70"
 reason = """
 Read the disassembly: FUN_8001FE70's one distinctive datum is 0x8007B864, the
 TMD staging pointer, and its module siblings (8001a8b0, 8001f05c, 80020224,

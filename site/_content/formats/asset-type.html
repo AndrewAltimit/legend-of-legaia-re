@@ -10,7 +10,7 @@
     <dt>Magic</dt><dd>none - the type byte is the top 8 bits of a <code>u32</code> packed with the 24-bit size</dd>
     <dt>Where on disc</dt><dd>every <a href="data-field.html">DATA_FIELD</a> chunk header and every <a href="asset-descriptor.html">asset descriptor</a> carries one</dd>
     <dt>Dispatcher</dt><dd><code>FUN_8001F05C</code> in <code>SCUS_942.54</code></dd>
-    <dt>Parser</dt><dd><code>crates/asset/src/lib.rs::AssetType</code></dd>
+    <dt>Parser</dt><dd><code>crates/container-formats/src/lib.rs::AssetType</code></dd>
     <dt>Confidence</dt><dd>Confirmed - the dispatcher is dumped in full, and the developers' own malloc-error strings name each type (<a href="#how-we-know">how we know</a>)</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">asset loader</a>, <a href="lzs.html">LZS decoder</a> (the compressed path)</dd>
   </dl>

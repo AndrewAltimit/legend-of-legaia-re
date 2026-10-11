@@ -616,7 +616,7 @@ U, V  = (v & 3) * 0x40, (v & 0xC) * 0x10;         // a 4x4 grid of 64x64 cells
 - The ten **symbols** live on art page 0 with a per-symbol CLUT at `0x7A80 + sym` (row 490, column = symbol). The palette is load-bearing: symbol ids 0 / 1 / 2 are *one* cell of artwork recoloured three ways, as are 4 / 5. A renderer that ignores the CLUT draws three identical reels.
 - The ten **bonus numerals** `1..=10` live on art page 1 with CLUT `0x7AC0 + (v & 0xF)` (row 491, one column per numeral), so every numeral on the bonus reels is a different colour and one strip can carry both kinds mid-rotation. The 4x4 grid goes blank past the tenth cell. The bonus reels are not the coin font scaled up.
 
-Decoders: [`legaia_asset::minigame_art::slot_symbol` / `slot_bonus_number`](../../crates/asset/src/minigame_art.rs).
+Decoders: [`legaia_asset::minigame_art::slot_symbol` / `slot_bonus_number`](../../crates/minigame-formats/src/minigame_art.rs).
 
 ### The paylines are 3D lines - `FUN_801d3380`
 

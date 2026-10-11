@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::cli_io::*;
 use anyhow::Result;
-use legaia_asset::stage_geom;
 use legaia_prot::cdname;
+use legaia_scene_formats::stage_geom;
 
 /// `asset stage <PATH>` - dump one entry's stage-geometry layout. Useful
 /// to confirm pool placement, sample resolved quad indices, and (with

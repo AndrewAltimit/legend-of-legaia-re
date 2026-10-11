@@ -1617,7 +1617,7 @@ routine.
 
 A scene's on-map entities are the **MAN partition-1 actor-placement records**,
 decoded by `FUN_8003A1E4` and ported as
-[`ManFile::actor_placements`](../../crates/asset/src/man_section.rs) /
+[`ManFile::actor_placements`](../../crates/scene-formats/src/man_section.rs) /
 [`Scene::field_actor_placements`](../../crates/engine-core/src/scene.rs). The
 scene-init routine `FUN_8003AEB0` runs `FUN_8003A1E4` over records `1..N1`
 (record `0` is the scene-entry controller, the

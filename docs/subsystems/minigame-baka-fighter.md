@@ -56,7 +56,7 @@ Eight `0x18`-byte prototype records tile `0x801D75DC..0x801D769C`, ending immedi
 | `0x801D766C` | `FUN_801D4FC8` | developer keyframe editor | `0x801D1D68` |
 | `0x801D7684` | `FUN_801D49E8` | special afterimage | `0x801D4558` |
 
-Parser: `legaia_asset::baka_opponents::parse_actor_prototypes`, which refuses an image whose records break the band's uniform shape (a mis-based image would otherwise yield eight plausible pointers). Disc-gated in `crates/asset/tests/baka_presentation_real.rs`.
+Parser: `legaia_asset::baka_opponents::parse_actor_prototypes`, which refuses an image whose records break the band's uniform shape (a mis-based image would otherwise yield eight plausible pointers). Disc-gated in `crates/minigame-formats/tests/baka_presentation_real.rs`.
 
 ## Assets
 
@@ -82,7 +82,7 @@ Each ladder entry is a raw `[u32 (type<<24)|size][payload]` chain of `[TIM 256x2
 
 Record 0 of the bank is the idle; the attack / special / knockdown records follow in action-table order. The meshes are the same high-detail party TMDs the turn-based battle uses and render as full 3D TMDs through the registered-mesh pipeline. Pack layout and provenance: [`../formats/character-mesh.md`](../formats/character-mesh.md) and [`battle.md`](battle.md).
 
-Parser `legaia_asset::baka_opponents::parse_fighter_pack`. Disc-gated oracle `crates/asset/tests/baka_presentation_real.rs`: all fourteen packs decode, every anim rig covers its TMD, entry 1220 is refused. **Confirmed** (load path and entry indices traced in `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`).
+Parser `legaia_asset::baka_opponents::parse_fighter_pack`. Disc-gated oracle `crates/minigame-formats/tests/baka_presentation_real.rs`: all fourteen packs decode, every anim rig covers its TMD, entry 1220 is refused. **Confirmed** (load path and entry indices traced in `overlay_baka_fighter_801cf00c.txt` + `overlay_baka_fighter_801d4c50.txt`).
 
 ### HUD art and stage pack (PROT 1203)
 
@@ -110,7 +110,7 @@ Each fighter is driven by a per-character action table reached through `PTR_DAT_
 
 `FUN_801D6E5C(char, action, from, to)` returns the index of the first sub-keyframe whose frame falls in `[from, to]`, or `-1` when the range is inverted, the action has no sub-keyframes, or none match. The fixed point sits on the **query**: the function shifts `from` and `to` right by 4 (rounding toward zero) and compares `+0x26` raw, so callers pass a `<< 4` frame range against whole-frame keyframes. Port: `engine-minigames::baka_fighter::keyframe_in_range`.
 
-Parser: `legaia_asset::baka_opponents::parse_actions` (`BakaActionSet::{speed, sub_keyframes}`). Across all 17 tables every attack and special record carries at least one strike, every strike frame is in `0..=64`, and a record's strikes are in frame order (disc-gated in `crates/asset/tests/baka_opponents_real.rs`). Record-space labels: `legaia_asset::baka_opponents::action_slot_label`.
+Parser: `legaia_asset::baka_opponents::parse_actions` (`BakaActionSet::{speed, sub_keyframes}`). Across all 17 tables every attack and special record carries at least one strike, every strike frame is in `0..=64`, and a record's strikes are in frame order (disc-gated in `crates/minigame-formats/tests/baka_opponents_real.rs`). Record-space labels: `legaia_asset::baka_opponents::action_slot_label`.
 
 Confidence: **Confirmed** record-field usage; **Inferred** action-slot meanings, from how the per-fighter controller indexes them.
 
@@ -624,7 +624,7 @@ The table pointer and the rect's `(w, h) = (6, 0x18)` (`0x801D6610` / `0x801D661
 
 The blit moves a cell up its own column: a 6-halfword-wide, 24-row strip (24 x 24 texels at 4bpp) copied into the live cell at `y = 0x86`. Each record's high half (`+2` / `+3`, `00 70` in both) is never read.
 
-Parser `legaia_asset::baka_opponents::parse_blit_rects` (disc-gated in `crates/asset/tests/baka_presentation_real.rs`); port `baka_fighter_chrome::sprite_blit`.
+Parser `legaia_asset::baka_opponents::parse_blit_rects` (disc-gated in `crates/minigame-formats/tests/baka_presentation_real.rs`); port `baka_fighter_chrome::sprite_blit`.
 
 ### The round-start cameo
 
@@ -1128,7 +1128,7 @@ The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for th
 - The drop shadow `FUN_801D6BB8` is not drawn.
 - The developer menu, keyframe editor and slot helpers are not ported (`REPLACED-BY:` tags); the action-table dump is.
 
-**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`. Format and export oracles: `crates/asset/tests/baka_opponents_real.rs`, `crates/asset/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
+**Tests.** World-level oracles in `crates/engine-core/tests/`: `baka_tally_world.rs` (disc-free: the tally, the accumulator and the return warp), `baka_front_end_world.rs`, `baka_ladder_world.rs`, and the disc-gated `baka_minigame_real.rs` (counter-play through the world tick beats a real ladder opponent and banks the parsed prize), `baka_duel_scene_real.rs`, `baka_impact_fx_real.rs`. Format and export oracles: `crates/minigame-formats/tests/baka_opponents_real.rs`, `crates/minigame-formats/tests/baka_presentation_real.rs`, and `crates/web-viewer/tests/baka_presentation_wasm_api.rs` (`a_cabinet_run_banks_the_rung_prize_on_pay_out`).
 
 ## See also
 

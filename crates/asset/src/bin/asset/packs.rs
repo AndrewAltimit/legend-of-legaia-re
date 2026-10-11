@@ -2,14 +2,16 @@ use std::path::{Path, PathBuf};
 
 use crate::cli_io::*;
 use anyhow::Result;
-use legaia_asset::{battle_data_pack, effect_bundle, field_pack};
+use legaia_battle_models::battle_data_pack;
+use legaia_container_formats::effect_bundle;
 use legaia_prot::cdname;
+use legaia_scene_formats::field_pack;
 
 /// Inspect one scene carrier - the entries this CLI's `field-pack` name comes
 /// from. There is no field-pack format and no schema: the word the format was
 /// named for is a `(type << 24) | size` DATA_FIELD chunk header, and the
 /// "97-entry schema" is the `[u32 count][u32 word_offset[count]]` table of the
-/// [`asset::pack`](legaia_asset::pack) behind it (`docs/formats/field-pack.md`).
+/// [`asset::pack`](legaia_container_formats::pack) behind it (`docs/formats/field-pack.md`).
 /// The output therefore names a chunk header, a pack table and members. The
 /// subcommand keeps its name for CLI stability.
 pub(crate) fn field_pack_one(input: &PathBuf, all_slots: bool, groups: bool) -> Result<()> {
@@ -485,7 +487,7 @@ pub(crate) fn battle_data_pack_scan(
 
 pub(crate) fn scene_v12_one(input: &Path, dump_scripts: bool, max_scripts: usize) -> Result<()> {
     let buf = crate::cli_io::read_input(input)?;
-    let t = legaia_asset::scene_v12_table::detect(&buf)
+    let t = legaia_scene_formats::scene_v12_table::detect(&buf)
         .ok_or_else(|| anyhow::anyhow!("not a scene_v12_table (header magic / algebra failed)"))?;
 
     println!("scene_v12_table @ {}", input.display());
@@ -590,7 +592,7 @@ pub(crate) fn scene_v12_scan(
             .unwrap_or("?")
             .to_string();
         let display = display_name_for(&stem, names.as_ref());
-        match legaia_asset::scene_v12_table::detect(&buf) {
+        match legaia_scene_formats::scene_v12_table::detect(&buf) {
             Some(t) => {
                 let unique_b2 = t
                     .records

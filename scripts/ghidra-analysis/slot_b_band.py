@@ -16,7 +16,7 @@ named by instructions rather than by a statistic:
   `move_program_end`.
 
 `legaia_asset::slot_b_module` is the authority for all of this and carries the
-disc-gated test (`crates/asset/tests/slot_b_record_bounds_real.rs`). This module
+disc-gated test (`crates/overlay-images/tests/slot_b_record_bounds_real.rs`). This module
 is its mirror for the host-side gates, which must run without a cargo build. It
 lives here rather than inside `scripts/ci/disc-coverage.py` because
 `attribute-dump-extents.py` and `inherited_tail.py` need the same answers and a

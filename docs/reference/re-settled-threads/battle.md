@@ -616,7 +616,7 @@ The panel placement records (6, 78, 79) carry kind `0x07`; `0x33` / `0x34` / `0x
 kinds that add the level / status marker, special-cased at the head of `FUN_8002C69C` into
 `FUN_8002C2E4(slot)`.
 
-Parser `legaia_asset::ui_widgets`, disc oracle `crates/asset/tests/ui_widgets_real.rs`. Owning page
+Parser `legaia_asset::ui_widgets`, disc oracle `crates/ui-formats/tests/ui_widgets_real.rs`. Owning page
 (layout, classes, chains, palette decode):
 [`battle.md`](../../subsystems/battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from).
 

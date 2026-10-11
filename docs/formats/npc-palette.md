@@ -54,7 +54,7 @@ which would be read as a 16-entry pack count).
 offset +4 from the chunk header; it does not need to interpret the
 `FUN_8001FE70` wrapper. The structured walker that *does* recognise
 the wrapper is
-[`scene_tmd_stream::battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs)
+[`scene_tmd_stream::battle_tim_chunks`](../../crates/scene-formats/src/scene_tmd_stream.rs)
 - it reports every type-0x01 chunk and tags whether the chunk sits
 inside `FUN_8001FE70`'s reach (`WalkSource::Tail`, which every retail
 chunk is) or past the first terminator (`WalkSource::Continuation`,

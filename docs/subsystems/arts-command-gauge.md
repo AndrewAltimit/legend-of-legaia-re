@@ -335,7 +335,7 @@ This is why the [save-record](../formats/save-record.md) labels `+0x198` weapon 
 
 An id placed at the wrong index silently falls through to the section default, and every weapon reads `0x1E`. That is the failure to expect when a cost sweep comes back constant.
 
-Every consumer reads the cost through this one function: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/asset/tests/battle_data_pack_real.rs`.
+Every consumer reads the cost through this one function: the port's Arts input, the Muscle Dome's per-command cost, and the disc-gated pin in `crates/battle-models/tests/battle_data_pack_real.rs`.
 
 ### Weapon classes and favored mapping
 

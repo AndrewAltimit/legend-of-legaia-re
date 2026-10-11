@@ -1253,25 +1253,24 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "legaia-anm",
  "legaia-battle-models",
  "legaia-bytes",
+ "legaia-container-formats",
+ "legaia-disc-audit",
  "legaia-game-tables",
  "legaia-lzs",
- "legaia-mdec",
- "legaia-mes",
+ "legaia-minigame-formats",
  "legaia-overlay-images",
  "legaia-prot",
- "legaia-seq",
+ "legaia-scene-formats",
+ "legaia-sound-formats",
  "legaia-tim",
  "legaia-tmd",
- "legaia-vab",
+ "legaia-ui-formats",
  "libc",
  "png",
  "serde",
  "serde_json",
- "sha2",
- "toml",
 ]
 
 [[package]]
@@ -1304,6 +1303,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-bytes",
+ "legaia-container-formats",
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-prot",
@@ -1341,6 +1341,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-container-formats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-anm",
+ "legaia-bytes",
+ "legaia-lzs",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "serde",
+]
+
+[[package]]
 name = "legaia-delilas-party"
 version = "0.1.0"
 dependencies = [
@@ -1356,6 +1370,32 @@ dependencies = [
  "legaia-translate",
  "legaia-vab",
  "legaia-xa",
+]
+
+[[package]]
+name = "legaia-disc-audit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-anm",
+ "legaia-battle-models",
+ "legaia-bytes",
+ "legaia-container-formats",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-mdec",
+ "legaia-mes",
+ "legaia-minigame-formats",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "legaia-scene-formats",
+ "legaia-sound-formats",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-ui-formats",
+ "legaia-vab",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1701,11 +1741,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "legaia-asset",
+ "legaia-container-formats",
+ "legaia-disc-audit",
  "legaia-font",
  "legaia-iso",
  "legaia-lzs",
  "legaia-prot",
+ "legaia-scene-formats",
  "legaia-tim",
  "legaia-tmd",
  "legaia-xa",
@@ -1735,6 +1777,7 @@ dependencies = [
  "anyhow",
  "legaia-bytes",
  "legaia-overlay-images",
+ "legaia-prot",
  "serde",
 ]
 
@@ -1745,7 +1788,9 @@ dependencies = [
  "anyhow",
  "clap",
  "legaia-art",
- "legaia-asset",
+ "legaia-battle-models",
+ "legaia-game-tables",
+ "legaia-scene-formats",
  "libc",
  "serde",
  "serde_json",
@@ -1802,9 +1847,11 @@ dependencies = [
  "anyhow",
  "clap",
  "flate2",
- "legaia-asset",
+ "legaia-battle-models",
  "legaia-cheats",
  "legaia-engine-core",
+ "legaia-game-tables",
+ "legaia-overlay-images",
  "legaia-prot",
  "libc",
  "png",
@@ -1825,12 +1872,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-minigame-formats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-battle-models",
+ "legaia-container-formats",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "legaia-vab",
+ "serde",
+]
+
+[[package]]
 name = "legaia-overlay-images"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-bytes",
+ "legaia-container-formats",
  "legaia-lzs",
+ "legaia-prot",
  "serde",
  "sha2",
  "toml",
@@ -1958,6 +2024,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-scene-formats"
+version = "0.1.0"
+dependencies = [
+ "legaia-bytes",
+ "legaia-container-formats",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-overlay-images",
+ "legaia-prot",
+ "legaia-tim",
+ "legaia-tmd",
+ "png",
+ "serde",
+]
+
+[[package]]
 name = "legaia-seq"
 version = "0.1.0"
 dependencies = [
@@ -1966,6 +2048,18 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-sound-formats"
+version = "0.1.0"
+dependencies = [
+ "legaia-bytes",
+ "legaia-container-formats",
+ "legaia-prot",
+ "legaia-seq",
+ "legaia-vab",
+ "serde",
 ]
 
 [[package]]
@@ -2019,6 +2113,17 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+]
+
+[[package]]
+name = "legaia-ui-formats"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "legaia-container-formats",
+ "legaia-game-tables",
+ "legaia-prot",
+ "legaia-tim",
 ]
 
 [[package]]

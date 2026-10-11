@@ -2,7 +2,7 @@
 """Generate a local grid UI for human review of one TIM label category.
 
 Pairs with `asset tim-render-distinct` (the decoded PNGs) and
-`crates/asset/src/data/tim_categories.tsv` (the curated labels). Emits a
+`crates/disc-audit/src/data/tim_categories.tsv` (the curated labels). Emits a
 self-contained `review.html` into the render dir: a thumbnail grid where every
 distinct texture currently labeled the TARGET category is pre-selected. Click a
 cell to toggle; filter to scan quickly; "Download selection" saves the chosen
@@ -67,7 +67,7 @@ def main():
     ap.add_argument("category", choices=VOCAB)
     ap.add_argument(
         "--table",
-        default="crates/asset/src/data/tim_categories.tsv",
+        default="crates/disc-audit/src/data/tim_categories.tsv",
         help="curated label table",
     )
     args = ap.parse_args()

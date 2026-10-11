@@ -1,6 +1,6 @@
 # Pochi-filler placeholder slots
 
-**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_asset::categorize::is_pochi_filler` in `crates/asset/src/categorize.rs`.
+**Not an asset format: a placeholder.** 266 of the 1233 PROT entries are reserved-but-unused slots holding a developer fill pattern, which the game never loads. Each is exactly one 2048-byte sector, and none carries a parseable TIM (measured over all 266, asserted as a test). Detection class `pochi_filler`; detector `legaia_asset::categorize::is_pochi_filler` in `crates/disc-audit/src/categorize.rs`.
 
 ## Layout
 
@@ -35,7 +35,7 @@ dispatcher answers a `0x14` with `type << 8` without reading the payload
 ([`asset-type.md`](asset-type.md)), so those bytes are never decompressed at
 runtime: the authoring tool filled a reserved descriptor rather than dropping
 it, with the same file it fills a reserved PROT slot with. Pinned by
-`crates/asset/tests/byte_account_entries.rs`.
+`crates/disc-audit/tests/byte_account_entries.rs`.
 
 ### The 121-byte tail is another entry's bytes
 

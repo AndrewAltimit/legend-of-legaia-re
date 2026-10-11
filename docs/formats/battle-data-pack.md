@@ -342,7 +342,7 @@ reports). Each rule carries a note. The cases the table exists for:
 - Gala's two headbands are dark leather that the colour diff loses and the identity reading finds.
 
 Every rule must name a record, a column, an object and primitives that exist -
-`crates/asset/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
+`crates/battle-models/tests/equip_isolate_real.rs` checks that, and that every one of the 132 records
 still keeps something and (for a held item) leaves the hand behind.
 
 The item-alone cut is **not** the disc's answer - the palette cut is, and it stays the
@@ -380,7 +380,7 @@ rule refuses three things:
   blade on the hand object and the pommel block on the forearm, both *closed* at the fist, and a
   cross-object rule joins the elbow-facing rims of two Ra-Seru arm plates through the joint.
 
-`crates/asset/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
+`crates/battle-models/tests/equip_repair_real.rs` sweeps the 81 records (only ever additive, every bridge
 inside the section's objects, the Great Axe closes). With `LEGAIA_EQUIP_SHEETS=<dir>` it writes a
 before / after contact sheet per character through the software rasteriser in
 `legaia_asset::mesh_raster`, the renderer that draws the site's per-item cards.
@@ -960,7 +960,7 @@ the `0xFE` signal) while a member still plays a dynamic-art-slot clip, and clock
 `gp+0x9EA` mirror from 0; gates 2 and 3 are not consulted by the stamp tick, so "the won battle is
 still on screen" stands in for them.
 
-Disc-gated validation: `crates/asset/tests/face_anim_real.rs` (table anchors; track census over
+Disc-gated validation: `crates/battle-models/tests/face_anim_real.rs` (table anchors; track census over
 `record[0]`, swing and art-bank entries; override-table census - 40 live records, in-range
 non-neutral frames, the empty rows where retail has no flap, in-band stamps for every reachable
 counter) and `crates/engine-shell/tests/battle_face_stamp_live.rs` (live battle VRAM holds a
@@ -1187,7 +1187,7 @@ Two traps follow:
   catalog LZS-decompresses first and then scans for the same magic. The deep tier reaches the
   right bytes, but there is no magic there and `legaia_tim::parse_strict` has nothing to parse.
   Both TIM catalogs contribute **zero** rows from entries 863..866
-  (`crates/asset/tests/battle_texture_catalog_real.rs`).
+  (`crates/disc-audit/tests/battle_texture_catalog_real.rs`).
 - **`clut_n` is commonly 32 or 48** - two or three 16-colour palettes in one run, with a mesh
   primitive's CBA column picking which one it samples. Decoding such a block as a single 16-entry
   CLUT produces a plausible image at roughly a 5 % pixel match against the real thing.
@@ -1260,8 +1260,8 @@ Every module below is re-exported through `legaia_asset`.
 | [`battle_char_palette`](../../crates/battle-models/src/battle_char_palette.rs) | The runtime-pinned framing: header words, descriptor chain, `record[0]` + sub-record palette assembly. Byte-exact vs live battle VRAM. |
 | [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | The battle-init consumer chain: section selection (`select_sections`), mesh splice (`assemble_character`), TSB/CBA relocation (`relocate_tsb_cba`), texture-pool uploads (`character_texture_uploads` and friends). |
 | [`battle_char_assembly::equip_diff`](../../crates/battle-models/src/battle_char_assembly/equip_diff.rs) | Presentation aid: what one loadout changed against the all-defaults assembly, by the radius-envelope test. Approximate by construction, not a port - retail never compares two assemblies. |
-| [`battle_char_assembly::equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/asset/tests/equip_item_real.rs`. |
-| [`battle_char_assembly::equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/asset/tests/equip_isolate_real.rs`. |
+| [`battle_char_assembly::equip_item`](../../crates/battle-models/src/battle_char_assembly/equip_item.rs) | The exact cut: `item_partition` splits a weapon / Ra-Seru section into held item and limb by palette column, falling through to `fused`. Swept by `crates/battle-models/tests/equip_item_real.rs`. |
+| [`battle_char_assembly::equip_isolate`](../../crates/battle-models/src/battle_char_assembly/equip_isolate.rs) | The opinionated cut: `isolate_item` plus the override table. Swept by `crates/battle-models/tests/equip_isolate_real.rs`. |
 | [`battle_char_assembly::equip_repair`](../../crates/battle-models/src/battle_char_assembly/equip_repair.rs) | Grip bridging on the item-alone export. |
 | [`battle_texture_catalog`](../../crates/battle-models/src/battle_texture_catalog.rs) | The texture-pool blocks as a texture tier; `resolve_block` / `assemble_clut_row` read one back. |
 | [`battle_data_pack`](../../crates/battle-models/src/battle_data_pack.rs) | The slot walker over the `[id, offset, size]` table. |

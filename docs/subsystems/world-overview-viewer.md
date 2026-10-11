@@ -250,7 +250,7 @@ animation, both shipped on disc:
   256 rows (= 256 × 256 logical pixels in 4bpp), inside slot 0
   (TIM_LIST) of each world-map kingdom bundle (PROT 0086 Drake / 0245
   Sebucus / 0392 Karisto - the bundle entry, one past the block's
-  prescript; see [`legaia_asset::kingdom_bundle`](../../crates/asset/src/kingdom_bundle.rs)). The kingdom-specific TIM is the one with
+  prescript; see [`legaia_asset::kingdom_bundle`](../../crates/scene-formats/src/kingdom_bundle.rs)). The kingdom-specific TIM is the one with
   CLUT block fb_xy ``(0, 506)`` and image block fb_xy ``(768, 256)``.
   Texture bytes vary per kingdom (each ships its own variant).
 - **Wave-ramp region:** the ocean data fills the **top-left 96 × 96
@@ -292,7 +292,7 @@ parseable slot 5, which no retail bundle is. See
 
 ## Web-overview shader plumbing
 
-[`legaia_asset::ocean::find_ocean_assets`](../../crates/asset/src/ocean.rs)
+[`legaia_asset::ocean::find_ocean_assets`](../../crates/scene-formats/src/ocean.rs)
 decompresses the kingdom bundle's slot 0, locates the ocean TIM by VRAM coords, and
 signature-scans the slot for the animation table. The disc-gated
 test ``crates/web-viewer/tests/ocean_assets.rs`` verifies extraction

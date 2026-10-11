@@ -26,7 +26,7 @@ indices unless marked "raw TOC" (raw = extraction + 2, see
 | Textures | PROT 0874 §2 (8 TIMs) | the player file's own texture pools | PROT 1205 (8 TIMs) |
 | Palette rows (VRAM `y`) | 478 (+ 473 / 475 shared) | 481 / 482 / 483, one per party slot | 490..497 |
 | Pose source | PROT 0874 §1 locomotion ANM | `record[0]` action streams of the same file | PROT 1203 ANM banks |
-| Parser | [`legaia_asset::character_pack`](../../crates/asset/src/character_pack.rs) | [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/battle-models/src/battle_char_pack.rs) |
+| Parser | [`legaia_asset::character_pack`](../../crates/battle-models/src/character_pack.rs) | [`battle_char_assembly`](../../crates/battle-models/src/battle_char_assembly.rs) | [`battle_char_pack`](../../crates/battle-models/src/battle_char_pack.rs) |
 | Confidence | Confirmed | Confirmed | Confirmed |
 
 ```mermaid
@@ -287,7 +287,7 @@ Vahn's patched index against a live capture before applying the swap to slot
 ## Textures (field form)
 
 Field textures are **PROT 0874 §2**, parser
-[`legaia_asset::field_char_textures`](../../crates/asset/src/field_char_textures.rs).
+[`legaia_asset::field_char_textures`](../../crates/battle-models/src/field_char_textures.rs).
 (Not extraction 0876, whose `player_data` *filename label* is the +2 label
 shift; it is a VAB + empty TIM_LIST + SEQ stream.)
 
@@ -617,7 +617,7 @@ design - and has no runtime texture band, so it is not drawn as a party member.
 The knockdown clip (action tag 4) ends at ~275-325 x, ~120-175 y, ~515-580 z:
 flat on the ground. That is correct for a hit reaction and wrong for an attack
 turn, so "is the party member upright" has a testable answer. Oracle:
-`crates/asset/tests/battle_pose_orientation_real.rs` (disc-gated;
+`crates/battle-models/tests/battle_pose_orientation_real.rs` (disc-gated;
 `LEGAIA_POSE_DUMP_DIR` writes orthographic PNGs). The rule deciding which
 family plays is in
 [`battle.md` § One staged-anim channel](../subsystems/battle.md#one-staged-anim-channel-actor0x1da).
@@ -845,7 +845,7 @@ them in a battle only for a member that falls back to the 1204 mesh
 (`engine-core::battle_party_form`).
 
 Chunk type `0x09` (TMD2) is a distinct dispatcher tag from regular TMD
-(`0x02`) in [`AssetType`](../../crates/asset/src/lib.rs); the body shape is
+(`0x02`) in [`AssetType`](../../crates/container-formats/src/lib.rs); the body shape is
 identical (magic `0x80000002`).
 
 ## Animation

@@ -420,7 +420,7 @@ is symmetric about `X = 0`, so a YZ reflection reproduces it in place and only
 a half turn closes it. Of the 49 `-Z`-open shells in the corpus none is on the
 mirror list; of the 133 X-open shells, 98 are. Sweep:
 `no_z_open_shell_takes_the_mirror_transform` in
-`crates/asset/tests/battle_backdrop_real.rs`.
+`crates/disc-audit/tests/battle_backdrop_real.rs`.
 
 `0007_town01` (stage id 4) is on the list: the Tetsu arena is completed by a
 reflection. A half turn there plants a second village wall across the open sea

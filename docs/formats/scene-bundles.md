@@ -6,7 +6,7 @@ Identify the shape before picking a walker. Two of the shapes (`scene_tmd_stream
 
 ## At a glance
 
-| Shape | Opens with | Retail entries | Holds | Runtime reader | Parser (`crates/asset/src/`) |
+| Shape | Opens with | Retail entries | Holds | Runtime reader | Parser (`crates/*-formats/src/`) |
 |---|---|---|---|---|---|
 | [`scene_tmd_stream`](#scene_tmd_stream---bare-tmd-prefix) | chunk header, TMD magic at `+4` | 182 | Battle-stage backdrop mesh + its TIMs | `FUN_8001FE70` | `scene_tmd_stream.rs` |
 | [`scene_vab_stream`](#scene_vab_stream---vab-prefix) | chunk header, `VABp` at `+4` | 218 | Sound bank (+ SEQ chunks) | DATA_FIELD chunks | `scene_vab_stream.rs` |
@@ -84,7 +84,7 @@ An entry holds **exactly one** `[chunk0 TMD][type-0x01 TIM chunks][terminator]` 
 
 Not a "two-list" / concatenated-sub-streams shape: the "second sub-stream at `0x14000`" of entry 0006 is PROT entry **0007** at its own offset 0 (TMD `0x2c20`, TIMs at `0x2c24` / `0xae48`), seen through the over-reading entry size. The town0b / town0c clusters are four-entry runs of the same layout (TMD bodies `0x383c` / `0x2c20` / `0x2998` / `0x3af8`, two `0x8220` TIM chunks each).
 
-[`scene_tmd_stream::sub_streams`](../../crates/asset/src/scene_tmd_stream.rs) returns one block per entry and [`battle_tim_chunks`](../../crates/asset/src/scene_tmd_stream.rs) reports every chunk as `WalkSource::Tail`. Both keep a post-terminator scan as a **regression detector**: a second sub-stream or a `WalkSource::Continuation` hit means the buffer spans more than one PROT entry. Disc-gated coverage: `crates/asset/tests/scene_tmd_stream_real.rs`.
+[`scene_tmd_stream::sub_streams`](../../crates/scene-formats/src/scene_tmd_stream.rs) returns one block per entry and [`battle_tim_chunks`](../../crates/scene-formats/src/scene_tmd_stream.rs) reports every chunk as `WalkSource::Tail`. Both keep a post-terminator scan as a **regression detector**: a second sub-stream or a `WalkSource::Continuation` hit means the buffer spans more than one PROT entry. Disc-gated coverage: `crates/disc-audit/tests/scene_tmd_stream_real.rs`.
 
 The engine's field-mode loader uses `battle_tim_chunks` to **skip** these battle-only TIMs. The row-479 NPC palettes are not field-resident, matching retail.
 
@@ -99,7 +99,7 @@ Measured over object 0, the shell both copies carry:
 - Trailing objects are near props and ground ribbons; several straddle the plane, which is why the classifier reads object 0 only.
 - Object **1** never draws: the backdrop actor drops it.
 
-`scene_tmd_stream::shell_shape` returns the object-0 AABB plus the open side; `ShellShape::describe` renders the viewer label; `shell_shape_all_objects` is the whole-pool form. Pinned by `every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in `crates/asset/tests/scene_tmd_stream_real.rs`. The placement (two actors, each stage's second transform, the dropped object) is `legaia_asset::battle_backdrop`, documented in [`battle.md`](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
+`scene_tmd_stream::shell_shape` returns the object-0 AABB plus the open side; `ShellShape::describe` renders the viewer label; `shell_shape_all_objects` is the whole-pool form. Pinned by `every_scene_tmd_stream_backdrop_is_authored_as_a_half_shell` in `crates/disc-audit/tests/scene_tmd_stream_real.rs`. The placement (two actors, each stage's second transform, the dropped object) is `legaia_asset::battle_backdrop`, documented in [`battle.md`](../subsystems/battle.md#backdrop-shell---two-copies-of-one-mesh).
 
 ### Reading
 
@@ -321,7 +321,7 @@ A `Flag` descriptor's *payload* is never read: the dispatcher arm returns before
 
 `0455_urudre1`'s descriptor 0 is a **second copy of a live asset**: its decompressed bytes hash (SHA-256) identically to the first 343,480 bytes of `0456_urudre1.BIN`, where that pack ends. The scene's texture pack ships as its own PROT entry, which the asset-loader chain streams; the bundle's copy is switched off by its type byte and nothing reads it. Entry `0456` is 344,064 bytes; the 584 above the pack are high-entropy inherited slack, not zero fill.
 
-A `1927`-byte payload in a bundle is fill, and a walker that decodes it is decoding filler. `crates/asset/tests/byte_account_entries.rs` pins both halves.
+A `1927`-byte payload in a bundle is fill, and a walker that decodes it is decoding filler. `crates/disc-audit/tests/byte_account_entries.rs` pins both halves.
 
 ### The bytes after the last stream are not the bundle's
 
@@ -329,7 +329,7 @@ A bundle's content ends where its last descriptor's LZS stream stops being consu
 
 They are an earlier PROT entry's bytes at the same file offsets. The packer wrote every entry out of one buffer, in TOC order, without clearing it, so the slack at offset `k` is the byte of the nearest earlier entry whose extent reaches `k`. That prediction reproduces the slack of all 90 bundles byte for byte; the first bundle (`town01`, extraction 4) has no earlier entry that long and its slack is zero.
 
-An editor that rebuilds a bundle can write zeros there, and a parser should never read it. Measured by [`inherited_tail::buffer_run`](../../crates/asset/src/inherited_tail.rs); the disc-wide rule is in [`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer).
+An editor that rebuilds a bundle can write zeros there, and a parser should never read it. Measured by [`inherited_tail::buffer_run`](../../crates/disc-audit/src/inherited_tail.rs); the disc-wide rule is in [`byte-accounting.md`](../tooling/byte-accounting.md#a-bundles-last-sector-is-the-packers-buffer).
 
 ### The world-map kingdom bundles differ in two slots
 

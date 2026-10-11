@@ -96,7 +96,7 @@ things decide whether the palette you see in the file is the one a draw uses:
   row-479 band the same way ([`npc-palette.md`](../formats/npc-palette.md)).
 - **Sharing.** A sprite or polygon may name any cell. The system-UI sheet's
   sprites take their palettes from the widget-class table's palette byte
-  ([`ui_widgets`](../../crates/asset/src/ui_widgets.rs)): row 511 cells 0-15
+  ([`ui_widgets`](../../crates/ui-formats/src/ui_widgets.rs)): row 511 cells 0-15
   are the sheet's own sixteen, cells 16-18 belong to a separate CLUT-only
   TIM uploaded just before it, and the element badges read a 4x4 block at
   `(896.., 498..501)`.
@@ -120,7 +120,7 @@ The asset viewer's **As the game draws it** view and the ROM patcher's
 texture editor (region list, in-game view, `tim-palette-map`) both call it.
 
 - **Who samples what.** Every rectangle comes from the widget-class table
-  (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/asset/src/ui_widgets.rs),
+  (`SCUS_942.54` `0x800732A4`, [`ui_widgets`](../../crates/ui-formats/src/ui_widgets.rs),
   [`battle.md`](battle.md#the-widget-class-table---where-every-chrome-sprite-comes-from)),
   expanded per draw arm of `FUN_8002C69C` exactly as the arm emits it: a
   class-5 record is its own sprite; a class-3 plate run adds its cap pair
@@ -130,7 +130,7 @@ texture editor (region list, in-game view, `tim-palette-map`) both call it.
   piece is drawn through the record's palette byte. The portrait records
   sample the next page and are not part of the map.
 - **Which cell.** The palette byte decodes to a CLUT cell
-  ([`clut_fb`](../../crates/asset/src/ui_widgets.rs)): bit 6 clear is
+  ([`clut_fb`](../../crates/ui-formats/src/ui_widgets.rs)): bit 6 clear is
   `CBA = 0x7FC0 + (b & 0x3F)`, VRAM `(16 * (b & 0x3F), 511)` - "sub-palette
   `b & 0x3F`"; bit 6 set is the 4x4 badge block at `(896.., 498..501)`. The
   sheet's 16x16 CLUT block lands flattened on row 511, so sub-palette `k`

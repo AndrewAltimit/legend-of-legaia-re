@@ -3,7 +3,9 @@ use std::path::Path;
 use crate::RenderTier;
 use crate::cli_io::*;
 use anyhow::Result;
-use legaia_asset::{battle_texture_catalog, tim_catalog, tim_deep_catalog, tim_scan, tmd_scan};
+use legaia_battle_models::battle_texture_catalog;
+use legaia_container_formats::{tim_scan, tmd_scan};
+use legaia_disc_audit::{tim_catalog, tim_deep_catalog};
 use legaia_prot::cdname;
 
 pub(crate) fn tmd_scan_cmd(
@@ -326,7 +328,7 @@ pub(crate) fn tim_deep_catalog_cmd(
 
 /// `asset battle-texture-catalog <PROT.DAT>` - catalog the headerless
 /// 4bpp character-art blocks in the player battle files. Not a TIM tier:
-/// see [`legaia_asset::battle_texture_catalog`] for why no magic scan can
+/// see [`legaia_battle_models::battle_texture_catalog`] for why no magic scan can
 /// reach these.
 pub(crate) fn battle_texture_catalog_cmd(
     prot: &std::path::Path,
@@ -337,7 +339,7 @@ pub(crate) fn battle_texture_catalog_cmd(
     let names = match scus {
         Some(p) => {
             let bytes = std::fs::read(p)?;
-            legaia_asset::item_names::ItemNameTable::from_scus(&bytes)
+            legaia_game_tables::item_names::ItemNameTable::from_scus(&bytes)
         }
         None => None,
     };

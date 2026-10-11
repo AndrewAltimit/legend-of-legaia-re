@@ -2,7 +2,7 @@
 //! `SCUS_942.54` item-property table.
 //!
 //! Each item's 12-byte property record (`DAT_80074368`, the table
-//! `legaia_asset::item_names` reads name pointers from at `+4`) carries the
+//! `legaia_game_tables::item_names` reads name pointers from at `+4`) carries the
 //! shop price as the `u16` at `+2` - the field the in-game buy/sell UI reads
 //! (verified there against a live shop). It is the authoritative price, so it
 //! makes a clean oracle for the curated `gamedata` prices mined from
@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use legaia_asset::item_names::{self, ItemNameTable};
+use legaia_game_tables::item_names::{self, ItemNameTable};
 use legaia_gamedata::Database;
 
 fn scus_bytes() -> Option<Vec<u8>> {

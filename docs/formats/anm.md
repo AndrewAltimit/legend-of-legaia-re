@@ -46,7 +46,7 @@ Record (a clip), `record_size = 16 + 8 * bones * frames`:
 
 As `u16` words the header reads `(a, b, marker_1, flag)`: bone count = `a & 0xFF`, gate = `a >> 8`, frames = `b`. The Baka Fighter bundle's `flag` values are `0x0201` / `0x0401` / `0x0402`.
 
-The size formula holds byte-exact across all 310 records of the five pinned bundles below and across every other bundle the corpus sweep finds. `legaia_asset::player_anm::find_in_entry` validates it on every record before declaring a bundle parsed; the disc-gated `crates/asset/tests/player_anm_real.rs` pins it.
+The size formula holds byte-exact across all 310 records of the five pinned bundles below and across every other bundle the corpus sweep finds. `legaia_asset::player_anm::find_in_entry` validates it on every record before declaring a bundle parsed; the disc-gated `crates/battle-models/tests/player_anm_real.rs` pins it.
 
 ## Disc source - the party locomotion bundle (PROT 0874 §1)
 
@@ -76,7 +76,7 @@ Parser: `legaia_asset::character_pack::field_locomotion_anm` and the `LOCOMOTION
 
 ## Disc source - per-scene ANM bundle
 
-The clip set a scene's **NPC actors** and scripted scene animations play ships inside the scene's own asset bundle, not as a dedicated PROT entry. The bundle is a [`parse_player_lzs`](../../crates/asset/src/lib.rs)-shaped container ([scene_asset_table](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)); its type-`0x05` descriptor LZS-decodes to an ANM container. The dispatcher allocates it into `_DAT_8007B888` with the `move_malloc_err` string (`ghidra/scripts/funcs/8001f05c.txt`, store at `0x8001F3A8`).
+The clip set a scene's **NPC actors** and scripted scene animations play ships inside the scene's own asset bundle, not as a dedicated PROT entry. The bundle is a [`parse_player_lzs`](../../crates/container-formats/src/lib.rs)-shaped container ([scene_asset_table](scene-bundles.md#scene_asset_table---count-prefixed-asset-bundle)); its type-`0x05` descriptor LZS-decodes to an ANM container. The dispatcher allocates it into `_DAT_8007B888` with the `move_malloc_err` string (`ghidra/scripts/funcs/8001f05c.txt`, store at `0x8001F3A8`).
 
 Byte-equality against the live clip bank in the [`v0_1_pre_battle_tetsu`](../../scripts/scenarios.toml) field-mode save state confirms:
 
@@ -134,7 +134,7 @@ Each entry decodes to a `(T, R)` transform in `FUN_8001BE80` (`ghidra/scripts/fu
 
 - `T0..T2` are **signed 12-bit** translations (`if (v & 0x800) v |= 0xFFFFF000`): the joint offset in actor-local space. The runtime pushes them through the GTE's `MVMVA` with the actor's rotation matrix, then loads the result into the GTE `TR` registers as the per-object world-space translation.
 - The three rotations build into the GTE rotation matrix in the order Z, Y, X (post-multiplication) via the PsyQ-shape builders (`ghidra/scripts/funcs/8004638c.txt`, `8004629c.txt`, `800461a4.txt`), which read the global sin / cos tables at `DAT_80070A2C` / `DAT_8007122C`.
-- `high4(T2)` is the **low** nibble of byte 4: `lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8` at `0x8001BF30..0x8001BF3C`. The unit test `bone_transform_decode_signed_12bit` (`crates/asset/src/player_anm.rs`, town01 record 17) pins the decode.
+- `high4(T2)` is the **low** nibble of byte 4: `lbu v0,0x4(t3); andi v0,v0,0xf; sll v0,v0,0x8` at `0x8001BF30..0x8001BF3C`. The unit test `bone_transform_decode_signed_12bit` (`crates/battle-models/src/player_anm.rs`, town01 record 17) pins the decode.
 
 Frame 0 of an idle clip is the rest-pose assembly transform: it places each TMD object at its joint position with its rest orientation.
 
@@ -190,7 +190,7 @@ The driver reads four header bytes (`ghidra/scripts/funcs/800204f8.txt`): the bo
 
 Results are written to scratchpad `0x1F8002C0` (`T` at `+0x0..0x6`, angles at `+0x8..0xE`) before the GTE load. At `frac == 0` every lane returns the current entry exactly, the flip retry included, so a whole-frame cursor poses exactly as the single-entry decode.
 
-**Census.** 2243 of the 3634 records the ANM detector finds across every PROT entry carry the gate, spread over 78 entries; 1560 of those use step divisor `4`. It is set per clip, not by record index: 327 of the 755 records at index `0..=8` carry it and 963 of those at `9+` do not. `crates/asset/tests/player_anm_sampler_real.rs` prints the census and checks every keyframe of every record against the single-entry decode.
+**Census.** 2243 of the 3634 records the ANM detector finds across every PROT entry carry the gate, spread over 78 entries; 1560 of those use step divisor `4`. It is set per clip, not by record index: 327 of the 755 records at index `0..=8` carry it and 963 of those at `9+` do not. `crates/battle-models/tests/player_anm_sampler_real.rs` prints the census and checks every keyframe of every record against the single-entry decode.
 
 **Cadence: the gate also slows the clip.** The step for a gated clip is `(rate * 2 + div - 1) / div` (`0x800205C8..0x800205E0`), against the plain `rate` otherwise, and the result is multiplied by the frame step `DAT_1F800393` (`0x80020654..0x80020690`). At the field rate `8` that is `16 / 8 / 6 / 4 / 3` sixteenths for divisors `1 / 2 / 3 / 4 / 6`, so the divisor-4 clips run at half the ungated speed and the blender fills the ticks in between.
 

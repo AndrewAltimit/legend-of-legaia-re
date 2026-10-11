@@ -5,10 +5,10 @@ use anyhow::{Context, Result};
 /// Parse the battle-action per-move power table and print its records.
 pub(crate) fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
     let bytes = crate::cli_io::read_input(input)?;
-    let Some(table) = legaia_asset::mode_table::ModeTable::from_scus(&bytes) else {
+    let Some(table) = legaia_game_tables::mode_table::ModeTable::from_scus(&bytes) else {
         anyhow::bail!(
             "no game-mode table at VA {:#x} in {} - is this SCUS_942.54?",
-            legaia_asset::mode_table::MODE_TABLE_VA,
+            legaia_game_tables::mode_table::MODE_TABLE_VA,
             input.display(),
         );
     };
@@ -32,7 +32,7 @@ pub(crate) fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
     }
     println!(
         "game-mode table @ VA {:#010x} ({} entries)",
-        legaia_asset::mode_table::MODE_TABLE_VA,
+        legaia_game_tables::mode_table::MODE_TABLE_VA,
         table.entries.len()
     );
     println!(
@@ -58,23 +58,23 @@ pub(crate) fn mode_table_cmd(input: &Path, json: bool) -> Result<()> {
         "{} of {} per-frame modes share handler {:#010x}",
         table.shared_handler_count(),
         table.entries.iter().filter(|e| e.is_per_frame()).count(),
-        legaia_asset::mode_table::SHARED_PER_FRAME_HANDLER,
+        legaia_game_tables::mode_table::SHARED_PER_FRAME_HANDLER,
     );
     Ok(())
 }
 
 pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
     let bytes = crate::cli_io::read_input(input)?;
-    let Some(table) = legaia_asset::move_power::parse(&bytes) else {
+    let Some(table) = legaia_game_tables::move_power::parse(&bytes) else {
         anyhow::bail!(
             "no move-power table at the pinned offset {:#x} in {} ({} bytes) - \
              is this the raw PROT 0898 battle-action overlay entry?",
-            legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
+            legaia_game_tables::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
             input.display(),
             bytes.len(),
         );
     };
-    let map = legaia_asset::move_power::parse_id_index_map(&bytes);
+    let map = legaia_game_tables::move_power::parse_id_index_map(&bytes);
     // The move id(s) that resolve to a given power-table index (the move-id
     // space is the spell-table id space).
     let move_ids_of = |idx: usize| -> Vec<u8> {
@@ -82,7 +82,8 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
             None => Vec::new(),
             Some(m) => (0..m.len())
                 .filter(|&mid| {
-                    legaia_asset::move_power::index_for_move_id(m, mid as u8) == Some(idx as u8)
+                    legaia_game_tables::move_power::index_for_move_id(m, mid as u8)
+                        == Some(idx as u8)
                 })
                 .map(|mid| mid as u8)
                 .collect(),
@@ -122,7 +123,8 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
             Some(m) => {
                 let ids: Vec<String> = (0..m.len())
                     .filter(|&mid| {
-                        legaia_asset::move_power::index_for_move_id(m, mid as u8) == Some(idx as u8)
+                        legaia_game_tables::move_power::index_for_move_id(m, mid as u8)
+                            == Some(idx as u8)
                     })
                     .map(|mid| format!("{mid:#04x}"))
                     .collect();
@@ -138,8 +140,8 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
         "move-power table: {} records @ file {:#x} (runtime VA {:#010x}), 26-byte stride; \
          id->index map {}",
         table.len(),
-        legaia_asset::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
-        legaia_asset::move_power::MOVE_POWER_TABLE_VA,
+        legaia_game_tables::move_power::MOVE_POWER_TABLE_FILE_OFFSET,
+        legaia_game_tables::move_power::MOVE_POWER_TABLE_VA,
         if map.is_some() { "present" } else { "MISSING" },
     );
     for r in &table {
@@ -191,7 +193,7 @@ pub(crate) fn move_power_cmd(input: &Path, json: bool) -> Result<()> {
 /// with the set of moves whose `+0x12` / `+0x16` lists cite it and (for the
 /// Proto3D space) the resolved prototype VA + SFX cue from the aux tables.
 pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()> {
-    use legaia_asset::move_power::{self, EffectFired, EffectKey};
+    use legaia_game_tables::move_power::{self, EffectFired, EffectKey};
 
     let bytes = crate::cli_io::read_input(input)?;
     let Some(table) = move_power::parse(&bytes) else {
@@ -312,7 +314,7 @@ pub(crate) fn move_power_effect_index_cmd(input: &Path, json: bool) -> Result<()
 
 /// Parse + print the battle element-affinity matrix and per-character table.
 pub(crate) fn element_affinity_cmd(input: &Path, json: bool) -> Result<()> {
-    use legaia_asset::element_affinity::{self, Element};
+    use legaia_game_tables::element_affinity::{self, Element};
     let bytes = crate::cli_io::read_input(input)?;
     let Some(aff) = element_affinity::parse(&bytes) else {
         anyhow::bail!(
@@ -379,8 +381,8 @@ pub(crate) fn element_affinity_cmd(input: &Path, json: bool) -> Result<()> {
     println!(
         "\nper-character summon power-percent @ file {:#x} (runtime VA {:#010x}); \
          pct = row[summon creature element], FUN_801ddb30 stage 5:",
-        legaia_asset::element_affinity::SUMMON_POWER_PCT_FILE_OFFSET,
-        legaia_asset::element_affinity::SUMMON_POWER_PCT_VA,
+        legaia_game_tables::element_affinity::SUMMON_POWER_PCT_FILE_OFFSET,
+        legaia_game_tables::element_affinity::SUMMON_POWER_PCT_VA,
     );
     print!("        ");
     for elem in 0..element_affinity::ELEMENT_COUNT {
@@ -402,7 +404,7 @@ pub(crate) fn item_tables_cmd(
     equipment_only: bool,
     consumables_only: bool,
 ) -> Result<()> {
-    use legaia_asset::{equip_stats, item_effect, item_names};
+    use legaia_game_tables::{equip_stats, item_effect, item_names};
 
     let bytes = crate::cli_io::read_input(scus)?;
     let names = item_names::ItemNameTable::from_scus(&bytes).context("parse item-name table")?;
@@ -460,9 +462,9 @@ pub(crate) fn item_tables_cmd(
 }
 
 /// `asset spell-names <SCUS>` - dump the static spell name / MP / target
-/// table (`legaia_asset::spell_names`, `DAT_800754C8`).
+/// table (`legaia_game_tables::spell_names`, `DAT_800754C8`).
 pub(crate) fn spell_names_cmd(scus: &Path, json: bool) -> Result<()> {
-    use legaia_asset::spell_names::SpellNameTable;
+    use legaia_game_tables::spell_names::SpellNameTable;
 
     let bytes = crate::cli_io::read_input(scus)?;
     let table = SpellNameTable::from_scus(&bytes).context("parse spell-name table")?;
@@ -498,10 +500,10 @@ pub(crate) fn spell_names_cmd(scus: &Path, json: bool) -> Result<()> {
 }
 
 /// `asset steal-table <SCUS>` - dump the static per-monster steal table
-/// (`legaia_asset::steal_table`, `DAT_80077828`), joining the stolen item
+/// (`legaia_game_tables::steal_table`, `DAT_80077828`), joining the stolen item
 /// id to its name from the item-name table.
 pub(crate) fn steal_table_cmd(scus: &Path, all: bool, json: bool) -> Result<()> {
-    use legaia_asset::{item_names::ItemNameTable, steal_table::StealTable};
+    use legaia_game_tables::{item_names::ItemNameTable, steal_table::StealTable};
 
     let bytes = crate::cli_io::read_input(scus)?;
     let table = StealTable::from_scus(&bytes).context("parse steal table")?;
@@ -547,9 +549,9 @@ pub(crate) fn steal_table_cmd(scus: &Path, all: bool, json: bool) -> Result<()> 
 }
 
 /// `asset accessory-passive <SCUS>` - dump the 64-slot accessory ("Goods")
-/// passive-effect table (`legaia_asset::accessory_passive`, `0x8007625C`).
+/// passive-effect table (`legaia_game_tables::accessory_passive`, `0x8007625C`).
 pub(crate) fn accessory_passive_cmd(scus: &Path, json: bool) -> Result<()> {
-    use legaia_asset::accessory_passive::{AccessoryPassiveTable, stat_boosts};
+    use legaia_game_tables::accessory_passive::{AccessoryPassiveTable, stat_boosts};
 
     let bytes = crate::cli_io::read_input(scus)?;
     let table =
@@ -598,9 +600,9 @@ pub(crate) fn accessory_passive_cmd(scus: &Path, json: bool) -> Result<()> {
 }
 
 /// `asset sfx-table <SCUS>` - dump the sound-effect descriptor table
-/// (`legaia_asset::sfx_table`, `DAT_8006F198`).
+/// (`legaia_game_tables::sfx_table`, `DAT_8006F198`).
 pub(crate) fn sfx_table_cmd(scus: &Path, json: bool) -> Result<()> {
-    use legaia_asset::sfx_table::SfxTable;
+    use legaia_game_tables::sfx_table::SfxTable;
 
     let bytes = crate::cli_io::read_input(scus)?;
     let table = SfxTable::from_scus(&bytes).context("parse sfx table")?;
@@ -643,9 +645,9 @@ pub(crate) fn sfx_table_cmd(scus: &Path, json: bool) -> Result<()> {
 }
 
 /// `asset new-game <SCUS>` - dump the new-game starting-party template
-/// (`legaia_asset::new_game`, `0x80078C4C`) + the code-built starting inventory.
+/// (`legaia_game_tables::new_game`, `0x80078C4C`) + the code-built starting inventory.
 pub(crate) fn new_game_cmd(scus: &Path, json: bool) -> Result<()> {
-    use legaia_asset::{
+    use legaia_game_tables::{
         item_names::ItemNameTable,
         new_game::{StartingInventory, StartingParty},
     };
@@ -695,10 +697,10 @@ pub(crate) fn new_game_cmd(scus: &Path, json: bool) -> Result<()> {
 }
 
 /// `asset level-up <SCUS>` - dump the per-character stat-growth params +
-/// XP thresholds (`legaia_asset::level_up_tables`, `DAT_80076918`). Stats are
+/// XP thresholds (`legaia_game_tables::level_up_tables`, `DAT_80076918`). Stats are
 /// indexed (the on-disc sub-record order); cross-reference the stat-growth doc.
 pub(crate) fn level_up_cmd(scus: &Path, json: bool) -> Result<()> {
-    use legaia_asset::level_up_tables::{
+    use legaia_game_tables::level_up_tables::{
         GROWTH_CHAR_COUNT, growth_tables_from_scus, xp_thresholds_from_scus,
     };
 

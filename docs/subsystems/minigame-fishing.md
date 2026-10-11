@@ -387,7 +387,7 @@ Each record is 10 words. Every field has a reader in `FUN_801d4004` (fish AI) or
 
 The `+0x04` score value and `+0x08` pull factor both climb with rarity, so a higher-value fish is also the harder fight.
 
-Parser: [`legaia_asset::fishing_species`](../../crates/asset/src/fishing_species.rs) - `parse` decodes the 10 records, `FishingSpecies::score_for` reproduces the award, `name` resolves the `+0x00` pointer. Values and names decode from the user's disc (disc-gated `fishing_species_real`).
+Parser: [`legaia_asset::fishing_species`](../../crates/minigame-formats/src/fishing_species.rs) - `parse` decodes the 10 records, `FishingSpecies::score_for` reproduces the award, `name` resolves the `+0x00` pointer. Values and names decode from the user's disc (disc-gated `fishing_species_real`).
 
 ## Catch scoring and the result plate
 
@@ -456,7 +456,7 @@ The shop branch (states `0x78..0x7a`) spends the fishing-point pool `_DAT_800844
 
 Both venues spend and latch against the same globals. The rows match the curated walkthrough prize lists ([`gamedata.md`](../reference/gamedata.md)) row for row, plus one entry the walkthroughs miss: **Vidna's row 0 is a 50,000-point one-time War God Icon**, invisible until the pool exceeds its price. Row contents decode from the user's disc.
 
-Parser: [`legaia_asset::fishing_exchange`](../../crates/asset/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::ui_fishing_exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
+Parser: [`legaia_asset::fishing_exchange`](../../crates/minigame-formats/src/fishing_exchange.rs); disc-gated `fishing_exchange_real` pins the structural invariants. Engine: `fishing::PrizeExchange` (list floor, availability, quantity cap, confirm), with the grant committed by `World::fishing_exchange_buy` against `World::minigames.fishing_points` and `fishing_prizes_purchased`; disc-free oracle `fishing_exchange_runtime`. Both play hosts route input through `engine-core::fishing_exchange_input` and draw `engine-ui::ui_fishing_exchange`. The patcher edits prices in place (`--fishing-price`, [`randomizer.md`](../tooling/randomizer.md)).
 
 In the port the exchange opens from the hub's row 3 (or the native window's `P`) and owns the pad while open: Up / Down move, Cross or L1 trades one, Circle or L2 closes back to the hub, and Left / Right switch the venue page (a port affordance).
 

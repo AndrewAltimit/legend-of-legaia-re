@@ -9,7 +9,7 @@
   <dl class="kv">
     <dt>Magic</dt><dd>none - the first <code>u32</code> is already a chunk header (type byte in the top 8 bits)</dd>
     <dt>Where on disc</dt><dd>34 <code>PROT.DAT</code> entries strict-validate as class <code>data_field_streaming</code>: the <code>other5</code> character/effect run (1204..1219) and a family of scene bundles</dd>
-    <dt>Parser</dt><dd><code>crates/asset/src/lib.rs::parse_streaming</code>; <code>asset scan-stream</code> / <code>asset extract</code></dd>
+    <dt>Parser</dt><dd><code>crates/container-formats/src/lib.rs::parse_streaming</code>; <code>asset scan-stream</code> / <code>asset extract</code></dd>
     <dt>Confidence</dt><dd>Confirmed - consumer <code>FUN_8002541C</code>, the <code>0x14</code> (DATA_FIELD) branch, feeding <code>FUN_8001F05C</code> with <code>copy_only=1</code></dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">asset loader</a>, <a href="../subsystems/battle.html">battle scene loader</a>, <a href="../characters.html">characters page</a> (battle-form meshes + atlases)</dd>
   </dl>
@@ -17,7 +17,7 @@
 
 <section class="doc-section" id="overview">
   <h2>Overview</h2>
-  <p>The walker passes every chunk through the dispatcher with <code>copy_only=1</code>, so chunks are always uncompressed - the container trades disc space for a load path with no decompression step. Implementation: <code>crates/asset/src/lib.rs::parse_streaming</code>.</p>
+  <p>The walker passes every chunk through the dispatcher with <code>copy_only=1</code>, so chunks are always uncompressed - the container trades disc space for a load path with no decompression step. Implementation: <code>crates/container-formats/src/lib.rs::parse_streaming</code>.</p>
   <aside class="notice">
     <div class="notice-title">Scope note</div>
     <p>This page covers the <em>typed-chunk streaming</em> shape that <code>FUN_8002541C</code> consumes - not the wider question of "what does the per-scene CDNAME block actually carry?" (a CDNAME block is the run of consecutive <code>PROT.DAT</code> entries that <a href="cdname.html"><code>CDNAME.TXT</code></a> assigns to one scene). Per-scene field bundles use multiple shapes; the slot map at the end identifies which shapes show up where.</p>

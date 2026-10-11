@@ -43,7 +43,7 @@ a function of the index alone. The per-partition header table is in
 ## Relocation surface
 
 A mid-buffer insert/delete of `delta` bytes at a destination op needs these
-fixups (all offsets per [`man_section`](../../crates/asset/src/man_section.rs)):
+fixups (all offsets per [`man_section`](../../crates/scene-formats/src/man_section.rs)):
 
 1. **Partition record-offset tables** (`MAN[0x2B..]`, u24LE entries relative to
    `data_region_offset`): bump every entry whose record starts after the edit by

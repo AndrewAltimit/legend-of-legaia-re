@@ -67,7 +67,7 @@ fn every_corpus_vab_is_carried_as_two_chunks() {
         let data = std::fs::read(&path).expect("read PROT entry");
         // Only the VABs that begin a chunk stream at offset 0 - the multi-bank
         // archive's banks start on their own sectors and are covered by
-        // `legaia_asset::vab_multi_bank`.
+        // `legaia_sound_formats::vab_multi_bank`.
         if data.len() < 0x40 || &data[4..8] != b"pBAV" {
             continue;
         }

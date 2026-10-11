@@ -5,7 +5,7 @@ icon is cut from. One 4bpp TIM in the **menu overlay** (PROT entry 899)
 carries all of them as a single horizontal strip.
 
 Parser: `legaia_asset::save_icon`. Disc pins in
-`crates/asset/tests/save_icon_real.rs`. Modding path:
+`crates/ui-formats/tests/save_icon_real.rs`. Modding path:
 `legaia_patcher::save_icon` (`legaia-patcher save-icon-list` /
 `save-icon-export` / `save-icon-replace`).
 

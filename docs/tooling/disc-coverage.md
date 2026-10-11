@@ -346,7 +346,7 @@ at offset `k` of a tail is the byte of the **nearest earlier entry reaching
 then takes that prediction's suffix wherever it cuts lower or the sibling cuts
 nothing; the byte account (`legaia_asset::inherited_tail::tails_in`), this gate
 and the [attribution sweep](#byte-level-attribution) all use it, and
-`crates/asset/tests/inherited_tail_real.rs` holds the Rust and Python sides to
+`crates/disc-audit/tests/inherited_tail_real.rs` holds the Rust and Python sides to
 each other cut for cut.
 
 The prediction reproduces 82 of the sibling rule's 83 cuts offset for offset,

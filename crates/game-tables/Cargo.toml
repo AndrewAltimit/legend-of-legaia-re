@@ -3,6 +3,8 @@ name = "legaia-game-tables"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# tests/integration.rs gathers every tests/*.rs into one binary.
+autotests = false
 
 [lib]
 name = "legaia_game_tables"
@@ -13,3 +15,10 @@ anyhow.workspace = true
 legaia-bytes.workspace = true
 legaia-overlay-images.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+legaia-prot.workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

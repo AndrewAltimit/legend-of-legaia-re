@@ -140,7 +140,7 @@ record[stat] += gain                                  ; then caps: HP ≤ 9999, 
 
 The divisor `0x24C0` is the curve normalizer. Because each curve sums to exactly `0x24C0`, the term `(max − start) × byte / Σcurve` accumulates to `(max − start)` across all 98 levels, so a stat lands on its `max` at level 99 (before jitter).
 
-**Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_asset::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/asset/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
+**Validation.** The `noa_levelup_field_pre` / `noa_levelup_field_post` library saves (Noa, growth slot 1, L2 → L3; the `noa_levelup_*` scenarios in `scripts/scenarios.toml`) give byte-exact single-level deltas: HP +39, MP +5, and the six record stats +2 / +4 / +4 / +3 / +4 / +3. Leveling from L2 reads `curve[row][1]`, and all 8 deltas land within `[core − jitter, core + jitter]` (for example HP core `(4500 − 150) × 82 / 9408 = 37`, observed +39, jitter half-range 4). Decoded and checked in `legaia_asset::level_up_tables` (`GrowthTables::char_params` / `level_gain_core`) by the disc-gated `crates/game-tables/tests/level_up_tables_real.rs`, which also pins the first correction divisors.
 
 ### A level-up is not a heal
 
@@ -410,7 +410,7 @@ The banner shows HP and MP only. The other six gains are applied to the record b
 
 | Test | Covers |
 |---|---|
-| `crates/asset/tests/level_up_tables_real.rs` (disc-gated) | Parser, `start` vs new-game seed, correction divisors, the captured-L3 threshold |
+| `crates/game-tables/tests/level_up_tables_real.rs` (disc-gated) | Parser, `start` vs new-game seed, correction divisors, the captured-L3 threshold |
 | `crates/engine-core/tests/growth_curve_disc.rs` (disc-gated) | Engine install vs seed, Noa L2 → L3 capture |
 | `crates/engine-shell/tests/new_game_seed.rs` (disc-gated) | `boot_installs_the_real_retail_xp_curve_from_disc`, `boot_installs_the_real_per_character_growth_curves_from_disc` (Noa's curve produces the L2 → L3 core, HP 37 / MP 6) |
 

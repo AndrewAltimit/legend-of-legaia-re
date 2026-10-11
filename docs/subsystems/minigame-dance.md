@@ -127,7 +127,7 @@ State `0x14` also copies the three scores into display halfwords (`DAT_801c6460.
 
 ## Step chart and scoring tables
 
-All three tables are **baked into the overlay's static image**; nothing is loaded per song. Parser: [`legaia_asset::dance_chart`](../../crates/asset/src/dance_chart.rs) (`parse` for the chart, `parse_tables` for the two scoring tables).
+All three tables are **baked into the overlay's static image**; nothing is loaded per song. Parser: [`legaia_asset::dance_chart`](../../crates/minigame-formats/src/dance_chart.rs) (`parse` for the chart, `parse_tables` for the two scoring tables).
 
 | Table | VA | File offset | Shape | Index |
 |---|---|---|---|---|
@@ -560,7 +560,7 @@ sequenceDiagram
 
 ### The art pack (PROT 1230)
 
-Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_asset::dance_art`](../../crates/asset/src/dance_art.rs):
+Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_asset::dance_art`](../../crates/minigame-formats/src/dance_art.rs):
 
 | VRAM rect | Content |
 |---|---|

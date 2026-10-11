@@ -48,7 +48,7 @@ where marked.
 
 The CLUT-walk `MoveImage` table documented for the world-map ocean
 ([`world-map.md`](world-map.md) "Ocean / water animation",
-[`clut_walk`](../../crates/asset/src/clut_walk.rs)) is **not kingdom-only**.
+[`clut_walk`](../../crates/scene-formats/src/clut_walk.rs)) is **not kingdom-only**.
 The asset-type dispatcher installs any bundle's type-byte `0x06` slot at
 `DAT_8007B7C8` (`FUN_8001F05C` case 6) and field init spawns one walker actor
 per entry. Each walker copies successive frames from a "park" CLUT row onto a

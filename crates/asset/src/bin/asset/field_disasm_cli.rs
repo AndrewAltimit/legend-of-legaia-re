@@ -6,7 +6,7 @@
 //! - `scene-event-scripts <PATH>`: parse the leading prescript table and
 //!   walk every record body individually. The prescript shape is
 //!   `[u16 count][u16 offsets[count]][record bytecode...]`. Detector lives
-//!   in `legaia_asset::scene_event_scripts`.
+//!   in `legaia_scene_formats::scene_event_scripts`.
 //! - `scan-prot --prot <PATH> [--cdname <PATH>]`: walk every PROT.DAT entry,
 //!   detect scene-event-scripts containers, and print every FMV trigger
 //!   (`0x4C 0xE2`) found, annotated with the CDNAME label of the enclosing
@@ -15,13 +15,13 @@
 //! CAVEAT (`scene-event-scripts` / `scan-prot`): the prescript records are NOT
 //! field-VM (`FUN_801DE840`) bytecode - they are a word-aligned (16-bit)
 //! per-scene actor/event command structure (see
-//! `legaia_asset::scene_event_scripts`). Walking them as field-VM yields a
+//! `legaia_scene_formats::scene_event_scripts`). Walking them as field-VM yields a
 //! 65–88 % `decode error` rate with only COINCIDENTAL opcode matches: a
 //! word-table byte that happens to equal `0x3F`/`0x3E`/`0x4C` reads as a
 //! phantom SceneChange / Interact / MenuCtrl, so any FMV trigger (`0x4C 0xE2`)
 //! reported inside a prescript record is a FALSE POSITIVE. The genuine
 //! per-scene field-VM scripts live in the scene MAN sub-asset
-//! (`legaia_asset::man_section`); see `docs/subsystems/script-vm.md`. These
+//! (`legaia_scene_formats::man_section`); see `docs/subsystems/script-vm.md`. These
 //! modes are retained as a diagnostic that the records do not decode as
 //! field-VM, not as a per-scene MV-index lift (that remains capture-blocked).
 //!
@@ -33,12 +33,12 @@ use std::path::Path;
 use anyhow::{Context, Result, anyhow};
 use clap::Subcommand;
 
-use legaia_asset::field_disasm::{
-    InsnInfo, LinearWalker, MenuCtrlKind, find_fmv_triggers, format_instruction,
-};
-use legaia_asset::scene_event_scripts;
 use legaia_prot::archive::Archive;
 use legaia_prot::cdname;
+use legaia_scene_formats::field_disasm::{
+    InsnInfo, LinearWalker, MenuCtrlKind, find_fmv_triggers, format_instruction,
+};
+use legaia_scene_formats::scene_event_scripts;
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum FieldDisasmCmd {
@@ -217,7 +217,7 @@ fn cmd_scene_event_scripts(
                     "  0x{:04X}  FmvTrigger fmv_id={} ({})",
                     pc + opcode_start,
                     fmv_id,
-                    legaia_asset::field_disasm::fmv_filename(fmv_id)
+                    legaia_scene_formats::field_disasm::fmv_filename(fmv_id)
                 );
             }
             continue;
@@ -357,7 +357,7 @@ fn cmd_scan_prot(
                 rec_str,
                 pc,
                 fmv_id,
-                legaia_asset::field_disasm::fmv_filename(fmv_id)
+                legaia_scene_formats::field_disasm::fmv_filename(fmv_id)
             );
         }
     }

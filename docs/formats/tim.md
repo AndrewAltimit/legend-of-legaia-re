@@ -134,7 +134,7 @@ a TIM (web-viewer thumbnails, sub-asset extraction), where the extra
 rejections would only get in the way.
 
 The committed reference catalog
-(`crates/asset/tests/data/prot_tim_catalog.tsv`) holds derived metadata only
+(`crates/disc-audit/tests/data/prot_tim_catalog.tsv`) holds derived metadata only
 (offsets, dimensions, CLUT counts, byte lengths, FNV-1a fingerprints) - never
 pixel bytes - and a disc-gated regression rebuilds it from the disc and pins
 the count + a rollup digest. The in-browser asset viewer builds the same
@@ -148,7 +148,7 @@ any TIM stored inside an [LZS-compressed](lzs.md) `PROT.DAT` section is
 invisible to it, and most character and scene textures are compressed.
 `legaia_asset::tim_deep_catalog` recovers them as a **separate tier**: it walks
 every PROT entry, LZS-decompresses it with `legaia_lzs::decompress_container`
-(the same decode path [`tim_scan`](../../crates/asset/src/tim_scan.rs) uses),
+(the same decode path [`tim_scan`](../../crates/container-formats/src/tim_scan.rs) uses),
 and strict-parses every TIM in each decoded section.
 
 ```
@@ -168,9 +168,9 @@ TIM-magic-in-noise a magic-only scan of decompressed garbage would produce.
 The deep tier is kept wholly separate from the flat catalog (which stays
 byte-identical to its reference). It has no external decoder oracle - the
 reference decoder doesn't decompress - so its disc-gated regression
-(`crates/asset/tests/tim_deep_catalog_coverage.rs`) instead guards the decode
+(`crates/disc-audit/tests/tim_deep_catalog_coverage.rs`) instead guards the decode
 path + validity gate by pinning count + rollup digest + a byte-exact committed
-reference (`crates/asset/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
+reference (`crates/disc-audit/tests/data/prot_tim_deep_catalog.tsv`, metadata + FNV
 only; no decompressed Sony bytes). The viewer surfaces the deep tier as a
 distinct "compressed textures" grid below the raw catalog.
 
@@ -196,7 +196,7 @@ A label is one of:
   party portraits + empty-slot frame.
 
 Both are our own observations - not asset strings or pixel data - so the table
-ships in the repo (`crates/asset/src/data/tim_categories.tsv`), like the
+ships in the repo (`crates/disc-audit/src/data/tim_categories.tsv`), like the
 ground-truth gamedata tables. A `table_is_valid` check (unique fingerprints,
 controlled vocabulary) plus the disc-gated catalog regressions guard it.
 

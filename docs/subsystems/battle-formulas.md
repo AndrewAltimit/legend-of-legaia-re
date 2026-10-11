@@ -613,7 +613,7 @@ Element ids: 0 earth, 1 water, 2 fire, 3 wind, 4 thunder, 5 light, 6 dark, 7
 neutral. Ids 2 / 3 / 4 / 7 are byte-pinned; 0 / 1 / 5 / 6 are **Inferred** from
 the reciprocal pairs and the spell-table element vocabulary. The byte takes only
 `0..=7` across the character table, every monster record and every summon cast
-record (disc-gated tests in `crates/asset/tests/`).
+record (disc-gated tests in `crates/game-tables/tests/`).
 
 **A player cast attacks as the summoned creature.** The attacker element is the
 streamed cast-body record's `+0x1D` - not the caster's element, and not the

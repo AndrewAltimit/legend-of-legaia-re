@@ -262,7 +262,7 @@ pub(super) enum Cmd {
     /// Print the Seru-magic side-effect table (`0x801F6870`): per summon
     /// element and magic-level band, the percent the damage finisher shaves
     /// off the target's stat on every hit (light row: the cure class) and the
-    /// banner-string VA the stager installs. `legaia_asset::seru_side_effect`.
+    /// banner-string VA the stager installs. `legaia_game_tables::seru_side_effect`.
     SeruSideEffect {
         /// Raw PROT 0898 (battle-action overlay) entry `.BIN`.
         input: PathBuf,
@@ -274,7 +274,7 @@ pub(super) enum Cmd {
     /// formation rows name it, split by the row's scripted-fight header byte
     /// and by random-region reachability - which fights (scripted / random)
     /// the enemy is met in, and so which stat-boost profile and Seru
-    /// side-effect gates apply. `legaia_asset::formation_census`.
+    /// side-effect gates apply. `legaia_disc_audit::formation_census`.
     FormationCensus {
         /// `PROT.DAT`, or a directory of extracted PROT entries.
         input: PathBuf,
@@ -283,7 +283,7 @@ pub(super) enum Cmd {
         json: bool,
     },
     /// Print the player Seru-magic summon → namesake `battle_data` creature map
-    /// (`legaia_asset::summon_creatures`, recovered from the disc by mesh
+    /// (`legaia_battle_models::summon_creatures`, recovered from the disc by mesh
     /// identity). A static table, so no disc input is required; pass `--scus` to
     /// annotate each row with the summon's spell name.
     SummonCreatures {

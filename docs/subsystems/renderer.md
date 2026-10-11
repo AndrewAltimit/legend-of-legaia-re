@@ -2963,7 +2963,7 @@ resolved `PacketShape` (`F3` / `FT3` / `G3` / `GT3` / `F4` / `FT4` / `G4` /
 
 ## Stage geometry detector (signal only)
 
-`crates/asset/src/stage_geom.rs` detects a 12-byte fixed prefix
+`crates/scene-formats/src/stage_geom.rs` detects a 12-byte fixed prefix
 `00 F0 84 7F 01 F0 1F 00 00 F1 00 00` repeated at 20-byte stride. That is not
 stage geometry: it is the standard primitive-group header of Legaia TMD group
 data when `((flags >> 1) - 8) >> 1 == K` for the group type with a 20-byte

@@ -33,7 +33,9 @@ toml.workspace = true
 legaia-art.workspace = true
 
 [dev-dependencies]
-legaia-asset.workspace = true
+legaia-battle-models.workspace = true
+legaia-game-tables.workspace = true
+legaia-scene-formats.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true, optional = true }

@@ -82,7 +82,7 @@ battle-init walk, `FUN_8001FE70`'s type-1 handler is the TIM/CLUT upload
 (`FUN_800198E0`), but a sound pack's type-1 chunk is not a TIM. The content shape is identical
 to the [`scene_vab_stream`](scene-bundles.md) BGM wrapper (VAB + SEQ), only the
 container differs (type-2-terminated streaming chunks vs the chunk0-prefixed
-form). Decoder: [`legaia_asset::sound_pack`](../../crates/asset/src/sound_pack.rs)
+form). Decoder: [`legaia_asset::sound_pack`](../../crates/sound-formats/src/sound_pack.rs)
 (`extract` returns the reconstituted VAB + the SEQ); disc-gated
 `sound_pack_vab_seq_real` test. The `.dpk` is not a *bare* VAG-record
 container: the VAG samples are the type-1 section *of a VAB*, indexed by the

@@ -27,7 +27,7 @@ cli = ["dep:clap", "dep:libc"]
 anyhow.workspace = true
 clap = { workspace = true, optional = true }
 flate2.workspace = true
-legaia-asset.workspace = true
+legaia-battle-models.workspace = true
 legaia-cheats.workspace = true
 png.workspace = true
 serde.workspace = true
@@ -36,6 +36,8 @@ toml = { workspace = true, features = ["display"] }
 
 [dev-dependencies]
 legaia-engine-core.workspace = true
+legaia-game-tables.workspace = true
+legaia-overlay-images.workspace = true
 legaia-prot.workspace = true
 
 [target.'cfg(unix)'.dependencies]
