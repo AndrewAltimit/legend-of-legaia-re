@@ -1481,6 +1481,7 @@ dependencies = [
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
+ "legaia-engine-mode",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-font",
@@ -1510,8 +1511,6 @@ dependencies = [
 name = "legaia-engine-dialog"
 version = "0.1.0"
 dependencies = [
- "legaia-asset",
- "legaia-engine-vm",
  "legaia-font",
  "legaia-mes",
 ]
@@ -1522,8 +1521,9 @@ version = "0.1.0"
 dependencies = [
  "legaia-asset",
  "legaia-engine-battle",
- "legaia-engine-minigames",
+ "legaia-engine-battle-vm",
  "legaia-engine-vm",
+ "legaia-render-kernels",
  "legaia-tmd",
 ]
 
@@ -1533,10 +1533,11 @@ version = "0.1.0"
 dependencies = [
  "legaia-anm",
  "legaia-asset",
- "legaia-bytes",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
- "legaia-engine-minigames",
+ "legaia-engine-dialog",
+ "legaia-engine-mode",
+ "legaia-engine-motion-vm",
  "legaia-engine-system",
  "legaia-engine-vm",
  "legaia-mes",
@@ -1584,11 +1585,12 @@ version = "0.1.0"
 dependencies = [
  "legaia-asset",
  "legaia-engine-battle",
+ "legaia-engine-battle-vm",
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-system",
- "legaia-engine-vm",
+ "legaia-render-kernels",
  "legaia-tim",
  "legaia-tmd",
 ]
@@ -1598,12 +1600,23 @@ name = "legaia-engine-minigames"
 version = "0.1.0"
 dependencies = [
  "legaia-asset",
+ "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-field",
  "legaia-engine-fishing",
  "legaia-engine-system",
  "legaia-engine-vm",
+ "legaia-render-kernels",
  "legaia-save",
+]
+
+[[package]]
+name = "legaia-engine-mode"
+version = "0.1.0"
+dependencies = [
+ "legaia-asset",
+ "legaia-bytes",
+ "legaia-engine-system",
 ]
 
 [[package]]
@@ -1622,6 +1635,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-asset",
+ "legaia-engine-battle-vm",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
@@ -1721,11 +1735,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-asset",
- "legaia-bytes",
  "legaia-cheats",
- "legaia-engine-battle",
  "legaia-gamedata",
- "legaia-save",
  "serde",
  "toml",
 ]
@@ -1739,12 +1750,10 @@ dependencies = [
  "legaia-asset",
  "legaia-engine-battle-vm",
  "legaia-engine-field",
- "legaia-engine-vm",
  "legaia-font",
  "legaia-mednafen",
  "legaia-render-kernels",
  "legaia-tim",
- "legaia-tmd",
  "serde",
  "serde_json",
 ]
@@ -1938,7 +1947,9 @@ dependencies = [
  "flate2",
  "legaia-art",
  "legaia-asset",
+ "legaia-bytes",
  "legaia-engine-audio",
+ "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-render",
@@ -2047,6 +2058,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-asset",
+ "legaia-engine-battle-vm",
  "legaia-engine-vm",
  "legaia-tim",
  "legaia-tmd",
