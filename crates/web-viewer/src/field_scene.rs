@@ -107,10 +107,9 @@ pub struct FieldSceneAnim {
     vsync_accum: u8,
 }
 
-/// Hybrid env-mesh builders - hoisted to the shared assembly kernel
-/// (`engine-core::scene_assembly`) so the browser pages and the native
-/// `export-glb` path bake identical meshes; re-exported under the old path
-/// for the crate's other pages.
+// Hybrid env-mesh builders - in the shared assembly kernel
+// (`engine-core::scene_assembly`) so the browser pages and the native
+// `export-glb` path bake identical meshes.
 use legaia_engine_core::scene_assembly::{build_hybrid_env_mesh, build_hybrid_env_mesh_posed};
 
 /// Assemble a CDNAME scene's full static map: field-mode

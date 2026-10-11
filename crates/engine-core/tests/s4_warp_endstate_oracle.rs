@@ -5,7 +5,7 @@
 //! Ground truth is the `s4_rimelm_door_transition` anchor: the grid-BFS door-nav
 //! walked Vahn out of his house and a walk-touch warp jumped him to world
 //! `(3264, 3520)` = tile `(25, 27)` (see `docs/tooling/playthrough-coverage.md`).
-//! This test (1) loads that anchor's main RAM through the [`legaia_pcsxr`] bridge
+//! This test (1) loads that anchor's main RAM through the [`legaia_pcsx_redux`] bridge
 //! and confirms retail parks the player at `(3264, 3520)` in `town01` field mode,
 //! then (2) finds the town01 MAN's `0xA3 0xF8` op whose target decodes to that
 //! position and drives it through the real field VM, asserting the engine emits a

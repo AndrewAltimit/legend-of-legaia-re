@@ -85,7 +85,7 @@ pub(crate) use geometry::{
     LineGeometry, effect_billboard_mesh, effect_sprite_line_geometry, heightfield_to_vram_mesh,
     scene_viewport_for, world_map_slot4_line_geometry,
 };
-// The procedural battle ground grid lives in `legaia-asset` so all three
+// The procedural battle ground grid lives in `legaia-scene-formats` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;

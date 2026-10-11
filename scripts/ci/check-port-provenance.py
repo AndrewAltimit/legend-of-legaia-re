@@ -217,7 +217,7 @@ DUMP_COVERAGE_MIN = 0.25
 # The fix is to let the cut follow the module. A module whose members really do
 # belong together links up at *some* rarity; where that happens says how private
 # its shared vocabulary is, and only a member that stays unlinked there is
-# saying anything. `ui_menu_window_painters.rs` links at 96 and has no orphan
+# saying anything. `menu/window_painters.rs` links at 96 and has no orphan
 # left; `world/field_movement.rs` is already cohesive at the base cut and its
 # orphan stays one at every cut on the ladder.
 DF_LADDER = (8, 12, 16, 24, 32, 48, 64, 96)
@@ -225,7 +225,7 @@ DF_LADDER = (8, 12, 16, 24, 32, 48, 64, 96)
 # ...but a per-module estimate needs pairs to estimate from. Five tags are ten
 # pairs and several of those are vacuous; the cut such a module "needs" is one
 # pair's accident. Below this many tagged addresses the base cut stands, and
-# the cheapest way to see why is `ui_equip_stat_compare.rs`: four tags,
+# the cheapest way to see why is `menu/equip_stat_compare.rs`: four tags,
 # two of them corroborating, and its one genuinely wrong tag stops reading as an
 # orphan the moment the cut reaches 16.
 ADAPTIVE_MIN_TAGS = 6
@@ -843,7 +843,7 @@ def module_tokens(rel: str) -> set[str]:
 
     Two modules "share a name" when these overlap. Used only to decide whether a
     `split-table` finding is worth showing - `shop.rs` vs `prize_exchange.rs`
-    share nothing, `ui_menu.rs` vs `ui_menu_window_painters.rs` share plenty.
+    share nothing, `menu.rs` vs `menu/window_painters.rs` share plenty.
     """
     stem = rel.split("crates/", 1)[-1]
     toks = {t for t in re.split(r"[^a-z0-9]+", stem.lower()) if len(t) >= 4}

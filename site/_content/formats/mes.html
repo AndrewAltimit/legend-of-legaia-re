@@ -14,7 +14,7 @@
     <dt>Magic</dt><dd>Compact: first u32 <code>0x00000404</code>. Records: recurring <code>0x44 0x78</code> marker pairs, no fixed header</dd>
     <dt>Size / stride</dt><dd>Glyph bytes are 1 byte; escapes <code>0xC0..0xCF</code> are 2 bytes; a line is <code>0x1F &lt;glyphs&gt; 0x00</code></dd>
     <dt>Parser</dt><dd><code>crates/mes</code> (CLI <code>mes</code>); box packing <code>legaia_mes::dialog_box</code>; pickers <code>legaia_mes::picker</code></dd>
-    <dt>Engine</dt><dd><code>engine_core::dialog</code> + <code>inline_dialogue</code>; pager SM in <code>engine-vm</code></dd>
+    <dt>Engine</dt><dd><code>engine_dialog::dialog</code> + <code>engine_field::inline_dialogue</code>; pager SM in <code>engine-dialog</code></dd>
     <dt>Confidence</dt><dd>Confirmed - four interpreter functions statically linked in <code>SCUS_942.54</code>; pager and pickers traced in the dialog overlay and pinned on disc bytes</dd>
     <dt>Used by</dt><dd><a href="../subsystems/script-vm.html">field/event VM</a>, <a href="../tooling/translation.html">translation packs</a>, <a href="../npcs.html">NPC browser</a></dd>
   </dl>

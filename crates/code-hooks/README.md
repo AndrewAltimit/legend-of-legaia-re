@@ -35,7 +35,7 @@ Two things live in this crate:
   imports another feature to do so.
 - **A hook mod that is only a plan.** Its builder takes image bytes as slices
   and returns `arenas::Edit`s, using the encoders, the arena map and table
-  addresses from `legaia-asset`. It belongs to no larger feature family.
+  addresses from `legaia-game-tables`. It belongs to no larger feature family.
 
 A hook that is part of a feature family lives with that family instead:
 the Tactical Arts hooks in [`legaia-arts-patch`](../arts-patch/README.md), the

@@ -2,10 +2,9 @@
 //! driven by disc-parsed tables, with no `World`, no scene loading and no
 //! renderer.
 //!
-//! `legaia-engine-core` depends on this crate and re-exports every module at
-//! its old path (`crate::slot_machine`, ...), so hosts keep
-//! naming the paths they always did. What stays in `engine-core`, and why,
-//! is in this crate's `README.md`.
+//! `legaia-engine-core` depends on this crate. What stays in `engine-core`,
+//! and why, is in this crate's `README.md`. The fishing rules engine is
+//! `legaia-engine-fishing`, one crate down.
 
 #![forbid(unsafe_code)]
 

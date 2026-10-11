@@ -13,7 +13,10 @@ instead of every raw entry.
 
 - `legaia-iso` - disc reader.
 - `legaia-prot` - TOC + CDNAME.
-- `legaia-asset` - categorize + tim_scan + `monster_archive`.
+- The format crates - `legaia-disc-audit` (categorize),
+  `legaia-container-formats` (`tim_scan`), `legaia-actor-formats`
+  (`monster_archive`), and the scene, UI, minigame, table and overlay-image
+  crates beside them.
 - `legaia-lzs` - LZS decoder.
 - `legaia-tim` / `legaia-tmd` / `legaia-mes` / `legaia-seq` / `legaia-vab` /
   `legaia-xa` / `legaia-mdec` - the sub-asset parsers behind the entry
@@ -581,7 +584,7 @@ tick, and Start exits back to the field with coins and prizes settled.
 over `play_fishing_prizes_json` / `play_fishing_prize_buy`. Disc-gated oracle:
 `tests/play_minigames_host.rs`. The overlays' own BGM tracks start through the
 shared scene host's warp (`World::swap_to_minigame_bgm`), and the dance
-count-in banner and how-to draw through `ui_dance` on this host too.
+count-in banner and how-to draw through `legaia_engine_ui::dance` on this host too.
 
 ## Field effects and script-spawned actors
 
@@ -1064,7 +1067,7 @@ characters + NPC pages (via `MeshView.exportGlb`, which bakes the **posed**
 vertices - the object-local parts would otherwise arrive in the file as a
 heap at the origin). The monster page's enemy export stays on the sibling
 `monster_gltf::export_glb` (it additionally carries the action
-animations). Disc-gated smoke: `legaia-asset`'s
+animations). Disc-gated smoke: `legaia-actor-formats`'s
 `tests/scene_gltf_real.rs`.
 
 ## In-browser ROM patcher (`rom_patcher`)

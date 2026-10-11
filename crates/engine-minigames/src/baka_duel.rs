@@ -1,6 +1,6 @@
 //! The Baka Fighter duel's camera and fighter-clip kernels - the pure half
-//! of `engine-core`'s `baka_duel_scene`, which re-exports everything here
-//! and keeps the mesh assembly (`BakaDuelScene` / `BakaDuelSurface`).
+//! of `legaia_engine_minigame_scenes::baka_duel_scene`, which holds the mesh
+//! assembly (`BakaDuelScene` / `BakaDuelSurface`).
 //!
 //! Both kernels come from the overlay's own code (PROT 0976, base
 //! `0x801CE818`; `see ghidra/scripts/funcs/overlay_baka_fighter_801cf388.txt`

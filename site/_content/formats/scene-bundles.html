@@ -13,7 +13,7 @@
   <dl class="kv">
     <dt>Where</dt><dd>The PROT entries every CDNAME scene block seats: <code>[.MAP][.PCH trigger sidecar][prescript][asset bundle]</code> for towns; battle stages as bare-TMD streams; BGM as VAB streams</dd>
     <dt>Magic</dt><dd>None shared - each shape is told apart by the content at <code>+4</code> (Legaia TMD <code>0x80000002</code>, <code>VABp</code>, a descriptor count, a <code>u16</code> record count)</dd>
-    <dt>Parser</dt><dd><code>legaia_asset::{scene_tmd_stream, scene_vab_stream, scene_v12_table, scene_asset_table, scene_event_scripts}</code>; <code>categorize</code> runs the detectors in order</dd>
+    <dt>Parser</dt><dd><code>legaia_scene_formats::{scene_tmd_stream, scene_v12_table, scene_asset_table, scene_event_scripts}</code>, <code>legaia_container_formats::scene_vab_stream</code>; <code>legaia_disc_audit::categorize</code> runs the detectors in order</dd>
     <dt>Confidence</dt><dd>Confirmed - each walker is read off its retail consumer; corpus tiling checked against every entry</dd>
     <dt>Used by</dt><dd><a href="../subsystems/asset-loader.html">Asset loader</a>, <a href="../subsystems/battle.html">Battle scene</a>, <a href="../world.html">Field scene viewer</a></dd>
   </dl>

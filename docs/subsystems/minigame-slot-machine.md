@@ -19,15 +19,15 @@ The code lives in a minigame overlay (a code module loaded into RAM for the visi
 | Balance / coin bank | overlay-local `DAT_801d4114` / global `_DAT_800845A4` |
 | Assets | PROT 1200 (five TIMs, cabinet TMD, ANM), PROT 1198 (VAB) and PROT 1199 (`efect.dat`) |
 | Parsers | `legaia_minigame_formats::minigame_slot_scene`, `slot_payout`, `minigame_art`, `minigame_sfx` |
-| Port | rules `legaia_engine_minigames::slot_machine`; draws `engine-ui::slot_cabinet` / `ui_slot_paylines`; world wiring `World::tick_slot_machine` |
+| Port | rules `legaia_engine_minigames::slot_machine`; draws `engine-ui::slot_cabinet` / `slot_paylines`; world wiring `World::tick_slot_machine` |
 
 Provenance: the dumps are `ghidra/scripts/funcs/overlay_slot_machine_<addr>.txt`. Confidence is marked per claim. The reel layout, RNG, bet charge, feature odds, payout lookup, entry seed and coin commit are **Confirmed** from the disassembly. Table *values* (payout bytes, HUD descriptors) decode from the user's disc and are not reproduced here.
 
-**Not the prize exchange.** Trading coins for items is a separate static table (`DAT_801e4518`, PROT 899 file `0x15D00`) that debits the coin bank. The randomizer edits it (`casino::CasinoExchange`) and the engine runs it: field-VM op `0x49` sub-op 7 at the koin1 / balden prize counters arms `PrizeExchangeSession` (`engine-minigames::prize_exchange`, re-exported by `engine-core`; windows 43/44/45/46, `engine-ui::prize_exchange`). The slot machine pays *into* the coin balance; the exchange spends it.
+**Not the prize exchange.** Trading coins for items is a separate static table (`DAT_801e4518`, PROT 899 file `0x15D00`) that debits the coin bank. The randomizer edits it (`casino::CasinoExchange`) and the engine runs it: field-VM op `0x49` sub-op 7 at the koin1 / balden prize counters arms `PrizeExchangeSession` (`engine-minigames::prize_exchange`; windows 43/44/45/46, `engine-ui::prize_exchange`). The slot machine pays *into* the coin balance; the exchange spends it.
 
 ## Entry from the field
 
-The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 103` (`sub_id 3`), which sets game mode `0x18` and loads PROT 0975 (`FUN_80025980` → `FUN_8003EBE4(0x50)`, init entry `0x801CEC94`). The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `MinigameSubId` (`engine-mode::minigame_entry`, re-exported as `legaia_engine_mode::minigame_entry`).
+The cabinet is reached by the **mode-24 minigame door-warp**: field-VM op `0x3E` with `op0 = 103` (`sub_id 3`), which sets game mode `0x18` and loads PROT 0975 (`FUN_80025980` → `FUN_8003EBE4(0x50)`, init entry `0x801CEC94`). The mechanism, its `sub_id` -> overlay table and the return warp are in [`script-vm.md` § 0x3E WARP](script-vm.md#0x3e-warp-mode-24-minigame-door-warp). The port's id decoder is `MinigameSubId` (`legaia_engine_mode::minigame_entry`).
 
 The reel state machine `FUN_801CF0D8` and the payout `FUN_801D13E8` land on function prologues in PROT 975 at base `0x801CE818`, and the `"insert 3 coins"` / `"game_coin %d"` strings sit inside its runtime slice. Two sibling dev modules take sub-ids 1 / 2 (PROT 973 `OTHER2`, a 1-sector module; PROT 974 `OTHER3`); their identities are open. Mode 0 loads the debug-menu overlay PROT 971, not this one.
 
@@ -496,7 +496,7 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 
 ## Engine port
 
-[`legaia_engine_minigames::slot_machine`](../../crates/engine-minigames/src/slot_machine.rs) is the from-scratch rules engine over this page, re-exported as `legaia_engine_minigames::slot_machine`. It runs on all three hosts: the native `play-window`, the browser play page and the standalone minigames page.
+[`legaia_engine_minigames::slot_machine`](../../crates/engine-minigames/src/slot_machine.rs) is the from-scratch rules engine over this page. It runs on all three hosts: the native `play-window`, the browser play page and the standalone minigames page.
 
 | Retail | Port |
 |---|---|

@@ -36,7 +36,7 @@ pub struct BattleHud {
     pub slots: [BattleSlotHud; 8],
     /// Damage / heal / status popups, drained per frame by [`Self::tick`].
     ///
-    /// Bounded at [`POPUP_RING_SLOTS`]: every push routes through
+    /// Bounded at [`POPUP_RING_SLOTS`](legaia_engine_battle_vm::battle_gauge_rearm::POPUP_RING_SLOTS): every push routes through
     /// [`Self::push_popup`], which delegates the cursor bookkeeping to
     /// retail's 8-slot ring ([`Self::popup_ring`]) - a ninth simultaneous
     /// popup overwrites the slot the cursor names rather than growing the
@@ -220,7 +220,7 @@ impl BattleHud {
     /// Retail has no growable popup list: `FUN_801F44A0` writes the pushed
     /// value / parameter / timer at the battle context's write cursor
     /// (`ctx+0x262`) and advances it `(cursor + 1) & 7`, so at most
-    /// [`POPUP_RING_SLOTS`] popups exist at once and a ninth simultaneous
+    /// [`POPUP_RING_SLOTS`](legaia_engine_battle_vm::battle_gauge_rearm::POPUP_RING_SLOTS) popups exist at once and a ninth simultaneous
     /// push **overwrites** the slot the cursor names - the first popup,
     /// when none has expired. The cursor + push-counter bookkeeping is
     /// delegated to the ported kernel ([`DamagePopupRing::push`], the

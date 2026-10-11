@@ -4,8 +4,8 @@
 //!
 //! Why it exists. `cast_module_ticks.rs` is the one cast-band module whose
 //! bodies no union member accounts for by name.
-//! `w2c_cast_band_body_ladder` scrapes the other **three** band modules
-//! (`cast_seru_ticks_a` / `cast_seru_ticks_b` / `cast_arm_ticks`) and this file
+//! `w2c_cast_band_body_ladder` scrapes the other band modules
+//! (`seru_magic_ticks` / `cast_arm_ticks`) and this file
 //! is deliberately not among them; `w4d_cast_band_ladder` walks the band one
 //! frame deep but seats **one representative id per PROT entry**, which is
 //! blind by construction to a module holding several choreographies - PROT

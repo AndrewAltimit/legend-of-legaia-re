@@ -4,8 +4,7 @@
 //!
 //! Plain data the battle input and the field HUD key on as well as the
 //! options session, so they sit below the session itself, which lives in
-//! engine-core's `options` beside the `World` it pushes its knobs onto and
-//! re-exports every enum here at its old path.
+//! engine-core's `options` beside the `World` it pushes its knobs onto.
 
 use serde::{Deserialize, Serialize};
 

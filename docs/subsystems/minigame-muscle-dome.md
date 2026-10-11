@@ -318,7 +318,7 @@ Each hub screen is a **fade-in at its own rate, a hold, and a fade-out**, and tw
 - **Other seats.** The Welcome strip (record 3) is centred on `(160, 120)`, the course-title art (record 4) at `(160, 64)` with a variant-2 shadow at `(168, 72)`, the INTERVAL heading (record 16) at `(160, 32)`.
 - **Tally roll.** The four lanes' tick counters `DAT_801D1AB8 / 1ABC / 1AC0 / 1AC4` each test `slti 0x11` (a 17-tick lead-in) and reseed to `0x10`.
 
-Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `other_game_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
+Port: `muscle_dome::HubScreen` (`engine-minigames`, envelope literals), `muscle_dome_hud::course_card_draws`, `muscle_ringside::FirstVisitHub` for the first visit ([`ringside-still.md`](../formats/ringside-still.md#in-the-port)), and `muscle_ringside::HubTimers`, armed and ticked once per world tick by `World::tick_muscle_hub` from the shared scene host. Each play host's own `tick_muscle_hub` only sounds what fired (`World::take_muscle_hub_sounds`); the minigames page samples the same kernel through `muscle_hub_screen_json`. No host picks a count or a brightness of its own.
 
 <a id="the-tally-cues-key-the-arenas-own-bank"></a>
 
@@ -874,7 +874,7 @@ The `Turns Left / HP Left` strip lives in the battle overlay and its phase-`0x14
 - The strip is one framed window across the top: gold border from framebuffer column `9` to `309`, top edge on row `11`. The per-actor name plate sits in the same top-left seat, from column `9`, rows `13..28`.
 - They never share a frame. Of 27 checkpoints, the three at a `Begin / Run` prompt show the strip, and the plate shows only in action frames (phase `0xFF`).
 
-Port: `engine-menus::timed_fight` (gate, numbers, lifetime; re-exported by `engine-core`) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
+Port: `engine-menus::timed_fight` (gate, numbers, lifetime) and `legaia_engine_ui::battle_timed_fight_strip` (the format string off the user's PROT 0898, the two numbers at `+0x68` / `+0xD2`), drawn by both hosts. The port draws all chrome sprites, then all text, so while the strip is up both hosts park the plaque (`plaque_seat_taken`). `TIMED_FIGHT_TURN_LIMIT` is the numerator of `timed_fight_turns_left`, reachable by no dome session.
 
 <a id="the-dump-set-is-the-whole-battle-overlay---a-filename-prefix-is-not-dome-evidence"></a>
 

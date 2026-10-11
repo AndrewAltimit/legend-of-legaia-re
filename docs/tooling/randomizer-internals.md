@@ -717,7 +717,7 @@ minutes) and the full schedule cycles in ~9.6 h. The kernel's seconds-based
 - **Writes.** The injector writes handler + stubs + strings + the seed-derived
   bucket table via `patch_prot_entry(899, …)`, each guarded as all-zero.
 - **The swap** rewrites the chosen owner's spell list in place (id at `+0x13D`,
-  level at `+0x161`), mirroring `engine_core::seru_trade::apply_trade`.
+  level at `+0x161`), mirroring `engine_battle::seru_trade::apply_trade`.
 - **Composition.** Nothing lands in the SCUS rodata gap, so it composes with
   every gap feature ([equipment drops](#equipment-drops),
   [flee-EXP](#run-away-exp), the Seru-Bell

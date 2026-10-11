@@ -2,7 +2,7 @@
 
 Disc-patching toolkit for a user-supplied Legend of Legaia disc image. Every
 feature is built on the same foundation: same-size in-place sector edits with
-the EDC/ECC re-encoded (`disc::DiscPatcher` over `legaia_iso::write`), emitted
+the EDC/ECC re-encoded (`legaia_disc_patch::disc::DiscPatcher` over `legaia_iso::write`), emitted
 as a portable PPF 3.0 patch and/or a patched `.bin` copy for local play.
 
 That machinery lives in [`legaia-disc-patch`](../disc-patch/README.md).
@@ -20,12 +20,10 @@ This crate is the top of the family; the rule for what lives where:
 | [`legaia-delilas-challenge`](../delilas-challenge/README.md) | The Delilas Challenge family: the dome course, its enrollment script and the custom items. |
 | `legaia-patcher` (this crate) | The `apply` layer that sequences every edit onto a disc, the CLI, the randomizer's own data shuffles, and the hook mods whose builders reach into those. |
 
-Code inside the family names the owning crate. The `pub use` lines in this
-crate's root keep the modules outside consumers use (the browser patcher,
-the engine's runtime oracles) reachable at `legaia_patcher::<module>`,
-including `legaia_translate` and `legaia_party_swap` for
-those two whole crates. The module names used through the rest of this page
-are those paths.
+Every consumer - the family itself, the browser patcher, the engine's
+runtime oracles - names the owning crate. This page is the reference for
+the whole family: a module named in the rest of it is a module of the crate
+the table above assigns it to.
 
 Four patching families share the machinery:
 
@@ -165,7 +163,7 @@ pool, the monster-archive re-packer, and the disc write-back.
 
 ### `rng`
 
-Lives in [`legaia-disc-patch`](../disc-patch/README.md), re-exported here.
+Lives in [`legaia-disc-patch`](../disc-patch/README.md).
 Version-stable `SplitMix64` PRNG. A published seed always reproduces a run,
 independent of any external generator's algorithm (the first output for seed 0 is
 pinned by a test).
@@ -636,7 +634,7 @@ fully **deterministic from the seed**.
   guarded as all-zero dead space.
 - **The swap** rewrites the chosen owner's spell list in place (id at `+0x13D`,
   level at `+0x161` = the bucket's `give_level`), mirroring
-  `engine_core::seru_trade::apply_trade`.
+  `legaia_engine_battle::seru_trade::apply_trade`.
 - Cadence: the `0x80084570` counter ticks ~per-frame, so the handler divides by
   `RESEED_PERIOD_FRAMES` (≈9 min/bucket; full cycle ≈9.6 h). The engine track also
   uses a `SeruTradeConfig` blob (`apply::enable_seru_trades`) for its own
@@ -1431,13 +1429,13 @@ duels field Vahn / Noa / Gala. One orchestrator plus support modules, including 
 | `enemy_anim_mirror` | Hero idles + hero Hyper chains written into the swapped monster blocks (the enemy-side animation mirror). |
 | `nivora_field` | The duel field scene rebuilt with the mapped heroes' field rigs (PROT 0639 members 106-108, whole-pack re-emit). |
 | `party_swap` | Party ↔ Delilas battle-model swap. Both animation systems address poses by part index, so a swap is a part permutation plus a pivot-anchored rest-pose bake: `playerize_player_file` rebuilds a `PLAYERn` file so the character wears a sibling's model under their own clips, `fieldize_pack` / `fieldize_pack_npc` do the field-form (PROT 0874) direction. |
-| `party_swap::moveset` | The whole-archive sibling rebuild behind `--delilas-moves delilas`: `swing_entries` picks a sibling's distinct attack clips out of the `0x0C..=0x1F` action-tag band (minus the caller's signature chain), and `rebuild_moveset_archive` re-emits a character's art `"ME"` slot as the carried signature stream plus one retargeted entry per clip. Rebuilding rather than extending is forced by the slot budget - retail leaves 20374 / 2446 / 17361 free bytes - and made safe by the record `+0x0A` stream index being a free-standing pointer. |
-| `party_swap::cast_stage` | The staged CASTER rows behind the patcher's Megaton Press cast route: `build_staged_cast_rows` authors real wind-up/payoff action entries (the sibling's clips through `winpose::retarget_clip`, re-encoded raw-packed) on player rows `0x0A`/`0x0B`, hosted in the record[0] face-pixel payloads (dead on a playerized file), with the retail Block entry re-homed onto placeholder row `0x06`; `push_up_desc_table` reclaims the descriptor-table slack as compressed-stream footprint. |
-| `party_swap::winpose` | The clip-side rebuilds: `rebuild_idle_stream` (a character's battle idle re-authored from a monster idle, rewritten **in place at its exact retail length** - the record[0] stream is raw, so holding `parts`/`frames` needs no relocation - with frame 0 re-anchored on the host rest), `retarget_clip`, `rebuild_art_slot_entry` / `rebuild_base_slot` for the `readef.DAT` art slots, and `encode_channel_delta`, the encoder side of `me_archive`'s codec. |
-| `party_swap::enemy_anim` | The enemy-side animation mirror: hero idles + hero Hyper chains re-authored into the swapped monster blocks, so the duel-side Vahn / Noa / Gala fight under their own clips inside the monster-archive format. |
-| `party_swap::nivora_field` | The duel field scene: PROT 0639 members 106-108 (the siblings' field NPC meshes) re-emitted as the mapped heroes' field rigs - a whole-pack rebuild, since the 112 members tile the stream with zero slack. |
-| `party_swap::fieldize` / `party_swap::event_field` | The field-form direction (PROT 0874 + the story scenes' Delilas NPC meshes rebuilt as the mapped heroes'). |
-| `party_swap::weapon_fuse` | Fuses the host's own equipped weapon, with its real texture, into the swapped hand (also the item-alone cut `equip_transplant` reuses). |
+| `legaia_party_swap::moveset` | The whole-archive sibling rebuild behind `--delilas-moves delilas`: `swing_entries` picks a sibling's distinct attack clips out of the `0x0C..=0x1F` action-tag band (minus the caller's signature chain), and `rebuild_moveset_archive` re-emits a character's art `"ME"` slot as the carried signature stream plus one retargeted entry per clip. Rebuilding rather than extending is forced by the slot budget - retail leaves 20374 / 2446 / 17361 free bytes - and made safe by the record `+0x0A` stream index being a free-standing pointer. |
+| `legaia_party_swap::cast_stage` | The staged CASTER rows behind the patcher's Megaton Press cast route: `build_staged_cast_rows` authors real wind-up/payoff action entries (the sibling's clips through `winpose::retarget_clip`, re-encoded raw-packed) on player rows `0x0A`/`0x0B`, hosted in the record[0] face-pixel payloads (dead on a playerized file), with the retail Block entry re-homed onto placeholder row `0x06`; `push_up_desc_table` reclaims the descriptor-table slack as compressed-stream footprint. |
+| `legaia_party_swap::winpose` | The clip-side rebuilds: `rebuild_idle_stream` (a character's battle idle re-authored from a monster idle, rewritten **in place at its exact retail length** - the record[0] stream is raw, so holding `parts`/`frames` needs no relocation - with frame 0 re-anchored on the host rest), `retarget_clip`, `rebuild_art_slot_entry` / `rebuild_base_slot` for the `readef.DAT` art slots, and `encode_channel_delta`, the encoder side of `me_archive`'s codec. |
+| `legaia_party_swap::enemy_anim` | The enemy-side animation mirror: hero idles + hero Hyper chains re-authored into the swapped monster blocks, so the duel-side Vahn / Noa / Gala fight under their own clips inside the monster-archive format. |
+| `legaia_party_swap::nivora_field` | The duel field scene: PROT 0639 members 106-108 (the siblings' field NPC meshes) re-emitted as the mapped heroes' field rigs - a whole-pack rebuild, since the 112 members tile the stream with zero slack. |
+| `legaia_party_swap::fieldize` / `legaia_party_swap::event_field` | The field-form direction (PROT 0874 + the story scenes' Delilas NPC meshes rebuilt as the mapped heroes'). |
+| `legaia_party_swap::weapon_fuse` | Fuses the host's own equipped weapon, with its real texture, into the swapped hand (also the item-alone cut `equip_transplant` reuses). |
 | `mips_sim` | In-crate MIPS interpreter the hook stubs execute under in unit tests (load-delay-accurate). |
 
 Disc oracles: `delilas_party_real`, `delilas_cast_stage_real`,
@@ -1560,15 +1558,15 @@ prescripts and the streaming-MAN dungeon scenes). Import applies filled
 `translation:` fields as same-size in-place patches (strings re-terminated -
 budget reclaims the 4-byte-alignment zero padding, and a pointer-table name
 that still overflows moves into room the other names give up,
-`translation::name_pool`; a longer `ui_menu` / `system_text` string moves with
+`legaia_translate::name_pool`; a longer `ui_menu` / `system_text` string moves with
 every `lui` pair, pointer word and `$gp` form that reaches it rewritten,
-`translation::code_refs` + `translation::code_strings`; a monster name grows its record; dialog segments space-padded
+`legaia_translate::code_refs` + `legaia_translate::code_strings`; a monster name grows its record; dialog segments space-padded
 to their exact framing; a scene whose recompress overflows its LZS footprint
 rolls back its longest lines one at a time), with per-character encodability
 errors for anything outside the retail ASCII glyph set. Untranslated entries
 stay byte-identical.
 
-Typed accents follow the pack's `accents:` header (`translation::accents`):
+Typed accents follow the pack's `accents:` header (`legaia_translate::accents`):
 `strict` reports each one, `fold` writes its ASCII fold, and `font` encodes it
 into its cell and writes the **accent font** - accented glyphs built at patch
 time from the disc's own letters (`legaia_font::accent_font`) into the dialog
@@ -1591,19 +1589,19 @@ space so index-keyed randomizer edits still resolve. Grows the image, so it writ
 
 The streaming dungeon scenes (`raw:` keys - an uncompressed MAN leading a
 `MAN / MES / MOVE / VDF` chunk stream) grow the same way through
-`translation::stream_man`: the MAN chunk is relocated with the scene-MAN
+`legaia_translate::stream_man`: the MAN chunk is relocated with the scene-MAN
 rewriter, re-headered, the chunks after it shifted verbatim, and the entry
 grows into its own sector slack (a same-size-image write) or, under
 `--allow-relayout`, by whole sectors. The bound is the loader's `0x62C00`-byte
 asset arena the entry is copied into; the importer keeps a 64 KiB headroom
 under it for the VDF morph scratch window at the arena's top.
 
-`export` is build-aware (`translation::build`, from `SYSTEM.CNF`): the USA
+`export` is build-aware (`legaia_translate::build`, from `SYSTEM.CNF`): the USA
 disc exports every section; a PAL disc its dialog and monster names; the
 Japanese disc its dialog, whose count-led Shift-JIS lines
-(`translation::sjis`) decode to Unicode and re-encode byte-exact - a reading
+(`legaia_translate::sjis`) decode to Unicode and re-encode byte-exact - a reading
 reference, since `import` refuses writes to a Japanese disc. `translate
-coverage` (`translation::coverage`) measures the export against the script
+coverage` (`legaia_translate::coverage`) measures the export against the script
 walk per scene; disc-gated oracle `tests/translation_export_coverage_real.rs`
 (`LEGAIA_DISC_BIN`, `LEGAIA_DISC_BIN_JP`, `LEGAIA_DISC_BIN_PAL`). See
 [measuring coverage](../../docs/tooling/translation/index.md#measuring-coverage).
@@ -1622,7 +1620,7 @@ bulk fill, `merge` recombines. Full workflow + schema:
 
 `translate space --input DISC [--pack P] [--section S] [--allow-relayout]
 [--scene PROT] [--json] [--verbose]` shows how much room every translatable
-string has and what uses it (`translation::space`, JSON schema
+string has and what uses it (`legaia_translate::space`, JSON schema
 `legaia-space-v1` in the module docs). Disc only, it opens with the room per
 category (`items`, `monster_names`, `place_names`, `ui_menu`, `system_text`:
 carrier, addressing, growable strings, free and spare bytes, competing mods)

@@ -129,7 +129,7 @@ The viewer composes Track 1 (asset crates) with Track 2 (engine crates):
 
 ```text
 legaia-iso ─┐                                      ┌─ winit  (input)
-legaia-prot ┼─ legaia-asset ─┬─ legaia-tim ──────┐  │
+legaia-prot ┼─ format crates ┬─ legaia-tim ──────┐  │
             │                ├─ legaia-tmd ──────┼──┴─ legaia-engine-render
             │                └─ legaia-vab ──────┐
             │                                    └─── legaia-engine-audio

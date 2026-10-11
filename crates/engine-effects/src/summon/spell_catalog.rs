@@ -144,7 +144,7 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// found. **The player summon spawns the namesake creature** (the Gimard spell
 /// summons the Gimard creature, Theeder→Theeder, …), so the faithful render is
 /// the ordinary battle TRS-keyframe path applied to that creature's
-/// monster-archive block (mesh via [`legaia_actor_formats::monster_archive::battle_render_mesh`],
+/// monster-archive block (mesh via `legaia_actor_formats::monster_archive::battle_render_mesh`,
 /// animation via [`legaia_actor_formats::monster_archive::idle_animation`] →
 /// [`crate::battle_anim::MonsterAnimPlayer`] → `tmd_to_vram_mesh_posed_rot`) -
 /// **not** the move-VM scene-graph the [`SummonScene`] stand-in drives.

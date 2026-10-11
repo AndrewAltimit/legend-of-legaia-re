@@ -4,13 +4,13 @@
 //! Retail draws one `LINE_G2` packet a frame from the lure tick
 //! (`FUN_801D26CC`): fish end to rod tip, clipped by `FUN_801D56E4`. The
 //! engine builds it in `PondSession::line_frame`; the play page wraps it with
-//! the shared `ui_fishing_line` builder into its screen-prim pass (the native
+//! the shared `fishing::line` builder into its screen-prim pass (the native
 //! window's `fishing_line_screen_prims` makes the same two calls in a `bin/`
 //! target no test can reach), and the minigames page strokes the endpoints
 //! `fishing_line_json` hands back. Both run over the venue's real rods, lifted
 //! off the `other1` bank, and both draw the rod model itself too
 //! (`PondSession::rod_faces`: the play page through the shared
-//! `ui_fishing_rod` builder, the minigames page off `fishing_rod_json`).
+//! `fishing::rod` builder, the minigames page off `fishing_rod_json`).
 
 #![cfg(not(target_arch = "wasm32"))]
 

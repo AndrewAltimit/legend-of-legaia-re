@@ -85,8 +85,8 @@ impl LegaiaMinigames {
     }
 
     /// The whole machine for this frame as a `w x h` RGBA8 image: the shared
-    /// `ui_slot_cabinet` builder (cabinet, reels, furniture, dot matrix, coin
-    /// HUD) plus the `ui_slot_paylines` quads, rasterised on the CPU over the
+    /// `slot_cabinet` builder (cabinet, reels, furniture, dot matrix, coin
+    /// HUD) plus the `slot_paylines` quads, rasterised on the CPU over the
     /// art pack's VRAM (`screen_prim_raster`) - the same primitive list the
     /// native window and the play page draw on their GPUs. Empty without a
     /// session or the resident set.

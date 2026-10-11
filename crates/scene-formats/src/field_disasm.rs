@@ -7,9 +7,9 @@
 //!     mnemonic, never executing host calls or mutating ctx state.
 //!
 //! This is a side-effect-free width/format decoder for the script bytecode, so
-//! it lives in the Track-1 asset crate alongside the other format parsers; the
+//! it lives in this format crate alongside the other scene parsers; the
 //! engine's executing field VM (`legaia_engine_vm::field::step`) re-uses the
-//! same width logic and re-exports this module.
+//! same width logic.
 //!
 //! For control-flow instructions (jumps, conditional jumps, BBOX tests),
 //! the decoder always emits the **encoded** byte length, so a linear walk
@@ -39,8 +39,7 @@
 //!
 //! This module is a thin coordinator over the cohesive submodules under
 //! `field_disasm/`; every public item is re-exported here so external paths
-//! (`legaia_scene_formats::field_disasm::<Item>`, and the `legaia-engine-vm`
-//! re-export) keep resolving.
+//! (`legaia_scene_formats::field_disasm::<Item>`) keep resolving.
 
 mod census;
 mod decode;

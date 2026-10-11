@@ -2,7 +2,7 @@
 //! through the engine slot-machine rules engine
 //! ([`legaia_engine_minigames::slot_machine`]).
 //!
-//! The payout-table parser itself is pinned by `legaia-asset`'s
+//! The payout-table parser itself is pinned by `legaia-minigame-formats`'
 //! `slot_payout_real`; this closes the engine end - the play-window load path
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(975)` ->
 //! `static_overlay::as_loaded` -> `parse`) resolves a real table, and a

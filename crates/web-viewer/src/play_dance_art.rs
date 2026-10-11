@@ -60,7 +60,7 @@ impl LegaiaRuntime {
 
     /// The dance HUD's textured quads as screen-space PSX primitives, off the
     /// world's one predicate (`MinigameState::dance_hud_quads`: HUD up and
-    /// page resident), through the shared `ui_dance::dance_hud_prims` the
+    /// page resident), through the shared `dance::dance_hud_prims` the
     /// native window emits with. Empty otherwise, when the text rows draw.
     pub(crate) fn dance_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         use legaia_engine_ui::dance as ud;

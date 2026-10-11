@@ -55,7 +55,7 @@
 //! loop at `0x801CF4E8`), and then aborts on `_DAT_8007B850 & 0x1F0` -
 //! Legaia's packed pad word, where bits 4..8 are Triangle / Circle / Cross /
 //! Square / Select. So the attract movie skips on any face button or Select
-//! and every mid-game FMV plays out; [`skip_edge_hit`] is that rule over the
+//! and every mid-game FMV plays out; [`skip_edge_hit`](legaia_engine_system::movie::cutscene::fmv_skip_edge_hit) is that rule over the
 //! standard PSX edge word the page and the world already speak. `see
 //! ghidra/scripts/funcs/str0970_801cf098.txt` (`0x801CF4D4..0x801CF500`).
 //!
@@ -92,7 +92,7 @@ const USER_DATA_SIZE: u32 = 2048;
 /// rate). The unsupported case does not wait at all.
 pub const INSTALL_TIMEOUT_FRAMES: u32 = 600;
 
-/// The buttons retail's `0x1F0` packed-mask test covers - re-exported from
+/// The buttons retail's `0x1F0` packed-mask test covers - aliased from
 /// the shared kernel so this host's tests keep their name.
 use legaia_engine_system::movie::cutscene::FMV_SKIP_BUTTONS as SKIP_BUTTONS;
 

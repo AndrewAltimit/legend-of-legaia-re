@@ -104,7 +104,7 @@ impl LegaiaRuntime {
     /// location rows come off the real save, exactly as retail reads them
     /// out of its per-slot buffer at `0x801EF1B8 + N * 0x100`.
     /// The card's fifteen blocks as the 5x3 preview grid reads them, through
-    /// the shared `engine_core::save_select::card_block_snapshots` kernel the
+    /// the shared `legaia_engine_menus::save_select::card_block_snapshots` kernel the
     /// native window calls too.
     pub(crate) fn card_block_snapshots(&self, slot: usize) -> Vec<SlotSnapshot> {
         match self.card(slot) {

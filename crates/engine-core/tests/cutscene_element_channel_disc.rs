@@ -1,9 +1,9 @@
 //! Disc-gated: the **element channel**'s provenance, taken from the field
 //! overlay's own bytes rather than from a dump filename.
 //!
-//! `crate::cutscene_script_elements` used to say there was "no element-actor
-//! dispatch to hang these off". For the ambient emitter (`FUN_801D6058`) that
-//! is falsified by the disc: its `+0x08` handler word sits in a `0x18`-byte
+//! The reading that there is "no element-actor dispatch to hang these off"
+//! (`legaia_engine_field::plain_template_actors`) is, for the ambient emitter
+//! (`FUN_801D6058`), falsified by the disc: its `+0x08` handler word sits in a `0x18`-byte
 //! spawn descriptor at `0x801F271C`, inside the field overlay's own
 //! plain-template table - the same table, and byte-for-byte the same shape, as
 //! the three templates the engine already hosts:

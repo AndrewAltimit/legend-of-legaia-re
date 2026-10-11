@@ -2,7 +2,7 @@
 //!
 //! The overworld panel-actor host, the field party HUD's state machine and
 //! the pad packing live in [`legaia_engine_field::world_map_panel_host`] and
-//! are re-exported here at their old paths. What stays is the set of HUD
+//! name no `World`. This module holds the set of HUD
 //! queries that read the world - the suppress gate, the view mode, the
 //! rearm term and the present-party projection - which both hosts ask once
 //! per frame.

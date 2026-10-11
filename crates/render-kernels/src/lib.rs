@@ -5,9 +5,9 @@
 //! weapon-trail / cast-beam / scanline-strip emitters, the battle-intro
 //! transition emitter, the battle numerals and the enhanced scene lighting.
 //!
-//! `legaia-engine-ui` re-exports every module here at its old path. Doc links
-//! that pointed back up at it are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate.
+//! `legaia-engine-ui` sits one crate up. Doc comments here name its items in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate.
 
 #![forbid(unsafe_code)]
 

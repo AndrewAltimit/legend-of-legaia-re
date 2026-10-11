@@ -467,7 +467,7 @@ impl Renderer {
     }
 
     /// Upload a sprite atlas. Alias of [`Self::upload_font_atlas`] - sprites
-    /// and font glyphs share the textured-quad pipeline (see [`SpriteDraw`]).
+    /// and font glyphs share the textured-quad pipeline (see [`SpriteDraw`](legaia_engine_ui::SpriteDraw)).
     pub fn upload_sprite_atlas(
         &self,
         rgba: &[u8],

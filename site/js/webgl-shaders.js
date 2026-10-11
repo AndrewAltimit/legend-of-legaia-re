@@ -20,7 +20,7 @@ const VRAM_H = 512;
  * the rolling-wave effect by cycling the first 16 CLUT entries each
  * frame.
  *
- * See `crates/web-viewer/src/ocean.rs` and
+ * See `crates/scene-formats/src/ocean.rs` and
  * `docs/subsystems/world-map.md` § "Ocean / coastline source" for the
  * full RE provenance.
  *
@@ -191,7 +191,7 @@ function occlLiftAxis(feetPx, centrePx) {
 /* Enhanced-lighting enhancement (NON-RETAIL) - the page twin of the native
  * renderer's `dyn_light` + `scene_point_gain`. The shading-law constants
  * below are interpolated into FS_SRC and paired by name with their native
- * twins (crates/engine-ui/src/scene_lighting.rs) in
+ * twins (crates/render-kernels/src/scene_lighting.rs) in
  * scripts/ci/check-ui-host-drift.py. The MOOD (ambient, key light, pool
  * weight, emissive gain) and the picked point lights are not constants on
  * this side at all: the engine hands them over per frame

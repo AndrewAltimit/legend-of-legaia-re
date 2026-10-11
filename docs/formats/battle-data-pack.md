@@ -1253,7 +1253,7 @@ PNG is the frame the write expects back.
 
 ## Parser status
 
-Every module below is re-exported through `legaia_asset`.
+Every module below is in `legaia_actor_formats` (`crates/actor-formats`).
 
 | Module | Role |
 |---|---|

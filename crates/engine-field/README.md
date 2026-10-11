@@ -5,16 +5,13 @@ actor programs and per-actor kernels, the follow camera's per-scene
 parameters and eases, player clip playback, the scene-transition and in-field
 save-screen actors, the op-`0x49` submode, the field VM's event queue, CLUT
 effects, the scene MAN's field-script decoders, the overworld draw-order and
-ground-cue policies, the overworld
-controller and its panel screen, and the battle animation / SFX cue
-routers. Free of wgpu, winit and cpal, so it builds for
+ground-cue policies, and the overworld
+controller and its panel screen. Free of wgpu, winit and cpal, so it builds for
 native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World`'s field frame, the
-`FieldHost` the field VM runs against, the camera resolver and the battle
-actor tick that drains the cue routers - and re-exports every module here at
-its old path, so `legaia_engine_field::camera_zone` and
-`legaia_engine_field::camera_zone` name the same module.
+`FieldHost` the field VM runs against and the camera resolver. Consumers
+name the modules here directly (`legaia_engine_field::camera_zone`).
 
 ## What belongs here
 
@@ -35,7 +32,7 @@ a dependent crate.
   identity), `field_actor_kernels` (the scene-transition teardown sweep and
   the actor colour tween), `field_actor_clone` (the `4C 14` clone spawn),
   `field_actor_program` (the voice-over scripted-scene actor,
-  `FUN_801D4A60`), `cutscene_script_elements` (the plain-template actor
+  `FUN_801D4A60`), `plain_template_actors` (the plain-template actor
   bodies: ambient emitter, save-screen hand-off, leader swap),
   `morph_weight_apply` (the morph-weight apply pass), `actor_look` (op
   `4C 45` look rotation) and `float_tween` (the `gp+0x148` screen-position
@@ -59,10 +56,6 @@ a dependent crate.
   [`docs/subsystems/shading.md`](../../docs/subsystems/shading.md)),
   `packet_color` (per-vertex packet colour streams), `overworld_draw_order`
   and `overworld_ground_cue` (`FUN_801F89B8`'s continent-cell colour).
-- **Cue routers** - `anim_cue` (a battle action's `(frame, cue_id)` track to
-  arts-voice XA requests and SPU ring cues) and `sfx_cue` (cue id to the
-  4-slot pending ring / XA clip, `FUN_8004FE5C`); the battle actor tick in
-  `engine-core` drains them.
 - **Field camera** - `camera` (`Camera`, the follow / zone / scripted
   camera both hosts tick, with `CameraDistance` and the camera-zone request
   and cull-view types). Generic over `CameraWorld`, the slice of the world it
@@ -70,33 +63,28 @@ a dependent crate.
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md) and
   [`docs/subsystems/cutscene.md`](../../docs/subsystems/cutscene.md) for the
   retail globals it mirrors.
-- **Mode seat** - `mode` (the retail mode table at SCUS `0x8007078C`,
-  `ModeDriver`, `ModeSeat`, `SceneMode` and the boot chain) and
-  `minigame_entry` (the mode-24 door-warp sub-id space). The seat drives a
-  world through `ModeWorld` - the scene mode, the frame-begin skip latch,
-  the CONFIG INIT sound detach, the battle-intro hold, the pad-edge swallow
-  and the master tick - and `ModeHandler<W>` is generic over that world;
-  engine-core implements `ModeWorld` for `World`.
+- **Mode seat** - not in this crate: `mode` and `minigame_entry` are
+  [`legaia-engine-mode`](../engine-mode/README.md), one crate down. The
+  field camera reads its `SceneMode`.
 - **MAN field scripts** - `man_field_scripts`: the opcode-aware walk of a
   scene MAN's partition scripts (record spans, the scratchpad / system
   flag sites, inline encounter records, BGM starts, stager installs),
   placement classification and carrier derivation (`FieldCarrierConfig`),
   NPC motion legs and the walk-step speed ladder, scene-change triggers,
   and the system-flag / op-`0x49` window / motion-flag censuses over a set
-  of MAN carriers. Engine-core's `man_field_scripts` re-exports it by glob
-  and adds the carrier resolution off a loaded `Scene` and the censuses'
-  scene-name entry points.
+  of MAN carriers. Engine-core's `man_field_scripts` holds the carrier
+  resolution off a loaded `Scene` and the censuses' scene-name entry points.
 - **Overworld** - `world_map` (`WorldMapController`, which drives
   `SceneMode::WorldMap`, and the entry fade) and `world_map_panel_host` (the
   world-map band's panel screen: the `0x801F2B98` window system, the six
   `ctx[+0x54]` panel actors and the travel arts, hosted on
   `WorldMapController::panels`, plus the field party HUD's state machine).
-  Engine-core's `world_map_panel_host` re-exports it by glob and adds the
+  Engine-core's `world_map_panel_host` holds the
   HUD queries that read the world (the suppress gate, the view mode, the
   rearm term, the present-party rows); see
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 
-- **Field-overlay kernels** (moved in from `legaia-engine-vm`) -
+- **Field-overlay kernels** -
   `field_regions` (the `.MAP` region-table scan and zone queries),
   `field_player_clip`, `field_warp_tile`, `field_actor_reflect`,
   `field_actor_timers` (the shutter envelope, the eased move and the floor
@@ -120,7 +108,8 @@ a dependent crate.
 - `field_submode` - the field overlay's op-`0x49` **sub-screen** entry family:
   context reset + driver-actor spawn (`FUN_801D9C3C`), the smaller
   fixed-template spawn (`FUN_801DE478`), the list-panel row layout
-  (`FUN_801E6984`), and the CARD mode-request leaf (`FUN_801D84B4`).
+  (`FUN_801E6984`). The CARD mode-request leaf (`FUN_801D84B4`) is
+  `legaia_engine_mode::card_request`.
 - `field_actor_kernels` - the scene-transition **teardown sweep**
   (`FUN_801D7518`, which the field initialiser runs once per actor list on a
   warp entry) and the per-actor **colour tween** (`FUN_801DDC20`) whose actors
@@ -139,12 +128,6 @@ a dependent crate.
   (`FUN_801DA390`; `player[+0x16]` is the middle slot of the `+0x14/+0x16/+0x18`
   position triple, and the eased result lands in the Y halfword of a vector):
   settled creeps by 1, unsettled takes a gap-proportional step capped at 12.
-- `anim_cue` - `walk_anim_cues` / `AnimCueState`, the per-frame walker
-  over a playing battle action's 8-slot `(frame, cue)` track
-  (`FUN_800508DC`): swing, hit, footstep and knockdown SFX, the party
-  `0xC8..=0xFF` band resolved into the arts-voice namespace, and the
-  CD-busy fallback ring cue. It emits `AnimCueEmit` decisions; engine-core's battle
-  actor tick (`world::actors`) drains them into the SFX ring.
 
 ## `world_map_entity` - `FUN_801DA51C`
 

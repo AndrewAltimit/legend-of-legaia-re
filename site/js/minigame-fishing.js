@@ -20,7 +20,7 @@
  *     idle, the other two their venue-bank clips), framed through the
  *     venue camera the same kernel composes (venue_camera_view);
  *   - the HUD layout is the ported overlay draw list
- *     (engine-ui::ui_fishing): the persistent best/points rows, the catch
+ *     (engine-ui::fishing): the persistent best/points rows, the catch
  *     readouts, the depth/tension/power gauge bars with the retail fill
  *     arithmetic and colour ramps, and the five banner animators on their
  *     traced slide/hold/fade ramps.
@@ -41,7 +41,7 @@ window.MgFishing = (function () {
   const A2R = (Math.PI * 2) / 4096;   /* PSX angle units -> radians */
 
   /* Labels for the undecoded HUD glyph ids (the one non-retail asset - the
-   * fishing sprite page - substituted by text; ids from ui_fishing). */
+   * fishing sprite page - substituted by text; ids from engine-ui::fishing). */
   const GLYPH_LABEL = {
     0x1a: 'BEST',   0x1c: 'POINTS',
     0x0b: 'LINE',   0x10: 'm',
@@ -383,7 +383,7 @@ window.MgFishing = (function () {
 
     /* The HUD's sprite half - plates, digits, gauge caps, banners - cut
      * from the overlay's own sprite table out of the venue's HUD page and
-     * rasterised by the engine (ui_fishing_sprite, the builder the play
+     * rasterised by the engine (engine-ui::fishing::sprite, the builder the play
      * hosts draw on their GPUs). Available when the table and the pond
      * decoded; the text stand-ins below then step aside. */
     let spriteCanvas = null;

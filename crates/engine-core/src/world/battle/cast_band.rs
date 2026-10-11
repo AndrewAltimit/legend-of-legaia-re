@@ -215,7 +215,7 @@ pub struct CasterStageRun {
     /// Index of the clip being staged / waited on.
     pub cursor: usize,
     /// The seat the caster walks into reach of before the first stage
-    /// ([`vm::cast_module_ticks::capture_body_approaches`]); `None` for a
+    /// ([`legaia_engine_battle_vm::cast_module_ticks::capture_body_approaches`]); `None` for a
     /// body that strikes from where it stands, or a group target.
     pub approach: Option<u8>,
     /// Where the run is.

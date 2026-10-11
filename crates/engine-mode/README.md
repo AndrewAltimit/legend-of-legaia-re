@@ -15,9 +15,10 @@ pieces that only make sense next to it.
 
 ## Layering
 
-Depends on `legaia-asset` (the mode table), `legaia-bytes` and
+Depends on `legaia-bytes` and
 `legaia-engine-system` (mode-entry initialisers, the boot entry word, music
 labels, pad input). It must not depend on `legaia-engine-field`,
 `legaia-engine-menus` or anything above them: the field camera reads
-`mode::SceneMode`, so this crate sits below the field crate, and both play
-hosts reach it through `legaia-engine-core`'s `mode` module.
+`mode::SceneMode`, so this crate sits below the field crate. Both play
+hosts name it directly; `legaia-engine-core`'s `mode` module holds the
+functions that read a `World`.

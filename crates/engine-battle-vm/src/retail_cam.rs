@@ -3,8 +3,7 @@
 //! `engine-core`'s field camera holds one of these, and so does the Baka
 //! Fighter duel camera in the minigame crate; keeping the type here, next to
 //! the camera mover that steps the same ten axes, lets both use it without
-//! the minigame crate depending on `engine-core`. `engine-core` re-exports it
-//! as `camera::RetailCamGlobals`.
+//! the minigame crate depending on `engine-core`.
 
 use crate::camera_mover::AXIS_COUNT;
 

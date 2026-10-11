@@ -8,7 +8,7 @@
 //! [`legaia_engine_core::world::MinigameState`] now, aged by the world tick
 //! and drawn through `legaia_engine_ui::minigame_fx`, so every host draws the
 //! same parts. What is left here is the sprite-part projection; the dance HUD's
-//! quads draw as screen prims (`ui_dance::dance_hud_prims`).
+//! quads draw as screen prims (`dance::dance_hud_prims`).
 
 /// Project the dance run's own sprite-part emits onto the shared view the
 /// engine-ui builder takes.

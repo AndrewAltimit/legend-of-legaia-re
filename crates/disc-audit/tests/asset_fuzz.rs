@@ -1,4 +1,4 @@
-//! Panic-hardening regression suite for the `legaia-asset` parser entry points.
+//! Panic-hardening regression suite for the format crates' parser entry points.
 //!
 //! The web viewer and bulk scanners feed ARBITRARY PROT-entry / DATA_FIELD /
 //! pack bytes into these parsers; a junk match must return `Err` / `None` /

@@ -2,7 +2,7 @@
 //!
 //! Holds per-slot HP / MP / AP / status-icon state plus a queue of damage
 //! popups and battle-event log lines. The `engine-render` crate's
-//! [`legaia_engine_ui::battle_hud_draws_for`] turns one of these into
+//! `legaia_engine_ui::battle_hud_draws_for` turns one of these into
 //! a `Vec<TextDraw>` for the GPU pipeline; engines that render via a
 //! different path (web / terminal) can read the same struct directly.
 //!

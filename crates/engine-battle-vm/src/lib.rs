@@ -1,20 +1,16 @@
 //! Battle-side VM kernels: the battle action state machine, the battle
 //! formulas, the battle camera scripts and the cast-module ticks.
 //!
-//! These modules were split out of `legaia-engine-vm` along a dependency
-//! line: their whole closure is inside this crate (plus the asset crates),
-//! so the crate sits strictly below `legaia-engine-vm` with no cycle.
-//! `legaia-engine-vm` re-exports every module here at its old path
-//! (`crate::battle_action`, ...), so a consumer may name either.
+//! Each module's whole closure is inside this crate (plus the asset
+//! crates), so the crate sits strictly below `legaia-engine-vm` with no
+//! cycle.
 //!
 //! `psx_camera` and `camera_mover` live here because the battle camera
-//! script and the GTE camera build call each other; the field-side camera
-//! modules that use them (`camera_rel_actor`, `retail_cam`, ...) stay in
-//! `legaia-engine-vm` and reach them through the re-export.
+//! script and the GTE camera build call each other; the field VM in
+//! `legaia-engine-vm` names them here.
 //!
-//! Doc links that point back up at `legaia-engine-vm` modules are plain
-//! code spans or unresolved paths, since rustdoc cannot resolve a link into
-//! a dependent crate. See the crate README for the module map.
+//! Doc comments name `legaia-engine-vm` modules in plain code spans, since
+//! rustdoc cannot resolve a link into a dependent crate. See the crate README for the module map.
 
 #![forbid(unsafe_code)]
 

@@ -75,7 +75,7 @@
 //!
 //! v4 appends a per-character "shiny Seru" list - spell ids learned from a
 //! shiny-captured Seru (the rare 2%-per-battle variant; see the `shiny_seru`
-//! randomizer feature + `engine_core::seru_learning`). Such a spell deals
+//! randomizer feature + `legaia_engine_battle::seru_learning`). Such a spell deals
 //! +35% damage for that character. The retail disc encodes this in the high
 //! bit of the spell-level byte (`record+0x161`); the engine save carries it
 //! out-of-band so the spell-id list stays clean.

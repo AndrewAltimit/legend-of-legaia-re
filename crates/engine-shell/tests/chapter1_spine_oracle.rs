@@ -4,7 +4,7 @@
 //!
 //! **Part A - retail anchors.** The cataloged playthrough anchors codify the
 //! retail progression through the spine; each is loaded from `saves/library/`
-//! (pcsx-redux `.sstate` via [`legaia_pcsxr`], mednafen `.mcr` via
+//! (pcsx-redux `.sstate` via [`legaia_pcsx_redux`], mednafen `.mcr` via
 //! [`legaia_mednafen`] through
 //! [`legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save`])
 //! and its recorded scene / mode (/ position where the loader exposes it) is
@@ -157,7 +157,7 @@ fn part_a_spine_anchors_codify_retail_progression() {
         eprintln!("[skip] saves/library missing (capture-gated)");
         return;
     }
-    // legaia_pcsxr resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
+    // legaia_pcsx_redux resolves runtime VAs off the SCUS anchor; point LEGAIA_SCUS
     // at the extracted copy if the harness didn't set it.
     if std::env::var_os("LEGAIA_SCUS").is_none() {
         // SAFETY: single-threaded test setup before any save load.

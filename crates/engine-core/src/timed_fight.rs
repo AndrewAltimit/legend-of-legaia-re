@@ -1,9 +1,9 @@
 //! The timed fight's `World` seam.
 //!
 //! The gate id, the turn bound and the strip's readout kernels live in
-//! [`legaia_engine_menus::timed_fight`] and are re-exported here at their old
-//! paths. What stays is the two queries that read a live battle off the
-//! world: whether the strip is up, and the strip itself.
+//! [`legaia_engine_menus::timed_fight`]. This module holds the two queries
+//! that read a live battle off the world: whether the strip is up, and the
+//! strip itself.
 
 use legaia_engine_menus::timed_fight::*;
 

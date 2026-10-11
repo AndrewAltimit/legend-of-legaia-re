@@ -34,9 +34,9 @@ portrait sheet on [`save-icon.md`](../formats/save-icon.md).
 | Checksum | `FUN_801E38D8` | `save_block_checksum`, `legaia_save::card::sc_block_checksum_valid` |
 | Drawing | `FUN_801E1C1C`, `FUN_801E36C4`, `FUN_801E06C0`, `FUN_801E08D8` | `engine-ui::title_save` (`save_select_overlay_draws`) |
 
-The `engine-menus` modules named on this page are re-exported by `engine-core`
-at their old paths (`legaia_engine_menus::save_select`, `save_screen`,
-`save_subscreen`, `card_flow`, `card_bu_io`, `list_order`, `pause_screens`).
+The `engine-menus` modules named on this page are
+`legaia_engine_menus::save_select`, `save_screen`, `save_subscreen`,
+`card_flow`, `card_bu_io`, `list_order` and `pause_screens`.
 
 ```mermaid
 stateDiagram-v2

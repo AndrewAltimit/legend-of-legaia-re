@@ -188,7 +188,7 @@ are not covered by an oracle.
 
 ## The engine-side `InnSession` prompt
 
-`engine-menus::inn` (re-exported as `engine-menus::inn`) also carries a
+`engine-menus::inn` also carries a
 menu-style prompt with its own cost window. **Retail has no such screen and no
 play host opens it**: the reachable stay is the field-VM record above, and
 routing a host into the prompt would replace the innkeeper's real dialogue

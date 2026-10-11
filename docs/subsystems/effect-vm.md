@@ -193,7 +193,7 @@ a **4x uniform scale**. A port that offsets the corners in world space under
 the same scaled MVP applies the 4x to the half-extents as well: a 32-texel
 puff reaches 1280 view units either side instead of 320. The shared correction
 is `effect_billboard::world_half_extents(size, view_scale)`
-(`crates/render-kernels`, re-exported by `engine-ui`); the native window
+(`crates/render-kernels`); the native window
 passes its `fx_scale` into `effect_sprite_corners`.
 
 ### A battle billboard's centre is Y-flipped
@@ -445,7 +445,7 @@ Every packet samples the same 2x2 texel patch, UVs `(0..2, 0xF0..0xF2)` in
 texture page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84`
 (`(64, 510)`), and the chain ends in twenty zero words.
 
-Port: `engine-effects::effect_ribbon` (re-exported from `legaia_engine_core`).
+Port: `engine-effects::effect_ribbon`.
 `World::active_effect_ribbons` rebuilds each live ribbon node's mesh every
 frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923). Ozma
 (`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
@@ -543,8 +543,7 @@ The live default-arm nodes in the catalogued states use modes `0x00`, `0x01`,
 `0x08`, `0x10`, `0x18` and `0x100` - shapes `0..3` and texture mode `1` - and
 none of shapes `4..7`.
 
-**Port.** `engine-effects::effect_default_arm` (re-exported from
-`engine-core`). `build` transliterates the routine onto a byte buffer - every
+**Port.** `engine-effects::effect_default_arm`. `build` transliterates the routine onto a byte buffer - every
 word retail stores, at the offset it stores it, with a record of which bytes
 it wrote - and `decode` reads the object back the way the TMD renderer reads
 it. `crates/engine-core/tests/effect_default_arm_retail_capture.rs` holds it
@@ -608,8 +607,7 @@ colour `0x808080`, so retail neither modulates nor fades the numeral. Port:
 Placing it is a **host** job: the seat is the struck actor's projected screen
 position, which only the layer holding the camera knows. Both hosts project
 the actor under the FX camera and emit the cells as screen-space VRAM quads
-through one builder, `battle_numerals` (`crates/render-kernels`, re-exported
-by `engine-ui`), using retail's own texels. Before the battle VRAM exists a
+through one builder, `battle_numerals` (`crates/render-kernels`), using retail's own texels. Before the battle VRAM exists a
 host falls back to `engine-ui::battle_value_readout_draws_for`: retail's cells
 and pitch in the dialog font. `engine-ui`'s HUD builder draws the popup queue
 only under `LEGAIA_DIAG_HUD`.

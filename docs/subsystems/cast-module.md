@@ -36,7 +36,7 @@ routine catalogue, and what the Rust port runs. Related pages:
 | Battle context | pointer at `0x8007BD24`; module phase byte `ctx+0x279`, `ctx+0x278`, caster seat `ctx+0x13`, band timer `ctx+0x6D8` |
 | Actor pointer table | `0x801C9370` (`DAT_801C9370`), eight seats: party `0..2`, monsters `3..7`, summon creature seat `7` |
 | Damage wrappers | `FUN_801DD0AC`, `FUN_801DD4B0`, `FUN_801DD6B4` in 0898 |
-| Port | `crates/engine-battle-vm` (`cast_module_ticks`, `cast_arm_ticks`, `cast_seru_ticks_a` / `_b`, `cast_module_camera`, `cast_fatal_decision`, `battle_cast_dispatch`, `battle_cast_cue`), re-exported as `legaia_engine_vm::*`; band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
+| Port | `crates/engine-battle-vm` (`cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_module_camera`, `cast_fatal_decision`, `battle_cast_dispatch`, `battle_cast_cue`); band driver `crates/engine-core/src/world/battle/cast_band.rs`; spawn pool `crates/overlay-images/src/cast_effect_pool.rs` |
 
 ### The module band
 
@@ -834,7 +834,7 @@ over the limit. The tick `0x801F69EC` calls it from three sites
 calling all four until the last has landed and a `speed << 7` countdown
 (`0x801F8DB0`) has drained. At four vsyncs a tick those gates give arm `7` 65
 ticks and arm `9` 25, the measured dwell. Port:
-`cast_seru_ticks_b::swordie_slash_step`, driven by
+`seru_magic_ticks::swordie_slash_step`, driven by
 `World::run_cast_module_code` on the world's frame step with a neutral wrapper
 return, so each landing stages its reaction clip while the HP outcome stays
 the fold's.
@@ -996,7 +996,7 @@ stager returns before staging, the latch holds `0`, and each module's own
 [`battle-formulas.md`](battle-formulas.md#seru-magic-side-effects---the-element-debuffs-fun_801f3d3c--the-finisher-switch).
 
 Parser: [`legaia_game_tables::seru_side_effect`](../../crates/game-tables/src/seru_side_effect.rs).
-Masks and constants are in `cast_seru_ticks_a`; the latch is
+Masks and constants are in `seru_magic_ticks`; the latch is
 `BattleActionCtx::follow_up_pending`, and `World::cure_selector` feeds the
 ported ticks.
 
@@ -1143,8 +1143,8 @@ confirmed from live RAM: a probe decoding the `jal` in each 16-byte
 `0x801F69E8` with `ra = 0x801F1F84` (stub 4 + 8), 0910 at `0x801F69EC` with
 `ra = 0x801F1FB4`, 0911 at `0x801F69D8` with `ra = 0x801F1FC4`.
 
-Ports: `cast_seru_ticks_a` (`gimard_tick`, `theeder_tick`, `vera_tick`,
-`gizam_tick`, `nighto_tick`, `zenoir_tick`) and `cast_seru_ticks_b`
+Ports: `seru_magic_ticks` (`gimard_tick`, `theeder_tick`, `vera_tick`,
+`gizam_tick`, `nighto_tick`, `zenoir_tick`) and `seru_magic_ticks`
 (`viguro_tick`, `swordie_tick` with `swordie_slash`, `orb_tick`, `freed_tick`,
 `nova_tick`, plus PROT 0919's `spoon_cure_sweep` / `spoon_heal_amount`). The
 damage folds once at `World::cast_spell_on_slots_prepaid` with the module's
@@ -1363,7 +1363,7 @@ The creature is seated once, in arm 4 (`0x801F6EEC..0x801F6F8C`, right after
 `FUN_801F19EC`): facing `atan2(victim -> caster) + 0x800`, standing half a
 unit (`sin / 2`, `cos / 2`) short of the victim on the caster-victim line. No
 later arm stores to the seat's `+0x34` / `+0x38`. Port:
-`cast_seru_ticks_a::theeder_seat_placement`, pinned from arm 4 on.
+`seru_magic_ticks::theeder_seat_placement`, pinned from arm 4 on.
 
 Arms 10 to 12 are ramps on `ctx[+0x6D8]`. Arm 10 zeroes it (`0x801F7768`).
 Arm 11 adds `(step * scalar) >> 1` a pass and holds below `0x100`
@@ -1388,7 +1388,7 @@ The packet arms are drawn:
 | 12 | `FUN_801F8634` | shifts the ray tip into the ring, fans a blue quad from each consecutive pair of past tips back to the root (`(16 - i) * 15`), edges it with a one-pixel line, caps the count at `0xF`, draws the core root-to-tip in `(0x40, 0x40, 0xC0)` |
 | 13 | `FUN_801F8B84` | the same fan without the core, dropping the count by one a pass until empty |
 
-Port: `cast_seru_ticks_a::theeder_tick` with `TheederFx`, sampled once per
+Port: `seru_magic_ticks::theeder_tick` with `TheederFx`, sampled once per
 retail pass; both hosts build the primitives with `render-kernels::cast_theeder`
 (`crates/render-kernels/src/cast_theeder.rs`) from `World::theeder_draw`. The
 prong cells come from a per-cast counter rather than the battle RNG. The
@@ -1929,7 +1929,7 @@ through one `World` seam, so a live cast reaches every routine below.
 | Spawn pool | `legaia_overlay_images::cast_effect_pool` (`crates/overlay-images`) | indexes all 64 entries by PROT number; parses each image's spawn records with `summon_overlay::parse`, which scans `jal FUN_80021B04` and `jal FUN_80050ED4` sites and follows each `a2`. Built once by the scene host (`ensure_cast_effect_pool`); a host with no disc holds none |
 | Dispatch key | `battle_cast_dispatch` | the two dispatchers answer with the emitter VA and band entry: `FUN_801F1ED4` row `id - 0x81` = PROT `903 + row`, `FUN_801F2160` row `sub_id` = PROT `935 + sub_id`. `World::cast_module_for` picks on the record's `+0` class byte |
 | Staging | `World::spawn_cast_module_fx` | seats the module's records as a move-VM scene (`SummonScene`) at the two seams retail uses: the capture band's pager (`load_capture_archive`, the `0x6E` arm) and the summon stager's first tick (`0x801E4B1C`) |
-| Code | `cast_module_ticks`, `cast_arm_ticks`, `cast_seru_ticks_a` / `_b`, `cast_fatal_decision` | one function per VA: dispatch bound, simulation-state writes, damage step (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction stage, anim-rate write) and phase advance. `World::run_cast_module_code` drives them from the stager tick the action SM calls at states `0x34` / `0x35` / `0x36`, and from the capture band's `0x70` |
+| Code | `cast_module_ticks`, `cast_arm_ticks`, `seru_magic_ticks`, `cast_fatal_decision` | one function per VA: dispatch bound, simulation-state writes, damage step (baked power, wrapper, clamp shape, `+0x10` accumulate, HP write, reaction stage, anim-rate write) and phase advance. `World::run_cast_module_code` drives them from the stager tick the action SM calls at states `0x34` / `0x35` / `0x36`, and from the capture band's `0x70` |
 | Camera and gates | `cast_module_camera` | [directors](#the-module-owns-the-camera) and countdown tables |
 | Damage | `World::cast_spell_on_slots_prepaid`, `World::run_cast_module_aoe` | the [one-owner rule](#one-owner-per-hit) |
 | Caster clips | `CAPTURE_CASTER_STAGES`, `World::capture_stager_tick` | below |

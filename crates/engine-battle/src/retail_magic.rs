@@ -41,7 +41,7 @@
 //! [`RetailSpell`] ([`RetailSpell::cast_class`] / [`RetailSpell::effect_class`])
 //! rather than asserted once for the block, because `+1` is the key
 //! `FUN_801F2160` dispatches a cast's module on
-//! ([`legaia_overlay_images::cast_effect_pool`]). The static atk/def kernel
+//! (`legaia_overlay_images::cast_effect_pool`). The static atk/def kernel
 //! `FUN_801ec3e4` is melee/arts-only (gated on an action-queue head in
 //! `0xC..=0x1F`). See `docs/formats/spell-table.md` for the full trace. The
 //! `base_power` figures below are therefore explicit MP-scaled placeholders.
@@ -85,7 +85,7 @@ pub struct RetailSpell {
     /// **Effect class**, table `+1` - the byte `FUN_801F2160` bounds with
     /// `sltiu ..., 0x20` and jumps through `0x801CF56C` on, selecting the cast
     /// module PROT `935 + class`
-    /// ([`legaia_overlay_images::cast_effect_pool::capture_module_prot`]). A player Seru
+    /// (`legaia_overlay_images::cast_effect_pool::capture_module_prot`). A player Seru
     /// cast does not route through that dispatcher - its module comes from the
     /// action id through `FUN_801F1ED4` - but the byte is table data and is
     /// pinned here because it is the *only* live key the capture band has.

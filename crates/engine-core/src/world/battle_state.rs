@@ -50,10 +50,10 @@ pub struct BattleState {
     pub map_id: u32,
     /// The regular battle's half of the special-battle word `_DAT_8007BAC0`
     /// (the Muscle Dome session carries its own). Battle init clears a lone
-    /// [`vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] and raises it against
+    /// [`legaia_engine_battle_vm::battle_formulas::SPECIAL_RASERU_FORBIDDEN`] and raises it against
     /// monster `0xAF`; the formation roll raises it for the Rim Elm ambush
-    /// (see [`vm::battle_formulas::battle_init_special_word`] /
-    /// [`vm::battle_formulas::formation_roll_special_word`]). Read by the Ra-Seru
+    /// (see [`legaia_engine_battle_vm::battle_formulas::battle_init_special_word`] /
+    /// [`legaia_engine_battle_vm::battle_formulas::formation_roll_special_word`]). Read by the Ra-Seru
     /// chip ([`crate::battle_hud::battle_magic_chip`]) and its arm
     /// (`World::tick_battle_command`). Every `!= 0` reader - the gold, EXP,
     /// drop, steal, capture, spell-XP and monster-flee gates - reads it through

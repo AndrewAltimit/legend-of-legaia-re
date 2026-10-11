@@ -9,8 +9,10 @@
 //! the navigation logic depends on the GPU backend.
 //!
 //! Modules:
-//! * [`ui_overlay`] - dialog box, cutscene narration, battle HUD, encounter
-//!   banner, stage-scale text, per-glyph sprite emit helpers.
+//! * `battle_hud` (items at the crate root) - sprite / text batching, shop
+//!   rows, level-up and capture banners, the battle HUD, encounter banner,
+//!   stage-scale text, per-glyph sprite emit helpers. The dialog and
+//!   notice boxes sit beside it in their own root-level modules.
 //! * [`battle_command_ui`] - the battle command menu's packet-pinned chip
 //!   cluster: the plate 3-slice, the four-arm diamond and its D-pad glyph,
 //!   and the `-` chip an unavailable command draws.
@@ -19,36 +21,30 @@
 //!   banner and the intro enemy-name labels (a marbled fill under a gold
 //!   border; the banner shares its seat with the actor-name plaque) and the
 //!   status / element badge cells.
-//! * [`ui_fishing`] - fishing-minigame HUD: the ported draw-list layout plus
+//! * [`fishing`] - fishing-minigame HUD: the ported draw-list layout plus
 //!   the consumer that renders it.
-//! * [`ui_menu`] - pause-menu field/status/spell/inventory/equipment panels,
+//! * [`menu`] - pause-menu field/status/spell/inventory/equipment panels,
 //!   options + key-rebind, name entry, game-over, tactical-arts editor.
-//! * [`ui_menu_window_painters`] - content painters for the menu-overlay
+//! * [`menu::window_painters`] - content painters for the menu-overlay
 //!   window-descriptor table's prompt / counter / tab / shop-panel block, and
-//!   `ui_equip_stat_compare` for the equip screen's two stat-compare
+//!   [`menu::equip_stat_compare`] for the equip screen's two stat-compare
 //!   painters (descriptor ids 25 and 41).
-//! * [`ui_menu_window_dispatch`] - which painter draws a given descriptor,
+//! * [`menu::window_dispatch`] - which painter draws a given descriptor,
 //!   keyed on its `renderer_va` the way the retail window walker keys on the
 //!   live window's `+0x28`.
-//! * [`ui_title_save`] - title menu, 9-slice window chrome, save-select,
-//!   save-slot grid + info panel, "Now checking" dialog.
+//! * `title_save` (items at the crate root) - title menu, 9-slice window
+//!   chrome, save-select, save-slot grid + info panel, "Now checking" dialog.
 //! * [`minigame_fx`] - the minigame effect-part pool's draw builder (the
 //!   pool itself is `legaia_engine_minigames::minigame_fx`) plus the dance run's
 //!   own sprite-part emit, both shared by every host.
-//! * [`screen_prim`] - screen-space PSX primitives (`POLY_FT4`/`POLY_GT4`
-//!   corners, CLUT/texpage, ABR mode, ordering-table bucket) plus the shared
-//!   OT sort and vertex builder. The one draw record here that is *not* a
-//!   [`TextDraw`] in disguise.
-//! * [`gte`] / [`vram_capture`] / [`battle_intro`] - the shared wgpu-free
-//!   render kernels: fixed-point GTE arithmetic (incl. the port's own
-//!   `psx_sin`/`psx_cos` LUT), the RGBA-to-BGR555 frame blit, and the
-//!   field-to-battle transition emitter both hosts arm. Here for the same
-//!   reason as `screen_prim`: this crate is the leaf both hosts link.
 //!
-//! Extracted from `legaia-engine-render`, which re-exports the items its
-//! native callers name at their old path through an explicit list. The GPU-resident
-//! batch wrappers ([`TextOverlay`]/`SpriteOverlay`/`UploadedSpriteAtlas`) stay
-//! in `legaia-engine-render` because they hold wgpu handles.
+//! The wgpu-free render kernels both hosts share - fixed-point GTE
+//! arithmetic, the screen-space PSX primitive record with its OT sort and
+//! vertex builder, the RGBA-to-BGR555 frame blit, the field-to-battle
+//! transition emitter - are `legaia-render-kernels`, one crate down. The
+//! GPU-resident batch wrappers ([`TextOverlay`]/`SpriteOverlay`/
+//! `UploadedSpriteAtlas`) are in `legaia-engine-render` because they hold
+//! wgpu handles.
 //!
 //! [`TextOverlay`]: https://docs.rs/legaia-engine-render
 

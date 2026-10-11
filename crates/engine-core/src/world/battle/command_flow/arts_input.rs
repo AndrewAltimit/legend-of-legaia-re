@@ -144,7 +144,7 @@ impl World {
     /// plate) - and the spirit band then grows the bar to the extended gauge
     /// the next turn's entry pool will have, and climbs the plate by the
     /// Spirit the turn earns (`legaia_engine_battle_vm::battle_action`'s spirit
-    /// band, [`vm::battle_action::BattleActionCtx::spirit_bar_width`] /
+    /// band, [`legaia_engine_battle_vm::battle_action::BattleActionCtx::spirit_bar_width`] /
     /// `spirit_plate_value`). The Done band's tail unloads both. So the view
     /// is up from the band's entry (`0x46`) until the `0x51` fade-down's
     /// once-only UI teardown runs (the retail `0x51` captures of a Spirit turn

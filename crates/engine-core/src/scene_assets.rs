@@ -58,7 +58,7 @@ pub struct SceneTmd {
     pub n_obj: u32,
 }
 
-/// The scene MES container, re-exported from the dialog module that pages it.
+// The scene MES container, from the dialog module that pages it.
 use legaia_engine_dialog::dialog::SceneMes;
 
 /// Typed snapshot of every asset the engine cares about after entering a

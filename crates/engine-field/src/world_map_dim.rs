@@ -32,7 +32,7 @@
 //!
 //! so `view_mode != 0 && (anim_flags & 1) != 0`. Entering top view at all
 //! additionally needs the debug flag `_DAT_8007B98C`, which retail leaves
-//! clear - see [`engine_core::world_map::WorldMapController`].
+//! clear - see [`crate::world_map::WorldMapController`].
 //!
 //! ## What it draws
 //!

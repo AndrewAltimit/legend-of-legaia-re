@@ -36,7 +36,8 @@ knows nothing about any feature. No MIPS (that is
 randomizer logic.
 
 It depends on the disc and container crates (`legaia-iso`, `legaia-prot`,
-`legaia-lzs`) and on `legaia-asset` for three format items: the monster
+`legaia-lzs`) and on `legaia-actor-formats` and `legaia-scene-formats` for
+three format items: the monster
 archive's slot stride, the player-file annex chain and the scene asset table.
 
 No Sony bytes: this crate ships code only, and every test that needs real

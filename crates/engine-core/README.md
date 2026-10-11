@@ -200,7 +200,7 @@ The `World`-free battle kernels - `art_strike`, `ap_gauge`, `battle_stats`,
 `accessory_passives`, `seru_trade`, `battle_sideband`, `tactical_arts_editor`,
 `monster_ai`, `battle_steal`, the catalogs, encounters and level-up among
 them - live in [`legaia-engine-battle`](../engine-battle/README.md) and are
-re-exported here at the same paths; this crate keeps the `World` side that
+named there; this crate keeps the `World` side that
 composes them.
 
 - `art_strike` - translates `ArtStrikeInfo` into an `ArtStrikeOutcome`
@@ -368,7 +368,7 @@ composes them.
   town01 survey finds no inline `[1][0x4F]` Tetsu literal, confirming the
   indexed formation-table install path (see `encounter_record`). The
   decoders live in `legaia-engine-field`, where every census takes the MAN
-  carriers it walks; this module re-exports them and adds what needs a
+  carriers it walks; this module holds what needs a
   loaded `Scene` - `scene_man_carriers` and the scene-name entry points of
   the system-flag, op-`0x49` window and motion-flag censuses.
 - **Field-resident carrier SM.** `World` ticks the ported `FUN_801DA51C`
@@ -412,7 +412,7 @@ lifts - the one build the browser field-scene page and the native
 `export-glb` path both read. `packet_color` carries the hybrid
 textured/vertex-colour side channel, `npc_catalog` the MAN placement
 walk, and `glb_export` composes all of it (plus per-NPC and animated-prop
-bakes through `legaia_asset::{scene,character}_gltf`) into the
+bakes through `legaia_actor_formats::{scene,character}_gltf`) into the
 `legaia-engine export-glb` artifact set, `--items` included
 (`export_equipment_item_glbs` over the shared
 `battle_char_assembly::loadout` kernel) - see
@@ -460,9 +460,9 @@ presentation left to the host. The ones that need no `World` - `dance`,
 `dance_tutorial`, `minigame_actor`, `minigame_fx`, `minigame_floor`,
 `baka_*`, `slot_machine`, `fishing*`, `other_game_overlay`, `tile_board`,
 `prize_exchange` and the World-free half of `muscle_dome` - live in
-[`legaia-engine-minigames`](../engine-minigames/README.md) and are
-re-exported here at their old paths, as are the duel and arena surfaces
-(`baka_duel_scene`, `muscle_dome_scene`) from
+[`legaia-engine-minigames`](../engine-minigames/README.md) (fishing in
+[`legaia-engine-fishing`](../engine-fishing/README.md)), and the duel and
+arena surfaces (`baka_duel_scene`, `muscle_dome_scene`) in
 [`legaia-engine-minigame-scenes`](../engine-minigame-scenes/README.md); this
 crate keeps their `World` glue and scene assembly (`dance_venue`,
 `dance_cast_scene`, `fishing_scene`, `fishing_venue`, `muscle_dome`,
@@ -498,12 +498,12 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   `World::settle_muscle_contest`. The contest ladder, course tables, damage
   model and hub envelopes are World-free and live in `engine-minigames`;
   the leg session, its command menu and ring live in `legaia-engine-menus`
-  (beside the battle command input they share). This module re-exports
-  both and keeps `magic_loadout_for`, which reads a fighter's loadout off
+  (beside the battle command input they share). This module
+  keeps `magic_loadout_for`, which reads a fighter's loadout off
   the live roster and hands the slice to `magic_loadout_of`. `timed_fight`
   and `battle_open` split the same way: their kernels in
   `legaia-engine-menus`, their `World` / `ProtIndex` readers here.
-- `muscle_dome_scene` (re-exported from `legaia-engine-minigame-scenes`) -
+- `muscle_dome_scene` (in `legaia-engine-minigame-scenes`) -
   the dome's 3D arena surface, `MuscleDomeSurface`:
   the arena shell, the ground grid, the lead's assembled battle form and the
   ladder's monster, posed off the session's turn edge and framed by
@@ -576,11 +576,11 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   again; the projection itself is `legaia_engine_battle_vm::psx_camera`. See
   [`docs/tooling/host-drift.md`](../../docs/tooling/host-drift.md#gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side).
 - `world_map::WorldMapController` - drives `SceneMode::WorldMap`
-  (re-exported from `legaia-engine-field`).
+  (in `legaia-engine-field`).
 - `world_map_panel_host` - the world-map band's panel screen: the
   `0x801F2B98` window system plus the six `ctx[+0x54]` panel actors and the
   travel arts, hosted on `WorldMapController::panels`. The screen lives in
-  `legaia-engine-field`; this module re-exports it and adds the field HUD
+  `legaia-engine-field`; this module holds the field HUD
   queries that read `World`. See
   [`docs/subsystems/world-map.md`](../../docs/subsystems/world-map.md#the-panel-actor-state-machines).
 - `scene::DefaultMapIdResolver` - scene-name → map-id resolution. (Effect lookup,
@@ -591,7 +591,7 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
 
 - `mode` - the game-mode driver and retail mode table (`ModeSeat`, which both
   hosts enter INIT modes through). The table, driver, seat and `SceneMode`
-  live in `legaia-engine-field` and reach the world only through the
+  live in `legaia-engine-mode` and reach the world only through the
   `ModeWorld` trait; this module implements it for `World` and keeps the
   field-entry demo handler.
 - `scene` - the scene-loading shell: PROT asset indexing, per-CDNAME-block
@@ -600,30 +600,36 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
   placement's model byte and the scripted-motion VM's op `0x0E` share.
 - `levelup` / `inn` / `equip_session` / `spells` - the post-battle
   `LevelUpTracker`, the inn rest session, the equipment session, and the
-  spell catalog + cast resolver (all re-exported from the `World`-free
-  crates below).
+  spell catalog + cast resolver (`levelup` and `spells` in
+  `legaia-engine-battle`, `inn` and `equip_session` in
+  `legaia-engine-menus`).
 - `field_menu` / `field_menu_dispatch` / `menu_runtime` and the `menu_*`
   family - pause-menu sessions, sub-session dispatch, and list / input /
   validator leaves. `field_menu_dispatch` and `menu_runtime` are the
-  `World` side; `field_menu` and the `menu_*` leaves are re-exported from
+  `World` side; `field_menu` and the `menu_*` leaves are in
   `legaia-engine-menus`.
 - `title` / `save_select` / `save_subscreen` / `card_flow` / `card_write` /
   `card_bu_io` - title state machine, save-slot select, and the memory-card
-  I/O and write flow (all but `card_write` re-exported from
+  I/O and write flow (all but `card_write` in
   `legaia-engine-menus`).
 - `dialog_window` - the field dialog pager's row window, scroll and typing
-  reveal.
+  reveal (in `legaia-engine-dialog`).
 - `fishing` / `fishing_actors` / `fishing_hub` / `fishing_venue` - the
   fishing minigame's `PondSession`, its actors, the venue hub screen and
-  venue-actor step.
+  venue-actor step. The rules are `legaia-engine-fishing`; `fishing_venue`
+  and the `Scene`-reading halves of `fishing_actors` and `fishing_hub` are
+  here.
 - `slot_machine` / `baka_cabinet` / `baka_duel_scene` - the casino slot
   machine rules engine, and the Baka Fighter cabinet shell and 3D duel scene
-  (the last re-exported from `legaia-engine-minigame-scenes`).
+  (the first two in `legaia-engine-minigames`, the last in
+  `legaia-engine-minigame-scenes`).
 - `tile_board` / `timed_fight` / `incense_notice` - the op-`0x49` tile board,
-  the turn-limited boss fight's gate, and the Incense wear-off notice.
+  the turn-limited boss fight's gate, and the Incense wear-off notice. The
+  board rules are `legaia-engine-minigames` and the gate kernel
+  `legaia-engine-menus`; the modules here hold the `World` side.
 - `encounter` / `encounter_man` / `monster_ai` / `monster_catalog` - per-scene
   random-encounter tables and trigger, and the per-monster battle AI
-  (`FUN_801E9FD4`).
+  (`FUN_801E9FD4`), all in `legaia-engine-battle`.
 - `new_game` - seeds live party records from the `SCUS_942.54` starting-party
   template.
 - `cd_dma` / `overlay_loader` / `stream_file` - the CD streaming host traits
@@ -634,16 +640,19 @@ crate keeps their `World` glue and scene assembly (`dance_venue`,
 The modules the sections above do not walk, grouped by family. The module
 docs carry the retail provenance.
 
-- **Actor model + hosts** - `actor_handler` (the actor's `+0x0C` per-frame
-  handler identity), `actor_alloc_host` / `move_buffer_host` (the `World`
-  impls of `engine-vm`'s allocator and MOVE-buffer host traits),
-  `camera_rel_glide`. The effect kernels (`part_motion`, `object_effect`,
-  `summon`, the effect arms and ribbon, `screen_fx`) are re-exported from
+- **Actor model + hosts** - `actor_alloc_host` / `move_buffer_host` (the `World`
+  impls of `engine-vm`'s allocator and MOVE-buffer host traits). The actor's
+  `+0x0C` per-frame handler identity (`actor_handler`) is in
+  `legaia-engine-field` and `camera_rel_glide` in
+  `legaia-engine-battle-vm`. The effect kernels
+  (`part_motion`, `object_effect`,
+  `summon`, the effect arms and ribbon, `screen_fx`) are in
   [`legaia-engine-effects`](../engine-effects/README.md).
 - **Battle** - `battle_open` (the formation open banner), `battle_party_form`
   (a member's assembled battle form, once for both hosts),
-  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages). The kernel modules re-exported from `engine-battle` are
-  mapped in [its README](../engine-battle/README.md).
+  `battle_cam_inputs`, `battle_sideband_textures` (`readef.DAT` pages).
+  The battle kernel modules are
+  mapped in [the `engine-battle` README](../engine-battle/README.md).
 - **Field** - `field_ground` (walk-ground heightfield as a render surface),
   `field_view_window` (the visible-tile crop), `field_occlusion` (the
   occlusion fade's visibility gate), `coplanar_draws`, `drop_shadow`,
@@ -654,44 +663,34 @@ docs carry the retail provenance.
 - **Cutscene** - `cutscene_caption`.
 - **Overworld** - `overworld_curvature`, `world_map_markers` (not retail:
   marker quads), `world_map_sky` (which frames draw the sky band).
-- **Menus + screens** - `menu_input` (`FUN_801d688c`), `menu_validator`,
-  `dev_menu_host`,
-  `prize_exchange` (casino sub-screen `0x20`; rules in `engine-minigames`).
-- **Minigame support** - `minigame_entry` (the mode-24 door-warp id space),
-  `minigame_floor`, `minigame_status` (the engine's affordance rows),
-  `dance_cast_scene`, `dance_tutorial`, `fishing_scene`, `fishing_chrome`,
-  `fishing_exchange_input`, `baka_fighter_chrome`, `baka_impact_fx`,
-  `muscle_ringside`, `other_game_overlay` (PROT 0977 kernels),
-  `casino_coin_bank` (op `4C E5`).
+- **Menus + screens** - `menu_validator`, `dev_menu_host`. The menu cursor
+  navigator `menu_input` (`FUN_801d688c`) is in `legaia-engine-system`; the
+  casino prize exchange (sub-screen `0x20`) is
+  `legaia_engine_minigames::prize_exchange`.
+- **Minigame support** - `minigame_status` (the engine's affordance rows),
+  `dance_cast_scene`, `fishing_scene`, `fishing_exchange_input`,
+  `muscle_ringside`, `casino_coin_bank` (op `4C E5`). The mode-24 door-warp
+  id space `minigame_entry` is in `legaia-engine-mode`; the rules-side
+  leaves (`dance_tutorial`, `baka_fighter_chrome`, `baka_impact_fx`,
+  `other_game_overlay`) are in `legaia-engine-minigames`, and
+  `minigame_floor` and `fishing_chrome` in `legaia-engine-fishing`.
 - **Scene loading + session** - `scene_assets`, `scene_bundle`,
   `scene_live` (a headless live scene preview for viewers),
   `resume` (where a load resumes and a New Game starts),
-  `encounter_registry`, `scus_leaf_kernels`.
+  `scus_leaf_kernels`.
 - **Cheats** - `cheats` (the play hosts' cheat mutations) and
   `cheat_applier` (parsed GameShark codes → engine cells, over
   `engine-system`'s `ram_map`).
-- **Runtime system** - `input`, `retail_pad`, `chunk_install`,
-  `mdec_dma_sync`, `cutscene`, `movie_audio`, `sound_state`, `music_labels`,
-  `fade` / `fade_ramp` / `pause_wipe`, `mode_entry_init`, `scene_name_sync`,
-  `ram_map`, `capture_observations` and `draw_census` are re-exported from
-  [`legaia-engine-system`](../engine-system/README.md).
-- **Menu front end** - `items`, `equipment`, `inventory_use`,
-  `menu_list_rows`, `menu_item_category`, `menu_arrange`, `spell_menu`,
-  `spell_party_broadcast`, `menu_widget`, `menu_open_sequence`, `menu_cues`,
-  `menu_glyph_atlas`, `save_menu_atlas`, `debug_char_editor`, `key_rebind`,
-  `publisher_logos`, `title`, `title_screen_atlas`, `name_entry`, `game_over`,
-  `card_flow`, `card_bu_io`, `dialog_window`, `dialog_pacing`,
-  `dialog_picker_slide`, `text_balloon` and `inn` are re-exported from
-  [`legaia-engine-menus`](../engine-menus/README.md).
-- **Field kernels** - `actor_handler`, `field_actor_kernels`,
-  `field_actor_clone`, `field_actor_program`, `cutscene_script_elements`,
-  `morph_weight_apply`, `actor_look`, `float_tween`, `camera_zone`,
-  `camera_ease`, `register_ramp`, `field_anim`, `walk_regen`,
-  `scene_transition_actor`, `field_save_screen_actor`, `field_submode`,
-  `field_events`, `cutscene_narration`, `field_audio_release`, `clut_fx`,
-  `clut_cell_fx`, `vdf_pulse`, `field_lit_mesh`, `packet_color`,
-  `overworld_draw_order`, `overworld_ground_cue`, `anim_cue` and `sfx_cue`
-  are re-exported from [`legaia-engine-field`](../engine-field/README.md).
+- **Below this crate** - the runtime system (pad input, the stream chunk
+  installer, movies, sound state, fades, mode-entry initialisers, the RAM
+  map) is [`legaia-engine-system`](../engine-system/README.md); the menu
+  front end (items, equipment, the menu sessions, title, name entry, the
+  card flow, the inn) is [`legaia-engine-menus`](../engine-menus/README.md),
+  with the dialog pager in
+  [`legaia-engine-dialog`](../engine-dialog/README.md); the field kernels
+  (actor programs, the camera zone and eases, clip playback, the CLUT
+  effects) are [`legaia-engine-field`](../engine-field/README.md). Each
+  README maps its own modules.
 
 ## See also
 

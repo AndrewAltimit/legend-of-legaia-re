@@ -322,7 +322,7 @@ variant-1 copy (marked ABR 1) of the same record: emitted variant 1 first,
 they paint variant 2 underneath. The marks are what the GPU draws: the uploaded
 CLUTs carry STP, so the variant-2 copy knocks the area out to black and the
 variant-1 face adds over it
-([which hub packets blend](#which-hub-packets-blend)). `other_game_hud::hub_screen_quads` takes draws in
+([which hub packets blend](#which-hub-packets-blend)). `muscle_dome_hud::hub_screen_quads` takes draws in
 emit order and returns paint order. Before this, the hosts painted in emit
 order - the shadow over the face - and the title art was
 listed shadow-first, which left the face inheriting the shadow's write-back

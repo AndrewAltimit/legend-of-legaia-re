@@ -621,7 +621,7 @@ pub fn shop_screen_draws(ctx: &ShopScreenCtx<'_>, view: &ShopScreenView<'_>) -> 
 /// The casino prize counter's screen - the gold shop's sibling on the same
 /// window stack: the frames of windows 43 ("Exchange" plaque), 44 (the prize
 /// list), 45 (the coin counter) and, while the purchase confirm is up, 46,
-/// under the texts and sprite requests `ui_prize_exchange::prize_exchange_draws_for`
+/// under the texts and sprite requests `prize_exchange::prize_exchange_draws_for`
 /// returns. Retail (the `casino_prize_shop` library state) draws it framed on
 /// black, like the shop.
 pub fn prize_screen_draws(

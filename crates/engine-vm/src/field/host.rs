@@ -1508,7 +1508,7 @@ pub trait FieldHost {
     /// value space is `0..=0xFF` and only the operand byte can set it.
     ///
     /// `_DAT_8007B630` is the amplitude `FUN_801D9D30`
-    /// ([`legaia_engine_battle_vm::battle_camera::apply_shake`]) turns into an LCG jitter on
+    /// (`legaia_engine_battle_vm::battle_camera::apply_shake`) turns into an LCG jitter on
     /// the camera translation pair `0x800840B8/BC`: `0` is "no shake" and
     /// `1..=0x15` widens the sample window. This opcode is that global's
     /// only writer, which is what makes the field script the sole source of

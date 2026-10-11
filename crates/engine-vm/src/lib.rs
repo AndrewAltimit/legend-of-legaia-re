@@ -91,12 +91,6 @@ pub mod actor_node_pool;
 pub mod actor_tick;
 pub mod anim_vm;
 pub mod battle_burst;
-// --- W1-C ---
-// --- end W1-C ---
-// --- W1-B ---
-// --- end W1-B ---
-// --- W1-D ---
-// --- end W1-D ---
 pub mod effect_vm;
 pub mod field;
 pub mod field_actor_billboard;

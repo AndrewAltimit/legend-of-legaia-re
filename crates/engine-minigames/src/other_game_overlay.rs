@@ -30,7 +30,7 @@
 //! contest costs no permanent HP. The values are computed by
 //! `crate::muscle_dome::leg_score_rows` and carried by
 //! `crate::muscle_dome::DomeContest`; the screen's geometry is
-//! `other_game_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
+//! `muscle_dome_hud::HUB_SCORE_TALLY_LABELS` / `score_tally_quads`.
 //!
 //! # Wiring status is per item, not per module
 //!

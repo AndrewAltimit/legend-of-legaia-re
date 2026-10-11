@@ -207,7 +207,7 @@ pub const ENEMY_BOSS_STAGER_PROT: [u32; 6] = [938, 940, 944, 961, 962, 966];
 /// (`FUN_80021B04` also special-cases `0x4001`, unobserved on disc). Any other
 /// out-of-band first word indicates the input wasn't trimmed to its TOC-gap
 /// footprint (see [`unique_content_len`]). Mirrors
-/// `engine_core::summon::MAX_MESH_SEL`.
+/// `legaia_engine_effects::summon::MAX_MESH_SEL`.
 pub const LIBRARY_MESH_SEL_MAX: i16 = 0x100;
 
 /// `model_sel == 0x4000`: a special render-mode node - `FUN_80021B04` seats the

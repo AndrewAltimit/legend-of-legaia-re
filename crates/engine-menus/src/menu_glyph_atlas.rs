@@ -20,7 +20,7 @@
 //!
 //! Build once at boot via [`build_atlas_from_prot_dat`]; engines pin
 //! the resulting [`MenuGlyphAtlas`] in `play-window`-style state and
-//! emit one [`legaia_engine_ui::SpriteRequest`] per character per
+//! emit one `legaia_engine_ui::SpriteRequest` per character per
 //! frame the title menu is visible.
 
 use anyhow::{Context, Result};

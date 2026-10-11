@@ -19,7 +19,7 @@
 //! title-tab painter and the modal sprite order - come out the same way
 //! whichever host asks. It is not a pixel oracle; the per-panel geometry is
 //! pinned by the builders' own unit tests, and the disc table it falls back
-//! from by `legaia-asset`'s disc-gated `menu_windows_real` - which asserts the
+//! from by `legaia-game-tables`' disc-gated `menu_windows_real` - which asserts the
 //! same rects against its own literal list rather than against
 //! [`MENU_WINDOW_FALLBACK`], so the two are separate pins of one set of
 //! numbers.

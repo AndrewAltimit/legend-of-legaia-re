@@ -92,7 +92,7 @@ pub fn reel_y(angle: i32) -> i32 {
 
 /// Model-space `z` of the reel cylinder at `angle` (`FUN_801d0fa8`).
 // PORT: FUN_801d0fa8 (reel cylinder z: cos(a) >> 3)
-// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// Drawn natively through `slot_cabinet`; the browser pages recompute it
 // in floating-point JavaScript (see `reel_y`).
 pub fn reel_z(angle: i32) -> i32 {
     let v = cos_4096(angle);
@@ -106,7 +106,7 @@ pub fn reel_z(angle: i32) -> i32 {
 /// The depth-cued gouraud shade of a reel vertex at model-space `z`, clamped to
 /// `0 ..= 0xB4` (`FUN_801d0fa8`). Feed it to a `texel * shade / 128` blend.
 // PORT: FUN_801d0fa8 (reel depth-cue shade)
-// Drawn natively through `ui_slot_cabinet`; the browser pages recompute it
+// Drawn natively through `slot_cabinet`; the browser pages recompute it
 // in floating-point JavaScript (see `reel_y`).
 pub fn reel_shade(z: i32) -> i32 {
     let v = (z + REEL_SHADE_Z_BIAS) * REEL_SHADE_Z_GAIN;

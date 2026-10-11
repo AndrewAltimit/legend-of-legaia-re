@@ -19,7 +19,7 @@ use legaia_engine_fishing::fishing::{
     self, FishingRecord, PondEvent, PondInput, PondPhase, PondSession, PrizeExchange,
 };
 use legaia_minigame_formats::fishing_species;
-// engine-ui re-exports its `ui_fishing` module's items at the crate root.
+// engine-ui re-exports its `fishing::hud` module's items at the crate root.
 use legaia_engine_ui as ui_fishing;
 use legaia_engine_ui::{BarAxis, CatchHudState, HudCaption, HudDraw};
 
@@ -423,7 +423,7 @@ impl LegaiaMinigames {
     /// "ot":n}, ...]` in retail 320x240 screen space, **in draw order** -
     /// the faces `PondSession::rod_faces` projects (the rod actor's pose,
     /// culled and bucketed the way `FUN_80043390`'s handlers do), wrapped by
-    /// the shared `ui_fishing_rod` builder and ordered by
+    /// the shared `fishing::rod` builder and ordered by
     /// `screen_prim::order_primitives`, the order the other two hosts' quad
     /// pass draws them in. A triangle repeats its third corner. `[]` with no
     /// rod out.
@@ -708,7 +708,7 @@ impl LegaiaMinigames {
 
     /// The last [`Self::fishing_pond_hud_json`] frame's sprite half - every
     /// plate, digit, gauge cap and banner cut from the overlay's sprite table
-    /// (`FUN_801D63B0`, the shared `ui_fishing_sprite` builder the two play
+    /// (`FUN_801D63B0`, the shared `fishing::sprite` builder the two play
     /// hosts draw on their GPUs) - rasterised over the pond's VRAM into a
     /// `w x h` RGBA8 overlay, transparent where nothing drew. Empty when
     /// [`Self::fishing_hud_sprites_ready`] is false.

@@ -9,7 +9,7 @@
 /// input `[0x40, 0x40, 0x00, ...]` yields `2`. On exhaustion it returns the
 /// consumed length (matching the original's walk-off-end behaviour). It is the
 /// dialog/text packet-width helper the disassembler uses for the `0x4C nE`
-/// text-balloon op; the executing field VM re-exports it from here.
+/// text-balloon op; the executing field VM calls it from here.
 pub fn packet_length(buf: &[u8]) -> usize {
     let mut count = 0usize;
     let mut i = 0usize;

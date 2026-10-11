@@ -157,7 +157,7 @@ rest are residual sector-crossers whose deficit is under one 2048-byte sector;
 supplying that sector is a disc-level relayout (what the PAL discs did at
 mastering - see [pal-localizations.md](../tooling/pal-localizations.md)).
 
-## The same question for an `container-formats::pack`: growing a mesh member
+## The same question for a `container-formats::pack`: growing a mesh member
 
 A scene's TMD [pack](pack.md) poses the relocation question in its simplest
 form, and the answer is the opposite of the MAN's: **nothing outside the pack

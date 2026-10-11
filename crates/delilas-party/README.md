@@ -51,8 +51,7 @@ mutually exclusive on a disc and share no code.
 What stays in [`legaia-patcher`](../patcher/README.md): the CLI subcommands
 (`delilas-verify`, `delilas-audit`) and the disc-gated oracles
 (`crates/patcher/tests/delilas_*_real.rs`, `enemy_anim_mirror_real.rs`,
-`nivora_field_real.rs`). The patcher re-exports the modules outside
-consumers use at `legaia_patcher::<module>`.
+`nivora_field_real.rs`).
 
 ## See also
 

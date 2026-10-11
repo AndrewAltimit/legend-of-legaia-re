@@ -1,11 +1,10 @@
 # legaia-render-kernels
 
-The wgpu-free render kernels both play hosts share, split out of
-[`legaia-engine-ui`](../engine-ui/README.md), which re-exports every module
-here at its old path (`legaia_render_kernels::gte`, ...); `legaia-engine-render`
-re-exports them again at its crate root, so native callers see no
-difference. Like engine-ui it links no wgpu, winit or cpal, so it builds for
-native and `wasm32` alike.
+The wgpu-free render kernels both play hosts share. It sits below
+[`legaia-engine-ui`](../engine-ui/README.md) and `legaia-engine-render`;
+they and the other consumers name its modules directly
+(`legaia_render_kernels::gte`, ...). Like engine-ui it links no wgpu, winit
+or cpal, so it builds for native and `wasm32` alike.
 
 ## Modules
 
@@ -58,7 +57,7 @@ native and `wasm32` alike.
 - `cast_theeder` - PROT 0904's (Theeder, spell `0x82`) beam packets: the
   four packet builders its tick body calls, as screen primitives.
 
-## Draw-prep kernels moved in from the VM and rules crates
+## Draw-prep kernels
 
 - `gte::divide` - the GTE's Unsigned Newton-Raphson perspective divide.
 - `field_light` - the field's GTE light matrix, colour matrix and back colour.

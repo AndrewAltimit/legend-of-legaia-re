@@ -437,7 +437,7 @@ the same way.
 engine-core field host captures each `0x2C` execution
 (`MoveVmGlobals::push_strip_request`), and both play hosts drain the queue on
 their draw path through one kernel, `move_strip::move_strip_prims`
-(`crates/render-kernels`, re-exported by `engine-ui`), which makes the two
+(`crates/render-kernels`), which makes the two
 projections under the frame's field camera. One deliberate difference:
 retail's wrap loops never terminate for a slab whose `u` or `v` span is not
 positive, and the port declines such a slab.

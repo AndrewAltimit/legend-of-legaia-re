@@ -34,7 +34,7 @@ let (x, z) = st.player_pos().unwrap();                     // player+0x14/+0x18 
 (`u8_at`/`u16_at`/`i16_at`/`u32_at`) plus the convenience accessors above. The
 anchors and their readers live in `legaia_ram_image::game_anchors`, shared with
 the mednafen reader so both emulators answer "which scene is this state in?"
-identically; this crate re-exports the constants and delegates. The position
+identically; this crate delegates to them. The position
 fields are read as `i16` - the facing word at `player+0x16` sits between `+0x14`
 (X) and `+0x18` (Z), so a `u32` read would fold it into the coordinate.
 

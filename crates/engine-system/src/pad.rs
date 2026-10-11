@@ -3,9 +3,7 @@
 //! publishes ([`PACK_UP`] and siblings, [`retail_packed`]).
 //!
 //! They live here, below `engine-core`, so the minigame rules engines can
-//! take pad words without depending on the simulation crate. `engine-core`
-//! re-exports both halves at their original paths (`input::PadButton`,
-//! `dev_menu::PACK_*` / `dev_menu::retail_packed`).
+//! take pad words without depending on the simulation crate.
 
 /// Bit positions for the 16 pad buttons. Values match the PSX hardware
 /// layout (0x0001 = Select … 0x8000 = Square) so engine-side code can

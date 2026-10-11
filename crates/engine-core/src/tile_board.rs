@@ -1,7 +1,7 @@
 //! The op-`0x49` tile board. Its rules (the cell codes, the header, the walk
 //! state machine, the fades, the prompt) live in
-//! `legaia_engine_minigames::tile_board` and are re-exported here; this file
-//! keeps the per-frame draw assembly, which reads the `World`.
+//! `legaia_engine_minigames::tile_board`; this file keeps the per-frame draw
+//! assembly, which reads the `World`.
 
 use legaia_engine_minigames::tile_board::*;
 
@@ -48,8 +48,7 @@ pub struct TileActorDraw {
 ///
 /// This is the port site for the board's draw pass, and the only one: both
 /// hosts call it (`play-window`'s redraw and the browser play page's
-/// `play_tile_board`). The `engine-shell` module of the same name is a bare
-/// re-export kept for the native bin's import path.
+/// `play_tile_board`).
 ///
 /// Provenance caveat - the dump this cites is a **wrong-base print**. The
 /// board renderer is not a function: it is the tail block of the walk SM

@@ -70,7 +70,7 @@
 //! The chunk stride is exactly `0x8224` (4-byte header + a 33312-byte TIM);
 //! each TIM is a 256x256 4bpp image plus a 256-colour (16x16) sub-CLUT row at
 //! VRAM `(0, 490..=497)`. The character atlases sit just below the
-//! [row-479 NPC CLUT band](legaia_asset::npc_palette) but above the dialog-font
+//! row-479 NPC CLUT band (`docs/formats/npc-palette.md`) but above the dialog-font
 //! glyph band - the runtime uploads them via the same targeted-upload pass
 //! the field engine uses for scene textures.
 //!
@@ -131,7 +131,7 @@
 //! a dispatcher tag: the field engine routes type-0x02 chunks through one
 //! installer chain and type-0x09 chunks (which only appear in this pack)
 //! through the battle-form chain. The TMD body shape is otherwise identical
-//! to the one documented in `legaia_asset::tmd`.
+//! to the one documented in `legaia_tmd`.
 
 use anyhow::{Context, Result, bail};
 

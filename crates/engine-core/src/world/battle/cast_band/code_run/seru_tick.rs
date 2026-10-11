@@ -18,7 +18,7 @@ impl World {
     /// heal amount is passed as `0`.
     ///
     /// The magnitude is not lost by that: `seru_tick_heal_amount` computes
-    /// `cast_seru_ticks_b::orb_heal_amount` of the caster's per-spell magic
+    /// `seru_magic_ticks::orb_heal_amount` of the caster's per-spell magic
     /// level (the character record's `+0x161` byte, found by scanning the
     /// learned-id list at `+0x13D`) and overrides the spell catalog's
     /// placeholder inside the fold, so the amount a live Orb restores is
@@ -99,7 +99,7 @@ impl World {
                             .map_or(0, |a| a.battle.max_hp)
                     })
                     .collect();
-                // Spell id for a `cast_seru_ticks_b` entry: the player
+                // Spell id for a `seru_magic_ticks` entry: the player
                 // Seru-magic block is linear, `entry = 903 + (id - 0x81)`.
                 let spell_id = (entry - 903 + 0x81) as u8;
                 let cleanse =

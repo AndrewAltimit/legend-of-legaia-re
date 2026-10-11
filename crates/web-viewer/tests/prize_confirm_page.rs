@@ -2,7 +2,7 @@
 //! `FUN_801D603C` (`choice_panel_draws_for`), reach row `801d603c` in
 //! `docs/tooling/reach-triage.md`.
 //!
-//! Both hosts draw the confirm through `ui_prize_exchange::prize_exchange_draws_for`
+//! Both hosts draw the confirm through `prize_exchange::prize_exchange_draws_for`
 //! whenever the session's confirm phase is up, so what reaches it is a prize
 //! walked past the coin and held-cap gates. The gate is seeded the way the
 //! page's cheat panel and a clerk's `49 07 <block>` seed it - coins, then the

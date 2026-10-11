@@ -6,7 +6,7 @@
 //! REF: FUN_8001FE70 (the battle-init `scene_tmd_stream` loader - chunk 0's
 //! TMD allocated and copied with its pointer at `0x8007B864`, type-`0x01`
 //! chunks uploaded through `FUN_800198E0`, a type-`0x02` chunk or zero size
-//! ending the walk. Its walker is ported as `legaia_asset`'s
+//! ending the walk. Its walker is ported as `legaia_scene_formats::scene_tmd_stream`'s
 //! type-`0x02`-terminated chunk walker; this module's whole-scene magic scan
 //! is not that routine, which the old `PORT:` here claimed it was.)
 //!

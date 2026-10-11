@@ -561,7 +561,7 @@ pub struct Actor {
     pub move_buffer: MoveBufferState,
 
     /// Battle-action per-actor state. Populated only when the world is in
-    /// [`SceneMode::Battle`].
+    /// [`SceneMode::Battle`](legaia_engine_mode::mode::SceneMode::Battle).
     pub battle: BattleActor,
 
     /// Sprite / actor-VM scratch fields:

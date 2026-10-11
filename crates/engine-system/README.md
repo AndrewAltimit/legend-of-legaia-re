@@ -8,9 +8,8 @@ the bottom of the engine stack: no other engine crate is below it. Free of wgpu,
 cpal, so it builds for native and `wasm32` alike.
 
 `legaia-engine-core` owns the composition - `World` drives the fade, ticks the
-sound state at frame begin and seats the mode-entry results - and re-exports
-every module here at its old path, so `legaia_engine_system::input` and
-`legaia_engine_system::input` name the same module.
+sound state at frame begin and seats the mode-entry results. Consumers name
+the modules here directly (`legaia_engine_system::input`).
 
 ## What belongs here
 

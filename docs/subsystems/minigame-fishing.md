@@ -22,9 +22,9 @@ The port runs the whole game as one session type, `PondSession`, on all three ho
 | Prize tables | `0x801D8088` (Buma) / `0x801D80D0` (Vidna), 6 rows, stride 12 |
 | Persistent state | `_DAT_8008444C..0x8008446C` in the save block ([RAM state](#ram-state)) |
 | Parsers | `legaia_minigame_formats::fishing_species`, `fishing_exchange`, `fishing_sprites`, `fishing_captions` |
-| Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md), re-exported as `legaia_engine_fishing::fishing*` |
+| Rules port | crate [`engine-fishing`](../../crates/engine-fishing/README.md) (`legaia_engine_fishing::fishing*`) |
 | World / scene port | `engine-core`: `fishing_venue`, `fishing_scene`, `fishing_hub`, `fishing_exchange_input`, `World::tick_fishing` |
-| Draw port | `engine-ui`: `ui_fishing`, `ui_fishing_sprite`, `ui_fishing_hub`, `ui_fishing_exchange`, `ui_fishing_line`, `ui_fishing_rod` |
+| Draw port | `engine-ui`: `fishing`, `fishing::sprite`, `fishing::hub`, `fishing::exchange`, `fishing::line`, `fishing::rod` |
 
 Dump files are `ghidra/scripts/funcs/overlay_fishing_<addr>.txt` for every `FUN_801cxxxx` / `FUN_801dxxxx` named on this page.
 
@@ -840,7 +840,7 @@ The pad globals `_DAT_8007b850` (held) and `_DAT_8007b874` (edge) and the frame 
 
 ## Engine port
 
-The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/README.md), re-exported as `legaia_engine_fishing::fishing*` and `legaia_engine_fishing::fishing*`. Entry point: [`fishing.rs`](../../crates/engine-fishing/src/fishing.rs).
+The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/README.md), modules `legaia_engine_fishing::fishing*`. Entry point: [`fishing.rs`](../../crates/engine-fishing/src/fishing.rs).
 
 | Retail | Port |
 |---|---|
@@ -855,10 +855,10 @@ The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/REA
 | `FUN_801d0474` / `FUN_801d72a0` / `FUN_801d0f5c` | `FishingMenu`, `help_panel_layout`, `RodLureSelect`, `FishingHub` |
 | `FUN_801d0c3c` / `FUN_801d092c` / `FUN_801d06c8` | `PrizeExchange` |
 | `FUN_801d6028` / `FUN_801d79e0` / `FUN_801d7bb8` | `minigame_floor::ground_height`, `step_patch_lookup`, `polar_offset` |
-| `FUN_801d13f0` / `FUN_801d1580` | `ui_fishing::persistent_hud_draws`, `catch_hud_draws` (+ `length_display` / `extent_display` / `cast_power_percent`) |
+| `FUN_801d13f0` / `FUN_801d1580` | `engine-ui::fishing::hud::persistent_hud_draws`, `catch_hud_draws` (+ `length_display` / `extent_display` / `cast_power_percent`) |
 | `FUN_801d78ec` / `FUN_801d75dc` / `FUN_801d71d4` / `FUN_801d6f10` / `FUN_801d7528` | `banner_from_left_draw` / `banner_from_right_draw` / `strike_splash_draws` / `banner_miss_draw` / `banner_converge_draws`, `BannerTimer` |
 | `FUN_801d1870` / `FUN_801d1a90` / `FUN_801d76e0` | `bar_frame` / `power_bar_frame` / `number_digit_cells` |
-| `FUN_801D63B0` | `ui_fishing_sprite` over `legaia_minigame_formats::fishing_sprites` |
+| `FUN_801D63B0` | `engine-ui::fishing::sprite` over `legaia_minigame_formats::fishing_sprites` |
 
 **Session.** `PondSession` composes the kernels into the cast -> wait -> strike -> fight -> score loop. It is the only fishing session: the minigames page drives it directly (`crates/web-viewer/src/minigames_fishing.rs`), and the native window and the browser play page run it through `World::tick_fishing`. No Sony bytes are baked in; the species, spawn, cadence, sprite, prize and caption tables decode from the user's disc.
 
@@ -876,9 +876,9 @@ The session seeds from the persistent words the world keeps between sessions (`W
 - the reeling-line actor (`LineActorSim`): armed on the hook (the `HOOK_CUE` arm phase), tracked through the fight, and run through the staged catch celebration on a landed fish - the `CELEBRATION_STAGE_FRAMES` timer firing `CELEBRATE_CUE` plus every unlocked `celebration_bursts` tier into the effect pool and SFX scheduler;
 - the strike splash (`fishing_chrome::splash_burst`) on the cadence-match event, the point-exchange panel framed by `centred_panel` and swayed by `sway_vector`, and the overlay's developer readout (`debug_tile` / `debug_readout_visible`) when the dev-menu session is up and the pad modifier is held.
 
-**HUD consumer.** `fishing_hud_draws_for` (in [`ui_fishing`](../../crates/engine-ui/src/fishing/hud.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_minigame_formats::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
+**HUD consumer.** `fishing_hud_draws_for` (in [`engine-ui::fishing::hud`](../../crates/engine-ui/src/fishing/hud.rs)) renders the `HudDraw` list - the fishing sibling of `battle_hud_draws_for`. It draws `Number` and `Count` items through the ported digit field as font-atlas text, resolves `Caption` items against host-supplied strings (read from the disc by `legaia_minigame_formats::fishing_captions`), resolves `Glyph` ids and gauge fills through a host-supplied atlas lookup, and routes `Bar` / `PowerBar` through `bar_frame` / `power_bar_frame`. An id the host cannot place is dropped.
 
-The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `ui_fishing_sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer the captions, the lure count and the gauge fills; the native window fills the gauges from its font's solid texel and the play page from the `bars` payload.
+The sprite half - the HI SCORE / POINT plates, gauge labels and caps, banners, score digits - goes through `engine-ui::fishing::sprite`. The native window and the browser play page draw the quads in their screen-primitive pass; the minigames page rasterises them over its pond VRAM (`screen_prim_raster::rasterize_rgba_overlay`) onto its HUD canvas. With the table decoded, `FishingHudAtlas::sprites_drawn` leaves the text consumer the captions, the lure count and the gauge fills; the native window fills the gauges from its font's solid texel and the play page from the `bars` payload.
 
 ## Open
 

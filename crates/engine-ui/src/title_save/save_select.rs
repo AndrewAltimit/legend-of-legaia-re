@@ -294,7 +294,7 @@ pub const TITLE_ART_POS: (i32, i32) = (33, 6);
 pub const TITLE_ART_SIZE: (i32, i32) = (254, 148);
 
 /// Source rects for the save-menu atlas, mirrored from
-/// [`legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*`] (9-slice
+/// `legaia_ui_formats::title_pak::OVERLAY_SYSTEM_UI_PANEL_*` (9-slice
 /// panel chrome) + `OVERLAY_SAVE_MENU_BAND_SLOT[12]` (pills). Passed
 /// into [`save_select_chrome_draws_for`] so it can build SpriteDraws
 /// without depending on the engine-core build of the atlas.

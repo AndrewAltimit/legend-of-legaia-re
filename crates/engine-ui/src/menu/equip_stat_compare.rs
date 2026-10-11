@@ -726,7 +726,7 @@ pub const COMPARE_LABELS_SPD: [&str; 3] = ["SPD", "INT", "AGL"];
 /// the window table did not parse at all).
 ///
 /// A host fills this from the menu-overlay window table through
-/// `ui_menu_window_dispatch::painter_at`, so an id whose descriptor names a
+/// `menu::window_dispatch::painter_at`, so an id whose descriptor names a
 /// different routine is skipped rather than mis-drawn.
 ///
 /// REF: FUN_801d56fc - window 36's renderer, ported as

@@ -1,7 +1,7 @@
 //! Disc-gated: drive the **real** fishing overlay tables (PROT 0972) through
 //! the one engine fishing session ([`legaia_engine_fishing::fishing::PondSession`]).
 //!
-//! The species parser itself is pinned by `legaia-asset`'s `fishing_species_real`;
+//! The species parser itself is pinned by `legaia-minigame-formats`' `fishing_species_real`;
 //! this closes the engine end - the load path every host takes
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(972)` ->
 //! `static_overlay::as_loaded` -> `SceneHost::enter_fishing_from_overlay`)

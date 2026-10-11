@@ -1,7 +1,7 @@
 //! Texture replacement: swap a TIM on the disc for a user-authored image.
 //!
 //! Targets come in two tiers, matching the two TIM catalogs in
-//! `legaia_asset`:
+//! `legaia_disc_audit`:
 //!
 //! - **raw** - a TIM stored uncompressed (the flat-scan
 //!   `legaia_disc_audit::tim_catalog` population: standalone entries, `timpack`

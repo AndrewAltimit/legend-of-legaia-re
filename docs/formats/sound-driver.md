@@ -52,7 +52,7 @@ So `bse.dat` leads with `[u16 tag @0][u16 @2 = even byte-offset of the record ta
 
 ## `.dpk` is a streaming-chunk container
 
-`FUN_8001FA88` loads the per-scene `.dpk` into the caller's buffer (`param_3`) and does **not** read it; the **consumer** is `FUN_8001FE70`, which `FUN_800513F0` calls on that same buffer right after the load (`ghidra/scripts/funcs/800513f0.txt:405-413` passes `gp[0xA8C]` to both). `FUN_8001FE70` (`ghidra/scripts/funcs/8001fe70.txt`) is the generic **streaming-chunk walker** the asset dispatcher already models (`legaia_asset` lib docs; `[u32 (type << 24) | (size & 0xFFFFFF)][size bytes, 4-padded]` chunks, advance by `(size & ~3) + 4`, type `1` → `FUN_800198E0`, type `2` = terminator). So the `.dpk` / `sound_data2` per-scene sound pack **is that container**, not a novel layout.
+`FUN_8001FA88` loads the per-scene `.dpk` into the caller's buffer (`param_3`) and does **not** read it; the **consumer** is `FUN_8001FE70`, which `FUN_800513F0` calls on that same buffer right after the load (`ghidra/scripts/funcs/800513f0.txt:405-413` passes `gp[0xA8C]` to both). `FUN_8001FE70` (`ghidra/scripts/funcs/8001fe70.txt`) is the generic **streaming-chunk walker** the asset dispatcher already models (`legaia_container_formats` lib docs; `[u32 (type << 24) | (size & 0xFFFFFF)][size bytes, 4-padded]` chunks, advance by `(size & ~3) + 4`, type `1` → `FUN_800198E0`, type `2` = terminator). So the `.dpk` / `sound_data2` per-scene sound pack **is that container**, not a novel layout.
 
 Empirically confirmed against the disc: PROT `0877` (`sound_data2`) walks cleanly as `[type 0: 0x2820][type 1: 0x1BA90][type 2: terminator]` and the type-`2` marker lands inside the file - the same shape `FUN_8001FE70` expects.
 

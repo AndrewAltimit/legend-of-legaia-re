@@ -9,19 +9,15 @@
 //!
 //! The primitive record, the ordering-table sort and the vertex builder are
 //! **not** here: they are [`legaia_render_kernels::screen_prim`], the wgpu-free
-//! layer both hosts link. This module is the native side's re-export of that
-//! model plus the pieces that need `engine-render`'s own types - which today is
-//! the afterimage wire and the constants pin below.
-//!
-//! Everything the old inline definitions offered is still reachable at this
-//! path (`legaia_render_kernels::screen_prim::ScreenPrim`, `::build_geometry`, ...), so
-//! call sites and tests read unchanged; what changed is that the browser play
-//! page now reaches the same definitions instead of needing a second set.
+//! layer both hosts link (`legaia_render_kernels::screen_prim::ScreenPrim`,
+//! `::build_geometry`, ...). This module holds the pieces that need
+//! `engine-render`'s own types - the afterimage wire and the constants pin
+//! below.
 //!
 //! # The GPU side
 //!
-//! [`build_geometry`] converts a primitive list into a flat NDC vertex/index
-//! buffer plus a list of [`DrawRun`]s (contiguous quads sharing a blend class).
+//! [`build_geometry`](legaia_render_kernels::screen_prim::build_geometry) converts a primitive list into a flat NDC vertex/index
+//! buffer plus a list of [`DrawRun`](legaia_render_kernels::screen_prim::DrawRun)s (contiguous quads sharing a blend class).
 //! [`crate::Renderer`] uploads that geometry once per frame and issues one draw
 //! per run, selecting the opaque pipeline or the matching per-ABR blend
 //! pipeline. Textured quads sample the shared PSX VRAM texture with the same
@@ -38,7 +34,7 @@
 //! into the *same* ordering table and one `DrawOTag` walks it.
 //!
 //! **The coordinate space is the PSX display, not the window.** The renderer
-//! hands [`build_geometry`] the [`legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH`] /
+//! hands [`build_geometry`](legaia_render_kernels::screen_prim::build_geometry) the [`legaia_render_kernels::vram_capture::PSX_SCREEN_WIDTH`] /
 //! `PSX_SCREEN_HEIGHT` pair and the overlay stretches over the whole surface -
 //! matching the `orthographic_rh(0, 320, 240, 0)` the native shell's
 //! `screen_fx` meshes already use.

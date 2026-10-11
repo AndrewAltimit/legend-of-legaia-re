@@ -2,8 +2,8 @@
 //! through it (the level-up stat jitter, the minigame rules engines).
 //!
 //! It lives here, below `engine-core`, so the minigame crate can draw from
-//! the same generator `engine-battle::levelup` re-exports without depending on
-//! the simulation crate. [`bios_rand_shape`] is the
+//! the same generator `engine-battle::levelup` rolls through without
+//! depending on the simulation crate. [`bios_rand_shape`] is the
 //! stateless one-step form of the same recurrence.
 
 /// Faithful PSX BIOS `rand()` (BIOS call `A(0x2F)`) - a 32-bit LCG.

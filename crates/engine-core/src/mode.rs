@@ -1,8 +1,8 @@
 //! The mode seat's `World` seam.
 //!
 //! The retail mode table, [`ModeDriver`], [`ModeSeat`] and [`SceneMode`]
-//! live in [`legaia_engine_mode::mode`] and are re-exported here at their old
-//! paths. The seat reaches the world only through [`ModeWorld`]; this module
+//! live in [`legaia_engine_mode::mode`]. The seat reaches the world only
+//! through [`ModeWorld`]; this module
 //! is where `World` implements it, plus the field-entry demo handler, which
 //! drives the actor VM and so needs the whole world.
 

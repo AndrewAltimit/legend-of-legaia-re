@@ -65,7 +65,7 @@ fn extracted_prot() -> Option<PathBuf> {
 }
 
 /// Re-derive the disc-wide ambient-facing census. Mirrors the corpus walk in
-/// `legaia-asset`'s `man_section_corpus` oracle: bundle -> MAN descriptor
+/// `legaia-scene-formats`' `man_section_corpus` oracle: bundle -> MAN descriptor
 /// (type byte `0x03`) -> LZS -> section parse -> motion records.
 fn census() -> Option<Vec<Site>> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {

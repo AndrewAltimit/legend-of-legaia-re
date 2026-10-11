@@ -133,16 +133,15 @@ impl SceneShops {
 }
 
 // The shop-record scanner (`scan` / `parse_record` / name reader) and its unit
-// tests live in [`legaia_scene_formats::shop_stock`]; `shop_sites` / `ShopSite` above
-// re-export them. This module keeps only the randomizer-specific MAN
-// locate-with-budget + repack wrapper.
+// tests live in [`legaia_scene_formats::shop_stock`]. This module keeps only
+// the randomizer-specific MAN locate-with-budget + repack wrapper.
 
 #[cfg(test)]
 mod tests {
 
     use legaia_scene_formats::shop_stock::scan as shop_sites;
 
-    /// The re-exported scanner finds an embedded shop even past arbitrary bytes
+    /// The shared scanner finds an embedded shop even past arbitrary bytes
     /// (the randomizer relies on this for `SceneShops`). Full record-validation
     /// coverage lives in `legaia_scene_formats::shop_stock`.
     #[test]

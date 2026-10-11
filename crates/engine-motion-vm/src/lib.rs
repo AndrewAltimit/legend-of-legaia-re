@@ -5,12 +5,11 @@
 //!
 //! Ported from the routines' disassembly like the rest of
 //! `legaia-engine-vm`, with no bytes from the original executable. Every
-//! module names only its siblings, `legaia-asset` (the MAN motion-script
-//! opcode widths) and `legaia-engine-battle-vm` (the PsyQ `rand` step and the
-//! bearing LUT), so the crate sits below `legaia-engine-vm`, which re-exports
-//! each module at its old path. Doc links that pointed up at it are plain
-//! code spans, since rustdoc cannot resolve a link into a dependent crate.
-//! See the crate README for the module map.
+//! module names only its siblings, `legaia-scene-formats` (the MAN
+//! motion-script opcode widths) and `legaia-engine-system` (the PsyQ `rand`
+//! step), so the crate sits below `legaia-engine-vm`. Doc comments name its
+//! items in plain code spans, since rustdoc cannot resolve a link into a
+//! dependent crate. See the crate README for the module map.
 
 #![forbid(unsafe_code)]
 

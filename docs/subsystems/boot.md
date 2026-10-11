@@ -569,7 +569,7 @@ sub-mode `0x11`.
 #### The port's seat at the mode table
 
 The engine's counterpart of `_DAT_8007B83C` is `ModeSeat`
-(`crates/engine-mode/src/mode.rs`, re-exported as `engine-core::mode`), owned
+(`crates/engine-mode/src/mode.rs`), owned
 by `engine-session`'s `BootSession` and driven once per frame from
 `BootSession::tick`. It is a seat rather than a mirror because its **writes are
 the port's own transitions**: the session enters `MAIN INIT` where retail's
@@ -706,7 +706,7 @@ neighbouring block on two of the three.
 | Call site | Constant | Extraction entry | Pinned by |
 |---|---|---|---|
 | `FUN_8003E360` (effect data) | raw `0x3D5` | 979 | `efect init` / `battle bgm %d` at the entry's head |
-| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as an `container-formats::pack` of PSX TIMs |
+| `FUN_8002574C` (CARD-mode init) | raw `0x37E` | 892 | parses as a `container-formats::pack` of PSX TIMs |
 | `FUN_80025BA0` (slot-B default) | param `5` / `6` | 900 / 901 | the summon-render pair |
 
 Reading either raw constant *as* an extraction index lands two entries high on
@@ -1252,7 +1252,7 @@ menu overlay's box / centred-text drawers `FUN_801E36C4`, `FUN_801E3EE0` and
 
 `title_prim` is the decoded packet protocol, **not the live draw path**: the
 renderer has no packet-level ingest, and both hosts draw the title and card
-screens through the draw-list builders in `engine-ui` (`ui_title_save`).
+screens through the draw-list builders in `engine-ui` (`title_save`).
 
 ### State struct (extended)
 

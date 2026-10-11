@@ -34,12 +34,8 @@ pub mod window;
 pub use glam;
 pub use wgpu;
 
-// The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`. The items
-// below are the ones this crate and its dependents (the native shell, the
-// asset-viewer, parity, and this crate's tests) name at the crate-root path;
-// the list is explicit so a new `engine-ui` item does not silently join this
-// crate's API. Anything else is reached as `legaia_engine_ui::<item>` (or add
-// it here when a native caller needs the old path).
+// The pure, wgpu-free UI draw-list layer lives in `legaia-engine-ui`; its
+// items are named as `legaia_engine_ui::<item>`.
 use legaia_engine_ui::TextDraw;
 
 pub mod dyn_light;
@@ -117,8 +113,8 @@ impl OverlayBlendSpan {
     }
 }
 
-/// GPU-resident aliases of the moved [`SpriteDraw`] / [`TextOverlay`] shapes.
-/// [`SpriteDraw`] itself lives in `legaia-engine-ui`; these two hold a wgpu
+/// GPU-resident aliases of the moved [`SpriteDraw`](legaia_engine_ui::SpriteDraw) / [`TextOverlay`] shapes.
+/// [`SpriteDraw`](legaia_engine_ui::SpriteDraw) itself lives in `legaia-engine-ui`; these two hold a wgpu
 /// [`UploadedFontAtlas`] handle so they stay in this crate.
 pub type UploadedSpriteAtlas = UploadedFontAtlas;
 pub type SpriteOverlay<'a> = TextOverlay<'a>;

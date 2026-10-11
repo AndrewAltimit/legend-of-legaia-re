@@ -75,7 +75,7 @@ pub fn venue_camera(e: &DanceSceneEntry) -> FieldCameraView {
 }
 
 // --- the camera keyframe track (FUN_801CF470, 0x801CF51C..0x801CF7D8) ----
-// Lives in the minigame crate (`dance::camera_track`); re-exported here.
+// Lives in the minigame crate (`dance::camera_track`).
 use legaia_engine_minigames::dance::DanceCameraPose;
 
 /// A track pose as the port's field-frame camera: the entry's `H` and the
@@ -510,7 +510,7 @@ pub enum DanceVenueEdge {
 /// walked-in scene is never unloaded.
 ///
 /// Every staged frame then advances the run's camera keyframe track
-/// ([`DanceCameraTrack::tick`], via [`legaia_engine_minigames::dance::DanceGame::advance_camera`])
+/// ([`DanceCameraTrack::tick`](legaia_engine_minigames::dance::DanceCameraTrack::tick), via [`legaia_engine_minigames::dance::DanceGame::advance_camera`])
 /// and re-frames the staged camera on the pose it wrote
 /// ([`venue_camera_at`]). A run with no track, or the how-to demo, keeps the
 /// entry's pose.

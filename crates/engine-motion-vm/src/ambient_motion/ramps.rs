@@ -315,7 +315,7 @@ pub enum ZoneRampTick {
 /// value tracks the player and can run backwards; the actor never retires
 /// itself on a completed ramp. What clears them is the scene MAN loader's
 /// second inlined retire sweep (`FUN_8003AEB0` at `0x8003B414`), which is
-/// keyed on this very VA - see `engine_core::actor_handler`.
+/// keyed on this very VA - see `legaia_engine_field::actor_handler`.
 ///
 /// Two global gates come first, both shared with the field touch dispatch:
 /// the player's engaged flag (`_DAT_8007C364[+0x10] & 0x80000`) and the

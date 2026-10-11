@@ -139,7 +139,7 @@ impl PlayWindowApp {
         let title_draw_vec = self.title_screen_sprite_draws(w, h);
         let menu_glyph_draw_vec = self.title_menu_glyph_sprite_draws(w, h);
         // Muscle Dome hub screens (intro card / ROUND banner / INTERVAL +
-        // score tally), placed by the shared `other_game_hud` emitters.
+        // score tally), placed by the shared `muscle_dome_hud` emitters.
         // Rides sprite slot 1: the boot-UI overlays that own it are all
         // inactive while a dome leg or its between-legs beat is up.
         let (muscle_hub_draw_vec, muscle_hub_blend) = self.muscle_hub_sprite_draws(w, h);

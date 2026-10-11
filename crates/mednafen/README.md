@@ -36,8 +36,7 @@ Modules: `container` (MDFNSVST section index), `psx` (CPU / GTE register
 snapshot), `gpu` / `spu` (typed section accessors). The emulator-neutral
 analysis of the RAM a state carries - `extract`, `game_anchors`, `diff`,
 `bisect`, `prim_pool` + `source_hunt`, `prim_dispatch`, `scenarios` - lives in
-[`legaia-ram-image`](../ram-image/README.md) and is re-exported here at its
-old paths; the CLI below drives both.
+[`legaia-ram-image`](../ram-image/README.md); the CLI below drives both.
 
 ## CLI
 

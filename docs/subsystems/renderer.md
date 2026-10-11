@@ -81,8 +81,8 @@ flowchart TD
 |---|---|
 | Primitive walk, mesh builders, coplanar passes | `crates/tmd` (`legaia_prims`, `mesh`) |
 | wgpu renderer, VRAM page, shaders, blend / dither / occlusion kernels | `crates/engine-render` |
-| wgpu-free kernels both hosts link: GTE math, `screen_prim`, `vram_capture`, `battle_intro`, `scene_lighting`, `prim_near_reject` | `crates/render-kernels`, re-exported by `crates/engine-ui` |
-| Scene VRAM build, culls, lifts, per-frame draw plans | `crates/engine-core` and the crates it re-exports |
+| wgpu-free kernels both hosts link: GTE math, `screen_prim`, `vram_capture`, `battle_intro`, `scene_lighting`, `prim_near_reject` | `crates/render-kernels` |
+| Scene VRAM build, culls, lifts, per-frame draw plans | `crates/engine-core` and the kernel crates under it |
 | Native draw-list assembly | `crates/engine-shell` (`window/`) |
 | Browser draw-list assembly and WebGL shaders | `crates/web-viewer`, `site/js/webgl-*.js` |
 
@@ -471,7 +471,7 @@ Evidence:
 
 **Port.** Both hosts run one kernel,
 [`field_lit_mesh`](../../crates/engine-field/src/field_lit_mesh.rs)
-(re-exported as `engine-field::field_lit_mesh`), over the light state in
+(`engine-field`), over the light state in
 [`render-kernels::field_light`](../../crates/render-kernels/src/field_light.rs). The
 mesh builder keeps each lit vertex's normal and object colour
 (`legaia_tmd::mesh::LitVertex`). Because the intensity depends on the draw's
@@ -1728,11 +1728,10 @@ semi-transparency, sampling the shared VRAM through the same CLUT decode the
 3D path uses. `order_primitives` reproduces `AddPrim` + `DrawOTag` exactly:
 descending OT index, LIFO within a bucket.
 
-**The model lives in the shared kernel `screen_prim`** (`render-kernels`,
-re-exported by `engine-ui`): the primitive record (`ScreenPrim` /
+**The model lives in the shared kernel `screen_prim`** (`render-kernels`): the primitive record (`ScreenPrim` /
 `ScreenQuad` / `FlatQuad`), the ABR extraction, the ordering-table sort, and
 `build_geometry` - the only public route from a primitive list to something
-drawable. `engine-render`'s `screen_overlay` re-exports it and adds the wgpu
+drawable. `engine-render`'s `screen_overlay` adds the wgpu
 wiring plus the afterimage packet builder; the browser play page links the
 same module and uploads the same three arrays to WebGL2. A host receives
 only `build_geometry`'s output (a vertex buffer, an index buffer, a run
@@ -1788,8 +1787,7 @@ for: the per-frame, per-style working-set owner between the transition state
 machine (`engine-core`, driven by `World::tick_encounter`) and the ordering
 table. It seeds the selected style's working set, advances it off the
 transition entity's own `+0x1A` clock, and emits `ScreenPrim`s plus the
-per-style fade. It is wgpu-free (`render-kernels`, re-exported by `engine-ui`
-and at its old `engine-render` path).
+per-style fade. It is wgpu-free (`render-kernels`).
 
 **All five styles draw**, each through its own retail packet builder, so
 every battle opens with the transition retail gives it
@@ -2244,11 +2242,10 @@ is the gate that measures it.
 that lives there - `psx_dither`, `psx_blend`, `dyn_light`, the shadow half of
 `scene_lights`, `occlusion_fade` - is native-only as code, and its browser
 twin is a second implementation in GLSL or JS. Kernels in `engine-core`,
-`engine-vm`, `render-kernels` (re-exported by `engine-ui`) or `legaia-tmd`
+`engine-vm`, `render-kernels` or `legaia-tmd`
 are one implementation both hosts link, which tier 7 can pair by name. That
 is why `gte`, `vram_capture`, `billboard`, `streak_pass`, `screen_prim` and
-the `battle_intro` emitter live in `render-kernels`, re-exported at their old
-`engine-render` paths.
+the `battle_intro` emitter live in `render-kernels`.
 
 So the two halves of the render law are policed differently: the draw-list
 half is one kernel, and a checker can ask "does this surface call it"; the
@@ -2795,7 +2792,7 @@ reference `blend_apply` - unit-tested against the PSX equations.
 
 ## GTE math module
 
-`crates/render-kernels/src/gte.rs` (re-exported as `render-kernels::gte`) is a
+`crates/render-kernels/src/gte.rs` (`render-kernels::gte`) is a
 fixed-point GTE math module in the retail accumulator shape: q3.12 rotation
 matrices, q19.12 translation vectors, i64-widened multiply-add. It exposes:
 

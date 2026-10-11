@@ -1,8 +1,8 @@
 //! The shop screens' `World` seam.
 //!
 //! The shop's sessions, layout kernels and window models live in
-//! [`legaia_engine_menus::shop`] and are re-exported here at their old
-//! paths. What stays is the one entry point that reads the world: the
+//! [`legaia_engine_menus::shop`]. This module holds the one entry point
+//! that reads the world: the
 //! window-41 party compare, which takes the roster and the equipment stat
 //! table off a [`World`], and the page-length helper keyed on the menu
 //! runtime's state.

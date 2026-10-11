@@ -3,7 +3,7 @@
 use crate::*;
 
 /// Plain-data row for the field-menu draw. Engines build these from
-/// `engine_core::field_menu::FieldMenuView::rows` so this crate doesn't
+/// `legaia_engine_menus::field_menu::FieldMenuView::rows` so this crate doesn't
 /// depend on engine-core.
 pub struct FieldMenuRowView<'a> {
     pub label: &'a str,

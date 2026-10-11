@@ -41,8 +41,7 @@ other, and the two arts mods whose builders reach into it - the Super Arts
 Pack (`super_arts_pack`) and the arts-name fix (`arts_name_fix`). The
 disc-gated oracles (`crates/patcher/tests/arts_*_real.rs`,
 `super_art_*_real.rs`, `oscillating_ap_real.rs`) stay with the patcher too,
-since they drive the edits through `apply`. The patcher re-exports the
-modules outside consumers use at `legaia_patcher::<module>`.
+since they drive the edits through `apply`.
 
 ## See also
 

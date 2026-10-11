@@ -581,8 +581,8 @@ fn native_battle_hud_hp_tints_span_the_retail_tiers() {
     );
 }
 
-/// The production path: `engine-ui`'s `party_panel_stage_x` (re-exported
-/// by `engine-render`, called by `battle_hud_draws_for`'s roster loop)
+/// The production path: `engine-ui`'s `party_panel_stage_x` (called by
+/// `battle_hud_draws_for`'s roster loop)
 /// reads the canonical `engine-vm` port of retail's `FUN_801D84C0`
 /// anchor table - `panel_anchors` - rather than mirroring it as
 /// literals. Assert the production function returns the kernel's values

@@ -8,19 +8,15 @@
 //! the debug character editor, key rebinding, game over and the inn: the
 //! `World`-free half of the engine's menu layer. The field dialog pager and
 //! the inline-dialogue / cutscene-timeline context state live one crate
-//! down, in `legaia-engine-dialog`, and are re-exported here.
+//! down, in `legaia-engine-dialog`.
 //!
 //! Every module's whole dependency closure inside the engine is in this
-//! crate or below it, so it sits strictly below `legaia-engine-core`,
-//! which re-exports each module at its old path. Doc links that pointed
-//! back up at `engine-core` are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate. See the crate README for the
-//! module map.
+//! crate or below it, so it sits strictly below `legaia-engine-core`. Doc
+//! comments name `engine-core` items in plain code spans, since rustdoc
+//! cannot resolve a link into a dependent crate. See the crate README for
+//! the module map.
 
 #![forbid(unsafe_code)]
-
-// The dialog pager and the spawned-context state, in `legaia-engine-dialog`;
-// re-exported here at the paths they had as modules of this crate.
 
 pub mod battle_input;
 pub mod battle_open;

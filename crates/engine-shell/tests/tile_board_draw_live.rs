@@ -9,8 +9,8 @@
 //!    play-window exposes the `LEGAIA_TILE_BOARD_DEMO=1` synthetic trigger).
 //! 2. A boot of a real field scene through [`BootSession`], installing a
 //!    board from the same 14-byte op window the field VM would deliver,
-//!    then asserting the shell draw assembly
-//!    ([`legaia_engine_shell::tile_board_draws`]) yields a per-cell draw at
+//!    then asserting the draw assembly
+//!    ([`legaia_engine_core::tile_board`]) yields a per-cell draw at
 //!    every drawable cell, with every tile actor's template mesh resolved
 //!    from the resident global TMD pool (the set the play-window redraw
 //!    pass uploads + draws).

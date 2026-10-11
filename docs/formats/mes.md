@@ -10,7 +10,7 @@ MES is the container and text encoding for Legaia's dialog. A message is a strea
 | The four SCUS text routines | [Interpreter functions](#interpreter-functions) |
 | Pager states, scrolling, control bytes, pickers | [Dialog window pager](#dialog-window-pager---fun_801d84d0) |
 | Parser | `crates/mes` (`legaia_mes`: `interp`, `dialog_box`, `picker`) |
-| Engine port | `crates/engine-dialog` (`dialog_window`, `dialog_pacing`, `dialog_picker_slide`, `dialog`, `inline_dialogue`), re-exported at the `engine-core` paths used below |
+| Engine port | `crates/engine-dialog` (`dialog_window`, `dialog_pacing`, `dialog_picker_slide`, `dialog`), `crates/engine-field` (`inline_dialogue`) |
 
 ## Variants
 
@@ -346,9 +346,9 @@ new_pc = (O + 1 + index*2) + i16_LE(entry[index])
 
 i.e. the displacement is relative to the **start of that option's own 2-byte entry**. Pinned empirically: across the four story-branch re-emissions of the `izumi` book menu, all four option entries shift by an identical per-emission delta (-518 / -564 / -549) - the signature of relative addressing to a moving site - and every decoded option across the field corpus jumps to a byte inside its own script. Parser `legaia_mes::picker` (`scan_pickers` / `parse_picker_at` + `Picker::jump_target`); disc-gated regression `field_dialog_pickers_disc`.
 
-The engine consumes this directly: `engine_core::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` - the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
+The engine consumes this directly: `engine_dialog::dialog::OwnedDialogPanel::from_inline_dialog` attaches the picker when it immediately follows the box's prompt segment; `legaia-engine play-window` draws the option labels under the prompt with an Up/Down cursor, and a confirm press runs `OwnedDialogPanel::confirm_menu` - the engine port of `FUN_80038050`: it applies the chosen option's relative jump, resumes typing at that branch's reply segment, and re-attaches a nested menu if one follows.
 
-For the **faithful** path, `engine_core::inline_dialogue` (`World::step_inline_dialogue`, the port of the dialog SM `FUN_80039B7C`) drives the whole inline interaction script through the real field VM: it executes the control bytecode between text segments (story-flag tests, `SET`/`CLEAR` flag ops, scene changes) and only pauses at each `0x1F` segment to show a box, so a chosen option's branch handler runs its side effects before the reply. It is gated by `World::toggles.use_vm_dialogue` (default `false` at the engine-core level; `legaia-engine play-window` enables it **by default**, with `--simple-dialogue` opting back into the simplified typewriter).
+For the **faithful** path, `engine_field::inline_dialogue` (`World::step_inline_dialogue`, the port of the dialog SM `FUN_80039B7C`) drives the whole inline interaction script through the real field VM: it executes the control bytecode between text segments (story-flag tests, `SET`/`CLEAR` flag ops, scene changes) and only pauses at each `0x1F` segment to show a box, so a chosen option's branch handler runs its side effects before the reply. It is gated by `World::toggles.use_vm_dialogue` (default `false` at the engine-core level; `legaia-engine play-window` enables it **by default**, with `--simple-dialogue` opting back into the simplified typewriter).
 
 ## Live blob example
 

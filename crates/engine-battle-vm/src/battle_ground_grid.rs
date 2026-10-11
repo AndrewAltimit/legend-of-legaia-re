@@ -77,7 +77,7 @@
 //! # Wiring
 //!
 //! The drawn mesh is the shared builder `legaia_scene_formats::battle_backdrop::
-//! build_ground_grid_rgbc` (re-exported by `engine-shell`'s `play-window` as
+//! build_ground_grid_rgbc` (imported by `engine-shell`'s `play-window` as
 //! `build_battle_ground_grid` and drawn under the battle camera), coloured
 //! with [`battle_ambient_colour`] of the live base
 //! (`World::battle_ambient_base`, ramped by [`ambient_base_step`]) - the

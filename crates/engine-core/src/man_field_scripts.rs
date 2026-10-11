@@ -3,8 +3,8 @@
 //! The decoders - partition walks, placement classification, carrier
 //! derivation, NPC motion, scene triggers, the flag / window / motion
 //! censuses over a set of MAN carriers - live in
-//! [`legaia_engine_field::man_field_scripts`] and are re-exported here at
-//! their old paths. What stays is what needs a loaded [`Scene`]: resolving a
+//! [`legaia_engine_field::man_field_scripts`]. This module holds what needs
+//! a loaded [`Scene`]: resolving a
 //! scene's MAN carriers out of its CDNAME block, and the three disc-wide
 //! censuses' scene-name entry points, which load each scene and hand its
 //! carriers to the carrier-level census.

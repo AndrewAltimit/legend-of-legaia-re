@@ -1,6 +1,6 @@
 //! Disc-gated cross-table integrity sweep over the scene-embedded id spaces.
 //!
-//! Companion to `legaia-asset`'s `monster_cross_table_integrity` (which ties the
+//! Companion to `legaia-actor-formats`' `monster_cross_table_integrity` (which ties the
 //! monster archive's drop / magic / steal ids back to the item + spell tables).
 //! Where that one covers the *static* roster tables, this one covers the ids the
 //! field-VM scripts embed inline in every scene MAN - the same populations the

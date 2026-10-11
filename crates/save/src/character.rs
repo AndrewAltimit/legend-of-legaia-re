@@ -728,7 +728,7 @@ impl CharacterRecord {
 
     /// Game-time field accessor lives outside this record (game time
     /// is a party-wide global at `0x80084570`); see
-    /// [`legaia_engine_system::ram_map`] for the engine-side cell.
+    /// `legaia_engine_system::ram_map` for the engine-side cell.
     /// Provided here as a doc anchor for cross-reference.
     pub const GAME_TIME_GLOBAL_ADDR: u32 = 0x80084570;
 

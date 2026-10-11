@@ -8,7 +8,7 @@
 //! rigid (Kabsch) fit taking the donor's placement onto the target's with
 //! its residual. Reads `extracted/PROT/086{3,4,5}*.BIN`.
 //!
-//!     cargo run --release -p legaia-asset --example hand_frame_fit
+//!     cargo run --release -p legaia-patcher --example hand_frame_fit
 #![allow(clippy::needless_range_loop)]
 
 use legaia_actor_formats::battle_data_pack;

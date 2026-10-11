@@ -12,7 +12,7 @@
 //! other) and in space: the native window drew the Muscle Dome rows and the
 //! dance beat track in raw surface pixels, top-left at a fraction of the
 //! page's size, while the page stage-scaled them. One builder per game here,
-//! one draw kernel in `engine-ui` (`ui_text_lines::status_row_draws_for`), and
+//! one draw kernel in `engine-ui` (`text_lines::status_row_draws_for`), and
 //! each host applies its one stage transform.
 
 use crate::world::World;

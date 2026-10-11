@@ -38,7 +38,7 @@ impl World {
 
     /// The defence half a melee command reads on `slot`: UDF (`+0x15C`) when
     /// `(command - 0x0C) % 10 < 5`, LDF (`+0x160`) otherwise
-    /// ([`vm::battle_formulas::physical_defense_is_udf`], `FUN_801EC3E4` at
+    /// ([`legaia_engine_battle_vm::battle_formulas::physical_defense_is_udf`], `FUN_801EC3E4` at
     /// `0x801ECE14`).
     ///
     /// Both party slots ([`Self::seed_party_battle_stats`]) and monster slots
@@ -322,7 +322,7 @@ impl World {
 
     /// `true` when `slot`'s spirit-art gauge has reached its ceiling (100), the
     /// retail condition for a Spirit-Art being available
-    /// ([`vm::battle_action::ActionState::SpiritArtsEntry`]).
+    /// ([`legaia_engine_battle_vm::battle_action::ActionState::SpiritArtsEntry`]).
     pub fn spirit_gauge_full(&self, slot: u8) -> bool {
         self.spirit_gauge(slot) >= 100
     }

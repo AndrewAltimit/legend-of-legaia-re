@@ -366,7 +366,7 @@ impl LegaiaRuntime {
     /// which case the caller goes straight to the title, exactly as the
     /// native `--boot-ui` chain does with an unbuildable atlas.
     ///
-    /// Only the native window used to play these: `engine_core::publisher_logos`
+    /// Only the native window used to play these: `legaia_engine_menus::publisher_logos`
     /// and its atlas builder were shared, and the browser play page entered
     /// the boot chain one stage late, at the title.
     pub fn boot_logos_start(&mut self) -> bool {

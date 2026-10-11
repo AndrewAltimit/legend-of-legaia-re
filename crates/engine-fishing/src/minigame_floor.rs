@@ -692,7 +692,7 @@ impl MarkerFloor {
     /// Advance every marker actor one frame.
     ///
     /// `pack_bias` is retail's `_DAT_8007B6F8`
-    /// ([`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`]) - added to the
+    /// (`legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS`) - added to the
     /// table value before it reaches the set-model primitive, so the staged
     /// value is a **global pool** index. A host indexing the scene's own mesh
     /// pack passes `0` and gets the unbiased index instead.

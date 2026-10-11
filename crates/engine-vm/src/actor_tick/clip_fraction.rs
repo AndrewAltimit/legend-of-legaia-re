@@ -38,7 +38,7 @@ pub const CLIP_FRACTION_FULL: u16 = 0x1000;
 /// Live on both hosts through that same chain: the field VM's `0x4C` sub-1
 /// arm calls `FieldHost::menu_ctrl_clone_actor`, `World::spawn_actor_clone`
 /// seats the clone on a pool slot carrying
-/// `engine_core::actor_handler::ActorHandler::ClipFade`, and
+/// `legaia_engine_field::actor_handler::ActorHandler::ClipFade`, and
 /// `World::tick_handler_actors` runs this every frame until the accumulator
 /// fills and the retire bit collects it. Six shipped scenes issue the
 /// opcode (`vozz`, `retona`, `urudre3`, `kor5`, `nilboa`, `noaru`).

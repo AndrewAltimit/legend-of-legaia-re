@@ -22,7 +22,6 @@ overlay's window descriptors and scripts are data tables in
 Sits on [`legaia-container-formats`](../container-formats/README.md) (for
 the TIM scanner), `legaia-prot` and `legaia-tim`. It must not depend on the
 scene, minigame or actor format crates, nor on `legaia-disc-audit`.
-`legaia-asset` re-exports each module at its old path.
 
 ## Module reference
 

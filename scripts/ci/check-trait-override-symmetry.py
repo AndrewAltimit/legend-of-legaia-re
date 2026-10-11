@@ -94,7 +94,7 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 CORE_SRC = REPO / "crates" / "engine-core" / "src"
-# Crates split out of engine-core whose traits engine-core re-exports.
+# Kernel crates under engine-core whose traits engine-core implements.
 SPLIT_SRCS = [
     REPO / "crates" / "engine-field" / "src",
     REPO / "crates" / "engine-menus" / "src",
@@ -103,8 +103,8 @@ SPLIT_SRCS = [
 ]
 WAIVERS = Path(__file__).resolve().parent / "trait-override-waivers.toml"
 
-# Same host split as check-ui-host-drift.py: engine-render re-exports engine-ui
-# and hosts native-side adapters, so an impl there is the native window's.
+# Same host split as check-ui-host-drift.py: engine-render hosts the
+# native-side adapters, so an impl there is the native window's.
 # engine-session holds the session and BGM director the native window runs
 # (the browser page runs the director too), and parity holds the oracles'
 # recording directors.

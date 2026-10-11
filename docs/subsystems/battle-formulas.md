@@ -5,8 +5,8 @@ scales it, what the defender subtracts, and the smaller rolls around them (turn
 order, fleeing, poison ticks, MP costs, spoils, the RNG). Every kernel on this
 page is read from the game's own code - mostly the battle overlay (PROT `0898`,
 link base `0x801CE818`) and `SCUS_942.54` - and mirrored as a pure Rust function
-in `crates/engine-battle-vm/src/battle_formulas/`, which `engine-vm` re-exports
-as `legaia_engine_battle_vm::battle_formulas`.
+in `crates/engine-battle-vm/src/battle_formulas/`
+(`legaia_engine_battle_vm::battle_formulas`).
 
 Each kernel is presented the same way: a formula block with explicit integer
 semantics, an inputs table (input -> where it comes from), provenance, and the
@@ -1037,9 +1037,9 @@ These behaviours were first reported by the_rabidsquirel (save-state testing on
 retail); the sites above are the disassembly behind them.
 
 **Port.** `engine-battle-vm::battle_action::done` (`done_cleanup`) for the accrual,
-`spirit_gauge_fill` for the damage fill, `cast_seru_ticks_a::cure_tier4_ap` for
+`spirit_gauge_fill` for the damage fill, `seru_magic_ticks::cure_tier4_ap` for
 the doubling (run by the Vera and Orb ticks and by
-`cast_seru_ticks_b::spoon_cure_sweep`). The cure tier is the side-effect
+`seru_magic_ticks::spoon_cure_sweep`). The cure tier is the side-effect
 stager's latch, staged from inside each module, which is what lets Spoon
 (`0x91`, evolved) read its own tier.
 
@@ -1815,8 +1815,7 @@ its return for both the compare and the debit:
 
 So a Spirit Jewel or Spirit Talisman discounts a menu heal exactly as a battle
 cast, and a caster below the raw price but at the discounted one can cast.
-**Port.** One kernel, `legaia_engine_battle::spells::caster_mp_cost` (re-exported
-from `engine-battle`), serves the Magic list, the confirm gate, the shared
+**Port.** One kernel, `legaia_engine_battle::spells::caster_mp_cost`, serves the Magic list, the confirm gate, the shared
 `cast_spell` affordability test, the field debit
 (`field_menu_dispatch::apply_spell_outcome`), the battle list, the battle fold
 and the Muscle Dome price.
@@ -1896,7 +1895,7 @@ a retail port, splits one raw word into a low trigger byte and a high pick half.
 ## Engine-side mirror - `engine-battle-vm::battle_formulas`
 
 The module lives at `crates/engine-battle-vm/src/battle_formulas.rs` plus the
-`battle_formulas/` directory; `engine-vm` re-exports it
+`battle_formulas/` directory
 (`legaia_engine_battle_vm::battle_formulas`). Everything is a pure function with unit
 tests pinning the documented arithmetic. `FUN_800402F4`'s selector dispatch is
 not reproduced as a whole; the state machine lives in

@@ -425,7 +425,7 @@ impl FishingCaptionText {
 /// snap and recast raise none here (the splash is a spawn into the effect
 /// pool, not a cue).
 ///
-/// One answer for every host that runs a pond: [`World::tick`] queues these
+/// One answer for every host that runs a pond: `World::tick` queues these
 /// for both play hosts, and the standalone minigames page keys them off its
 /// own session's events - which played no hook or catch sound at all before.
 pub fn pond_event_cues(e: &legaia_engine_fishing::fishing::PondEvent) -> Vec<u16> {

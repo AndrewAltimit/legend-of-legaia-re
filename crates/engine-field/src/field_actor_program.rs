@@ -393,7 +393,7 @@ enum Flow {
 /// way. `port-catalog.py` never gates a *free* function edge - the receiver
 /// gate is defined over `impl_type`, which a free function has none of - so a
 /// free `fn step` collects an in-edge from both of the other things in this
-/// tree that spell `step`: the live `engine_vm::motion_vm::step`, and every
+/// tree that spell `step`: the live `legaia_engine_motion_vm::motion_vm::step`, and every
 /// reachable function that merely names a local or parameter `step` (the
 /// browser's `LegaiaMinigames::fishing_advance_cast(&mut self, step: i32)` was
 /// the one that fired). Under the old name the then-correct disclosure was

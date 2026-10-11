@@ -128,7 +128,7 @@ Pipeline and per-format extractors:
 | `disc-extract` | Verify a dump's fingerprint; list / extract the raw ISO9660 files. |
 | `prot-extract` | Split `PROT.DAT` into its numbered entries with CDNAME-derived names. |
 | `lzs-decode` | Decompress Legaia's LZS streams and `.lzs` containers. |
-| `asset` | The format hub: categorize entries, extract sub-assets, dump readable game-data tables, export monsters to glTF. |
+| `asset` | The format tool: categorize entries, extract sub-assets, dump readable game-data tables, export monsters to glTF. |
 | `tim` | TIM textures → PNG. |
 | `tmd` | Legaia TMD meshes → Wavefront OBJ. |
 | `vab` | VAB sound banks → VAG samples / WAV. |

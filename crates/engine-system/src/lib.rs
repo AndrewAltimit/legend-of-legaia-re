@@ -6,11 +6,10 @@
 //! the `World`-free system layer under the engine.
 //!
 //! Every module's whole dependency closure inside the engine is in this
-//! crate or below it, so it sits strictly below `legaia-engine-core`,
-//! which re-exports each module at its old path. Doc links that pointed
-//! back up at `engine-core` are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate. See the crate README for the
-//! module map.
+//! crate or below it, so it sits strictly below `legaia-engine-core`. Doc
+//! comments name `engine-core` items in plain code spans, since rustdoc
+//! cannot resolve a link into a dependent crate. See the crate README for
+//! the module map.
 
 #![forbid(unsafe_code)]
 

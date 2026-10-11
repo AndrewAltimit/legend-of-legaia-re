@@ -38,14 +38,12 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 
 | Port piece | Where |
 |---|---|
-| Party assembly, monster mesh + texture relocation | `crates/actor-formats` (`battle_char_assembly`, `monster_archive`), re-exported by `legaia_asset` |
+| Party assembly, monster mesh + texture relocation | `crates/actor-formats` (`battle_char_assembly`, `monster_archive`) |
 | Per-fight form install | `engine-core::battle_party_form` |
 | Staged clip commit, ladder, rate arms | `engine-core` `world/actors/battle_anim.rs`, `world/battle/clip_ladder.rs`; `engine-battle-vm::battle_anim_rate` |
 | Tint pass, draw tick, ghost pass | `engine-battle-vm::{battle_actor_tint, battle_actor_tick, battle_action::camera_ghost}`, `engine-battle::battle_body_blend` |
 | Trails, streaks, after-images | `engine-battle-vm::battle_trail`, `engine-battle::battle_afterimage`, `render-kernels::{battle_trail, streak_pass, afterimage}` |
 | Hosts | `crates/engine-shell/src/window/battle.rs`; `crates/web-viewer/src/play_battle_render.rs`, `play_battle.rs`, `play_battle_fx.rs` |
-
-`engine-vm` re-exports the `engine-battle-vm` modules, `engine-core` re-exports `engine-battle`, and `engine-ui` re-exports `render-kernels`, so code and older prose name the same modules under either crate.
 
 ## Draw pipeline
 

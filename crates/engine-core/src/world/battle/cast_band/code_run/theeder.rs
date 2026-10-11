@@ -24,7 +24,7 @@ impl World {
     }
 
     /// PROT 0904's arm-4 seat placement
-    /// ([`vm::cast_seru_ticks_a::theeder_seat_placement`]) from the victim's
+    /// ([`legaia_engine_battle_vm::seru_magic_ticks::theeder_seat_placement`]) from the victim's
     /// and the caster's live positions.
     ///
     /// REF: FUN_801F69D8 (PROT 0904 arm 4, `0x801F6EEC..0x801F6F8C`)
@@ -111,7 +111,7 @@ impl World {
     /// difference.
     ///
     /// The atan2 is the ported `FUN_80019B28`
-    /// ([`vm::battle_action::bearing_12bit_approx`]) over the
+    /// ([`legaia_engine_battle_vm::battle_action::bearing_12bit_approx`]) over the
     /// approximated arctan LUT, the same one the enemy target cursor uses.
     ///
     /// REF: FUN_801F69D8 (PROT 0904 arm 12 cone gate), FUN_80019B28

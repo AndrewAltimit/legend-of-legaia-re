@@ -8,7 +8,7 @@
 //! font glyph at the ported cell x instead: the layout is retail's, the glyph
 //! source is not.
 //!
-//! The layout lives in `engine_core::baka_fighter_chrome::hud_digit_placements`,
+//! The layout lives in `legaia_engine_minigames::baka_fighter_chrome::hud_digit_placements`,
 //! which decides which strips draw and at which pen. This module is the other
 //! half: the glyph quads. Splitting them is deliberate; a shared *layout* is
 //! not a shared draw, and the two hosts drew different things off one layout
@@ -88,7 +88,7 @@ pub fn baka_widget_label_draws_for(
 pub const BAKA_HUD_OT: u32 = 3;
 
 /// The cabinet's and the round chrome's widget quads
-/// (`engine_core::baka_fighter_chrome::hud_widget_quads`, one per
+/// (`legaia_engine_minigames::baka_fighter_chrome::hud_widget_quads`, one per
 /// `FUN_801d5ed0` call) as screen-space PSX primitives against the duel
 /// VRAM, linked at [`BAKA_HUD_OT`]. The view is the dance HUD's, because the
 /// two emitters build the same `POLY_GT4`: packet corners, per-corner UVs,

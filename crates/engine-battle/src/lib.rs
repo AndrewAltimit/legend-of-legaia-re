@@ -9,8 +9,6 @@
 //! `world::battle` submodules) calls in and owns the composition, so this
 //! crate sits strictly below `legaia-engine-core` with no cycle.
 //!
-//! `legaia-engine-core` re-exports each module at its old path
-//! (`crate::monster_ai`, ...), so a consumer may name either.
 //! See the crate README for the module map and the rule for what belongs
 //! here.
 

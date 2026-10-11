@@ -27,11 +27,10 @@ draw builders; the remaining differences from retail are listed under
 | Status / party panel renderer | `FUN_801D33D8` (window 28) |
 | Live party records | `0x80084708 + n*0x414` ([`save-record.md`](../formats/save-record.md)) |
 | Port: session | `engine-menus` (`field_menu`, `pause_screens`, `equip_session`, `spell_menu`, `menu_list_rows`), driven by `engine-session::BootSession` |
-| Port: drawing | `engine-ui` (`pause_menu`, `ui_menu::*`, `ui_menu_window_painters`, `ui_menu_window_dispatch`) |
+| Port: drawing | `engine-ui` (`pause_menu`, `menu::*`, `menu::window_painters`, `menu::window_dispatch`) |
 
-`engine-core` re-exports the `engine-menus` modules at their old paths, so
-`engine-core::pause_screens::X` and `engine-menus::pause_screens::X` name the
-same item. Dumps cited as `overlay_menu_<addr>.txt` live in
+`engine-core::pause_screens` holds only the functions that read a `World`;
+the screen models are `engine-menus::pause_screens`. Dumps cited as `overlay_menu_<addr>.txt` live in
 `ghidra/scripts/funcs/`.
 
 Every content renderer draws **content only**: the window frame is drawn by
@@ -340,7 +339,7 @@ The table's content renderers for windows 5 (`FUN_801D61B0`), 6
 (`FUN_801D6360`), 7, 8, 24, 31, 32, 33, 34, 36, 37, 43, 45 and 46, plus the
 bottom-clipped box emit `FUN_801E4140`, are draw-list builders in
 [`engine-ui::menu::window_painters`](../../crates/engine-ui/src/menu/window_painters.rs)
-(windows 25 and 41 in `ui_equip_stat_compare`). Every window painter
+(windows 25 and 41 in `menu::equip_stat_compare`). Every window painter
 is reached by a screen on both hosts. The port keeps the pen arithmetic and the
 state-word rules and drops two globals every painter touches - the ink word
 `DAT_8007B454` and the glyph-advance byte `DAT_80073F20` - because a host that
@@ -1996,8 +1995,8 @@ as a pinned mirror when no disc table is available) and each section above
 names its session and draw builders.
 
 All draw builders live in **`legaia-engine-ui`**, the wgpu-free leaf.
-`engine-render` re-exports the crate (`pub use legaia_engine_ui::*`), which is
-what lets the browser play page build the same menus without linking wgpu.
+The browser play page links the crate directly, so it builds the same menus
+without linking wgpu.
 Screens are placed on the shared 320x240 stage via
 `engine-ui::scale_stage_text_draws`. Labels, gauges, pictograms, cursors and
 element icons are UI-icon sprites whose source rects are the `0x800732a4`

@@ -91,7 +91,7 @@ impl LegaiaRuntime {
     }
 
     /// The whole machine as screen primitives through the shared
-    /// `ui_slot_cabinet::slot_cabinet_prims` - the native window's
+    /// `slot_cabinet::slot_cabinet_prims` - the native window's
     /// `slot_cabinet_screen_prims` twin. Empty outside a session.
     pub(crate) fn slot_cabinet_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         use legaia_engine_ui::slot_cabinet as usc;
@@ -132,7 +132,7 @@ impl LegaiaRuntime {
         });
         // The paylines over it: the machine's own ported pass + projection
         // (`SlotMachine::payline_segments`) through the shared
-        // `ui_slot_paylines` builder - the native window's
+        // `slot_paylines` builder - the native window's
         // `slot_payline_screen_prims` twin. The 2D-canvas fallback strokes
         // them itself, so they join the prim pass only with the cabinet.
         use legaia_engine_ui::slot_paylines as usp;
@@ -161,7 +161,7 @@ impl LegaiaRuntime {
         };
         if let Some(c) = self.minigame_art().and_then(|a| a.slot_cabinet.as_ref()) {
             // The machine draws itself; the rules pages' text is the one
-            // text draw it owes (`ui_slot_cabinet::slot_rules_text_draws_for`,
+            // text draw it owes (`slot_cabinet::slot_rules_text_draws_for`,
             // the native window's twin).
             return c
                 .rules

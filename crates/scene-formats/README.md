@@ -18,8 +18,7 @@ leaf codecs (`legaia-lzs`, `legaia-tim`, `legaia-tmd`, `legaia-bytes`). The one
 sideways edge is [`legaia-overlay-images`](../overlay-images/README.md):
 `scene_event_scripts` reads the summon part records an event script can
 spawn. It must not depend on the UI, minigame or actor format crates,
-nor on `legaia-disc-audit`. `legaia-asset` re-exports each module at its old
-path.
+nor on `legaia-disc-audit`.
 
 ## Module reference
 
@@ -53,7 +52,7 @@ Side-effect-free disassembler for the field/event-VM bytecode (the opcode
 stream `FUN_801DE840` executes): the per-opcode width/format decoder plus
 `LinearWalker`. Lives here (next to the MAN/scene parsers that carry the
 bytecode) so disc tooling can walk scripts without the engine; the executing
-VM re-exports it as `legaia_scene_formats::field_disasm`. CLI: `asset field-disasm
+VM is `legaia-engine-vm`. CLI: `asset field-disasm
 file|scene-event-scripts|scan-prot`; `asset field-op-census` is the disc-wide
 opcode census built on it ([`docs/tooling/field-op-census.md`](../../docs/tooling/field-op-census.md)).
 

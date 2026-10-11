@@ -19,7 +19,7 @@ A second, unrelated AP figure lives on this page too: the **Spirit** cost of a n
 | Named-art Spirit cost | `FUN_801EED1C`, paid from `actor + 0x170` through the accumulator `actor + 0x224` |
 | Execution | `FUN_801EC3E4`, called from SCUS `0x800478A0` |
 | Parser | `legaia_actor_formats::battle_char_assembly::swing_command_costs` (`crates/actor-formats`) |
-| Port | `crates/engine-battle/src/arts_command_input.rs` + `ap_gauge.rs` (re-exported by `engine-core`), drawn by `engine-ui::arts_input` on both hosts |
+| Port | `crates/engine-battle/src/arts_command_input.rs` + `ap_gauge.rs`, drawn by `engine-ui::arts_input` on both hosts |
 | Mods | `--weapon-specialty`, the equipment editor's swing costs, `--arts-ap-grant` / `--arts-ap-cost` ([randomizer.md](../tooling/randomizer.md)) |
 
 Every address is for the USA release. All of them are collected in the [address reference](#address-reference).
@@ -486,7 +486,7 @@ A modification that wants the penalty to travel with the sword must add an `0xBA
 
 ## The port's input session
 
-`arts_command_input` (`crates/engine-battle/src/arts_command_input.rs`, re-exported as `legaia_engine_battle::arts_command_input`) is the retail flow:
+`legaia_engine_battle::arts_command_input` (`crates/engine-battle/src/arts_command_input.rs`) is the retail flow:
 
 1. The Arts command opens a per-press directional entry.
 2. Each press appends its command byte to the actor's buffer and debits that command's `+0x74` cost from the turn pool.

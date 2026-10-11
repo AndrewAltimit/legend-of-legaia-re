@@ -192,7 +192,7 @@
 
 <section class="doc-section" id="engine-port">
   <h2>In the port</h2>
-  <p><code>engine-battle-vm::battle_action</code> (re-exported as <code>engine-battle-vm::battle_action</code>) keeps one enum value per retail state byte (<code>ActionState</code>), so an engine transition trace lines up against a retail capture line by line. <code>step(host, ctx)</code> runs one frame of dispatch; <code>BattleActionHost</code> carries a callback per helper the state bodies call; <code>validate_action</code> ports the executable&rsquo;s 18-arm action validator. <code>engine-core::World</code> composes it into the battle tick.</p>
+  <p><code>engine-battle-vm::battle_action</code> keeps one enum value per retail state byte (<code>ActionState</code>), so an engine transition trace lines up against a retail capture line by line. <code>step(host, ctx)</code> runs one frame of dispatch; <code>BattleActionHost</code> carries a callback per helper the state bodies call; <code>validate_action</code> ports the executable&rsquo;s 18-arm action validator. <code>engine-core::World</code> composes it into the battle tick.</p>
   <details class="disclosure" id="pool-helpers">
     <summary>Details: actor-pool leaf helpers</summary>
     <div class="disclosure-body">

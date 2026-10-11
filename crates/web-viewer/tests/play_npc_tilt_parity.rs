@@ -22,7 +22,7 @@
 //!   each host's cheap yaw-only model build stays the common path;
 //! - the two hosts' model builds agree on the composition. The native NPC
 //!   pass calls `legaia_render_kernels::battle_intro::placement_rotation`,
-//!   which is a re-export of the `legaia_engine_ui` builder called here; the
+//!   the builder called here; the
 //!   page composes `placementModelEuler` (`site/js/webgl-math.js`), whose
 //!   linear part is transcribed below. A divergence between the two is
 //!   exactly the failure this file exists to catch, and no screenshot of one

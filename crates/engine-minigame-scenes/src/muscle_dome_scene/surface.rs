@@ -229,7 +229,7 @@ impl MuscleDomeSurface {
 
     /// The framing a host that drives its own selection flow asks for (the
     /// minigames page, which commits through the session's card calls rather
-    /// than through its [`legaia_engine_minigames::muscle_dome::DomeMenu`]). `None` - every
+    /// than through its `legaia_engine_minigames::muscle_dome::DomeMenu`). `None` - every
     /// world host - derives it from the session's own menu.
     pub fn set_select_framing(&mut self, framing: Option<SelectFraming>) {
         self.select_framing = framing;

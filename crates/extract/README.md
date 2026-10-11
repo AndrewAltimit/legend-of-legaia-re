@@ -12,12 +12,12 @@ ISO9660 files                     // PROT.DAT, DMY.DAT, SCUS_942.54, MOV/, XA/, 
    │  legaia-prot        TOC math, name from CDNAME.TXT
    ▼
 PROT entries                      // 0865_battle_data.BIN, 0972_move_program_no.BIN, ...
-   │  legaia-asset       categorize + streaming sub-asset extract
+   │  legaia-disc-audit  categorize; legaia-container-formats: streaming sub-asset extract
    ▼
 Sub-assets                        // TIM, TMD, VAB, MES, ANM, stage-geom, scene bundles
    │  legaia-tim         TIM → PNG (--skip-png skips)
    │  legaia-xa          CD-XA demux → per-channel WAV (--skip-xa skips)
-   │  legaia-asset       TIM catalog → TSV inventory (--skip-catalog skips)
+   │  legaia-disc-audit  TIM catalog → TSV inventory (--skip-catalog skips)
    │  legaia-font        dialog font atlas + widths (--skip-font skips)
    ▼
 extracted/                        // human-browsable output tree

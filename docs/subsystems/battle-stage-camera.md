@@ -31,8 +31,7 @@ camera's eye-space translation trio. Angles are 12-bit: `4096` is a full turn.
 | Frame step | `FUN_80016B6C` -> `DAT_1F800393` | `BattleFrameClock` |
 | Intro transition | `FUN_801CF5BC`, PROT 0979 `field_battle_intro` | `battle_intro_transition`, `battle_intro_*`, `render-kernels::battle_intro` |
 
-The VM-side modules live in `crates/engine-battle-vm` and are re-exported by
-`legaia_engine_vm`. Camera inputs and the per-frame step are
+The VM-side modules live in `crates/engine-battle-vm`. Camera inputs and the per-frame step are
 `engine-core::battle_cam_inputs` (`World::tick_battle_camera`,
 `World::battle_cam_pose`). Both hosts - the native `play-window`
 (`crates/engine-shell/src/window/`) and the browser play page
@@ -1238,8 +1237,7 @@ needs ~84 frames just to finish starting.
 | Screen-strip curtain | `FUN_801D11D0` | `battle_intro_styles::tick_curtain` | `battle_intro::intro_quad_to_screen` |
 
 The simulation kernels are in `crates/engine-battle-vm`. The packet builders
-are `crates/render-kernels/src/battle_intro.rs`, re-exported as
-`render-kernels::battle_intro` and `engine-render::battle_intro`. `BattleIntro`
+are `render-kernels::battle_intro` (`crates/render-kernels/src/battle_intro.rs`). `BattleIntro`
 holds the style's working set between frames and synchronises its clock from
 the live transition entity. The one-shot field frame capture lands the drawn
 field in the texture pages each style's packets name (`Renderer::capture_rgba`

@@ -12,7 +12,7 @@ impl World {
     /// initiative seeder is the only consumer of the *unlatched* copy (it
     /// zeroes the disadvantaged side's keys, `0x801DAA40`); the action SM's
     /// state `0x00` consumes it and clears it
-    /// ([`vm::battle_action::begin_formation_arm`]).
+    /// ([`legaia_engine_battle_vm::battle_action::begin_formation_arm`]).
     ///
     /// REF: FUN_80051D84
     pub fn battle_formation(&self) -> legaia_engine_battle_vm::battle_formulas::FormationAdvantage {

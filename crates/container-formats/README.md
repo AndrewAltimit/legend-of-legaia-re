@@ -18,7 +18,7 @@ type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
 | `pack` | The pack a streaming chunk carries (`u32 count`, `u32 word_offsets[count]`). See [`pack.md`](../../docs/formats/pack.md). |
 | `effect_bundle` | The on-disc effect bundle - magic `0x02018B0C`. See [`effect.md`](../../docs/formats/effect.md). |
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
-| `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is an `container-formats::pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
+| `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is a `pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |
 | `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
 | `tim_scan` / `tmd_scan` | Brute-force magic search for TIMs / Legaia TMDs inside an entry, raw or behind LZS. |
@@ -34,5 +34,3 @@ The bottom of the format stack. It depends on the leaf codecs
 must not depend on any crate that describes game content: the scene, UI,
 minigame and actor format crates all sit on this one, and
 [`legaia-disc-audit`](../disc-audit/README.md) sits on all of them.
-
-`legaia-asset` re-exports every item here at its old `legaia_asset::` path.

@@ -1,6 +1,6 @@
 //! Each dome fighter's magic / art loadout, built out of the roster,
 //! spell and art state a live world holds. The stat profiles and damage model this feeds live in
-//! `legaia_engine_minigames::muscle_dome` (re-exported by the parent).
+//! `legaia_engine_minigames::muscle_dome`.
 
 use super::*;
 

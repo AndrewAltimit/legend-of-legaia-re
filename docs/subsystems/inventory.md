@@ -211,7 +211,7 @@ Ports: `legaia_engine_battle_vm::battle_action::selector_insert_displayed_skill`
 
 ## What the port does
 
-The engine keeps the bag as `PartyState::inventory`, an `ItemBag` (`crates/engine-menus/src/item_bag.rs`, re-exported by `engine-core`) over retail's own **256-slot array**: `(id, count)` pairs in slot order, holes included, with an active [window](#the-active-window) installed over them. The slot arithmetic is not re-implemented there. It is `legaia_save::retail_inventory`, where the accessor family is ported once, so the preservation model (`save-tool items`) and the running engine share one copy of each routine.
+The engine keeps the bag as `PartyState::inventory`, an `ItemBag` (`crates/engine-menus/src/item_bag.rs`) over retail's own **256-slot array**: `(id, count)` pairs in slot order, holes included, with an active [window](#the-active-window) installed over them. The slot arithmetic is not re-implemented there. It is `legaia_save::retail_inventory`, where the accessor family is ported once, so the preservation model (`save-tool items`) and the running engine share one copy of each routine.
 
 Most consumers address the bag by **id**: the pause menu's filtered pages, `GIVE_ITEM`, buy / sell, the battle Item arm. `ItemBag` keeps a map-shaped adapter (`get` / `insert` / `entry` / `remove` / `len`) over the array for them. What the array gives underneath:
 

@@ -277,8 +277,7 @@ impl Default for AudioState {
     }
 }
 
-/// The SFX-ring producer ops, re-exported from
-/// [`legaia_engine_system::sound_state`].
+// The SFX-ring producer ops, from `legaia_engine_system::sound_state`.
 use legaia_engine_system::sound_state::SfxRingOp;
 
 /// Where a side-band bank request lands: the VAB slot `FUN_800243F0` installs

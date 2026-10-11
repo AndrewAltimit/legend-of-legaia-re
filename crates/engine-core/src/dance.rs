@@ -1,6 +1,6 @@
 //! Noa's dance rhythm minigame. The rules engine (beat clock, judge, groove
 //! gauge, the floor cast and sprite-part pools, the camera track) lives in
-//! `legaia_engine_minigames::dance` and is re-exported here; this file keeps
+//! `legaia_engine_minigames::dance`; this file keeps
 //! the one step that reads the disc through a [`crate::scene::ProtIndex`]:
 //! staging the HUD art into a scene's VRAM.
 

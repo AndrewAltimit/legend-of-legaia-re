@@ -13,7 +13,7 @@ use legaia_web_viewer::LegaiaViewer;
 
 /// The live full-party save's Vahn loadout (char record `+0x196..+0x19A`):
 /// Hunter Clothes body, bare head, Survival Knife, Ra-Seru Meta, bare feet.
-/// Pinned byte-exact by `legaia-asset`'s `battle_char_assembly_real`.
+/// Pinned byte-exact by `legaia-actor-formats`' `battle_char_assembly_real`.
 const VAHN_SAVE_LOADOUT: [u8; 5] = [0x43, 0x00, 0x22, 0x01, 0x00];
 
 fn loaded() -> Option<LegaiaViewer> {

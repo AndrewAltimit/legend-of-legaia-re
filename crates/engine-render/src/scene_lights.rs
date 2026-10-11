@@ -3,10 +3,9 @@
 //!
 //! The derivation (which prims emit, how samples cluster into lights, the
 //! nearest-to-player pick, the attenuation law) is the shared kernel
-//! [`legaia_render_kernels::scene_lighting`] (`legaia_render_kernels::scene_lighting`), which the
-//! browser play page runs too; it is re-exported here under the module path
-//! the native host has always used. What stays here is the part only the
-//! wgpu renderer has: the per-light **shadow** view-projection.
+//! [`legaia_render_kernels::scene_lighting`], which the browser play page
+//! runs too. This module is the part only the wgpu renderer has: the
+//! per-light **shadow** view-projection.
 //!
 //! The WGSL consumer is `scene_point_gain` in `shaders.rs` (real variant
 //! compiled only into the scene pipelines);

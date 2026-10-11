@@ -10,8 +10,8 @@
 //!
 //! The assembly itself is shared - [`legaia_engine_core::tile_board`]'s
 //! `tile_board_actor_draws` / `tile_actor_slots_needing_mesh` /
-//! `is_tile_actor_slot`, the same three the native `redraw` pass calls
-//! through `legaia_engine_shell::tile_board_draws`. This module is only the
+//! `is_tile_actor_slot`, the same three the native `redraw` pass calls.
+//! This module is only the
 //! wasm boundary: the flat typed arrays the page's WebGL layer consumes,
 //! shaped like the NPC path (`play_npc_transforms` and friends) because a
 //! tile actor is drawn exactly like one - a scene mesh at a world position.

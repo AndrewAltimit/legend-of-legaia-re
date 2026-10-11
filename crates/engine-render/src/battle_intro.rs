@@ -3,8 +3,7 @@
 //! The emitter itself - working sets, projection, packet builders, the
 //! curtain's CPU two-pass composition - is wgpu-free and lives in
 //! [`legaia_render_kernels::battle_intro`], where the browser play page can link
-//! it. Everything is re-exported here at the historical path so native call
-//! sites and tests read unchanged.
+//! it.
 //!
 //! What cannot move is the way the native window obtains the field frame the
 //! styles sample: [`update_field_capture`] re-renders the scene offscreen

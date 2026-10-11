@@ -1,14 +1,11 @@
 # legaia-engine-dialog
 
-The field dialog layer's `World`-free kernels, split out of
-`legaia-engine-menus`: the dialog pager, its row window, pacing and picker
+The field dialog layer's `World`-free kernels: the dialog pager, its row window, pacing and picker
 slide, and the text balloon. The state of the script contexts that drive the
 pager (`inline_dialogue`, `cutscene_timeline`) is field-VM context and lives
 in `legaia-engine-field`. `engine-menus` depends on this crate, never the other way
-round, and re-exports every module at its old path
-(`legaia_engine_dialog::dialog`, and through `engine-core`,
-`legaia_engine_dialog::dialog`), so hosts and tests name the same paths they
-always did.
+round. Hosts and tests name its modules directly
+(`legaia_engine_dialog::dialog`).
 
 ## What lives here
 
@@ -35,6 +32,6 @@ These modules hold the state those steps advance. Drawing is `engine-ui`'s.
 ## See also
 
 - [`crates/engine-menus`](../engine-menus/README.md) - the menu, title and
-  memory-card front end this was split from.
+  memory-card front end above this crate.
 - [`docs/subsystems/script-vm.md`](../../docs/subsystems/script-vm.md) - the
   field VM whose ops open these panels.

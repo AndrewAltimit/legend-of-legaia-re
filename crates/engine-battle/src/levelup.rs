@@ -35,7 +35,7 @@
 //! `BootSession` calls it from the user's `SCUS_942.54`. The flat 10 HP / 5 MP
 //! [`StatGain`] default is only the disc-less fallback. Retail's per-level
 //! `rand()` jitter is modeled as an **opt-in** layer
-//! ([`LevelUpTracker::with_level_up_jitter`] + the [`BiosRand`] LCG); it is off
+//! ([`LevelUpTracker::with_level_up_jitter`] + the [`BiosRand`](legaia_engine_system::rand::BiosRand) LCG); it is off
 //! by default so it draws no `rand()` and replays stay bit-identical - see
 //! `docs/subsystems/level-up.md` § Stat gains.
 

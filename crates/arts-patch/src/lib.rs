@@ -8,7 +8,7 @@
 //! arena map, and every test that needs real game data is disc-gated in
 //! `legaia-patcher`.
 //!
-//! It names `legaia-art` (the arts tables and tokenizer), `legaia-asset`,
+//! It names `legaia-art` (the arts tables and tokenizer), `legaia-game-tables`,
 //! `legaia-lzs`, `legaia-iso`, `legaia-code-hooks` and `legaia-disc-patch`,
 //! and no other feature crate. See the crate README for the module map.
 

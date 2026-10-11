@@ -2574,7 +2574,7 @@ NPC is the **interaction pipeline**, not a text-carrying instruction:
    `&DAT_801f3540[line]`, line count `_DAT_801f2740`). `FUN_80039b7c` runs per
    frame, per entity, from the entity SM `FUN_801DA51C`'s interaction tail.
 
-   The engine ports this SM as `engine_core::inline_dialogue` /
+   The engine ports this SM as `engine_field::inline_dialogue` /
    `World::step_inline_dialogue` (PORT `FUN_80039b7c`): it drives the actor's
    inline interaction script through the **real field VM** (`vm::field::step`),
    executing the control bytecode between text segments (story-flag tests,
@@ -2887,7 +2887,7 @@ asset field-disasm scene-event-scripts <PATH> [--summary]
 asset field-disasm scan-prot --prot <PROT.DAT> --cdname <CDNAME.TXT> --bytewise
 ```
 
-The library is `legaia_scene_formats::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}` (re-exported as `legaia_scene_formats::field_disasm`). `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
+The library is `legaia_scene_formats::field_disasm::{decode, LinearWalker, find_fmv_triggers, format_instruction}`. `decode()` returns `Result<Insn, DisasmError>`; `LinearWalker` is the iterator shape that wraps `decode` plus single-byte recovery. The `InsnInfo::MenuCtrl { kind: MenuCtrlKind::FmvTrigger { fmv_id }, .. }` variant carries the operand of the `0x4C 0xE2` op for callers who want to grep for cutscene triggers across the corpus.
 
 > **CAVEAT - `scene-event-scripts` / `scan-prot` walk a NON-field-VM
 > structure.** The `0xFFFF 0x0000` lead is the stager-record header

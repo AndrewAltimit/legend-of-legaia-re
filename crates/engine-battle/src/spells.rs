@@ -112,7 +112,7 @@ pub enum SpellTarget {
 impl SpellTarget {
     /// The two target bits of retail's spell-table `+2` stats byte for this
     /// shape: `0x02` = ally side, `0x20` = all targets. The inverse of
-    /// [`legaia_game_tables::spell_names::SpellStats::target_shape`], which is how
+    /// `legaia_game_tables::spell_names::SpellStats::target_shape`, which is how
     /// [`crate::retail_magic`] fills the shape in the first place.
     ///
     /// It exists so the screens that branch on that byte can run retail's own
@@ -216,7 +216,7 @@ pub struct SpellDef {
     /// Spell-table `+0x01` **effect class** - the key `FUN_801F2160` bounds
     /// with `sltiu ..., 0x20` and dispatches a capture-class cast's module on
     /// (PROT `935 + class`, see
-    /// [`legaia_overlay_images::cast_effect_pool::capture_module_prot`]). `0` on the
+    /// `legaia_overlay_images::cast_effect_pool::capture_module_prot`). `0` on the
     /// placeholder catalog and on any record built without the disc table;
     /// [`crate::retail_magic`] fills it from `SCUS_942.54`.
     pub effect_class: u8,

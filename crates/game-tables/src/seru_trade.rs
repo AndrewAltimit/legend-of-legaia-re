@@ -468,7 +468,7 @@ pub fn bucket_index_for(play_time_seconds: u32, vendor_offset: u8) -> usize {
 /// Expand one bucket's `(want, give)` preference against the live party: one
 /// [`OwnerTrade`] per party member who currently owns the wanted seru, in party
 /// order. `owned` is the cross-party enumeration (e.g.
-/// `engine_core::seru_trade::party_owned_seru`). Empty when nobody owns the want
+/// `legaia_engine_battle::seru_trade::party_owned_seru`). Empty when nobody owns the want
 /// or the bucket has no offer (`want_id == 0`).
 ///
 /// Owners who **already own the give-back seru** are filtered out - trading the

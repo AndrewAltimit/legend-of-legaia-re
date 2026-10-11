@@ -109,7 +109,7 @@ impl LegaiaMinigames {
 
     /// The tutorial's captions / options / cursor / feedback for this frame
     /// as a `w x h` RGBA8 overlay (transparent elsewhere), through the shared
-    /// `ui_dance::dance_tutorial_draws_for` both play hosts draw. Empty with
+    /// `dance::dance_tutorial_draws_for` both play hosts draw. Empty with
     /// no live tutorial or no dialog font.
     pub fn dance_tutorial_rgba(&self, w: u32, h: u32) -> Vec<u8> {
         use legaia_engine_ui::dance as ui_dance;

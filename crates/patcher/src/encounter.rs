@@ -189,7 +189,7 @@ impl MonsterCostTable {
 /// `rate_increment == 0` never advances the counter, so it never triggers a
 /// random encounter - it can reference formations without ever rolling them
 /// (the retail position-aware roll `FUN_801D9E1C`; mirrored in
-/// `engine_core::region_encounter`).
+/// `legaia_engine_battle::region_encounter`).
 ///
 /// So a formation is a random encounter iff some region with **`rate_increment >
 /// 0`** reaches it. Formations reached only by rate-0 regions (or by no region)

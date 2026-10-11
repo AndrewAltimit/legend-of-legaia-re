@@ -1,10 +1,10 @@
 //! The Muscle Dome's `World` seam.
 //!
 //! The dome session, its command menu, ring and loadout kernels live in
-//! [`legaia_engine_menus::muscle_dome_session`] (which itself re-exports the course
-//! ladder and score tables of `legaia_engine_minigames::muscle_dome`) and are
-//! re-exported here at their old paths. What stays is the one entry that
-//! reads the world: a fighter's magic loadout off the live roster.
+//! [`legaia_engine_menus::muscle_dome_session`]; the course ladder and score
+//! tables live in `legaia_engine_minigames::muscle_dome`. This module holds
+//! the one entry that reads the world: a fighter's magic loadout off the
+//! live roster.
 
 use legaia_engine_menus::muscle_dome_session::*;
 

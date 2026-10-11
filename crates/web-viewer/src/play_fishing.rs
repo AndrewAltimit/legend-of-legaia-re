@@ -128,11 +128,11 @@ impl LegaiaRuntime {
 
     /// The fishing rod and line as screen primitives for this tick - the
     /// native window's `fishing_line_screen_prims` twin: the rod model
-    /// (`PondSession::rod_faces` through the shared `ui_fishing_rod` builder),
+    /// (`PondSession::rod_faces` through the shared `fishing::rod` builder),
     /// then the session's line
     /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
     /// through the follow camera the page draws the venue with) wrapped by the
-    /// shared `ui_fishing_line` builder, into the page's screen-prim pass.
+    /// shared `fishing::line` builder, into the page's screen-prim pass.
     pub(crate) fn fishing_line_prims(
         &mut self,
     ) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
@@ -178,7 +178,7 @@ impl LegaiaRuntime {
     /// The fishing HUD's sprite half as screen primitives - the native
     /// window's `fishing_hud_screen_prims` twin: every plate, digit, gauge
     /// cap and banner cut from the overlay's sprite table (`FUN_801D63B0`,
-    /// the shared `ui_fishing_sprite` builder) out of the venue's HUD page,
+    /// the shared `fishing::sprite` builder) out of the venue's HUD page,
     /// which the pond VRAM this page takes for the session already holds.
     /// Empty without a session or a decoded table.
     pub(crate) fn fishing_hud_sprite_prims(

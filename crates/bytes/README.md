@@ -30,9 +30,12 @@ out of scope here.
 
 ## Pipeline
 
-Leaf crate with no dependencies of its own. Depended on by `legaia-asset`,
-`legaia-engine-core` and `legaia-patcher` - the crates that read the widest
-range of raw disc buffers - and by the crates split out of them, wherever a
-raw little-endian read out of one is needed. Other
+Leaf crate with no dependencies of its own. Depended on by the format crates
+above the leaf codecs (`legaia-container-formats`, `legaia-scene-formats`,
+`legaia-actor-formats`, `legaia-game-tables`, `legaia-overlay-images`,
+`legaia-disc-audit`) and by the engine and patcher crates that read raw disc
+buffers (`legaia-engine-battle`, `legaia-engine-mode`, `legaia-parity`,
+`legaia-party-swap`, `legaia-patcher`), wherever a
+raw little-endian read is needed. Other
 parser crates still carry their own private helpers; each is a candidate to
 fold in here.

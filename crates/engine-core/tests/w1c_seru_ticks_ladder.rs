@@ -30,7 +30,7 @@ use std::path::PathBuf;
 const SUMMON_SLOT: usize = 7;
 /// Frames stepped per id before the ladder gives up. Every chain here is at
 /// most 21 arms plus a settle arm plus the terminal; PROT 0910 also runs its
-/// own arm timers (`cast_seru_ticks_b::swordie_tick`), several hundred frames
+/// own arm timers (`seru_magic_ticks::swordie_tick`), several hundred frames
 /// at a frame step of one.
 const FRAME_BOUND: usize = 1024;
 

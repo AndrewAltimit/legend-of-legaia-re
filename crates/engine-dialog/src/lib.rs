@@ -6,10 +6,9 @@
 //!
 //! Every module's dependency closure inside the engine is this crate, the
 //! field VM (`legaia-engine-vm`) and the MES / font parsers, so it sits below
-//! `legaia-engine-menus`, which re-exports each module at its old path (and
-//! `legaia-engine-core` re-exports those in turn). Doc links that pointed up
-//! at a dependent crate are plain code spans, since rustdoc cannot resolve a
-//! link into a dependent crate. See the crate README for the module map.
+//! `legaia-engine-menus`. Doc comments name items of a dependent crate in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate. See the crate README for the module map.
 
 #![forbid(unsafe_code)]
 

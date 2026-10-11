@@ -5,9 +5,6 @@
 //! Engine-agnostic. No wgpu / windowing / audio dependencies - the asset
 //! crates talk to this layer, the render and audio crates read from it.
 
-// The battle kernels live in `legaia-engine-battle`; re-exported so every
-// `legaia_engine_core::<module>` path (and `crate::<module>` inside this
-// crate) keeps resolving.
 pub mod actor_alloc_host;
 pub mod battle_cam_inputs;
 pub mod battle_flow;
@@ -461,10 +458,3 @@ mod tests {
         );
     }
 }
-
-// The minigame rules engines live in `legaia-engine-minigames`; re-exported
-// here so every host and test keeps its `legaia_engine_core::<module>` path.
-
-// The minigames' 3D scene surfaces (the Baka Fighter duel and the Muscle Dome
-// arena) live in `legaia-engine-minigame-scenes`; re-exported at their old
-// paths.

@@ -213,7 +213,7 @@ pub struct SubmodeScreen {
     /// the counter's cells. Empty while that record is not installed.
     pub coin_panel: Vec<legaia_engine_minigames::slot_machine::CoinPanelDraw>,
     /// A host has opened the pause menu for the current scripted
-    /// menu-button press ([`OP49_PARK_PRESERVING_SUB_OPS`]), so the request
+    /// menu-button press ([`OP49_PARK_PRESERVING_SUB_OPS`](legaia_engine_field::man_field_scripts::OP49_PARK_PRESERVING_SUB_OPS)), so the request
     /// is spent until the park is re-armed. See
     /// [`World::scripted_menu_open_pending`].
     pub scripted_menu_opened: bool,

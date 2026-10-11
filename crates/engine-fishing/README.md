@@ -1,10 +1,8 @@
 # legaia-engine-fishing
 
-The fishing minigame's rules engine, split out of `legaia-engine-minigames`.
-`engine-minigames` depends on this crate, never the other way round, and
-re-exports every module at its old path (`legaia_engine_fishing::fishing`,
-and through `engine-core`, `legaia_engine_fishing::fishing`), so hosts and tests
-name the same paths they always did.
+The fishing minigame's rules engine. `legaia-engine-minigames` depends on
+this crate, never the other way round. Hosts and tests name its modules
+directly (`legaia_engine_fishing::fishing`).
 
 ## What lives here
 
@@ -23,7 +21,7 @@ All of it is documented in
 ## The split line
 
 The five modules name each other, the disc-parsed fishing tables in
-`legaia-asset`, the field-region queries in `legaia-engine-field`, pad input
+`legaia-minigame-formats`, the field-region queries in `legaia-engine-field`, pad input
 and the BIOS `rand` in `legaia-engine-system`, the GTE divide in
 `legaia-render-kernels`, the vertex-morph stager in `legaia-engine-vm` and
 the mesh walker in `legaia-tmd` - and no other minigame. That makes fishing the one

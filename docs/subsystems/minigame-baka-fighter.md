@@ -27,7 +27,7 @@ The whole minigame is one RAM overlay (code loaded at run time above `0x801C0000
 | Port (3D duel) | `engine-minigame-scenes::baka_duel_scene` |
 | Port (parsers) | `legaia_minigame_formats::baka_opponents`, `legaia_minigame_formats::minigame_art` |
 
-The `engine-minigames` modules are re-exported at their old `legaia_engine_core::baka_*` paths. Provenance for every function named here is `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`. Read the two dispatchers from the disassembly: the decompiled C of `FUN_801CF388` renders most exit paths as fake `FUN_801Dxxxx()` label-calls.
+Provenance for every function named here is `ghidra/scripts/funcs/overlay_baka_fighter_<addr>.txt`. Read the two dispatchers from the disassembly: the decompiled C of `FUN_801CF388` renders most exit paths as fake `FUN_801Dxxxx()` label-calls.
 
 The field VM (`FUN_801DE840`), actor VM, move VM, world-map controller (`FUN_801E76D4`) and summon / effect paths that appear in RAM beside this overlay are not Baka-Fighter code; see [`script-vm.md`](script-vm.md), [`actor-vm.md`](actor-vm.md), [`move-vm.md`](move-vm.md) and [`world-map.md`](world-map.md).
 
@@ -494,7 +494,7 @@ So a normal attack plays out once and idles; a hit reaction plays out, holds one
 
 The container is `[u32 count][u32 offsets[count]][records]`, so word `d` is `offsets[d - 1]`: display id `base + k` is bank **record `k - 1`**. Record 0 is the idle (display `base + 1`: the idle reset at `0x801D4144..50` and both round-start seeds in `overlay_baka_fighter_801d0fe4.txt` store `base + 1`). The party base is `_DAT_801DBFD0 = DAT_801DBF70 * 9`. The tally exits store `base + 9` - bank record 8, the win flourish.
 
-Port: `engine-minigames::baka_duel::FighterMotion` (re-exported through `baka_duel_scene`), one per seat (`BakaFight::motion`), stepped every tick after the rules. It feeds only the presentation; the exchange still books off the strike clock. **Confirmed** (disassembly).
+Port: `engine-minigames::baka_duel::FighterMotion`, one per seat (`BakaFight::motion`), stepped every tick after the rules. It feeds only the presentation; the exchange still books off the strike clock. **Confirmed** (disassembly).
 
 ### CPU move pick (`FUN_801D487C`)
 
@@ -803,7 +803,7 @@ Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 097
 | native play window, browser play page | `BakaDuelSurface::hud_quads` runs every cabinet cell and every `ChromeDraw` through `hud_widget_quad` (glyph draws paged through `glyph_u` on a copy of widget 5); `engine-ui::baka_strips::baka_hud_prims` links them at OT bucket `3` as screen primitives against the duel VRAM, which carries the PROT 1203 pages (`BakaDuelAssets::vram`) | font labels (`chrome_labels`, `choice_sheet_labels`, drawn by `baka_widget_label_draws_for`) on a frame whose HUD art is not resident (`hud_art_resident`) |
 | minigames page | widget corners and inclusive UV spans from `baka_hud_quad_json`, drawn with the sheet art; chrome from `baka_chrome_json`; bar frames from `baka_bar_frame_json` | page-drawn banners only for a run with no engine chrome |
 
-The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `ui_baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
+The duel HUD's digit strips are still font glyphs at the ported pens on the play hosts (`baka_fighter_chrome::hud_digit_placements`, `engine-ui::baka_strips::baka_digit_strip_draws_for`): the layout is retail's, the glyph source is not.
 
 The chrome's announcer line plays through each play host's CD-XA clip path. The minigames page decodes every line the chrome can start (`baka_fighter_chrome::announcer_xa_prestage`, `XA32` / `XA33`) at disc load and plays them through the same XA output (`baka_xa_state_json` reports staged and fired lines).
 

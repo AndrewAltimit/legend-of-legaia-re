@@ -1,16 +1,16 @@
 # legaia-engine-motion-vm
 
 The two per-actor motion VMs, ported from the routines' disassembly like the
-rest of [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from the
+VMs in [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from the
 original executable.
 
-This crate sits strictly **below** `legaia-engine-vm`: every module's whole
-dependency closure inside the engine is in this crate, `legaia-asset` (the MAN
+This crate sits near the bottom of the engine stack, below
+`legaia-engine-field` and `legaia-engine-core`: every module's whole
+dependency closure inside the engine is in this crate, `legaia-scene-formats` (the MAN
 motion-script opcode widths) and
 [`legaia-engine-system`](../engine-system/README.md) (the PsyQ `rand`
-step). `legaia-engine-vm` re-exports each module at its
-old path, so `legaia_engine_motion_vm::ambient_motion` and
-`legaia_engine_motion_vm::ambient_motion` name the same module. Free of wgpu,
+step). Consumers name the modules here directly
+(`legaia_engine_motion_vm::ambient_motion`). Free of wgpu,
 winit and cpal, so it builds for native and `wasm32` alike.
 
 ## `motion_vm` / `ambient_motion` - `FUN_8003774C` / `FUN_80038158`
@@ -35,8 +35,8 @@ point. Without it an engine NPC holds one heading forever where a retail one
 slowly looks around.
 
 `motion_pause`, the sibling kick (`FUN_8003C9AC`) that rewrites every
-moving-class actor's requested move to its standing move, stays in
-`legaia-engine-vm`: it writes the field VM context's requested move.
+moving-class actor's requested move to its standing move, is in
+`legaia-engine-field`: it writes the field VM context's requested move.
 
 ## What belongs here
 
@@ -48,11 +48,11 @@ moving-class actor's requested move to its standing move, stays in
 
 The disc oracles that pin both VMs against every scene MAN
 (`ambient_motion_disc_oracle`, `ambient_motion_ops`) stay in
-`crates/engine-vm/tests`, which name the re-exported paths.
+`crates/engine-vm/tests`.
 
 ## See also
 
 - [`docs/subsystems/motion-vm.md`](../../docs/subsystems/motion-vm.md) - the
   opcode tables and the bytecode's home in the MAN.
-- [`crates/engine-vm`](../engine-vm/README.md) - the crate this was split
-  from, and the field host that ticks both VMs.
+- [`crates/engine-vm`](../engine-vm/README.md) - the field, move and actor
+  VMs.

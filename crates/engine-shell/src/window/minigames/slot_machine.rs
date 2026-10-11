@@ -7,7 +7,7 @@ impl PlayWindowApp {
     /// The slot machine's five paylines as screen primitives: the ported
     /// payline pass (`FUN_801D3380`) with its projection
     /// (`SlotMachine::payline_segments`), turned into one-pixel flat quads by
-    /// the shared `ui_slot_paylines` builder. Both browser pages stroke the
+    /// the shared `slot_paylines` builder. Both browser pages stroke the
     /// same projected segments. Empty outside the slot machine or when the
     /// overlay's payline table did not decode.
     pub(in crate::window) fn slot_payline_screen_prims(
@@ -109,7 +109,7 @@ impl PlayWindowApp {
 
     /// The whole machine as screen primitives - cabinet, reels, furniture,
     /// dot matrix and coin HUD - through the shared
-    /// `ui_slot_cabinet::slot_cabinet_prims` builder. Empty outside the slot
+    /// `slot_cabinet::slot_cabinet_prims` builder. Empty outside the slot
     /// machine or before its VRAM is resident.
     pub(in crate::window) fn slot_cabinet_screen_prims(
         &self,
@@ -156,7 +156,7 @@ impl PlayWindowApp {
         prims
     }
 
-    /// The slot machine's rules-page text (`ui_slot_cabinet::
+    /// The slot machine's rules-page text (`slot_cabinet::
     /// slot_rules_text_draws_for`) in surface pixels; empty off a rules page.
     /// The browser play page draws the same list (`slot_status_draws`).
     pub(in crate::window) fn slot_rules_text_draws(&self, w: u32, h: u32) -> Vec<TextDraw> {

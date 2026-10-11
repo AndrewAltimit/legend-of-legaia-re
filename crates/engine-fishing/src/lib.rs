@@ -3,12 +3,10 @@
 //! Headless state machines driven by disc-parsed tables, with no `World`, no
 //! scene loading and no renderer.
 //!
-//! These modules name only each other, `legaia-asset`, `legaia-engine-vm`
-//! and `legaia-tmd` - no other minigame - so the crate sits below
-//! `legaia-engine-minigames`, which re-exports each module at its old path
-//! (and `legaia-engine-core` re-exports those in turn). Doc links that
-//! pointed up at a dependent crate are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate. See the crate README.
+//! These modules name no other minigame, so the crate sits below
+//! `legaia-engine-minigames`. Doc comments name items of a dependent crate
+//! in plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate. See the crate README.
 
 #![forbid(unsafe_code)]
 

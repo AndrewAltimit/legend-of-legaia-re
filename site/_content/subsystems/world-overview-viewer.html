@@ -128,7 +128,7 @@
       <tr><td>Cadence</td><td>Kingdom bundle slot-5 CLUT-walk table</td><td>A 16 &times; 1 copy onto <code>(0, 506)</code> every 9 vsyncs; the viewer uses 0.1 s per frame on a wall clock</td></tr>
     </tbody>
   </table>
-  <p>The stepping table is the slot-5 CLUT-walk table the live engine steps directly - <em>not</em> the script-driven CLUT-cell family, which only carries the row-498 park one-shots. Code: <code>legaia_web_viewer::ocean::find_ocean_assets</code>. Before a disc is loaded the sea is a solid tint from <code>ocean_color</code>, CLUT-sampled out of a save state.</p>
+  <p>The stepping table is the slot-5 CLUT-walk table the live engine steps directly - <em>not</em> the script-driven CLUT-cell family, which only carries the row-498 park one-shots. Code: <code>legaia_scene_formats::ocean::find_ocean_assets</code>. Before a disc is loaded the sea is a solid tint from <code>ocean_color</code>, CLUT-sampled out of a save state.</p>
 </section>
 
 <section class="doc-section" id="shader-plumbing">

@@ -293,7 +293,7 @@ pub const LIST_MODE_PARKED: i32 = 4;
 /// window's `(+0xA, +0xC)` rect origin; the draw stays host-side here.
 ///
 /// The name is deliberately not the bare `description_source`:
-/// `legaia_engine_ui`'s `ui_menu_window_painters` declares a free function
+/// `legaia_engine_ui`'s `menu::window_painters` declares a free function
 /// of that name over a different id space, and the port catalog's call
 /// graph links a bare call to **every** in-tree free function of the name
 /// with no receiver to disambiguate. Sharing it would make this kernel read

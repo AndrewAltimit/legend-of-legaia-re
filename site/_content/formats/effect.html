@@ -175,7 +175,7 @@
     </tbody>
   </table>
   </div>
-  <p><strong>The four Arts banners are composed, not stored.</strong> Only one <code>ARTS!!</code> exists on the sheet. The banner emitter <code>FUN_801E2650</code> draws a pair of quads per call - the position-selected word, then always the <code>ARTS!!</code> tail - so the four positions render <code>NEW</code> / <code>HYPER</code> / <code>MIRACLE</code> / <code>SUPER ARTS!!</code>, the halves sliding in from opposite sides to a per-position seam. This sheet is distinct from the HUD's <code>cur / max</code> numerals, which are 8&times;12 cells off the menu-glyph atlas through CLUT row 510 (<a href="../subsystems/battle.html">battle</a>). In the port: <code>engine_vm::battle_value_readout</code>.</p>
+  <p><strong>The four Arts banners are composed, not stored.</strong> Only one <code>ARTS!!</code> exists on the sheet. The banner emitter <code>FUN_801E2650</code> draws a pair of quads per call - the position-selected word, then always the <code>ARTS!!</code> tail - so the four positions render <code>NEW</code> / <code>HYPER</code> / <code>MIRACLE</code> / <code>SUPER ARTS!!</code>, the halves sliding in from opposite sides to a per-position seam. This sheet is distinct from the HUD's <code>cur / max</code> numerals, which are 8&times;12 cells off the menu-glyph atlas through CLUT row 510 (<a href="../subsystems/battle.html">battle</a>). In the port: <code>engine_battle_vm::battle_value_readout</code>.</p>
 </section>
 
 <section class="doc-section" id="consumer-cluster">

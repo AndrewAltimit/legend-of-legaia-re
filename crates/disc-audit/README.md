@@ -19,8 +19,7 @@ every parser there is, so this crate depends on all of
 `legaia-container-formats`, `legaia-scene-formats`, `legaia-minigame-formats`,
 `legaia-ui-formats`, `legaia-actor-formats`,
 `legaia-game-tables` and `legaia-overlay-images`. None of those may depend on
-it, and it must not depend on any engine or patcher crate. `legaia-asset`
-re-exports each module at its old path.
+it, and it must not depend on any engine or patcher crate.
 
 ## Module reference
 

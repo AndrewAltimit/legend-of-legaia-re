@@ -1,7 +1,6 @@
 //! Party <-> Delilas battle-model swap kernels: pure transforms over decoded
 //! disc assets. Nothing here opens a disc; the disc writes are
-//! `legaia-delilas-party`'s. `legaia-patcher` re-exports this crate as
-//! `crate`.
+//! `legaia-delilas-party`'s.
 //!
 //! The crate root holds the shared rig math (anatomy permutation, bone
 //! frames, the pivot-anchored bake, texture re-layout) and the

@@ -8,8 +8,8 @@ browser play page (`legaia-web-viewer`) share.
 
 The shared render kernels (GTE math, screen primitives, the VRAM capture,
 the effect emitters, the battle numerals and the enhanced scene lighting)
-live in [`legaia-render-kernels`](../render-kernels/README.md), which this
-crate re-exports at their old paths.
+live in [`legaia-render-kernels`](../render-kernels/README.md), the crate
+below this one.
 
 Every function projects a renderer-agnostic *view* struct - built by the host
 from the live `World` - into a `Vec` of `TextDraw` / `SpriteDraw` primitives.
@@ -143,13 +143,13 @@ shared leaf:
 
 ## Composition
 
-`legaia-engine-render` re-exports the items its native callers use at their
-historical crate-root path, through an explicit list rather than a glob, so a
-new item here does not silently join that crate's API. The GPU-resident batch wrappers
+Native callers name the builders here directly; `legaia-engine-render`
+depends on this crate for the draw types it uploads. The GPU-resident batch wrappers
 (`TextOverlay` / `SpriteOverlay` / `UploadedSpriteAtlas`) stay in
 `legaia-engine-render` because they hold wgpu handles.
 
-Depends only on `legaia-asset`, `legaia-engine-battle-vm`,
+Depends only on `legaia-game-tables`, `legaia-ui-formats`,
+`legaia-minigame-formats`, `legaia-engine-battle-vm`,
 `legaia-render-kernels`, `legaia-font`, `legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
 no wgpu, no winit, and not `legaia-engine-core` - so it links into the lean
 WASM play build. The projection from live `engine-core` state into these

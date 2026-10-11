@@ -13,7 +13,7 @@ Most helpers are resident in the **battle overlay**, PROT entry 0898 (extraction
 | slot B | The second overlay slot at `0x801F69D8`, above the resident battle overlay, where cast / summon modules page in. |
 | GTE | The PlayStation geometry coprocessor. |
 
-Port module names are given as `crate::module`. The battle kernels live in `engine-battle-vm` and are re-exported by `engine-vm` at their old paths, so `legaia_engine_battle_vm::battle_action` and `engine-battle-vm::battle_action` name the same code.
+Port module names are given as `crate::module`: `engine-battle-vm::battle_action` is `legaia_engine_battle_vm::battle_action`.
 
 ## Helper index
 
@@ -359,7 +359,7 @@ So an agile enemy takes several strikes per turn, the same "wide gauge = more co
 
 Both sides of the budget are disc data: the AGL seed is the record's `+0x0E` halfword and each candidate's price is its entry's `+0x74` byte in the monster archive (PROT 867). The per-turn hit count is therefore a randomizer target. The patcher's `--enemy-attack-count` multiplier rescales the affordable attack entries' cost bytes in place ([randomizer.md § Enemy attack count](../tooling/randomizer.md#enemy-attack-count)).
 
-Port: `engine-battle::monster_ai` (re-exported as `engine-battle::monster_ai`).
+Port: `engine-battle::monster_ai`.
 
 ### `FUN_801EED1C` / `FUN_801E7320` - state-`0x0C` setup hooks
 
@@ -632,7 +632,7 @@ On a terminator it installs the **move-power record** (`0x801F4F5C + map[actor+0
 
 **`FUN_801E295C` does not call it.** A five-form reference scan (`scripts/ghidra-analysis/find-address-word-refs.py 801dea50`) finds exactly two references in the whole corpus, both `jal`s in `SCUS_942.54` at `0x800478B8` and `0x80047C08`, inside `FUN_80047430`, the per-frame anim-node tick. The effect-script walk is driven from the anim path.
 
-Port: kernels in `engine-effects::action_effect_script` (re-exported by `engine-core`); the spawns come back as requests. See `overlay_battle_action_801dea50.txt`.
+Port: kernels in `engine-effects::action_effect_script`; the spawns come back as requests. See `overlay_battle_action_801dea50.txt`.
 
 #### `FUN_801E09F8` - cast-effect census + projectile flight / impact
 

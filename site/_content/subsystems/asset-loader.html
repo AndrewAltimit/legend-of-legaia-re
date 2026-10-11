@@ -11,7 +11,7 @@
     <dt>Loaders</dt><dd>One per scene type - battle, field / town, sound, streams (<a href="#how-we-know">table below</a>)</dd>
     <dt>Common router</dt><dd>The asset-type dispatcher: an 8-bit type byte picks a handler (TIM, TMD, MES, ANM, &hellip;)</dd>
     <dt>Scene change</dt><dd>Field-VM op <code>0x3F</code> carries a scene <em>name</em>; op <code>0x3E</code> door-warps reach only the seven minigames</dd>
-    <dt>In the port</dt><dd><code>engine-core::SceneResources::build_targeted</code> + <code>legaia_asset</code> parsers (<code>scene_asset_table</code>, <code>scene_tmd_stream</code>, <code>battle_data_pack</code>)</dd>
+    <dt>In the port</dt><dd><code>engine-core::SceneResources::build_targeted</code> + the format parsers (<code>legaia_scene_formats::{scene_asset_table, scene_tmd_stream}</code>, <code>legaia_actor_formats::battle_data_pack</code>)</dd>
     <dt>Confidence</dt><dd>Confirmed - disassembly + corpus round-trips (<a href="#how-we-know">how we know</a>)</dd>
   </dl>
   <div class="notice">

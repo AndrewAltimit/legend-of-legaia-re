@@ -4,16 +4,15 @@ The battle-side VM kernels: the per-actor battle action state machine
 (`FUN_801E295C`), the battle formulas, the phase-scripted battle camera and
 the shared retail GTE camera, the cast-module tick bodies, and the
 battle-overlay leaves around them. Ported from the routines' disassembly like
-the rest of [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
+the VMs in [`legaia-engine-vm`](../engine-vm/README.md), with no bytes from
 the original executable.
 
-This crate sits strictly **below** `legaia-engine-vm`: every module's whole
-dependency closure inside the engine is in this crate (plus `legaia-asset` /
-`legaia-art` and `legaia-engine-system`, for the BIOS `rand` and the fade
-template the summon flash converts into), and `legaia-engine-vm` re-exports each module at its old path,
-so `legaia_engine_battle_vm::battle_action` and `legaia_engine_battle_vm::battle_action`
-name the same module. Free of wgpu, winit and cpal, so it builds for native
-and `wasm32` alike.
+This crate does not depend on `legaia-engine-vm`: every module's whole
+dependency closure inside the engine is in this crate (plus the format
+crates, `legaia-art` and `legaia-engine-system`, for the BIOS `rand` and the fade
+template the summon flash converts into). Consumers name the modules here
+directly (`legaia_engine_battle_vm::battle_action`). Free of wgpu, winit and
+cpal, so it builds for native and `wasm32` alike.
 
 ## What belongs here
 
@@ -21,8 +20,9 @@ A battle-side module moves here when nothing in its closure reaches back into
 `legaia-engine-vm`. `battle_burst` (named by `move_vm`'s host) stays in
 `legaia-engine-vm` for that reason; `psx_camera` and `camera_mover` are here
 because the battle camera script and the GTE camera build call each other.
-Doc links that point back up at `legaia-engine-vm` modules are plain code
-spans, since rustdoc cannot resolve a link into a dependent crate.
+Doc links that point at `legaia-engine-vm` modules are plain code
+spans, since rustdoc cannot resolve a link into a crate this one does not
+depend on.
 
 ## Contents
 
@@ -131,7 +131,7 @@ lands on the same net transform.
 (`PORT: FUN_801DC0BC`, the `f32` rendition of `camera_mover`'s integer law) -
 lives here rather than in the wgpu-linked renderer crate, which is what lets
 the browser play page ease a scripted shot instead of snapping every
-`apply > 0` beat. `engine-render::window` re-exports it at its old path.
+`apply > 0` beat.
 
 Which camera owns a given frame, and what its inputs are, is one layer up:
 `engine-core::camera_view`.

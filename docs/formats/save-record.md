@@ -242,7 +242,7 @@ next-level threshold (`+0x4`) but `+0x130 == 1` still displays **LV 1**, and set
 directly, *not* re-derived from cumulative XP at a New Game.
 
 The retail level-up applier maintains `+0x130` by incrementing it `+1` per level-up
-event (the captured `engine_core::levelup::observations::{noa,gala}_4_level_jump`
+event (the captured `engine_battle::levelup::observations::{noa,gala}_4_level_jump`
 bumped it by one across a four-level grant, so it can momentarily lag the XP-derived
 level after a rare multi-level jump), but for single-level play and the new-game seed
 it equals the level. `+0x130` is not a "Magic Rank", and the adjacent `+0x131`

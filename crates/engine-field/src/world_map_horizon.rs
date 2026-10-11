@@ -7,7 +7,7 @@
 //!
 //! The emitter is one-shot: it runs only when the gate `_DAT_801F351C` is
 //! set, and self-clears it. The gate plus its three staged params live in
-//! [`engine_core::world_map::EmitterGate`]; this module is the consumer that
+//! [`crate::world_map::EmitterGate`]; this module is the consumer that
 //! turns one armed gate into a frame's worth of prims.
 //!
 //! ## What it draws

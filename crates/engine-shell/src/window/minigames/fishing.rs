@@ -123,7 +123,7 @@ impl PlayWindowApp {
 
     /// The sprite half of the fishing HUD as screen primitives: every plate,
     /// digit, gauge cap and banner cut from the overlay's sprite table
-    /// (`FUN_801D63B0`, through the shared `ui_fishing_sprite` builder) out of
+    /// (`FUN_801D63B0`, through the shared `fishing::sprite` builder) out of
     /// the venue's HUD page, which the pond VRAM this window uploads for the
     /// session already holds. The browser play page makes the same call.
     /// Empty without a session or a decoded table.
@@ -141,10 +141,10 @@ impl PlayWindowApp {
 
     /// The fishing rod and line as screen primitives: the rod model the rod
     /// actor posed this frame (`PondSession::rod_faces`, wrapped by the shared
-    /// `ui_fishing_rod` builder), then the session's line for this frame
+    /// `fishing::rod` builder), then the session's line for this frame
     /// (`legaia_engine_core::fishing_venue::fishing_line_frame`, the fish end
     /// projected through the follow camera the scene draws with), wrapped by
-    /// the shared `ui_fishing_line` builder. The browser play page makes the
+    /// the shared `fishing::line` builder. The browser play page makes the
     /// same calls. Empty with no rod and no line out.
     pub(in crate::window) fn fishing_line_screen_prims(
         &mut self,

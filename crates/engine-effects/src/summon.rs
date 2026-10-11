@@ -35,7 +35,7 @@
 //! [`crate::world::World::take_pending_summon_spawn`], and the host spawns the
 //! summon's namesake `battle_data` creature ([`summon_creature_id`]) as an
 //! ordinary battle actor - mesh + texture via
-//! [`legaia_actor_formats::monster_archive::battle_render_mesh`], animation via
+//! `legaia_actor_formats::monster_archive::battle_render_mesh`, animation via
 //! [`legaia_actor_formats::monster_archive::idle_animation`] →
 //! [`crate::battle_anim::MonsterAnimPlayer`] → the rigid TRS-keyframe draw
 //! (`FUN_80048A08` / `FUN_8004998C`, ported in `legaia_engine_vm::anim_vm`). That

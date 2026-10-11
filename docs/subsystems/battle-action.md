@@ -173,7 +173,7 @@ Unhandled values are listed under [Unhandled states](#unhandled-states).
 
 Slot `0xFF` of the jump table at `0x801CED44` points at `0x801E67E8`, whose whole body is two context writes: `ctx[+0x06] = 0x14` (`0x801E67F4`), handing the round back to the command-flow SM's round-start arm, and `ctx[+0x28A] += 1` (`0x801E6810`) around a call to `FUN_801F45A4` (the per-round status-`0x400` waker). The only way in is the `jr v0` at `0x801E2AAC`, so a decompiler pass that does not resolve the table reports `Removing unreachable block (ram,0x801E67E8)` and the round bump is absent from the C. The command-flow side of the handshake is in [`battle-command-flow.md`](battle-command-flow.md#the-round-loop---what-re-arms-0x1e); `0x14` then stores `0x1E` unconditionally, which is why the `Begin` / `Run` prompt belongs to the round and not to a battle's first turn.
 
-**Port.** `engine_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` wake sweep) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
+**Port.** `engine_battle_vm::battle_action` maps `0xFF` to `ActionState::RoundEnd`, whose handler rewinds the turn cursor and hands control back through `EndOfAction`, the state the arming driver keys the next turn on. The retail `0xFF` body (`ctx[+0x28A]` bump, `FUN_801F45A4` wake sweep) runs host-side in `engine-core`'s live loop at its round boundary. The rewind is the engine's own: retail reseeds by re-entering `0x00`. `battle_end(..)` is raised only by the paths that raise `DAT_8007BD71 = 0xFE` in retail - the `0x5A` wipe arms and the escape teardown. Regressions: `engine-vm` `full_round_with_both_sides_alive_does_not_end_the_battle`, `engine-core` `round_boundary_state_is_not_a_spurious_victory`.
 
 #### Attack chain - strike loop (`0x1E`)
 
@@ -483,7 +483,7 @@ Two camera arms on the outcome (`_DAT_8007726C == ctx + 0x189` = failed). **Fail
 
 #### State `0x66` - Run - successful-escape teardown
 
-Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white ramp drawn with kind 2 = ABR `B - F`, i.e. a fade to **black**; ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_core::fade` kernel.
+Writes the fade template at `DAT_801C9070` - kind 2, time `0x40`, start `(0,0,0)` → end `(0xFF,0xFF,0xFF)` (a black→white ramp drawn with kind 2 = ABR `B - F`, i.e. a fade to **black**; ramped by the `FUN_80020B00` fade-state loader) - and spawns it via `func_0x80024E80(&DAT_801C9070, 0)`. Sets `DAT_8007BD71 = 0xFE` - the **battle-end signal**, the same byte the `0x5A` wipe gate sets - so the party leaves the battle. (The earlier "run failed, battle continues" reading of this state is falsified by that signal byte; the failed-run path is `0x65 → 0x50`.) Engine: `ActionState::RunEscape` → `BattleEndCause::Escaped`; the fade is the `engine_system::fade` kernel.
 
 **Next:** `0x67` (terminal hold; no case body - falls through to default no-op).
 
@@ -1162,7 +1162,7 @@ is in the middle of a character-record lookup and is not a function.
 
 ## Engine port
 
-`crates/engine-battle-vm/src/battle_action.rs` (and the `battle_action/` modules beside it; re-exported as `legaia_engine_battle_vm::battle_action`) ports the state graph as a per-frame edge-triggered state machine. It is live: both play hosts run every battle action through it. Surface:
+`crates/engine-battle-vm/src/battle_action.rs` (and the `battle_action/` modules beside it; `legaia_engine_battle_vm::battle_action`) ports the state graph as a per-frame edge-triggered state machine. It is live: both play hosts run every battle action through it. Surface:
 
 - `ActionState` - symbolic enum for every named state byte; `from_byte` returns `None` for unmapped values (so the dispatcher can surface them as `StepOutcome::UnknownState` for engine logging).
 - `ActionCategory` - symbolic enum for the action-category byte at `actor[+0x1DE]`.
@@ -1507,7 +1507,7 @@ purple ones (`battle_melee_hit_spark`'s Somersault draws pool `9`'s colours,
 `(120, 0, 255)` cued to the captured `(52, 0, 111)`). The port applies it
 where the walk queues the spawn (`World::step_actor_effect_script`).
 
-Engine port: kernel `action_effect_script` (in `crates/engine-effects`, re-exported by `engine-core`) (stepper, rotation,
+Engine port: kernel `action_effect_script` (in `crates/engine-effects`) (stepper, rotation,
 terminator maths, `RetailRotationLut`), driven per battle frame by
 `World::tick_battle_animations`; spawn requests drain via
 `World::drain_battle_effect_spawns` and route into the effect pool (direct

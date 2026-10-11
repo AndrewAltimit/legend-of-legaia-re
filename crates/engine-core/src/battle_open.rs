@@ -1,8 +1,8 @@
 //! The battle open's disc readers.
 //!
 //! The formation banner, its hold timers and wording live in
-//! [`legaia_engine_menus::battle_open`] and are re-exported here at their old
-//! paths. What stays is what reads the user's `PROT.DAT` through a
+//! [`legaia_engine_menus::battle_open`]. This module holds what reads the
+//! user's `PROT.DAT` through a
 //! [`crate::scene::ProtIndex`]: the battle overlay's labels and the cast
 //! trigger's anim-pair lists.
 

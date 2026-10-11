@@ -5,10 +5,9 @@
 //!
 //! Every module's whole dependency closure inside the engine is in this
 //! crate (plus `legaia-engine-vm` and the asset crates), so it sits strictly
-//! below `legaia-engine-core`, which re-exports each module at its old path
-//! (`crate::summon`, ...). Doc links that point back up at
-//! `engine-core` are plain code spans, since rustdoc cannot resolve a link
-//! into a dependent crate. See the crate README for the module map.
+//! below `legaia-engine-core`. Doc comments name `engine-core` items in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate. See the crate README for the module map.
 
 #![forbid(unsafe_code)]
 

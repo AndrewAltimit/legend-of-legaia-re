@@ -69,7 +69,7 @@
 //!
 //! * [`copy_nested_records`] stages a nested record block between two raw
 //!   `u32` buffers. The engine has no such buffer: animation and keyframe
-//!   data arrive as parsed `legaia_asset` types and are handed to the
+//!   data arrive as parsed `legaia_actor_formats` types and are handed to the
 //!   renderer as typed clips, never staged word-wise, so no caller holds a
 //!   `&mut [u32]` destination for it to advance.
 //! * [`scale_rgb24`] is the **drain of the armed wash**, and every part of that

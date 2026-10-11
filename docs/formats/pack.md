@@ -54,5 +54,5 @@ The [standalone TIM-pack](tim-pack.md) reader is not a second format. Its 8-byte
 ## See also
 
 - [prot::timpack](tim-pack.md) - the reader for this pack behind a `TIM_LIST` chunk header.
-- [field-pack](field-pack.md) - **not** a third pack: the `0x01059B84` word is a DATA_FIELD chunk header wrapping an `container-formats::pack` of scene TIMs (this page's format).
+- [field-pack](field-pack.md) - **not** a third pack: the `0x01059B84` word is a DATA_FIELD chunk header wrapping a `container-formats::pack` of scene TIMs (this page's format).
 - [DATA_FIELD streaming](data-field.md) - the streaming container these packs live inside.

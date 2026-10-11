@@ -231,7 +231,7 @@ A blanket module disclosure is safe while *nothing* in the file has a caller,
 and it can be narrowed the moment one item acquires one: an anchor whose own
 doc block opens a line with `WIRED:` opts that single item out of the module
 blanket, leaving the blanket true for the rest of the file. The worked example
-is `cutscene_script_elements::save_screen_spawn`, one live spawn under a
+is `plain_template_actors::save_screen_spawn`, one live spawn under a
 blanket its three sibling element handlers still need. An own-block
 `NOT WIRED` beats an own-block `WIRED:`; the token rules and the control suite
 are in [`port-catalog.md`](port-catalog.md#per-item-wired-against-a-module-blanket).

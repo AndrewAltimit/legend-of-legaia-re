@@ -572,7 +572,7 @@ impl MoveFxStreak {
     /// terminate, so a host can call it unconditionally per frame.
     ///
     /// `counter_word` is the staged move-power record's `+0x04`
-    /// ([`legaia_game_tables::move_power::MoveRecord::counter_init`]); pass `None`
+    /// (`legaia_game_tables::move_power::MoveRecord::counter_init`); pass `None`
     /// when no catalog is installed and the block keeps its previous word,
     /// exactly as retail's `sh` would be skipped.
     pub fn install(&mut self, step: &EffectScriptStep, counter_word: Option<u16>) -> bool {

@@ -2,7 +2,7 @@
 //!
 //! The camera - presets, the zone follow composer and ease, the script
 //! mover, the event router, the follow knobs - lives in
-//! [`legaia_engine_field::camera`] and is re-exported here at its old paths.
+//! [`legaia_engine_field::camera`].
 //! It reaches the world only through [`CameraWorld`]; this module is where
 //! `World` implements it, each method a forward to the field or method the
 //! camera used to read directly.

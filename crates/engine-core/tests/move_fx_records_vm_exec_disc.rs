@@ -22,7 +22,7 @@ use legaia_engine_vm::move_vm::{self, ActorState, MoveHost, StepResult};
 use legaia_game_tables::move_power::{self, BATTLE_ACTION_OVERLAY_PROT_INDEX};
 use legaia_prot::archive::Archive;
 
-/// The move VM's per-frame opcode cap (mirrors `engine_core::summon`).
+/// The move VM's per-frame opcode cap (mirrors `legaia_engine_effects::summon`).
 const PER_FRAME_BUDGET: usize = 256;
 /// Frames to drive each record (well past any real move-FX scene length).
 const FRAMES: usize = 600;

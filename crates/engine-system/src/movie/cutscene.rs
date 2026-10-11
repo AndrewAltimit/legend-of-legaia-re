@@ -48,7 +48,7 @@
 //! superseded - see `docs/formats/str-fmv-table.md`.)
 //!
 //! The disc-authoritative decoder is
-//! [`legaia_game_tables::fmv_dispatch::FmvTable`] - call paths that hold the
+//! `legaia_game_tables::fmv_dispatch::FmvTable` - call paths that hold the
 //! PROT 0970 overlay bytes (e.g. the shell's boot-cutscene player)
 //! should prefer `FmvTable::engine_path(fmv_id)`, which also carries
 //! the per-slot frame range the four `MV3.STR` segments need. The
@@ -81,7 +81,7 @@
 /// event use this helper to resolve the operand to a path that their
 /// disc handle can open; ids `2..=5` all resolve to `MV3.STR` (the
 /// four frame-range segments - the segment window itself comes from
-/// [`legaia_game_tables::fmv_dispatch::FmvTable`], which is the preferred
+/// `legaia_game_tables::fmv_dispatch::FmvTable`, which is the preferred
 /// resolver when disc bytes are available). A `None` result means the
 /// slot points at a cut/missing path; engines should treat it as a
 /// no-op (or surface a playback error if they want to surface it).
@@ -420,7 +420,7 @@ pub const STR_INIT_GAME_MODE: u8 = 0x1A;
 
 /// Number of FMV slots in the dispatch table at `0x801D0A6C`
 /// (9 retail + 14 dev). Matches
-/// [`legaia_game_tables::fmv_dispatch::FMV_SLOT_COUNT`].
+/// `legaia_game_tables::fmv_dispatch::FMV_SLOT_COUNT`.
 pub const FMV_SLOT_COUNT: usize = 23;
 
 /// PSX-virtual address of the FMV dispatch table base.

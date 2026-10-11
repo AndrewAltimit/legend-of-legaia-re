@@ -358,7 +358,7 @@ The tail past the latch increment is **inside** the latch. Nothing branches to `
 - `FUN_801E92DC` takes a **spell id**. It resolves the acting slot through `_DAT_8007BD10`, indexes the live game-state window at `0x80084140 + char*0x414 + 0x704` and prepends there. So `ctx[+0x269]` is the spell a capture granted, and element `0x59` is that grant's banner.
 - The capture arm's window is narrow. A non-zero `ctx[+0x269]` on the exit pass re-seeds the countdown to `0xB4` (`0x801E6138`) before the teardown reloads it at `0x801E614C`, so that pass fails the `< 0xC` gate; the menu-flag floor writes `0xC` exactly, which fails it too. The frames with both a live capture byte and a running teardown are the last twelve of the countdown, before it crosses zero.
 
-Port: `done::done_band_capture_and_banner_sweep` carries the `0x59` raise and the `0x51` close. The multi-cast loop stays with `battle_value_readout` (`engine-battle-vm`), which owns the value window and the queued count. `FUN_801E92DC` is `magic_xp::learn_spell_prepend` (`engine-battle`, re-exported by `engine-core`).
+Port: `done::done_band_capture_and_banner_sweep` carries the `0x59` raise and the `0x51` close. The multi-cast loop stays with `battle_value_readout` (`engine-battle-vm`), which owns the value window and the queued count. `FUN_801E92DC` is `magic_xp::learn_spell_prepend` (`engine-battle`).
 
 ## The item / restore applier `FUN_800402F4`
 
@@ -402,7 +402,7 @@ Arguments at every site are `(a0 = tint, a1 = actor-state word, a2 = actor slot,
 - `a0` and `a1` are literals, one pair per site: the tint, and the actor-state word the expander writes to `actor[+0x04]`. The class-0 / class-1 restore arms and the class-7 tier-1 / tier-2 buff arms pass the neutral tint `0x00808080` and recolour nothing.
 - The revive arm (`0x800410B8`) is the one site whose `a1` is `0x20080200`, the word the expander tests for, so revive is the only arm that leaves `actor[+0x0C]` alone.
 
-Port: the selection is a `(class, param_2)` table plus one loop, carried as `battle_cue_group::cue_group_for` (`engine-battle-vm`, re-exported by `engine-vm`) rather than a port of the applier's 1976 instructions. The acting actor's `+0x1E8` / `+0x1E9` pair selects the site, the expander runs, and each cue goes to the effect pool / SFX scheduler through the host.
+Port: the selection is a `(class, param_2)` table plus one loop, carried as `battle_cue_group::cue_group_for` (`engine-battle-vm`) rather than a port of the applier's 1976 instructions. The acting actor's `+0x1E8` / `+0x1E9` pair selects the site, the expander runs, and each cue goes to the effect pool / SFX scheduler through the host.
 
 <a id="fun_800402f4s-stone-and-curse-arms-classes-9--10"></a>
 ### The Stone and Curse arms (classes 9 / 10)
@@ -505,7 +505,7 @@ Any action between the flinch and the melee gives the flinch time to end and con
 
 ### The disc patch
 
-`legaia-patcher --approach-softlock-fix` (`crates/code-hooks/src/approach_fix.rs`, re-exported as `legaia_code_hooks::approach_fix`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
+`legaia-patcher --approach-softlock-fix` (`legaia_code_hooks::approach_fix`, `crates/code-hooks/src/approach_fix.rs`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
 
 Retail's own `0x14` arm then re-runs the staging next frame and the monster resumes walking. By the time the guard fires, the commit that killed the clip has consumed the stale bit, so the re-staged clip loops cleanly. The same bounce rescues a party attacker whose run clip dies. Healthy approaches never see a dead clip and are unaffected.
 

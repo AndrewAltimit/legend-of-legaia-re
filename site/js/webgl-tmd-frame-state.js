@@ -550,7 +550,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
 
   /* Upload the disc-side ocean tile assets. `texture` is the raw 4bpp
    * VRAM data (32 768 bytes, 128×256 packed) extracted by
-   * `legaia_web_viewer::ocean::find_ocean_assets`. `animationFrames` is
+   * `legaia_scene_formats::ocean::find_ocean_assets`. `animationFrames` is
    * the 416-byte flat buffer (13 frames × 16 BGR555 entries, LE) from
    * the same source. `tileWorldSize` is how many world units one
    * texture wrap should cover (default 256, matches the retail tile

@@ -177,7 +177,7 @@
     <li>Left / Right are the only scroll, one whole page at a time.</li>
     <li>Confirming a disabled (grey) row buzzes; a list parked behind the command window draws every row white.</li>
   </ul>
-  <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-menus::pause_screens::list_kernel_navigate</code> + <code>engine-ui::pause_lists</code>.</p>
+  <p>The menu overlay builds each row as a packed u16 - class nibble, disabled bit, alt-ink bit, 12-bit payload - and the kernel only reads them; a small global protocol carries mode, selection and scroll between the two. The per-row draw switches on the class nibble: bag rows with counts, equip candidates with slot pictograms, shop rows with prices, plain names. Engine port: <code>engine-menus::pause_screens::list_kernel_navigate</code> + <code>engine-ui::menu::screens</code>.</p>
 </section>
 
 <section class="doc-section" id="items-use-flows">

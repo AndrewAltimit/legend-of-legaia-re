@@ -12,7 +12,7 @@ impl World {
     /// frame the cast starts (`0x801F6B50` kill roll, `0x801F6C28` resist
     /// throw, `0x801F6CF0` the third-character extra throw). This is the same
     /// draw against this world's RNG cursor, and the arithmetic is the ported
-    /// kernel's ([`vm::cast_seru_ticks_a::nighto_outcome`]).
+    /// kernel's ([`legaia_engine_battle_vm::seru_magic_ticks::nighto_outcome`]).
     ///
     /// The three inputs the roll needs beyond the dice:
     ///

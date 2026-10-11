@@ -21,7 +21,7 @@
 //! are the **trailing operand bytes of the install opcode itself**, inline
 //! in the per-scene field-VM script bytecode. There is no separate on-disc
 //! encounter-record table; each scripted encounter is its own opcode site
-//! in a [`scene_v12_table`](../../legaia-asset/src/scene_v12_table.rs)
+//! in a `legaia_scene_formats::scene_v12_table`
 //! sister pair (or its `scene_event_scripts` sibling). See
 //! `docs/formats/encounter.md` for the install-opcode catalogue
 //! (0x37/0x41, 0x38, 0x43, 0x47, 0x4C). Random-encounter triggers

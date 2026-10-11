@@ -276,7 +276,7 @@ impl PlayWindowApp {
         // Placeholder letterforms ONLY while the hall's own HUD page is not
         // resident. With it staged the banner is retail's textured sprite,
         // emitted as screen-space primitives in `redraw`'s prim list through
-        // the same `ui_dance::dance_countin_prims` the browser play page
+        // the same `dance::dance_countin_prims` the browser play page
         // calls - so the two hosts cannot end up drawing different halves of
         // this one banner, which is exactly what happened to the battle
         // numerals.
@@ -538,7 +538,7 @@ impl PlayWindowApp {
             // the one-glyph round digit, the 8 px right-aligned score field,
             // and the 0x10 px "GET COIN" numeral strip for the prize. The
             // placement is `baka_fighter_chrome::hud_digit_placements` and
-            // the glyph quads are `ui_baka_strips` - both shared with the
+            // the glyph quads are `baka_strips` - both shared with the
             // browser play page, which printed a summary line here instead.
             // The HUD widget descriptors these cells patch (`DAT_801d7160`)
             // index a sprite page no host uploads, so each cell draws as a
@@ -572,7 +572,7 @@ impl PlayWindowApp {
             // (`glyph_u`-paged `u` + the record's `v/w/h`) rides alongside
             // as the future atlas source.
             // Labels come from the shared kernels
-            // (`baka_fighter_chrome::chrome_labels`, `ui_baka_strips`), the
+            // (`baka_fighter_chrome::chrome_labels`, `baka_strips`), the
             // same the browser play page draws.
             let sheet = f.cabinet().choice_sheet();
             let cabinet_cells = f.cabinet_cells();

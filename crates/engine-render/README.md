@@ -6,11 +6,9 @@ This crate is where the hard `wgpu` link lives, which is why the
 renderer-agnostic UI draw-list builders (`status_screen_draws_for`,
 `options_draws_for`, `battle_hud_draws_for` and friends) are **defined in
 [`legaia-engine-ui`](../engine-ui/README.md)**, not here - the browser
-play page needs them without pulling in wgpu. `engine-render`
-re-exports the items its native callers name through an explicit list at
-the crate root, so `engine_render::status_screen_draws_for` still resolves;
-edit them in `engine-ui`, and add a name to that list only when a native
-caller needs the old path.
+play page needs them without pulling in wgpu. Native callers name them in
+`legaia_engine_ui`, and the wgpu-free render kernels in
+`legaia_render_kernels`.
 
 Owns a `wgpu` device + surface plus several render pipelines, sharing the
 same surface and depth attachment:
@@ -176,8 +174,7 @@ it off).
 
 The derivation - which prims glow, the light list, the moods, the glow
 geometry, and the CPU mirror of the shading law - lives in the shared
-`legaia_render_kernels::scene_lighting` kernel (re-exported here as
-`scene_lighting`), so the browser play page lights from the same values.
+`legaia_render_kernels::scene_lighting` kernel, so the browser play page lights from the same values.
 This crate keeps the WGSL twin (`dyn_light` / `scene_point_gain` in
 `shaders.rs`, held to the mirror by the `dyn_light` module's tests) and the
 part only wgpu has: `scene_lights::light_view_proj` and the per-light PCF
@@ -233,7 +230,7 @@ faithfully.
 
 Toggle is global - apply once per frame before submitting draws.
 
-The [`afterimage`](../render-kernels/src/afterimage.rs) (wgpu-free in `engine-ui`, re-exported here) module ports the battle move-FX
+The [`afterimage`](../render-kernels/src/afterimage.rs) module (wgpu-free, in `legaia-render-kernels`) ports the battle move-FX
 streak draw (`FUN_801e1ab0`): `build_afterimage_quad` assembles one
 jittered, semi-transparent textured quad (`POLY_FT4`) from four projected
 screen corners + the move's trail-texture id, reproducing the per-corner
@@ -299,8 +296,8 @@ surface.
 
 Fixed-point GTE math helpers (`q3.12` rotation, `q19.12` translation)
 live in [`gte`](../render-kernels/src/gte.rs) - hosted wgpu-free in
-`legaia-engine-ui` so the browser play page links the same arithmetic, and
-re-exported here at its historical path; production rendering still uses f32
+`legaia-render-kernels` so the browser play page links the same arithmetic;
+production rendering still uses f32
 wgpu math, but the module is the single citation point for retail-correct
 fixed-point arithmetic when re-targeting captured GTE traces.
 
@@ -310,7 +307,7 @@ On the console the framebuffer *is* VRAM - the display area is a rect inside
 the same 1024x512 halfword page textures are read from - so a primitive can
 sample pixels the GPU drew moments earlier. The renderer only ever pushed
 the software page *to* the GPU; [`vram_capture`](../render-kernels/src/vram_capture.rs)
-(wgpu-free in `legaia-engine-ui`, re-exported here) is the
+(wgpu-free, in `legaia-render-kernels`) is the
 missing direction. `blit_rgba_into_vram` quantises an RGBA8 readback to
 BGR555 and writes it into a `legaia_tim::Vram` rect, and
 `Renderer::capture_into_vram` wires that to `capture_rgba`. The write lands
@@ -335,8 +332,8 @@ owner that stands between the (already live) transition state machine in
 `engine-core` and the ordering table above. It seeds the selected style's
 working set, advances it off the transition entity's own clock, and emits
 `ScreenPrim`s plus the per-style fade. The emitter itself is wgpu-free and
-lives in [`engine-ui`](../render-kernels/src/battle_intro.rs) - both hosts arm it -
-and [`src/battle_intro.rs`](src/battle_intro.rs) here re-exports it plus the
+lives in [`legaia-render-kernels`](../render-kernels/src/battle_intro.rs) - both hosts arm it -
+and [`src/battle_intro.rs`](src/battle_intro.rs) here holds the
 one renderer-bound wrapper, `update_field_capture`, which turns
 `Renderer::capture_rgba` output into the emitter's `land_capture_rgba` /
 `refresh_captured_page` calls.

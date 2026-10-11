@@ -1,8 +1,8 @@
 //! The pause screens' `World` seam.
 //!
 //! The pause-menu sessions, window models and route tables live in
-//! [`legaia_engine_menus::pause_screens`] and are re-exported here at their
-//! old paths. What stays is the one entry point that reads the world: the
+//! [`legaia_engine_menus::pause_screens`]. This module holds the one entry
+//! point that reads the world: the
 //! Items screen's window-14 target panel, which takes the disc item-effect
 //! table and the roster off a [`World`].
 

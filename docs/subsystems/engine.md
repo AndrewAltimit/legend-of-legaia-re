@@ -38,22 +38,23 @@ The workspace is two stacks that meet at the format parsers. The preservation st
 
 ```mermaid
 flowchart BT
-    FMT["format crates<br/>iso prot lzs tim tmd vab xa seq mes anm art font save"]
-    ASSET["asset<br/>+ game-tables, actor-formats, overlay-images"]
+    FMT["per-format crates<br/>iso prot lzs tim tmd vab xa seq mes anm art font save"]
+    FAM["format-family crates<br/>container-formats scene-formats actor-formats<br/>minigame-formats ui-formats game-tables overlay-images"]
+    ESYS["engine-system"]
+    EMODE["engine-mode"]
+    EDLG["engine-dialog"]
     EBV["engine-battle-vm"]
     EMV["engine-motion-vm"]
     EVM["engine-vm"]
     EB["engine-battle"]
+    RK["render-kernels"]
+    EFX["engine-effects"]
+    EFIELD["engine-field"]
     EFISH["engine-fishing"]
     EMG["engine-minigames"]
-    ESYS["engine-system"]
-    EDLG["engine-dialog"]
-    EFX["engine-effects"]
     EMENU["engine-menus"]
-    EFIELD["engine-field"]
     EMGS["engine-minigame-scenes"]
     CORE["engine-core<br/>World, SceneHost"]
-    RK["render-kernels"]
     EUI["engine-ui"]
     EREN["engine-render<br/>wgpu"]
     EAUD["engine-audio<br/>SPU + sequencer"]
@@ -63,27 +64,28 @@ flowchart BT
     SHELL["engine-shell<br/>native host"]
     WEB["web-viewer<br/>browser hosts"]
 
-    ASSET --> FMT
-    EBV --> ASSET
-    EMV --> EBV
-    EVM --> EMV
-    EB --> EVM
-    EFISH --> EVM
-    ESYS --> EVM
-    EDLG --> EVM
+    FAM --> FMT
+    EDLG --> FMT
+    EMODE --> ESYS
+    EBV --> ESYS
+    EBV --> FAM
+    EMV --> ESYS
+    EMV --> FAM
+    EVM --> FAM
+    EB --> EBV
+    RK --> EBV
     RK --> EVM
-    EMG --> EFISH
+    EFX --> RK
     EFX --> EB
-    EFX --> EMG
-    EMENU --> EDLG
-    EMENU --> ESYS
-    EMENU --> EB
-    EMENU --> EMG
-    EFIELD --> ESYS
+    EFIELD --> EMODE
+    EFIELD --> EMV
+    EFIELD --> EDLG
+    EFIELD --> RK
     EFIELD --> EB
-    EFIELD --> EMG
+    EFISH --> EFIELD
+    EMG --> EFISH
+    EMENU --> EMG
     EMGS --> EMENU
-    EMGS --> EFIELD
     CORE --> EFX
     CORE --> EMGS
     EUI --> RK
@@ -94,73 +96,83 @@ flowchart BT
     SCR --> CORE
     SCR --> EUI
     PAR --> SESS
-    PAR --> EREN
     SHELL --> PAR
     SHELL --> SCR
+    SHELL --> EREN
     WEB --> SESS
     WEB --> SCR
 ```
 
 The shape to read off it:
 
-- **The VM layer is at the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait.
-- **A ring of `World`-free kernel crates sits above it** (`engine-battle`, `engine-fishing`, `engine-minigames`, `engine-system`, `engine-dialog`, `engine-menus`, `engine-field`, `engine-effects`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
-- **`engine-core` is where they meet.** It owns `World` and `SceneHost`, implements the per-VM `Host` traits, and re-exports the kernel crates at their historical `legaia_engine_core::` paths.
-- **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it.
+- **Every crate names the crate that owns the code it uses.** No crate re-exports another workspace crate, so the first segment of a path is where the code is.
+- **The format-family crates are the top of the preservation stack.** `container-formats`, `scene-formats`, `actor-formats`, `minigame-formats`, `ui-formats`, `game-tables` and `overlay-images` hold the Legaia-specific formats over the per-format parsers. `asset` is the `asset` command-line binary over them and `disc-audit`; it has no library.
+- **`engine-system`, `engine-dialog` and the VM crates are the bottom of the engine stack.** `engine-battle-vm`, `engine-motion-vm` and `engine-vm` hold the bytecode interpreters and state machines. They know nothing about GPU, audio or the `World`; each reaches the rest of the engine through a `Host` trait.
+- **A ring of `World`-free kernel crates sits above them** (`engine-mode`, `engine-battle`, `engine-effects`, `engine-field`, `engine-fishing`, `engine-minigames`, `engine-menus`, `engine-minigame-scenes`). Each holds rules and state that never touch the `World` struct, so it can be unit-tested alone.
+- **`engine-core` is where they meet.** It owns `World` and `SceneHost` and implements the per-VM `Host` traits. A module there that shares its name with a kernel module (`shop`, `dance`, `tile_board`, `mode`, `camera`, ...) holds only the functions that read a `World` or a `Scene`; the rules are in the kernel crate.
+- **Presentation is a separate branch.** `render-kernels` -> `engine-ui` -> `engine-render` and `engine-audio` do not depend on `engine-core`; the hosts compose them with it. `render-kernels` is also what the effect, field and minigame kernels link for GTE math.
 - **`engine-session` and `engine-screens` are the host-shared top.** `BootSession` (scene host + per-frame order + BGM director) and the shop-family screens are written once and ticked by both play hosts.
 
 ### Dependency table
 
-Internal dependencies as declared in each crate's `Cargo.toml`.
+Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family crates" means the seven in the diagram.
 
 | Crate | Depends on | Role |
 |---|---|---|
-| `bytes`, `iso`, `prot`, `lzs`, `tim`, `mes`, `anm`, `mdt`, `art`, `font`, `save`, `seq`, `cheats` | - | Leaf format crates. |
+| `bytes`, `iso`, `prot`, `lzs`, `tim`, `mes`, `anm`, `mdt`, `art`, `font`, `save`, `seq`, `vab`, `cheats`, `gamedata`, `ram-image` | - | Leaf crates: per-format parsers, label sets, RAM-image analysis. |
 | `tmd` | `tim` | Legaia TMD meshes. |
 | `xa` | `iso` | XA-ADPCM. |
-| `vab` | `xa` | Sound banks (shares the SPU-ADPCM filter constants). |
 | `mdec` | `xa` | Movie decoder. |
 | `overlay-images` | `lzs`, `bytes` | Code-overlay images: detection, load bases, slot-B module layout. |
 | `game-tables` | `overlay-images`, `bytes` | Decoded data tables in `SCUS_942.54` and the overlays. |
-| `actor-formats` | `game-tables`, `lzs`, `prot`, `tim`, `tmd`, `bytes` | Character and monster model formats + glTF export. |
-| `asset` | the three above + `lzs`, `prot`, `tim`, `tmd`, `vab`, `mes`, `anm`, `mdec`, `bytes` | The format hub. |
-| `extract` | `iso`, `prot`, `lzs`, `asset`, `tim`, `tmd`, `xa`, `font` | Disc -> files pipeline. |
-| `disc-patch` | `iso`, `prot`, `lzs`, `asset`, `xa` | `DiscPatcher`, PPF, space ledger. |
-| `translate` | `disc-patch`, `asset`, `art`, `font`, `lzs`, `prot` | Language packs. |
-| `party-swap` | `asset`, `lzs`, `tim`, `tmd`, `bytes` | Battle-model swap kernels. |
-| `texture-replace` | `disc-patch`, `translate`, `asset`, `iso`, `lzs`, `tim` | Image replacement. |
-| `code-hooks` | `disc-patch`, `asset`, `lzs` | MIPS encoders, simulator, hook mods. |
-| `arts-patch` | `code-hooks`, `disc-patch`, `asset`, `art`, `iso`, `lzs` | Tactical Arts mods: combo randomizer, art power, AP hooks, Super Art list. |
-| `delilas-party` | `party-swap`, `arts-patch`, `code-hooks`, `texture-replace`, `translate`, `disc-patch` | The play-as-Delilas mod. |
-| `patcher` | the seven above + the parser crates | The `legaia-patcher` CLI. |
-| `engine-battle-vm` | `asset`, `art` | Battle action SM, formulas, battle camera, cast ticks. |
-| `engine-motion-vm` | `engine-battle-vm`, `asset` | The two per-actor motion VMs. |
-| `engine-vm` | `engine-battle-vm`, `engine-motion-vm`, `asset`, `art`, `anm` | The VM layer; no GPU or audio deps. |
-| `engine-battle` | `engine-vm`, `asset`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
-| `engine-fishing` | `engine-vm`, `asset`, `tmd` | Fishing rules engine. |
-| `engine-minigames` | `engine-fishing`, `engine-vm`, `asset`, `save` | Minigame rules engines. |
-| `engine-effects` | `engine-battle`, `engine-minigames`, `engine-vm`, `asset`, `tmd` | Effect kernels. |
-| `engine-system` | `engine-vm`, `bytes`, `cheats`, `gamedata` | Input, fades, streaming, sound state. |
-| `engine-dialog` | `engine-vm`, `asset`, `font`, `mes` | Dialog pager, inline-dialogue and cutscene-timeline state. |
-| `engine-menus` | `engine-dialog`, `engine-system`, `engine-battle`, `engine-minigames`, `engine-vm`, `asset`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
-| `engine-field` | `engine-system`, `engine-minigames`, `engine-battle`, `engine-vm`, `asset`, `anm`, `bytes`, `mes`, `tmd` | Field kernels: actor programs, camera, cue routers, mode seat. |
-| `engine-minigame-scenes` | `engine-minigames`, `engine-menus`, `engine-battle`, `engine-field`, `engine-system`, `engine-vm`, `asset`, `tim`, `tmd` | The minigames' 3D scene surfaces. |
-| `engine-core` | every `engine-*` kernel crate above + the parser crates | `World`, scene host and loading, battle loop, menu runtime, saves. |
-| `render-kernels` | `engine-vm`, `asset`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters; no wgpu. |
-| `engine-ui` | `render-kernels`, `engine-vm`, `asset`, `tim`, `tmd`, `font` | Draw-list builders; no wgpu. |
-| `engine-render` | `engine-ui`, `engine-vm`, `asset`, `tim`, `font` | wgpu renderer. |
+| `container-formats` | `anm`, `lzs`, `tim`, `tmd`, `bytes` | Asset-type dispatcher, descriptor, DATA_FIELD chunk stream, pack. |
+| `scene-formats` | `container-formats`, `overlay-images`, `lzs`, `tim`, `tmd`, `bytes` | Field and world-map scene formats, the field-VM disassembler. |
+| `actor-formats` | `container-formats`, `game-tables`, `lzs`, `prot`, `tim`, `tmd`, `bytes` | Character and monster model formats + glTF export. |
+| `minigame-formats` | `container-formats`, `lzs`, `prot`, `tim`, `tmd`, `vab` | The minigames' disc data. |
+| `ui-formats` | `container-formats`, `prot`, `tim` | The formats the 2D interface is drawn from. |
+| `disc-audit` | the format-family crates + `anm`, `lzs`, `mdec`, `mes`, `prot`, `tim`, `vab`, `bytes` | Tooling that measures the whole disc rather than parsing one format. |
+| `asset` | `disc-audit` + the format-family crates | The `asset` binary. |
+| `extract` | `iso`, `prot`, `container-formats`, `disc-audit`, `tim`, `xa`, `font` | Disc -> files pipeline. |
+| `mednafen` | `ram-image`, `actor-formats`, `cheats` | Mednafen save-state reader. |
+| `pcsx-redux` | `ram-image` | PCSX-Redux save-state reader. |
+| `disc-patch` | `iso`, `prot`, `lzs`, `actor-formats`, `scene-formats` | `DiscPatcher`, PPF, space ledger. |
+| `translate` | `disc-patch`, `art`, `font`, `lzs`, `prot`, `actor-formats`, `container-formats`, `game-tables`, `scene-formats` | Language packs. |
+| `party-swap` | `actor-formats`, `container-formats`, `lzs`, `tim`, `tmd`, `bytes` | Battle-model swap kernels. |
+| `texture-replace` | `disc-patch`, `disc-audit`, `actor-formats`, `game-tables`, `ui-formats`, `iso`, `lzs`, `tim` | Image replacement. |
+| `code-hooks` | `actor-formats`, `game-tables` | MIPS encoders, simulator, hook mods. |
+| `arts-patch` | `code-hooks`, `disc-patch`, `game-tables`, `art`, `iso`, `lzs` | Tactical Arts mods: combo randomizer, art power, AP hooks, Super Art list. |
+| `delilas-party` | `party-swap`, `arts-patch`, `code-hooks`, `texture-replace`, `translate`, `disc-patch`, `actor-formats`, `game-tables`, `art`, `lzs`, `vab`, `xa` | The play-as-Delilas mod. |
+| `delilas-challenge` | `code-hooks`, `disc-patch`, `game-tables`, `scene-formats`, `lzs`, `mes` | The Delilas Challenge dome course and custom items. |
+| `patcher` | the eight above + format-family and parser crates | The `legaia-patcher` CLI. |
+| `engine-system` | `cheats`, `gamedata` | Input, fades, streaming, sound state. |
+| `engine-mode` | `engine-system`, `bytes` | The game-mode seat. |
+| `engine-dialog` | `font`, `mes` | Dialog pager, inline-dialogue and cutscene-timeline state. |
+| `engine-battle-vm` | `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera, cast ticks. |
+| `engine-motion-vm` | `engine-system`, `scene-formats` | The two per-actor motion VMs. |
+| `engine-vm` | `scene-formats`, `minigame-formats`, `anm` | Field, move, effect and window-widget VMs; no GPU or audio deps. |
+| `engine-battle` | `engine-battle-vm`, `engine-system`, `actor-formats`, `game-tables`, `scene-formats`, `ui-formats`, `art`, `anm`, `save`, `tim`, `tmd`, `bytes` | `World`-free battle kernels. |
+| `render-kernels` | `engine-battle-vm`, `engine-vm`, `actor-formats`, `overlay-images`, `tim`, `tmd` | GTE math, screen prims, VRAM capture, effect emitters; no wgpu. |
+| `engine-effects` | `engine-battle`, `engine-battle-vm`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `tmd` | Effect kernels. |
+| `engine-field` | `engine-mode`, `engine-motion-vm`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `overlay-images`, `scene-formats`, `anm`, `mes`, `tmd` | Field kernels: actor programs, camera, cue routers. |
+| `engine-fishing` | `engine-field`, `engine-system`, `engine-vm`, `render-kernels`, `game-tables`, `minigame-formats`, `tmd` | Fishing rules engine. |
+| `engine-minigames` | `engine-fishing`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `render-kernels`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `save` | Minigame rules engines. |
+| `engine-menus` | `engine-minigames`, `engine-field`, `engine-dialog`, `engine-battle`, `engine-battle-vm`, `engine-system`, `engine-vm`, `actor-formats`, `game-tables`, `minigame-formats`, `scene-formats`, `ui-formats`, `art`, `font`, `save`, `tim` | Menu, title and memory-card front end. |
+| `engine-minigame-scenes` | `engine-menus`, `engine-minigames`, `engine-field`, `engine-battle`, `engine-battle-vm`, `engine-system`, `render-kernels`, `actor-formats`, `container-formats`, `game-tables`, `minigame-formats`, `overlay-images`, `scene-formats`, `tim`, `tmd` | The minigames' 3D scene surfaces. |
+| `engine-core` | every `engine-*` kernel crate above, `render-kernels`, `disc-audit` + the format-family and parser crates | `World`, scene host and loading, battle loop, menu runtime, saves. |
+| `engine-ui` | `render-kernels`, `engine-battle-vm`, `game-tables`, `minigame-formats`, `ui-formats`, `tim`, `font` | Draw-list builders; no wgpu. |
+| `engine-render` | `engine-ui`, `render-kernels`, `engine-battle-vm`, `tim`, `font` | wgpu renderer. |
 | `engine-audio` | `xa`, `vab`, `seq`, `prot` | SPU model, sequencer, output backends. |
-| `engine-session` | `engine-core`, `engine-audio`, `engine-vm` + parser crates | `BootSession` + BGM director; no wgpu or winit. |
-| `engine-screens` | `engine-core`, `engine-ui`, `asset`, `font` | Shop / prize / inn / banner screens both hosts draw. |
-| `parity` | `engine-session`, `engine-core`, `engine-vm`, `engine-render`, `engine-audio`, `mednafen`, `pcsxr` + parser crates | Parity oracles + retail comparison. |
-| `engine-shell` | `parity`, `engine-session`, `engine-screens`, `engine-core`, `engine-vm`, `engine-render`, `engine-audio` + parser crates | The native host. |
-| `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-vm`, `engine-ui`, `engine-audio`, `patcher` + parser crates | The browser hosts and site tools. |
-| `asset-viewer` | `engine-core`, `engine-vm`, `engine-render`, `engine-audio` + parser crates | Standalone asset viewer. |
+| `engine-session` | `engine-core`, `engine-audio`, `engine-menus`, `engine-battle`, `engine-field`, `engine-mode`, `engine-system` + format-family and parser crates | `BootSession` + BGM director; no wgpu or winit. |
+| `engine-screens` | `engine-core`, `engine-ui`, `engine-battle`, `engine-effects`, `engine-menus`, `engine-mode`, `render-kernels`, `game-tables`, `minigame-formats`, `font` | Shop / prize / inn / banner screens both hosts draw. |
+| `parity` | `engine-session`, `engine-core`, `engine-audio`, `engine-ui`, the kernel crates it measures, `mednafen`, `pcsx-redux`, `ram-image` + parser crates | Parity oracles + retail comparison. |
+| `engine-shell` | `parity`, `engine-session`, `engine-screens`, `engine-core`, `engine-render`, `engine-ui`, `engine-audio`, the kernel crates + format-family and parser crates | The native host. |
+| `web-viewer` | `engine-session`, `engine-screens`, `engine-core`, `engine-ui`, `engine-audio`, the kernel crates, `patcher` and its layer crates + format-family and parser crates | The browser hosts and site tools. |
+| `asset-viewer` | `engine-core`, `engine-vm`, `engine-battle-vm`, `engine-dialog`, `engine-field`, `engine-mode`, `engine-system`, `engine-ui`, `engine-render`, `engine-audio`, `disc-audit` + format-family and parser crates | Standalone asset viewer. |
 
 Notes on the split lines:
 
 - **Format crates stay engine-agnostic.** They produce typed in-memory data; the engine turns that into GPU resources and audio buffers.
-- **`engine-ui` is the wgpu-free leaf under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu. `engine-render` re-exports its items at their historical paths.
+- **`engine-ui` is the wgpu-free leaf under `engine-render`.** It builds renderer-agnostic draw lists (`TextDraw` / `SpriteDraw`), which is what lets the browser consume them without linking wgpu.
 - **`engine-ui` does not link `engine-core`,** so projecting engine state into its builders is a layer of its own. `engine-screens` is that layer for the shop-family screens: both play hosts call `shop_overlay_frame` and keep only input assembly, stage scale and upload.
 - **Battle splits three ways.** The action state machine and the arithmetic kernels it calls are in `engine-battle-vm` ([README](../../crates/engine-battle-vm/README.md) has the split line). The `World`-free kernels (monster AI script, catalogs, encounters, level-up, per-frame passes) are in `engine-battle`. The stateful side (round loop, command flow, cast band, monster turn picker) is in `engine-core`.
 - **Minigames split the same way.** Rules engines are in `engine-minigames` / `engine-fishing` ([README](../../crates/engine-minigames/README.md)); `World` glue and scene assembly stay in `engine-core`. The two 3D surfaces that load through a `read_prot` closure rather than a `Scene` (the Baka Fighter duel, the Muscle Dome arena) are in [`engine-minigame-scenes`](../../crates/engine-minigame-scenes/README.md).
@@ -396,7 +408,7 @@ Per-VM notes that are not on the owning pages:
 
 ## Gameplay systems
 
-The shell loop closes: title -> save-select -> field / encounter -> battle -> save. Each system below has its own page; this is the map from system to module. Modules that moved into a kernel crate are still re-exported at their `legaia_engine_core::` path.
+The shell loop closes: title -> save-select -> field / encounter -> battle -> save. Each system below has its own page; this is the map from system to module.
 
 | System | Module | Notes |
 |---|---|---|

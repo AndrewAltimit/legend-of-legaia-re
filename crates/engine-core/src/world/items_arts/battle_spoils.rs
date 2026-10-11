@@ -88,7 +88,7 @@ impl World {
 
     /// Distribute `xp_reward` (the summed enemy EXP) to the surviving party
     /// members after a `BattleEndCause::MonsterWipe`. Mirrors the retail split
-    /// ([`vm::battle_formulas::victory_exp_per_member`], `FUN_8004E568`):
+    /// ([`legaia_engine_battle_vm::battle_formulas::victory_exp_per_member`], `FUN_8004E568`):
     ///
     /// - The summed reward is scaled by 3/4 (`v - (v >> 2)`), then **ceiling**-
     ///   divided among the surviving (HP > 0) members - not a floor-divide of
@@ -204,10 +204,10 @@ impl World {
     /// Resolve the victory spoils for `formation` (the reward half of
     /// `FUN_8004E568`): accumulate each dead enemy's gold as `gold >> 1`,
     /// finalize it through the +25% bonus + halve
-    /// ([`vm::battle_formulas::victory_gold_finalize`]) and add it to
+    /// ([`legaia_engine_battle_vm::battle_formulas::victory_gold_finalize`]) and add it to
     /// [`crate::world::PartyState::money`]; sum the enemy EXP and distribute it (scaled 3/4,
     /// ceiling-split) via [`World::apply_battle_xp`]; roll the one drop
-    /// retail offers ([`vm::battle_formulas::victory_drop_roll`], one BIOS
+    /// retail offers ([`legaia_engine_battle_vm::battle_formulas::victory_drop_roll`], one BIOS
     /// `rand()` per enemy seat plus the 1-in-4 gate). Returns the aggregated
     /// [`BattleRewards`] (`gold` is the **credited** amount, not the raw sum) so
     /// engines can surface the post-battle banner ("got N XP, M gold,

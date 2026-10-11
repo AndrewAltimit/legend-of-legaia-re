@@ -2,8 +2,7 @@
 
 What an actor is built from on the disc - the party in its field and battle
 forms, the monsters, the summon creatures - plus the animation that poses
-them and their glTF export. The crate was `legaia-battle-models` until it
-took the field-form character pack; nothing here is battle-only any more.
+them and their glTF export.
 
 - **Monsters** - `monster_archive` (the PROT 867 monster archive: records,
   meshes, animations) and `monster_model` (the modder-facing OBJ+PNG
@@ -40,10 +39,6 @@ Sits on [`legaia-container-formats`](../container-formats/README.md) (the
 descriptor decode and pack the field pack is read through) and
 [`legaia-game-tables`](../game-tables/README.md). It must not depend on the
 scene, UI or minigame format crates, nor on `legaia-disc-audit`.
-
-The root manifest keeps a transitional `legaia-battle-models` key naming this
-package, so a dependent not yet rewritten still links it as
-`legaia_battle_models`. New code takes `legaia-actor-formats`.
 
 ## Module reference
 

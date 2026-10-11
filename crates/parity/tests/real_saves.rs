@@ -209,7 +209,7 @@ fn noa_level_up_triplet_pins_phase_split_and_settled_deltas() {
     // scene `map01`. Asserts (a) the multi-frame write split documented
     // in `parity::capture_observations::char_level_up`, and (b)
     // the settled byte-level deltas that
-    // `engine_core::levelup::observations::noa_4_level_jump` codifies.
+    // `legaia_engine_battle::levelup::observations::noa_4_level_jump` codifies.
     //
     // Slot indices read here from the active corpus; see
     // `scripts/scenarios.toml` for the current assignment.

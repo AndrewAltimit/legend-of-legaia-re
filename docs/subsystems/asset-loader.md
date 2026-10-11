@@ -13,8 +13,9 @@ indices; the retail branch resolves the same dev path strings through
 the descriptor walker they both feed (`FUN_80020224` → `FUN_8001F05C`).
 
 **Port counterpart.** `engine-core`'s `SceneResources::build_targeted` (see
-[CLUT-data scattering](#clut-data-scattering)) plus the `legaia_asset` parsers -
-`scene_asset_table`, `scene_tmd_stream`, `battle_data_pack`.
+[CLUT-data scattering](#clut-data-scattering)) plus the format parsers -
+`legaia_scene_formats::{scene_asset_table, scene_tmd_stream}` and
+`legaia_actor_formats::battle_data_pack`.
 
 **The thing that catches people out:** the slot→asset mapping is **positional**.
 There is no slot→asset indirection table anywhere; the descriptor's own

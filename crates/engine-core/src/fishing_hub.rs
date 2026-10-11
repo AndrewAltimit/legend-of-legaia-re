@@ -1,6 +1,6 @@
 //! The fishing venue's hub screen: the rules half (`FishingHub`, its text
 //! tables and the `PondSession` hub tick) lives in
-//! `legaia_engine_fishing::fishing_hub` and is re-exported here; this file
+//! `legaia_engine_fishing::fishing_hub`; this file
 //! keeps the `World` methods that route the hub's exits into the world's
 //! exchange sub-screen and wallet.
 

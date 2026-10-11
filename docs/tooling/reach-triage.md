@@ -572,8 +572,8 @@ about the cells that outlived their own fixtures.
 | `publisher_logos.rs` | 1 | `801cefd4` | Closed: `w3c_boot_logos_ladder` (`crates/web-viewer/tests/`) opens the logo phase on the browser play page and steps the sequencer to its end on a neutral pad, then again with Start. It is the only union member that starts **before** the title card, which is why one rung was enough |
 | `menu_arrange.rs` | 1 | `801d64a8` | Closed: `w1f2_menu_depth_ladder`'s Items rung picks command-window row 2. It named that step before it reached it - the rung drove Arrange on a bag its own Throw Out leg had emptied, so retail's buzz-on-empty dispatch swallowed the confirm; Arrange runs first now |
 | `save_subscreen.rs` (sub-`0x15` list source) | 1 | `801da2a0` | Closed by seeding its gate: `w7_pause_learned_content_ladder` prepends one Seru spell to the lead record (plus the Ra-Seru the list length is gated on) and drives Status -> Cross -> the page's latch/exchange by pad, and the exchange reaches the record |
-| `ui_menu_window_painters.rs` (window 37) | 1 | `801d5944` | Closed: `w1f2_menu_depth_ladder`'s sell rung drives the root picker's Sell row to the quantity screen. It was a pure reach gap on **both** hosts - `sell_quantity_draws_for` has one call site both hosts reach (`legaia_engine_screens::shop_window_draws`, filtering window id 37) - and the union's other shop rungs all buy |
-| `ui_menu/records_screen.rs` | 1 | `801ed710` | Closed: `play_compose_ladder`'s dev-menu rung taps Square for the Records page and asserts it drew, which is the one row selection the cell asked for |
+| `menu/window_painters.rs` (window 37) | 1 | `801d5944` | Closed: `w1f2_menu_depth_ladder`'s sell rung drives the root picker's Sell row to the quantity screen. It was a pure reach gap on **both** hosts - `sell_quantity_draws_for` has one call site both hosts reach (`legaia_engine_screens::shop_window_draws`, filtering window id 37) - and the union's other shop rungs all buy |
+| `menu/screens/records_screen.rs` | 1 | `801ed710` | Closed: `play_compose_ladder`'s dev-menu rung taps Square for the Records page and asserts it drew, which is the one row selection the cell asked for |
 
 Every row in the table is converted but one, and that one left as a **gate**
 rather than as a fixture (`801da2a0`, the reorder page). Most of the rest were
@@ -1111,7 +1111,7 @@ rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 | module | n | bucket | reach | addresses |
 |---|---|---|---|---|
 | `battle_trail.rs` | 1 | (b), **converted** | the weapon-trail gate is the committed clip's `+0x77` identity byte, not the move-power record: `FUN_8005112C` fires only on four swing clips (Vahn `0x29`, Noa `0x1E` / `0x2A`, Gala `0x64`), and the earlier reading here borrowed `801e1ab0`'s `+0x0b` gate. On the disc, Vahn's `0x29` is his art-bank clip `0x2B`. `w1c_battle_render_ladder`'s rung 6 seats that clip in a forced fight through the page's `debug_stage_battle_anim` and requires the page to plan and compose the sweep, against the same fight before seating, which plans none. `weapon_trail_prims` is called on both hosts' battle render passes (`redraw_passes.rs`, `play_battle.rs`) | `800485bc` |
-| `ui_menu_window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `ui_prize_exchange::prize_exchange_draws_for` (`legaia_engine_screens::prize_window_draws`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
+| `menu/window_painters.rs` | 1 | (a), **converted** by `prize_confirm_page` | the casino prize-exchange Yes/No confirm (window 46). No longer disclosed: both hosts draw it through `engine-ui::prize_exchange::prize_exchange_draws_for` (`legaia_engine_screens::prize_window_draws`) whenever the session's confirm phase is up, so what enters it is a ladder that walks a prize past the coin and held-cap gates on the `koin1` counter. Its sibling `801d5510` (window 35, see below) is entered by the promoted `w4a_shop_quantity_compose` | `801d603c` |
 | `gte/math.rs` | 1 | (b), **converted** | `GteMat3::rot_y` runs inside `camera_view_rotation` (the `FUN_8001CF50` port) on both hosts' part passes, only for a part whose `+0x52` keeps yaw. One disc word does: `urudre1` stager record 14's `0x0080` ([`renderer.md`](../subsystems/renderer.md#camera-relative-nodes-fun_8001cf50)). `dream_yaw_part_page_ladder` walks the play page onto the dream's walk-on band at tile `(97, 10)`, pages cutscene record `P2[1]` to its `34 30 05`, and composes the sprite-arm quads record 14 spawns through `play_field_fx_sync` | `8004629c` |
 
 The crate used to be the largest one-reason cluster on this page: with no
@@ -1149,7 +1149,7 @@ resolves `FUN_801D5510`), so both hosts filter the id on the descriptor's own
 `crates/engine-shell/tests/menu_window_dispatch_real.rs`.
 
 One near-miss is worth recording because the grep that finds it is wrong. The
-window-25 / window-41 stat-compare chain in `ui_equip_stat_compare.rs`
+window-25 / window-41 stat-compare chain in `menu/equip_stat_compare.rs`
 reads like an orphan cluster: `compare_panel_draws_for` and
 `party_compare_panel_fields` have no caller outside their own file, and their
 in-file call sites sit at line numbers past the module's test boundary. They are
@@ -1230,7 +1230,7 @@ reach it. The `strv2_decode` module states the same prerequisite chain.
 
 One row is left and the `lib.rs` pair is not it. `80034e4c` and `8003c1f8`
 are module-scope tags whose real bodies are the `engine-ui` menu-ink and
-sprite builders the crate re-exports - the zero-padded decimal field and the
+sprite builders - the zero-padded decimal field and the
 separator glyph - and both are entered, by the dev menu's records page and by
 the shop's sell quantity row respectively. They closed with a draw ladder,
 the way the cell said they would, and the crate's `afterimage` and
@@ -1458,8 +1458,7 @@ through the per-row pass the rest of the buckets did.
 
 What has closed is all of it, and the denominator worth quoting is **tagged
 bodies**, which is a property of the sources rather than of the ladder set. The
-three modules `cast_arm_ticks.rs`, `cast_seru_ticks_a.rs` and
-`cast_seru_ticks_b.rs` were the first to reach zero never-entered; the eleven
+modules `cast_arm_ticks.rs` and `seru_magic_ticks.rs` were the first to reach zero never-entered; the eleven
 that outlasted them were all in `cast_module_ticks.rs` - `801f69f8` `801f6a0c`
 `801f6a14` `801f6a28` `801f7158` `801f767c` `801f77e8` `801f7fa4` `801f85a8`
 `801f86a4` `801f8d64` - and

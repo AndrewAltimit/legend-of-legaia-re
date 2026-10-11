@@ -24,7 +24,7 @@ Provenance is `ghidra/scripts/funcs/overlay_dance_<addr>.txt` unless a section s
 | Scene block | `other7` (CDNAME raw `0x4CC`, extraction 1226..1232): hall geometry, art pack 1230, SFX 1228 / 1231 |
 | Win flag | story flag `0x50a` - set on entry, cleared on a loss |
 | Parsers | `legaia_minigame_formats::dance_chart`, `dance_cast`, `dance_art` |
-| Rules port | `legaia_engine_minigames::dance` (re-exported as `legaia_engine_core::dance`) |
+| Rules port | `legaia_engine_minigames::dance` |
 | Hosts | native `play-window`, browser play page, browser minigames page - see [Engine port](#engine-port) |
 
 ## Entry from the field
@@ -834,7 +834,7 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 | Layer | Where | What it carries |
 |---|---|---|
 | Parsers | `legaia_minigame_formats::dance_chart`, `dance_cast`, `dance_art` | chart + scoring tables, spawn + descriptor tables, art pack + widget table |
-| Rules engine | [`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) (re-exported as `legaia_engine_core::dance`) | beat clock, per-dancer handler, judge, CPU feed, award, count-in, finish countdown, camera track, HUD layout |
+| Rules engine | [`legaia_engine_minigames::dance`](../../crates/engine-minigames/src/dance.rs) | beat clock, per-dancer handler, judge, CPU feed, award, count-in, finish countdown, camera track, HUD layout |
 | Tutorial | `legaia_engine_minigames::dance_tutorial` | the Disco King script's shape |
 | Marker kernel | `legaia_engine_fishing::dance_marker`, `minigame_floor::MarkerFloor` | marker flipbook + floor sweep |
 | World wiring | `engine-core`: `World::enter_dance` / `tick_dance` / `exit_dance`, `SceneMode::Dance` | suspending scene mode, flag writes, count-in, SFX |
@@ -846,9 +846,9 @@ The dance is fully playable in the port on all three surfaces. The rules, the ca
 
 **Floor size is a property of the mode.** `DanceGame::from_overlay_for_mode` ports `FUN_801d0190`'s selection (three dancers in the competitive modes, one in the how-to, six in free play) and `DanceMode` carries the mapping; the how-to mode also forces the short song. `DanceGame::from_overlay` is the qualifier entry point. The disc-gated `dance_minigame_real` test auto-plays the real chart end to end and drives a hands-off run to watch the rivals score.
 
-**Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `ui_dance::dance_tutorial_draws_for`.
+**Entry and exit.** The door warp picks the mode through `dance::dance_mode_from_flags`, `World::enter_dance` runs state 1's flag writes, and the song's end applies `DanceGame::results_clear_win_flag`. These live in `engine-core`, so every host that drains the warp gets them. A `DanceMode::HowTo` run installs `minigames.dance_tutorial` in the same call; the dance tick steps it beside the session and publishes `dance_tutorial_frame` for `engine-ui::dance::dance_tutorial_draws_for`.
 
-**HUD.** Each frame the host lays the HUD out from `DanceGame::hud_draws` at its 320x240 stage positions and builds the textured-quad frame (`hud_draw_quads`, `beat_track_quads`) with the glyph-U patches applied. With the HUD page staged, both play hosts emit the quads as `POLY_GT4` screen primitives through `ui_dance::dance_hud_prims` off `MinigameState::dance_hud_quads`; without it they fall back to `DanceGame::hud_frame_rows` as font text. The count-in banner makes the same either / or off the same flag, with `dance_countin_draws_for` as its placeholder. A disc-gated oracle pins the layout and quads against the real widget table.
+**HUD.** Each frame the host lays the HUD out from `DanceGame::hud_draws` at its 320x240 stage positions and builds the textured-quad frame (`hud_draw_quads`, `beat_track_quads`) with the glyph-U patches applied. With the HUD page staged, both play hosts emit the quads as `POLY_GT4` screen primitives through `engine-ui::dance::dance_hud_prims` off `MinigameState::dance_hud_quads`; without it they fall back to `DanceGame::hud_frame_rows` as font text. The count-in banner makes the same either / or off the same flag, with `dance_countin_draws_for` as its placeholder. A disc-gated oracle pins the layout and quads against the real widget table.
 
 The HUD kernels kept in the rules crate: `dance_number_digits` / `dance_score_digit_u` / `dance_level_digit_u` (`FUN_801d32f8`), `dance_combo_window_bright` / `dance_beat_track_note_x` (`FUN_801d2524`), `dance_hit_sting_voices` (`FUN_801d3d78`), `good_banner_spawn` (`FUN_801d40dc`), `dance_face_rig` (`FUN_801d03c4`), `dance_countin_banner_envelope` (`FUN_801d2d98`), `dance_clip_driver_gate` (`FUN_801d4098`), `dance_hud_widget_quad` (`FUN_801d2f38`) and `dance_hud_draws` / `dance_score_box_slots` (`FUN_801d231c`).
 

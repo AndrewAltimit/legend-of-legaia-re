@@ -2,7 +2,7 @@
 //! (PROT 0976) through the engine duel rules engine
 //! ([`legaia_engine_minigames::baka_fighter`]).
 //!
-//! The table parsers are pinned by `legaia-asset`'s `baka_opponents_real`;
+//! The table parsers are pinned by `legaia-minigame-formats`' `baka_opponents_real`;
 //! this closes the engine end - the play-window load path
 //! (`SceneHost::open_disc` -> `entry_bytes_extended(976)` ->
 //! `static_overlay::as_loaded` -> `parse` / `parse_actions`) resolves the

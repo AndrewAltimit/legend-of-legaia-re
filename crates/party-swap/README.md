@@ -10,7 +10,8 @@ pivot-anchored rest-pose bake (the crate docs walk each step).
 ## What decides that a module sits here
 
 It is a **pure transform**: decoded disc assets in, rebuilt bytes out, with
-no disc I/O. This crate depends on the parser crates only (`legaia-asset`,
+no disc I/O. This crate depends on the parser crates only
+(`legaia-actor-formats`, `legaia-container-formats`,
 `legaia-tmd`, `legaia-tim`, `legaia-lzs`, `legaia-bytes`) and must not depend
 on [`legaia-disc-patch`](../disc-patch/README.md) or any patcher crate. The
 layer that reads the inputs off a disc and writes the results back is
@@ -27,9 +28,6 @@ the same kernels:
 - `winpose`, `moveset`, `weapon_fuse`, `cast_stage` - victory and idle clips,
   the sibling move set, the fused weapon hand and the staged caster rows.
 - `enemy_anim` - the enemy-animation remap.
-
-[`legaia-patcher`](../patcher/README.md) re-exports this crate as
-`legaia_party_swap` for consumers outside the patcher family.
 
 ## See also
 

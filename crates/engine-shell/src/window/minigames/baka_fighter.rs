@@ -139,7 +139,7 @@ impl PlayWindowApp {
     /// The Baka cabinet's and round chrome's widgets as screen-space PSX
     /// primitives against the duel VRAM: the shared quad kernel
     /// (`BakaDuelSurface::hud_quads`, the retail emitter `FUN_801d5ed0`)
-    /// through the shared builder (`ui_baka_strips::baka_hud_prims`) - the
+    /// through the shared builder (`baka_strips::baka_hud_prims`) - the
     /// browser play page makes the same two calls. Empty unless
     /// [`Self::baka_hud_art_drawn`].
     pub(in crate::window) fn baka_hud_prims(

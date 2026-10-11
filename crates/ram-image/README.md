@@ -24,5 +24,4 @@ A leaf: `anyhow`, `serde` and `toml` only. The two container readers,
 [`legaia-mednafen`](../mednafen/README.md) (`.mc*` states) and
 [`legaia-pcsx-redux`](../pcsx-redux/README.md) (PCSX-Redux `.sstate`), sit on this crate
 and hand it the RAM they unwrap. It must not depend on either of them, nor on
-any format or engine crate. `legaia-mednafen` re-exports each module at its
-old path.
+any format or engine crate.

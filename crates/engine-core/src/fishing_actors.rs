@@ -1,7 +1,7 @@
 //! The fishing venue's actors (rod, lure, line, catch bursts) live in
-//! `legaia_engine_fishing::fishing_actors` and are re-exported here. This
-//! file keeps the one piece that reads a loaded `Scene`: gathering the rod
-//! meshes and the bend out of the venue.
+//! `legaia_engine_fishing::fishing_actors`. This file keeps the one piece
+//! that reads a loaded `Scene`: gathering the rod meshes and the bend out of
+//! the venue.
 
 use legaia_engine_fishing::fishing_actors::*;
 

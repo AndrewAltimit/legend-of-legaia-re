@@ -12,9 +12,6 @@
 
 #![forbid(unsafe_code)]
 
-// Items these files name as `crate::...`, which live in a crate below this
-// one; binding them here keeps the moved files' paths unchanged.
-
 pub mod battle_char_assembly;
 pub mod battle_char_pack;
 pub mod battle_char_palette;

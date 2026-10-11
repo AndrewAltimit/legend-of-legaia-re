@@ -161,7 +161,7 @@ pub fn parse_messages(overlay: &[u8], page3: &[u8], page3_w: usize) -> Result<Ve
 /// message stays unlit, which is what makes the message scroll in and out.
 // PORT: FUN_801d069c (marquee dot-buffer composer)
 //
-// The native window owns the dot buffer: `ui_slot_cabinet::SlotMarqueeClock`
+// The native window owns the dot buffer: `slot_cabinet::SlotMarqueeClock`
 // composes it every frame (the attract legend through this scroll, the
 // caption / tally through `render_marquee`) and the dot pass rasterises it.
 // The browser play page still exports the 21 message bitmaps as JSON and
@@ -193,7 +193,7 @@ pub fn compose_marquee(msg: &MarqueeMessage, x: i32, y: i32) -> Vec<u8> {
 /// every frame rather than diffed against the previous one.
 // PORT: FUN_801d069c (negative-id clear path)
 // The blank buffer every composed frame starts from, natively through
-// `ui_slot_cabinet::SlotMarqueeClock`.
+// `slot_cabinet::SlotMarqueeClock`.
 pub fn clear_dots() -> Vec<u8> {
     vec![0u8; DOT_COLS * DOT_STRIDE]
 }
@@ -220,7 +220,7 @@ pub fn clear_dots() -> Vec<u8> {
 /// the equivalence [`compose_marquee`] already relies on.
 // PORT: FUN_801d3230 (dot-buffer placement blit)
 // Reached natively through `render_marquee` from
-// `ui_slot_cabinet::SlotMarqueeClock`.
+// `slot_cabinet::SlotMarqueeClock`.
 pub fn place_message(buf: &mut [u8], msg: &MarqueeMessage, col: i32, row: i32) {
     for r in 0..msg.h as i32 {
         let dr = row + r;
@@ -284,7 +284,7 @@ pub struct MarqueePlacement {
 /// that runs whether or not its own place was drawn.
 // PORT: FUN_801cfff0 (per-frame marquee composition)
 // The caption / tally half; the attract-legend tail is [`attract_legend`].
-// Composed natively every frame by `ui_slot_cabinet::SlotMarqueeClock`.
+// Composed natively every frame by `slot_cabinet::SlotMarqueeClock`.
 pub fn compose_marquee_frame(frame: &MarqueeFrame) -> Vec<MarqueePlacement> {
     let mut out = Vec::new();
     if frame.payout != 0 && frame.payout_frame != 0 {

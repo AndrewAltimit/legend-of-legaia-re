@@ -251,13 +251,13 @@ except ModuleNotFoundError:  # Python < 3.11
 
 REPO = Path(__file__).resolve().parent.parent.parent
 UI_SRC = REPO / "crates" / "engine-ui" / "src"
-# engine-ui plus the render kernels split out of it (which it re-exports).
+# engine-ui plus the render kernels it builds on.
 UI_SRCS = [UI_SRC, REPO / "crates" / "render-kernels" / "src"]
 WAIVERS = Path(__file__).resolve().parent / "ui-host-drift-waivers.toml"
 
-# Source roots per host. `engine-render` counts as native: it re-exports
-# engine-ui wholesale and wraps some builders in GPU-resident batches, so a
-# call there is still the native window reaching the screen.
+# Source roots per host. `engine-render` counts as native: it wraps some
+# engine-ui builders in GPU-resident batches, so a call there is still the
+# native window reaching the screen.
 HOSTS = {
     "native": [
         REPO / "crates" / "engine-shell" / "src",
@@ -286,10 +286,10 @@ SHARED_COMPOSERS: dict[Path, tuple[str, ...]] = {
 # The rest are engine-ui's *intermediate* records - a resolved screen that
 # still needs a host-owned atlas or font to become quads:
 #
-#   HudDraw           the fishing HUD's item list (ui_fishing)
-#   HudQuad           a PROT 0977 textured-Gouraud quad (other_game_hud)
-#   DigitCell         one placed digit of a numeric readout (ui_fishing)
-#   BarFrame          a resolved gauge bar (ui_fishing)
+#   HudDraw           the fishing HUD's item list (fishing::hud)
+#   HudQuad           a PROT 0977 textured-Gouraud quad (muscle_dome_hud)
+#   DigitCell         one placed digit of a numeric readout (fishing::hud)
+#   BarFrame          a resolved gauge bar (fishing::hud)
 #   ComparePanelField one field of an equip stat-compare panel
 #
 # They belong on the surface for the same reason the terminal records do: a
@@ -4486,15 +4486,17 @@ def _selftest_frame_case(
 # `engine-session` is engine surface too: both play hosts hold its
 # `BootSession` and tick it, so a call into it is a call both can make.
 # `engine-screens` likewise: the shop-family composition both hosts call.
-# `engine-battle` holds the battle kernels engine-core re-exports, and
-# `engine-battle-vm` the battle VM kernels engine-vm re-exports, and
-# `engine-effects` the effect kernels engine-core re-exports.
+# `engine-battle` holds the `World`-free battle kernels,
+# `engine-battle-vm` the battle VM kernels, `engine-effects` the effect
+# kernels and `engine-mode` the mode seat. The hosts name each of these
+# crates directly, so the list is every engine crate a host can call into.
 ENGINE_API_CRATES = (
     "engine-core",
     "engine-battle",
     "engine-effects",
     "engine-field",
     "engine-menus",
+    "engine-mode",
     "engine-dialog",
     "engine-system",
     "engine-minigames",

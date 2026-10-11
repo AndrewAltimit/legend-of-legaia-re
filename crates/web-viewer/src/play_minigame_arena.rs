@@ -20,7 +20,7 @@
 //!   envelopes ([`legaia_engine_minigames::muscle_dome::HubScreen`]) off the
 //!   world's leg / contest edges, ported from the native window's
 //!   `tick_muscle_hub`; the quads come out of the PROT 0977 sprite table
-//!   through the shared `other_game_hud` emitters.
+//!   through the shared `muscle_dome_hud` emitters.
 //! - **Baka Fighter** (`World::tick_baka_fighter`): Square / Circle / Cross
 //!   commit attack types 1 / 2 / 3 (retail's face-button read), Triangle the
 //!   port's chargeable special; the result screen's tally
@@ -420,7 +420,7 @@ impl LegaiaRuntime {
     /// The Baka cabinet's and round chrome's widgets as screen-space PSX
     /// primitives against the duel VRAM: the shared quad kernel
     /// (`BakaDuelSurface::hud_quads`, retail `FUN_801d5ed0`) through the
-    /// shared builder (`ui_baka_strips::baka_hud_prims`), the same two calls
+    /// shared builder (`baka_strips::baka_hud_prims`), the same two calls
     /// the native window makes. Empty unless [`Self::baka_hud_art_drawn`].
     pub(crate) fn baka_hud_prims(&self) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
         if !self.baka_hud_art_drawn() {
@@ -463,7 +463,7 @@ impl LegaiaRuntime {
         // `tally N   coins N` as one prose line instead, so the two hosts
         // showed the same numbers in different places and at different
         // strides. Layout from `baka_fighter_chrome::hud_digit_placements`,
-        // quads from `ui_baka_strips`, both shared.
+        // quads from `baka_strips`, both shared.
         // The attract card and the player select draw no duel HUD
         // (`baka_cabinet::draws_hud` is false across the front end).
         let placed = if f.cabinet().front_end() {

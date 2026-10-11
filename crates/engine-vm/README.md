@@ -8,15 +8,15 @@ plus the format notes in `docs/subsystems/`, with no static-recompiled bytes
 from the original executable. The crate is the VMs and what they import: the
 window-widget VM at the root, `field`, `effect_vm`, `move_vm` with its buffers
 and extension, `anim_vm`, and the actor allocator and tick. The battle-side VMs
-are re-exported from `legaia-engine-battle-vm` and the two motion VMs from
+are `legaia-engine-battle-vm` and the two motion VMs are
 `legaia-engine-motion-vm`. Kernels that are not a VM live in the crate whose
 role they fit - field-overlay kernels in `legaia-engine-field`, the title and
 menu state machines in `legaia-engine-menus`, draw-prep kernels in
 `legaia-render-kernels`, pad input and the BIOS `rand` in
 `legaia-engine-system`.
 
-The side-effect-free field-VM disassembler this crate re-exports from
-`legaia-asset` (`field_disasm`) has its CLI on the `asset` binary:
+The side-effect-free field-VM disassembler
+(`legaia_scene_formats::field_disasm`) has its CLI on the `asset` binary:
 `asset field-disasm file` walks a raw script body,
 `scene-event-scripts` walks every record of a prescript container, and
 `scan-prot` sweeps a whole extracted `PROT.DAT` for FMV triggers. For a
@@ -105,7 +105,7 @@ pure data (the catalog's spawn records + animation frames), so `EffectHost`
 only supplies the RNG and the summon routing.
 
 The world-space billboard step that pairs with it (`effect_billboard`) is a
-pure draw kernel and lives in `engine-ui`.
+pure draw kernel and lives in `legaia-render-kernels`.
 
 ## `move_vm` - `FUN_80023070`
 
@@ -121,10 +121,10 @@ the dispatch table is ported in `move_vm_overlay_ext.rs`.
 Retail carries **two** per-actor motion VMs and both are ported: `motion_vm`
 (`FUN_8003774C`, pursue / patrol / face-target) and `ambient_motion`
 (`FUN_80038158`, the scripted-motion VM over MAN tail-section 1). They live in
-[`legaia-engine-motion-vm`](../engine-motion-vm/README.md), a crate below this
-one, and are re-exported here at their old paths
+[`legaia-engine-motion-vm`](../engine-motion-vm/README.md)
 (`legaia_engine_motion_vm::motion_vm`, `legaia_engine_motion_vm::ambient_motion`,
-`legaia_engine_motion_vm::ambient_motion_ops`).
+`legaia_engine_motion_vm::ambient_motion_ops`). This crate does not depend on
+it; the disc oracles in `tests/` name it as a dev-dependency.
 
 ## `actor_tick` - `FUN_80021DF4`
 
@@ -205,9 +205,9 @@ The crate's remaining modules are what the VMs import; by family:
 The battle action state machine (`battle_action`), the battle formulas,
 the battle camera script, `psx_camera`, the cast-module ticks and most
 battle-overlay leaves live in
-[`legaia-engine-battle-vm`](../engine-battle-vm/README.md), a crate below
-this one. Every module there is re-exported here at its old path
-(`legaia_engine_battle_vm::battle_action`, ...), so callers may name either.
+[`legaia-engine-battle-vm`](../engine-battle-vm/README.md)
+(`legaia_engine_battle_vm::battle_action`, ...). This crate does not depend
+on it outside its tests.
 
 ## See also
 

@@ -99,7 +99,7 @@
 
 <section class="doc-section" id="engine-wiring">
   <h2>In the port</h2>
-  <p><code>legaia_game_tables::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-battle::levelup::LevelUpTracker</code> (re-exported under <code>engine-battle::levelup</code>) applies them: the XP share is the 3/4-scaled pool ceiling-divided among survivors (<code>battle_formulas::victory_exp_per_member</code>), a multi-level jump collapses into one result, the first character to level takes the banner and any others queue behind it, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
+  <p><code>legaia_game_tables::level_up_tables</code> reads the three tables from the player&rsquo;s own executable at boot, and <code>engine-battle::levelup::LevelUpTracker</code> applies them: the XP share is the 3/4-scaled pool ceiling-divided among survivors (<code>battle_formulas::victory_exp_per_member</code>), a multi-level jump collapses into one result, the first character to level takes the banner and any others queue behind it, and the record&rsquo;s maxima grow while current HP and MP stay where they were. The jitter is a faithful model of the BIOS <code>rand</code>, held off by default so replays stay bit-identical. The spoils and level-up windows are retail&rsquo;s two framed windows, drawn from geometry measured off a capture (<code>engine-ui</code>); the out-of-battle level-up banner is composed in <code>engine-screens</code> for both hosts.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
@@ -127,7 +127,7 @@
           <tr><td>Settle</td><td>mid&#x2082; &rarr; post</td><td><code>+0x106 / +0x10A / +0x10E</code> - the battle-end resync, not a refill</td></tr>
         </tbody>
       </table>
-      <p>Multi-level captures (<code>vahn_4_level_jump</code> and siblings, codified in <code>engine_core::levelup::observations</code>) pin write regions but not per-level rates; the single-level Noa pair is the arithmetic oracle. A Fire Book I use writes one region, <code>+0x185..+0x188</code>: a count-prefixed list of displayed-skill ids read only by the menu's status renderer (<code>CharacterRecord::displayed_skills</code>). The Seru-struct <code>+0x74</code> reads are the actor's colour word (<code>FUN_800480D8</code> stamps <code>0x00808080</code>), not a growth grant. The grant tables are not in <code>PROT.DAT</code> at all.</p>
+      <p>Multi-level captures (<code>vahn_4_level_jump</code> and siblings, codified in <code>engine_battle::levelup::observations</code>) pin write regions but not per-level rates; the single-level Noa pair is the arithmetic oracle. A Fire Book I use writes one region, <code>+0x185..+0x188</code>: a count-prefixed list of displayed-skill ids read only by the menu's status renderer (<code>CharacterRecord::displayed_skills</code>). The Seru-struct <code>+0x74</code> reads are the actor's colour word (<code>FUN_800480D8</code> stamps <code>0x00808080</code>), not a growth grant. The grant tables are not in <code>PROT.DAT</code> at all.</p>
     </div>
   </details>
   <details class="disclosure">

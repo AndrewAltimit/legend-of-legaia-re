@@ -17,7 +17,7 @@ The page also covers what the player sees: the two framed windows the results se
 | Record fields | cumulative XP `+0x0`, next threshold `+0x4`, HP / MP max + six stats `+0x11C..+0x12D`, level byte `+0x130` (record base `0x80084708 + slot×0x414`) |
 | Results windows | screen elements `0x41` (report), `0x42` (loss), `0x44 + mask` (level-up), drawn by `FUN_8002C69C` |
 | Parser | `legaia_game_tables::level_up_tables` (`crates/game-tables/src/level_up_tables.rs`) |
-| Port | `LevelUpTracker` in `crates/engine-battle/src/levelup/` (re-exported as `engine_core::levelup`), driven by `World::apply_battle_xp` |
+| Port | `LevelUpTracker` in `crates/engine-battle/src/levelup/`, driven by `World::apply_battle_xp` |
 
 Provenance: `ghidra/scripts/funcs/overlay_battle_action_801e9504.txt` (identical `overlay_magic_level_up_801e9504.txt` / `overlay_muscle_dome_801e9504.txt`), caller in `ghidra/scripts/funcs/8004e568.txt`.
 
@@ -88,7 +88,7 @@ threshold = threshold + corr                 slot 2 (Gala)
 
 **In the engine.** The curve ships twice and the two agree byte for byte:
 
-- `legaia_save::RETAIL_XP_CUMULATIVE` / `engine_core::levelup::retail_xp_table()` carry the derived base curve (`121, 365, 730, 1338, 2190, …, 9_646_483`), computed from the closed form plus the scaling arithmetic. No table bytes are copied.
+- `legaia_save::RETAIL_XP_CUMULATIVE` / `engine_battle::levelup::retail_xp_table()` carry the derived base curve (`121, 365, 730, 1338, 2190, …, 9_646_483`), computed from the closed form plus the scaling arithmetic. No table bytes are copied.
 - `legaia_game_tables::level_up_tables::xp_thresholds_from_scus` reads `DAT_80076AF4` and applies the formula from the user's `SCUS_942.54` at boot; `legaia_engine_session::BootSession` installs it over `LevelUpTracker::xp_table`.
 - `xp_correction_divisors_from_scus` parses the divisors; `LevelUpTracker::threshold_for` applies them (slot 1 earlier, slot 2 later).
 
@@ -360,7 +360,7 @@ It is off by default: with no jitter RNG installed the tracker applies only the 
 
 Besides the two retail windows, the port raises a text banner per levelled character. `LevelUpBanner` carries `char_id`, `new_level`, `hp_gained`, `mp_gained` and a `frames_remaining` countdown (`DEFAULT_FRAMES` = 180 frames, 3 s at 60 Hz). `World::tick` decrements it each frame. `ArtLearnedBanner` uses the same tick pattern.
 
-`legaia_engine_ui::battle_hud::level_up_draws_for` (re-exported by `engine-render`) returns two text draw calls. It takes the font, the four banner scalars and a pen rather than the banner struct, so it stays renderer- and world-agnostic:
+`legaia_engine_ui::battle_hud::level_up_draws_for` returns two text draw calls. It takes the font, the four banner scalars and a pen rather than the banner struct, so it stays renderer- and world-agnostic:
 
 - Line 1 (yellow): `LEVEL UP! (char N -> Lv M)`
 - Line 2 (green): `HP +X  MP +Y`

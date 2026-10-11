@@ -75,21 +75,21 @@ Choose by what you are trying to do:
 
 ## Workspace
 
-The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
+The repo is a Cargo workspace. Crate naming: package `legaia-foo`, lib `legaia_foo`; one library per crate, plus a command-line binary behind the crate's default-on `cli` feature where it has one. `asset` is the exception: it is only the `asset` binary. Every dependency is declared once in the root `[workspace.dependencies]`. Each crate's `README.md` documents its own scope and CLI.
 
 ```mermaid
 flowchart TD
     subgraph formats["Formats and extraction"]
         container["iso, prot, lzs"]
-        hub["asset<br/>+ game-tables, actor-formats, overlay-images"]
+        hub["format families<br/>container-formats, scene-formats, actor-formats,<br/>minigame-formats, ui-formats, game-tables, overlay-images"]
         perfmt["tim, tmd, vab, xa, seq, mes, anm, mdt, art, font, mdec, save"]
-        extract["extract: legaia-extract"]
+        extract["extract: legaia-extract<br/>asset: the asset CLI over disc-audit"]
         container --> hub --> extract
         perfmt --> hub
     end
     subgraph port["The port"]
-        kernels["World-free kernels<br/>engine-battle, engine-field, engine-menus, engine-dialog,<br/>engine-effects, engine-system, engine-minigames, engine-fishing"]
-        vm["engine-vm<br/>over engine-battle-vm + engine-motion-vm"]
+        kernels["World-free kernels<br/>engine-battle, engine-field, engine-menus, engine-dialog, engine-effects,<br/>engine-system, engine-mode, engine-minigames, engine-fishing"]
+        vm["engine-vm, engine-battle-vm, engine-motion-vm"]
         core["engine-core: World + scene host"]
         audio["engine-audio: SPU + sequencer"]
         session["engine-session: BootSession"]
@@ -108,7 +108,7 @@ flowchart TD
     end
     subgraph mod["Disc patcher"]
         dp["disc-patch"]
-        layers["translate, code-hooks, arts-patch,<br/>texture-replace, party-swap, delilas-party"]
+        layers["translate, code-hooks, arts-patch, texture-replace,<br/>party-swap, delilas-party, delilas-challenge"]
         patcher["patcher: legaia-patcher"]
         dp --> layers --> patcher
     end
@@ -117,15 +117,17 @@ flowchart TD
     hub --> web
 ```
 
-**Formats and extraction.** `bytes` (shared checked readers) sits under the container layer `iso`, `prot`, `lzs` and the format hub `asset`, which re-exports `game-tables` (the static data tables), `actor-formats` (the character and monster model formats) and `overlay-images` (the code-overlay image formats). The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`; `extract` drives the whole pipeline. `mednafen` and `pcsxr` read emulator save states; `gamedata` and `cheats` are curated label sets.
+**Formats and extraction.** `bytes` (shared checked readers) sits under the disc layer `iso`, `prot`, `lzs`. The per-format parsers are `tim`, `tmd`, `vab`, `xa`, `seq`, `mes`, `anm`, `mdt`, `art`, `font`, `mdec` and `save`.
 
-**The port.** `engine-core` holds the `World` and the scene host. Below it sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm` (which re-exports the battle side from `engine-battle-vm`).
+Over them sit the format-family crates: `container-formats` (asset dispatch, chunk stream, pack), `scene-formats` (field and world-map scenes), `actor-formats` (the character and monster model formats), `minigame-formats`, `ui-formats`, `game-tables` (the static data tables) and `overlay-images` (the code-overlay image formats). `disc-audit` measures the whole disc, `asset` is its command-line binary, and `extract` drives the whole pipeline. `mednafen` and `pcsx-redux` read emulator save states over the shared `ram-image`; `gamedata` and `cheats` are curated label sets.
+
+**The port.** `engine-core` holds the `World` and the scene host. Below it sit the kernels that never touch `World` - `engine-battle`, `engine-field`, `engine-menus`, `engine-dialog`, `engine-effects`, `engine-system`, `engine-mode`, `engine-minigames` (over `engine-fishing`) and `engine-minigame-scenes` - and the ported VMs in `engine-vm`, `engine-battle-vm` (the battle side) and `engine-motion-vm`.
 
 On the presentation side, `engine-ui` builds renderer-agnostic draw lists over the shared `render-kernels`; `engine-screens` composes the shop-family screens once for both hosts; `engine-session` is the `BootSession` and BGM director every play host ticks. `engine-render` (winit + wgpu) and `engine-audio` (SPU + sequencer) are the native presentation leaves, `engine-shell` is the `legaia-engine` binary, and `parity` holds the retail oracles. `asset-viewer` and the `web-viewer` WASM target sit beside them.
 
 The port ships three hosts on that one engine: the native `play-window`, the browser play page, and the browser minigames page. `engine-session`, `engine-screens` and `engine-ui` carry no wgpu / winit / cpal dependency, which is what lets the same session code run natively and in `wasm32`. The gates that keep the hosts in step are in [`tooling/host-drift.md`](tooling/host-drift.md).
 
-**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement) `code-hooks` (MIPS code injection), `arts-patch` (the Tactical Arts mods) and `delilas-party` (the play-as-Delilas mod) split out of it.
+**The disc patcher.** `patcher` (the `legaia-patcher` binary) sits over `disc-patch` (sector write-back, PPF output, the free-space ledger) with `translate` (language packs), `party-swap` (the battle-model swap kernels), `texture-replace` (texture, battle-art and save-icon replacement), `code-hooks` (MIPS code injection), `arts-patch` (the Tactical Arts mods), `delilas-party` (the play-as-Delilas mod) and `delilas-challenge` (the Delilas Challenge dome course) as separate crates under it.
 
 Build and test:
 

@@ -513,7 +513,7 @@
   }
   /* Hand the disc-side ocean assets (texture + 13-frame CLUT animation
    * table) to the renderer. Called after `viewer.set_scene_kingdom`
-   * has decompressed slot 0 and `legaia_web_viewer::ocean::find_ocean_assets`
+   * has decompressed slot 0 and `legaia_scene_formats::ocean::find_ocean_assets`
    * has run. When the kingdom isn't a world-map one (or the disc isn't
    * loaded yet), the accessors return empty buffers and we leave the
    * solid-colour fallback in place. */

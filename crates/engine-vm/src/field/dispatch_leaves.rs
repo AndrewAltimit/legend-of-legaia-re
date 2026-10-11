@@ -13,7 +13,7 @@
 //!
 //! | Helper                  | Original          | Used by                      |
 //! | ----------------------- | ----------------- | ---------------------------- |
-//! | [`packet_length`]       | `FUN_8003CA38`    | `0x4C nE sub-1`, `0x49`      |
+//! | `packet_length`         | `FUN_8003CA38`    | `0x4C nE sub-1`, `0x49`      |
 //! | [`party_flag_test`]     | `FUN_8003CE64`    | `0x4C nC sub-1/5/6`          |
 //! | [`small_table_search`]  | `FUN_80042EE0`    | `0x4C nD sub-C/E`            |
 //! | [`load_u16_le`]         | `FUN_8003CE9C`    | `0x4C nC sub-5/6`, `nD sub-1`|
@@ -192,9 +192,8 @@ pub fn tile_center(b: u8) -> i16 {
 mod tests {
     use super::*;
 
-    // `packet_length` moved to `legaia_scene_formats::field_disasm`; its tests live
-    // there now. It is re-exported above so the rest of the engine VM can call
-    // `field_helpers::packet_length` unchanged.
+    // `packet_length` lives in `legaia_scene_formats::field_disasm`, with its
+    // tests.
 
     #[test]
     fn party_flag_test_returns_ff_when_bit_set() {

@@ -2,7 +2,7 @@
 --
 -- Probes the five distance-cue fog parameters consulted by the world-map
 -- overlay's per-prim leaves at 0x801F7644..0x801F8690 (see
--- docs/subsystems/world-map.md and crates/engine-vm/src/prim_dispatch.rs).
+-- docs/subsystems/world-map.md and crates/render-kernels/src/prim_dispatch.rs).
 --
 -- Each leaf inserts a ~60-instruction fog block between GTE projection and
 -- the OT packet write, reading these GP-relative fields every vertex:

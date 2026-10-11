@@ -25,8 +25,8 @@
 //!
 //! `engine-core` is deliberately *not* a dependency: `engine-render` is
 //! documented as a leaf presentation crate that does not depend on the
-//! simulation (`docs/subsystems/engine.md`), and it re-exports this crate
-//! wholesale, so a dependency here would be one there. The cost is that each
+//! simulation (`docs/subsystems/engine.md`), and it depends on this crate,
+//! so a dependency here would be one there. The cost is that each
 //! host still writes the session -> view projection; the benefit is that the
 //! composition below is reachable from a plain library test with no disc, no
 //! GPU and no host.
@@ -95,7 +95,7 @@ pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
 /// ([`MenuRects::frame_rect`]).
 ///
 /// How retail-true these numbers are, said exactly: the disc-gated
-/// `legaia-asset` test `menu_windows_real` pins the parsed disc table against
+/// `legaia-game-tables` test `menu_windows_real` pins the parsed disc table against
 /// its own literal list of the same rects (RAM-matched to six catalogued
 /// menu-open captures). It does **not** read this constant, so the two are
 /// verified separately rather than against each other - a third copy of the
@@ -415,7 +415,7 @@ pub struct OptionsScreenView<'a> {
 
 /// The key-rebind sub-screen's model: one `(button label, bound key)` pair
 /// per row, plus which row the cursor is on and whether it is waiting for a
-/// keypress ([`legaia_engine_menus::key_rebind::KeyRebindSession`]).
+/// keypress (`legaia_engine_menus::key_rebind::KeyRebindSession`).
 pub struct KeyRebindView<'a> {
     pub rows: &'a [(&'a str, &'a str)],
     pub cursor: u8,

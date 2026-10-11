@@ -9,8 +9,8 @@
 //!
 //! A hook here is a *plan*: it reads image bytes handed in as slices and
 //! returns the same-size [`arenas::Edit`]s to write. Nothing in this crate
-//! opens a disc, so it depends on `legaia-asset` (table addresses) and on no
-//! other patcher crate. See the crate README for the module map and the rule
+//! opens a disc, so it depends on `legaia-game-tables` and
+//! `legaia-actor-formats` (table addresses) and on no other patcher crate. See the crate README for the module map and the rule
 //! that decides what sits here.
 
 #![forbid(unsafe_code)]

@@ -97,7 +97,7 @@ fn read_cstr(buf: &[u8], off: usize) -> Option<String> {
 ///
 /// The slot decode itself is [`FmvSlot::from_record`]; only the `+0x00` path
 /// pointer is resolved here, because it is an overlay VA the `mdec` crate
-/// deliberately has no way to follow (it does not depend on `legaia-asset`).
+/// deliberately has no way to follow (it does not depend on `legaia-game-tables`).
 fn retail_segments(overlay: &[u8]) -> Vec<Segment> {
     let table_off = (FMV_TABLE_VA - STR_OVERLAY_BASE_VA) as usize;
     let mut out = Vec::new();
@@ -331,7 +331,7 @@ fn every_retail_fmv_id_plays_from_its_dispatch_slot() {
 /// [`legaia_mdec::str_av`] - the kernel both play hosts open a movie through -
 /// with a soundtrack that is present, audible, and as long as the picture.
 ///
-/// The window is the one `legaia_asset::fmv_segment_window` hands each host:
+/// The window is the one `legaia_game_tables::fmv_dispatch::fmv_segment_window` hands each host:
 /// `(start_frame - 1) * 10` sectors in, `(end - start + 1) * 10` sectors long.
 /// Rung 1 stops after a dozen frames; this one reads every sector of every
 /// segment, so a movie whose XA interleave runs short, goes silent or decodes

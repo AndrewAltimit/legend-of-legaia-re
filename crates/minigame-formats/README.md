@@ -18,8 +18,7 @@ The minigames' disc data. The rules engines that consume it live in
 Sits on [`legaia-container-formats`](../container-formats/README.md) and the
 leaf codecs (`legaia-lzs`, `legaia-prot`, `legaia-tim`, `legaia-tmd`,
 `legaia-vab`). It must not depend on the scene, UI or actor format
-crates, nor on `legaia-disc-audit`. `legaia-asset` re-exports each module at
-its old path.
+crates, nor on `legaia-disc-audit`.
 
 ## Module reference
 

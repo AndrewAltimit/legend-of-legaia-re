@@ -1,7 +1,7 @@
 //! Disc-gated: drive the **real** parsed dance step chart (PROT 0980) through
 //! the engine dance rules engine ([`legaia_engine_core::dance`]).
 //!
-//! The chart parser itself is pinned by `legaia-asset`'s `dance_chart_real`;
+//! The chart parser itself is pinned by `legaia-minigame-formats`' `dance_chart_real`;
 //! this closes the engine end - that [`DanceGame::from_overlay`] loads the baked
 //! chart off the user's disc and a full beat-clock + judge run is driveable on
 //! it (no synthetic fixture). No Sony bytes are asserted, only structural facts:

@@ -262,7 +262,7 @@ impl World {
     pub const VICTORY_FADE_PHASE_SEED: u16 = VICTORY_FADE_PHASE_SEED;
 
     /// The battle-end presentation is up: the scene is still in
-    /// [`SceneMode::Battle`] but the action SM no longer runs.
+    /// [`SceneMode::Battle`](legaia_engine_mode::mode::SceneMode::Battle) but the action SM no longer runs.
     pub fn battle_end_sequence_active(&self) -> bool {
         self.battle.victory.is_some()
     }

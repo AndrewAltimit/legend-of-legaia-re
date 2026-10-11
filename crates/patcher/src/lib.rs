@@ -20,7 +20,7 @@
 //! a stream the retail decoder accepts. Where the data sits in a fixed-size
 //! slot (the monster archive's `0x14000`-byte records), the re-packed stream is
 //! padded back to the original slot size so no offset downstream moves - see
-//! [`monster`].
+//! `legaia_disc_patch::monster`.
 //!
 //! ## Where things live
 //!
@@ -38,10 +38,8 @@
 //!   feature family.
 //! - `legaia-party-swap` - the disc-free model-transform kernels.
 //!
-//! The `pub use` lines below keep those crates' modules reachable at
-//! `legaia_patcher::<module>` for consumers outside the family (the browser
-//! patcher, the engine's runtime oracles). Code inside the family names the
-//! owning crate directly.
+//! Every consumer, inside the family or outside it (the browser patcher,
+//! the engine's runtime oracles), names the owning crate directly.
 
 pub mod apply;
 pub mod arts_name_fix;

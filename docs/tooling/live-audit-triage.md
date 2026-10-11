@@ -221,9 +221,9 @@ Two further rules the rows taught:
 
 ### `engine-core` anchors
 
-The modules later moved into `engine-battle`, `engine-minigames`,
-`engine-menus`, `engine-field`, `engine-system` and their siblings keep their
-verdicts; `engine-core` re-exports them.
+The table also carries the anchors in `engine-battle`, `engine-minigames`,
+`engine-menus`, `engine-field`, `engine-system` and their sibling kernel
+crates; each row's site names the owning crate.
 
 | addr | symbol | site | verdict |
 |---|---|---|---|
@@ -394,7 +394,7 @@ The reason each row carries, in short form. The source tag is authoritative.
   tests).
 - **`exec_centered_bar` / `exec_centered_text` / `exec_card_init` /
   `init_card_state`** - the title and save screens are drawn by `engine-ui`'s
-  `ui_title_save` builders, not by replaying the overlay's primitive
+  `title_save` builders, not by replaying the overlay's primitive
   descriptors, so no host supplies a `PrimHost`. The same covers
   `exec_clear_image` / `exec_move_image` / `exec_sprite_descriptor`.
 
@@ -794,7 +794,7 @@ the two halves share. Both are written up in
 
 A pass over the whole minigame slice - `baka_fighter*`, `dance`, `fishing*`,
 `slot_machine`, `muscle_dome`, `minigame_floor`, `other_game_overlay` and
-`engine-ui`'s `other_game_hud` - produced **no** new `WIRE` and **no** new
+`engine-ui`'s `muscle_dome_hud` - produced **no** new `WIRE` and **no** new
 `FALSE INERT`. Every anchor really is unreached. What it did produce is six
 disclosures whose named prerequisite already existed somewhere in the tree, and
 two of those turned out to be port defects rather than wording. The corrected
@@ -809,7 +809,7 @@ Three subsystems each disclosed the *same* gap as a different missing artefact:
 |---|---|---|
 | `hud_widget_quad` (`801d5ed0`) | "`parse_baka_hud`, which no host calls" | both hosts call it; the browser also decodes the PROT 1203 art pack |
 | `dance_face_rig` (`801d03c4`) | no face pages resident, no blit pass | `legaia_minigame_formats::dance_art` has both, run per frame by the browser dance page |
-| the `other_game_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
+| the `muscle_dome_hud` emitters | (correctly) no engine-side dome HUD renderer | - |
 
 The single real blocker under all three is that every host consumes the *parsed
 descriptor geometry* and composes its quads in JavaScript, so no Rust caller
@@ -884,8 +884,8 @@ kernel's reading is never exercised, so a misreading survives:
 
 - **`polar_offset` / `walk_grid_overhead` / `water_tile_class`.** The polar
   helper's reason said no engine code decodes its two quadrature tables. They
-  are static SCUS rodata that `FUN_80026be0` publishes at boot, `legaia_asset`
-  already names and synthesises them, and the play window materialises one. Its
+  are static SCUS rodata that `FUN_80026be0` publishes at boot,
+  `legaia_minigame_formats::minigame_slot_scene` already names and synthesises them, and the play window materialises one. Its
   reason was also wrong about the callers: the slot machine's reel renderer
   reads the tables inline and never calls it, while every real caller is a
   facing-relative offset in the fishing overlay - including the cast that
@@ -917,7 +917,7 @@ Neither needed the quad sink, and both are now live:
   from four sites, and only one passes `rand() % 3` - the three groovy-move
   tiers each pass a literal `5`, a sting outside the random space that the
   page's `r > 2` bound had been dropping entirely.
-- **`other_game_hud::decimal_slots`.** Its reason said "reached only through
+- **`muscle_dome_hud::decimal_slots`.** Its reason said "reached only through
   `decimal_quads`", which was true and hid that the fill is *shared*:
   `FUN_801D1308` and the fishing overlay's `FUN_801D76E0` open with the
   identical eight-slot loop, register allocation apart. `number_digit_cells`
@@ -1308,7 +1308,7 @@ for it would have to build first.
 |---|---|---|
 | **The caller above it is unported** | that one routine is ported; the row then goes live transitively and must never be given a call site of its own. | `panel_backread_loader` (whole file, behind `FUN_80025358`), `field_actor_program`'s three (behind `step_scene_program`), `field_ledge_hop_arc::spawn_arc_helper`. |
 | **No host produces the retail input shape** | a backend or a channel that does not exist yet exists. | `input::set_pad_reports` (raw two-port libpad reports), `frame_tick::resolve_frame_step` (an hblank sampler), `effect_ribbon` x3 (an actor render-mode-4 flag word plus a packet chain). |
-| **The record or table has no parser** | `legaia_asset` grows one. | `move_no_effect_guard` x3 - the `[element][band]` follow-up table at `0x801F6870` is the only input still missing; its sibling input, the affinity matrix, is already disc-parsed and live. |
+| **The record or table has no parser** | the owning format crate grows one. | `move_no_effect_guard` x3 - the `[element][band]` follow-up table at `0x801F6870` is the only input still missing; its sibling input, the affinity matrix, is already disc-parsed and live. |
 | **Retail-unreachable** | never. Not a wiring gap; the routine is linked and unreferenced on the whole disc. | `menu_open_sequence::menu_open_step`, `save::add_to_slot`, `fishing_actors::project_segment`, `baka_fighter_chrome::editor_tick` (linked as an actor prototype's callback word, but its band is a phase no shipping path enters). |
 | **A geometry kind the port has no sink for** | the sink is built - and the sink is usually not the obvious one. | `slot_machine::payline_prims` needed a *projection pass*, not a `ScreenPrim::Line` - the endpoints are model-space; `projected_paylines` is that pass, and the row is live. |
 | **Host drift is the blocker, not the caller** | the *other* host gets the missing half; wiring one alone is the drift `host-drift.md` exists to catch. | `field_passive_hud` x2 - the native side could take it today and the browser has no projector at that seam at all. |

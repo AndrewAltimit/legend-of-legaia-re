@@ -231,7 +231,7 @@ pub const NPC_CLUT_BAND_ROWS: std::ops::Range<usize> = 476..486;
 /// `(48, 500)` - folded per row. The walker (`FUN_8001ada4` case 0xB, one
 /// actor per entry) rewrites each whole 16-entry cell every few game ticks,
 /// so a capture holds an arbitrary animation phase there, never the disc
-/// base CLUT. The disc-gated `clut_walk_real` test in `legaia-asset` pins
+/// base CLUT. The disc-gated `clut_walk_real` test in `legaia-scene-formats` pins
 /// the destination fold against this constant's cell values.
 ///
 /// The ten-state map01 capture census that originally pinned these columns

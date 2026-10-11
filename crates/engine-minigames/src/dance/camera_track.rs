@@ -1,8 +1,8 @@
 //! The dance tick's camera keyframe track (`FUN_801CF470`,
 //! `0x801CF51C..0x801CF7D8`): the pose records and key tables out of the
 //! dance overlay, the entry-built ease table, and the two counters the tick
-//! steps. `engine-core`'s `dance_venue` re-exports it and turns a pose into
-//! the venue's field camera.
+//! steps. `engine-core`'s `dance_venue` turns a pose into the venue's field
+//! camera.
 
 use super::*;
 

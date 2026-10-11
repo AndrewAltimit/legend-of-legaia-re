@@ -5,9 +5,9 @@
 //! of the SCUS and overlay regions the code mods claim, and the MAN
 //! re-pack budget helpers.
 //!
-//! `legaia-patcher` re-exports every module here at its old path. Doc links
-//! that pointed back up at it are plain code spans, since rustdoc cannot
-//! resolve a link into a dependent crate.
+//! `legaia-patcher` sits above this crate. Doc comments name its items in
+//! plain code spans, since rustdoc cannot resolve a link into a dependent
+//! crate.
 
 #![forbid(unsafe_code)]
 

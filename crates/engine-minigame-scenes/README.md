@@ -1,11 +1,10 @@
 # legaia-engine-minigame-scenes
 
-The minigames' **3D scene surfaces**, split out of `legaia-engine-core`: the
+The minigames' **3D scene surfaces**: the
 kernels that turn a running minigame into posed vertex buffers and a camera,
 one per game, which every host draws. `engine-core` depends on this crate,
-never the other way round, and re-exports both modules at their old paths
-(`legaia_engine_minigame_scenes::baka_duel_scene`, `legaia_engine_minigame_scenes::muscle_dome_scene`),
-so hosts and tests name the same paths they always did.
+never the other way round. Hosts and tests name the two modules directly
+(`legaia_engine_minigame_scenes::baka_duel_scene`, `legaia_engine_minigame_scenes::muscle_dome_scene`).
 
 ## What lives here
 
@@ -24,8 +23,6 @@ World-free crates below `engine-core`: the rules engines in
 `legaia-engine-menus`, the battle seats in `legaia-engine-battle`, the packet
 colour helpers in `legaia-engine-field`, the cameras in
 `legaia-engine-battle-vm`.
-The crate root aliases each one at the `crate::<module>` path the surfaces
-were written against.
 
 What stays in `engine-core` is everything that reads the world: the
 `World` entry points that seat a rung and tick a surface, the dance and
