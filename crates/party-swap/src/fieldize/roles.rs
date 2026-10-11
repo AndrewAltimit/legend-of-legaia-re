@@ -94,12 +94,12 @@ pub(in super::super) fn derive_field_roles(
         });
     }
     // Head = highest centroid (y-down: most negative).
-    infos.sort_by(|a, b| a.cy.partial_cmp(&b.cy).unwrap());
+    infos.sort_by(|a, b| a.cy.total_cmp(&b.cy));
     let head = infos[0].idx;
     // Torso = the most x-central of the rest.
     let torso = infos[1..]
         .iter()
-        .min_by(|a, b| a.cx.abs().partial_cmp(&b.cx.abs()).unwrap())
+        .min_by(|a, b| a.cx.abs().total_cmp(&b.cx.abs()))
         .unwrap()
         .idx;
     // Legs = the four remaining bones whose geometry reaches lowest
@@ -109,7 +109,7 @@ pub(in super::super) fn derive_field_roles(
         .filter(|i| i.idx != head && i.idx != torso)
         .copied()
         .collect();
-    rest_bones.sort_by(|a, b| b.max_y.partial_cmp(&a.max_y).unwrap());
+    rest_bones.sort_by(|a, b| b.max_y.total_cmp(&a.max_y));
     let (legs, arms) = rest_bones.split_at(4);
     let side = |set: &[Info], neg: bool| -> Vec<Info> {
         let mut v: Vec<Info> = set
@@ -118,7 +118,7 @@ pub(in super::super) fn derive_field_roles(
             .copied()
             .collect();
         // Upper = higher centroid (more negative y).
-        v.sort_by(|a, b| a.cy.partial_cmp(&b.cy).unwrap());
+        v.sort_by(|a, b| a.cy.total_cmp(&b.cy));
         v
     };
     let (arm_l, arm_r) = (side(arms, true), side(arms, false));

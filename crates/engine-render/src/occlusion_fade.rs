@@ -314,7 +314,7 @@ mod tests {
     #[test]
     fn bayer_is_a_16_level_uniform_lattice() {
         let mut seen: Vec<f32> = (0..16).map(|i| bayer_threshold(i % 4, i / 4)).collect();
-        seen.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        seen.sort_by(|a, b| a.total_cmp(b));
         for (i, v) in seen.iter().enumerate() {
             let expect = (i as f32 + 0.5) / 16.0;
             assert!((v - expect).abs() < 1e-6, "level {i}: {v} != {expect}");
