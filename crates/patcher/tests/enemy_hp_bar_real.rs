@@ -21,6 +21,7 @@
 //! the simulator tests inside the module.
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_code_hooks::arenas::OVERLAY_BASE_VA;
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::write::mode2_form1_sector_is_valid;
 use legaia_patcher::apply;
@@ -29,7 +30,6 @@ use legaia_patcher::enemy_hp_bar::{
     EnemyHpBarInjection, FRAG_A_VA, FRAG_B_VA, FRAG_C_VA, FRAG_S_VA, HOOK_VA, OVERLAY_PROT_INDEX,
     assemble,
 };
-use legaia_patcher::shiny_seru::OVERLAY_BASE_VA;
 
 fn load_disc() -> Option<Vec<u8>> {
     let p = std::path::PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

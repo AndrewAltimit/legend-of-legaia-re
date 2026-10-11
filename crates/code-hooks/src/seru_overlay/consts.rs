@@ -567,29 +567,11 @@ pub const TRADE_ACTIVE_VA: u32 = RUN_C_VA + 0x940;
 pub const ENTRY_STUB_VA: u32 = RUN_C_VA + 0x970;
 /// Reorder dispatch stub (cursor 2 → Trade sub-mode, 3 → Quit, 0/1 → Buy/Sell).
 pub const TRADE_DISPATCH_STUB_VA: u32 = RUN_C_VA + 0x9D0;
-/// Base of the 0899 run every seru-trade piece (and `--show-super-arts`'s menu
-/// half, past [`WANTS_STR_VA`]'s strings) lives in.
-///
-/// It is the blank lower band of the save-menu atlas TIM the overlay carries at
-/// `0x801E5120` (pixels `0x801E5340..0x801ED340`, 256x256 4bpp, uploaded to VRAM
-/// `(960, 0)` when the card screen opens): atlas rows 162..223, all-zero in the
-/// file. Nothing samples those rows (a card-screen capture's draw list reads rows
-/// 0..160 of that page, and 224..239 come from the save-icon sheet uploaded over
-/// them), no instruction in any image forms an address in them, both save-screen
-/// card buffers (`0x801E5120..0x801E9120`) end below them, and they read zero in
-/// every library capture with the overlay resident. See
-/// [`crate::space_ledger`], which also refuses any region overlapping a runtime
-/// buffer.
-///
-/// The run once sat at `0x801E74E0`, inside the save compose buffer - which a
-/// save from the pause menu fills and then returns to the root menu with the
-/// overlay still resident.
-pub const RUN_C_VA: u32 = 0x801E_A440;
+/// The menu-overlay run the trade screen is hosted in:
+/// [`crate::arenas::MENU_RUN_C_VA`], whose head this feature owns.
+pub const RUN_C_VA: u32 = crate::arenas::MENU_RUN_C_VA;
 /// Length of the run.
-pub const RUN_C_LEN: u32 = 0xF00;
-// Every cell and string is reached through one shared `lui` of its page, so the
-// whole run must sit inside one `%hi` page.
-const _: () = assert!(crate::mips::hi(RUN_C_VA) == crate::mips::hi(RUN_C_VA + RUN_C_LEN - 1));
+pub const RUN_C_LEN: u32 = crate::arenas::MENU_RUN_C_LEN;
 
 /// The in-shop trade-screen handler (draws + input + swap; runs in mode 0x17).
 ///

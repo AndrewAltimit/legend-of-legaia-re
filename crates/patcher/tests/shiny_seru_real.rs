@@ -18,13 +18,16 @@
 //! covered by `legaia-engine-core`'s `shiny_*` unit tests instead.
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_code_hooks::arenas::{
+    self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_SETUP_VA, MENU_OVERLAY_PROT_INDEX,
+    OVERLAY_BASE_VA, SCUS_GAP_END_VA, SCUS_GAP_VA,
+};
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::shiny_seru::{
-    self, BATTLE_ACTION_OVERLAY_PROT_INDEX, HOOK_BANNER_VA, HOOK_BMENU_LVL_VA, HOOK_CAPTURE_VA,
-    HOOK_DAMAGE_VA, HOOK_FADE_VA, HOOK_GRANT_SHIFT_VA, HOOK_GRANT_VA, HOOK_MENU_VA, HOOK_SETUP_VA,
-    MENU_OVERLAY_PROT_INDEX, OVERLAY_BASE_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, ShinySeruInjection,
+    self, HOOK_BANNER_VA, HOOK_BMENU_LVL_VA, HOOK_CAPTURE_VA, HOOK_DAMAGE_VA, HOOK_FADE_VA,
+    HOOK_GRANT_SHIFT_VA, HOOK_GRANT_VA, HOOK_MENU_VA, ShinySeruInjection,
 };
 
 fn load_disc() -> Option<Vec<u8>> {
@@ -86,9 +89,9 @@ fn baseline_hooks_match_the_known_build() {
     // game's keyframes, not our code.
     for (start, end, label) in [
         (SCUS_GAP_VA, SCUS_GAP_END_VA, "gap 1"),
-        (shiny_seru::ARENA1_VA, shiny_seru::ARENA1_END_VA, "arena 1"),
-        (shiny_seru::ARENA2_VA, shiny_seru::ARENA2_END_VA, "arena 2"),
-        (shiny_seru::SLOT6_VA, shiny_seru::SLOT6_END_VA, "slot 6"),
+        (arenas::ARENA1_VA, arenas::ARENA1_END_VA, "arena 1"),
+        (arenas::ARENA2_VA, arenas::ARENA2_END_VA, "arena 2"),
+        (arenas::SLOT6_VA, arenas::SLOT6_END_VA, "slot 6"),
     ] {
         let off = file_offset_for_va(&scus, start).unwrap();
         let len = (end - start) as usize;
@@ -286,7 +289,7 @@ fn planner_refuses_an_unrecognized_build() {
 
     // Dirty the arena-1 routine region (non-dead) -> refuse.
     let mut scus_g2 = scus.clone();
-    let g2off = file_offset_for_va(&scus_g2, shiny_seru::ARENA1_VA).unwrap();
+    let g2off = file_offset_for_va(&scus_g2, arenas::ARENA1_VA).unwrap();
     scus_g2[g2off + 4] = 0x42;
     assert!(ShinySeruInjection::plan(&scus_g2, &ov0898, &ov0899, 20, &ids).is_err());
 }

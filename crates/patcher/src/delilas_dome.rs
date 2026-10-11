@@ -468,7 +468,7 @@ pub const STREAM2_ROUTINE_VA: u32 = 0x8007_AED8;
 pub const CAVE_END_VA: u32 = 0x8007_AF00;
 /// End of the usable zero window (exclusive): the SsAPI sound I/O register
 /// table begins exactly at `0x8007AF00` and is read every frame (the
-/// shiny-seru read-watch pinned it - see `shiny_seru::layout`), so the cave
+/// shiny-seru read-watch pinned it - see `legaia_code_hooks::arenas`), so the cave
 /// must end below it even though the bytes scan as zero.
 pub const GAP_END_VA: u32 = 0x8007_AF00;
 

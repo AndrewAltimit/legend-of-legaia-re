@@ -15,11 +15,11 @@ use super::{
     SUP_STRIDE, SUPER_ARTS_PER_CHAR,
 };
 use crate::mips::*;
-use crate::shiny_seru::{
+use anyhow::{Result, bail};
+use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, OVERLAY_TABLE_RANGES,
     SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES, SLOT6_END_VA, SLOT6_VA,
 };
-use anyhow::{Result, bail};
 
 // --- Planning ----------------------------------------------------------------
 

@@ -125,7 +125,7 @@ use crate::arts_ap_grant::{
     assemble_refund, assert_not_in_tables, assert_zero, ov_hook, words_to_bytes,
 };
 use crate::mips::*;
-use crate::shiny_seru::{
+use legaia_code_hooks::arenas::{
     ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, Edit, HOOK_SETUP_VA, HOOK_SETUP_W0,
     OVERLAY_TABLE_RANGES, RAND_FUNC_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SCUS_TABLE_RANGES,
     SLOT6_END_VA, SLOT6_VA,

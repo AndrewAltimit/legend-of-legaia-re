@@ -4,13 +4,13 @@ use super::hook_asm::{
 use super::rows::{SuperArtRow, arrow_code};
 use super::*;
 use crate::mips::*;
-use crate::shiny_seru::{
-    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
-    SLOT6_VA,
-};
 use crate::super_art_power::GRID_BIAS;
 use anyhow::Result;
 use legaia_art::queue::{Character, Command};
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
+    SLOT6_VA,
+};
 
 /// Decode a branch's word offset back out of an encoded instruction.
 fn br_off(w: u32) -> i32 {

@@ -1087,7 +1087,7 @@ Both ride one MIPS code hook into the **party** arts queue-builder `FUN_801EED1C
 (PROT 0898, base `0x801CE818`; slot < 3, so enemies are unaffected): three
 same-size detours - the affordability guard (`0x801EF410`), the AP debit/accrual
 (`0x801EF490`), and the end-of-turn refund clamp (`0x801EF988`) - plus the
-routines in `shiny_seru::ARENA1_VA` / `ARENA2_VA` and a `4 x 32` `i8` config
+routines in `arenas::ARENA1_VA` / `ARENA2_VA` and a `4 x 32` `i8` config
 table in `SCUS_GAP_VA`. Those are the regions the [Shiny Seru](#shiny-seru)
 feature reuses, so the two are **mutually exclusive** - enforced in the CLI and
 the web patcher. Trap-wise it is the same class as `shiny_seru`/`bonus_drop`:

@@ -80,8 +80,8 @@ use anyhow::{Context, Result, bail};
 
 use legaia_asset::item_names;
 
+use crate::arenas::{Edit, OVERLAY_BASE_VA, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES};
 use crate::mips::*;
-use crate::shiny_seru::{Edit, OVERLAY_BASE_VA, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES};
 
 /// PROT entry of the battle-action overlay (0898).
 pub const OVERLAY_PROT_INDEX: usize = 898;

@@ -101,6 +101,7 @@ pub use routines::*;
 mod tests {
     use super::encode::*;
     use super::*;
+    use crate::arenas::*;
 
     fn op(w: u32) -> u32 {
         w >> 26

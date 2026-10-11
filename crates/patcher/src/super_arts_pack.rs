@@ -104,7 +104,9 @@ use crate::mips::{
     A0, A1, A2, T1, T2, T5, T6, T8, V0, ZERO, addiu, j, jal, jalr, lui, nop, ori, read_word, sll,
     slti,
 };
-use crate::shiny_seru::{ARENA1_END_VA, ARENA1_VA, Edit, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES};
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, Edit, OVERLAY_TABLE_RANGES, SCUS_TABLE_RANGES,
+};
 
 /// ZetaPhoenix's block, verbatim. See `crates/patcher/data/README.md` for its
 /// provenance and the licence note.

@@ -18,7 +18,7 @@
 
 // Modules these files name as `crate::...`, which `legaia-patcher` re-exports
 // at its root; binding them here keeps the moved files' paths unchanged.
-use legaia_code_hooks::{mips, seru_overlay, shiny_seru};
+use legaia_code_hooks::mips;
 use legaia_disc_patch::rng;
 
 #[cfg(test)]

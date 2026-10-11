@@ -21,6 +21,7 @@ use legaia_disc_patch::disc;
 use legaia_disc_patch::space_ledger;
 
 pub mod approach_fix;
+pub mod arenas;
 pub mod bonus_drop;
 pub mod delilas_cast;
 pub mod enemy_hp_bar;

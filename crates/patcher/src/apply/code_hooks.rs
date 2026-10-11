@@ -184,10 +184,10 @@ pub fn inject_shiny_seru(patcher: &mut DiscPatcher, pct: u8) -> Result<ShinySeru
         .read_named_file(SCUS_NAME)
         .context("read SCUS_942.54 for shiny-seru injection")?;
     let ov0898 = patcher
-        .read_entry(crate::shiny_seru::BATTLE_ACTION_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_code_hooks::arenas::BATTLE_ACTION_OVERLAY_PROT_INDEX)
         .context("read battle-action overlay (0898) for shiny-seru injection")?;
     let ov0899 = patcher
-        .read_entry(crate::shiny_seru::MENU_OVERLAY_PROT_INDEX)
+        .read_entry(legaia_code_hooks::arenas::MENU_OVERLAY_PROT_INDEX)
         .context("read menu overlay (0899) for shiny-seru injection")?;
     // Derive the capturable-Seru monster ids from the disc's monster names so
     // the allowlist tracks the actual `battle_data` archive (no hardcoded ids).

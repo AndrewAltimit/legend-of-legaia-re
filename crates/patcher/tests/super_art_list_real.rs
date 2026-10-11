@@ -38,14 +38,14 @@
 //! before calling the feature done.
 
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
+    SLOT6_VA,
+};
 use legaia_iso::iso9660::{find_file_in_image, read_file_in_image};
 use legaia_iso::raw::{SECTOR_SIZE, USER_DATA_SIZE};
 use legaia_patcher::apply;
 use legaia_patcher::disc::DiscPatcher;
-use legaia_patcher::shiny_seru::{
-    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, SCUS_GAP_END_VA, SCUS_GAP_VA, SLOT6_END_VA,
-    SLOT6_VA,
-};
 use legaia_patcher::super_art_list::{
     APPLIER_VA, ARROW_BITS, ARROWS_COUNT_SHIFT, ARROWS_STRIDE, ART_CONSTANT_BIAS, ARTS_CHARACTERS,
     FIRST_NORMAL_ORDINAL, GLYPH_BUF_BYTES, HOOK_COUNT_VA, HOOK_ID_VA, HOOK_PERFORMED_VA,

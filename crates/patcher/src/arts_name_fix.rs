@@ -38,7 +38,7 @@
 //! produced the Healing-Leaf freeze (zero *padding between live tables* is
 //! reachable by indexed reads a static scan cannot see). This carrier holds
 //! injection sites to the read-watch standard, so it parks the routine in
-//! **verified-dead arena 1** instead ([`crate::shiny_seru::ARENA1_VA`],
+//! **verified-dead arena 1** instead ([`legaia_code_hooks::arenas::ARENA1_VA`],
 //! read-watch-verified unreferenced across a live battle with an item use, a
 //! victory pose and a summon cast) and re-targets only the hook's `j` word.
 //! The pack parks it directly behind its battle-load stub.
@@ -46,7 +46,7 @@
 use anyhow::{Result, bail};
 
 use crate::mips::{A1, addiu, j, lui};
-use crate::shiny_seru::{ARENA1_END_VA, ARENA1_VA, Edit, SCUS_TABLE_RANGES};
+use legaia_code_hooks::arenas::{ARENA1_END_VA, ARENA1_VA, Edit, SCUS_TABLE_RANGES};
 
 /// The hook site: the banner path's `li a0,0x4C` at `0x8004BC3C`.
 pub const HOOK_VA: u32 = 0x8004_BC3C;

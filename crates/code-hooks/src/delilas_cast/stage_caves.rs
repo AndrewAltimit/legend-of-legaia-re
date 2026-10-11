@@ -142,7 +142,7 @@ const STUB_958_BODY_OFFSETS: [u64; 3] = [0x21B4, 0x21BC, 0x21C4];
 pub(super) const GATE_958_OFFSET: u64 = 0x21CC;
 
 pub(super) fn stage_cave_layout() -> Result<StageCaveLayout> {
-    use crate::shiny_seru::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
+    use crate::arenas::{ARENA2_END_VA, ARENA2_VA, SLOT6_END_VA, SLOT6_VA};
     // The queue hook is fixed-size (its shape does not depend on the
     // routes), so the tail base is stable across builds.
     let hook_len = assemble_hook(SCUS_GAP_VA_LOCAL, &[]).len() as u32;
@@ -195,8 +195,8 @@ const BED_960_DUR: u16 = 0x3F6;
 /// Link base of the cast modules (slot-B); 958's wipe-body stubs are
 /// addressed as `MODULE_LINK_BASE + file offset`.
 const MODULE_LINK_BASE: u32 = 0x801F_69D8;
-const SCUS_GAP_VA_LOCAL: u32 = crate::shiny_seru::SCUS_GAP_VA;
-const SCUS_GAP_END_VA_LOCAL: u32 = crate::shiny_seru::SCUS_GAP_END_VA;
+const SCUS_GAP_VA_LOCAL: u32 = crate::arenas::SCUS_GAP_VA;
+const SCUS_GAP_END_VA_LOCAL: u32 = crate::arenas::SCUS_GAP_END_VA;
 
 fn words_to_bytes(words: &[u32]) -> Vec<u8> {
     words.iter().flat_map(|w| w.to_le_bytes()).collect()

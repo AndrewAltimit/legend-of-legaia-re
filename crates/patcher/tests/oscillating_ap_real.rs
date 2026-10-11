@@ -27,6 +27,10 @@
 
 use legaia_art::queue::Character;
 use legaia_asset::item_names::file_offset_for_va;
+use legaia_code_hooks::arenas::{
+    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, HOOK_SETUP_VA, SCUS_GAP_END_VA,
+    SCUS_GAP_VA, SLOT6_END_VA, SLOT6_VA,
+};
 use legaia_iso::iso9660::read_file_in_image;
 use legaia_patcher::apply;
 use legaia_patcher::arts_ap_grant::{
@@ -36,10 +40,6 @@ use legaia_patcher::arts_ap_grant::{
 use legaia_patcher::arts_power::parse_combo;
 use legaia_patcher::disc::DiscPatcher;
 use legaia_patcher::oscillating_ap::{BITS_LEN, HOOK_DMG_VA, HOOK_LIST_VA, OscillatingApInjection};
-use legaia_patcher::shiny_seru::{
-    ARENA1_END_VA, ARENA1_VA, ARENA2_END_VA, ARENA2_VA, HOOK_SETUP_VA, SCUS_GAP_END_VA,
-    SCUS_GAP_VA, SLOT6_END_VA, SLOT6_VA,
-};
 
 const PCT: u8 = 20;
 

@@ -6,6 +6,7 @@ use anyhow::Result;
 
 use super::encode::*;
 use super::layout::*;
+use crate::arenas::*;
 
 // --- Routine assemblers. Each takes the two displaced words it must replay
 //     (read from the image at plan time) plus its return VA. -----------------
