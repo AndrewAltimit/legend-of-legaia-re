@@ -13,6 +13,7 @@ from ui_host_drift.controls import (
     SELFTEST_DIAG,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
+    SELFTEST_PATH_STRINGS,
     SELFTEST_RENDER,
     SELFTEST_SAVE_IO,
     SELFTEST_SCREENS,
@@ -22,6 +23,7 @@ from ui_host_drift.controls import (
     SELFTEST_VARIANT_USE,
     SELFTEST_WORDS,
 )
+from ui_host_drift.path_check import check_declared_paths, is_path_string
 from ui_host_drift.roots import HOSTS, REPO, WAIVERS
 from ui_host_drift.rows.constant_pairs import CONSTANT_PAIRS
 from ui_host_drift.rows.diag_gates import DIAG_GATES
@@ -223,6 +225,16 @@ def main() -> int:
             )
             return 2
 
+    for _label, value, want in SELFTEST_PATH_STRINGS:
+        if is_path_string(value) != want:
+            print(
+                "ERROR: built-in path-shape control failed; a walk that cannot "
+                "tell a path from a pattern either misses the rows' files or "
+                "reports a regex as a missing one. Run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+
     builders = collect_builders()
     if not builders:
         print("[ui-drift] no draw builders found - is crates/engine-ui/src present?", file=sys.stderr)
@@ -257,6 +269,12 @@ def main() -> int:
             print(f"{mark} {name:<40} {','.join(sorted(hosts)):<12} {builders[name]}")
 
     problems: list[str] = []
+
+    # The floor under every tier below: a row that names a file which is
+    # not on disk is a rule over nothing, and most tiers would read that
+    # as a clean surface.
+    path_problems, paths_checked = check_declared_paths()
+    problems.extend(path_problems)
 
     # Unwaived drift / orphans.
     for name in drift:
@@ -371,6 +389,10 @@ def main() -> int:
             f"[ui-drift] engine-ui draw builders: {len(builders)} "
             f"({len(both)} on both hosts, {len(drift)} native-only, "
             f"{len(web_ahead)} web-only, {len(orphan)} unused)"
+        )
+        print(
+            f"[ui-drift] paths the declared rows name, each checked on disk: "
+            f"{paths_checked}"
         )
         print(
             f"[ui-drift] paired host geometry constants: {len(CONSTANT_PAIRS)} "

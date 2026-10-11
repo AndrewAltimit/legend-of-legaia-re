@@ -11,6 +11,7 @@ from ui_host_drift.controls import (
     SELFTEST_FRAME,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
+    SELFTEST_PATH_STRINGS,
     SELFTEST_RENDER,
     SELFTEST_SCREENS,
     SELFTEST_SIGNATURES,
@@ -19,6 +20,7 @@ from ui_host_drift.controls import (
     SELFTEST_VARIANT_USE,
     SELFTEST_WORDS,
 )
+from ui_host_drift.path_check import is_path_string
 from ui_host_drift.rows.frame_paths import FRAME_PATHS
 from ui_host_drift.rows.page_keys import NON_PAD_CODES
 from ui_host_drift.rust_text import (
@@ -182,6 +184,15 @@ def run_selftest() -> int:
         else:
             failures += 1
             print(f"  FAIL  frame content: {label} - reached {got}, expected {want}")
+    for label, value, want in SELFTEST_PATH_STRINGS:
+        if is_path_string(value) == want:
+            print(f"  ok    path shape: {label}")
+        else:
+            failures += 1
+            print(
+                f"  FAIL  path shape: {label} - read as "
+                f"{'a path' if not want else 'not a path'}"
+            )
     total = (
         len(SELFTEST_WORDS)
         + len(SELFTEST_SCREENS)
@@ -197,6 +208,7 @@ def run_selftest() -> int:
         + len(SELFTEST_CALL_FORM)
         + len(SELFTEST_FRAME)
         + len(SELFTEST_CONTENT)
+        + len(SELFTEST_PATH_STRINGS)
     )
     if failures:
         print(

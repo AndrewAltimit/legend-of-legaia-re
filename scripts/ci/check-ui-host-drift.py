@@ -10,6 +10,7 @@ beside it:
     ui_host_drift/rows/         the declared rows, one module per tier;
                                 `host_files.py` holds every host source path
     ui_host_drift/tiers/        the analysis, one module per tier
+    ui_host_drift/path_check.py do the paths the rows name exist?
     ui_host_drift/rust_text.py  the source-text helpers the tiers share
     ui_host_drift/controls.py   the detector controls
     ui_host_drift/selftest.py   `--selftest`

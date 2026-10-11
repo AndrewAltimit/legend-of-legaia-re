@@ -1,7 +1,8 @@
 """Host source files the declared rows name.
 
 A row cites a file through one of these constants, so a moved or split Rust
-file is one edit here.
+file is one edit here. `ui_host_drift.path_check` fails the gate when a path
+named in any rows module is not on disk.
 """
 
 # Host source files the paired-constant check reads. Named here rather than

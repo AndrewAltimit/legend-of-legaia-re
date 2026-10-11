@@ -506,3 +506,16 @@ SELFTEST_SAVE_IO = [
         [],
     ),
 ]
+
+# Detector controls for the row self-check's path shape: what the walk
+# over the rows reads as a path, and what it must leave alone.
+SELFTEST_PATH_STRINGS: list[tuple[str, str, bool]] = [
+    ("a host source file", "crates/web-viewer/src/play_menu.rs", True),
+    ("a source directory", "crates/engine-shell/src/window", True),
+    ("a site script", "site/js/webgl-shaders.js", True),
+    ("a function name", "play_overlay_draws_json", False),
+    ("a Rust path, not a file path", "crates::engine_ui::menu", False),
+    ("a regex over a path", r"crates/web-viewer/src/play_\w+\.rs", False),
+    ("prose that mentions a path", "see crates/engine-ui/src for the builders", False),
+    ("a path outside the known roots", "target/port-catalog/catalog.csv", False),
+]
