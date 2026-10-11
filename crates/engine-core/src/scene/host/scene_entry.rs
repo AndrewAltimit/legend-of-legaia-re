@@ -1,6 +1,9 @@
 //! `SceneHost` field/world-map scene entry, shop population, archive/move-power seeding, and per-frame tick.
 //!
-//! Extracted verbatim from `scene/host.rs` as an additional `impl SceneHost` block.
+//! Each child is one `impl SceneHost` block: `field_scene` and `world_map_scene` enter a
+//! scene, `battle_inputs` seeds what a battle needs, `entry_seat` places the player,
+//! `walk_on_triggers` dispatches tile triggers, `tick` is the per-frame step and
+//! `fmv_handoff` the post-movie control transfer.
 
 use super::*;
 
