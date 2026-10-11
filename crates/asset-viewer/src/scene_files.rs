@@ -1,37 +1,7 @@
-//! Shared helpers used across the viewer's per-mode apps: the per-actor
-//! mesh wrapper, AABB math, path shortening, PSX pad keymapping, and the
-//! scene-directory collectors.
+//! Locating extracted assets on disk: the per-scene TMD and TIM directory
+//! collectors, the recursive TMD walk, and path shortening for display.
 
-use legaia_engine_core::input::PadButton;
 use std::path::{Path, PathBuf};
-use winit::keyboard::KeyCode;
-
-pub(crate) struct WorldActorMesh {
-    pub(crate) mesh: legaia_engine_render::UploadedVramMesh,
-    /// AABB of the local TMD geometry (pre-transform). Used to size the
-    /// camera frustum.
-    pub(crate) aabb_lo: [f32; 3],
-    pub(crate) aabb_hi: [f32; 3],
-}
-
-pub(crate) fn mesh_aabb(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
-    if positions.is_empty() {
-        return ([0.0; 3], [0.0; 3]);
-    }
-    let mut lo = positions[0];
-    let mut hi = positions[0];
-    for p in &positions[1..] {
-        for i in 0..3 {
-            if p[i] < lo[i] {
-                lo[i] = p[i];
-            }
-            if p[i] > hi[i] {
-                hi[i] = p[i];
-            }
-        }
-    }
-    (lo, hi)
-}
 
 /// Trim a path for window-title use: keep the last 3 components.
 pub(crate) fn short_path(p: &Path) -> String {
@@ -46,56 +16,6 @@ pub(crate) fn short_path(p: &Path) -> String {
         s.push_str(&c.as_os_str().to_string_lossy());
     }
     s
-}
-
-/// Map winit physical keys to PSX pad button bits. Keyboard mapping mirrors
-/// the conventional emulator default:
-///
-/// - Arrows → D-pad
-/// - Z → Cross, X → Square, A → Triangle, S → Circle
-/// - Enter → Start, Right Shift → Select
-/// - Q / W → L1 / R1, 1 / 2 → L2 / R2
-pub(crate) fn keymap_pad(code: KeyCode) -> Option<PadButton> {
-    Some(match code {
-        KeyCode::ArrowUp => PadButton::Up,
-        KeyCode::ArrowDown => PadButton::Down,
-        KeyCode::ArrowLeft => PadButton::Left,
-        KeyCode::ArrowRight => PadButton::Right,
-        KeyCode::KeyZ => PadButton::Cross,
-        KeyCode::KeyX => PadButton::Square,
-        KeyCode::KeyA => PadButton::Triangle,
-        KeyCode::KeyS => PadButton::Circle,
-        KeyCode::Enter => PadButton::Start,
-        KeyCode::ShiftRight => PadButton::Select,
-        KeyCode::KeyQ => PadButton::L1,
-        KeyCode::KeyW => PadButton::R1,
-        KeyCode::Digit1 => PadButton::L2,
-        KeyCode::Digit2 => PadButton::R2,
-        _ => return None,
-    })
-}
-
-/// Friendly button-name string for HUD readouts. Returns `"_"` for
-/// unset bits so the readout has a fixed grid shape.
-pub(crate) fn pad_button_label(b: PadButton) -> &'static str {
-    match b {
-        PadButton::Up => "U",
-        PadButton::Down => "D",
-        PadButton::Left => "L",
-        PadButton::Right => "R",
-        PadButton::Cross => "X",
-        PadButton::Circle => "O",
-        PadButton::Square => "[]",
-        PadButton::Triangle => "/\\",
-        PadButton::Start => "ST",
-        PadButton::Select => "SE",
-        PadButton::L1 => "L1",
-        PadButton::R1 => "R1",
-        PadButton::L2 => "L2",
-        PadButton::R2 => "R2",
-        PadButton::L3 => "L3",
-        PadButton::R3 => "R3",
-    }
 }
 
 /// Collect every `tmd_scan/<NNNN_label>/*.tmd` for entries within

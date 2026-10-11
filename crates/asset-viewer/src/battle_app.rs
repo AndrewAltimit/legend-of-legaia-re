@@ -3,7 +3,8 @@
 //! monster meshes under the orbit camera with a live SM HUD.
 
 use crate::cli::Bundle;
-use crate::common::{WorldActorMesh, keymap_pad, mesh_aabb};
+use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
+use crate::pad_keymap::keymap_pad;
 use anyhow::{Context, Result};
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_render::glam::{Mat4, Vec3};

@@ -3,10 +3,9 @@
 //! the field VM over the scene's event-script records, and overlays a HUD
 //! with VM telemetry + a dialog panel.
 
-use crate::common::{
-    WorldActorMesh, collect_scene_tim_dirs, collect_scene_tmds, keymap_pad, mesh_aabb,
-    pad_button_label,
-};
+use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
+use crate::pad_keymap::{keymap_pad, pad_button_label};
+use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
 use legaia_engine_core::input::{InputState, PadButton};
 use legaia_engine_render::glam::{Mat4, Vec3};

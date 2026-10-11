@@ -33,16 +33,20 @@
 //! browser modes in [`browser`], the field / battle / world / dialog demos
 //! in [`field_app`] / [`battle_app`] / [`world_app`] / [`dialog_app`], SEQ
 //! playback in [`seq_play`], and the shared loaders / view payloads in
-//! [`loaders`] / [`tmd_view`] / [`stage_view`] / [`display`] / [`common`].
+//! [`loaders`] / [`tmd_view`] / [`stage_view`] / [`display`] / [`mesh_bounds`] /
+//! [`pad_keymap`] / [`scene_files`].
 
 mod battle_app;
 mod browser;
 mod cli;
-mod common;
+
 mod dialog_app;
 mod display;
 mod field_app;
 mod loaders;
+mod mesh_bounds;
+mod pad_keymap;
+mod scene_files;
 mod seq_play;
 mod stage_view;
 mod tmd_view;
@@ -58,13 +62,13 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::battle_app::run_battle_scene;
 use crate::browser::{App, Browser, MeshBrowser, StageBrowser};
 use crate::cli::{Bundle, ShapeFilter, parse_hex_u64, scene_bundle_dirs};
-use crate::common::collect_tmds;
 use crate::dialog_app::run_dialog;
 use crate::display::Display;
 use crate::field_app::run_field;
 use crate::loaders::{
     load_save_icon_sheet, load_tim_path, load_tim_path_at_offset, load_vab_sample,
 };
+use crate::scene_files::collect_tmds;
 use crate::seq_play::run_seq_playback;
 use crate::stage_view::{collect_stage_files, load_stage_for_view};
 use crate::tmd_view::{TmdViewData, load_tmd_for_view};

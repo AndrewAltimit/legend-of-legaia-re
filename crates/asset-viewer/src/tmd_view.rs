@@ -1,7 +1,7 @@
 //! TMD viewer loader: builds either a flat-shaded mesh payload or a
 //! VRAM-textured one (with a targeted TIM upload) for a single TMD.
 
-use crate::common::short_path;
+use crate::scene_files::short_path;
 use anyhow::{Context, Result};
 use legaia_tim::Vram;
 use std::path::{Path, PathBuf};

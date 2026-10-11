@@ -9,7 +9,8 @@
 //! `--with-move-vm` instead loads a synthetic `WORLD_SET → WAIT_SET → HALT`
 //! program per actor so the move-VM port runs every tick.
 
-use crate::common::{WorldActorMesh, collect_scene_tim_dirs, collect_scene_tmds, mesh_aabb};
+use crate::mesh_bounds::{WorldActorMesh, mesh_aabb};
+use crate::scene_files::{collect_scene_tim_dirs, collect_scene_tmds};
 use anyhow::{Context, Result};
 use legaia_engine_render::glam::{Mat4, Vec3};
 use legaia_engine_render::{

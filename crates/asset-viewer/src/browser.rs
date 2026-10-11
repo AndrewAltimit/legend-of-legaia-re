@@ -2,8 +2,9 @@
 //! stage-browser modes: window + renderer + audio host driving a
 //! navigable sequence of [`Display`]s.
 
-use crate::common::{mesh_aabb, short_path};
 use crate::display::{Display, MeshView, display_for_prot_entry};
+use crate::mesh_bounds::mesh_aabb;
+use crate::scene_files::short_path;
 use crate::stage_view::load_stage_for_view;
 use crate::tmd_view::{TmdViewData, load_tmd_for_view};
 use legaia_engine_audio::AudioOut;
