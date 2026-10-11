@@ -67,7 +67,6 @@ legaia-prot.workspace = true
 # drives the same decode the hosts do. `legaia-asset` depends on
 # prot/lzs/tim/tmd/vab/seq and never on engine-audio, so this dev-only edge is
 # acyclic.
-legaia-asset.workspace = true
 legaia-game-tables.workspace = true
 
 [[test]]

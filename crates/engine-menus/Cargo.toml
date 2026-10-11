@@ -13,7 +13,6 @@ legaia-engine-field.workspace = true
 legaia-engine-battle-vm.workspace = true
 anyhow.workspace = true
 legaia-art.workspace = true
-legaia-asset.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-dialog.workspace = true
 legaia-engine-minigames.workspace = true

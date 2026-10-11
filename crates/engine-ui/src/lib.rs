@@ -52,7 +52,6 @@
 //!
 //! [`TextOverlay`]: https://docs.rs/legaia-engine-render
 
-
 pub mod arts_input;
 pub mod baka_strips;
 pub mod battle_chrome;

@@ -1258,7 +1258,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-art",
- "legaia-asset",
  "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-game-tables",
@@ -1284,7 +1283,6 @@ dependencies = [
  "legaia-scene-formats",
  "legaia-tim",
  "legaia-tmd",
- "legaia-ui-formats",
  "libc",
  "png",
  "serde",
@@ -1298,7 +1296,6 @@ dependencies = [
  "anyhow",
  "clap",
  "env_logger",
- "legaia-asset",
  "legaia-container-formats",
  "legaia-disc-audit",
  "legaia-engine-audio",
@@ -1346,7 +1343,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-game-tables",
 ]
 
@@ -1371,7 +1367,6 @@ name = "legaia-delilas-challenge"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "legaia-asset",
  "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-game-tables",
@@ -1388,7 +1383,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-asset",
  "legaia-code-hooks",
  "legaia-disc-patch",
  "legaia-game-tables",
@@ -1431,7 +1425,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-iso",
  "legaia-lzs",
  "legaia-prot",
@@ -1447,7 +1440,6 @@ dependencies = [
  "clap",
  "cpal",
  "js-sys",
- "legaia-asset",
  "legaia-game-tables",
  "legaia-prot",
  "legaia-seq",
@@ -1465,7 +1457,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-art",
- "legaia-asset",
  "legaia-bytes",
  "legaia-engine-battle-vm",
  "legaia-engine-system",
@@ -1485,7 +1476,6 @@ version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
  "legaia-art",
- "legaia-asset",
  "legaia-engine-system",
  "legaia-game-tables",
  "legaia-overlay-images",
@@ -1501,7 +1491,6 @@ dependencies = [
  "legaia-anm",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-asset",
  "legaia-bytes",
  "legaia-cheats",
  "legaia-container-formats",
@@ -1562,7 +1551,6 @@ name = "legaia-engine-effects"
 version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-vm",
@@ -1577,7 +1565,6 @@ version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
- "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-dialog",
@@ -1597,7 +1584,6 @@ dependencies = [
 name = "legaia-engine-fishing"
 version = "0.1.0"
 dependencies = [
- "legaia-asset",
  "legaia-engine-field",
  "legaia-engine-system",
  "legaia-engine-vm",
@@ -1615,7 +1601,6 @@ dependencies = [
  "anyhow",
  "legaia-actor-formats",
  "legaia-art",
- "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-dialog",
@@ -1639,7 +1624,6 @@ name = "legaia-engine-minigame-scenes"
 version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-container-formats",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
@@ -1661,7 +1645,6 @@ name = "legaia-engine-minigames"
 version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
  "legaia-engine-field",
@@ -1679,7 +1662,6 @@ dependencies = [
 name = "legaia-engine-mode"
 version = "0.1.0"
 dependencies = [
- "legaia-asset",
  "legaia-bytes",
  "legaia-engine-system",
  "legaia-minigame-formats",
@@ -1689,7 +1671,6 @@ dependencies = [
 name = "legaia-engine-motion-vm"
 version = "0.1.0"
 dependencies = [
- "legaia-asset",
  "legaia-engine-system",
  "legaia-scene-formats",
 ]
@@ -1701,12 +1682,10 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "glam",
- "legaia-asset",
  "legaia-engine-battle-vm",
  "legaia-engine-ui",
  "legaia-engine-vm",
  "legaia-font",
- "legaia-lzs",
  "legaia-overlay-images",
  "legaia-prot",
  "legaia-render-kernels",
@@ -1723,7 +1702,6 @@ dependencies = [
 name = "legaia-engine-screens"
 version = "0.1.0"
 dependencies = [
- "legaia-asset",
  "legaia-engine-battle",
  "legaia-engine-core",
  "legaia-engine-effects",
@@ -1742,7 +1720,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-art",
- "legaia-asset",
  "legaia-container-formats",
  "legaia-engine-audio",
  "legaia-engine-battle",
@@ -1775,8 +1752,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-art",
- "legaia-asset",
- "legaia-cheats",
  "legaia-container-formats",
  "legaia-engine-audio",
  "legaia-engine-battle",
@@ -1795,7 +1770,6 @@ dependencies = [
  "legaia-engine-session",
  "legaia-engine-system",
  "legaia-engine-ui",
- "legaia-engine-vm",
  "legaia-font",
  "legaia-game-tables",
  "legaia-iso",
@@ -1836,7 +1810,6 @@ name = "legaia-engine-system"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "legaia-asset",
  "legaia-cheats",
  "legaia-game-tables",
  "legaia-gamedata",
@@ -1850,7 +1823,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
- "legaia-asset",
  "legaia-engine-battle-vm",
  "legaia-engine-field",
  "legaia-font",
@@ -1872,7 +1844,6 @@ dependencies = [
  "anyhow",
  "legaia-actor-formats",
  "legaia-anm",
- "legaia-asset",
  "legaia-container-formats",
  "legaia-engine-battle-vm",
  "legaia-engine-motion-vm",
@@ -2058,7 +2029,6 @@ dependencies = [
  "clap",
  "flate2",
  "legaia-art",
- "legaia-asset",
  "legaia-bytes",
  "legaia-engine-audio",
  "legaia-engine-battle",
@@ -2069,11 +2039,9 @@ dependencies = [
  "legaia-engine-field",
  "legaia-engine-menus",
  "legaia-engine-mode",
- "legaia-engine-render",
  "legaia-engine-session",
  "legaia-engine-system",
  "legaia-engine-ui",
- "legaia-engine-vm",
  "legaia-game-tables",
  "legaia-mednafen",
  "legaia-overlay-images",
@@ -2099,7 +2067,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-bytes",
  "legaia-container-formats",
  "legaia-lzs",
@@ -2117,7 +2084,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-asset",
  "legaia-bytes",
  "legaia-code-hooks",
  "legaia-container-formats",
@@ -2188,7 +2154,6 @@ dependencies = [
  "bytemuck",
  "glam",
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-engine-battle-vm",
  "legaia-engine-vm",
  "legaia-overlay-images",
@@ -2241,7 +2206,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "legaia-actor-formats",
- "legaia-asset",
  "legaia-disc-audit",
  "legaia-disc-patch",
  "legaia-game-tables",
@@ -2282,7 +2246,6 @@ dependencies = [
  "encoding_rs",
  "legaia-actor-formats",
  "legaia-art",
- "legaia-asset",
  "legaia-container-formats",
  "legaia-disc-patch",
  "legaia-font",
@@ -2329,7 +2292,6 @@ dependencies = [
  "legaia-actor-formats",
  "legaia-art",
  "legaia-arts-patch",
- "legaia-asset",
  "legaia-code-hooks",
  "legaia-container-formats",
  "legaia-delilas-challenge",

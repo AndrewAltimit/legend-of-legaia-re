@@ -15,7 +15,6 @@ legaia-engine-battle-vm.workspace = true
 legaia-render-kernels.workspace = true
 bytemuck.workspace = true
 glam.workspace = true
-legaia-asset.workspace = true
 legaia-font.workspace = true
 legaia-tim.workspace = true
 legaia-game-tables.workspace = true

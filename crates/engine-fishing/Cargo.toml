@@ -12,7 +12,6 @@ path = "src/lib.rs"
 legaia-engine-field.workspace = true
 legaia-render-kernels.workspace = true
 legaia-engine-system.workspace = true
-legaia-asset.workspace = true
 legaia-engine-vm.workspace = true
 legaia-tmd.workspace = true
 legaia-game-tables.workspace = true

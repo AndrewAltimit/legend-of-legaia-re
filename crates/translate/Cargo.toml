@@ -12,7 +12,6 @@ path = "src/lib.rs"
 anyhow.workspace = true
 encoding_rs.workspace = true
 legaia-art.workspace = true
-legaia-asset.workspace = true
 legaia-disc-patch.workspace = true
 legaia-font.workspace = true
 legaia-lzs.workspace = true

@@ -13,7 +13,6 @@ legaia-engine-menus.workspace = true
 anyhow.workspace = true
 log.workspace = true
 legaia-art.workspace = true
-legaia-asset.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
 legaia-font.workspace = true

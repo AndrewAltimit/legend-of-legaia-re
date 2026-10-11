@@ -12,7 +12,6 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 env_logger.workspace = true
-legaia-asset.workspace = true
 legaia-engine-audio.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-render.workspace = true

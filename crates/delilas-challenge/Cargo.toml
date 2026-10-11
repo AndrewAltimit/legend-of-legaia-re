@@ -10,7 +10,6 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
-legaia-asset.workspace = true
 legaia-code-hooks.workspace = true
 legaia-disc-patch.workspace = true
 legaia-lzs.workspace = true

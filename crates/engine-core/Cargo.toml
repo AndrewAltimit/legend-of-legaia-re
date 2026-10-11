@@ -27,7 +27,6 @@ legaia-engine-vm.workspace = true
 legaia-engine-battle.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-minigame-scenes.workspace = true
-legaia-asset.workspace = true
 legaia-font.workspace = true
 legaia-iso.workspace = true
 legaia-lzs.workspace = true
@@ -42,8 +41,6 @@ legaia-anm.workspace = true
 legaia-art.workspace = true
 legaia-save.workspace = true
 legaia-cheats.workspace = true
-legaia-gamedata.workspace = true
-legaia-bytes.workspace = true
 legaia-actor-formats.workspace = true
 legaia-container-formats.workspace = true
 legaia-disc-audit.workspace = true
@@ -77,6 +74,8 @@ legaia-mednafen.workspace = true
 legaia-arts-patch.workspace = true
 legaia-disc-patch.workspace = true
 legaia-ram-image.workspace = true
+legaia-bytes.workspace = true
+legaia-gamedata.workspace = true
 
 [[test]]
 name = "integration"

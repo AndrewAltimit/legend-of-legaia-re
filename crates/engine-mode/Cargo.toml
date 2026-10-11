@@ -9,7 +9,6 @@ name = "legaia_engine_mode"
 path = "src/lib.rs"
 
 [dependencies]
-legaia-asset.workspace = true
 legaia-bytes.workspace = true
 legaia-engine-system.workspace = true
 

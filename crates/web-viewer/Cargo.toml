@@ -17,7 +17,6 @@ legaia-render-kernels.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-tim.workspace = true
 legaia-prot.workspace = true
-legaia-asset.workspace = true
 legaia-lzs.workspace = true
 legaia-iso.workspace = true
 legaia-patcher.workspace = true
