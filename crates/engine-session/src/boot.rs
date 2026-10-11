@@ -2,7 +2,7 @@
 //!
 //! Composes the per-crate primitives ([`legaia_engine_core::scene::SceneHost`],
 //! [`legaia_engine_core::camera::Camera`], the BGM director from
-//! [`crate::bgm::AudioBgmDirector`]) into one struct the binary drives per
+//! [`crate::audio_director::AudioBgmDirector`]) into one struct the binary drives per
 //! frame. Mirrors the retail boot flow:
 //!
 //! 1. Open the extracted PROT + CDNAME map.
@@ -36,7 +36,7 @@ use legaia_engine_core::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_core::scene::{BgmDirector, DefaultMapIdResolver, SceneHost, SceneTickEvent};
 use legaia_engine_core::world::SceneMode;
 
-use crate::bgm::AudioBgmDirector;
+use crate::audio_director::AudioBgmDirector;
 
 mod construct;
 mod disc_tables;

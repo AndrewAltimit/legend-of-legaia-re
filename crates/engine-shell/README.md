@@ -22,7 +22,7 @@ The crate root (`src/lib.rs`) re-exports the glue every embedding shares:
   PROT + CDNAME map, loads a starting scene (`town01` by default), uploads
   the scene's primary VAB to the SPU, then drives world + camera + event
   routing each frame. Mirrors the retail boot sequence.
-- [`AudioBgmDirector`](../engine-session/src/bgm.rs) - (defined in
+- [`AudioBgmDirector`](../engine-session/src/audio_director.rs) - (defined in
   `legaia-engine-session`, generic over the audio output) the
   `legaia_engine_core::scene::BgmDirector` that parses the SEQ bytes the
   field VM resolves through the BGM table, builds a sequencer, and feeds a

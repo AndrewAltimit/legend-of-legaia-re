@@ -53,7 +53,7 @@
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_audio::{AudioSink, SfxBank};
 use legaia_engine_core::world::SceneMode;
-use legaia_engine_session::bgm::SfxFrameReport;
+use legaia_engine_session::audio_director::SfxFrameReport;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -72,7 +72,7 @@ pub(crate) type PageDirector = legaia_engine_session::AudioBgmDirector<PageSink>
 
 /// `_DAT_8007B910`'s reference value, what the readout shows for the duck
 /// before a director exists.
-const DUCK_LEVEL_REF: u8 = legaia_engine_session::bgm::DUCK_LEVEL_REF;
+const DUCK_LEVEL_REF: u8 = legaia_engine_session::audio_director::DUCK_LEVEL_REF;
 
 /// Cue id **retail's pause menu** fires when the list cursor moves.
 ///

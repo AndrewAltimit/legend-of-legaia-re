@@ -6,14 +6,18 @@
 //! [`legaia_engine_audio::AudioSink`]), the GPU, and its input source.
 //!
 //! - [`battle_fx`] - the move-FX spawn-to-sound step.
-//! - [`bgm`] - the BGM / SFX director over an `AudioSink`.
+//! - [`audio_director`] - the BGM / SFX / CD-XA director over an `AudioSink`.
 //! - [`boot`] - [`BootSession`], the scene host plus the per-frame order
 //!   (mode seat, menus, camera halves, audio routing) around its tick.
 
+pub mod audio_director;
 pub mod battle_fx;
-pub mod bgm;
 pub mod boot;
 pub mod xa_banks;
 
-pub use bgm::AudioBgmDirector;
+/// The old name of [`audio_director`], kept so existing paths resolve.
+#[doc(hidden)]
+pub use audio_director as bgm;
+
+pub use audio_director::AudioBgmDirector;
 pub use boot::{BootConfig, BootSession, PauseMenuPress};
