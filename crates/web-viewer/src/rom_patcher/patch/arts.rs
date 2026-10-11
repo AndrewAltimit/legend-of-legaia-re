@@ -162,7 +162,7 @@ pub(super) fn super_art_power(run: &mut PatchRun<'_>) -> StepResult {
         {
             let parsed = tok.split_once('=').and_then(|(n, v)| {
                 let hits = legaia_arts_patch::super_art_power::find_super_art(n.trim(), None);
-                let art = (hits.len() == 1).then_some(hits[0])?;
+                let art = (hits.len() == 1).then(|| hits[0])?;
                 let vs = v.trim();
                 let value = vs
                     .strip_prefix("0x")
