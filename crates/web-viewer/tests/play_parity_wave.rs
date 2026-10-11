@@ -140,7 +140,8 @@ fn npc_clip_frames_advance_on_sim_ticks_only() {
     let key = s2[i * 4];
     let ungated = key & 0xF == f0 & 0xF && key >> 4 == ((f0 >> 4) + 4).rem_euclid(frames);
     let gated = (1..=8u8).any(|div| {
-        use legaia_engine_field::field_anim::{CLIP_RATE, clip_step};
+        use legaia_engine_field::field_anim::CLIP_RATE;
+        use legaia_engine_vm::actor_tick::clip_step;
         let s = i32::from(clip_step(CLIP_RATE, true, div));
         let period = (frames * 16 - 1 + s - 1) / s;
         f0 % s == 0 && key == ((f0 / s + 8) % period) * s
