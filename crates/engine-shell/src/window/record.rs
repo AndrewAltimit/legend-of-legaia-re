@@ -44,12 +44,14 @@ pub fn cmd_record(
         None,
         None,
         false,
-        None,        // battle: a recording captures real play, never a forced fight
-        Some(false), // dynamic_lighting: replays stay on the faithful render
-        true,        // dyn_shadows: inert while dynamic_lighting is off
-        false,       // entry_pulse: replays stay on the retail-static entry
-        false,       // occlusion_fade: replays stay on the faithful render
-        false,       // volumetric_fog: replays stay on the faithful render
+        None, // battle: a recording captures real play, never a forced fight
+        // A recording stays on the faithful render and the retail-static
+        // entry. The persisted options are left as the player set them: the
+        // recording is of their session, and none of them reaches the trace.
+        super::LaunchFidelity {
+            retail: false,
+            ..super::LaunchFidelity::retail()
+        },
         // debug_seeds: a recording captures real play; seeded spells / flags
         // would not be in the replay file and the replay would diverge.
         super::DebugSeeds::default(),

@@ -313,16 +313,10 @@ pub fn engine_frame_with(
 ) -> Result<Frame> {
     let work = work_dir(out_dir);
     std::fs::create_dir_all(&work)?;
-    // The window's interactive default frames the field further out than
-    // retail (`CameraDistance::Far`); the comparand is retail's own frame,
-    // so the child reads a scratch options file pinning the retail vantage.
-    // `reduce_flashing` is the photosensitivity slew on the ambient CLUT
-    // cyclers, on by default and not retail: the comparand is retail's own
-    // palette step.
-    std::fs::write(
-        work.join("legaia-options.toml"),
-        "camera_distance = \"retail\"\nreduce_flashing = false\n",
-    )?;
+    // The child reads its options from the work directory. An empty file
+    // gives it the defaults, so a file a previous run left cannot reach this
+    // one; `--retail` below pins every fidelity knob over them.
+    std::fs::write(work.join("legaia-options.toml"), "")?;
     let shot = work.join(format!("{label}.png"));
     let _ = std::fs::remove_file(&shot);
     let extracted = std::fs::canonicalize(extracted)?;
@@ -334,27 +328,19 @@ pub fn engine_frame_with(
     for (k, v) in env {
         cmd.env(k, v);
     }
-    // The comparison is against retail: every presentation enhancement the
-    // window defaults on stays off - the volumetric ground fog, enhanced
-    // lighting, the camera-occlusion fade (which dissolves the walls around
-    // a hidden player that retail draws opaque) and the scene-entry VDF
-    // pulse retail never arms.
-    cmd.args([
-        "play-window",
-        "--no-audio",
-        "--no-volumetric-fog",
-        "--no-dynamic-lighting",
-        "--no-occlusion-fade",
-        "--no-entry-pulse",
-        "--scene",
-        scene,
-    ])
-    .args(extra)
-    .arg("--extracted-root")
-    .arg(&extracted)
-    .arg("--screenshot")
-    .arg(&shot)
-    .args(["--screenshot-tick", &tick.to_string()]);
+    // The comparison is against retail, so the child runs `--retail`: every
+    // presentation enhancement the window defaults on stays off (the
+    // volumetric ground fog, enhanced lighting, the camera-occlusion fade,
+    // the scene-entry VDF pulse) and the persisted options are pinned - the
+    // retail vantage over the interactive `Far`, and no photosensitivity slew
+    // on the ambient CLUT cyclers. `LaunchFidelity::retail` is the list.
+    cmd.args(["play-window", "--no-audio", "--retail", "--scene", scene])
+        .args(extra)
+        .arg("--extracted-root")
+        .arg(&extracted)
+        .arg("--screenshot")
+        .arg(&shot)
+        .args(["--screenshot-tick", &tick.to_string()]);
     match entry {
         FrameEntry::Resume(save) => {
             let file = work.join(format!("{label}.lgsf"));

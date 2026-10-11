@@ -1200,6 +1200,20 @@ pub(crate) enum Cmd {
         /// at runtime with the `F9` key.
         #[arg(long, default_value_t = false)]
         no_volumetric_fog: bool,
+        /// Run retail-faithful: every enhancement off (enhanced lighting and
+        /// its shadows, the volumetric fog, the occlusion fade, the entry
+        /// pulse) and every persisted engine-only option pinned to its retail
+        /// value for this session (retail camera distance, the 8-way movement
+        /// decode, no photosensitivity slew, retail tile windows). The one
+        /// switch a parity capture passes; nothing is written back to the
+        /// options file.
+        #[arg(
+            long,
+            default_value_t = false,
+            conflicts_with_all = ["dynamic_lighting", "no_dynamic_lighting", "no_dyn_shadows",
+                "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog"]
+        )]
+        retail: bool,
     },
     /// Resolve XA voice-cue ids to the `(clip slot, filter channel, duration)`
     /// triple the retail dispatcher builds - the cutscene-audio census view.

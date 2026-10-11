@@ -351,6 +351,7 @@ fn main() -> Result<()> {
             no_entry_pulse,
             no_occlusion_fade,
             no_volumetric_fog,
+            retail,
             learn_spell,
             set_flag,
             resume_save,
@@ -397,17 +398,24 @@ fn main() -> Result<()> {
             )?,
             seed_party,
             battle.as_deref(),
-            if no_dynamic_lighting {
-                Some(false)
-            } else if dynamic_lighting {
-                Some(true)
+            if retail {
+                window::LaunchFidelity::retail()
             } else {
-                None
+                window::LaunchFidelity {
+                    dynamic_lighting: if no_dynamic_lighting {
+                        Some(false)
+                    } else if dynamic_lighting {
+                        Some(true)
+                    } else {
+                        None
+                    },
+                    dyn_shadows: !no_dyn_shadows,
+                    entry_pulse: !no_entry_pulse,
+                    occlusion_fade: !no_occlusion_fade,
+                    volumetric_fog: !no_volumetric_fog,
+                    retail: false,
+                }
             },
-            !no_dyn_shadows,
-            !no_entry_pulse,
-            !no_occlusion_fade,
-            !no_volumetric_fog,
             window::DebugSeeds::from_args(&learn_spell, &set_flag, resume_save)?.with_cheats(
                 window::PlayCheats {
                     level: cheat_level,

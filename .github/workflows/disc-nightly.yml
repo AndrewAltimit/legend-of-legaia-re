@@ -1,0 +1,73 @@
+---
+# The disc-gated suite, on a schedule.
+#
+# Every test that needs the disc skips and passes without it, and main-ci.yml's
+# `disc-test` job only runs when someone dispatches it or labels a pull
+# request. Left to that, the tests that compare the port against retail data
+# run on one developer's machine and nowhere else. This runs them nightly on
+# the self-hosted runner, which holds the image, and skips the night when main
+# has not moved since the last run that passed.
+#
+# Requires the `LEGAIA_DISC_BIN` repository variable (Settings > Variables >
+# Actions): the disc image path on the runner. `LEGAIA_MAX_OTHER_SKIPS`, when
+# set, bounds how many tests may skip on an input other than the disc; read the
+# first run's job summary for the figure before setting it.
+
+name: Disc Nightly
+
+on:
+  schedule:
+    # 09:17 UTC: off the hour, and outside the working day of the one runner.
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: disc-nightly
+  cancel-in-progress: false
+
+env:
+  CARGO_TARGET_DIR: /home/mikunpc/.cache/legaia-ci-target
+
+jobs:
+  disc-test:
+    name: Disc-Gated Tests (nightly)
+    runs-on: self-hosted
+    timeout-minutes: 120
+    env:
+      LEGAIA_DISC_BIN: ${{ vars.LEGAIA_DISC_BIN }}
+      LEGAIA_MAX_OTHER_SKIPS: ${{ vars.LEGAIA_MAX_OTHER_SKIPS }}
+      # The last commit this job passed on, kept outside the target cache, which select-ci-target-dir.sh prunes.
+      LAST_PASS_FILE: /home/mikunpc/.cache/legaia-disc-nightly-last-pass
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          clean: true
+
+      - name: Skip when main has not moved
+        id: fresh
+        run: |
+          head="$(git rev-parse HEAD)"
+          last=""
+          if [[ -f "${LAST_PASS_FILE}" ]]; then
+            last="$(cat "${LAST_PASS_FILE}")"
+          fi
+          if [[ "${GITHUB_EVENT_NAME}" == "schedule" && "${head}" == "${last}" ]]; then
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            echo "Already passed on ${head}; nothing to run." >> "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "run=true" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Select per-toolchain target dir
+        if: steps.fresh.outputs.run == 'true'
+        run: scripts/ci/select-ci-target-dir.sh
+
+      - name: Run disc-gated test suite
+        if: steps.fresh.outputs.run == 'true'
+        run: scripts/ci/run-disc-tests.sh
+
+      - name: Record the pass
+        if: steps.fresh.outputs.run == 'true'
+        run: git rev-parse HEAD > "${LAST_PASS_FILE}"

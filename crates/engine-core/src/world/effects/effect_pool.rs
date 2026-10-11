@@ -27,14 +27,15 @@ impl World {
     ///
     /// REF: FUN_801E0088
     pub fn tick_effects(&mut self) {
-        let pool_ptr: *mut Pool = &mut self.effect_pool;
-        let catalog_ptr: *const vm::effect_vm::EffectCatalog = &self.effect_catalog;
+        // The pool and the catalog leave the world for the walk, so the
+        // host's `&mut World` aliases neither; `EffectHostImpl` reaches
+        // only the RNG and the pending-burst queue.
+        let mut pool = std::mem::take(&mut self.effect_pool);
+        let catalog = std::mem::take(&mut self.effect_catalog);
         let mut host = EffectHostImpl { world: self };
-        // SAFETY: EffectHostImpl only reads `world.rng_state`; it never
-        // accesses `effect_pool` or `effect_catalog` through the borrow.
-        let pool = unsafe { &mut *pool_ptr };
-        let catalog = unsafe { &*catalog_ptr };
-        pool.tick_retail(&mut host, catalog, 1);
+        pool.tick_retail(&mut host, &catalog, 1);
+        self.effect_pool = pool;
+        self.effect_catalog = catalog;
         self.debug_effects.retain_mut(|d| {
             d.age_frames += 1;
             d.age_frames < DEBUG_EFFECT_LIFETIME_FRAMES
@@ -244,13 +245,12 @@ impl World {
     /// `FUN_801DFDF0` as the effect-script walk `FUN_801DEA50` reaches it
     /// ([`Self::route_battle_effect_spawns`]).
     pub fn try_spawn_effect(&mut self, ui_id: u8, world_pos: [i16; 3], angle: u16) {
-        let catalog_ptr: *const vm::effect_vm::EffectCatalog = &self.effect_catalog;
-        let pool_ptr: *mut vm::effect_vm::Pool = &mut self.effect_pool;
+        // Same hand-off as [`Self::tick_effects`].
+        let mut pool = std::mem::take(&mut self.effect_pool);
+        let catalog = std::mem::take(&mut self.effect_catalog);
         let mut host = EffectHostImpl { world: self };
-        // SAFETY: EffectHostImpl only reads `world.rng_state`; it never
-        // accesses `effect_pool` or `effect_catalog` through the borrow.
-        let pool = unsafe { &mut *pool_ptr };
-        let catalog = unsafe { &*catalog_ptr };
-        let _ = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, catalog);
+        let _ = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, &catalog);
+        self.effect_pool = pool;
+        self.effect_catalog = catalog;
     }
 }

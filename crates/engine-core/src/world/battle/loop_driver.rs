@@ -83,13 +83,13 @@ impl World {
     /// REF: FUN_801E09F8 (census head; kernel + `// PORT:` tag in
     /// `legaia_engine_battle_vm::battle_cast_census`)
     pub(in crate::world) fn tick_battle_cast_census(&mut self) {
-        let ctx_ptr: *mut BattleActionCtx = &mut self.battle_ctx;
+        // A copy, written back, as `step_battle` does: host queries read
+        // `world.battle_ctx`, and the census takes the host shared, so
+        // nothing writes the world's copy in between.
+        let mut ctx = self.battle_ctx.clone();
         let host = BattleHostImpl { world: self };
-        // SAFETY: same argument as `step_battle` - `BattleHostImpl` never
-        // reaches `world.battle_ctx` through its borrow, and the census reads
-        // only the actor table.
-        let ctx = unsafe { &mut *ctx_ptr };
-        legaia_engine_battle_vm::battle_action::tick_cast_census(&host, ctx);
+        legaia_engine_battle_vm::battle_action::tick_cast_census(&host, &mut ctx);
+        self.battle_ctx = ctx;
     }
 
     /// Per-frame battle-side driver for the live gameplay loop. Gated by

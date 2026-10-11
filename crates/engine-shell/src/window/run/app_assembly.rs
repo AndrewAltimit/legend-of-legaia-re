@@ -250,11 +250,17 @@ impl PlayWindowApp {
     ///
     /// Then the launch's option overrides and the persisted options pushed
     /// into their live consumers, before the loop starts.
-    pub(super) fn apply_launch_options(
-        &mut self,
-        volumetric_fog: bool,
-        dynamic_lighting: Option<bool>,
-    ) {
+    pub(super) fn apply_launch_options(&mut self, fidelity: crate::window::LaunchFidelity) {
+        let crate::window::LaunchFidelity {
+            volumetric_fog,
+            dynamic_lighting,
+            ..
+        } = fidelity;
+        // `--retail` pins the persisted engine-only options for this session
+        // only, the way the fog override below does: nothing is written back.
+        if fidelity.retail {
+            self.options_state.pin_retail();
+        }
         if let Some(info) = self.session.equip_restrictions.clone() {
             self.menu_runtime.install_equip_info(info);
             self.menu_runtime.retail_equipment_buy = true;
