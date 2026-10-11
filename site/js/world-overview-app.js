@@ -9,73 +9,14 @@
  */
 
 (async function () {
-  /* ---------- PROT ranges per kingdom (from CDNAME map) ----------- */
-  const KINGDOM_PROT = {
-    drake:   { start: 85,  end: 93,  label: 'Drake Kingdom',   cdname: 'map01' },
-    sebucus: { start: 244, end: 253, label: 'Sebucus Islands', cdname: 'map02' },
-    karisto: { start: 391, end: 398, label: 'Karisto Kingdom', cdname: 'map03' },
-  };
+  /* ---------- Per-kingdom data (world-overview-kingdoms.js) ----------- */
+  const {
+    KINGDOM_PROT, KINGDOM_CAM, KINGDOM_TOPVIEW_CAM, UNPLACED_TARGET_FOOTPRINT,
+    KINGDOM_FOG_TINT, DEFAULT_FOG_PARAMS, LIST_NAMES, LIST_COLORS,
+  } = window.LegaiaWorldOverviewKingdoms;
+  /* ---------- Quick-travel menu panel (world-overview-quick-travel.js) -- */
+  const { renderQuickTravel } = window.LegaiaWorldOverviewQuickTravel;
 
-  /* ---------- Retail camera defaults (from .mc{1,2,3}) -------------
-   * Captured per-kingdom from mednafen save states in walk-view mode.
-   * The X/Z scrolls live at `_DAT_80089120` / `_DAT_80089118` and are
-   * stored as negated map-origin coordinates - the engine writes
-   * `_DAT_80089118 = -(int)*(short *)(actor + 0x14)` etc., so the world
-   * camera target is the negation of the raw cell. The captured saves
-   * are all in walk-view (DAT_801F2B94 = 0), so these reflect the
-   * load-time spawn rather than an interactively-scrolled dev-menu
-   * camera; they're still useful as per-kingdom anchor points.
-   *   mednafen-state world-map-camera --table <save> ...
-   * regenerates these values. */
-  const KINGDOM_CAM = {
-    drake:   { centerX: 8832, centerZ: 8832, zoom: 0x170 },
-    sebucus: { centerX: 7936, centerZ: 9344, zoom: 0x170 },
-    karisto: { centerX: 7936, centerZ: 9088, zoom: 0x170 },
-  };
-  /* Top-view camera anchors per kingdom. The "lock to retail top-view"
-   * button slams the world-cam to these centres + sets the zoom so the
-   * frame matches the in-game world-map camera. Values mirror the
-   * walk-view load-time spawn anchors decoded by `mednafen-state
-   * world-map-camera --table <save>` against per-kingdom saves; the
-   * dev-menu's free-camera top-view (DAT_801F2B94 != 0) starts from the
-   * same anchor before user input scrolls it, so these double as
-   * top-view defaults until a captured dev-menu state refines them. */
-  const KINGDOM_TOPVIEW_CAM = {
-    drake:   { centerX: 8832, centerZ: 8832, azimuth: 0x0000, zoom: 0x0170 },
-    sebucus: { centerX: 7936, centerZ: 9344, azimuth: 0x0000, zoom: 0x0170 },
-    karisto: { centerX: 7936, centerZ: 9088, azimuth: 0x0000, zoom: 0x0170 },
-  };
-  /* Class-conditional target footprints for the unplaced-slot1 grid.
-   * Each unplaced TMD is normalised so its larger XZ extent maps to this
-   * target, then centroid-anchored at its assigned grid slot. Numbers
-   * are world units (Drake is 16320x16320). The renderer falls back to
-   * MESH_SCALE when normalisation is disabled or the AABB collapses to
-   * zero. Matches the four classes in slot1_classification.toml. */
-  const UNPLACED_TARGET_FOOTPRINT = {
-    landmark:   600,
-    decoration: 200,
-    ground_tile: 1200,
-    unknown:    600,
-  };
-  /* Per-kingdom baseline fog tint (BGR555 -> linear RGB). Used as the
-   * fragment shader's fallback when a captured LUT entry is zero, so the
-   * "fog" toggle still produces a kingdom-flavoured gradient before the
-   * user supplies fog_probe.lut.bin. The values are mid-tier samples of
-   * each kingdom's dev-menu top-view sky colour. */
-  const KINGDOM_FOG_TINT = {
-    drake:   { r: 0.18, g: 0.22, b: 0.34 },
-    sebucus: { r: 0.16, g: 0.26, b: 0.32 },
-    karisto: { r: 0.26, g: 0.20, b: 0.22 },
-  };
-  /* Initial fog defaults: matches the retail probe shape (Z_far = Z >> 5
-   * over a ~16384-unit reference). Overwritten when the user uploads a
-   * fog_probe.lut.bin via the fog-LUT picker. */
-  const DEFAULT_FOG_PARAMS = { enable: 0, zShift: 5, farRef: 12000, color: null };
-  const LIST_NAMES = {
-    0: 'player/system', 1: 'entities', 2: 'background',
-    3: 'reserve_3', 4: 'reserve_4', 5: 'reserve_5', 6: 'extra',
-  };
-  const LIST_COLORS = { 0: '#56B6F5', 1: '#79D279', 2: '#C0C0C0', 6: '#E07028' };
 
   /* ---------- DOM refs ----------- */
   const $file       = document.getElementById('wo-disc-file');
@@ -1492,122 +1433,6 @@
       scatterDots.push({ x, y, p });
     });
   }
-
-  /* ---------- Quick-travel menu overlay (whole Legaia) ---------- */
-  /* Visual style guide for the 20-record overlay - subtle but readable. */
-  const QT_DOT_COLOR = '#F4B41A';
-  const QT_DOT_RADIUS = 5;
-  let qtRecords = null;  /* { names: string[], placements: [{name_idx, ...}] } */
-  let qtScreen = [];     /* [{ x, y, p, name }] hit-test entries in canvas coords */
-
-  function renderQuickTravel(menu) {
-    qtRecords = menu;
-    const $qtCanvas   = document.getElementById('wo-qt-canvas');
-    const $qtNameList = document.getElementById('wo-qt-namelist');
-    if (!$qtCanvas || !$qtNameList) return;
-    /* Sidebar: 16 names with placement counts (sub-entries per landmark). */
-    const counts = new Array(menu.names.length).fill(0);
-    menu.placements.forEach(p => { counts[p.name_idx]++; });
-    $qtNameList.innerHTML = menu.names.map((name, i) => {
-      const c = counts[i];
-      const tag = c === 0
-        ? '<span style="color:#888">(no record)</span>'
-        : `<span class="wo-coord">x${c}</span>`;
-      return `<li><span class="wo-name">[0x${i.toString(16).padStart(2,'0').toUpperCase()}] ${escapeHtml(name)}</span> ${tag}</li>`;
-    }).join('');
-    /* Canvas: scale menu_x/menu_y (PSX menu screen space, ~128x128) to
-     * canvas pixels. menu_x range observed 22..102, menu_y 13..108. */
-    drawQuickTravelCanvas();
-  }
-  function drawQuickTravelCanvas() {
-    const $qtCanvas = document.getElementById('wo-qt-canvas');
-    if (!$qtCanvas || !qtRecords) return;
-    const ctx = $qtCanvas.getContext('2d');
-    const W = $qtCanvas.width, H = $qtCanvas.height;
-    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, W, H);
-    /* Margin + scale from a 0..128 menu-coord box to canvas. */
-    const margin = 30;
-    const aW = W - margin * 2;
-    const aH = H - margin * 2;
-    const sx = aW / 128;
-    const sy = aH / 128;
-    /* Grid */
-    ctx.strokeStyle = 'rgba(120,130,200,0.12)';
-    for (let i = 0; i <= 8; i++) {
-      ctx.beginPath();
-      ctx.moveTo(margin + (i/8)*aW, margin);
-      ctx.lineTo(margin + (i/8)*aW, margin + aH);
-      ctx.moveTo(margin, margin + (i/8)*aH);
-      ctx.lineTo(margin + aW, margin + (i/8)*aH);
-      ctx.stroke();
-    }
-    qtScreen = [];
-    /* Draw dots first so labels render on top. */
-    qtRecords.placements.forEach(p => {
-      const x = margin + p.menu_x * sx;
-      const y = margin + p.menu_y * sy;
-      ctx.beginPath();
-      ctx.arc(x, y, QT_DOT_RADIUS, 0, 2*Math.PI);
-      ctx.fillStyle = QT_DOT_COLOR; ctx.fill();
-      ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1; ctx.stroke();
-      qtScreen.push({ x, y, p, name: qtRecords.names[p.name_idx] || '?' });
-    });
-    /* Label one entry per landmark (the first record we see for each
-     * name_idx). De-dupes the closely-grouped sub-entry triplets. */
-    ctx.font = '11px monospace';
-    ctx.fillStyle = '#ddd';
-    ctx.textBaseline = 'middle';
-    const labeled = new Set();
-    qtScreen.forEach(d => {
-      if (labeled.has(d.p.name_idx)) return;
-      labeled.add(d.p.name_idx);
-      const label = d.name;
-      const tx = d.x + QT_DOT_RADIUS + 4;
-      const tw = ctx.measureText(label).width;
-      /* Background pill so labels stay readable over the grid. */
-      ctx.fillStyle = 'rgba(10,10,26,0.78)';
-      ctx.fillRect(tx - 2, d.y - 7, tw + 4, 14);
-      ctx.fillStyle = '#ddd';
-      ctx.fillText(label, tx, d.y);
-    });
-  }
-  /* Hover tooltip over the quick-travel canvas. */
-  const $qtCanvasEl = document.getElementById('wo-qt-canvas');
-  const $qtHover    = document.getElementById('wo-qt-hover');
-  if ($qtCanvasEl && $qtHover) {
-    $qtCanvasEl.addEventListener('mousemove', ev => {
-      const rect = $qtCanvasEl.getBoundingClientRect();
-      const mx = (ev.clientX - rect.left) * ($qtCanvasEl.width / rect.width);
-      const my = (ev.clientY - rect.top) * ($qtCanvasEl.height / rect.height);
-      let best = null, bestD = Infinity;
-      for (const d of qtScreen) {
-        const dx = d.x - mx, dy = d.y - my;
-        const r2 = dx*dx + dy*dy;
-        if (r2 < bestD) { bestD = r2; best = d; }
-      }
-      if (best && bestD < 96) {
-        const p = best.p;
-        $qtHover.textContent =
-          `${best.name}  -  rec ${p.index}  menu (${p.menu_x}, ${p.menu_y})  ` +
-          `scene_id=0x${p.scene_id.toString(16).padStart(4,'0').toUpperCase()}  ` +
-          `flag=0x${p.discovery_flag.toString(16).padStart(2,'0').toUpperCase()}`;
-      } else {
-        $qtHover.innerHTML = '&nbsp;';
-      }
-    });
-    $qtCanvasEl.addEventListener('mouseleave', () => { $qtHover.innerHTML = '&nbsp;'; });
-  }
-  /* Initial placeholder. */
-  (function paintQtPlaceholder() {
-    const $c = document.getElementById('wo-qt-canvas');
-    if (!$c) return;
-    const ctx = $c.getContext('2d');
-    ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, $c.width, $c.height);
-    ctx.fillStyle = '#888'; ctx.font = '13px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('Load a disc above to see the in-game world-map menu', $c.width / 2, $c.height / 2 - 10);
-    ctx.fillText('(parsed live from SCUS_942.54)', $c.width / 2, $c.height / 2 + 10);
-  })();
 
   /* Hover tooltip over the scatter */
   if ($canvas2d) {
