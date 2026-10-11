@@ -441,7 +441,7 @@ A villager's free-roam movement is its [tail-section-1 stream](#the-walk-half---
 
   The finished beat arms `rayman`'s guide rail: the P2[4] / P2[5] / P2[6] walk-ons return a player who strays to (31, 20), and after three strays Kina gives up and raises `0x1EC..0x1EE`. The way on to `tunnelb` is Hari's permission chain: talks P1[44..46] raise `0x1FD..0x1FF`, the P2[18] walk-on then raises `0x200`, P2[19] raises `0x1FC`, and only then does the gate guard's P2[16] open the door. A P2[18] stepped on before the three talks runs and gains nothing; it takes a second visit.
 
-  The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
+  The player (`B8 F8 ..`) takes both paths on its own heading (`move_state.render_26`, `TimelineFacing::slot = None`); the story beats turn the hero this way well over a thousand times across the disc. Outside the timeline, a simple-path `0x38` reaches the actor through `FieldActorHost::face_compass`: the player for `0xF8`, the stepping placement channel, or the NPC whose talk record is running.
 
 The start kernel (`World::start_field_npc_motion`) mirrors the `FUN_800358c0` shape - write the target, reset the glide cursor - and the per-frame consumer is this VM.
 

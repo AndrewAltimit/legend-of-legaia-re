@@ -265,7 +265,7 @@ fn shop_op49_script() -> Vec<u8> {
 
 #[test]
 fn field_vm_op49_opens_a_gold_shop_then_resumes() {
-    use vm::field::{FieldHost, Op49State};
+    use vm::field::{FieldDialogMenuHost, Op49State};
     let mut world = World::new();
     // Priced item data: 0x22 = 50g, 0x34 = 120g (both sellable).
     let mut prices = [0u16; 256];
@@ -352,7 +352,7 @@ fn tile_board_op49_script() -> Vec<u8> {
 
 #[test]
 fn field_vm_op49_sub5_installs_a_tile_board_then_resumes_on_exit() {
-    use vm::field::{FieldHost, Op49State};
+    use vm::field::{FieldDialogMenuHost, Op49State};
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.player_actor_slot = Some(0);
@@ -701,7 +701,7 @@ fn field_vm_op49_without_item_data_never_opens_a_shop() {
 /// focus / pitch / eye-depth staged by the previous beat, not drop them.
 #[test]
 fn camera_configure_merges_params_across_beats() {
-    use legaia_engine_vm::field::{CameraParam, FieldHost};
+    use legaia_engine_vm::field::{CameraParam, FieldCameraHost};
     let mut world = World::new();
     let val = |slots: &[u8], v: u16| -> Vec<CameraParam> {
         slots

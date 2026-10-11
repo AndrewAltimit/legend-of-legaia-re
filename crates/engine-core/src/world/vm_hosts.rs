@@ -10,7 +10,7 @@ use legaia_engine_battle_vm::battle_action::{BattleActionHost, BattleActor, Batt
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_vm as vm;
 use vm::effect_vm::EffectHost;
-use vm::field::{CameraParam, FieldCtx, FieldHost, Op49State, SceneFadeResult};
+use vm::field::{CameraParam, FieldCtx, Op49State, SceneFadeResult};
 use vm::move_vm::{ActorState as MoveActorState, MoveHost};
 use vm::{Host as ActorVmHost, Position as ActorVmPosition};
 

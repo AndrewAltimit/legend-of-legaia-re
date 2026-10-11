@@ -148,9 +148,9 @@ The engine path is `World::trigger_field_interact` ->
   spins on it before the scene goes on.) A spin on such a resolved cursor
   parks even before the talk's first box opens.
 - **Gate, debit, restore.** The gate reads the live purse through
-  `FieldHost::party_bank_value`; the debit is the record's own `ADD_MONEY`;
+  `FieldPartyInventoryHost::party_bank_value`; the debit is the record's own `ADD_MONEY`;
   the restore is its own `4C 82 <slot>` ops
-  (`FieldHost::op4c_n8_sub2_restore_party_slot`).
+  (`FieldPartyInventoryHost::op4c_n8_sub2_restore_party_slot`).
 - **Pool mirroring.** Retail's character record is the only copy of a member's
   pools. The port also keeps them on the party actor, which a battle seats
   from and writes back over the record, so the restore projects the record

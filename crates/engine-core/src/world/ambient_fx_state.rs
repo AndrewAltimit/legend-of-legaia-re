@@ -81,7 +81,7 @@ pub struct AmbientFxState {
     /// emission order the arm resolved them (one call, or two for a copy
     /// wider than a VRAM page). Queued by
     /// [`crate::world::World::queue_vram_rect_copies`] (the
-    /// `FieldHost::op43_vram_rect_copy` host hook), drained against the
+    /// `FieldScreenHost::op43_vram_rect_copy` host hook), drained against the
     /// host's software VRAM by
     /// [`crate::world::World::apply_vram_rect_copies`].
     pub(crate) vram_rect_copies: Vec<legaia_engine_vm::vram_rect_copy::RectCopyCall>,

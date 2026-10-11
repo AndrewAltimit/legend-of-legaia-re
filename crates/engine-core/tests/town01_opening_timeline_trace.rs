@@ -28,14 +28,19 @@
 //! Skip-passes without disc data / extracted assets (CLAUDE.md convention).
 
 use legaia_engine_core::scene::SceneHost;
-use legaia_engine_vm::field::{FieldCtx, FieldHost, Op49State, StepResult, step};
+use legaia_engine_vm::field::{
+    FieldActorFxHost, FieldActorHost, FieldActorSpawnHost, FieldAudioHost, FieldCameraHost,
+    FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost, FieldFlagsHost, FieldHaltHost,
+    FieldPartyInventoryHost, FieldPlayerHost, FieldSceneHost, FieldScreenHost, FieldTerrainHost,
+    Op49State, StepResult, step,
+};
 use std::path::PathBuf;
 
 /// Minimal field host for a *decode-only* linear walk of a record body.
 ///
 /// It forces the two host-gated stalls to advance so the walk reaches every
-/// instruction: a huge [`FieldHost::frame_delta`] satisfies WAIT_FRAMES (0x4A)
-/// in one step, and [`FieldHost::op49_state`] returns `Done` so STATE_RESUME
+/// instruction: a huge [`FieldFlagsHost::frame_delta`] satisfies WAIT_FRAMES (0x4A)
+/// in one step, and [`FieldDialogMenuHost::op49_state`] returns `Done` so STATE_RESUME
 /// (0x49) advances by its encoded width instead of arming. The remaining
 /// unconditional structural park (`0x4C` sub-D `script_alloc`) is stepped past
 /// by [`linear_decode`]. No game state is simulated - this only enumerates
@@ -45,20 +50,49 @@ struct LinearTraceHost {
     flags: u32,
 }
 
-impl FieldHost for LinearTraceHost {
+impl FieldFlagsHost for LinearTraceHost {
     fn global_flags(&self) -> u32 {
         self.flags
     }
+
     fn set_global_flags(&mut self, value: u32) {
         self.flags = value;
     }
+
     fn frame_delta(&self) -> u16 {
         0x7FFF
     }
+}
+
+impl FieldSceneHost for LinearTraceHost {}
+
+impl FieldTerrainHost for LinearTraceHost {}
+
+impl FieldCameraHost for LinearTraceHost {}
+
+impl FieldCameraMotionHost for LinearTraceHost {}
+
+impl FieldScreenHost for LinearTraceHost {}
+
+impl FieldAudioHost for LinearTraceHost {}
+
+impl FieldPartyInventoryHost for LinearTraceHost {}
+
+impl FieldDialogMenuHost for LinearTraceHost {
     fn op49_state(&self) -> Op49State {
         Op49State::Done
     }
 }
+
+impl FieldActorHost for LinearTraceHost {}
+
+impl FieldActorSpawnHost for LinearTraceHost {}
+
+impl FieldActorFxHost for LinearTraceHost {}
+
+impl FieldPlayerHost for LinearTraceHost {}
+
+impl FieldHaltHost for LinearTraceHost {}
 
 /// One decoded instruction: `(pc, opcode, extended-target, size)`.
 #[derive(Debug, Clone, Copy)]

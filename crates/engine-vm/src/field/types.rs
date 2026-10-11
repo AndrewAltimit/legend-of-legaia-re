@@ -1,7 +1,7 @@
 //! Field VM result / parameter value types surfaced by the [`FieldHost`]
 //! trait methods. Split out of `field.rs`.
 
-/// Tristate result for [`FieldHost::op4c_n_8_sub_d_actor_search`] (op 0x4C
+/// Tristate result for [`FieldPartyInventoryHost::op4c_n_8_sub_d_actor_search`] (op 0x4C
 /// n8 sub-D).
 ///
 /// The dispatcher's three-way branch maps:
@@ -35,7 +35,7 @@ pub struct CameraParam {
 /// Story-flag-driven dispatch path for op 0x4C outer-nibble-4 sub-9.
 ///
 /// The original VM branches on two bits of `_DAT_1F800394`. See
-/// [`FieldHost::op4c_n4_sub9_state`] for the bit table.
+/// [`FieldCameraMotionHost::op4c_n4_sub9_state`] for the bit table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sub9State {
     /// Bits `0x02000000` clear, `0x01000000` clear - default path. Write or
@@ -55,7 +55,7 @@ pub enum Sub9State {
     Delta,
 }
 
-/// Outcome of [`FieldHost::scene_fade`].
+/// Outcome of [`FieldScreenHost::scene_fade`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SceneFadeResult {
     /// Fade started or completed - VM advances past the instruction.
@@ -68,7 +68,7 @@ pub enum SceneFadeResult {
 /// Tristate for op 0x49 STATE_RESUME. Mirrors `_DAT_8007B450` in the
 /// original (idle = 0, done = 1, anything else = currently armed). Hosts
 /// World coordinates copied onto a script context by Op 0x4C sub-3 sub-7
-/// ([`FieldHost::fetch_player_coords`]). All values are at-rest player ctx
+/// ([`FieldPlayerHost::fetch_player_coords`]). All values are at-rest player ctx
 /// fields - the VM doesn't transform them before assigning.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PlayerCoords {
@@ -82,7 +82,7 @@ pub struct PlayerCoords {
     pub field_26: u16,
 }
 
-/// implement [`FieldHost::op49_state`] to surface their internal state.
+/// implement [`FieldDialogMenuHost::op49_state`] to surface their internal state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Op49State {
     /// `_DAT_8007B450 == 0`. The script can arm a fresh resume.

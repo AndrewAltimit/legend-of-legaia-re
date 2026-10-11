@@ -225,7 +225,7 @@ impl World {
     pub fn replay_field_bgm_words(&mut self, words: &[(u16, u8)]) {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: self };
         for &(text_id, sub_op) in words {
-            legaia_engine_vm::field::FieldHost::bgm(&mut host, text_id, sub_op);
+            legaia_engine_vm::field::FieldAudioHost::bgm(&mut host, text_id, sub_op);
         }
     }
 

@@ -211,7 +211,7 @@ fn op_4c_outer_dispatcher_has_no_remaining_pending_arms() {
     // `Advance` / `Halt` / `Yield` / `Unknown` - none returns
     // `Pending`. n8 sub-3 (box-fill table via FUN_801D5630) was the
     // last truly-pending case; it now invokes
-    // [`FieldHost::op4c_n_8_sub_3_rect_tile_fill`] and advances PC.
+    // [`FieldTerrainHost::op4c_n_8_sub_3_rect_tile_fill`] and advances PC.
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &[0x4C, 0x83, 0, 0, 0, 0, 0], 0);
@@ -609,7 +609,7 @@ fn op_4c_n4_sub_9_delta_ramp_advances() {
 
 #[test]
 fn op_4c_n4_sub_9_state_default_when_no_story_bits_set() {
-    // Verify the FieldHost::op4c_n4_sub9_state default impl reads global flags.
+    // Verify the FieldCameraMotionHost::op4c_n4_sub9_state default impl reads global flags.
     let host = TestHost {
         globals: 0x0000_0000,
         ..TestHost::default()

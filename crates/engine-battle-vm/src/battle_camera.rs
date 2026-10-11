@@ -33,7 +33,7 @@
 //! `0x801E2134` (jump-table slot `0x801CEF58`) stores the operand byte and
 //! advances the PC by three
 //! (`overlay_0897_801de840.txt` `0x801E2134..0x801E2144`). The port models
-//! that opcode - [`crate::field::FieldHost::op4c_n8_sub4_set_b630`] - and the
+//! that opcode - [`crate::field::FieldCameraMotionHost::op4c_n8_sub4_set_b630`] - and the
 //! engine host keeps the value on the world for the camera to read.
 //!
 //! Retail's own callers of `FUN_801D9D30` are all in the **field-family**

@@ -8,7 +8,7 @@
 //! `+0x14..+0x18` = the offset, `+0x3C`/`+0x3E` = the size, `+0x74` = the
 //! sprite asset, `+0x88` / `+0x5A` from its stack arguments, `+0x50 = 0x3E7`
 //! and **`+0x94 = 0`**. Its one `jal` is `0x801DFFE0`, the field VM's op
-//! `0x34` sub-1 spawn (`FieldHost::op34_sub1_spawn_attached`), which the op's
+//! `0x34` sub-1 spawn (`FieldActorFxHost::op34_sub1_spawn_attached`), which the op's
 //! capture form then fills `+0x94` from. The arc-hop family is **not** the
 //! spawner: its chained record (template `0x801F22AC`) ticks `FUN_801D5D60`,
 //! not this routine.

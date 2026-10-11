@@ -990,7 +990,7 @@ fn the_battle_sound_set_picks_the_battle_track() {
 fn op_35_sub_7_stores_the_battle_sound_set() {
     let mut world = World::new();
     {
-        use legaia_engine_vm::field::FieldHost;
+        use legaia_engine_vm::field::FieldAudioHost;
         let mut host = FieldHostImpl { world: &mut world };
         host.bgm(0xFFFF, 7);
     }

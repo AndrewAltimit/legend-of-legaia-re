@@ -265,7 +265,7 @@ crates; each row's site names the owning crate.
 | `8001fa68` | `list_append_u16` | `crates/engine-vm/src/actor_node_pool.rs` | REPLACE |
 | `80020424` / `80020454` / `800204a4` | `alloc_list_head` / `alloc_and_append` / `free` | `crates/engine-vm/src/actor_node_pool.rs` | DISCLOSE |
 | `80021b04` | `spawn_move_actor` | `crates/engine-vm/src/move_vm/spawn.rs` | REPLACE |
-| `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host.rs` | FALSE INERT |
+| `80024e08` | `op4c_n5_sub0_set_actor_model` | `crates/engine-vm/src/field/host/actor.rs` | FALSE INERT |
 | `8003c9ac` | `motion_pause_kick` + module | `crates/engine-field/src/motion_pause.rs` | WIRE (wired) |
 | `8003fb10` | `validate_action` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
 | `80046898` | `item_count_gate` | `crates/engine-battle-vm/src/battle_action/validator.rs` | WIRE (wired) |
@@ -443,7 +443,7 @@ section.
 - **`apply_shake`** (`801d9d30`) is `DISCLOSE`. Its `amplitude` is a `1..=0x15`
   shift count read from `_DAT_8007B630`, whose only retail writer is a field-VM
   opcode (`overlay_0897_801de840.txt` `0x801E2134`, a 3-byte instruction). The
-  port models the opcode (`FieldHost::op4c_n8_sub4_set_b630` ->
+  port models the opcode (`FieldCameraMotionHost::op4c_n8_sub4_set_b630` ->
   `World::camera.shake_amplitude`). The global's second reader is the field
   follow camera `FUN_801DB510`, which loads it at `0x801DB850` and folds the
   shake into its zone ease; the port's follow camera consumes it too.
@@ -632,7 +632,7 @@ Rows with their own findings:
   (`0x801DF410` takes the PC-advance path only on failure), building the landing
   triple from the operand's two tile bytes and falling back to the actor's own
   position when both are zero. The port forwards the coords to
-  `FieldHost::field_halt_acquire_apply`; `World::locomotion.ledge_hop` is the
+  `FieldHaltHost::field_halt_acquire_apply`; `World::locomotion.ledge_hop` is the
   player's single `Option`, and this entry arcs whichever actor the script runs
   on.
 - **`fade_ramp`** (`80020c14` / `80025000`). `FadeRamp` *is* the `+0x7C` block;
@@ -1029,8 +1029,8 @@ backwards in one direction:
 | `pooled_actor_seed` | `REPLACE` | `World::open_field_submode_screen`'s side `SubmodeScreen` struct - and both entries are retail-unreachable besides |
 | `mode_entry_init::field_prim_buffer_bytes` | `REPLACE` | `engine-render`'s wgpu draw lists; the backend owns the allocation, so an arena size has no consumer |
 | `fade_ramp` | `DISCLOSE` | the battle-teardown owner: substituting `FadeRamp` for `FadeState` moves the fade's lifetime, which is a behaviour change, not a call |
-| `camera_ease` | `DISCLOSE`, since closed as `WIRE` | `World`, whose `FieldHost::op4c_n4_sub9_*` hooks were no-op defaults. They are implemented now, so the offset is posted and stepped - see the camera-ease block below |
-| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
+| `camera_ease` | `DISCLOSE`, since closed as `WIRE` | `World`, whose `FieldCameraMotionHost::op4c_n4_sub9_*` hooks were no-op defaults. They are implemented now, so the offset is posted and stepped - see the camera-ease block below |
+| `vram_rect_copy` | `DISCLOSE` | `engine-render`, which implements no `FieldScreenHost::op43_vram_rect_copy`; the software VRAM it would blit inside already exists |
 | `panel_backread_loader` | `DISCLOSE` | its only retail caller `FUN_80025358` is unported |
 | `mode::mode_init_bare` | `DISCLOSE` | a production owner of `ModeDriver` - `engine-session`'s `BootSession::tick` handing frame sequencing to the driver |
 | `mode_entry_init::field_bgm_plan` | `DISCLOSE`, since closed as `WIRE` | the two-part arm is the credits theme; `mode_entry_init::two_part_bgm_stream` stages its score and bank at scene entry, so the plan is live |
@@ -1159,7 +1159,7 @@ no `j`, no address word - and one in-tree production caller,
 `spawn_arc_with_emitter`. It therefore goes live transitively the moment that
 row is wired and must never be given a direct call site of its own. Its parent
 `spawn_arc_with_emitter` (`801D25EC`) has a live call chain to a host
-(field VM op `0x43` -> `FieldHost::field_halt_acquire_apply`) but that hook is
+(field VM op `0x43` -> `FieldHaltHost::field_halt_acquire_apply`) but that hook is
 a no-op default that `engine-core`'s `FieldHostImpl` does not override, and the
 operand decode is unsettled: `field_ledge_hop_arc` reads two tile bytes plus
 apex and frames where `op_43` reads two `i16` coordinates and forwards neither
@@ -1225,7 +1225,7 @@ post the accumulator itself because that same bit is `FUN_801DA390`'s input
 lock (`0x801DA398`), so the easing returns before its first store while it is
 raised.
 
-`FieldHost::op4c_n4_sub9_player_relative_write`'s hook doc named only the
+`FieldCameraMotionHost::op4c_n4_sub9_player_relative_write`'s hook doc named only the
 `scene_ctrl[+0x4A]` store and missed the `_DAT_8007BCAC = target` one at
 `0x801E1560`; it is corrected with the hook.
 
@@ -1241,7 +1241,7 @@ globals as unset, with the field-VM arms identified. They are op `0x4C`
 outer-nibble-4 subs `0xA`/`0xB`/`0xC`, whose immediate stores are the
 branch-delay slots at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688`
 (`-0x432c`) and `0x801E16C8` (`-0x4328`). `World` now implements
-`FieldHost::op4c_nibble4_global_write` onto the tuple, so a scene script that
+`FieldScreenHost::op4c_nibble4_global_write` onto the tuple, so a scene script that
 sets the globals arms the gate the way `FUN_801D1344` does. Sub `0xD` scales by
 `_DAT_8008457C >> 12` into `0x8007B910` (`0x801E1700..0x801E1720`) and is
 dropped - the engine has no consumer, and parking it somewhere would only

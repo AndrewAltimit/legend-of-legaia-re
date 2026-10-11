@@ -48,7 +48,10 @@ use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::partition_record_span;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field::{
-    ActorSearchResult, CameraParam, FieldCtx, FieldHost, StepResult, step,
+    ActorSearchResult, CameraParam, FieldActorFxHost, FieldActorHost, FieldActorSpawnHost,
+    FieldAudioHost, FieldCameraHost, FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost,
+    FieldFlagsHost, FieldHaltHost, FieldPartyInventoryHost, FieldPlayerHost, FieldSceneHost,
+    FieldScreenHost, FieldTerrainHost, StepResult, step,
 };
 use legaia_scene_formats::man_section;
 use std::collections::{BTreeMap, BTreeSet};
@@ -133,37 +136,77 @@ struct ProbeHost {
     configures: Vec<Vec<CameraParam>>,
 }
 
-impl FieldHost for ProbeHost {
+impl FieldFlagsHost for ProbeHost {
     fn global_flags(&self) -> u32 {
         if self.yes { u32::MAX } else { 0 }
     }
+
     fn set_global_flags(&mut self, _value: u32) {}
+
     fn frame_delta(&self) -> u16 {
         // The wait accumulator is an `i16`, so this drains every authored
         // `WAIT_FRAMES` target below `0x8000` in a single step.
         i16::MAX as u16
     }
+
     fn extra_flags(&self) -> u32 {
         if self.yes { u32::MAX } else { 0 }
     }
+
     fn screen_mode(&self) -> u32 {
         if self.yes { u32::MAX } else { 0 }
     }
+
     fn screen_mode_table(&self, _index: u8) -> Option<u32> {
         self.yes.then_some(0xF000)
     }
+
     fn system_flag_test(&self, _idx: u16) -> bool {
         self.yes
     }
-    fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
+
+    fn op4c_n_c_party_flag_test(&self, _flag_idx: u16) -> bool {
         self.yes
     }
-    fn op4c_n8_sub_c_branch_on_field_68(&self, _ctx: &FieldCtx) -> bool {
+
+    fn op4c_n_a_flag_set(&self, _ctx: &FieldCtx, _bank: u8, _bit: u8) -> bool {
         self.yes
     }
+}
+
+impl FieldSceneHost for ProbeHost {
+    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
+        self.yes
+    }
+}
+
+impl FieldTerrainHost for ProbeHost {
+    fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, _bbox: [i16; 4]) -> bool {
+        self.yes
+    }
+}
+
+impl FieldCameraHost for ProbeHost {
+    fn camera_configure(&mut self, params: &[CameraParam], _apply_trigger: u16, _mode: u8) {
+        self.configures.push(params.to_vec());
+    }
+}
+
+impl FieldCameraMotionHost for ProbeHost {}
+
+impl FieldScreenHost for ProbeHost {
+    fn op4c_nibble4_global_pair_gate(&self) -> bool {
+        self.yes
+    }
+}
+
+impl FieldAudioHost for ProbeHost {}
+
+impl FieldPartyInventoryHost for ProbeHost {
     fn op4c_n_8_sub_b_actor_type_present(&self, _type_byte: u8) -> bool {
         self.yes
     }
+
     fn op4c_n_8_sub_d_actor_search(&self, _char_idx: u8, _marker: u8) -> ActorSearchResult {
         if self.yes {
             ActorSearchResult::Found
@@ -171,24 +214,7 @@ impl FieldHost for ProbeHost {
             ActorSearchResult::EmptySlot
         }
     }
-    fn op4c_n_e_sub_b_actor_jump(&mut self, _actor_id: u8) -> Option<()> {
-        self.yes.then_some(())
-    }
-    fn op4c_n_e_sub_4_bbox_outside(&self, _ctx: &FieldCtx, _bbox: [i16; 4]) -> bool {
-        self.yes
-    }
-    fn op4c_n_c_party_flag_test(&self, _flag_idx: u16) -> bool {
-        self.yes
-    }
-    fn op4c_n_a_flag_set(&self, _ctx: &FieldCtx, _bank: u8, _bit: u8) -> bool {
-        self.yes
-    }
-    fn op4c_nibble4_global_pair_gate(&self) -> bool {
-        self.yes
-    }
-    fn op4c_n_c_sub9_globals_differ(&self) -> bool {
-        self.yes
-    }
+
     fn inventory_compare_pair(&self, _page: u8, _sub_op: u8) -> (i32, i32) {
         if self.yes {
             (i32::MAX, 0)
@@ -196,8 +222,29 @@ impl FieldHost for ProbeHost {
             (0, i32::MAX)
         }
     }
-    fn camera_configure(&mut self, params: &[CameraParam], _apply_trigger: u16, _mode: u8) {
-        self.configures.push(params.to_vec());
+}
+
+impl FieldDialogMenuHost for ProbeHost {}
+
+impl FieldActorHost for ProbeHost {
+    fn op4c_n8_sub_c_branch_on_field_68(&self, _ctx: &FieldCtx) -> bool {
+        self.yes
+    }
+}
+
+impl FieldActorSpawnHost for ProbeHost {
+    fn op4c_n_e_sub_b_actor_jump(&mut self, _actor_id: u8) -> Option<()> {
+        self.yes.then_some(())
+    }
+}
+
+impl FieldActorFxHost for ProbeHost {}
+
+impl FieldPlayerHost for ProbeHost {}
+
+impl FieldHaltHost for ProbeHost {
+    fn field_halt_acquire_predicate(&self, _ctx: &FieldCtx, _which: u8) -> bool {
+        self.yes
     }
 }
 

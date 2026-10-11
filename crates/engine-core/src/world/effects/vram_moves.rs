@@ -29,7 +29,7 @@ pub struct ScriptVramMove {
 impl ScriptVramMove {
     /// Build from the six decoded operand words in instruction order
     /// `[src_x, src_y, w, h, dst_x, dst_y]` - the payload the field VM hands
-    /// the `FieldHost::op4c_n6_sub0_emitter6` host hook.
+    /// the `FieldScreenHost::op4c_n6_sub0_emitter6` host hook.
     pub fn from_words(words: [i16; 6]) -> Self {
         Self {
             src: (words[0], words[1]),

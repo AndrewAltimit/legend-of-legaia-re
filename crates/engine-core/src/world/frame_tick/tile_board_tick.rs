@@ -345,7 +345,7 @@ impl World {
 
     /// Install a tile board from a field-VM op-0x49 **sub-op 5** instruction
     /// (`instr` = the bytes from the opcode onward, as handed to
-    /// `FieldHost::op49_menu_request`). Parses the 13-byte inline header
+    /// `FieldDialogMenuHost::op49_menu_request`). Parses the 13-byte inline header
     /// (`instr[1..]`, the window retail points `_DAT_8007b450` at), fills the
     /// cells with the retail procedural fill (`overlay_0897_801e0b1c`, seeded
     /// from the world RNG the way retail seeds from BIOS `rand`), puts the

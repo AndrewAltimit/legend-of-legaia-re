@@ -45,7 +45,7 @@
 //! both globals - it sets or ramps `scene_ctrl[+0x4A]`, and on its delta arm
 //! writes `_DAT_8007BCAC` in the same breath. `World` now implements all three
 //! of that opcode's host hooks
-//! (`FieldHost::op4c_n4_sub9_default_write` / `_default_ramp` /
+//! (`FieldCameraMotionHost::op4c_n4_sub9_default_write` / `_default_ramp` /
 //! `_delta_write_or_ramp`) onto `legaia_engine_core::world::CameraRig::scene_offset` /
 //! `legaia_engine_core::world::CameraRig::offset_ease`, and `World::tick` steps the
 //! accumulator once a frame through [`ease_camera_offset`]. The accumulator is

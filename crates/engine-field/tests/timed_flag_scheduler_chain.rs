@@ -5,7 +5,7 @@
 //! sub `3`) arms the timer; `FUN_801D2EBC` drains it once per frame, firing a
 //! below-threshold flag on the way down and an expiry flag at zero. The two
 //! halves are ported in different modules (`field` and `escape_timer`),
-//! and `FieldHost::op4c_n_d_sub3_party_setup` is the seam between them.
+//! and `FieldFlagsHost::op4c_n_d_sub3_party_setup` is the seam between them.
 //!
 //! This test is the crate-local statement of that join, against a minimal
 //! host: it decodes a synthetic installer instruction through the real VM,
@@ -19,7 +19,12 @@
 //! Bytecode is hand-authored - no Sony bytes.
 
 use legaia_engine_field::escape_timer::EscapeTimer;
-use legaia_engine_vm::field::{FieldCtx, FieldHost, StepResult, step};
+use legaia_engine_vm::field::{
+    FieldActorFxHost, FieldActorHost, FieldActorSpawnHost, FieldAudioHost, FieldCameraHost,
+    FieldCameraMotionHost, FieldCtx, FieldDialogMenuHost, FieldFlagsHost, FieldHaltHost,
+    FieldPartyInventoryHost, FieldPlayerHost, FieldSceneHost, FieldScreenHost, FieldTerrainHost,
+    StepResult, step,
+};
 
 /// Minimal host: records the one hook this chain needs.
 #[derive(Default)]
@@ -29,20 +34,49 @@ struct CaptureHost {
     schedule: Option<(u32, u32, u32)>,
 }
 
-impl FieldHost for CaptureHost {
+impl FieldFlagsHost for CaptureHost {
     fn global_flags(&self) -> u32 {
         self.flags
     }
+
     fn set_global_flags(&mut self, value: u32) {
         self.flags = value;
     }
+
     fn frame_delta(&self) -> u16 {
         1
     }
+
     fn op4c_n_d_sub3_party_setup(&mut self, ab: u32, cd: u32, ef: u32) {
         self.schedule = Some((ab, cd, ef));
     }
 }
+
+impl FieldSceneHost for CaptureHost {}
+
+impl FieldTerrainHost for CaptureHost {}
+
+impl FieldCameraHost for CaptureHost {}
+
+impl FieldCameraMotionHost for CaptureHost {}
+
+impl FieldScreenHost for CaptureHost {}
+
+impl FieldAudioHost for CaptureHost {}
+
+impl FieldPartyInventoryHost for CaptureHost {}
+
+impl FieldDialogMenuHost for CaptureHost {}
+
+impl FieldActorHost for CaptureHost {}
+
+impl FieldActorSpawnHost for CaptureHost {}
+
+impl FieldActorFxHost for CaptureHost {}
+
+impl FieldPlayerHost for CaptureHost {}
+
+impl FieldHaltHost for CaptureHost {}
 
 /// Build `[4C, D3, expiry: u16, below: u16, duration: u32, threshold: u32]`.
 fn schedule_insn(expiry: u16, below: u16, duration: u32, threshold: u32) -> Vec<u8> {

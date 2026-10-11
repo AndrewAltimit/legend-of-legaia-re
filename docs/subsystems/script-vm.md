@@ -799,7 +799,7 @@ later sub-op `0xA` (`town01`'s opening records carry the op;
 
 `[36, lo0, hi0, lo1, hi1]`, PC += 5. Reads two signed-16 operands through `FUN_8003CE9C`:
 `sel` (first) and `arg` (second). Despite the historical `SCENE_FADE` label - which the
-engine's `FieldHost::scene_fade` hook still carries - **every arm of this op is sound**.
+engine's `FieldScreenHost::scene_fade` hook still carries - **every arm of this op is sound**.
 Read off the disassembly at `0x801E02CC..0x801E0444` in `FUN_801DE840`.
 
 `sel == 0xFFFF` waits on the load flag `_DAT_8007BC20` (zero falls through, non-zero halts
@@ -859,7 +859,7 @@ script parks - the same "satisfied on arrival" shape the BGM barrier has.
 | Op | Mnemonic | Encoding | Effect |
 |---|---|---|---|
 | 0x37 / 0x41 / 0x47 | `YIELD` family (**motion ops**) | `[op, b0, b1]` (resume pc+3); `[47, xb, zb, b2]` (pc+4) | Park the script and hand the op to the walk kernel. [Detail](#0x37--0x41--0x47-yield-family-motion-ops). |
-| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player) and advance by 3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) - only a player target parks the record; an NPC turns while the record runs on. On fail the PC stays on the op. |
+| 0x38 | `CAM_CFG` | `[38, op0, op1]` | Actor facing. If `op1 & 0x7F == 0`: simple path - copy `*(short*)(0x80073F04 + (op0 & 0xF) * 2)` into the resolved actor's `+0x26` (`0xF8` = the player; port hook `FieldActorHost::face_compass`). Else: halt-acquire path - same predicate as op 0x43 sub-0/1/A/B (`saved_pc != 0 \|\| ctx==player`) AND (`!(flags & 0x400) \|\| scene_busy`); on success set HALT + saved_pc + wait_accum=0 (mirror to caller when ctx is player) and advance by 3 for every target (`li s7,3` in the delay slot at `0x801DEEFC`) - only a player target parks the record; an NPC turns while the record runs on. On fail the PC stays on the op. |
 | 0x39 | `GIVE_ITEM` | `[39, item_id]` | Adds one inline item `item_id` to the inventory; the **treasure-chest item-give** path (the granted item is this single operand byte, **not** a per-scene table). Full behaviour in [§ 0x39 GIVE_ITEM](#0x39-give_item) below. |
 | 0x3A | `ADD_MONEY` | `[3A, b0, b1, b2]` | 24-bit signed delta: `_DAT_8008459C += sext24(operand)`. Clamp to `[0, 9999999]`. |
 | 0x3B | `SET_ITEM_COUNT` | `[3B, slot, count]` | Set inventory entry: `*(byte*)(0x80084340 + (slot & 0xF) + (slot >> 4) * 0x414) = count`, then `func_0x80042558()` to refresh inventory display. Inventory pages of 0x414 bytes. |
@@ -1010,7 +1010,7 @@ The disc carries ten clean non-`0xFF` sites (`asset field-op-census --only
 3E`): `town0b` `3E 00 02` five times, `stone` `3E 00 03` four times and
 `jagaroom` `3E 01 00` once, each behind a flag SET and a wait or a battle
 BGM cue - the shape of every `3E FF` boss entry. Engine:
-`FieldHost::scripted_battle` → `World::trigger_scripted_battle` for every
+`FieldSceneHost::scripted_battle` → `World::trigger_scripted_battle` for every
 `op0`; `engine-core/tests/scripted_battle_low_op0_disc.rs` steps one site per
 scene into `SceneMode::Battle` against the named MAN row.
 
@@ -1193,7 +1193,7 @@ channel, and all but six sit in partition-2 cutscene records.
 
 The engine runs the arc. `legaia_engine_vm::field_ledge_hop_arc::ScriptArcRequest`
 decodes the operand from the arm's loads; the cutscene timeline's `C3 F8` park
-and `FieldHost::op43_arc_jump` (NPC channels) both reach
+and `FieldActorHost::op43_arc_jump` (NPC channels) both reach
 `World::start_field_script_arc`, and `World::tick_field_script_arcs` advances
 the clip and the watcher. An NPC's height lives in
 `World::script_actors.npc_heights` for as long as it stands where the arc put
@@ -1221,7 +1221,7 @@ is non-zero only while a placement's spawn section is being pre-run (set and
 cleared around the spawn loop at SCUS `0x8003B73C` / `0x8003B928` and around
 the two field-VM re-runs at `0x801E2820` / `0x801E2BBC`). The engine reads the
 halt it can see - an arc still in flight on that actor
-(`World::script_arc_target_halted`, the `FieldHost::op43_arc_target_halted`
+(`World::script_arc_target_halted`, the `FieldHaltHost::op43_arc_target_halted`
 hook) - and the VM returns `Halt` at the op on any refusal. The acquire's
 other clause (an NPC target with no `+0x94` owner) is not modelled.
 
@@ -2775,9 +2775,43 @@ fight option is disc-derived by scanning each option branch for that `3E FF`
 install rather than matching an English menu label, so it holds under the PAL
 discs and translation packs.
 
+## Host surface
+
+`step` is generic over one bound, [`FieldHost`](../../crates/engine-vm/src/field/host.rs). It declares
+no method of its own: it is the sum of the supertraits below, each in its own file under
+`crates/engine-vm/src/field/host/`, and it is implemented for every type that implements all of
+them. A supertrait groups the methods one owner of host state answers for, not the methods of one
+opcode, so op `0x4C` `MENU_CTRL` and op `0x43` each spread over several.
+
+| Supertrait | File | Host state it speaks for |
+|---|---|---|
+| `FieldFlagsHost` | `flags.rs` | Global, region and system flag banks, the scene slot table, the frame delta, `rand`, the timed-flag schedule. |
+| `FieldSceneHost` | `scene.rs` | Scene changes, the minigame door-warp, scripted battles and encounters, the FMV and game-over handoffs. |
+| `FieldTerrainHost` | `terrain.rs` | Tile flags, the region and fog tables, the floor-height ladder, footing and box tests. |
+| `FieldCameraHost` | `camera.rs` | Camera registers (op `0x45`), camera zones, snap and clamp, the view window. |
+| `FieldCameraMotionHost` | `camera_motion.rs` | The cutscene glide, the vertical-offset ease, zoom and shake. |
+| `FieldScreenHost` | `screen.rs` | Fades and tints, the PROT 0900 screen widgets, VRAM edits, the field light, the particle gate. |
+| `FieldAudioHost` | `audio.rs` | BGM dispatch (op `0x35`) and sound-effect cues. |
+| `FieldPartyInventoryHost` | `party_inventory.rs` | Roster, character records, the bag, gold and coins. |
+| `FieldDialogMenuHost` | `dialog_menu.rs` | Dialogue boxes, text balloons, talk staging, the op `0x49` menu request. |
+| `FieldActorHost` | `actor.rs` | The stepped actor's moves, teleports, heading, slot ramps, model and arcs. |
+| `FieldActorSpawnHost` | `actor_spawn.rs` | The actor list: record spawn, clone, allocation, id resolve. |
+| `FieldActorFxHost` | `actor_fx.rs` | Lights, tint, reflections and emitters attached to an actor. |
+| `FieldPlayerHost` | `player.rs` | The player object the VM reaches through channel `0xF8`. |
+| `FieldHaltHost` | `halt.rs` | The halt-acquire park and its release. |
+
+Only `FieldFlagsHost` has required methods (the global flag word and the frame delta). Every other
+method has a default body, so a host implements what it has state for and leaves the rest as empty
+`impl` blocks. One bound exists between supertraits: `FieldCameraMotionHost: FieldFlagsHost`, for
+the default `op4c_n4_sub9_state`, which reads the global flag word.
+
+`engine-core`'s `FieldHostImpl` mirrors the layout: `world/vm_hosts/field_host/<group>_host.rs`
+holds its impl of one supertrait, and the sibling files hold the `World` bodies those impls route
+into.
+
 ## Connection to other crates
 
-- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
+- [`crates/engine-vm`](../../crates/engine-vm/src/field.rs) - the port. `legaia_engine_vm::field::step` executes one instruction per call and returns a `StepResult` (`Advance` / `Yield` / `Halt`); side effects go through the `FieldHost` trait, implemented in `engine-core` (`world/vm_hosts/field_host.rs`) - see [§ Host surface](#host-surface). The per-frame runners, the dialogue SM and the cutscene timeline that drive it live in `engine-core`, `engine-field` and `engine-dialog`.
 - [`crates/asset`](../../crates/asset/README.md) - `legaia_scene_formats::field_disasm`, the static decoder ([below](#disassembler-tool-asset-field-disasm)), and `man_section` / `man_edit`, the MAN parser and relocator.
 - [`crates/mdt`](../formats/mdt.md) - opcode `0x22` `EXEC_MOVE` drives the move-table consumer at `FUN_800204F8`. Move IDs in scripts feed straight into the .mdt parsers.
 - [`crates/mes`](../formats/mes.md) - parses the inline `0x1F` / glyph text stream that field dialogue shows (see [§ Field dialogue](#field-dialogue-has-no-opcode)).

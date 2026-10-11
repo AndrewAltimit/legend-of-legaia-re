@@ -109,7 +109,7 @@ pub(super) fn op_4c_n5<H: FieldHost>(
         // in the `jal 0x800430ac` delay slot and the `bne` target
         // `0x801E00B8` advances too, so **both** paths advance -
         // there is no poll and no halt here. See
-        // `FieldHost::op4c_n5_sub2_take_item` for the arm.
+        // `FieldPartyInventoryHost::op4c_n5_sub2_take_item` for the arm.
         2 => {
             if operand + 1 > bytecode.len() {
                 return StepResult::Unknown { opcode, pc };

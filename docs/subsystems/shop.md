@@ -658,7 +658,7 @@ record. Agreement confirms both.
 
 Opening a merchant in-game is the field VM's own op `0x49` (`STATE_RESUME`).
 On the Idle->arm edge the VM hands the host the instruction bytes
-(`FieldHost::op49_menu_request`); `World::try_arm_field_shop` runs the same
+(`FieldDialogMenuHost::op49_menu_request`); `World::try_arm_field_shop` runs the same
 sellable-mask-gated record validation directly on those bytes, and on a match
 stages a priced `ShopSession` on `World::shops.pending_shop` and arms the
 op-0x49 tristate (so the script stays suspended exactly the way the name-entry

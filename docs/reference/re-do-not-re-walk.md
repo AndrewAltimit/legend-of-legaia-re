@@ -600,7 +600,7 @@ compare-and-skip continuation at `0x801E0B40`:
 
 Sub-ops 10/11 keep the 9-byte u32 gold/coin form; 12..15 fall through (PC += 7). Ports:
 `field_disasm::decode_subops` (single 0..=9 compare arm), `engine-vm` `field/step/flow.rs` and
-`FieldHost::op4e_char_level` / `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5
+`FieldPartyInventoryHost::op4e_char_level` / `slot_table_read`. cave01's `P2[12]` spawn gate is the live sub-5
 exemplar.
 
 ### Gaza 2 0x51 park - the two falsified generators

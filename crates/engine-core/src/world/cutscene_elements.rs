@@ -220,7 +220,7 @@ impl World {
     /// Retail keeps the gate in one word and the emitter re-reads it every
     /// frame; the port keeps a copy per element, so the write fans out here.
     ///
-    /// The VM side of this is `FieldHost::set_ambient_particle_gate`, and
+    /// The VM side of this is `FieldScreenHost::set_ambient_particle_gate`, and
     /// `FieldHostImpl` (`crate::world::vm_hosts`) forwards it straight here,
     /// so a script that raises the gate reaches every live emitter on both
     /// hosts. The global's only readers are that emitter and the field render

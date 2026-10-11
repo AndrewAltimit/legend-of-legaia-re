@@ -321,7 +321,7 @@ pub fn step<H: FieldHost>(
         //   `switchD_801e00f4::default()`; for op 0x38 that path is not in the
         //   0x50/0x60/0x70 system-flag arm, so the dispatcher halts at PC.
         //
-        // [`field_halt_acquire_predicate`]: FieldHost::field_halt_acquire_predicate
+        // [`field_halt_acquire_predicate`]: FieldHaltHost::field_halt_acquire_predicate
         0x38 => {
             let Some(&op0) = bytecode.get(operand) else {
                 return StepResult::Unknown { opcode, pc };
@@ -832,16 +832,16 @@ pub fn step<H: FieldHost>(
         // Sub-ops 2..=9 share the same 7-byte compare-and-skip shape
         // without the `>> 8` scaling; each has a dedicated value loader
         // (raw jump table `0x801CEE30`): 2 = char level byte `+0x130`
-        // ([`FieldHost::op4e_char_level`]), 3 / 9 = gold / coin bank
-        // ([`FieldHost::party_bank_value`]), 4 = BIOS `Rand() & 0xFF`
-        // ([`FieldHost::op4e_sub4_bios_rand`], a random-chance branch),
+        // ([`FieldPartyInventoryHost::op4e_char_level`]), 3 / 9 = gold / coin bank
+        // ([`FieldPartyInventoryHost::party_bank_value`]), 4 = BIOS `Rand() & 0xFF`
+        // ([`FieldFlagsHost::op4e_sub4_bios_rand`], a random-chance branch),
         // 5..=8 = slot table `0x801C6460[sub - 5]`
-        // ([`FieldHost::slot_table_read`]). Sub-ops 10/11 are the
+        // ([`FieldFlagsHost::slot_table_read`]). Sub-ops 10/11 are the
         // party-bank comparison (9-byte u32 encoding).
         0x4E => flow::op_4e(host, bytecode, pc, opcode, header_size, operand),
 
         // 0x49 - STATE_RESUME. Multi-frame state machine on `_DAT_8007B450`.
-        // The host surfaces the tristate via [`FieldHost::op49_state`].
+        // The host surfaces the tristate via [`FieldDialogMenuHost::op49_state`].
         //
         // - `Idle`: arm a new resume. Sub-op 1 also captures `ctx.field_90`
         //   into `_DAT_8007B44C` (the original's actor-handle save). The

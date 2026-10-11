@@ -230,7 +230,7 @@ pub struct WorldMapController {
     /// at `0x801E1648` (`sw v0,-0x4330(v1)`), `0x801E1688` (`-0x432c`) and
     /// `0x801E16C8` (`-0x4328`) in `overlay_world_map_801de840.txt`, each with
     /// a sibling ramp arm through the shared `0x801E205C` epilogue. `World`
-    /// implements `FieldHost::op4c_nibble4_global_write` onto this tuple, so a
+    /// implements `FieldScreenHost::op4c_nibble4_global_write` onto this tuple, so a
     /// scene script that sets the globals arms the gate exactly as retail's
     /// `FUN_801D1344` does. (An earlier note cited `0x801E1638` for the first
     /// store; that address is the arm's operand `jal`, and the store is the

@@ -36,7 +36,7 @@ pub const CLIP_FRACTION_FULL: u16 = 0x1000;
 /// PORT: FUN_801D820C
 ///
 /// Live on both hosts through that same chain: the field VM's `0x4C` sub-1
-/// arm calls `FieldHost::menu_ctrl_clone_actor`, `World::spawn_actor_clone`
+/// arm calls `FieldActorSpawnHost::menu_ctrl_clone_actor`, `World::spawn_actor_clone`
 /// seats the clone on a pool slot carrying
 /// `legaia_engine_field::actor_handler::ActorHandler::ClipFade`, and
 /// `World::tick_handler_actors` runs this every frame until the accumulator

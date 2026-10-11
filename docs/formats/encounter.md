@@ -150,7 +150,7 @@ There is no dedicated "encounter" opcode.
 
 **Engine port.** The field VM mirrors the split:
 
-- The bare arm op (`0x37` / `0x41`) calls `FieldHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldHost::install_scripted_encounter()` the bounded window overlaying the opcode (`[opcode][op1][op2][count][<=4 ids]`).
+- The bare arm op (`0x37` / `0x41`) calls `FieldSceneHost::is_scripted_encounter_armed()` and, only when armed, hands `FieldSceneHost::install_scripted_encounter()` the bounded window overlaying the opcode (`[opcode][op1][op2][count][<=4 ids]`).
 - `World` parses the window as an `EncounterRecord`, registers the formation and forces the next `on_field_step` roll (`World::install_scripted_encounter` / `arm_scripted_encounter`). A successful install disarms, matching the retail `entity[+0x94]` clear.
 - `World::encounters.scripted_armed` stands in for "the active entity's state machine reached the confirm state".
 

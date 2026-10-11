@@ -309,7 +309,7 @@ pub(super) fn op_4c_n4<H: FieldHost>(
             }
             9 => {
                 // sub-9: dispatch on two bits of the global story
-                // flag word. See `FieldHost::op4c_n4_sub9_state`.
+                // flag word. See `FieldCameraMotionHost::op4c_n4_sub9_state`.
                 //
                 // Every arm advances the 6 bytes, the ramp arms included:
                 // the nibble-4 head advances first (`addiu s8,s8,6` at

@@ -6,7 +6,7 @@
 //! remaining count into the MM:SS.ff readout in the same pass.
 //!
 //! This exercises the join the two ports make through `World`: the installer
-//! hook (`FieldHost::op4c_n_d_sub3_party_setup` ->
+//! hook (`FieldFlagsHost::op4c_n_d_sub3_party_setup` ->
 //! `World::schedule_timed_flags`) and the per-frame drain
 //! (`World::tick_escape_timer`, driving
 //! `legaia_engine_field::escape_timer::EscapeTimer`).

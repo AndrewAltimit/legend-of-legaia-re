@@ -713,7 +713,7 @@ fn release_pauses(world: &mut World, ticks: usize) -> usize {
 /// the paused source and the new score never sounds.
 #[test]
 fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
-    use legaia_engine_vm::field::FieldHost;
+    use legaia_engine_vm::field::FieldAudioHost;
 
     let mut world = World::new();
     {
@@ -749,7 +749,7 @@ fn a_timed_release_inside_a_pending_swap_does_not_pause_the_new_track() {
 /// alone.
 #[test]
 fn the_script_pause_bit_follows_the_bgm_sub_ops() {
-    use legaia_engine_vm::field::FieldHost;
+    use legaia_engine_vm::field::FieldAudioHost;
 
     fn step(world: &mut World, id: u16, sub: u8) -> bool {
         let mut host = crate::world::vm_hosts::FieldHostImpl { world: &mut *world };

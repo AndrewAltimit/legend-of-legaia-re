@@ -23,7 +23,7 @@ impl FieldHostImpl<'_> {
     /// of `5`); without the route the overworld kept drawing the old village.
     /// An op aimed at the player (`CC F8 50 ..`, e.g. `jagaroom`'s costume
     /// swap) goes to [`World::field_player_set_model`] instead, through
-    /// `FieldHost::player_set_model`.
+    /// `FieldPlayerHost::player_set_model`.
     ///
     /// PORT: FUN_80024E08 (the model re-stage, through the live-model seat)
     pub(super) fn op4c_n5_sub0_set_actor_model(

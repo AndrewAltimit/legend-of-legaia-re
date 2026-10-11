@@ -11,7 +11,7 @@ pub struct CameraRig {
     ///
     /// Raised by exactly one thing in retail: the field-VM opcode
     /// `0x4C` outer-nibble `8` sub-`4` (`[4C, 0x84, amplitude]`), ported at
-    /// [`legaia_engine_vm::field::FieldHost::op4c_n8_sub4_set_b630`]. The
+    /// [`legaia_engine_vm::field::FieldCameraMotionHost::op4c_n8_sub4_set_b630`]. The
     /// scene reset `FUN_8003A024` zeroes it on every scene load
     /// (`0x8003A07C`, ported in
     /// [`crate::world::World::reset_scene_control_block`]), so a tremor a
