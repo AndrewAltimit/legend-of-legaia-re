@@ -39,7 +39,7 @@ flowchart TD
 
 | Layer | Retail | Port |
 |---|---|---|
-| Track selection | Field-VM op `0x35` writes `_DAT_8007BAC8`; `FUN_800243F0` resolves and swaps | `SceneHost::route_bgm_events` into `AudioBgmDirector` (`crates/engine-session`) |
+| Track selection | Field-VM op `0x35` writes `_DAT_8007BAC8`; `FUN_800243F0` resolves and swaps | `SceneHost::route_bgm_events` into `AudioDirector` (`crates/engine-session`) |
 | Bank + score install | `FUN_8001FC00` stream, `FUN_8001E54C` chunk walk, `SsVabOpenHead` | `chunk_install::owned_bank_offsets`, `VabBank::upload`, `spu_layout` |
 | Sequencer | libsnd `SsSeqCalc` tier, `0x80061-0x80067` | `Sequencer`, with `seq_calc` / `seq_events` as instruction-level reference kernels |
 | Voice allocation | `FUN_80066B00` + flush `FUN_80065BAC` | `Sequencer::alloc_voice`, `flush_key_ons` |
@@ -546,7 +546,7 @@ entry".
 configures a battle track id, the live gameplay loop queues an ordinary
 `FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`)
 and resumes the stashed field track on battle end (`restore_field_bgm`). Both
-transitions run through the host's `AudioBgmDirector` `start_inner` path - no
+transitions run through the host's `AudioDirector` `start_inner` path - no
 separate battle-audio code path. The battle id resolves like any op-`0x35` id
 (`music_bank_entry_bytes` → `start_owned_vab`). The shipped default is the
 global id `2026` (`music_labels::BATTLE_THEME_1_BGM_ID`, retail's
@@ -673,12 +673,12 @@ space (`988 + i` for index `i <= 67`, `990 + i` for `i >= 68`, a 2-entry gap at
 `1056`/`1057`); `music_labels::prot_entry_for_bgm_id` owns that map. Playing one means
 uploading **that entry's own VAB** into SPU RAM and driving the sequencer against it,
 rather than the scene VAB the field path stages. Every owned-VAB staging
-(`AudioBgmDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-system::chunk_install::owned_bank_offsets` - the
+(`AudioDirector`, which both play hosts run, and the audio-trace director) splits the entry with `engine-system::chunk_install::owned_bank_offsets` - the
 installer walk's type-0 bank and type-2 score - rather than hunting it for the two magics;
 the disc-gated test pins that the two readings agree on every slot, including which six
 have no pair.
 
-The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioBgmDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
+The site's minigame pages take exactly this path per game (`crates/web-viewer/src/minigames/bgm.rs`): `render_music01_bgm` / `render_music01_loop` split the pair, `VabBank::upload` the VAB, and render through the from-scratch `Spu` + `Sequencer` - the same components the live `AudioDirector` uses. Minigame BGM sources are disc-pinned extraction constants (base-independent): the Baka Fighter init loads extraction 1043 (#55 `M112` "Sol disco fever"); the dance overlay loads extraction 1048/1054 (#60/#66, the Sol disco finals, mode-selected, see [`minigame-dance.md`](minigame-dance.md)); the slot machine and fishing/Muscle Dome start **no** track and inherit their host scene's op-`0x35` BGM. The `music01_bgm_render` WASM surface renders any bank slot for the dance's Sol-disco jukebox.
 
 #### The ending theme: two entries on sound slot 10
 
@@ -1583,7 +1583,7 @@ straight from their bytecode, and op `0x36` sub `4` sets that slot's
 countdown through `FUN_80035BAC`
 ([`sfx-table.md`](../formats/sfx-table.md#the-fields-producers-op-0x36-and-the-motion-vms-op-0x09)).
 The engine queues each call on the world as a `SfxRingOp`;
-`AudioBgmDirector::route_world_sfx`, which both play hosts call every tick,
+`AudioDirector::route_world_sfx`, which both play hosts call every tick,
 replays the queue onto the scheduler's four-slot ring, and the
 scheduler returns due ring cues in `SfxFireBatch::ring`, apart from the router
 queue. A ring id is keyed as the drainer `FUN_80016B6C` keys it: below `0x200`
@@ -1684,7 +1684,7 @@ the reward bank (PROT 0889, slot `11`, staged when the results frame queues cue
 `0x50`) and a script-selected side-band bank (slot `3`, staged while the world
 is in a field-family mode). One kernel, `legaia_engine_audio::bgm_tail::BgmTail`,
 holds their placement, their residency and the side-band retry memo, and both
-directors drive it (`AudioBgmDirector` natively, `LegaiaRuntime`'s SFX channel
+directors drive it (`AudioDirector` natively, `LegaiaRuntime`'s SFX channel
 on the browser page).
 
 **Residency follows retail's closes, not the track.** Retail gives both banks
@@ -1800,7 +1800,7 @@ The engine wires this end-to-end:
   - the same degradation retail applies to an art with no cue-table entry.
   Drain: `World::drain_battle_shout_cues`.
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent.
-- **Playback** (`engine-audio` / `engine-session`): `AudioBgmDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
+- **Playback** (`engine-audio` / `engine-session`): `AudioDirector::play_art_shout` resolves the cue against the bank (`// PORT: FUN_8004C140`: a uniform draw from the art's pool, re-rolled while it equals the party-wide last pick `gp+0xA4A` - one byte for all three characters, not one each - and forced to channel `0xC` when the first formation id `gp+0x9F4` is `0x4F`, an override that is inert on both hosts, which supply no formation id) and stages the clip through `AudioOut::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
 Two timing behaviours model the retail CD/XA sequencing contract (the recomp cross-reference established that the shout **trails** the art animation - the XA response arrives after the animation begins, never before): a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modeled seek/first-sector latency) gates the clip silent after the animation-start request; and a back-to-back request while a shout is still sounding queues behind it rather than cutting it (only the most recent pending clip is kept), so consecutive arts don't drop the later voice line.
 `OfflineMixer` exposes the same mixing core device-free; the disc-gated oracle `engine-shell/tests/arts_shout_battle.rs` types an art into the live Arts command input and asserts the shout PCM lands in the mix only after the delay window, with `engine-core/tests/battle_shout_cue.rs` as the disc-free cue-emission check - one art, three arts in one entry, and the silent synthetic baseline.
@@ -1932,7 +1932,7 @@ stage is `0` on a resident side-band, the `FUN_8003DE7C(1)` span countdown is
 the starter's stop point and that one channel decoded
 (`XaClipBank::decode_channel_span`, `read_span_sectors`), kept under
 `LAZY_CLIP_CAP` - the native director off the disc image
-(`AudioBgmDirector::set_xa_lazy_source`), the play page through a
+(`AudioDirector::set_xa_lazy_source`), the play page through a
 `play_xa_stage_requests_json` / `play_xa_install_span` round trip over the disc
 bytes it holds. The per-host wiring is on
 [`host-drift.md`](../tooling/host-drift.md#the-cast-voice-leg).
@@ -2155,7 +2155,7 @@ damage finisher's enemy-defender halve) are testing that handle for null.
 modelled busy window of `dur` vsyncs for the router's drive gate, and the
 `0x800788B8` table off the user's SCUS. Both hosts play it. The native window
 demuxes `XA27` / `XA30` into a `legaia_engine_audio::XaClipBank` at boot
-(`read_battle_xa_clip_bank`) and `AudioBgmDirector::play_xa_clip` mixes the
+(`read_battle_xa_clip_bank`) and `AudioDirector::play_xa_clip` mixes the
 requested `(slot, channel)` PCM, cut at the retail read span, through the same
 XA path as the arts shouts. The browser page's `web-viewer` `play_xa` demuxes
 the raw sectors the page slices out of the visitor's own disc bytes into the
@@ -2220,7 +2220,7 @@ is PCSX-Redux's `src/core/sstate.h` + `src/spu/types.h`.
 The engine side runs a standalone `legaia_engine_audio::Spu` + `Sequencer`
 alongside a headless `BootSession::tick` (a real cpal `AudioOut` cannot open in
 CI), sampling voice / master / reverb state after each frame. A private
-`TraceBgmDirector` owns that `Spu` the way `AudioBgmDirector` owns the cpal
+`TraceBgmDirector` owns that `Spu` the way `AudioDirector` owns the cpal
 one, takes the
 [cold scene-entry sequence](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like),
 and routes op-`0x35` events in lock-step with `SceneHost::route_bgm_events`.

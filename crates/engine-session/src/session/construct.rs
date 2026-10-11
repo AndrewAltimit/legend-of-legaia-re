@@ -5,51 +5,6 @@
 use super::*;
 
 impl<S: AudioSink> BootSession<S> {
-    /// `open_audio` opens the host's output; it runs only when
-    /// `cfg.enable_audio` is set.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(super) fn open_with_source(
-        source: SceneSource<'_>,
-        cfg: &BootConfig,
-        open_audio: impl FnOnce() -> Result<S>,
-    ) -> Result<Self> {
-        let scus = read_scus(&source);
-        let host = match source {
-            SceneSource::Extracted(root) => SceneHost::open_extracted(root)
-                .with_context(|| format!("open extracted dir {}", root.display()))?,
-            #[cfg(not(target_arch = "wasm32"))]
-            SceneSource::Disc(path) => SceneHost::open_disc(path)
-                .with_context(|| format!("open disc image {}", path.display()))?,
-        };
-        #[allow(unused_mut)]
-        let mut session = Self::from_host(host, scus.as_deref(), cfg, open_audio)?;
-        // Demux + decode the arts-voice shout banks (XA2/XA4/XA6) and the
-        // SCUS cue tables. Disc-image boots only (channel demux needs the
-        // raw CD-XA subheaders). Best-effort - an absent bank leaves arts
-        // silent.
-        #[cfg(not(target_arch = "wasm32"))]
-        if let (SceneSource::Disc(path), Some(director)) = (&source, session.bgm.as_mut()) {
-            match read_arts_shout_bank(path) {
-                Some(bank) => director.set_shout_bank(bank),
-                None => log::warn!("arts-voice shout bank not staged"),
-            }
-            // The battle's one-shot clips (`XA27` stings, `XA30` grunts) -
-            // the melee kernel's two sound sites.
-            match read_battle_xa_clip_bank(path) {
-                Some(bank) => director.set_xa_clip_bank(bank),
-                None => log::warn!("battle CD-XA clip bank not staged"),
-            }
-            // The cast voices (seventeen files) are not decoded here: the
-            // director stages one channel span from the disc the first time
-            // a cast names it.
-            let n = director.set_xa_lazy_source(path);
-            if n == 0 {
-                log::warn!("no XA<n>.XA files resolved; cast voices stay silent");
-            }
-        }
-        Ok(session)
-    }
-
     /// Build a session over an already-open [`SceneHost`] and the disc's
     /// `SCUS_942.54` (`None` on a disc-free boot), then load `cfg.scene`.
     /// The path constructors ([`BootSession::open`] / `open_disc`) land
@@ -190,7 +145,7 @@ impl<S: AudioSink> BootSession<S> {
                     // its track, into the one BGM slot, and a scene-local id
                     // plays a global fallback track
                     // (`legaia_engine_core::scene_host::SCENE_LOCAL_BGM_FALLBACK_ID`).
-                    let mut director = AudioBgmDirector::new(audio.clone());
+                    let mut director = AudioDirector::new(audio.clone());
                     // Decode the static SFX descriptor bank from the same
                     // executable once; it names the program/tone/voice-count
                     // for each cue id, and the VAB slot each cue's category
@@ -287,11 +242,11 @@ impl<S: AudioSink> BootSession<S> {
 /// cue fired before the first world tick has somewhere to sound; from then on
 /// [`BootSession::route_field_sfx`] refills it with whatever the world's
 /// residency names for the current mode - PROT 0876 in slot 6 in the field,
-/// PROT 0869 in slot 2 in battle ([`AudioBgmDirector::sync_shared_region`]).
+/// PROT 0869 in slot 2 in battle ([`AudioDirector::sync_shared_region`]).
 ///
 /// Each entry is a scene-VAB-style stream (`[u32 chunk header][VAB]...`), so
 /// the VAB starts at `+4` (with a `+0` fallback for a bare bank).
-fn stage_sfx_vab<S: AudioSink>(director: &mut AudioBgmDirector<S>, host: &SceneHost) -> Result<()> {
+fn stage_sfx_vab<S: AudioSink>(director: &mut AudioDirector<S>, host: &SceneHost) -> Result<()> {
     use legaia_engine_core::world::SharedRegionBank;
     use legaia_game_tables::sfx_table::SLOT0_SYSTEM_BANK_PROT_INDEX;
 

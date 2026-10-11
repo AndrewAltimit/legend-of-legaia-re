@@ -172,13 +172,13 @@ impl Policy {
         self.seg_left = len;
     }
 
-    pub(super) fn pad(&mut self, s: &BootSession, frame: u64) -> u16 {
+    pub(super) fn pad(&mut self, s: &NativeSession, frame: u64) -> u16 {
         let pad = self.pad_inner(s, frame);
         self.last = pad;
         pad
     }
 
-    pub(super) fn pad_inner(&mut self, s: &BootSession, frame: u64) -> u16 {
+    pub(super) fn pad_inner(&mut self, s: &NativeSession, frame: u64) -> u16 {
         let w = &s.host.world;
         // Pause menu open: browse at random, then back out with Circle.
         if s.field_menu.is_some() {
@@ -305,7 +305,7 @@ impl Policy {
 /// The battle fighter's wanted press this frame (see `critical_path_replay`'s
 /// `FightPolicy`): Begin, Attack, Auto, confirm the target, Cross any message
 /// box. `0` when nothing obvious is wanted.
-pub(super) fn fight_pad(s: &BootSession) -> u16 {
+pub(super) fn fight_pad(s: &NativeSession) -> u16 {
     use legaia_engine_menus::battle_input::CommandPhase;
     use legaia_engine_menus::inventory_use::InventoryUseState;
     let w = &s.host.world;

@@ -24,8 +24,8 @@ use std::hash::Hasher;
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
@@ -88,12 +88,12 @@ fn inputs() -> Option<Inputs> {
 
 /// Resume the anchor's SC block into `town0b`, as a card load does. The
 /// random encounter roll stays off: every battle here is one the test made.
-fn resume_town0b(inputs: &Inputs) -> BootSession {
+fn resume_town0b(inputs: &Inputs) -> NativeSession {
     let cfg = BootConfig {
         scene: "town0b".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&inputs.extracted, &cfg).expect("open BootSession");
+    let mut session = NativeSession::open(&inputs.extracted, &cfg).expect("open NativeSession");
     let opts = FieldLiveOpts {
         live_loop: false,
         player_battle: true,
@@ -114,7 +114,7 @@ fn resume_town0b(inputs: &Inputs) -> BootSession {
 
 /// The presentation queues both play hosts drain after every tick (the soak
 /// harness's `host_drains`), plus the frame-tail effect legs.
-fn host_drains(session: &mut BootSession) {
+fn host_drains(session: &mut NativeSession) {
     let w = &mut session.host.world;
     let _ = w.drain_field_events();
     let _ = w.drain_battle_events();
@@ -156,7 +156,7 @@ fn rim_elm_variants_arm_the_sparring_carrier_only_in_town01() {
             scene: scene.into(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open BootSession");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open NativeSession");
         let opts = FieldLiveOpts {
             live_loop: false,
             player_battle: true,
@@ -244,7 +244,7 @@ const DIRS: [PadButton; 4] = [
 
 /// A human's battle hand: Begin or Run on the round prompt, any ring arm,
 /// Auto or Command, arts strings, cancel now and then.
-fn human_pad(session: &BootSession, rng: &mut Rng) -> u16 {
+fn human_pad(session: &NativeSession, rng: &mut Rng) -> u16 {
     use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
@@ -271,7 +271,7 @@ fn human_pad(session: &BootSession, rng: &mut Rng) -> u16 {
 /// Everything a player could see move in a battle (the soak harness's
 /// battle digest): the command session, the menus, the action context and
 /// every combatant's HP / MP / liveness.
-fn battle_digest(session: &BootSession) -> u64 {
+fn battle_digest(session: &NativeSession) -> u64 {
     use std::fmt::Write;
     struct H(std::collections::hash_map::DefaultHasher);
     impl Write for H {

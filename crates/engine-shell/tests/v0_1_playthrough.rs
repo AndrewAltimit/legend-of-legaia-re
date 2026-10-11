@@ -7,14 +7,14 @@
 //!
 //! **Field leg.** The engine drives a cold boot into Field for the
 //! scenario's scene via [`build_engine_mode_trace_field_live`]
-//! ([`BootSession::enter_field_live`]) and asserts:
+//! ([`NativeSession::enter_field_live`]) and asserts:
 //!   - it actually reaches `SceneMode::Field` (not stuck in `Title`);
 //!   - the replay `[[expected]]` Field rows hold across the run;
 //!   - the retail mode-trace converges (when a non-drifted save resolves);
 //!   - an SC round-trip on the post-Field world is byte-identical.
 //!
 //! **Battle leg.** A NEW GAME cold boot reaches `SceneMode::Battle` for the
-//! opening Rim Elm training fight (`BootSession::begin_new_game` seeds Vahn; the
+//! opening Rim Elm training fight (`NativeSession::begin_new_game` seeds Vahn; the
 //! cold boot installs town01's sparring carrier). It is the game's first fight,
 //! so the new-game seed *is* retail's pre-fight story state. Convergence is
 //! against the cataloged retail anchors that bracket the transition: the
@@ -60,9 +60,9 @@ use std::path::PathBuf;
 
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 use legaia_engine_session::mode_trace::ModeTraceFrame;
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_parity::mode_trace_oracle::{
     build_engine_mode_trace_field_live, build_engine_mode_trace_new_game_battle_leg,
@@ -142,7 +142,7 @@ fn manifest_path() -> Option<PathBuf> {
 /// Build a deterministic synthetic world. Same shape as
 /// `determinism_j2::synthetic_world` so the two gates can share an
 /// implementation when the v0.1 path is real enough to swap the
-/// synthetic driver for a real BootSession.
+/// synthetic driver for a real NativeSession.
 fn synthetic_world(rng_seed: u32) -> World {
     let mut world = World::new();
     while world.actors.len() < 8 {
@@ -373,7 +373,7 @@ fn v0_1_oracle_convergence() {
     //
     // Run the engine for `max(MIN_ORACLE_FRAMES, replay.meta.frames)`
     // ticks via the field-live driver: it calls
-    // `BootSession::enter_field_live`, so the engine reaches
+    // `NativeSession::enter_field_live`, so the engine reaches
     // `SceneMode::Field` for `scene_name` immediately (instead of sitting
     // in `Title` like the bare `load_scene` path), then ticks feeding the
     // replay's expanded pad stream into `World.input` per frame.
@@ -478,7 +478,7 @@ fn v0_1_oracle_convergence() {
             scene: scene_name.to_string(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("reopen for SC round-trip");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("reopen for SC round-trip");
         session
             .enter_field_live(
                 scene_name,
@@ -550,7 +550,7 @@ fn print_scene_mode_transitions(scenario_label: &str, trace: &[ModeTraceFrame]) 
 /// dialogue-accept (no manual engage, no script injection beyond the talk
 /// path's interaction and the dialog-advance poll).
 ///
-/// **Story-seed.** `BootSession::begin_new_game` seeds the opening party (Vahn,
+/// **Story-seed.** `NativeSession::begin_new_game` seeds the opening party (Vahn,
 /// 180 HP) from the `SCUS_942.54` template. The Tetsu fight is the game's first
 /// battle, so this fresh state *is* retail's pre-fight story state - there is no
 /// earlier save to seed from (you cannot save before the tutorial fight). Cold
@@ -582,7 +582,7 @@ fn v0_1_battle_leg_reaches_battle_from_new_game() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     // Story-seed: the new-game opening party = retail pre-Tetsu state.
     session.begin_new_game();
     session
@@ -737,7 +737,7 @@ fn v0_1_battle_leg_walk_talk_accept() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session.begin_new_game();
     session
         .enter_field_live(

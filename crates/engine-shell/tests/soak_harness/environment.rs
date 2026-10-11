@@ -55,14 +55,16 @@ pub(super) fn source() -> Option<Source> {
     Some(Source::Disc(disc))
 }
 
-pub(super) fn open_session(src: &Source) -> BootSession {
+pub(super) fn open_session(src: &Source) -> NativeSession {
     let cfg = BootConfig {
-        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     match src {
-        Source::Extracted(d) => BootSession::open(d, &cfg).expect("open BootSession (extracted)"),
-        Source::Disc(p) => BootSession::open_disc(p, &cfg).expect("open BootSession (disc)"),
+        Source::Extracted(d) => {
+            NativeSession::open(d, &cfg).expect("open NativeSession (extracted)")
+        }
+        Source::Disc(p) => NativeSession::open_disc(p, &cfg).expect("open NativeSession (disc)"),
     }
 }
 

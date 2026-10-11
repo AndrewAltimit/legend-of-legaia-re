@@ -5,7 +5,7 @@
 //! battle forms, swing clips and art banks. The cheats layered on top move
 //! the records through the retail growth tables.
 //!
-//! The headless `BootSession` default stays retail's Vahn-alone roster; this
+//! The headless `NativeSession` default stays retail's Vahn-alone roster; this
 //! test raises the picker flag the way `play-window` and the browser play
 //! page do.
 //!
@@ -14,8 +14,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
 const SCENE: &str = "town01";
@@ -32,7 +32,7 @@ fn extracted_dir() -> Option<PathBuf> {
         .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
-fn open_picker_session() -> Option<BootSession> {
+fn open_picker_session() -> Option<NativeSession> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
@@ -45,7 +45,7 @@ fn open_picker_session() -> Option<BootSession> {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     let Some(defaults) = session.host.new_game_defaults.as_mut() else {
         eprintln!("[skip] no SCUS new-game template reachable from {extracted:?}");
         return None;

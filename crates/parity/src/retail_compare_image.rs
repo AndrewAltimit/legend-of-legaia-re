@@ -223,7 +223,7 @@ fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
 #[derive(Clone, Copy)]
 pub enum FrameEntry<'a> {
     /// A card-load resume of the retail save (`--resume-save`), the order
-    /// the headless channels seed with ([`crate::boot::BootSession::resume_save`]):
+    /// the headless channels seed with ([`legaia_engine_session::native::NativeSession::resume_save`]):
     /// the save's scene entered at the save's position with no free-roam
     /// picker staging, then the world hydrated from the save. Live NPCs
     /// stay on, as in the headless session: a placement's script runs only

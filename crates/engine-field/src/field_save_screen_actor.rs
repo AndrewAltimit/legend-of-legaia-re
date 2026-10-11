@@ -72,7 +72,7 @@
 //!
 //! ## REPLACED-BY: the save screen as host screen state
 //!
-//! `legaia_engine_shell::BootSession::open_field_menu` writes
+//! `legaia_engine_session::BootSession::open_field_menu` writes
 //! `SceneMode::Menu` and enters `GameMode::CardInit` through the mode seat -
 //! which stages no overlay request in the port's model - then
 //! `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the Save /
@@ -211,7 +211,7 @@ impl FieldSaveScreenActor {
     /// PORT: FUN_80024190
     ///
     /// REPLACED-BY: the save screen as host screen state -
-    /// `legaia_engine_shell::BootSession::open_field_menu` performs the mode
+    /// `legaia_engine_session::BootSession::open_field_menu` performs the mode
     /// bounce (`SceneMode::Menu` plus `ModeSeat::enter(GameMode::CardInit)`,
     /// which stages no overlay request),
     /// `legaia_engine_core::field_menu_dispatch::FieldMenuSubsession::build` opens the

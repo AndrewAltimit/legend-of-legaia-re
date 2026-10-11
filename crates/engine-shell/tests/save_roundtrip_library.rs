@@ -6,7 +6,7 @@
 //!
 //! 1. **Load fidelity.** Lift the block through `MountedCard::save_at` (the
 //!    reader both hosts' card Load uses) and land it with
-//!    `BootSession::resume_save` (the shared `resume_card_load` kernel the
+//!    `NativeSession::resume_save` (the shared `resume_card_load` kernel the
 //!    browser page runs too). Straight after the landing, `save_full` must
 //!    give back every field the block carries: the four party records byte
 //!    for byte, the story-flag window, the whole item array, the gold, the
@@ -32,8 +32,8 @@ use std::path::{Path, PathBuf};
 
 use legaia_engine_core::card_write::write_save_into_card;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_save::emu::MountedCard;
 use legaia_save::{SaveFile, SaveResume};
 
@@ -53,13 +53,13 @@ fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn open_session() -> Option<BootSession> {
+fn open_session() -> Option<NativeSession> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from)?;
     if !disc.exists() {
         return None;
     }
     let cfg = BootConfig {
-        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     let mut roots = Vec::new();
@@ -69,10 +69,10 @@ fn open_session() -> Option<BootSession> {
     roots.push(repo_root().join("extracted"));
     for d in roots {
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
-            return Some(BootSession::open(&d, &cfg).expect("open BootSession (extracted)"));
+            return Some(NativeSession::open(&d, &cfg).expect("open NativeSession (extracted)"));
         }
     }
-    Some(BootSession::open_disc(&disc, &cfg).expect("open BootSession (disc)"))
+    Some(NativeSession::open_disc(&disc, &cfg).expect("open NativeSession (disc)"))
 }
 
 fn opts() -> FieldLiveOpts {
@@ -273,7 +273,7 @@ fn blank_card() -> MountedCard {
 }
 
 /// A frame a player could save on: free field roam, nothing modal.
-fn save_ready(s: &BootSession) -> bool {
+fn save_ready(s: &NativeSession) -> bool {
     let w = &s.host.world;
     matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
         && s.field_menu.is_none()
@@ -285,7 +285,7 @@ fn save_ready(s: &BootSession) -> bool {
         && w.active_fmv().is_none()
 }
 
-fn step(session: &mut BootSession, pad: u16) {
+fn step(session: &mut NativeSession, pad: u16) {
     session.host.world.set_pad(pad);
     let _ = session.tick();
     let w = &mut session.host.world;
@@ -297,7 +297,7 @@ fn step(session: &mut BootSession, pad: u16) {
 /// (so walk-on triggers, placements and their scripts run against the
 /// party), stand for [`SETTLE_FRAMES`], then tap Cross through whatever the
 /// walk opened until the field is free again. `false` when it never is.
-fn settle(session: &mut BootSession) -> bool {
+fn settle(session: &mut NativeSession) -> bool {
     const UP: u16 = 0x0010;
     const RIGHT: u16 = 0x0020;
     const DOWN: u16 = 0x0040;
@@ -323,7 +323,7 @@ fn settle(session: &mut BootSession) -> bool {
 /// The save a player would write now, through a blank card and back, then
 /// resumed: every disagreement between the two `save_full`s, plus the card
 /// codec's own (the block read back vs the save written into it).
-fn card_round_trip(session: &mut BootSession) -> Vec<String> {
+fn card_round_trip(session: &mut NativeSession) -> Vec<String> {
     let mut problems = Vec::new();
     let before = session.host.world.save_full();
     let resume = session.current_resume();

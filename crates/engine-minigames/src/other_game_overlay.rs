@@ -199,7 +199,7 @@ pub fn cue_volume(word: u32) -> i32 {
 // [`ScoreTallyStep::cues`]. `legaia-engine-audio` grew the explicit key-on
 // that takes it (`VoiceAttr` / `key_on_voice_attr`, the port of
 // `FUN_80065034`), and the native window drains the queue into it through
-// `AudioBgmDirector::key_on_voice_attr`. The browser minigames page owns a
+// `AudioDirector::key_on_voice_attr`. The browser minigames page owns a
 // live `WebAudioOut` of its own now and keys the same set through
 // `LegaiaMinigames::muscle_tally_voice`, driven off the INTERVAL screen's tick
 // because that page replays the ramp from the screen rather than stepping it

@@ -866,7 +866,7 @@ Every reader of the cell is a volume setter. Across the dumped corpus it has 26 
 
 The **screen fade is a different scalar**: `_DAT_8007B440`, drawn each frame by the wipe / curtain emitter `FUN_8003479C` (clamped `0xF2`). It is ramped by the function at VA `0x801ED308` in the menu / cutscene overlay family (see `ghidra/scripts/funcs/801ed308.txt`: own prologue, `jal 0x8003479c` at `0x801ED3F0` / `0x801ED4BC` / `0x801ED510`). Name the overlay when citing that VA: in the **battle** image `0x801ED308` is interior to `FUN_801EC3E4` (the underdog-rewrite arm's power-scalar read), which touches `_DAT_8007B440` nowhere. The two scalars ramp together, because a summon dims the screen and ducks the music.
 
-Port: `BattleActionHost::duck_audio_level` -> `BattleEvent::DuckAudioLevel` (`75` from the summon / capture arms, `100` once on the `0x50 -> 0x51` transition). `engine-session`'s `AudioBgmDirector` mirrors the cell (`duck_level`, seeded `0xD7`), ramps it one unit per frame toward the target (`tick_duck`) and re-applies it through `AudioOut::set_sequencer_master_vol`. The browser play page consumes the same event through `play_battle_audio::drain_battle_audio_cues`.
+Port: `BattleActionHost::duck_audio_level` -> `BattleEvent::DuckAudioLevel` (`75` from the summon / capture arms, `100` once on the `0x50 -> 0x51` transition). `engine-session`'s `AudioDirector` mirrors the cell (`duck_level`, seeded `0xD7`), ramps it one unit per frame toward the target (`tick_duck`) and re-applies it through `AudioOut::set_sequencer_master_vol`. The browser play page consumes the same event through `play_battle_audio::drain_battle_audio_cues`.
 
 <a id="battle-voice-cues---the-xa30-grunt-vs-the-xa2xa4xa6-arts-shout"></a>
 ### Battle voice cues

@@ -4,7 +4,7 @@
 
 use super::*;
 
-impl<S: AudioSink> AudioBgmDirector<S> {
+impl<S: AudioSink> AudioDirector<S> {
     /// Key one voice from an explicit
     /// [`VoiceAttr`](legaia_engine_audio::VoiceAttr) set - the shape retail's
     /// `FUN_80065034` takes, and the one a caller that already holds the

@@ -41,8 +41,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::world::World;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 use legaia_mednafen::SaveState;
 use legaia_ram_image::ScenarioManifest;
@@ -132,10 +132,10 @@ struct WallPress {
     pz: i32,
     live_grid: Vec<u8>,
     world: World,
-    /// A fresh full `BootSession` entered on the grid-matched scene - the
+    /// A fresh full `NativeSession` entered on the grid-matched scene - the
     /// engine's own scene context (resolver-loaded `.MAP` + prescript
     /// paints), for the full-stack press legs.
-    session: BootSession,
+    session: NativeSession,
 }
 
 /// Resolve + load a wall-press scenario; `None` = skip (missing disc /
@@ -209,7 +209,7 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
     };
     let mut best: Option<(String, usize)> = None;
     for candidate in [scene.as_str(), "town01"] {
-        let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
         if session
             .enter_field_live(candidate, &FieldLiveOpts::default())
             .is_err()
@@ -243,7 +243,7 @@ fn load_wall_press(label: &str) -> Option<WallPress> {
     );
 
     // A fresh full session on the matched scene for the full-stack legs.
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
     session
         .enter_field_live(&matched_scene, &FieldLiveOpts::default())
         .expect("re-enter matched scene");
@@ -441,7 +441,7 @@ fn wall_press_down_engine_rest_matches_retail() {
 /// `.MAP`, prescript paints, real pad -> camera-remapped locomotion via
 /// `World::tick`) and return where the player rests.
 fn full_scene_press_rest(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     edge_probes: bool,
     start: (i16, i16),
     pad_mask: u16,
@@ -462,7 +462,7 @@ fn full_scene_press_rest(
 }
 
 /// Full-stack standoff: with the flag on, a held d-pad press inside a REAL
-/// scene entry (`BootSession::enter_field_live` - the resolver-loaded `.MAP`
+/// scene entry (`NativeSession::enter_field_live` - the resolver-loaded `.MAP`
 /// grid plus the engine-executed prescript paints, walked through the pad ->
 /// camera-remap -> `step_field_locomotion` path) rests at the captured retail
 /// wall standoff byte-exactly. The unit-level legs above isolate the stepper

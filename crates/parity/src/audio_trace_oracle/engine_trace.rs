@@ -3,16 +3,16 @@
 
 use super::*;
 
-/// Run a [`BootSession`] on the configured scene with a private headless
+/// Run a [`NativeSession`] on the configured scene with a private headless
 /// SPU + [`TraceBgmDirector`] in parallel. Samples per-frame voice /
 /// master / reverb state.
 ///
-/// The audio side never touches cpal - the BootSession is constructed with
+/// The audio side never touches cpal - the NativeSession is constructed with
 /// `enable_audio = false` and we drive a standalone
 /// [`legaia_engine_audio::Spu`] on the side. This makes the oracle CI-safe.
 ///
 /// The field VM drives BGM playback through the director: after each
-/// [`BootSession::tick`] we call
+/// [`NativeSession::tick`] we call
 /// [`legaia_engine_core::scene_host::SceneHost::route_bgm_events`] to deliver
 /// op `0x35` events. `opts.bgm_id` is a manual boot-time start that fires
 /// before the main loop - useful for scenes whose prescripts don't kick
@@ -27,8 +27,8 @@ pub fn build_engine_audio_trace(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     enter_scene_for_trace(&mut session, &opts.scene)?;
 
@@ -97,19 +97,19 @@ pub fn build_engine_audio_trace(
     Ok(out)
 }
 
-/// Drop a freshly-opened [`BootSession`] into live field dispatch before an
+/// Drop a freshly-opened [`NativeSession`] into live field dispatch before an
 /// audio / PCM trace samples it.
 ///
-/// [`BootSession::open`] only calls `load_scene`: the world stays in
+/// [`NativeSession::open`] only calls `load_scene`: the world stays in
 /// [`SceneMode::Title`](legaia_engine_mode::mode::SceneMode) with **no field
 /// record installed**, so the field VM steps nothing and op `0x35` never
 /// executes. Every other engine-side oracle already goes through
-/// [`BootSession::enter_field_live`] (the mode-trace builders, `sim-trace`);
+/// [`NativeSession::enter_field_live`] (the mode-trace builders, `sim-trace`);
 /// the two audio oracles were the ones that did not, which is the whole
 /// reason their engine traces reported an empty voice mask on every frame
 /// while retail keyed voices.
 ///
-/// [`legaia_engine_session::boot::FieldLiveOpts::default`] rather than the window's playable
+/// [`legaia_engine_session::session::FieldLiveOpts::default`] rather than the window's playable
 /// preset: a no-input trace window wants the field VM running and nothing
 /// else, so the step-driven encounter roll and player-driven battles stay
 /// off and the sampled audio is the scene's own entry music.
@@ -128,11 +128,11 @@ pub fn build_engine_audio_trace(
 /// for the whole window - a trace whose playhead sits at tick 0 and whose
 /// voice mask stays empty, which reads exactly like "the engine never started
 /// any BGM".
-pub(crate) fn enter_scene_for_trace(session: &mut BootSession, scene: &str) -> Result<()> {
+pub(crate) fn enter_scene_for_trace(session: &mut NativeSession, scene: &str) -> Result<()> {
     session.host.world.seed_free_roam_story_baseline(scene);
     session.enter_field_live(
         scene,
-        &legaia_engine_session::boot::FieldLiveOpts::default(),
+        &legaia_engine_session::session::FieldLiveOpts::default(),
     )?;
     Ok(())
 }
@@ -143,7 +143,7 @@ pub(crate) fn enter_scene_for_trace(session: &mut BootSession, scene: &str) -> R
 /// its own VAB. The manual `--bgm-id` override took only the first of those
 /// two paths, so an override naming a real music track resolved to nothing.
 pub(crate) fn start_bgm_id_directly(
-    session: &BootSession,
+    session: &NativeSession,
     director: &mut TraceBgmDirector,
     id: u16,
 ) -> Result<()> {
@@ -161,7 +161,7 @@ pub(crate) fn start_bgm_id_directly(
 /// The PCM-trace loop wants the same per-frame voice-activity sampler
 /// but the function is otherwise private to this module.
 pub(crate) fn sample_engine_frame_for_pcm(
-    session: &BootSession,
+    session: &NativeSession,
     spu: &legaia_engine_audio::Spu,
     sequencer: Option<&legaia_engine_audio::Sequencer>,
 ) -> AudioTraceFrame {
@@ -169,7 +169,7 @@ pub(crate) fn sample_engine_frame_for_pcm(
 }
 
 pub(super) fn sample_engine_frame(
-    session: &BootSession,
+    session: &NativeSession,
     spu: &legaia_engine_audio::Spu,
     sequencer: Option<&legaia_engine_audio::Sequencer>,
 ) -> AudioTraceFrame {

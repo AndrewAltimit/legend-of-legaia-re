@@ -1,6 +1,6 @@
 //! The play page's BGM: the field VM's op-`0x35` events route into the
 //! page's [`crate::play_sfx::PageDirector`] - the native window's
-//! `AudioBgmDirector` (`crates/engine-session/src/bgm.rs`), one
+//! `AudioDirector` (`crates/engine-session/src/bgm.rs`), one
 //! implementation of `legaia_engine_core::scene_host::BgmDirector` for both hosts,
 //! so a start / pause / stop lands the same way on each. What stays here is
 //! the page's own hand-off timing: the title -> load hand-off and the start

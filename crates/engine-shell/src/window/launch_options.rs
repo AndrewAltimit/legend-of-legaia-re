@@ -191,7 +191,7 @@ pub struct DebugSeeds {
     /// shared bank `DAT_80085758`.
     pub story_flags: Vec<u16>,
     /// `--resume-save <PATH>`: an LGSF file to land the way a card Load
-    /// does ([`crate::boot::BootSession::resume_save`]) in
+    /// does ([`legaia_engine_session::native::NativeSession::resume_save`]) in
     /// place of the `--scene` door entry.
     pub resume_save: Option<std::path::PathBuf>,
     /// `--cheat-*`: the player cheats applied once the scene is entered.

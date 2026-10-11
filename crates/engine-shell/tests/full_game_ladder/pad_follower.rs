@@ -42,7 +42,7 @@ pub(super) fn inert_band(
     })
 }
 
-pub(super) fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
+pub(super) fn pad_avoid(session: &NativeSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let mut out = hazards(session, "");
     if session.host.world.mode == SceneMode::Field
@@ -76,7 +76,7 @@ pub(super) fn pad_avoid(session: &BootSession, keep: Option<(i16, i16)>) -> Hash
 /// The gate-1 walk-on tiles of the loaded field scene whose partition-2
 /// record cleanly clears a C1 latch of the walk-on record on `door` - the
 /// bands that open the way to it.
-pub(super) fn unlatching_bands(session: &BootSession, door: (i16, i16)) -> Vec<(i32, i32)> {
+pub(super) fn unlatching_bands(session: &NativeSession, door: (i16, i16)) -> Vec<(i32, i32)> {
     use legaia_engine_field::man_field_scripts::{
         FlagBank, partition2_record_gates, walk_partition_gflag_sites,
     };
@@ -116,7 +116,7 @@ pub(super) fn unlatching_bands(session: &BootSession, door: (i16, i16)) -> Vec<(
 /// door bands alone (a live walk-on band then gets crossed, as a player
 /// crosses one that stands in the only way through).
 pub(super) fn plan_around(
-    session: &BootSession,
+    session: &NativeSession,
     from: Cell,
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
@@ -148,7 +148,7 @@ pub(super) fn plan_around(
 /// probe-checked steps reads blocked although the free movement that got
 /// it there can leave. Head for the nearest cell a step can leave; the
 /// route is planned again from there.
-pub(super) fn unwedge(session: &BootSession, from: Cell) -> Vec<Cell> {
+pub(super) fn unwedge(session: &NativeSession, from: Cell) -> Vec<Cell> {
     let w = &session.host.world;
     let open = |c: Cell| {
         let (x, z) = cell_center(c);
@@ -191,7 +191,7 @@ pub(super) fn unwedge(session: &BootSession, from: Cell) -> Vec<Cell> {
 /// cuts the corner of), every move costing one step, ending on the open
 /// tile nearest `goal`. The lattice planner finishes from there.
 pub(super) fn overworld_tile_route(
-    session: &BootSession,
+    session: &NativeSession,
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
 ) -> Vec<(i32, i32)> {
@@ -253,7 +253,7 @@ pub(super) fn overworld_tile_route(
 /// next pressed tick commits exactly one sub-step). `None` when the camera
 /// gives no pad for the move's world direction.
 pub(super) fn overworld_corner_pad(
-    session: &BootSession,
+    session: &NativeSession,
     next: (i32, i32),
     tapped: bool,
 ) -> Option<u16> {
@@ -308,13 +308,13 @@ pub(super) fn overworld_corner_pad(
 /// tiles of `goal`. Random encounters on the way are fled; a scripted
 /// sequence the walk sets off (a band's record, a talk) is paged through.
 pub(super) fn pad_walk(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
     within: i32,
 ) -> Result<Walk, String> {
     let dist = |t: (i32, i32)| (t.0 - i32::from(goal.0)).abs() + (t.1 - i32::from(goal.1)).abs();
-    let here = |s: &BootSession| {
+    let here = |s: &NativeSession| {
         let (x, z) = player_xz(s);
         dispatch_tile(x, z)
     };
@@ -914,10 +914,10 @@ pub(super) fn pad_walk(
 /// and the collision stops the step, which is how a player lines up a talk
 /// or leans on a door. `Some(scene)` if a scene change landed.
 pub(super) fn pad_lean(
-    session: &mut BootSession,
-    at: impl Fn(&BootSession) -> Option<(i16, i16)>,
+    session: &mut NativeSession,
+    at: impl Fn(&NativeSession) -> Option<(i16, i16)>,
     frames: usize,
-    done: impl Fn(&BootSession) -> bool,
+    done: impl Fn(&NativeSession) -> bool,
 ) -> Option<String> {
     for _ in 0..frames {
         if done(session) || !walking(session) {
@@ -939,7 +939,7 @@ pub(super) fn pad_lean(
 
 /// The four tiles beside `tile`, nearest to the player first, skipping any
 /// that carry a `.MAP` trigger (standing there would run its record).
-pub(super) fn beside(session: &BootSession, tile: (i16, i16)) -> Vec<(i16, i16)> {
+pub(super) fn beside(session: &NativeSession, tile: (i16, i16)) -> Vec<(i16, i16)> {
     let claimed = claimed_tiles(session);
     let (px, pz) = player_xz(session);
     let me = dispatch_tile(px, pz);
@@ -980,7 +980,7 @@ pub(super) fn beside(session: &BootSession, tile: (i16, i16)) -> Vec<(i16, i16)>
 
 /// Step onto walk-on `tile` with the pad: walk to an inert tile beside it,
 /// then onto it, so the dispatch sees a genuine tile change.
-pub(super) fn pad_step_onto(session: &mut BootSession, tile: (u8, u8)) -> Result<Walk, String> {
+pub(super) fn pad_step_onto(session: &mut NativeSession, tile: (u8, u8)) -> Result<Walk, String> {
     let goal = (i16::from(tile.0), i16::from(tile.1));
     let avoid = pad_avoid(session, None);
     let mut last = String::from("no inert tile beside it");
@@ -1024,7 +1024,7 @@ pub(super) fn pad_step_onto(session: &mut BootSession, tile: (u8, u8)) -> Result
 }
 
 /// Whether the player stands on `tile`'s dispatch tile.
-pub(super) fn on_tile(session: &BootSession, tile: (i16, i16)) -> bool {
+pub(super) fn on_tile(session: &NativeSession, tile: (i16, i16)) -> bool {
     let (x, z) = player_xz(session);
     dispatch_tile(x, z) == (i32::from(tile.0), i32::from(tile.1))
 }

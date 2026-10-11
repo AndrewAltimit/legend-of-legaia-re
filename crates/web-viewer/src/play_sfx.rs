@@ -1,7 +1,7 @@
 //! Sound-effect channel for the browser **play page**.
 //!
 //! The page plays its sound through the same director the native window
-//! does: [`legaia_engine_session::AudioBgmDirector`], generic over the audio
+//! does: [`legaia_engine_session::AudioDirector`], generic over the audio
 //! output, here a [`PageSink`] - the live `WebAudioOut` in a browser and a
 //! headless [`legaia_engine_audio::TestAudioSink`] off wasm, so the tests
 //! exercise the real staging and firing path. The director owns the SFX
@@ -68,7 +68,7 @@ pub(crate) type PageSink = legaia_engine_audio::WebAudioOut;
 pub(crate) type PageSink = legaia_engine_audio::TestAudioSink;
 
 /// The page's audio director - the native window's, over [`PageSink`].
-pub(crate) type PageDirector = legaia_engine_session::AudioBgmDirector<PageSink>;
+pub(crate) type PageDirector = legaia_engine_session::AudioDirector<PageSink>;
 
 /// `_DAT_8007B910`'s reference value, what the readout shows for the duck
 /// before a director exists.
@@ -515,7 +515,7 @@ impl LegaiaRuntime {
     /// frame, and a line first asked for at its op sounded late - then the
     /// field's one-shots (op `0x36`'s XA arm, the scripted-scene voice leg).
     /// The rest of the field-side SFX routing is the session's
-    /// (`BootSession::tick` -> `AudioBgmDirector::route_world_sfx`); the page
+    /// (`BootSession::tick` -> `AudioDirector::route_world_sfx`); the page
     /// was declared as staging field XA itself, so the session leaves these
     /// two queues for it. The native window reads a clip's span synchronously
     /// and drops the prestage list.

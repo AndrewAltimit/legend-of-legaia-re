@@ -26,8 +26,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -46,7 +46,7 @@ const FRAME_BUDGET: usize = 20_000;
 
 /// Play placement `slot`'s interaction record to its end, mashing confirm.
 /// Returns `(boxes_shown, terminated, opened_a_picker)`.
-fn play(session: &mut BootSession, slot: u8, pick_last_option: bool) -> (usize, bool, bool) {
+fn play(session: &mut NativeSession, slot: u8, pick_last_option: bool) -> (usize, bool, bool) {
     let w = &mut session.host.world;
     w.dialog.inline = None;
     w.dialog.current = None;
@@ -95,7 +95,7 @@ fn rim_elm_conversations_end() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");

@@ -7,7 +7,7 @@
 //!
 //!   1. Builds an engine audio trace via
 //!      [`legaia_parity::audio_trace_oracle::engine_trace_from_paths`]:
-//!      boots a [`BootSession`](legaia_engine_shell::BootSession) headlessly
+//!      boots a [`NativeSession`](legaia_engine_session::native::NativeSession) headlessly
 //!      (`enable_audio = false`), runs a private standalone
 //!      [`legaia_engine_audio::Spu`] in parallel, ticks `FRAMES` frames,
 //!      and samples voice / master / reverb state each frame. The trace

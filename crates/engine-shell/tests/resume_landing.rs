@@ -1,5 +1,5 @@
 //! Pins the native half of the shared resume / New Game entry
-//! (`BootSession::resume_save` / `BootSession::start_new_game`, both over
+//! (`NativeSession::resume_save` / `NativeSession::start_new_game`, both over
 //! `legaia_engine_core::resume`). The browser page's `play_resume_save` /
 //! `play_new_game` pin the same landings in `crates/web-viewer/src/resume.rs`.
 //!
@@ -9,8 +9,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_core::resume::ResumeLanding;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 fn extracted_dir() -> Option<PathBuf> {
     if let Some(d) = std::env::var_os("LEGAIA_EXTRACTED_DIR").map(PathBuf::from)
@@ -27,7 +27,7 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn open() -> Option<BootSession> {
+fn open() -> Option<NativeSession> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
@@ -40,7 +40,7 @@ fn open() -> Option<BootSession> {
         scene: "town01".into(),
         enable_audio: false,
     };
-    Some(BootSession::open(&extracted, &cfg).expect("open boot session"))
+    Some(NativeSession::open(&extracted, &cfg).expect("open boot session"))
 }
 
 #[test]

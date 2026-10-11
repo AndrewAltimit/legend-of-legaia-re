@@ -20,8 +20,8 @@
 use std::path::{Path, PathBuf};
 
 use legaia_engine_core::live_loop::LiveLoopOpts;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -33,12 +33,12 @@ fn extracted_dir() -> Option<PathBuf> {
     None
 }
 
-fn boot(extracted: &Path, scene: &str) -> BootSession {
+fn boot(extracted: &Path, scene: &str) -> NativeSession {
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(extracted, &cfg).expect("open extracted boot session");
     let opts = FieldLiveOpts {
         live_loop: true,
         player_battle: true,
@@ -139,7 +139,7 @@ fn both_hosts_option_shapes_arm_the_same_world_state() {
         scene: "map03".to_string(),
         enable_audio: false,
     };
-    let mut browserish = BootSession::open(&extracted, &cfg).expect("open");
+    let mut browserish = NativeSession::open(&extracted, &cfg).expect("open");
     browserish
         .host
         .enter_field_scene("map03", 0)

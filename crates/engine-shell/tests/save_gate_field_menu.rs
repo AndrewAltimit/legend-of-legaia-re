@@ -1,4 +1,4 @@
-//! Disc-gated: `BootSession::open_field_menu` carries the scene's save
+//! Disc-gated: `NativeSession::open_field_menu` carries the scene's save
 //! permission onto the pause menu it builds.
 //!
 //! This is the production path the windowed host and the headless tick share:
@@ -15,8 +15,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_menus::field_menu::FieldMenuRow;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -39,7 +39,7 @@ fn opening_the_pause_menu_in_a_no_save_scene_greys_the_save_row() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");
@@ -115,7 +115,7 @@ fn start_is_inert_while_a_dialogue_owns_the_player() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");

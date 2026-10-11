@@ -5,16 +5,16 @@
 //! the SPU's voice-activity state instead of the engine's high-level
 //! dispatcher. The retail side lifts a single-frame snapshot from a
 //! mednafen save state's `SPU` section; the engine side ticks a
-//! [`BootSession`] and runs a private headless SPU + sequencer in parallel,
+//! [`NativeSession`] and runs a private headless SPU + sequencer in parallel,
 //! sampling voice / master / reverb state each frame.
 //!
 //! **Asymmetry.** Two known mismatches both sides explicitly model:
 //!
-//! 1. **Headless engine SPU.** [`BootSession`] only attaches a real cpal
+//! 1. **Headless engine SPU.** [`NativeSession`] only attaches a real cpal
 //!    `AudioOut` when `enable_audio = true`, which fails in CI (no audio
 //!    device). The oracle constructs a standalone
 //!    [`legaia_engine_audio::Spu`] + [`legaia_engine_audio::Sequencer`] in
-//!    parallel with the BootSession's headless tick and routes
+//!    parallel with the NativeSession's headless tick and routes
 //!    scene-resolved BGM events into it via a private
 //!    [`TraceBgmDirector`]. This isn't bit-identical to the retail SPU,
 //!    but it captures the same voice-activity envelope: which channel
@@ -37,8 +37,8 @@ use legaia_engine_core::scene_host::BgmDirector;
 use legaia_seq::Seq;
 use serde::{Deserialize, Serialize};
 
-use crate::BootSession;
-use legaia_engine_session::boot::BootConfig;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 mod divergence;
 mod engine_trace;
@@ -126,7 +126,7 @@ pub struct VoiceTraceFrame {
 /// distinguish "didn't observe" from "observed 0".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AudioTraceFrame {
-    /// Frame counter. Engine: wall-clock frame from [`BootSession::frames`].
+    /// Frame counter. Engine: wall-clock frame from [`NativeSession::frames`].
     /// Retail: always 0 (save states are single-frame).
     pub frame: u64,
     /// Sequencer playhead in PPQN ticks. Engine: from
@@ -238,7 +238,7 @@ pub struct AudioTraceBuildOptions {
 impl Default for AudioTraceBuildOptions {
     fn default() -> Self {
         Self {
-            scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
+            scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
             bgm_id: None,
             us_per_frame: 1_000_000.0 / 60.0,
             frames: 60,

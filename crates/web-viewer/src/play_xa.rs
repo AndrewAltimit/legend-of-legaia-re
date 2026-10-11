@@ -39,7 +39,7 @@
 //!   starter `FUN_8003D53C(clip_slot, channel, duration_sectors)` takes.
 //!
 //! Both banks belong to the page's audio director once it exists (the native
-//! window's `AudioBgmDirector`), and both play through its `play_art_shout` /
+//! window's `AudioDirector`), and both play through its `play_art_shout` /
 //! `play_xa_clip` - the native calls, over the page's output: the modelled
 //! CD-response start delay so the voice trails the animation, the one-deep
 //! back-to-back queue, and a mix point **before** the page's post-mixer gain,
@@ -132,7 +132,7 @@ impl LegaiaRuntime {
 
     /// Fire the Tactical-Arts shout for `(cslot, action_constant)` through
     /// the XA mixing path - the twin of the native
-    /// `AudioBgmDirector::play_art_shout`. Resolves the cue against the
+    /// `AudioDirector::play_art_shout`. Resolves the cue against the
     /// bank's channel pools (retail `FUN_8004C140`'s pick, no immediate
     /// repeat) and stages the clip with the modelled CD-response delay so the
     /// shout starts *after* the art animation that requested it. A second
@@ -163,7 +163,7 @@ impl LegaiaRuntime {
     }
 
     /// Play one CD-XA clip request - the engine's `FUN_8003D53C(clip,
-    /// channel, dur)`, the twin of the native `AudioBgmDirector::play_xa_clip`:
+    /// channel, dur)`, the twin of the native `AudioDirector::play_xa_clip`:
     /// the staged `(slot, channel)` PCM cut at the retail read span
     /// (`XaClipBank::cut_frames`), through the same XA path as the shouts
     /// with the same start delay.

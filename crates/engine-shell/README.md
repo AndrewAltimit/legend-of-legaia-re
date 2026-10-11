@@ -15,20 +15,13 @@ straight out of a `.bin` image; `--extracted-root <dir>` reads the output of
 
 ## Library: the wiring layer
 
-The crate root (`src/lib.rs`) holds the glue every embedding shares:
+The session this host runs is `legaia-engine-session`'s, over the cpal
+output: `legaia_engine_session::native::NativeSession`
+(`BootSession<AudioOut>`) and `NativeAudioDirector`
+(`AudioDirector<AudioOut>`), opened from an extracted tree or a disc image
+([`native`](../engine-session/src/native.rs)). The crate root (`src/lib.rs`)
+holds the glue around it:
 
-- [`BootSession`](../engine-session/src/boot.rs) / `BootConfig` - the boot flow
-  (defined in `legaia_engine_session::boot`; `BootSession` here is its type
-  alias over the cpal output). Opens the
-  PROT + CDNAME map, loads a starting scene (`town01` by default), uploads
-  the scene's primary VAB to the SPU, then drives world + camera + event
-  routing each frame. Mirrors the retail boot sequence.
-- [`AudioBgmDirector`](../engine-session/src/audio_director.rs) - (defined in
-  `legaia_engine_session::audio_director`, generic over the audio output;
-  the name here is its type alias over the cpal output) the
-  `legaia_engine_core::scene_host::BgmDirector` that parses the SEQ bytes the
-  field VM resolves through the BGM table, builds a sequencer, and feeds a
-  cpal-backed audio output. Field-VM op `0x35` (BGM start) routes here.
 - [`cutscene_av`](src/cutscene_av.rs) - STR (MDEC video + interleaved XA
   audio) windowed playback over the shared `legaia_mdec::str_av` demux (the
   play page's too), paced by `engine-system::movie::cutscene::MovieClock`.

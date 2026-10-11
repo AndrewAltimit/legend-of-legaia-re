@@ -4,12 +4,12 @@
 //! `scripts/scenarios.toml` that has BOTH an `expected_active_scene`
 //! AND an on-disk `.mc{slot}` mednafen save, this test:
 //!
-//!   1. Boots a [`BootSession`](legaia_engine_shell::BootSession) on
+//!   1. Boots a [`NativeSession`](legaia_engine_session::native::NativeSession) on
 //!      the resolved scene and ticks it `FRAMES` times, sampling
 //!      `(scene_mode, active_scene)` per frame. `phase = "menu"`
 //!      scenarios additionally thread a scripted Start press so the
 //!      session opens the field pause menu headlessly
-//!      (`BootSession::open_field_menu`, the retail CARD pair).
+//!      (`NativeSession::open_field_menu`, the retail CARD pair).
 //!   2. Lifts a single `(game_mode, scene_mode, active_scene)` snapshot
 //!      out of the matching mednafen `.mc{slot}` save.
 //!   3. Asserts the engine's trace converges with the retail snapshot:
@@ -173,8 +173,8 @@ fn mode_trace_e3_all_scenarios_converge() {
         // `phase = "menu"` captures hold the field PAUSE MENU open, which
         // retail runs under game_mode 0x17 (CARD MODE, 23 - the menu/memory-
         // card overlay's per-frame mode; all six library menu saves read 0x17
-        // at 0x8007B83C). BootSession hosts the same field-menu runtime
-        // headlessly (Start-edge path in `BootSession::tick` →
+        // at 0x8007B83C). NativeSession hosts the same field-menu runtime
+        // headlessly (Start-edge path in `NativeSession::tick` →
         // `open_field_menu`), so these scenarios drive a scripted Start press
         // and must converge on the full menu state: SceneMode::Menu + the
         // same active scene + game_mode 0x17 (compared whenever both sides

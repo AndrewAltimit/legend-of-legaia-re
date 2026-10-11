@@ -19,7 +19,7 @@ pub(super) struct Door {
 /// The doors toward `dest` from the loaded scene, and - when there are none -
 /// why, in terms of the disc structures.
 pub(super) fn doors_to(
-    session: &BootSession,
+    session: &NativeSession,
     graph: &DiscGraph,
     dest: &str,
 ) -> Result<Vec<Door>, String> {
@@ -151,7 +151,7 @@ pub(super) fn doors_to(
 
 /// Seat one tile off `tile` and onto it, so the walk-on dispatch sees a
 /// genuine tile change.
-pub(super) fn step_onto(session: &mut BootSession, tile: (u8, u8)) {
+pub(super) fn step_onto(session: &mut NativeSession, tile: (u8, u8)) {
     session.host.world.set_pad(0);
     // The approach tile must itself be inert: a kind-1 band there spawns its
     // own record, and a kind-0 teleport there arms a warp whose landing, a
@@ -176,7 +176,7 @@ pub(super) fn step_onto(session: &mut BootSession, tile: (u8, u8)) {
 
 /// Tiles of the loaded field scene that carry a `.MAP` trigger of either
 /// kind (kind-1 record bands, kind-0 intra-scene teleports).
-pub(super) fn claimed_tiles(session: &BootSession) -> HashSet<(u8, u8)> {
+pub(super) fn claimed_tiles(session: &NativeSession) -> HashSet<(u8, u8)> {
     let mut out = HashSet::new();
     if session.host.world.mode != SceneMode::Field {
         return out;
@@ -196,7 +196,7 @@ pub(super) fn claimed_tiles(session: &BootSession) -> HashSet<(u8, u8)> {
 
 /// Try `doors` by seating; `Ok(entered)` for the first that changed scene.
 pub(super) fn seated_hop(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     dest: &str,
 ) -> Result<String, String> {
@@ -232,7 +232,7 @@ pub(super) fn seated_hop(
 /// P2[25], the mist-night movie). `None` when no such talk exists;
 /// `Some(Err)` when talks ran and none left the scene.
 pub(super) fn talk_hop(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     dest: &str,
 ) -> Option<Result<String, String>> {
@@ -312,7 +312,7 @@ pub(super) fn talk_hop(
 
 /// The loaded scene's MAN, parsed, and its `.MAP` triggers.
 pub(super) fn scene_man_and_triggers(
-    session: &BootSession,
+    session: &NativeSession,
 ) -> Option<(
     legaia_scene_formats::man_section::ManFile,
     Vec<u8>,
@@ -330,7 +330,7 @@ pub(super) fn scene_man_and_triggers(
 /// For every walk-on site whose record names `dest`: the record, its
 /// partition-2 C1 / C2 story gates (retail `FUN_8003BDE0`) and which of them
 /// the live flag bank fails - the one-level-down reason a door stays shut.
-pub(super) fn site_gate_report(session: &BootSession, dest: &str) -> String {
+pub(super) fn site_gate_report(session: &NativeSession, dest: &str) -> String {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return "scene MAN / triggers unavailable".into();

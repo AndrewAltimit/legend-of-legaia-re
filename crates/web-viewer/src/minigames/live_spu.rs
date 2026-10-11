@@ -18,7 +18,7 @@ use super::*;
 // `FUN_801D1288` resolves a whole `(voice, VAB id, program, tone, note, fine,
 // vol_l, vol_r)` set, ported as `other_game_overlay::arena_voice_cue` ->
 // `VoiceAttrCue`, and the native window drives it through
-// `AudioBgmDirector::key_on_voice_attr`. The catalog path
+// `AudioDirector::key_on_voice_attr`. The catalog path
 // (`SfxBank::play_one_shot`) could never sound it.
 //
 // So this block is the page's `play_sfx`: one `WebAudioOut` the entry point

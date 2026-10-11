@@ -93,7 +93,7 @@ STD_METHOD_NAMES = {
 
 
 # Host fns the walk does not enter. The play page's `audio_director` builds
-# the shared `AudioBgmDirector` the first time anything needs it and stages
+# the shared `AudioDirector` the first time anything needs it and stages
 # its resident banks against the disc - the native session's boot staging,
 # which no native frame kernel reaches either. Following it would charge
 # that one-time install to every frame step that fires a cue.

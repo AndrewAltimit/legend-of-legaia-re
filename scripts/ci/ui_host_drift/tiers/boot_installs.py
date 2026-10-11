@@ -45,7 +45,7 @@ def check_boot_installs() -> tuple[list[str], list[str], int]:
     """Tier 13. `(problems, waived_notes, native_installs_checked)`."""
     if not BOOT_NATIVE.is_file():
         return [f"boot installs: {BOOT_NATIVE.relative_to(REPO)} missing"], [], 0
-    # The boot module is `boot.rs` plus its `boot/` children; an install in
+    # The session module is `session.rs` plus its `session/` children; an install in
     # any of them is the native boot's.
     native_src = "\n".join(
         p.read_text(encoding="utf-8")

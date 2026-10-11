@@ -165,7 +165,7 @@ impl RetailBattle {
 /// Run `drive` from the round prompt through the pad path. The ticks it took,
 /// or `None` when the phase was never reached (or the fight ended first).
 pub(super) fn run_drive(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     director: &mut crate::retail_compare::RecordingDirector,
     drive: BattleDrive,
     age_short: &mut Option<u16>,

@@ -9,7 +9,7 @@ from ui_host_drift.roots import REPO
 # Tier 13 - boot installs: does the page's disc load install every World
 # table the native boot does?
 #
-# The native boot (`crates/engine-session/src/boot.rs`) installs disc tables
+# The native boot (`crates/engine-session/src/session.rs`) installs disc tables
 # onto the world one call at a time, and the page's `load_disc` repeats the
 # list by hand. Nothing failed when the page's copy fell behind: every
 # consumer has a disc-free fallback, so six progression tables (XP curve +
@@ -31,5 +31,5 @@ from ui_host_drift.roots import REPO
 # catalogs, ...) still need a page call of their own.
 # ---------------------------------------------------------------------------
 
-BOOT_NATIVE = REPO / "crates/engine-session/src/boot.rs"
+BOOT_NATIVE = REPO / "crates/engine-session/src/session.rs"
 BOOT_WEB_ROOT = REPO / "crates/web-viewer/src"

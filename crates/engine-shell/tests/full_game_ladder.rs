@@ -34,7 +34,7 @@
 //! | 3 | `progresses` | the next milestone is reached by **seated** traversal - the player is placed on each door's walk-on tile and the engine's own dispatch fires it |
 //! | 4 | `pad` | the next milestone is reached with pad input only |
 //!
-//! Segment 0 is seeded by the New Game path itself (`BootSession::start_new_game`),
+//! Segment 0 is seeded by the New Game path itself (`NativeSession::start_new_game`),
 //! so it measures the cold opening rather than a save.
 //!
 //! The headline is **how many milestones a cold New Game reaches
@@ -94,8 +94,8 @@ use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_census::{scene_man_carriers, system_flag_census};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 use legaia_scene_formats::field_disasm::FlagKind;
 use serde::Deserialize;

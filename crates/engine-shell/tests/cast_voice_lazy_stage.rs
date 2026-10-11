@@ -1,6 +1,6 @@
 //! Disc-gated: the native window's **lazy cast-voice staging** reads one
 //! channel span straight off the disc image, the way the director does the
-//! first time a cast names a clip (`AudioBgmDirector::play_xa_clip` ->
+//! first time a cast names a clip (`NativeAudioDirector::play_xa_clip` ->
 //! `read_xa_channel_span`).
 //!
 //! The two live captures are the oracle: PROT 0903 (Gimard) starts
@@ -14,7 +14,7 @@
 //! Skips (and passes) without `LEGAIA_DISC_BIN`.
 
 use legaia_engine_audio::xa_clip_bank::read_span_sectors;
-use legaia_engine_session::audio_director::read_xa_channel_span;
+use legaia_engine_session::native::read_xa_channel_span;
 use std::path::PathBuf;
 
 fn disc() -> Option<PathBuf> {

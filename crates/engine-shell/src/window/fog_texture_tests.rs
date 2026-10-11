@@ -18,8 +18,8 @@
 //! Skips (and passes) when `LEGAIA_DISC_BIN` / `extracted/` are missing.
 
 use super::run::build_window_scene_resources;
-use crate::boot::BootSession;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use std::path::PathBuf;
 
 /// Retail hash of VRAM `x 448..464, y 0x40..0x70` - the fog wisps.
@@ -53,7 +53,7 @@ fn window_vram(extracted: &std::path::Path, scene: &str) -> legaia_tim::Vram {
         scene: scene.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(extracted, &cfg).expect("boot session");
     session
         .enter_field_live(scene, &FieldLiveOpts::default())
         .expect("enter field scene");

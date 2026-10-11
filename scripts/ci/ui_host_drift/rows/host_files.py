@@ -35,9 +35,11 @@ NATIVE_DYN_LIGHT = "crates/render-kernels/src/scene_lighting/mood.rs"
 NATIVE_DYN_WINDOWS = "crates/render-kernels/src/scene_lighting/windows.rs"
 
 
-NATIVE_BOOT = "crates/engine-session/src/boot.rs"
-NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/boot/frame_tick.rs"
-NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/boot/scene_entry.rs"
+NATIVE_BOOT = "crates/engine-session/src/session.rs"
+NATIVE_BOOT_FRAME_TICK = "crates/engine-session/src/session/frame_tick.rs"
+NATIVE_BOOT_SCENE_ENTRY = "crates/engine-session/src/session/scene_entry.rs"
+# The native host's CD-XA bank readers (a disc image on disk).
+NATIVE_XA_DISC = "crates/engine-session/src/native/xa_disc.rs"
 NATIVE_SAVE_HELPERS = "crates/engine-shell/src/window/save_rack_disk.rs"
 NATIVE_ASSETS = "crates/engine-shell/src/window/assets.rs"
 # The actor stage of the scene asset upload (`upload_assets`): the player's

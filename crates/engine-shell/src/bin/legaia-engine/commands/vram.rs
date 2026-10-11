@@ -280,7 +280,7 @@ fn row_has_data(blob: &[u8], x: usize, y: usize, w: usize) -> bool {
 /// no temp file is needed.
 ///
 /// In scenario mode with `frames > 0`, additionally boots a
-/// `BootSession` on the resolved scene and ticks it `frames` times
+/// `NativeSession` on the resolved scene and ticks it `frames` times
 /// before returning the sampled engine VRAM. This catches dynamic
 /// uploads (NPC palette swaps, fog ramps, per-frame CLUT mutations)
 /// that the pure pre-pass doesn't see.

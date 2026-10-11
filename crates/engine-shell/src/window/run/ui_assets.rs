@@ -12,7 +12,7 @@ use super::*;
 /// one. The fixed-width placeholder is the last resort: it advances every
 /// glyph 9px where retail advances `widths[c] + 1` (4..10), which stretched
 /// every string by roughly a third.
-pub(super) fn load_dialog_font(session: &BootSession, extracted_root: &Path) -> Font {
+pub(super) fn load_dialog_font(session: &NativeSession, extracted_root: &Path) -> Font {
     Font::load_from_extracted(extracted_root)
         .map_err(|e| log::debug!("extracted/font not loaded ({e:#}); trying the disc"))
         .ok()
@@ -32,7 +32,7 @@ pub(super) fn load_dialog_font(session: &BootSession, extracted_root: &Path) -> 
 /// front. Falls back silently when the disc isn't loaded or the
 /// entry doesn't parse - retail discs always have it.
 pub(super) fn build_publisher_logos_atlas(
-    session: &BootSession,
+    session: &NativeSession,
 ) -> Option<legaia_engine_menus::publisher_logos::LogosAtlas> {
     match session
         .host
@@ -66,7 +66,7 @@ pub(super) fn build_publisher_logos_atlas(
 /// silently when the disc isn't loaded or the entry doesn't parse -
 /// retail discs always have it.
 pub(super) fn build_title_screen_atlas(
-    session: &BootSession,
+    session: &NativeSession,
 ) -> Option<legaia_engine_menus::title_screen_atlas::TitleScreenAtlas> {
     match session
         .host
@@ -103,7 +103,7 @@ pub(super) fn build_title_screen_atlas(
 /// per-entry extractor never visits this gap, so we read PROT.DAT
 /// raw bytes - see `legaia_ui_formats::menu_glyph_atlas`.
 pub(super) fn build_menu_glyph_atlas(
-    session: &BootSession,
+    session: &NativeSession,
 ) -> Option<legaia_engine_menus::menu_glyph_atlas::MenuGlyphAtlas> {
     match session.host.index.prot_dat_raw_bytes(
         legaia_ui_formats::menu_glyph_atlas::PROT_DAT_OFFSET,
@@ -134,7 +134,7 @@ pub(super) fn build_menu_glyph_atlas(
 /// as the small-caps rows above, through its sub-palette 13. Baked into
 /// the save-menu atlas (below) rather than sampled from the menu-glyph
 /// atlas so the HUD's sprite list stays one texture.
-pub(super) fn read_menu_glyph_tim(session: &BootSession) -> Option<Vec<u8>> {
+pub(super) fn read_menu_glyph_tim(session: &NativeSession) -> Option<Vec<u8>> {
     session
         .host
         .index
@@ -150,7 +150,7 @@ pub(super) fn read_menu_glyph_tim(session: &BootSession) -> Option<Vec<u8>> {
 /// same texture as its labels (`save_menu_atlas::menu_font_cells`; the
 /// browser page attaches the same cells).
 pub(super) fn attach_menu_font_cells(
-    session: &BootSession,
+    session: &NativeSession,
     font: Font,
     menu_glyph_tim_bytes: &Option<Vec<u8>>,
 ) -> Font {
@@ -173,7 +173,7 @@ pub(super) fn attach_menu_font_cells(
 /// Decode the save-menu UI atlas from its two disc sources, plus the
 /// optional menu-glyph TIM for the HUD numerals.
 pub(super) fn build_save_menu_atlas(
-    session: &BootSession,
+    session: &NativeSession,
     menu_glyph_tim_bytes: &Option<Vec<u8>>,
 ) -> Option<legaia_engine_menus::save_menu_atlas::SaveMenuAtlas> {
     // Try to decode the save-menu UI atlas. Needs TWO disc sources:
@@ -256,7 +256,7 @@ pub(super) fn build_save_menu_atlas(
 /// @0x15F20): the retail window rects behind every pause-menu screen.
 /// Falls back to the pinned mirror consts when unavailable.
 pub(super) fn read_menu_window_table(
-    session: &mut BootSession,
+    session: &mut NativeSession,
 ) -> Option<legaia_game_tables::menu_windows::MenuWindowTable> {
     session
         .host

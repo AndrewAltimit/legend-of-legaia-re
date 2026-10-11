@@ -1,26 +1,26 @@
 //! Disc-gated regression: the field d-pad is not inverted after a cutscene.
 //!
 //! The New Game prologue (`opdeene` -> `town01` opening cutscene) runs op-0x45
-//! Camera Configure events that leave the [`BootSession`]'s camera controller in
+//! Camera Configure events that leave the [`NativeSession`]'s camera controller in
 //! `Cinematic` mode at the shot's yaw. The renderer frames free-roam field with
-//! a fixed follow camera that never reads that yaw, but `BootSession::tick`
+//! a fixed follow camera that never reads that yaw, but `NativeSession::tick`
 //! feeds the controller yaw into `World::locomotion.camera_azimuth` to remap the pad
 //! camera-relative. A leaked non-zero yaw therefore rotated the d-pad ~180deg
 //! off the on-screen camera (up walked down, left walked right) once control
 //! returned in Rim Elm - only on the `--boot-ui` path, since a direct boot never
 //! runs those camera events.
 //!
-//! `Camera::reset_for_free_roam` (called from `BootSession::tick`) snaps the
+//! `Camera::reset_for_free_roam` (called from `NativeSession::tick`) snaps the
 //! controller back to the follow default whenever the field is in free-roam, so
 //! the azimuth quantises to quadrant 0 (identity remap) and the controls match
-//! the rendered camera. This drives the real `BootSession::tick` to pin that.
+//! the rendered camera. This drives the real `NativeSession::tick` to pin that.
 //!
 //! Skip-passes without disc data so CI works without Sony bytes.
 
 use std::path::PathBuf;
 
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -43,8 +43,8 @@ fn free_roam_field_clears_leaked_cinematic_camera_yaw() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
-    let opts = legaia_engine_session::boot::FieldLiveOpts::default();
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let opts = legaia_engine_session::session::FieldLiveOpts::default();
     session
         .enter_field_live("town01", &opts)
         .expect("enter town01 live");
@@ -61,7 +61,7 @@ fn free_roam_field_clears_leaked_cinematic_camera_yaw() {
     session.camera.yaw = std::f32::consts::PI;
     session.camera.pitch = 0.5;
 
-    // One free-roam tick: `BootSession::tick` must snap the camera back to the
+    // One free-roam tick: `NativeSession::tick` must snap the camera back to the
     // follow default before it computes `field_camera_azimuth`.
     session.tick().expect("field tick");
 

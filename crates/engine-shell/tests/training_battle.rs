@@ -19,8 +19,8 @@ use std::path::PathBuf;
 use legaia_engine_battle::monster_catalog::catalog_from_monster_archive;
 use legaia_engine_field::man_field_scripts::FieldCarrierConfig;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_scene_formats::encounter_record::{
     RIM_ELM_TRAINING_FORMATION_ID, RIM_ELM_TRAINING_OPPONENT_ID,
 };
@@ -63,7 +63,7 @@ fn training_encounter_reaches_battle_with_real_monster() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,
@@ -170,7 +170,7 @@ fn training_reaches_battle_via_man_formation_index() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,
@@ -269,7 +269,7 @@ fn training_reaches_battle_via_field_carrier_sm() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,
@@ -369,7 +369,7 @@ fn training_reaches_battle_via_field_vm_dialogue_accept() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,
@@ -502,7 +502,7 @@ fn training_reaches_battle_via_interaction_probe() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session.begin_new_game();
     session
         .enter_field_live(

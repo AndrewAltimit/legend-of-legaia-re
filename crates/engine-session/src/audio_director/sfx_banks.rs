@@ -4,7 +4,7 @@
 
 use super::*;
 
-impl<S: AudioSink> AudioBgmDirector<S> {
+impl<S: AudioSink> AudioDirector<S> {
     /// Cues waiting in the scheduler (queued, not yet matured).
     pub fn sfx_pending(&self) -> usize {
         self.sfx_sched.pending_count()
@@ -379,14 +379,14 @@ impl<S: AudioSink> AudioBgmDirector<S> {
 /// category-6 cue in battle (slot 6 closed by `FUN_8001DCF8`) or a category-2
 /// cue in the field (slot 2 closed by `FUN_801D6704`) is silent there, not
 /// rerouted to whichever bank is open. The hosts restage the slot-2 / slot-6
-/// region per mode ([`AudioBgmDirector::sync_shared_region`]), so each
+/// region per mode ([`AudioDirector::sync_shared_region`]), so each
 /// category's own bank is resident exactly where retail's is.
 ///
 /// Only an id the routing does not carry (no descriptor table installed, or an
 /// id past it) still falls back to [`FALLBACK_VAB_SLOT`] when that is staged.
 ///
 /// Free function rather than a method so it is testable without a cpal device
-/// (an [`AudioBgmDirector`] needs a live audio output).
+/// (an [`AudioDirector`] needs a live audio output).
 pub(crate) fn resolve_sfx_slot<T>(
     cue_slots: &BTreeMap<u8, u8>,
     staged: &BTreeMap<u8, T>,

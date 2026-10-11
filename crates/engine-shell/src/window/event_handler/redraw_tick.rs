@@ -22,7 +22,7 @@ impl PlayWindowApp {
         // those spawns draw the world `rand()` stream - so a wall-paced
         // capture ran a fogged scene on a stream that moved with machine
         // load, and the retail comparison's frame landed on a different
-        // fight from its headless seed (`BootSession::fog_render_tick`).
+        // fight from its headless seed (`NativeSession::fog_render_tick`).
         let ticks = if self.screenshot.is_some() { 1 } else { ticks };
         // In-flow windowed cutscene: when the field VM's FMV-trigger
         // op flips the world into SceneMode::Cutscene and the STR has
@@ -138,7 +138,7 @@ impl PlayWindowApp {
         // cell / glyph per press). Mirrors the opening `town01`
         // naming prompt, which suspends the field VM.
         // The routing is the engine's (`World::step_name_entry_frame`, the
-        // kernel `BootSession::tick` runs for every other driver): the
+        // kernel `NativeSession::tick` runs for every other driver): the
         // edge drives the entry SM and the frame counter advances so the
         // caret blinks. This arm adds only the window's frame-tail skip.
         if self.session.step_name_entry_frame(pressed_edge) {
@@ -218,7 +218,7 @@ impl PlayWindowApp {
         // the menu asks the same question.
         // The press itself - a script's op-`0x49` save point / ready
         // check, a Start edge, the deny buzz - is answered by the one
-        // engine rule every host asks (`BootSession::press_field_menu`),
+        // engine rule every host asks (`NativeSession::press_field_menu`),
         // which already holds the narration / title-card refusal this
         // arm used to spell out locally. A shop / prize overlay owns the
         // pad, so no press reaches the menu while one is up.
@@ -228,7 +228,7 @@ impl PlayWindowApp {
         // is not taken, or the window would route input and draws to a
         // menu that is not there while the scene tick stayed skipped.
         // The menu spawns partway through the field's wipe to black
-        // (`BootSession::pause_wipe`): until then the field keeps drawing
+        // (`NativeSession::pause_wipe`): until then the field keeps drawing
         // under the wipe and ticking (with the world in `Menu`, so the
         // player stands still), and the boot-UI arm takes the frame from
         // the tick the menu exists.
@@ -247,7 +247,7 @@ impl PlayWindowApp {
             self.session.press_field_menu(pressed_edge & 0x0008 != 0)
         };
         if let legaia_engine_session::PauseMenuPress::Opened { scripted } = press {
-            // Start: the BootSession-hosted pause menu (the retail CARD
+            // Start: the NativeSession-hosted pause menu (the retail CARD
             // pair, game_mode 0x17 - the world holds SceneMode::Menu
             // while it is open), with the window's input + draws routed
             // to it via the boot-UI arm. The open blips as a confirm, as

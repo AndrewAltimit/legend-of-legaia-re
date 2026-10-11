@@ -30,7 +30,7 @@ prescript starts one traces a silent BGM channel.
 
 The blocking capability is **SPU ownership**, not a missing method body. The
 owned-VAB hooks have to upload the entry's own VAB before parsing its SEQ -
-`AudioBgmDirector::stage_owned_vab` does exactly that through
+`AudioDirector::stage_owned_vab` does exactly that through
 `self.audio.with_spu(..)` plus an `SpuAllocator`. `TraceBgmDirector` holds no
 SPU: the trace loop in `build_engine_audio_trace` owns the private
 `legaia_engine_audio::Spu`, uploads the scene bank itself and hands the

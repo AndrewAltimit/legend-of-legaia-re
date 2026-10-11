@@ -149,7 +149,7 @@ struct LaunchToggles {
 }
 
 /// Set the host policy and the world switches of a freshly opened session.
-fn apply_launch_toggles(session: &mut BootSession, toggles: LaunchToggles) {
+fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     let LaunchToggles {
         entry_pulse,
         vm_dialogue,
@@ -201,11 +201,11 @@ fn apply_launch_toggles(session: &mut BootSession, toggles: LaunchToggles) {
 /// path, an overworld through the world-map entry, anything else through the
 /// live field entry.
 fn enter_launch_scene(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     scene: &str,
     world_map: bool,
     debug_seeds: &super::DebugSeeds,
-    field_live_opts: &legaia_engine_session::boot::FieldLiveOpts,
+    field_live_opts: &legaia_engine_session::session::FieldLiveOpts,
 ) -> Result<()> {
     // The direct `--scene` entry is this window's scene picker: a cold entry
     // (no save, no New Game) seeds the full Vahn / Noa / Gala party through
@@ -286,7 +286,7 @@ fn enter_launch_scene(
         session.host.world.stage_picker_entry(scene, false);
         // Drop into the live field scene (run record 0, install the encounter
         // table, arm the live loop). Shared with the v0.1 oracle + headless
-        // drivers via `BootSession::enter_field_live`.
+        // drivers via `NativeSession::enter_field_live`.
         let opts = field_live_opts.clone();
         match session.enter_field_live(scene, &opts) {
             Ok(mode) => log::info!("play-window: entered field scene '{scene}' (mode={mode:?})"),
@@ -373,7 +373,7 @@ pub(super) fn cmd_play_window_with_record(
     );
     // Field-live arming, built once and reused: at startup for the direct path
     // and later by the boot-UI NEW GAME handler when it enters `opdeene`.
-    let field_live_opts = legaia_engine_session::boot::FieldLiveOpts {
+    let field_live_opts = legaia_engine_session::session::FieldLiveOpts {
         live_loop,
         player_battle,
         battle_bgm,

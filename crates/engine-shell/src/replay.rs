@@ -248,7 +248,7 @@ impl ReplayFile {
         for ex in &self.expected {
             // Pick the recorded row whose `frame` equals the expected
             // frame. The recorded trace from
-            // `build_engine_mode_trace` carries `frame = BootSession::frames`,
+            // `build_engine_mode_trace` carries `frame = NativeSession::frames`,
             // monotonically increasing from 0, with one row per tick - so
             // index = frame for the common path. Fall back to a linear
             // search for replays that started with a non-zero frame.

@@ -30,7 +30,7 @@ use std::path::PathBuf;
 
 use legaia_engine_audio::{Spu, VabBank, spu::ram::SPU_RAM_BYTES, spu::ram::SpuAllocator};
 use legaia_engine_core::scene_host::SceneHost;
-use legaia_engine_session::boot::SFX_BANK_SPU_BYTES;
+use legaia_engine_session::session::SFX_BANK_SPU_BYTES;
 use legaia_game_tables::sfx_table::{
     PINNED_SLOT_BANKS, SLOT2_CLASS2_BANK_ALT_PROT_INDEX, SfxTable,
 };

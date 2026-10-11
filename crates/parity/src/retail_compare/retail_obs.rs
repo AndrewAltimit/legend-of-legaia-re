@@ -329,7 +329,7 @@ pub(super) const SLOT_TABLE_VA: u32 = 0x801C_6460;
 /// still counting towards (a door-fade handshake 36 frames into its 46, a
 /// spawn delay 24 into its 50) and score that as an engine miss. Holding the
 /// captured counts keeps every timer where retail's was.
-pub(crate) fn hold_slot_table(session: &mut BootSession, retail: &RetailObs) {
+pub(crate) fn hold_slot_table(session: &mut NativeSession, retail: &RetailObs) {
     if let Some(slots) = retail.slot_table {
         session.host.world.field_vm.slot_table = slots;
     }

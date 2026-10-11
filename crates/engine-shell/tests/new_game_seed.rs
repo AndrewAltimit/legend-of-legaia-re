@@ -1,7 +1,7 @@
 //! Disc-gated: a New Game seeds Vahn from the disc's SCUS template.
 //!
-//! Opens a [`BootSession`] against the extracted disc tree (which carries
-//! `SCUS_942.54`), runs the NEW GAME path (`BootSession::begin_new_game`), and
+//! Opens a [`NativeSession`] against the extracted disc tree (which carries
+//! `SCUS_942.54`), runs the NEW GAME path (`NativeSession::begin_new_game`), and
 //! asserts the world comes up with exactly Vahn in slot 0 carrying his real
 //! starting stats. This is the engine end of the New Game boot chain (see
 //! `docs/subsystems/boot.md` and `docs/formats/new-game-table.md`).
@@ -10,8 +10,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -37,7 +37,7 @@ fn new_game_seeds_vahn_from_disc_template() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     // The template must have parsed from the extracted SCUS.
     let starting = session
@@ -78,7 +78,7 @@ fn boot_installs_the_real_retail_xp_curve_from_disc() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     // The boot installs the disc-parsed SCUS curve (DAT_80076AF4 +
     // FUN_801E9504's formula). The first thresholds are byte-validated
@@ -109,7 +109,7 @@ fn boot_installs_the_real_per_character_growth_curves_from_disc() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     use legaia_engine_battle::levelup::StatGrowthCurve;
     let curves = &session.host.world.party.level_up_tracker.stat_curves;
@@ -149,7 +149,7 @@ fn new_game_seeds_vahn_straight_from_disc_image() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open_disc(&disc, &cfg).expect("open disc boot session");
+    let mut session = NativeSession::open_disc(&disc, &cfg).expect("open disc boot session");
     assert!(
         session.starting_party.is_some(),
         "SCUS_942.54 must be readable from the disc image"
@@ -176,10 +176,10 @@ fn enter_field_live_installs_disc_catalogs_without_battle_flags() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open extracted boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open extracted boot session");
 
     // Default opts: no live loop, no player-driven battle.
-    let opts = legaia_engine_session::boot::FieldLiveOpts::default();
+    let opts = legaia_engine_session::session::FieldLiveOpts::default();
     assert!(
         !opts.live_loop && !opts.player_battle,
         "default opts carry no battle flags"

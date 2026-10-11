@@ -19,8 +19,8 @@ use std::path::PathBuf;
 
 use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
@@ -60,7 +60,7 @@ fn card_sc(library: &std::path::Path, card: &str, save: &str) -> Option<Vec<u8>>
 }
 
 /// Attack / Auto / confirm the target / page on - pad presses only.
-fn fight_pad(session: &BootSession) -> u16 {
+fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if w.battle.item_menu.is_some() {
@@ -105,7 +105,7 @@ fn a_strike_at_a_monster_killed_earlier_in_the_round_finds_a_living_target() {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open BootSession");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open NativeSession");
     let opts = FieldLiveOpts {
         live_loop: false,
         player_battle: true,

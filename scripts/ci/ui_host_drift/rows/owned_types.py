@@ -78,4 +78,8 @@ OWNED_TYPES: list[dict[str, object]] = [
 # fields hold - the scene host and the camera are the session's, and a host
 # reaches them through it.
 SESSION_TYPE = "BootSession"
-SESSION_SRC = REPO / "crates/engine-session/src/boot.rs"
+SESSION_SRC = REPO / "crates/engine-session/src/session.rs"
+# Where the session crate declares aliases of the session type over one
+# audio output (`NativeSession`). A host that holds a field of an alias
+# holds the session.
+SESSION_ALIAS_SRC = REPO / "crates/engine-session/src/native.rs"

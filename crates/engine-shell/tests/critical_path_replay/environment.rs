@@ -33,7 +33,7 @@ pub(super) fn open_host() -> Option<SceneHost> {
     let extracted = extracted_dir()?;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     // A cold boot has a party: seed the retail New Game roster (Vahn, the
-    // SCUS `0x80078C4C` template) exactly as `BootSession::begin_new_game`
+    // SCUS `0x80078C4C` template) exactly as `NativeSession::begin_new_game`
     // does. Without it every party slot is hollow (`max_hp == 0`, no
     // record) - the port-only unseeded state whose encounters can neither be
     // fought nor survived, which made rung 3's "one encounter fought and

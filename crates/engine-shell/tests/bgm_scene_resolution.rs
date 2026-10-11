@@ -80,16 +80,17 @@ fn scene_prescripts_select_global_pool_tracks() {
     let mut total_field_events = 0usize;
 
     for scene_name in &scene_names {
-        let cfg = legaia_engine_session::boot::BootConfig {
+        let cfg = legaia_engine_session::session::BootConfig {
             scene: scene_name.clone(),
             enable_audio: false,
         };
-        let Ok(mut session) = legaia_engine_shell::boot::BootSession::open(&extracted, &cfg) else {
+        let Ok(mut session) = legaia_engine_session::native::NativeSession::open(&extracted, &cfg)
+        else {
             continue;
         };
         // Cold-boot the scene into live field dispatch. Plain `tick` alone
         // never installs a field record, so the VM would step nothing.
-        let opts = legaia_engine_session::boot::FieldLiveOpts {
+        let opts = legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         };

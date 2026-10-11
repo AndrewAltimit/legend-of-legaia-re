@@ -5,14 +5,14 @@ for native and `wasm32` alike. Audio reaches it through `engine-audio`, which
 links cpal on native targets only (`BootSession::open` / `open_disc` are built
 over its `AudioOut`); a `wasm32` build never links cpal.
 
-- [`BootSession`](src/boot.rs) / `BootConfig` - the scene host plus the
+- [`BootSession`](src/session.rs) / `BootConfig` - the scene host plus the
   per-frame order around its tick: the naming prompt, the mode seat, the
   pause menu, the camera's halves before and after the world tick, BGM and
   SFX routing, the world frame tail. `BootSession::open` / `open_disc` build
   one over the native cpal output from an extracted tree or a disc image;
   `BootSession::from_host` builds one over any `SceneHost` and the disc's
   `SCUS_942.54` bytes, for a host that assembled its scene host in memory.
-- [`AudioBgmDirector`](src/audio_director.rs) - the `legaia_engine_core::scene_host::BgmDirector`
+- [`AudioDirector`](src/audio_director.rs) - the `legaia_engine_core::scene_host::BgmDirector`
   that turns field-VM BGM events into sequencers and fires SFX cues, VAB
   slot residency and the battle duck, generic over the audio output
   (`legaia_engine_audio::AudioSink`).
@@ -22,9 +22,23 @@ over its `AudioOut`); a `wasm32` build never links cpal.
   sectors off the disc image, the play page slices them out of its disc
   bytes; both stage through `install_shout_file` / `install_clip_file`.
 
-Both types are generic over the audio output. `engine-shell` names the
-native instantiations (`legaia_engine_shell::BootSession` =
-`BootSession<AudioOut>`).
+Both types are generic over the audio output. The native instantiations
+are named once, in [`native`](src/native.rs): `NativeSession` =
+`BootSession<AudioOut>` and `NativeAudioDirector` = `AudioDirector<AudioOut>`.
+
+## Host-neutral session, native policy
+
+Everything above is host-neutral. What only a native host can do - open a
+session from a path on disk, read the CD-XA banks off a disc image, read one
+cast-voice channel from the image the first time a cast names it
+(`XaDiscSource`, the native `XaChannelSource`) - is the
+[`native`](src/native.rs) module, compiled for native targets only. The
+browser host builds its session with `from_host` and stages the same banks
+through `xa_banks`.
+
+[`mode_trace`](src/mode_trace.rs) holds `ModeTraceFrame`, one sample of a
+session's dispatch state: what a replay file's expected frames and the
+mode-trace oracle's retail samples are compared against.
 
 Both play hosts run it. The browser play page holds a `BootSession` over its
 WebAudio output (`crates/web-viewer/src/host_slot.rs`), built with

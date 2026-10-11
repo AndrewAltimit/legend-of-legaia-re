@@ -15,8 +15,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::sound_state::SfxRingOp;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -45,7 +45,7 @@ fn kor5_ambient_script_writes_its_cue_into_ring_slot_3() {
         scene: "kor5".to_string(),
         enable_audio: false,
     };
-    let mut s = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut s = NativeSession::open(&extracted, &cfg).expect("boot session");
     s.host.world.seed_free_roam_story_baseline("kor5");
     s.enter_field_live("kor5", &FieldLiveOpts::default())
         .expect("enter kor5");

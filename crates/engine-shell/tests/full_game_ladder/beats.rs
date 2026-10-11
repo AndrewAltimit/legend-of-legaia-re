@@ -14,7 +14,7 @@ pub(super) const MAX_BEATS: usize = 120;
 /// somewhere; beats that wait on a conversation, a menu or an item stay
 /// unplayed. `Ok(Some(scene))` when a beat left the scene.
 pub(super) fn play_beats(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     log: &mut Vec<String>,
 ) -> Result<Option<String>, String> {
     use legaia_engine_field::man_field_scripts::{boss_stager_placements, partition2_record_gates};
@@ -27,7 +27,7 @@ pub(super) fn play_beats(
     };
     let before: BTreeSet<u16> = flags_of_world(session);
     let mut ran = 0usize;
-    let finish = |session: &BootSession, log: &mut Vec<String>, ran: usize| {
+    let finish = |session: &NativeSession, log: &mut Vec<String>, ran: usize| {
         let gained = flags_of_world(session).difference(&before).count();
         log.push(format!("{name}: {ran} beat(s) run, +{gained} flag(s)"));
     };
@@ -430,7 +430,7 @@ pub(super) fn play_beats(
                             continue;
                         }
                     }
-                    let started = |s: &BootSession| {
+                    let started = |s: &NativeSession| {
                         s.host.world.props.active_walk_touch == Some(slot) || !released(s)
                     };
                     if let Some(s) = pad_lean(session, move |_| Some(contact), 32, started) {
@@ -540,7 +540,7 @@ pub(super) fn play_beats(
 /// partition-2 record that - itself or through what it spawns - cleanly
 /// SETs a still-clear flag the next anchor carries.
 pub(super) fn object_door_beats(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<(u8, (i16, i16))> {
@@ -606,7 +606,7 @@ pub(super) type PropBeat = ((u8, u8), (i32, i32), bool);
 /// down to `map01`, where the latter plays the tree's revival. A prop whose
 /// record overreaches (sets a latch the next anchor lacks) is left alone.
 pub(super) fn prop_beats(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<PropBeat> {
@@ -657,9 +657,9 @@ pub(super) fn prop_beats(
 /// tile beside it, hold the pad toward it until its record starts, then let
 /// the run play out. `town0d` P0[1], the house door, sets `0x3B9` and spawns
 /// the P2[28] song-night chain the first time it is opened.
-pub(super) fn touch_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
+pub(super) fn touch_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
     let (tx, tz) = tile_of(at.0 as i16, at.1 as i16);
-    let prop_run = |s: &BootSession| {
+    let prop_run = |s: &NativeSession| {
         s.host
             .world
             .dialog
@@ -702,7 +702,7 @@ pub(super) fn touch_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32, 
 /// With `LEGAIA_FGL_TRACE` set, print one line per played beat: what ran,
 /// how it ended, and the flags it set.
 pub(super) fn trace_beat(
-    session: &BootSession,
+    session: &NativeSession,
     before: &BTreeSet<u16>,
     what: impl FnOnce() -> String,
 ) {
@@ -747,7 +747,7 @@ pub(super) const BEAT_ROUNDS: usize = 3;
 /// still has clear. A conversation that writes no story flag is scenery and
 /// is not played.
 pub(super) fn talk_beats(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<u8> {

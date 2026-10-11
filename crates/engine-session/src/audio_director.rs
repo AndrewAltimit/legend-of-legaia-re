@@ -40,8 +40,7 @@ mod xa_clips;
 
 #[cfg(test)]
 use sfx_banks::resolve_sfx_slot;
-use xa_clips::XaLazySource;
-pub use xa_clips::read_xa_channel_span;
+pub use xa_clips::XaChannelSource;
 
 /// The pause menu's cursor-step cue, re-exported from the one engine-side
 /// table both hosts fire from ([`legaia_engine_menus::menu_cues`], provenance
@@ -56,7 +55,7 @@ pub const RETAIL_MENU_CANCEL_CUE: u16 = legaia_engine_menus::menu_cues::MENU_CAN
 /// BGM director that routes [`BgmDirector`] events into a live
 /// audio output ([`AudioSink`]). The director holds a clone of the audio handle (cpal stream
 /// is reference-counted internally via `Arc`) plus the active VAB bank.
-pub struct AudioBgmDirector<S: AudioSink> {
+pub struct AudioDirector<S: AudioSink> {
     audio: Arc<S>,
     bank: Option<VabBank>,
     /// Master volume forwarded to every freshly-attached sequencer. Engines
@@ -117,7 +116,7 @@ pub struct AudioBgmDirector<S: AudioSink> {
     /// seventeen files (`docs/subsystems/cast-module.md`); none is decoded
     /// until a cast names its channel, and then only the read span the
     /// starter would have covered. `None` on a disc-free boot.
-    xa_lazy: Option<XaLazySource>,
+    xa_lazy: Option<Box<dyn XaChannelSource + Send + Sync>>,
     /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
     /// live level (seeded `0xD7` = [`DUCK_LEVEL_REF`] by the cold reset
     /// `FUN_8001FFA4`), ramped one unit per vsync toward a target the action
@@ -174,10 +173,10 @@ pub const DUCK_LEVEL_REF: u8 = legaia_engine_audio::duck::DUCK_LEVEL_REF;
 /// VAB slot the battle-end reward bank (PROT 0889, cue `0x50`) is installed
 /// in - retail streams it at results time (`FUN_8004E568` phase 4,
 /// `FUN_8001E54C(0xB, ...)`), and the port stages it transiently the same
-/// way ([`AudioBgmDirector::stage_transient_sfx_vab`]).
+/// way ([`AudioDirector::stage_transient_sfx_vab`]).
 pub const TRANSIENT_REWARD_SLOT: u8 = legaia_engine_audio::bgm_tail::REWARD_SLOT;
 
-/// What one [`AudioBgmDirector::tick_sfx_frame`] / [`AudioBgmDirector::fire_now`]
+/// What one [`AudioDirector::tick_sfx_frame`] / [`AudioDirector::fire_now`]
 /// did. `fired` is what keyed a voice; the other two are counted whether or
 /// not a bank was staged, so a host can tell a source that produced nothing
 /// from one that produced cues nothing could sound.
@@ -191,14 +190,14 @@ pub struct SfxFrameReport {
     pub voice_declined: u32,
 }
 
-/// One ring cue resolved to what it keys, for [`AudioBgmDirector::tick_sfx_frame`].
+/// One ring cue resolved to what it keys, for [`AudioDirector::tick_sfx_frame`].
 enum RingFire<'a> {
     /// A static-table id (`< 0x200`) and its category's bank.
     Static(u8, &'a VabBank),
     /// A runtime-bank row (`>= 0x200`) and the bank its `+4` names.
     Runtime([u8; 8], &'a VabBank),
 }
-impl<S: AudioSink> AudioBgmDirector<S> {
+impl<S: AudioSink> AudioDirector<S> {
     pub fn new(audio: Arc<S>) -> Self {
         Self {
             audio,
@@ -272,8 +271,8 @@ mod tests {
     /// run, with the mixing core pulled by the test instead of a device.
     // Single-threaded like both hosts; the director takes its sink by `Arc`.
     #[allow(clippy::arc_with_non_send_sync)]
-    fn headless() -> AudioBgmDirector<legaia_engine_audio::TestAudioSink> {
-        AudioBgmDirector::new(Arc::new(legaia_engine_audio::TestAudioSink::new(
+    fn headless() -> AudioDirector<legaia_engine_audio::TestAudioSink> {
+        AudioDirector::new(Arc::new(legaia_engine_audio::TestAudioSink::new(
             legaia_engine_audio::SPU_INTERNAL_RATE,
         )))
     }
@@ -429,7 +428,7 @@ mod tests {
     #[test]
     fn director_has_no_deferred_start_slot() {
         fn assert_director<T: BgmDirector>() {}
-        assert_director::<AudioBgmDirector<legaia_engine_audio::AudioOut>>();
+        assert_director::<AudioDirector<legaia_engine_audio::AudioOut>>();
         let _ = empty_bank(); // touch path so unused-import lint stays clean
     }
 }

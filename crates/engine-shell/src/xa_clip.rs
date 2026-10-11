@@ -32,7 +32,7 @@
 //! from a move-power record, so no id ever reaches the voice arm. The engine's
 //! one live XA-clip consumer, the arts shout, is **not** it: that path picks its
 //! channel out of a runtime candidate pool (`legaia_art::arts_voice`'s
-//! `ArtsVoiceTable`, driven by `AudioBgmDirector::play_art_shout`), not by the
+//! `ArtsVoiceTable`, driven by `NativeAudioDirector::play_art_shout`), not by the
 //! `(id - 0x100)` arithmetic below, and the two are separate retail paths - see
 //! the note on `legaia_art::arts_voice::StaticXaCue`.
 //!

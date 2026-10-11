@@ -12,8 +12,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 fn extracted_dir() -> Option<PathBuf> {
     for c in ["extracted", "../extracted", "../../extracted"] {
@@ -48,7 +48,7 @@ fn rim_elm_spar_menu_decodes_as_a_four_option_picker() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             "town01",
@@ -128,7 +128,7 @@ fn rim_elm_spar_fight_option_is_disc_derived_from_the_battle_install() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             "town01",

@@ -14,7 +14,7 @@ use super::*;
 /// window boot and to REBUILD the render state after a door transition
 /// (`SceneTickEvent::SceneEntered`) swaps the host's scene.
 pub(in crate::window) fn build_window_scene_resources(
-    session: &BootSession,
+    session: &NativeSession,
 ) -> Result<SceneResources> {
     let s = session
         .host

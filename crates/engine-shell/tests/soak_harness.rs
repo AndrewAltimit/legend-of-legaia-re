@@ -12,7 +12,7 @@
 //! See `docs/tooling/soak-harness.md` for the policies, the detectors, how to
 //! run a long soak, and how to reproduce a finding. In short:
 //!
-//! - **Driver.** One fresh [`BootSession`] per run (scene, seed): new-game
+//! - **Driver.** One fresh [`NativeSession`] per run (scene, seed): new-game
 //!   party, live loop and player-driven battles armed, an empty card rack
 //!   mounted, then `frames` ticks of pad input from a seeded [`Policy`]. The
 //!   only actuator is `World::set_pad`; FMVs are skipped through the shared
@@ -58,8 +58,8 @@ use legaia_engine_menus::save_screen::card_port_snapshot;
 use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::{Scene, is_world_map_scene};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_shell::replay::{ReplayFile, ReplayMeta};
 use legaia_engine_system::input::PadButton;
 

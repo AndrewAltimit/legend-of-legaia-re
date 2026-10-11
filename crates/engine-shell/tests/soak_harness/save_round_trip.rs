@@ -9,7 +9,7 @@ pub(super) const ROUND_TRIP_EVERY: u64 = 600;
 
 /// A frame a player could open the pause menu on and save: free field
 /// roam, no modal, no timeline, no dialogue.
-pub(super) fn round_trip_ready(s: &BootSession) -> bool {
+pub(super) fn round_trip_ready(s: &NativeSession) -> bool {
     let w = &s.host.world;
     matches!(w.mode, SceneMode::Field | SceneMode::WorldMap)
         && s.field_menu.is_none()
@@ -86,7 +86,7 @@ pub(super) fn save_diff(
 /// block holds, or does nothing for an empty block (the flow refuses those
 /// before committing, so that arm is defensive).
 pub(super) fn apply_save_commit(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     card: &mut SoakCard,
     commit: legaia_engine_menus::save_screen::SaveCommit,
     opts: &FieldLiveOpts,
@@ -109,7 +109,7 @@ pub(super) fn apply_save_commit(
 }
 
 /// Re-derive the save grid's port-0 snapshots from the in-memory card.
-pub(super) fn refresh_rack(session: &mut BootSession, card: &SoakCard) {
+pub(super) fn refresh_rack(session: &mut NativeSession, card: &SoakCard) {
     let mut ports: Vec<Vec<SlotSnapshot>> =
         vec![(0..15).map(SlotSnapshot::empty).collect(), Vec::new()];
     for (&(port, cell), (sf, resume)) in card.iter() {

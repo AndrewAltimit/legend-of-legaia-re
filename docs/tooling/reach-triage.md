@@ -139,7 +139,7 @@ and each has a union member that lifts it.
 
 | Exclusion | Why | What lifts it |
 |---|---|---|
-| draw-list builders (`engine-ui`) | `crates/engine-session/src/boot.rs` names neither `engine-ui` nor `engine-render`. | `play_compose_ladder` (`crates/web-viewer/tests/`) drives the play page's `LegaiaRuntime` by pad and composes its whole per-frame read surface. |
+| draw-list builders (`engine-ui`) | `crates/engine-session/src/session.rs` names neither `engine-ui` nor `engine-render`. | `play_compose_ladder` (`crates/web-viewer/tests/`) drives the play page's `LegaiaRuntime` by pad and composes its whole per-frame read surface. |
 | `engine-render` | A hard wgpu link `web-viewer` does not carry. | A spawned `play-window` run: `LLVM_PROFILE_FILE` is inherited by child processes, so a test that spawns `CARGO_BIN_EXE_legaia-engine` gets the child's profile merged into the export. |
 | `bin/`-resident code | No `#[test]` can *call* into a `bin/` target. | The same spawn route: a ladder that runs the subcommand covers it. The native window's composition is library code (`crates/engine-shell/src/window/`). |
 | native minigames | The window opens each from `WindowEvent::KeyboardInput` (`K` dance, `U` how-to, `L` fishing, `O` slots, `M` Muscle Dome, `B` Baka, `P` prize exchange); `--pad-script` writes a pad word and that handler never runs. | `--key-script` (`TICK:KEY`), composed with `--pad-script`; `native_minigame_ladder` asserts each rung's captured frame differs from the same tick with nothing open. Needs a display. |
@@ -738,7 +738,7 @@ rather than four independent hook calls.
 Driving them surfaced a wiring gap the reach number cannot show, because the
 gap is on the far side of the trait. `BgmDirector::reattach_volume` has a
 default no-op body, and **neither** rendering host overrides it -
-`AudioBgmDirector` implements `pause` / `resume` / `stop` / `unhalt_pause` and
+`AudioDirector` implements `pause` / `resume` / `stop` / `unhalt_pause` and
 not this one, and the browser runtime's director matches. So sub-op 8 computes
 retail's level (`FUN_80019898`'s `(raw << 15) >> 16`) and every host discards
 it. The primitive it would drive already exists

@@ -42,7 +42,7 @@ pub(super) struct SegmentReport {
 }
 
 /// Is `target` reached in the session's current state?
-pub(super) fn reached(session: &BootSession, target: &Milestone) -> bool {
+pub(super) fn reached(session: &NativeSession, target: &Milestone) -> bool {
     if scene_name(session) != target.scene || !walking(session) {
         return false;
     }
@@ -58,12 +58,12 @@ pub(super) fn reached(session: &BootSession, target: &Milestone) -> bool {
 
 /// A party wipe on a pad walk leaves the game-over screen up; nothing after
 /// it is play.
-pub(super) fn wiped(session: &BootSession) -> Option<String> {
+pub(super) fn wiped(session: &NativeSession) -> Option<String> {
     let w = &session.host.world;
     (w.game_over_hold || w.game_over).then(|| format!("party wiped: {}", battle_snapshot(session)))
 }
 
-pub(super) fn flags_of_world(session: &BootSession) -> BTreeSet<u16> {
+pub(super) fn flags_of_world(session: &NativeSession) -> BTreeSet<u16> {
     let mut out = BTreeSet::new();
     for (i, b) in session.host.world.flags.system_flags.iter().enumerate() {
         for k in 0..8 {
@@ -78,7 +78,7 @@ pub(super) fn flags_of_world(session: &BootSession) -> BTreeSet<u16> {
 /// Drive from the seeded state toward `target`, hop by hop, by seated
 /// traversal (with the beats pass) or by the pad. `Ok(())` when reached.
 pub(super) fn traverse(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     target: &Milestone,
     pad: bool,

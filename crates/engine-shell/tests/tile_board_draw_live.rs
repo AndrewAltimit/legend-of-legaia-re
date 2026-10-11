@@ -7,7 +7,7 @@
 //!    scene MAN carries a board install - the tile board is a dev/unused
 //!    minigame mode reachable only through the op itself (which is why the
 //!    play-window exposes the `LEGAIA_TILE_BOARD_DEMO=1` synthetic trigger).
-//! 2. A boot of a real field scene through [`BootSession`], installing a
+//! 2. A boot of a real field scene through [`NativeSession`], installing a
 //!    board from the same 14-byte op window the field VM would deliver,
 //!    then asserting the draw assembly
 //!    ([`legaia_engine_core::world_views::tile_board`]) yields a per-cell draw at
@@ -22,8 +22,8 @@ use std::path::PathBuf;
 
 use legaia_engine_field::man_field_scripts::partition_record_span;
 use legaia_engine_minigames::tile_board::{self, TileBoardHeader};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -207,7 +207,7 @@ fn tile_board_draw_assembly_covers_every_drawable_cell() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");
@@ -291,7 +291,7 @@ fn tile_board_unresolved_templates_degrade_gracefully() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01 live");

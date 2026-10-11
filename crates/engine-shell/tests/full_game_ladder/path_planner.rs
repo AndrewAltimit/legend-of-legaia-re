@@ -41,7 +41,7 @@ pub(super) fn dispatch_tile(x: i16, z: i16) -> (i32, i32) {
 pub(super) const STEPS: [((i16, i16), usize); 4] =
     [((0, -1), 0), ((-1, 0), 1), ((0, 1), 2), ((1, 0), 3)];
 
-pub(super) fn pad_for_step(session: &BootSession, dwx: i16, dwz: i16) -> u16 {
+pub(super) fn pad_for_step(session: &NativeSession, dwx: i16, dwz: i16) -> u16 {
     let mut pad = 0u16;
     let (sx, sy) = if session.host.world.mode == SceneMode::WorldMap {
         let az = session
@@ -266,7 +266,7 @@ thread_local! {
 /// into a room laid out elsewhere in the map. When the goal is out of
 /// reach the route ends at the reachable cell nearest it.
 pub(super) fn plan_path(
-    session: &BootSession,
+    session: &NativeSession,
     from: Cell,
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
@@ -419,7 +419,7 @@ thread_local! {
 }
 
 pub(super) fn plan_key(
-    session: &BootSession,
+    session: &NativeSession,
     goal: (i16, i16),
     avoid: &HashSet<(i32, i32)>,
 ) -> PlanKey {
@@ -438,7 +438,7 @@ pub(super) fn plan_key(
 /// the search reached, and whether it reached its aim.
 #[allow(clippy::type_complexity)]
 pub(super) fn plan_search(
-    session: &BootSession,
+    session: &NativeSession,
     from: Cell,
     goal: (i16, i16),
     target: Option<Cell>,
@@ -725,7 +725,7 @@ pub(super) fn walk_back(parent: &HashMap<Cell, Cell>, from: Cell, to: Cell) -> O
 
 /// Every door tile in the scene that does NOT lead to `dest` - stepping on one
 /// would leave for the wrong scene.
-pub(super) fn hazards(session: &BootSession, dest: &str) -> HashSet<(i32, i32)> {
+pub(super) fn hazards(session: &NativeSession, dest: &str) -> HashSet<(i32, i32)> {
     let w = &session.host.world;
     let mut out = HashSet::new();
     if w.mode == SceneMode::WorldMap {

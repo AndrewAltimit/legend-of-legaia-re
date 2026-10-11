@@ -6,7 +6,7 @@ use super::*;
 
 /// Headless [`BgmDirector`] used by [`build_engine_audio_trace`].
 ///
-/// Mirrors [`legaia_engine_session::AudioBgmDirector`] but doesn't hold an
+/// Mirrors [`legaia_engine_session::AudioDirector`] but doesn't hold an
 /// [`legaia_engine_audio::AudioOut`] (cpal is unavailable in CI). It owns
 /// the same three things the cpal director owns behind its `AudioOut` - the
 /// [`Spu`], the active [`VabBank`], and the attached [`Sequencer`] - so the
@@ -89,10 +89,10 @@ impl TraceBgmDirector {
         let report =
             legaia_vab::parse(bytes, vab_off).context("parse scene VAB header for audio trace")?;
         let mut alloc = SpuAllocator::new(
-            legaia_engine_session::boot::SPU_RESERVED_BYTES,
-            legaia_engine_session::boot::SPU_RAM_BYTES
-                - legaia_engine_session::boot::SPU_RESERVED_BYTES
-                - legaia_engine_session::boot::SFX_BANK_SPU_BYTES,
+            legaia_engine_session::session::SPU_RESERVED_BYTES,
+            legaia_engine_session::session::SPU_RAM_BYTES
+                - legaia_engine_session::session::SPU_RESERVED_BYTES
+                - legaia_engine_session::session::SFX_BANK_SPU_BYTES,
         );
         let bank = VabBank::upload(&mut self.spu, &mut alloc, &report, bytes);
         self.bank = Some(bank);
@@ -138,7 +138,7 @@ impl TraceBgmDirector {
     /// Split a raw `music_01` bank entry (`[chunk][pBAV VAB][pQES SEQ]`),
     /// upload the entry's **own** VAB into the private SPU, make it the
     /// active bank, and return the SEQ bytes. Mirrors
-    /// [`legaia_engine_session::AudioBgmDirector`]'s `stage_owned_vab` byte for byte,
+    /// [`legaia_engine_session::AudioDirector`]'s `stage_owned_vab` byte for byte,
     /// including its allocator region, so the two directors program the same
     /// `start_addr` for the same track.
     pub(super) fn stage_owned_vab(&mut self, entry_bytes: &[u8]) -> Option<Vec<u8>> {
@@ -184,7 +184,7 @@ impl Default for TraceBgmDirector {
 impl BgmDirector for TraceBgmDirector {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         // Suppress duplicate starts for the same id - mirrors the retail
-        // op `0x35` behaviour observed in `AudioBgmDirector::start`.
+        // op `0x35` behaviour observed in `NativeAudioDirector::start`.
         if self.last_started == Some(bgm_id) && !self.paused && self.sequencer.is_some() {
             return;
         }

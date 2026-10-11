@@ -9,7 +9,7 @@ pub const MENU_PRESS_GAP: u64 = 12;
 
 /// Extra ticks the first press after `Start` waits: the field darkens for up
 /// to fourteen ticks (`0x83 / 10` at a frame step of `1`) before the menu
-/// exists and takes a press (`BootSession::pause_wipe`, retail
+/// exists and takes a press (`NativeSession::pause_wipe`, retail
 /// `FUN_801ED308` phase 1), longer than one [`MENU_PRESS_GAP`].
 pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
 
@@ -49,7 +49,10 @@ pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
 /// Drive the headless session's pause menu to `menu` through its pad path
 /// ([`pause_menu_presses`], each a one-tick edge), settle, and read back the
 /// sub-screen it holds.
-pub(super) fn drive_pause_menu(session: &mut BootSession, menu: &RetailMenu) -> Result<Option<u8>> {
+pub(super) fn drive_pause_menu(
+    session: &mut NativeSession,
+    menu: &RetailMenu,
+) -> Result<Option<u8>> {
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::EquipState;
     let presses = pause_menu_presses(menu);

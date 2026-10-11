@@ -24,8 +24,8 @@ use legaia_engine_core::battle_tutorial::{TUTORIAL_ARM_FLAG, TutorialLesson};
 use legaia_engine_menus::battle_input::CommandPhase;
 use legaia_engine_menus::inventory_use::InventoryUseState;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
@@ -48,12 +48,12 @@ struct Plan {
     drill: Vec<Vec<PadButton>>,
 }
 
-fn open_spar(extracted: &std::path::Path) -> BootSession {
+fn open_spar(extracted: &std::path::Path) -> NativeSession {
     let cfg = BootConfig {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             "town01",
@@ -90,7 +90,12 @@ fn open_spar(extracted: &std::path::Path) -> BootSession {
 
 /// The press a player makes this frame. `drill_tries` counts the lesson-3
 /// arts entries opened so far.
-fn hand(session: &BootSession, plan: &Plan, drill_tries: &mut usize, entry_open: &mut bool) -> u16 {
+fn hand(
+    session: &NativeSession,
+    plan: &Plan,
+    drill_tries: &mut usize,
+    entry_open: &mut bool,
+) -> u16 {
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {
         return PadButton::Cross.mask();

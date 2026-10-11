@@ -11,7 +11,7 @@ use super::*;
 /// Every CDNAME label that resolves to a playable scene (a kingdom overworld,
 /// or a scene whose field MAN resolves), unioned with the decoded `0x3F`
 /// destinations of those scenes that also resolve.
-pub(super) fn scene_set(session: &BootSession) -> Vec<String> {
+pub(super) fn scene_set(session: &NativeSession) -> Vec<String> {
     use legaia_engine_field::man_field_scripts::scene_destinations;
     let index = &session.host.index;
     let playable = |name: &str| -> bool {

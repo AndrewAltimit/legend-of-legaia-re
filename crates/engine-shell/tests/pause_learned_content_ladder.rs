@@ -15,17 +15,17 @@
 //!
 //! ## What is seeded, and why it is player state
 //!
-//! The session is booted with `BootSession::begin_new_game` exactly as
+//! The session is booted with `NativeSession::begin_new_game` exactly as
 //! `menu_replay` boots it. Two writes are then made to the **party**, never
 //! to a menu: one Seru spell prepended to Vahn's record through
 //! `magic_xp::learn_spell_prepend` (the record-side commit a capture makes,
 //! the same kernel `World::resolve_captures` calls), and one art book put in
 //! the bag (what a shop purchase or a chest leaves). Everything after that is
-//! a pad edge through `World::set_pad` + `BootSession::tick`.
+//! a pad edge through `World::set_pad` + `NativeSession::tick`.
 //!
 //! One host step is replayed as well: the native window's boot installs the
 //! menu overlay's data tables (`World::install_menu_overlay_tables` over
-//! PROT 0899, `window/run.rs`), and the headless `BootSession` does not. The
+//! PROT 0899, `window/run.rs`), and the headless `NativeSession` does not. The
 //! art notice's template is one of those tables, so without the install the
 //! notice is `None` by design ("disc text the engine does not invent"). The
 //! bytes are the user's disc; nothing here is synthesised.
@@ -56,8 +56,8 @@ use std::path::PathBuf;
 use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
 use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 /// A player Seru spell (`0x81..=0x8B`, `docs/formats/spell-table.md`).
@@ -76,13 +76,13 @@ fn extracted_dir() -> Option<PathBuf> {
         .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
-fn tap(s: &mut BootSession, b: PadButton) {
+fn tap(s: &mut NativeSession, b: PadButton) {
     s.host.world.set_pad(b.mask());
     let _ = s.tick();
     s.host.world.set_pad(0);
     let _ = s.tick();
     // A Start that opened the menu: wait out the field's wipe until the menu
-    // exists (`BootSession::pause_wipe`).
+    // exists (`NativeSession::pause_wipe`).
     for _ in 0..64 {
         if s.pause_wipe().menu_spawned() {
             break;
@@ -91,7 +91,7 @@ fn tap(s: &mut BootSession, b: PadButton) {
     }
 }
 
-fn root_cursor(s: &BootSession) -> Option<u8> {
+fn root_cursor(s: &NativeSession) -> Option<u8> {
     match s.field_menu.as_ref()?.phase() {
         FieldMenuPhase::Browsing { cursor } => Some(cursor),
         _ => None,
@@ -99,7 +99,7 @@ fn root_cursor(s: &BootSession) -> Option<u8> {
 }
 
 /// Start edge, then walk the root cursor onto `row` and press Cross.
-fn open_row(s: &mut BootSession, row: FieldMenuRow) {
+fn open_row(s: &mut NativeSession, row: FieldMenuRow) {
     if !s.field_menu_is_open() {
         tap(s, PadButton::Start);
     }
@@ -118,7 +118,7 @@ fn open_row(s: &mut BootSession, row: FieldMenuRow) {
     tap(s, PadButton::Cross);
 }
 
-fn close_to_root(s: &mut BootSession) {
+fn close_to_root(s: &mut NativeSession) {
     for _ in 0..12 {
         if s.field_menu_sub.is_none() {
             return;
@@ -130,7 +130,7 @@ fn close_to_root(s: &mut BootSession) {
 
 /// town01 with a new-game party, one or two spells learned by Vahn, and
 /// `bag` in the bag.
-fn booted(spells: &[u8], bag: &[u8]) -> Option<BootSession> {
+fn booted(spells: &[u8], bag: &[u8]) -> Option<NativeSession> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
@@ -143,7 +143,7 @@ fn booted(spells: &[u8], bag: &[u8]) -> Option<BootSession> {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut s = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut s = NativeSession::open(&extracted, &cfg).expect("boot session");
     s.begin_new_game();
     s.enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01");

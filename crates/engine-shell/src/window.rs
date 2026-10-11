@@ -2,7 +2,6 @@
 //! viewer (`PlayWindowApp`) and the `play-str` MDEC movie player
 //! (`StrPlayerApp`), plus their geometry/asset helpers.
 
-use crate::BootSession;
 use crate::replay::{PadEvent, ReplayFile, ReplayMeta};
 use anyhow::{Context, Result};
 use glam::{Mat4, Vec3, Vec4};
@@ -19,6 +18,7 @@ use legaia_engine_scene::scene::Scene;
 use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
+use legaia_engine_session::native::NativeSession;
 use legaia_engine_ui::{
     HudPopupView, HudSlotMeta, HudSlotView, TextDraw, battle_hud_draws_for,
     encounter_banner_draws_for, text_draws_for,

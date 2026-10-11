@@ -298,13 +298,13 @@ SELFTEST_SIGNATURES: list[tuple[str, str, bool]] = [
 
 SELFTEST_IMPLS: list[tuple[str, str, str | None, str | None]] = [
     ("bare trait name",
-     "impl BgmDirector for AudioBgmDirector {", "BgmDirector", "AudioBgmDirector"),
+     "impl BgmDirector for AudioDirector {", "BgmDirector", "AudioDirector"),
     ("fully qualified trait path",
      "impl legaia_engine_core::scene_host::BgmDirector for WebBgmDirector<'_> {",
      "BgmDirector", "WebBgmDirector<'_>"),
     ("lifetime generics on the impl",
      "impl<'a> CdDmaHost for DiscHost<'a> {", "CdDmaHost", "DiscHost<'a>"),
-    ("inherent impl is not a trait impl", "impl AudioBgmDirector {", None, None),
+    ("inherent impl is not a trait impl", "impl AudioDirector {", None, None),
     ("trait definition is not a trait impl", "pub trait BgmDirector {", None, None),
 ]
 

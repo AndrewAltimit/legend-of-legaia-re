@@ -16,8 +16,8 @@ use std::path::PathBuf;
 
 use legaia_engine_audio::{SfxBank, Spu};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
@@ -48,7 +48,7 @@ fn a_monster_cue_keys_a_sample_from_its_monster_snd_bank() {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open");
     session
         .enter_field_live(
             "town01",

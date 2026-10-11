@@ -33,8 +33,8 @@
 
 #![allow(clippy::expect_fun_call)]
 
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_shell::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 use legaia_web_viewer::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
@@ -58,16 +58,16 @@ fn native_chain(disc: &str) -> (Vec<(u8, String)>, u64) {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut s = BootSession::open_disc(std::path::Path::new(disc), &cfg).expect("open disc");
+    let mut s = NativeSession::open_disc(std::path::Path::new(disc), &cfg).expect("open disc");
     let mut words = Vec::new();
-    let sample = |s: &BootSession, words: &mut Vec<(u8, String)>| {
+    let sample = |s: &NativeSession, words: &mut Vec<(u8, String)>| {
         let gm = s.mode_seat.game_mode();
         words.push((gm.as_index() as u8, s.mode_seat.mode_name().to_string()));
     };
     sample(&s, &mut words);
     s.enter_field_live(
         SCENE,
-        &legaia_engine_session::boot::FieldLiveOpts {
+        &legaia_engine_session::session::FieldLiveOpts {
             live_loop: false,
             player_battle: false,
             ..Default::default()

@@ -12,7 +12,7 @@
 //!
 //! Seeds from the retail library states `vell_fog_field` (mist forest) and
 //! the two `koin1` ticket-counter states through the engine's own card-load path
-//! ([`BootSession::resume_save`]), seats the player on retail's `(X, Z)`,
+//! ([`NativeSession::resume_save`]), seats the player on retail's `(X, Z)`,
 //! turns the liveliness on and ticks 120 frames with no input.
 //!
 //! Skips (passes) unless `LEGAIA_DISC_BIN` is set and the save library and
@@ -20,8 +20,8 @@
 
 use std::path::{Path, PathBuf};
 
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_parity::retail_compare::{enumerate_corpus, read_retail, resolve_dirs};
 
 fn repo() -> PathBuf {
@@ -66,7 +66,7 @@ fn an_idle_resume_with_live_npcs_does_not_move_the_player() {
             scene: retail.scene.clone(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open session");
         let _ = session.resume_save(save, &retail.scene, &FieldLiveOpts::default());
         session.host.world.npcs.animate = true;
         assert!(
@@ -74,7 +74,7 @@ fn an_idle_resume_with_live_npcs_does_not_move_the_player() {
             "{label}: seat on retail ({x}, {z})"
         );
         session.camera.zone.arm_arrival();
-        let pos = |s: &BootSession| {
+        let pos = |s: &NativeSession| {
             let w = &s.host.world;
             let a = &w.actors[w.player_actor_slot? as usize];
             Some((a.move_state.world_x, a.move_state.world_z))

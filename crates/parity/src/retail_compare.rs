@@ -22,7 +22,7 @@
 //!   ([`crate::retail_compare_image`]).
 //!
 //! The engine is seeded through its own card-load path
-//! ([`crate::BootSession::resume_save`] over the lifted block), then the
+//! ([`legaia_engine_session::native::NativeSession::resume_save`] over the lifted block), then the
 //! player is seated on the state's `(X, Z)` - the same debug seat
 //! `LEGAIA_SEAT` gives `play-window` - and the session ticks
 //! [`SETTLE_TICKS`] frames with no input. The seeding model and its gaps are
@@ -49,9 +49,9 @@ use legaia_ram_image::ScenarioManifest;
 use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
-use crate::boot::BootSession;
 use crate::retail_compare_image::{Frame, ImageScore};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 mod seeds;
 pub use seeds::*;
 mod scoring;

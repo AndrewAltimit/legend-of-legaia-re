@@ -1,4 +1,4 @@
-//! Disc-gated: `BootSession::enter_world_map_live` loads a real world-map
+//! Disc-gated: `NativeSession::enter_world_map_live` loads a real world-map
 //! scene, routes its region-keyed encounter table onto the overworld, installs
 //! the player, and reaches `SceneMode::WorldMap` ready to roll encounters.
 //!
@@ -13,8 +13,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -43,7 +43,7 @@ fn world_map_live_installs_regions_and_player() {
         scene: "map03".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     let opts = FieldLiveOpts::default();
     let mode = session
         .enter_world_map_live("map03", &opts)
@@ -106,7 +106,7 @@ fn world_map_load_uses_kingdom_landmark_pack() {
             scene: scene.into(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
         let opts = FieldLiveOpts::default();
         session
             .enter_world_map_live(scene, &opts)
@@ -172,7 +172,7 @@ fn world_map_live_walk_reaches_battle() {
         scene: "map03".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     let opts = FieldLiveOpts::default();
     session
         .enter_world_map_live("map03", &opts)
@@ -319,7 +319,7 @@ fn overworld_scenes_load_nonempty_walkability_grid() {
             scene: scene.into(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
         let opts = FieldLiveOpts::default();
         session
             .enter_world_map_live(scene, &opts)
@@ -368,7 +368,7 @@ fn world_map_scene_transition_auto_enters_world_map() {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .host
         .set_map_resolver(Box::new(VecMapIdResolver::new(vec!["map03".into()])));
@@ -439,7 +439,7 @@ fn world_map_walking_onto_real_minigame_door_arms_the_warp() {
             scene: scene.into(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
         let opts = FieldLiveOpts::default();
         session
             .enter_world_map_live(scene, &opts)
@@ -528,7 +528,7 @@ fn world_map_talking_to_real_npc_renders_inline_dialogue() {
             scene: scene.into(),
             enable_audio: false,
         };
-        let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+        let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
         let opts = FieldLiveOpts::default();
         session
             .enter_world_map_live(scene, &opts)
@@ -725,7 +725,7 @@ fn save_load_on_an_overworld_label_resumes_in_world_map_mode() {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     let save = session.host.world.save_full();
     let opts = FieldLiveOpts::default();
     let mode = session

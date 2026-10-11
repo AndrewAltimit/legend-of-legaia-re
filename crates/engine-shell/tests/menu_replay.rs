@@ -7,21 +7,21 @@
 //! rack. Same contract: nothing is seated, nothing is poked, and a leg that
 //! cannot be reached by pad is reported as a stall rather than routed around.
 //!
-//! ## Why this needed a change to `BootSession` first
+//! ## Why this needed a change to `NativeSession` first
 //!
 //! Retail's pause menu is two levels deep: the root list **suspends itself**
 //! on confirm and the routed sub-screen owns the pad until it finishes
 //! (`FieldMenuPhase::Suspended`). Before this test existed, the headless
-//! [`BootSession::tick`] answered that suspend by calling `menu.resume(false)`
+//! [`NativeSession::tick`] answered that suspend by calling `menu.resume(false)`
 //! on the spot - so a `set_pad` + `tick` driver could open the menu, move the
 //! root cursor and observe the row gates, and **could not enter Items, Equip
 //! or Save at all**. Both shipped hosts (the native window's boot-UI arm, the
 //! browser page's `play_menu_*`) implemented the second level privately.
 //!
-//! That is host drift in the shared driver, not a test problem: `BootSession`
+//! That is host drift in the shared driver, not a test problem: `NativeSession`
 //! is what every oracle in this crate drives, and it was the weakest of the
 //! three menu drivers. The stack now lives on the session
-//! ([`BootSession::field_menu_sub`]), so this ladder is genuinely pad-driven
+//! ([`NativeSession::field_menu_sub`]), so this ladder is genuinely pad-driven
 //! end to end and the two hosts have something to converge on.
 //!
 //! ## The ladder
@@ -99,8 +99,8 @@ use legaia_engine_menus::save_select::{
     SaveRack, SaveSelectMode, SelectPhase, SlotContent, SlotSnapshot,
 };
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 // ---------------------------------------------------------------------------
@@ -112,13 +112,13 @@ use legaia_engine_system::input::PadButton;
 /// The release frame is not decoration. `just_pressed` is `pad & !pad_prev`,
 /// so a mask held across two frames is one event and the second frame's press
 /// would be silently lost - which reads exactly like a screen refusing input.
-fn tap(session: &mut BootSession, mask: u16) {
+fn tap(session: &mut NativeSession, mask: u16) {
     session.host.world.set_pad(mask);
     let _ = session.tick();
     session.host.world.set_pad(0);
     let _ = session.tick();
     // A press that opened the menu: the field darkens for a few frames
-    // before the menu exists (`BootSession::pause_wipe`), and a player waits
+    // before the menu exists (`NativeSession::pause_wipe`), and a player waits
     // for it to appear before pressing on.
     for _ in 0..64 {
         if session.pause_wipe().menu_spawned() {
@@ -128,13 +128,13 @@ fn tap(session: &mut BootSession, mask: u16) {
     }
 }
 
-fn tap_button(session: &mut BootSession, b: PadButton) {
+fn tap_button(session: &mut NativeSession, b: PadButton) {
     tap(session, b.mask());
 }
 
 /// Hold neutral for `n` frames - what a player does across a beat that
 /// accepts no input (the memory-card read).
-fn idle(session: &mut BootSession, n: usize) {
+fn idle(session: &mut NativeSession, n: usize) {
     session.host.world.set_pad(0);
     for _ in 0..n {
         let _ = session.tick();
@@ -161,13 +161,13 @@ fn extracted_dir() -> Option<PathBuf> {
 /// Everything here is *game* state a player would have (a party, a bag, a
 /// memory card in port 1) - none of it is menu state. The menu is reached
 /// only by pad, below.
-fn booted(scene: &str) -> Option<BootSession> {
+fn booted(scene: &str) -> Option<NativeSession> {
     let extracted = extracted_dir()?;
     let cfg = BootConfig {
         scene: scene.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).ok()?;
+    let mut session = NativeSession::open(&extracted, &cfg).ok()?;
     session.begin_new_game();
     // A kingdom map is not a field scene: it has its own live entry
     // (`enter_world_map_live`), which is what installs the world-map
@@ -222,14 +222,14 @@ fn port0_blocks() -> Vec<SlotSnapshot> {
 // Observers
 // ---------------------------------------------------------------------------
 
-fn root_cursor(session: &BootSession) -> Option<u8> {
+fn root_cursor(session: &NativeSession) -> Option<u8> {
     match session.field_menu.as_ref()?.phase() {
         FieldMenuPhase::Browsing { cursor } => Some(cursor),
         _ => None,
     }
 }
 
-fn sub_row(session: &BootSession) -> Option<FieldMenuRow> {
+fn sub_row(session: &NativeSession) -> Option<FieldMenuRow> {
     session
         .field_menu_sub
         .as_ref()
@@ -239,7 +239,7 @@ fn sub_row(session: &BootSession) -> Option<FieldMenuRow> {
 /// Walk the root cursor from wherever it is onto `row`, by pad, refusing to
 /// take more steps than the list is long. Returns `false` when the row cannot
 /// be landed on - which for a gated row is the correct answer, not a failure.
-fn walk_cursor_to(session: &mut BootSession, row: FieldMenuRow) -> bool {
+fn walk_cursor_to(session: &mut NativeSession, row: FieldMenuRow) -> bool {
     for _ in 0..FieldMenuRow::ALL.len() {
         if root_cursor(session) == Some(row.index()) {
             return true;
@@ -257,7 +257,7 @@ fn walk_cursor_to(session: &mut BootSession, row: FieldMenuRow) -> bool {
 /// drained back to the root; reading after a whole `tap` would then report
 /// "the row opened nothing", which is a different and false claim. The screen
 /// was entered either way, and the rung says so.
-fn open_row(session: &mut BootSession, row: FieldMenuRow) -> Option<FieldMenuRow> {
+fn open_row(session: &mut NativeSession, row: FieldMenuRow) -> Option<FieldMenuRow> {
     if !walk_cursor_to(session, row) {
         return None;
     }
@@ -274,7 +274,7 @@ fn open_row(session: &mut BootSession, row: FieldMenuRow) -> Option<FieldMenuRow
 
 /// Back out of whatever sub-screen is open, by pad, and report whether the
 /// root list took the pad back.
-fn close_sub(session: &mut BootSession) -> bool {
+fn close_sub(session: &mut NativeSession) -> bool {
     for _ in 0..8 {
         if session.field_menu_sub.is_none() {
             return matches!(
@@ -337,7 +337,7 @@ fn pad_driven_menu_ladder() {
     // -- Rung 1: a real Start edge opens the menu -------------------------
     //
     // Not `open_field_menu()`. The edge goes through `World::set_pad` and
-    // `BootSession::tick`'s own Start arm, which is also where the dialogue
+    // `NativeSession::tick`'s own Start arm, which is also where the dialogue
     // refusal and the Field-mode gate live.
     assert_eq!(
         s.host.world.mode,
@@ -730,7 +730,7 @@ fn pad_driven_menu_ladder() {
     );
 }
 
-fn sub_select_phase(s: &BootSession) -> Option<SelectPhase> {
+fn sub_select_phase(s: &NativeSession) -> Option<SelectPhase> {
     match s.field_menu_sub.as_ref() {
         Some(FieldMenuSubsession::Save(sel)) => Some(sel.phase()),
         _ => None,
@@ -781,7 +781,7 @@ fn the_save_row_is_reachable_by_pad_on_a_kingdom_overworld() {
     );
 
     // ...and now also where Start works. Off a real pad edge through
-    // `BootSession::tick`'s own Start arm, not an API call.
+    // `NativeSession::tick`'s own Start arm, not an API call.
     tap_button(&mut s, PadButton::Start);
     assert!(
         s.field_menu_is_open(),

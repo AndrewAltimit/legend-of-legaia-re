@@ -49,9 +49,9 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::BootSession;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::BootConfig;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// Camera pose sample in retail units.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,8 +133,8 @@ pub fn scene_mode_to_retail(mode: SceneMode) -> Option<u16> {
     legaia_engine_mode::mode::GameMode::for_scene_mode(mode).map(|gm| gm.as_index() as u16)
 }
 
-/// Sample one canonical frame from a live [`BootSession`].
-pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
+/// Sample one canonical frame from a live [`NativeSession`].
+pub fn sample_frame(session: &NativeSession) -> SimTraceFrame {
     let world = &session.host.world;
     let cam = &session.camera;
 
@@ -205,7 +205,7 @@ pub fn sample_frame(session: &BootSession) -> SimTraceFrame {
 /// Boot a scene and tick `frames` sim frames, sampling the canonical trace
 /// after boot and after every tick (`frames + 1` records). With
 /// `field_live`, the session drops into a live field scene first
-/// ([`BootSession::enter_field_live`]) so the field VM + locomotion +
+/// ([`NativeSession::enter_field_live`]) so the field VM + locomotion +
 /// camera events actually run, the same way the windowed host arms them.
 pub fn build_sim_trace(
     scene_name: &str,
@@ -219,13 +219,13 @@ pub fn build_sim_trace(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     if field_live {
         session.enter_field_live(
             scene_name,
-            &legaia_engine_session::boot::FieldLiveOpts::default(),
+            &legaia_engine_session::session::FieldLiveOpts::default(),
         )?;
     }
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));

@@ -22,8 +22,8 @@
 use legaia_engine_core::camera_view::{FieldCameraFrame, resolve_field_camera};
 use legaia_engine_core::fog_particles::{FOG_CAP_RAISED, FOG_CLUT, FOG_OVERWORLD_LIFT, FOG_TPAGE};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use std::path::PathBuf;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -55,7 +55,7 @@ fn the_overworld_runs_the_fog_pool_through_its_own_arm() {
         scene: scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
     let mode = session
         .enter_world_map_live(&scene, &FieldLiveOpts::default())
         .expect("enter map01");

@@ -47,9 +47,9 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_ram_image::game_anchors;
 use serde::{Deserialize, Serialize};
 
-use crate::boot::BootSession;
 use crate::retail_compare::{CameraObs, RetailObs};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 
 mod camera_align;
 mod capture_drive;

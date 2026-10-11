@@ -13,7 +13,7 @@
 //! roughly a third too wide - the save-screen "Do not remove MEMORY CARD"
 //! line measured 225px against retail's 164px.
 //!
-//! [`BootSession::dialog_font`] closes that: the font is decoded from the
+//! [`NativeSession::dialog_font`] closes that: the font is decoded from the
 //! boot source itself (the `PROT.DAT` 4bpp font TIM + the `SCUS_942.54`
 //! advance table), no save state involved. This test asserts a disc boot
 //! actually carries it and that its metrics are the retail proportional ones,
@@ -22,8 +22,8 @@
 //! Skip-pass (CLAUDE.md disc-gated convention) when `LEGAIA_DISC_BIN` is
 //! unset.
 
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 use legaia_font::Font;
 use std::path::PathBuf;
 
@@ -42,14 +42,14 @@ fn disc_boot_carries_the_proportional_dialog_font() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    let session = BootSession::open_disc(
+    let session = NativeSession::open_disc(
         &disc,
         &BootConfig {
             scene: "town01".to_string(),
             enable_audio: false,
         },
     )
-    .expect("open BootSession from disc");
+    .expect("open NativeSession from disc");
 
     let font = session
         .dialog_font

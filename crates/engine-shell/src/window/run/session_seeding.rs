@@ -1,5 +1,7 @@
 //! Debug seeding of a freshly booted play-window session: the cheat file,
-//! the `--party` spec, the `--set-flag` story flags and the `--battle` fight.
+//! the `--party` spec, the `--set-flag` story flags, the `--battle` fight,
+//! and the environment seeds (the capture seat and palettes, debug spells,
+//! the RNG seed, the start tile, the sparring tutorial arm, the demo party).
 
 use super::*;
 
@@ -75,7 +77,10 @@ pub(super) fn parse_party_spec(spec: &str) -> Result<Vec<u8>> {
 /// one a script raised. Called twice - once before scene entry and once after
 /// the `--seed-party` reset - and idempotent, because setting a bit twice is
 /// setting a bit.
-pub(super) fn seed_debug_story_flags(session: &mut BootSession, seeds: &super::super::DebugSeeds) {
+pub(super) fn seed_debug_story_flags(
+    session: &mut NativeSession,
+    seeds: &super::super::DebugSeeds,
+) {
     if seeds.story_flags.is_empty() {
         return;
     }
@@ -124,7 +129,7 @@ impl BattleEntry {
 /// region roll does - so the intro, the BGM swap and the battle-load path are
 /// the ordinary ones, and what the window shows is what an organic encounter
 /// shows. Nothing here runs when `--battle` is absent.
-pub(super) fn arm_requested_battle(session: &mut BootSession, spec: &str) {
+pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     let entry = match BattleEntry::parse(spec) {
         Ok(e) => e,
         Err(err) => {
@@ -279,7 +284,7 @@ pub(super) fn arm_requested_battle(session: &mut BootSession, spec: &str) {
 /// fog bit) then drew its sheets across the terrain through the field
 /// camera, and the terrain took the field draw path, neither of which the
 /// world map runs.
-pub(super) fn seed_new_game_party(session: &mut BootSession) {
+pub(super) fn seed_new_game_party(session: &mut NativeSession) {
     let entered = session.host.world.mode;
     session.begin_new_game();
     if entered == legaia_engine_mode::mode::SceneMode::WorldMap {
@@ -294,7 +299,7 @@ pub(super) fn seed_new_game_party(session: &mut BootSession) {
 /// frame-pairing aid for comparing this host against a retail save state
 /// at that state's own player position. The play page's twin is
 /// `play_debug_seat`.
-pub(super) fn apply_debug_seat_env(session: &mut BootSession) {
+pub(super) fn apply_debug_seat_env(session: &mut NativeSession) {
     if let Ok(seat) = std::env::var("LEGAIA_SEAT") {
         let xz: Vec<i16> = seat
             .split(',')
@@ -347,7 +352,7 @@ pub(super) fn apply_debug_seat_env(session: &mut BootSession) {
 /// The retail-compare image channel's palette seeds: a retail state's live
 /// CLUT-cell cycler snapshots (`LEGAIA_SEAT_CLUT_FX`) and its scroller rects
 /// with their captured texels (`LEGAIA_SEAT_VRAM_RECTS=<file>`).
-pub(super) fn apply_capture_palette_seeds(session: &mut BootSession) {
+pub(super) fn apply_capture_palette_seeds(session: &mut NativeSession) {
     // `LEGAIA_SEAT_CLUT_FX` (the retail-compare image channel): a retail
     // state's live CLUT-cell cycler snapshots, written over the matching
     // cycled cells so the frame shows the captured palette phase
@@ -375,7 +380,7 @@ pub(super) fn apply_capture_palette_seeds(session: &mut BootSession) {
 /// Magic arm and cast - the cast-presentation screenshot harness. A
 /// development aid for the parity sweeps, not a player surface.
 pub(super) fn teach_debug_spells(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     debug_seeds: &super::super::DebugSeeds,
 ) {
     let parse = |s: &str| {
@@ -410,7 +415,7 @@ pub(super) fn teach_debug_spells(
 /// different deterministic stream - the way to reach an AI branch (a
 /// monster cast) the default seed never picks. A development aid for the
 /// parity sweeps, not a player surface.
-pub(super) fn apply_rng_seed_env(session: &mut BootSession) {
+pub(super) fn apply_rng_seed_env(session: &mut NativeSession) {
     if let Ok(spec) = std::env::var("LEGAIA_RNG_SEED") {
         let spec = spec.trim();
         let seed = spec
@@ -433,7 +438,7 @@ pub(super) fn apply_rng_seed_env(session: &mut BootSession) {
 /// `--world-map` boot has no door warp to seat the player, and the ocean
 /// is unwalkable, so the (0,0) default strands the marker at sea. E.g.
 /// Rim Elm's retail map01 arrival is `LEGAIA_START_TILE=96,25`.
-pub(super) fn apply_start_tile_env(session: &mut BootSession) {
+pub(super) fn apply_start_tile_env(session: &mut NativeSession) {
     if let Ok(spec) = std::env::var("LEGAIA_START_TILE") {
         let parts: Vec<i32> = spec
             .split(',')
@@ -450,15 +455,15 @@ pub(super) fn apply_start_tile_env(session: &mut BootSession) {
 }
 
 /// Log the battle chip / banner labels the boot read off the disc.
-pub(super) fn log_battle_ui_labels(session: &BootSession) {
+pub(super) fn log_battle_ui_labels(session: &NativeSession) {
     // Battle chip / banner labels off the user's own disc: the `Ambushed!` and
     // `surprised the enemy` lines, `Spirit`, `Escape` and the per-character
-    // Ra-Seru magic-command name, both halves installed at boot (`boot.rs`,
+    // Ra-Seru magic-command name, both halves installed at boot (`session.rs`,
     // the builder the browser page shares). Empty on a partial extraction, in
     // which case the port's own wording draws instead of nothing.
     //
     // The party cast trigger's per-spell anim-pair lists are installed by
-    // `BootSession::open` for every session (`boot.rs`), auto-battles
+    // `NativeSession::open` for every session (`native.rs`), auto-battles
     // included.
     {
         let n = session.host.world.battle.ui_strings.len();
@@ -468,7 +473,7 @@ pub(super) fn log_battle_ui_labels(session: &BootSession) {
 
 /// `LEGAIA_BATTLE_TUTORIAL`: a one-shot poke at the sparring tutorial's arm
 /// flag, for a player-driven session.
-pub(super) fn apply_battle_tutorial_env(session: &mut BootSession) {
+pub(super) fn apply_battle_tutorial_env(session: &mut NativeSession) {
     // Sparring tutorial: nothing to gate here.
     //
     // The prompt corpus (stage overlay 967) is installed by scene entry for
@@ -559,7 +564,7 @@ pub(super) fn apply_battle_tutorial_env(session: &mut BootSession) {
 /// player-battle flag, so every native session that booted without a save
 /// played with free items and a fabricated art the browser page never
 /// had - the same engine, two different parties.
-pub(super) fn seed_demo_battle(session: &mut BootSession, player_battle: bool) {
+pub(super) fn seed_demo_battle(session: &mut NativeSession, player_battle: bool) {
     let demo_seed = std::env::var("LEGAIA_DEMO_BATTLE_SEED").is_ok_and(|v| v == "1");
     if player_battle && demo_seed {
         log::info!("play-window: LEGAIA_DEMO_BATTLE_SEED=1 - seeding demo items / chains / art");
@@ -619,7 +624,7 @@ pub(super) fn seed_demo_battle(session: &mut BootSession, player_battle: bool) {
 /// Install the requested present-party composition (after the roster +
 /// cheats have settled, so the actor reseed reads final records). The
 /// flag overrides whatever composition the boot save carried.
-pub(super) fn install_party_spec(session: &mut BootSession, spec: &str) -> Result<()> {
+pub(super) fn install_party_spec(session: &mut NativeSession, spec: &str) -> Result<()> {
     let slots = parse_party_spec(spec)?;
     // Seed the roster slots the spec names before installing the
     // composition. `--seed-party` seeds retail's New Game roster, which is
@@ -682,7 +687,7 @@ pub(super) fn install_party_spec(session: &mut BootSession, spec: &str) -> Resul
 /// `--cheat-*`: after the roster and the present party have settled, so
 /// the level cheat grows the members that will actually fight.
 pub(super) fn apply_debug_cheats(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     debug_seeds: &super::super::DebugSeeds,
 ) {
     let templates = session
@@ -699,7 +704,7 @@ pub(super) fn apply_debug_cheats(
 /// setup, so the party / cheats / New Game reset have all settled and the
 /// combatants entering the battle are the ones the run configured.
 pub(super) fn arm_launch_battle(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     spec: &str,
     boot_ui: bool,
     party: Option<&str>,

@@ -24,14 +24,14 @@ pub(super) fn run_ladder(host: &mut SceneHost) -> Vec<Rung> {
     // basic attack for every party turn and nothing else - see
     // [`drain_battle`] - so the ladder's fighter could not choose a command,
     // could not use an item, and could not run. `SceneHost::open_extracted`
-    // is the bare scene host, not `BootSession`, so the catalogs the play
-    // hosts install (`BootSession::enter_field_live`) have to be installed
+    // is the bare scene host, not `NativeSession`, so the catalogs the play
+    // hosts install (`NativeSession::enter_field_live`) have to be installed
     // here too: **an empty item catalog makes every bag row inadmissible**,
     // which is a silent way for a healing policy to do nothing at all.
     if fight.driven {
         host.world.battle.player_driven = true;
         // Arm the **field** side of the loop as well, which is what both play
-        // hosts do (`BootSession::enter_field_live`) and what makes a dungeon
+        // hosts do (`NativeSession::enter_field_live`) and what makes a dungeon
         // roll its own encounters. It is inert on this route today - see the
         // `keikoku encounter model` line below - and arming it anyway means
         // the day the region decode is fixed, rung 5 starts fighting in the

@@ -6,7 +6,7 @@ use super::*;
 /// Walk to a door toward `dest` with the pad only. `Ok(entered)` on a scene
 /// change (which may not be `dest`; the caller checks).
 pub(super) fn pad_hop(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     dest: &str,
 ) -> Result<String, String> {
@@ -400,7 +400,7 @@ pub(super) fn pad_hand() -> bool {
 pub(super) const PAD_SEGMENT_FRAMES: u64 = 216_000;
 
 thread_local! {
-    /// `BootSession::frames` at which the current pad segment's budget runs
+    /// `NativeSession::frames` at which the current pad segment's budget runs
     /// out.
     pub(super) static PAD_DEADLINE: std::cell::Cell<u64> = const { std::cell::Cell::new(u64::MAX) };
 }
@@ -419,7 +419,7 @@ thread_local! {
 }
 
 /// `Err` once the pad segment's frame budget is spent.
-pub(super) fn pad_budget(session: &BootSession) -> Result<(), String> {
+pub(super) fn pad_budget(session: &NativeSession) -> Result<(), String> {
     if pad_hand() && session.frames >= PAD_DEADLINE.with(std::cell::Cell::get) {
         Err(format!("pad frame budget ({PAD_SEGMENT_FRAMES}) spent"))
     } else {

@@ -12,9 +12,9 @@ use super::*;
 /// Press Start and wait out the pause wipe: retail's field session raises
 /// the wipe level from black-free to full before it spawns the menu
 /// (`FUN_801ED308`), and the menu takes no input until then
-/// (`BootSession::pause_wipe`). A press sent into the wipe is lost, and the
+/// (`NativeSession::pause_wipe`). A press sent into the wipe is lost, and the
 /// field heal then walked out of a menu it never drove.
-pub(super) fn open_pause_menu(session: &mut BootSession) {
+pub(super) fn open_pause_menu(session: &mut NativeSession) {
     tap_pad(session, PadButton::Start.mask());
     for _ in 0..120 {
         if session.field_menu.is_none() || session.pause_wipe().menu_spawned() {
@@ -24,7 +24,7 @@ pub(super) fn open_pause_menu(session: &mut BootSession) {
     }
 }
 
-pub(super) fn tap_pad(session: &mut BootSession, mask: u16) {
+pub(super) fn tap_pad(session: &mut NativeSession, mask: u16) {
     session.host.world.set_pad(mask);
     let _ = session.tick();
     session.host.world.set_pad(0);
@@ -35,8 +35,8 @@ pub(super) fn tap_pad(session: &mut BootSession, mask: u16) {
 /// press Square, the newly-pressed bit the talk controller's state-0 arm gate
 /// reads (`FUN_801D27E0`, `_DAT_8007B874 & 0x80`), and wait out the
 /// fade-swap-fade cycle. `true` when the leader changed.
-pub(super) fn swap_leader(session: &mut BootSession) -> bool {
-    let armed = |s: &BootSession| {
+pub(super) fn swap_leader(session: &mut NativeSession) -> bool {
+    let armed = |s: &NativeSession| {
         s.host
             .world
             .dialog
@@ -70,7 +70,7 @@ pub(super) fn swap_leader(session: &mut BootSession) -> bool {
 
 /// The weakest living party member's HP as a fraction of its maximum, in
 /// per-mille. `1000` for a party at full health.
-pub(super) fn party_hp_permille(session: &BootSession) -> u32 {
+pub(super) fn party_hp_permille(session: &NativeSession) -> u32 {
     let w = &session.host.world;
     let n = w.party.party_count.clamp(1, 3) as usize;
     (0..n)
@@ -88,7 +88,7 @@ pub(super) fn party_hp_permille(session: &BootSession) -> u32 {
 /// the weakest is below `threshold` per-mille and the bag has a restorative;
 /// then Circle back out to the field. Every step is a pad edge through the
 /// same menu sessions both play hosts drive. Returns how many items it used.
-pub(super) fn pad_field_heal(session: &mut BootSession, threshold: u32) -> usize {
+pub(super) fn pad_field_heal(session: &mut NativeSession, threshold: u32) -> usize {
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
@@ -271,7 +271,7 @@ pub(super) fn unguarded_members(w: &legaia_engine_core::world::World, element: u
 /// the field. Each confirm commits through the menu's own applier
 /// (`FUN_801E5A08`'s port), so the bag gives up the item and takes back the
 /// one it replaced. Returns how many members it equipped.
-pub(super) fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
+pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize {
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::{EquipState, browse_row_for_slot};
     use legaia_engine_menus::field_menu::{FieldMenuPhase, FieldMenuRow};
@@ -400,7 +400,7 @@ pub(super) fn pad_equip_guard(session: &mut BootSession, element: u8) -> usize {
 /// buys `0x40` walk-regen ticks (`0x800` walking vsyncs) with no encounter at
 /// all, whatever the rand stream deals (see `field-menu.md`, the Incense
 /// route `FUN_801D8D94`). Returns whether one was used.
-pub(super) fn pad_field_repel(session: &mut BootSession, threshold: u32) -> bool {
+pub(super) fn pad_field_repel(session: &mut NativeSession, threshold: u32) -> bool {
     use legaia_engine_core::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::field_menu::FieldMenuRow;
     use legaia_engine_menus::inventory_use::InventoryUseState;
@@ -563,7 +563,7 @@ pub(super) fn record_restores(
 /// region rolls; a lone member at 17/219 walking to it wiped on 14 of 21
 /// dealt streams (`LEGAIA_FGL_RNG_SEED`), against 3 of 21 walking straight
 /// out to `map01`.
-pub(super) fn pad_rest(session: &mut BootSession) -> Result<Option<String>, String> {
+pub(super) fn pad_rest(session: &mut NativeSession) -> Result<Option<String>, String> {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     if session.host.world.mode != SceneMode::Field
         || session.host.world.scene_can_roll_encounters()

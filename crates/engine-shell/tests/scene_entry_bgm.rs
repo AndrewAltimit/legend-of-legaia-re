@@ -11,7 +11,7 @@
 //! Three separate legs have each, on their own, left the engine silent here,
 //! and each reads identically from outside:
 //!
-//! 1. **No field-live entry.** `BootSession::open` only calls `load_scene`,
+//! 1. **No field-live entry.** `NativeSession::open` only calls `load_scene`,
 //!    which installs no field record - the field VM steps nothing and op
 //!    `0x35` never executes. Pinned by `voice_mask`: no start, no voices.
 //! 2. **No global-pool start hook.** Every real music cue is a global id
@@ -148,17 +148,17 @@ fn town01_cold_entry_selects_the_retail_track() {
         }
     }
 
-    let cfg = legaia_engine_session::boot::BootConfig {
+    let cfg = legaia_engine_session::session::BootConfig {
         scene: "town01".to_string(),
         enable_audio: false,
     };
     let mut session =
-        legaia_engine_shell::boot::BootSession::open(&extracted, &cfg).expect("open town01");
+        legaia_engine_session::native::NativeSession::open(&extracted, &cfg).expect("open town01");
     session.host.world.seed_free_roam_story_baseline("town01");
     session
         .enter_field_live(
             "town01",
-            &legaia_engine_session::boot::FieldLiveOpts::default(),
+            &legaia_engine_session::session::FieldLiveOpts::default(),
         )
         .expect("enter town01 live");
 

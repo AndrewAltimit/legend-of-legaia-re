@@ -613,7 +613,7 @@ fn rung8_fishing_developer_readout_needs_menu_and_modifier() {
 }
 
 /// The slot machine's reel motor: a directly keyed SPU voice
-/// (`World::take_sfx_voice_keys` -> `AudioBgmDirector::key_on_voice_attr` ->
+/// (`World::take_sfx_voice_keys` -> `NativeAudioDirector::key_on_voice_attr` ->
 /// `legaia_engine_audio::key_on_voice_attr`), the one cue path that bypasses
 /// both the SFX ring and the descriptor bank.
 ///

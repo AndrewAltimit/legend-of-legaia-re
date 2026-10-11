@@ -230,7 +230,7 @@ fn art_shout_pcm_lands_in_the_mix_after_the_cd_delay() {
     };
 
     // --- The bank the boot path stages, from the real disc. ---
-    let mut bank = legaia_engine_session::boot::read_arts_shout_bank(&disc)
+    let mut bank = legaia_engine_session::native::read_arts_shout_bank(&disc)
         .expect("arts-voice shout bank stages from the disc");
     let pool: Vec<u8> = bank
         .pool(0, 0x27)

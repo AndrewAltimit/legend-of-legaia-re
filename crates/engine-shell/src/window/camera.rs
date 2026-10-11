@@ -694,7 +694,7 @@ mod follow_compass_tests {
                 4.0 / 3.0,
             ) * FIELD_WORLD_FLIP;
             // Compass azimuth = render bias + manual orbit (what
-            // BootSession feeds World::field_camera_azimuth).
+            // NativeSession feeds World::field_camera_azimuth).
             let alpha = -to_rad(FIELD_FOLLOW_YAW_UNITS) + manual_orbit;
             let forward = Vec3::new(alpha.sin(), 0.0, alpha.cos());
             let right = Vec3::new(alpha.cos(), 0.0, -alpha.sin());

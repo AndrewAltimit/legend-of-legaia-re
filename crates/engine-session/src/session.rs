@@ -2,7 +2,7 @@
 //!
 //! Composes the per-crate primitives ([`legaia_engine_core::scene_host::SceneHost`],
 //! [`legaia_engine_field::camera::Camera`], the BGM director from
-//! [`crate::audio_director::AudioBgmDirector`]) into one struct the binary drives per
+//! [`crate::audio_director::AudioDirector`]) into one struct the binary drives per
 //! frame. Mirrors the retail boot flow:
 //!
 //! 1. Open the extracted PROT + CDNAME map.
@@ -15,13 +15,9 @@
 //! CI mode, no window). [`BootSession::tick`] is the per-frame driver
 //! callable from either path.
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-#[cfg(not(target_arch = "wasm32"))]
-use legaia_engine_audio::AudioOut;
 use legaia_engine_audio::AudioSink;
 use legaia_engine_battle::magic_xp::SpellLevelNotice;
 use legaia_engine_core::field_menu_dispatch::{
@@ -37,7 +33,7 @@ use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::scene::DefaultMapIdResolver;
 use legaia_engine_system::input::PadButton;
 
-use crate::audio_director::AudioBgmDirector;
+use crate::audio_director::AudioDirector;
 
 mod construct;
 mod disc_tables;
@@ -47,8 +43,6 @@ mod scene_entry;
 
 use disc_tables::*;
 pub use disc_tables::{BATTLE_XA_CLIP_SLOTS, attach_escape_icons};
-#[cfg(not(target_arch = "wasm32"))]
-pub use disc_tables::{read_arts_shout_bank, read_battle_xa_clip_bank};
 
 /// What one menu-button press did ([`BootSession::press_field_menu`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,22 +140,13 @@ impl Default for BootConfig {
     }
 }
 
-/// Source of PROT.DAT + CDNAME.TXT bytes for a [`BootSession::open*`]
-/// call. Internal - public construction is via the typed entry points
-/// [`BootSession::open`] and [`BootSession::open_disc`].
-#[cfg(not(target_arch = "wasm32"))]
-enum SceneSource<'a> {
-    Extracted(&'a Path),
-    Disc(&'a Path),
-}
-
 /// Per-frame session bundle. The binary owns one of these and calls
 /// [`tick`](Self::tick) every frame.
 pub struct BootSession<S: AudioSink> {
     pub host: SceneHost,
     pub camera: Camera,
     pub audio: Option<Arc<S>>,
-    pub bgm: Option<AudioBgmDirector<S>>,
+    pub bgm: Option<AudioDirector<S>>,
     /// Wall-clock frame counter, separate from `host.world.frame` (which
     /// includes pause-time skips when those land).
     pub frames: u64,
@@ -389,24 +374,6 @@ impl HostQueueMarks {
         front(&mut world.battle.clut_stages, self.clut_stages);
         front(&mut world.battle.effect_spawns, self.effect_spawns);
         front(&mut world.minigames.pending_sfx, self.minigame_sfx);
-    }
-}
-
-/// The native constructors: a session over the cpal output.
-#[cfg(not(target_arch = "wasm32"))]
-impl BootSession<AudioOut> {
-    /// Open an extracted disc tree and load the configured scene. Errors if
-    /// the directory isn't an extracted PROT or the scene name isn't in
-    /// CDNAME.TXT.
-    pub fn open(extracted_root: &Path, cfg: &BootConfig) -> Result<Self> {
-        Self::open_with_source(SceneSource::Extracted(extracted_root), cfg, AudioOut::new)
-    }
-
-    /// Open the engine straight from a `.bin` disc image. The disc is walked
-    /// once to extract `PROT.DAT` and `CDNAME.TXT`; no on-disk extraction
-    /// step is required.
-    pub fn open_disc(disc_bin: &Path, cfg: &BootConfig) -> Result<Self> {
-        Self::open_with_source(SceneSource::Disc(disc_bin), cfg, AudioOut::new)
     }
 }
 

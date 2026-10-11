@@ -448,7 +448,7 @@ Port: `legaia_engine_core::world::World::sync_sfx_residency` models the latch,
 each slot's enable (`SfxBankResidency::slot_open`) and the region's occupant off
 the world's mode edges; op `0x36` sub `3` runs `World::release_field_audio`.
 Both play hosts restage the region from it every tick through the shared
-`AudioBgmDirector::sync_shared_region`, above the slot-0 bank inside the
+`AudioDirector::sync_shared_region`, above the slot-0 bank inside the
 reserved SFX window, and resolve a routed cue to its own slot or to silence.
 Known differences from retail:
 
@@ -533,17 +533,17 @@ Both play hosts stage slot 0 plus whichever bank the current mode holds in the
 shared region, and route each cue through
 `slot_for_category(descriptor.category)`:
 
-- `AudioBgmDirector::stage_resident_slot0` uploads the slot-0 bank into the
+- `AudioDirector::stage_resident_slot0` uploads the slot-0 bank into the
   bottom of the reserved top region of SPU RAM; the scene-BGM allocator is
   capped below the region.
-- `AudioBgmDirector::tick_sfx_frame` fires each cue against the bank its slot
+- `AudioDirector::tick_sfx_frame` fires each cue against the bank its slot
   names - silent when that slot is closed - and falls back to the scene's BGM
   `VabBank` only when nothing is staged at all.
 - The 30 category-`6` descriptors key PROT 0876 in the field and are silent in
   battle. The strike cue `0x1A` sounds out of the system bank; the Baka Fighter
   exchange-hit cue `0x09` out of PROT 0869.
 - The category-`11` cue (`0x50`, the level-up jingle) is staged at results
-  time: `AudioBgmDirector::ensure_reward_bank` uploads PROT 0889 into the free
+  time: `AudioDirector::ensure_reward_bank` uploads PROT 0889 into the free
   tail of the BGM region when the results frame queues the cue; before that it
   is silent. The bank is dropped when a track's samples overrun it or the world
   returns to a field-family mode (whose init closes slot `11`), not on every

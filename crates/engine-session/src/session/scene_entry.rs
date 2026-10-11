@@ -299,7 +299,7 @@ impl<S: AudioSink> BootSession<S> {
         // The order (story flags, landing, whole save) is the shared
         // kernel's - `resume_card_load`, which the browser page runs too.
         let landing = legaia_engine_core::resume::resume_card_load(
-            &mut NativeCardLoad {
+            &mut SessionCardLoad {
                 session: self,
                 opts,
             },
@@ -323,14 +323,14 @@ impl<S: AudioSink> BootSession<S> {
     }
 }
 
-/// The native window's half of a card load
+/// The session's half of a card load
 /// ([`legaia_engine_core::resume::resume_card_load`]).
-struct NativeCardLoad<'a, S: AudioSink> {
+struct SessionCardLoad<'a, S: AudioSink> {
     session: &'a mut BootSession<S>,
     opts: &'a FieldLiveOpts,
 }
 
-impl<S: AudioSink> legaia_engine_core::resume::CardLoadHost for NativeCardLoad<'_, S> {
+impl<S: AudioSink> legaia_engine_core::resume::CardLoadHost for SessionCardLoad<'_, S> {
     fn card_load_world(&mut self) -> &mut legaia_engine_core::world::World {
         &mut self.session.host.world
     }

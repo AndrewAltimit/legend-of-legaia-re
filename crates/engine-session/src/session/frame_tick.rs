@@ -77,7 +77,7 @@ impl<S: AudioSink> BootSession<S> {
     /// `0`/`4`, the ambient motion VM's op `0x09`) to the director's retail
     /// ring, and keep the director's field-side SFX sources - the scene's
     /// runtime descriptor rows and the side-band bank - in step with the
-    /// world. The director's own per-frame [`AudioBgmDirector::tick_sfx_frame`]
+    /// world. The director's own per-frame [`AudioDirector::tick_sfx_frame`]
     /// then plays whatever came due. With no audio the calls are dropped, as
     /// every other cue is.
     fn route_field_sfx(&mut self) {

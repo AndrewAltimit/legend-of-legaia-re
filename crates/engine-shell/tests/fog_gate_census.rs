@@ -21,8 +21,8 @@ use legaia_engine_core::fog_particles::{
 use legaia_engine_field::man_field_scripts::partition_record_span;
 use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -191,7 +191,7 @@ fn native_engine_draws_retail_shaped_fog_once_the_script_raises_the_gate() {
         scene: scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
     session
         .enter_field_live(&scene, &FieldLiveOpts::default())
         .expect("enter field scene");
@@ -317,7 +317,7 @@ fn vell_fog_density_tracks_the_retail_poll() {
         scene: scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
     session
         .enter_field_live(&scene, &FieldLiveOpts::default())
         .expect("enter vell");

@@ -12,7 +12,7 @@
 //!   - `build_engine_vram_bytes_prepass` - pure `SceneResources` build,
 //!     no engine ticking. Fast, deterministic, what the scene-bundle
 //!     loader produces at load time.
-//!   - `build_engine_vram_bytes_with_frames` - wraps `BootSession` and
+//!   - `build_engine_vram_bytes_with_frames` - wraps `NativeSession` and
 //!     ticks `frames` times before sampling, so dynamic uploads (CLUT
 //!     swaps, fog ramps) land in the snapshot.
 //!
@@ -27,8 +27,8 @@ use legaia_engine_scene::scene_resources::{
     BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
 };
 
-use crate::BootSession;
-use legaia_engine_session::boot::BootConfig;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// PSX VRAM dimensions in BGR555 cells.
 pub const VRAM_WIDTH: usize = 1024;
@@ -67,7 +67,7 @@ pub fn oracle_load_kind(scene_name: &str) -> SceneLoadKind {
 }
 
 /// Build engine-side VRAM via the targeted-upload pre-pass. No
-/// `BootSession` involvement - fast and stateless. Picks the load kind via
+/// `NativeSession` involvement - fast and stateless. Picks the load kind via
 /// [`oracle_load_kind`] so the standalone build matches what the engine
 /// uploads live.
 pub fn build_engine_vram_bytes_prepass(
@@ -135,7 +135,7 @@ pub fn build_engine_vram_bytes_prepass_with_kind(
     Ok(vram_to_le_bytes(&resources.vram))
 }
 
-/// Boot a `BootSession` on `scene_name`, tick it `frames` times, then
+/// Boot a `NativeSession` on `scene_name`, tick it `frames` times, then
 /// sample its VRAM. Use this when the oracle needs to catch dynamic
 /// uploads that the pre-pass doesn't see.
 pub fn build_engine_vram_bytes_with_frames(
@@ -152,8 +152,8 @@ pub fn build_engine_vram_bytes_with_frames(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     for _ in 0..frames {
         let _ = session.tick()?;
@@ -162,7 +162,7 @@ pub fn build_engine_vram_bytes_with_frames(
         .host
         .resources
         .as_ref()
-        .context("BootSession did not produce SceneResources after ticking")?;
+        .context("NativeSession did not produce SceneResources after ticking")?;
     Ok(vram_to_le_bytes(&resources.vram))
 }
 

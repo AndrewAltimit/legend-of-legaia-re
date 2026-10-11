@@ -4,7 +4,7 @@
 
 use super::*;
 
-impl<S: AudioSink> AudioBgmDirector<S> {
+impl<S: AudioSink> AudioDirector<S> {
     /// Set the audio duck's target as a percentage of the reference level
     /// (`BattleEvent::DuckAudioLevel`): `75` under a summon / magic capture,
     /// `100` when the Done band ramps it back. The ramp itself runs in
@@ -128,7 +128,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
 
     fn start_inner(&mut self, bgm_id: u16, seq_bytes: &[u8]) -> Result<()> {
         let Some(bank) = self.bank.clone() else {
-            log::warn!("AudioBgmDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
+            log::warn!("AudioDirector::start({bgm_id}) ignored - no VAB bank loaded for scene");
             return Ok(());
         };
         let seq = Seq::parse(seq_bytes).context("parse SEQ for BGM start")?;
@@ -160,12 +160,12 @@ impl<S: AudioSink> AudioBgmDirector<S> {
         // resume/unhalt.
         self.audio.set_sequencer_paused(false);
         self.last_started = Some(bgm_id);
-        log::info!("AudioBgmDirector: BGM {bgm_id} started");
+        log::info!("AudioDirector: BGM {bgm_id} started");
         Ok(())
     }
 }
 
-impl<S: AudioSink> BgmDirector for AudioBgmDirector<S> {
+impl<S: AudioSink> BgmDirector for AudioDirector<S> {
     fn start(&mut self, bgm_id: u16, seq_bytes: &[u8]) {
         // Suppress duplicate starts for the same BGM id - the field VM's
         // op 0x35 occasionally re-emits without a state change (we'd lose
@@ -177,7 +177,7 @@ impl<S: AudioSink> BgmDirector for AudioBgmDirector<S> {
             return;
         }
         if let Err(e) = self.start_inner(bgm_id, seq_bytes) {
-            log::warn!("AudioBgmDirector::start({bgm_id}) failed: {e:#}");
+            log::warn!("AudioDirector::start({bgm_id}) failed: {e:#}");
         }
     }
 
@@ -192,11 +192,11 @@ impl<S: AudioSink> BgmDirector for AudioBgmDirector<S> {
             return;
         }
         let Some(seq) = self.stage_owned_vab(entry_bytes) else {
-            log::warn!("AudioBgmDirector::start_owned_vab({bgm_id}) - no [VAB][SEQ] pair in entry");
+            log::warn!("AudioDirector::start_owned_vab({bgm_id}) - no [VAB][SEQ] pair in entry");
             return;
         };
         if let Err(e) = self.start_inner(bgm_id, &seq) {
-            log::warn!("AudioBgmDirector::start_owned_vab({bgm_id}) failed: {e:#}");
+            log::warn!("AudioDirector::start_owned_vab({bgm_id}) failed: {e:#}");
         }
     }
 

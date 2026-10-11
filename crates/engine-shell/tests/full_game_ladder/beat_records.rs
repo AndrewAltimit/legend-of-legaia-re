@@ -18,7 +18,7 @@ pub(super) fn next_anchor_has(flag: u16) -> bool {
 /// left alone - a long cutscene sets and clears many a scratch flag the
 /// anchor never shows.
 pub(super) fn overreaching_records(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     partition: usize,
@@ -194,7 +194,7 @@ thread_local! {
 /// the entry scripts of its `0x3F` destinations (other than this scene)
 /// clear.
 pub(super) fn handoff_cleared(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     part: usize,
@@ -357,7 +357,7 @@ pub(super) fn entry_spawns_on(
 
 /// The live walk-on tiles of the loaded field scene whose record stages a
 /// fight ([`record_stages_fight`]).
-pub(super) fn fight_band_tiles(session: &BootSession) -> HashSet<(i32, i32)> {
+pub(super) fn fight_band_tiles(session: &NativeSession) -> HashSet<(i32, i32)> {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return HashSet::new();
@@ -466,7 +466,7 @@ pub(super) fn record_enters_minigame(
 /// `0x2C7` and returns the party to the drained chamber, where `suimon`'s
 /// `P1[0]` trades that for `0x27B` - the flag that joins the two chambers.
 pub(super) fn hands_off_to_entry_script(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     rec: usize,

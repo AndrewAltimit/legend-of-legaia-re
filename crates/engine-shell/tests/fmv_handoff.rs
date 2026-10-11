@@ -16,8 +16,8 @@
 
 use std::path::PathBuf;
 
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 use legaia_engine_system::movie::cutscene::{FmvHandoff, fmv_post_play_handoff};
 
 /// The nine `fmv_id`s that address a movie on the retail disc.
@@ -99,7 +99,7 @@ fn every_field_handoff_scene_enters() {
             scene: scene.to_string(),
             enable_audio: false,
         };
-        let mut session = match BootSession::open(&extracted, &cfg) {
+        let mut session = match NativeSession::open(&extracted, &cfg) {
             Ok(s) => s,
             Err(e) => panic!("fmv {id}: boot on hand-off scene '{scene}' failed: {e:#}"),
         };
@@ -146,7 +146,7 @@ fn the_handoff_transfers_once_however_many_hosts_poll() {
         scene: "town01".to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("boot town01");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot town01");
     session.host.enter_field_scene("town01", 0).expect("enter");
     assert_eq!(
         session.host.scene.as_ref().map(|s| s.name.as_str()),

@@ -15,7 +15,7 @@ pub(super) enum CrossTarget {
 
 impl CrossTarget {
     /// The tiles the lattice plans toward.
-    pub(super) fn tiles(&self, session: &BootSession, graph: &DiscGraph) -> Vec<(i16, i16)> {
+    pub(super) fn tiles(&self, session: &NativeSession, graph: &DiscGraph) -> Vec<(i16, i16)> {
         match self {
             CrossTarget::Door(toward) => doors_to(session, graph, toward)
                 .map(|d| {
@@ -29,7 +29,7 @@ impl CrossTarget {
     }
 
     /// Whether the pad walk can now reach the target from where it stands.
-    pub(super) fn in_reach(&self, session: &BootSession, graph: &DiscGraph) -> bool {
+    pub(super) fn in_reach(&self, session: &NativeSession, graph: &DiscGraph) -> bool {
         match self {
             CrossTarget::Door(toward) => door_in_reach(session, graph, toward),
             CrossTarget::Tiles(t) => tiles_in_reach(session, t),
@@ -39,7 +39,7 @@ impl CrossTarget {
 
 /// Can the pad walk reach one of `tiles` (or a tile beside it) from where
 /// the player stands?
-pub(super) fn tiles_in_reach(session: &BootSession, tiles: &[(i16, i16)]) -> bool {
+pub(super) fn tiles_in_reach(session: &NativeSession, tiles: &[(i16, i16)]) -> bool {
     let avoid = hazards(session, "");
     let (x, z) = player_xz(session);
     let from = cell_of(x, z);
@@ -62,7 +62,7 @@ pub(super) fn tiles_in_reach(session: &BootSession, tiles: &[(i16, i16)]) -> boo
 /// flags `0x4EF` / `0x4F0` that route `deroa`'s platform hub to the room
 /// whose door re-enters by the junction band P2[3] (`0x3C8`).
 pub(super) fn reach_beat_waits(
-    session: &BootSession,
+    session: &NativeSession,
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
     rec: usize,
@@ -120,7 +120,7 @@ pub(super) fn reach_beat_waits(
 /// The band tiles of the live walk-on records of the loaded scene whose own
 /// body sets one of `flags` - the beats a milestone's missing reach flags
 /// wait on (`chitei2` P2[3], the junction's north-south band, sets `0x3C8`).
-pub(super) fn reach_flag_bands(session: &BootSession, flags: &[u16]) -> Vec<(i16, i16)> {
+pub(super) fn reach_flag_bands(session: &NativeSession, flags: &[u16]) -> Vec<(i16, i16)> {
     use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
@@ -157,7 +157,7 @@ pub(super) fn reach_flag_bands(session: &BootSession, flags: &[u16]) -> Vec<(i16
 /// unreachable door refuses before any walking - and `Ok(scene)` is where
 /// the round trip landed.
 pub(super) fn cross_over(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
@@ -178,7 +178,7 @@ pub(super) fn cross_over(
 
 /// [`cross_over`]'s body; `refused_here` collects the doors it refused.
 pub(super) fn cross_over_inner(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     graph: &DiscGraph,
     cur: &str,
     goal: &str,
@@ -198,7 +198,7 @@ pub(super) fn cross_over_inner(
     // rest keep their order behind it, so a chain the lattice cannot see is
     // still found by trial.
     let all = cands.clone();
-    let plan = |session: &BootSession, shut: &BTreeSet<String>| {
+    let plan = |session: &NativeSession, shut: &BTreeSet<String>| {
         let open: Vec<String> = all.iter().filter(|x| !shut.contains(*x)).cloned().collect();
         let p = crossing_plan(session, graph, &open, &target.tiles(session, graph));
         if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
@@ -473,7 +473,7 @@ pub(super) const MAX_SIDES: usize = 16;
 /// crossing - only opens a pocket south of the castle. `None` when the lattice shows no chain; the caller then
 /// tries every candidate in turn.
 pub(super) fn crossing_plan(
-    session: &BootSession,
+    session: &NativeSession,
     graph: &DiscGraph,
     cands: &[String],
     targets: &[(i16, i16)],
@@ -570,7 +570,7 @@ pub(super) fn crossing_plan(
 }
 
 /// Can the pad walk reach a door of the loaded scene toward `dest`?
-pub(super) fn door_in_reach(session: &BootSession, graph: &DiscGraph, dest: &str) -> bool {
+pub(super) fn door_in_reach(session: &NativeSession, graph: &DiscGraph, dest: &str) -> bool {
     let Ok(doors) = doors_to(session, graph, dest) else {
         return false;
     };
@@ -596,7 +596,11 @@ pub(super) fn door_in_reach(session: &BootSession, graph: &DiscGraph, dest: &str
 /// (115, 13); the door to `kor` is (115, 11), and (115, 12) between them
 /// teleports back to the doorway, so the door is reached from the north,
 /// round the pillar over the spent P2[14] band at (113, 5..6).
-pub(super) fn door_approachable(session: &BootSession, end: (i16, i16), goal: (i16, i16)) -> bool {
+pub(super) fn door_approachable(
+    session: &NativeSession,
+    end: (i16, i16),
+    goal: (i16, i16),
+) -> bool {
     let d = i32::from((end.0 - goal.0).abs() + (end.1 - goal.1).abs());
     if d > DOOR_APPROACH_SLACK {
         return false;

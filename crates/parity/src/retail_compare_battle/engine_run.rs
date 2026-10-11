@@ -150,7 +150,7 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
         scene: retail.scene.clone(),
         enable_audio: false,
     };
-    let Ok(mut session) = BootSession::open(extracted, &cfg) else {
+    let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
         return Vec::new();
     };
     let opts = FieldLiveOpts {
@@ -186,7 +186,7 @@ pub fn run_engine_battle(
         scene: retail.scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).context("open boot session")?;
+    let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
     // Player-driven: retail parks every party turn on the command flow, so an
     // auto-resolving engine would spend the settle window fighting.
     let opts = FieldLiveOpts {

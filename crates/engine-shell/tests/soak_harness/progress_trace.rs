@@ -18,14 +18,14 @@ impl std::fmt::Write for HashWriter {
     }
 }
 
-pub(super) fn player_slot(s: &BootSession) -> usize {
+pub(super) fn player_slot(s: &NativeSession) -> usize {
     s.host.world.player_actor_slot.unwrap_or(0) as usize
 }
 
 /// Everything a player could see move. Softlock = this frozen for a whole
 /// window while the pad varies. Deliberately broad: a false "frozen" costs a
 /// triage, a false "moving" only a missed finding.
-pub(super) fn progress_digest(s: &BootSession) -> u64 {
+pub(super) fn progress_digest(s: &NativeSession) -> u64 {
     let w = &s.host.world;
     // `DefaultHasher::new()` is keyed with fixed zeros, so the digest is
     // stable across runs and processes.
@@ -157,7 +157,7 @@ pub(super) fn tick_menu_session(
 }
 
 /// What holds the frame, as a short signature fragment.
-pub(super) fn held_by(s: &BootSession) -> String {
+pub(super) fn held_by(s: &NativeSession) -> String {
     let w = &s.host.world;
     let op_at = |bc: &[u8], pc: usize| bc.get(pc).copied().unwrap_or(0xFF);
     if let Some(m) = s.field_menu.as_ref() {
@@ -241,7 +241,7 @@ pub(super) fn held_by(s: &BootSession) -> String {
 
 /// One triage line: mode, scene, holder, player, and the bytes at every live
 /// script context's PC.
-pub(super) fn trace_line(s: &BootSession, pad: u16) -> String {
+pub(super) fn trace_line(s: &NativeSession, pad: u16) -> String {
     let w = &s.host.world;
     let bytes = |bc: &[u8], pc: usize| -> String {
         bc.get(pc..(pc + 6).min(bc.len()))

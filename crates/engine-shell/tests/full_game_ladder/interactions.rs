@@ -9,7 +9,7 @@ use super::*;
 /// box test on the player), so each side is tried in turn until one gains a
 /// flag. The player goes back where it stood afterwards, so the next press
 /// does not re-open the same talk.
-pub(super) fn talk_to(session: &mut BootSession, slot: u8) -> Run {
+pub(super) fn talk_to(session: &mut NativeSession, slot: u8) -> Run {
     if pad_hand() {
         return pad_talk_to(session, slot);
     }
@@ -27,7 +27,7 @@ pub(super) fn talk_to(session: &mut BootSession, slot: u8) -> Run {
 /// retail `FUN_801CFC40` result bit `1`): the same stand-beside, face and
 /// press-Cross approach as a talk, aimed so the prop arm of the facing probe
 /// (`FUN_801CF9F4`) lands on its contact box.
-pub(super) fn examine_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
+pub(super) fn examine_prop(session: &mut NativeSession, anchor: (u8, u8), at: (i32, i32)) -> Run {
     let pos = (at.0 as i16, at.1 as i16);
     interact_at(session, pos, &|w: &legaia_engine_core::world::World| {
         w.field_interact_probe_slot().is_none() && w.field_interact_prop_anchor() == Some(anchor)
@@ -38,7 +38,7 @@ pub(super) fn examine_prop(session: &mut BootSession, anchor: (u8, u8), at: (i32
 /// beside `(nx, nz)`, face the sector where `hits` holds, press Cross and
 /// page what opens.
 pub(super) fn interact_at(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     (nx, nz): (i16, i16),
     hits: &dyn Fn(&legaia_engine_core::world::World) -> bool,
 ) -> Run {
@@ -134,7 +134,7 @@ pub(super) fn interact_at(
 /// standing off-centre onto the neighbouring tile, and against a wall that
 /// tile can be solid: `jiji`'s prop examine left the party at (69, 71),
 /// walled on all four sides, after starting from (9020, 9216).
-pub(super) fn restore_player_xz(session: &mut BootSession, (x, z): (i16, i16)) {
+pub(super) fn restore_player_xz(session: &mut NativeSession, (x, z): (i16, i16)) {
     let w = &mut session.host.world;
     let y = w.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
     let slot = w.player_actor_slot.unwrap_or(0) as usize;
@@ -147,7 +147,7 @@ pub(super) fn restore_player_xz(session: &mut BootSession, (x, z): (i16, i16)) {
 
 /// Page an open conversation to its end with [`script_pad`]. `None` when it
 /// ended with the frame back on the field; `Some(run)` for anything else.
-pub(super) fn page_talk(session: &mut BootSession) -> Option<Run> {
+pub(super) fn page_talk(session: &mut NativeSession) -> Option<Run> {
     for f in 0..DEEP_EXIT_TICKS {
         if let Err(e) = pad_budget(session) {
             return Some(Run::Parked(e));
@@ -183,7 +183,7 @@ pub(super) fn page_talk(session: &mut BootSession) -> Option<Run> {
 /// the conversation, then turn and step away so the confirm cannot re-open
 /// the same talk. Each side is tried until one gains a flag, as the seated
 /// hand does.
-pub(super) fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
+pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
     if !session.host.world.npcs.positions.contains_key(&slot) {
         return Run::Released;
     }
@@ -239,8 +239,8 @@ pub(super) fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
                 }
             }
         }
-        let npc = move |s: &BootSession| s.host.world.npcs.positions.get(&slot).copied();
-        let facing = |s: &BootSession| s.host.world.field_interact_probe_slot() == Some(slot);
+        let npc = move |s: &NativeSession| s.host.world.npcs.positions.get(&slot).copied();
+        let facing = |s: &NativeSession| s.host.world.field_interact_probe_slot() == Some(slot);
         if let Some(scene) = pad_lean(session, npc, 48, facing) {
             return Run::Entered(scene);
         }
@@ -288,7 +288,7 @@ pub(super) fn pad_talk_to(session: &mut BootSession, slot: u8) -> Run {
         if walking(session) && !beat_follows {
             // Turn away and step off, as a player does before pressing on.
             let (px, pz) = player_xz(session);
-            let away = move |_: &BootSession| {
+            let away = move |_: &NativeSession| {
                 Some((
                     px.saturating_add(px.saturating_sub(nx).signum() * 256),
                     pz.saturating_add(pz.saturating_sub(nz).signum() * 256),

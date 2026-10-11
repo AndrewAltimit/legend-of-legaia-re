@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 
 use legaia_engine_audio::xa_clip_bank::{MONO_FRAMES_PER_SECTOR, STEREO_FRAMES_PER_SECTOR};
-use legaia_engine_session::boot::read_battle_xa_clip_bank;
+use legaia_engine_session::native::read_battle_xa_clip_bank;
 
 fn disc() -> Option<PathBuf> {
     let p = PathBuf::from(std::env::var_os("LEGAIA_DISC_BIN")?);

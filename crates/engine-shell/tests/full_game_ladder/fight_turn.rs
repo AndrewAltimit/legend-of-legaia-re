@@ -21,7 +21,7 @@ use super::*;
 /// Items lesson, the down arm for Spirit, `Auto` for the attack lesson and
 /// `Command` with the Somersault for the hyper-arts drill (an Auto attack is
 /// that lesson's wrong-lesson rewind).
-pub(super) fn fight_pad(session: &BootSession) -> u16 {
+pub(super) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
     use legaia_engine_core::battle_tutorial::TutorialLesson;
@@ -270,7 +270,7 @@ pub(super) fn fight_pad(session: &BootSession) -> u16 {
 }
 
 /// One line of battle state for a stall report.
-pub(super) fn battle_snapshot(session: &BootSession) -> String {
+pub(super) fn battle_snapshot(session: &NativeSession) -> String {
     let w = &session.host.world;
     let n = w.party.party_count.clamp(1, 3) as usize;
     let hp = |i: usize| format!("{}/{}", w.actors[i].battle.hp, w.actors[i].battle.max_hp);
@@ -313,7 +313,7 @@ pub(super) fn battle_snapshot(session: &BootSession) -> String {
 
 /// The party a traced battle starts with: each member's level, MP, equipment
 /// and spell list, and the bag's battle-usable items.
-pub(super) fn party_dump(session: &BootSession) {
+pub(super) fn party_dump(session: &NativeSession) {
     let w = &session.host.world;
     let n = w.party.party_count.clamp(1, 3) as usize;
     for i in 0..n {
@@ -378,7 +378,7 @@ pub(super) fn party_dump(session: &BootSession) {
 
 /// Fight a battle with the pad ([`fight_pad`]). `None` when it ended and a
 /// walking mode came back.
-pub(super) fn drain_battle(session: &mut BootSession) -> Option<Run> {
+pub(super) fn drain_battle(session: &mut NativeSession) -> Option<Run> {
     // A fight's frames come off the pad segment's budget only past the
     // battle allowance: the deadline moves ahead of the fight by the most
     // it may need, and the unused part is taken back.
@@ -398,7 +398,7 @@ pub(super) fn drain_battle(session: &mut BootSession) -> Option<Run> {
     r
 }
 
-pub(super) fn fight_battle(session: &mut BootSession) -> Option<Run> {
+pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     NO_ITEM.with(|n| n.borrow_mut().clear());
     NO_MAGIC.with(|n| n.borrow_mut().clear());
     DUEL_SPIRIT_ROUND.with(|d| d.set(None));
@@ -410,7 +410,7 @@ pub(super) fn fight_battle(session: &mut BootSession) -> Option<Run> {
     let mut guarded = [false; 3];
     let mut was_window = false;
     ITEM_TARGET.with(|t| *t.borrow_mut() = [None; 3]);
-    let party_hp = |s: &BootSession| -> Vec<u16> {
+    let party_hp = |s: &NativeSession| -> Vec<u16> {
         let w = &s.host.world;
         let n = w.party.party_count.clamp(1, 3) as usize;
         (0..n).map(|i| w.actors[i].battle.hp).collect()
@@ -439,11 +439,12 @@ pub(super) fn fight_battle(session: &mut BootSession) -> Option<Run> {
         party_dump(session);
     }
     let trace_hits = trace && std::env::var_os("LEGAIA_FGL_TRACE_HITS").is_some();
-    let hp_all =
-        |s: &BootSession| -> Vec<u16> { s.host.world.actors.iter().map(|a| a.battle.hp).collect() };
+    let hp_all = |s: &NativeSession| -> Vec<u16> {
+        s.host.world.actors.iter().map(|a| a.battle.hp).collect()
+    };
     let mut last_cmd: [String; 3] = Default::default();
     let mut hp_prev = hp_all(session);
-    let foe_hp = |s: &BootSession| -> u32 {
+    let foe_hp = |s: &NativeSession| -> u32 {
         let w = &s.host.world;
         let n = w.party.party_count.clamp(1, 3) as usize;
         w.actors

@@ -18,6 +18,7 @@ from ui_host_drift.rows.host_files import (
     NATIVE_REDRAW_PASSES,
     NATIVE_SAVE_HELPERS,
     NATIVE_TITLE_SAVE,
+    NATIVE_XA_DISC,
     WEB_BOOT_TITLE,
     WEB_FIELD_SCENE,
     WEB_MINIGAMES_DANCE,
@@ -240,7 +241,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "page's PlayXa restated the native reader). Both stage each shout "
         "file through `xa_banks::install_shout_file`",
         "sites": {
-            "native": ("crates/engine-session/src/boot/disc_tables.rs", "read_arts_shout_bank"),
+            "native": (NATIVE_XA_DISC, "read_arts_shout_bank"),
             "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",
@@ -252,7 +253,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "width the retail read span divides by. Both stage each clip file "
         "through `xa_banks::install_clip_file`",
         "sites": {
-            "native": ("crates/engine-session/src/boot/disc_tables.rs", "read_battle_xa_clip_bank"),
+            "native": (NATIVE_XA_DISC, "read_battle_xa_clip_bank"),
             "web": ("crates/web-viewer/src/play_xa.rs", "play_xa_install"),
         },
         "mode": "symbols_all",

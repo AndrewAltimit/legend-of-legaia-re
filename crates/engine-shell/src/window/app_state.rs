@@ -235,7 +235,7 @@ pub(super) type ResolvedChromeDraw = (
 );
 
 pub(super) struct PlayWindowApp {
-    pub(super) session: BootSession,
+    pub(super) session: NativeSession,
     pub(super) font: Font,
     /// Pre-built scene resources (VRAM + TMDs). Consumed by `upload_assets`
     /// when the renderer is first attached; `None` after that.
@@ -954,7 +954,7 @@ pub(super) struct PlayWindowApp {
     /// captured at startup, so the boot-UI NEW GAME handler can re-enter the
     /// opening cutscene scene (`opdeene`) with the same arming the startup
     /// `enter_field_live` used.
-    pub(super) field_live_opts: legaia_engine_session::boot::FieldLiveOpts,
+    pub(super) field_live_opts: legaia_engine_session::session::FieldLiveOpts,
     /// Extracted-root directory, retained so the in-flow cutscene driver can
     /// resolve a field-VM FMV trigger's `MV*.STR` file (mirrors the headless
     /// `play` loop's `extracted_root.join(rel)`). `None` in disc-only runs,
@@ -1012,7 +1012,7 @@ pub(super) enum BootUiState {
     /// Save-select panel is active.
     SaveSelect(legaia_engine_menus::save_select::SaveSelectSession),
     /// Field (pause) menu is active. The menu session itself is hosted by
-    /// the [`BootSession`]
+    /// the [`NativeSession`]
     /// (`session.field_menu`, the retail CARD mode pair / `game_mode 0x17`;
     /// the world runs `SceneMode::Menu` while it is open). This arm only
     /// routes the window's input + draws to it, so dropping out returns

@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use legaia_engine_core::world::world_map_camera_relative_bits;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 fn extracted_dir() -> Option<PathBuf> {
@@ -74,7 +74,7 @@ fn card_sc(lib: &Path, card: &str, save: &str) -> Option<Vec<u8>> {
 /// The `map01` door to `dolk2` the ladder walks onto.
 const DOOR_TILE: (i32, i32) = (54, 71);
 
-fn player_tile(session: &BootSession) -> (i32, i32) {
+fn player_tile(session: &NativeSession) -> (i32, i32) {
     let w = &session.host.world;
     let a = &w.actors[w.player_actor_slot.expect("player slot") as usize];
     (
@@ -85,7 +85,7 @@ fn player_tile(session: &BootSession) -> (i32, i32) {
 
 /// The pad direction that walks world `(dx, dz)` (one axis) under the live
 /// camera.
-fn pad_toward(session: &BootSession, dx: i32, dz: i32) -> u16 {
+fn pad_toward(session: &NativeSession, dx: i32, dz: i32) -> u16 {
     let want = match (dx.signum(), dz.signum()) {
         (1, _) => 0x2000,
         (-1, _) => 0x8000,
@@ -111,7 +111,7 @@ fn pad_toward(session: &BootSession, dx: i32, dz: i32) -> u16 {
 }
 
 /// Resume `PRO-04` onto `map01` with the player seated on `seat`.
-fn seated(seat: (i32, i32)) -> Option<BootSession> {
+fn seated(seat: (i32, i32)) -> Option<NativeSession> {
     let extracted = extracted_dir()?;
     let lib = std::env::var_os("LEGAIA_SAVES_LIBRARY")
         .map(PathBuf::from)
@@ -124,7 +124,7 @@ fn seated(seat: (i32, i32)) -> Option<BootSession> {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     let sf = legaia_save::SaveFile::from_retail_sc_block(&sc, legaia_save::RETAIL_SC_PARTY_RECORDS)
         .expect("lift SC block");
     session.host.world.load_full(sf.clone());

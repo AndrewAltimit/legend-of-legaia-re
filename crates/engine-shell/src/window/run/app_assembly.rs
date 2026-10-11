@@ -5,7 +5,7 @@ use super::*;
 
 /// What a launch hands [`PlayWindowApp::assemble`].
 pub(super) struct WindowParts<'a> {
-    pub(super) session: BootSession,
+    pub(super) session: NativeSession,
     pub(super) font: Font,
     pub(super) scene_res: SceneResources,
     pub(super) publisher_logos_atlas_data: Option<legaia_engine_menus::publisher_logos::LogosAtlas>,
@@ -19,7 +19,7 @@ pub(super) struct WindowParts<'a> {
     pub(super) mounted_card: Option<MountedCard>,
     pub(super) screenshot: Option<ScreenshotConfig>,
     pub(super) record_to: Option<RecordTarget>,
-    pub(super) field_live_opts: legaia_engine_session::boot::FieldLiveOpts,
+    pub(super) field_live_opts: legaia_engine_session::session::FieldLiveOpts,
     pub(super) save_dir: &'a Path,
     pub(super) extracted_root: &'a Path,
     pub(super) disc: Option<&'a Path>,
@@ -280,7 +280,7 @@ impl PlayWindowApp {
         // retail; `T` cycles) and the precise-movement toggle (`R`). The
         // compass bias tells the engine-core camera what fixed yaw this
         // window's follow camera renders at (compass sense = the negated PSX
-        // render yaw), so `BootSession::tick`'s d-pad remap feed tracks the
+        // render yaw), so `NativeSession::tick`'s d-pad remap feed tracks the
         // on-screen view exactly - including after a left-mouse drag-orbit.
         self.session.camera.distance = self.options_state.camera_distance;
         self.session.camera.render_yaw_bias =

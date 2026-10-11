@@ -1,4 +1,4 @@
-//! Opening and seeding a `BootSession`, and the small reads every pass takes
+//! Opening and seeding a `NativeSession`, and the small reads every pass takes
 //! off it (scene, mode, player tile, who holds the pad, whether control is
 //! back).
 
@@ -8,16 +8,16 @@ use super::*;
 // Session + seeding
 // ---------------------------------------------------------------------------
 
-pub(super) fn open_session(extracted: &Path) -> BootSession {
+pub(super) fn open_session(extracted: &Path) -> NativeSession {
     let cfg = BootConfig {
         scene: "town01".into(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(extracted, &cfg).expect("open boot session");
     // Both play hosts run field dialogue through the inline-script field-VM
     // runner by default (`play-window`'s `--simple-dialogue` and the browser
     // play page's runtime both key on this toggle), so a talk executes its
-    // record's flag writes, branches and scene changes. `BootSession` leaves
+    // record's flag writes, branches and scene changes. `NativeSession` leaves
     // it off; without it a conversation only types its first text segment.
     session.host.world.toggles.use_vm_dialogue = true;
     session
@@ -38,7 +38,7 @@ pub(super) fn live_opts(pad: bool) -> FieldLiveOpts {
 /// Seed `session` at milestone `m`. `Ok(scene)` when the landing entered the
 /// milestone's scene.
 pub(super) fn seed(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     m: &Milestone,
     anchor: Option<&Anchor>,
     opts: &FieldLiveOpts,
@@ -74,7 +74,7 @@ pub(super) fn seed(
     Ok(landing.scene().unwrap_or_default().to_string())
 }
 
-pub(super) fn scene_name(session: &BootSession) -> String {
+pub(super) fn scene_name(session: &NativeSession) -> String {
     session
         .host
         .scene
@@ -83,14 +83,14 @@ pub(super) fn scene_name(session: &BootSession) -> String {
         .unwrap_or_default()
 }
 
-pub(super) fn walking(session: &BootSession) -> bool {
+pub(super) fn walking(session: &NativeSession) -> bool {
     matches!(
         session.host.world.mode,
         SceneMode::Field | SceneMode::WorldMap
     )
 }
 
-pub(super) fn player_xz(session: &BootSession) -> (i16, i16) {
+pub(super) fn player_xz(session: &NativeSession) -> (i16, i16) {
     let w = &session.host.world;
     let slot = w.player_actor_slot.unwrap_or(0) as usize;
     let ms = &w.actors[slot].move_state;
@@ -104,7 +104,7 @@ pub(super) fn tile_of(x: i16, z: i16) -> (i16, i16) {
 /// Where the context holding the pad came to rest, as `(pc, opcode)`: the
 /// modal timeline's, else the first live helper record's, else the entry
 /// script's (the frontier ladder's `park_site`).
-pub(super) fn park_site(session: &BootSession) -> String {
+pub(super) fn park_site(session: &NativeSession) -> String {
     let w = &session.host.world;
     let at = |who: &str, bc: &[u8], pc: usize| match bc.get(pc) {
         Some(op) => format!("{who} pc=0x{pc:04X} op=0x{op:02X}"),
@@ -122,7 +122,7 @@ pub(super) fn park_site(session: &BootSession) -> String {
     at("entry", &w.field_bytecode, w.field_pc)
 }
 
-pub(super) fn holder(session: &BootSession) -> &'static str {
+pub(super) fn holder(session: &NativeSession) -> &'static str {
     let w = &session.host.world;
     if w.scene_transition_hold.is_some() {
         "a scene change in flight"
@@ -141,7 +141,7 @@ pub(super) fn holder(session: &BootSession) -> &'static str {
 
 /// The partition-2 record the modal cutscene timeline is running, matched
 /// by its bytes against the scene's records.
-pub(super) fn timeline_p2_record(session: &BootSession) -> Option<u8> {
+pub(super) fn timeline_p2_record(session: &NativeSession) -> Option<u8> {
     let tl = session.host.world.cutscene.timeline.as_ref()?;
     let (mf, man, _) = scene_man_and_triggers(session)?;
     let n2 = mf.partitions.get(2)?.len();
@@ -153,7 +153,7 @@ pub(super) fn timeline_p2_record(session: &BootSession) -> Option<u8> {
     })
 }
 
-pub(super) fn released(session: &BootSession) -> bool {
+pub(super) fn released(session: &NativeSession) -> bool {
     let w = &session.host.world;
     // A scene change parked behind the streaming actor's countdown has not
     // released anything: the door is mid-flight.
@@ -176,7 +176,7 @@ pub(super) fn released(session: &BootSession) -> bool {
 /// A beat that reaches the milestone it is played for stops there, fight or
 /// no fight: `chitei2` P2[11] sets the `0x470` its milestone waits on, then
 /// stages a battle that belongs to the next stretch.
-pub(super) fn fight_committed(session: &mut BootSession, r: Run) -> Run {
+pub(super) fn fight_committed(session: &mut NativeSession, r: Run) -> Run {
     if !matches!(r, Run::Released) || !session.host.world.field_scripts_held_for_battle() {
         return r;
     }

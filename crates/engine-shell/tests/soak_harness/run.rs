@@ -81,7 +81,7 @@ pub(super) struct WorkerStatus {
 pub(super) type StatusBoard = Arc<Mutex<Vec<WorkerStatus>>>;
 
 pub(super) fn value_checks(
-    s: &BootSession,
+    s: &NativeSession,
     t: &Tunables,
     out: &mut Vec<(&'static str, String, String)>,
 ) {
@@ -206,10 +206,10 @@ pub(super) fn value_checks(
 /// The presentation queues both play hosts drain after every tick (the
 /// window's `drain_and_route_field_events` / `drain_and_log_battle_events` /
 /// CLUT-stage and effect-spawn routing, the browser runtime's twins).
-/// `BootSession::tick` routes only BGM events off the field queue and drains
+/// `NativeSession::tick` routes only BGM events off the field queue and drains
 /// none of the rest, so a headless driver that skipped this would measure its
 /// own leak rather than the engine.
-pub(super) fn host_drains(session: &mut BootSession) {
+pub(super) fn host_drains(session: &mut NativeSession) {
     let w = &mut session.host.world;
     let _ = w.drain_field_events();
     let _ = w.drain_battle_events();
@@ -279,7 +279,7 @@ pub(super) fn run_one(
     let mut stats = RunStats::default();
     let mut pads = Vec::with_capacity(spec.frames as usize);
 
-    let mk = |session: &BootSession,
+    let mk = |session: &NativeSession,
               detector: &'static str,
               frame: u64,
               location: String,
@@ -402,7 +402,7 @@ pub(super) fn run_one(
         // The name-entry overlay is host-modal on both play hosts: while it
         // is up the field tick is skipped, every pad edge routes into the
         // entry SM, and the frame counter keeps advancing (the window's
-        // redraw arm, the browser's `name_entry_input`). `BootSession::tick`
+        // redraw arm, the browser's `name_entry_input`). `NativeSession::tick`
         // does not do this, so the harness does it for it.
         let edge = pad & !prev_pad;
         prev_pad = pad;
@@ -453,7 +453,7 @@ pub(super) fn run_one(
         };
         // Both play hosts drain the field-event queue after the tick (the
         // window's `drain_and_route_field_events`, the browser runtime's
-        // drain); `BootSession::tick` routes only the BGM events and restores
+        // drain); `NativeSession::tick` routes only the BGM events and restores
         // the rest, so a headless driver that skipped this would measure its
         // own leak. Checked before the drain, then drained.
         if session.host.world.pending_field_events.len() > t.queue_cap {
@@ -528,7 +528,7 @@ pub(super) fn run_one(
             stats.shop_opens += 1;
         }
         // Save screen: both play hosts persist a Save pick and resume a Load
-        // pick (`apply_save_commit`); `BootSession` only latches the pick.
+        // pick (`apply_save_commit`); `NativeSession` only latches the pick.
         // The harness keeps the card in memory, so a later Load in the same
         // run reads back what an earlier Save wrote.
         if let Some(commit) = session.last_save_commit.take() {

@@ -208,7 +208,7 @@ pub const TITLE_ZOOM_END: i32 = 0x1000;
 
 /// One CD-XA clip start the hub made this tick - `FUN_8003D53C(clip, chan,
 /// dur)`, in the starter's own terms, for a host's XA path
-/// (`AudioBgmDirector::play_xa_clip` natively, `play_xa_clip` on the page).
+/// (`AudioDirector::play_xa_clip` natively, `play_xa_clip` on the page).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HubXaCue {
     /// Clip-table slot (`XA<slot + 1>.XA`).

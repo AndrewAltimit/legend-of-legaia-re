@@ -3,92 +3,28 @@
 
 use super::*;
 
-/// The disc side of lazy CD-XA staging: the image path and every
-/// `XA<n>.XA`'s `(lba, sectors)` keyed by clip slot `n - 1`.
-pub(super) struct XaLazySource {
-    disc: std::path::PathBuf,
-    files: BTreeMap<u8, (u32, u32)>,
-}
-
-impl XaLazySource {
-    /// Walk the disc's ISO once for the `XA<n>.XA` files. `None` when the
-    /// image does not open or carries none.
-    fn open(disc: &std::path::Path) -> Option<Self> {
-        let mut raw = legaia_iso::raw::RawDisc::open(disc).ok()?;
-        let volume = legaia_iso::iso9660::read_volume(&mut raw).ok()?;
-        let files = legaia_iso::iso9660::walk_files(&mut raw, &volume.root).ok()?;
-        let mut map = BTreeMap::new();
-        for (path, rec) in &files {
-            let base = path.rsplit('/').next().unwrap_or(path);
-            let base = base.split(';').next().unwrap_or(base).to_ascii_uppercase();
-            let Some(n) = base
-                .strip_prefix("XA")
-                .and_then(|s| s.strip_suffix(".XA"))
-                .and_then(|s| s.parse::<u32>().ok())
-            else {
-                continue;
-            };
-            let Ok(slot) = u8::try_from(n.checked_sub(1)?) else {
-                continue;
-            };
-            let sectors = rec.size.div_ceil(legaia_iso::raw::USER_DATA_SIZE as u32);
-            map.insert(slot, (rec.lba, sectors));
-        }
-        (!map.is_empty()).then_some(Self {
-            disc: disc.to_path_buf(),
-            files: map,
-        })
-    }
-
-    /// `count` raw 2352-byte sectors from `lba`, concatenated.
-    fn read_sectors(&self, lba: u32, count: u32) -> Option<Vec<u8>> {
-        let mut raw = legaia_iso::raw::RawDisc::open(&self.disc).ok()?;
-        let mut out = Vec::with_capacity(
-            count as usize * legaia_engine_audio::xa_clip_bank::RAW_SECTOR_BYTES,
-        );
-        for s in 0..count {
-            let sector = raw.read_raw_sector(lba + s).ok()?;
-            out.extend_from_slice(&sector[..]);
-        }
-        Some(out)
-    }
-
-    /// One channel of `XA<slot + 1>.XA` over the starter's read span for
-    /// `duration_sectors`, decoded: `(clip, interleave width)`.
+/// Where the director reads a CD-XA channel it has not staged: one channel
+/// of `XA<slot + 1>.XA` over the clip starter's read span for
+/// `duration_sectors`, decoded, as `(clip, interleave width)`. The native
+/// host's source reads the disc image
+/// (`crate::native::XaDiscSource`).
+pub trait XaChannelSource {
     fn channel_span(
         &self,
         slot: u8,
         channel: u8,
         duration_sectors: u32,
-    ) -> Option<(legaia_engine_audio::XaClip, u8)> {
-        let &(lba, file_sectors) = self.files.get(&slot)?;
-        let span = legaia_engine_audio::xa_clip_bank::read_span_sectors(duration_sectors)
-            .min(file_sectors);
-        let raw = self.read_sectors(lba, span)?;
-        legaia_engine_audio::xa_clip_bank::decode_channel_span(&raw, channel)
+    ) -> Option<(legaia_engine_audio::XaClip, u8)>;
+}
+
+impl<S: AudioSink> AudioDirector<S> {
+    /// Hand the director the source lazy staging reads from.
+    pub fn set_xa_channel_source(&mut self, source: Box<dyn XaChannelSource + Send + Sync>) {
+        self.xa_lazy = Some(source);
     }
-}
 
-/// Read one cast-voice clip straight off a disc image: channel `channel` of
-/// `XA<clip_slot + 1>.XA`, from the file's first sector to the clip
-/// starter's stop point for `duration_sectors`
-/// (`legaia_engine_audio::xa_clip_bank::read_span_sectors`). This is the
-/// read the director performs the first time a cast names a clip; exposed
-/// so the disc-gated oracle can pin it without an audio device. `None` when
-/// the disc, the file or the channel is absent.
-// REF: FUN_8003D53C
-pub fn read_xa_channel_span(
-    disc: &std::path::Path,
-    clip_slot: u8,
-    channel: u8,
-    duration_sectors: u32,
-) -> Option<(legaia_engine_audio::XaClip, u8)> {
-    XaLazySource::open(disc)?.channel_span(clip_slot, channel, duration_sectors)
-}
-
-impl<S: AudioSink> AudioBgmDirector<S> {
     /// Install the arts-voice shout bank (demuxed + decoded from the user's
-    /// disc at boot; see [`crate::boot::read_arts_shout_bank`]).
+    /// disc at boot; see [`crate::native::read_arts_shout_bank`]).
     pub fn set_shout_bank(&mut self, bank: ArtsShoutBank) {
         self.shout_bank = Some(bank);
     }
@@ -121,7 +57,7 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     }
 
     /// Install the generic CD-XA clip bank (demuxed + decoded from the disc
-    /// at boot; see [`crate::boot::read_battle_xa_clip_bank`]).
+    /// at boot; see [`crate::native::read_battle_xa_clip_bank`]).
     pub fn set_xa_clip_bank(&mut self, bank: XaClipBank) {
         self.xa_clip_bank = Some(bank);
     }
@@ -129,20 +65,6 @@ impl<S: AudioSink> AudioBgmDirector<S> {
     /// `true` once a CD-XA clip bank is staged.
     pub fn has_xa_clip_bank(&self) -> bool {
         self.xa_clip_bank.is_some()
-    }
-
-    /// Point lazy staging at the disc image: walk its ISO once for every
-    /// `XA<n>.XA` and keep `(slot, lba, sectors)`, the way the boot filler
-    /// `FUN_801CFA78` builds the clip table at `0x801C6ED8` (slot `n - 1`
-    /// for `XA<n>.XA`; `docs/subsystems/audio.md`). Returns how many files
-    /// resolved; `0` leaves lazy staging off.
-    pub fn set_xa_lazy_source(&mut self, disc: &std::path::Path) -> usize {
-        let Some(src) = XaLazySource::open(disc) else {
-            return 0;
-        };
-        let n = src.files.len();
-        self.xa_lazy = Some(src);
-        n
     }
 
     /// `true` once lazy staging has a disc to read from.

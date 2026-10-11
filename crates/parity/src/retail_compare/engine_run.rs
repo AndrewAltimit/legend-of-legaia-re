@@ -78,7 +78,7 @@ impl BgmDirector for RecordingDirector {
 /// How the retail save is applied around the scene entry.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SeedOrder {
-    /// The engine's own card-load path ([`BootSession::resume_save`]): seed
+    /// The engine's own card-load path ([`NativeSession::resume_save`]): seed
     /// the story flags, land the scene, then hydrate the whole save. The
     /// entry scripts see the saved flags but not the saved party, bag or
     /// gold.
@@ -107,7 +107,7 @@ pub fn run_engine_with(
         scene: retail.scene.clone(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted, &cfg).context("open boot session")?;
+    let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
     // Field talk runs on the inline field-VM runner, as it does in both play
     // hosts (`play-window`'s default and the browser page) and in the image
     // child: without it an engaged placement opens the plain typewriter panel
@@ -281,7 +281,7 @@ pub struct ScriptPhase {
 }
 
 pub(super) fn sample_engine(
-    session: &mut BootSession,
+    session: &mut NativeSession,
     retail: &RetailObs,
     director: &RecordingDirector,
     menu_subscreen: Option<u8>,

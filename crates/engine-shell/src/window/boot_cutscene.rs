@@ -2,7 +2,7 @@
 
 use super::*;
 use legaia_engine_audio::AudioSink;
-// `AudioBgmDirector::stop` is a `BgmDirector` trait item; the title/boot
+// `NativeAudioDirector::stop` is a `BgmDirector` trait item; the title/boot
 // hand-offs below stop the score through it.
 use legaia_engine_core::scene_host::BgmDirector as _;
 
@@ -186,8 +186,8 @@ impl PlayWindowApp {
     /// move.
     ///
     /// A **Save** records the loaded scene as the file's resume point
-    /// ([`crate::boot::BootSession::current_resume`]). A
-    /// **Load** resumes through [`crate::boot::BootSession::resume_save`],
+    /// ([`legaia_engine_session::native::NativeSession::current_resume`]). A
+    /// **Load** resumes through [`legaia_engine_session::native::NativeSession::resume_save`],
     /// the landing order the browser page's `play_resume_save` shares
     /// (`legaia_engine_core::resume::land_save`): the save's own scene - retail
     /// resumes a save where it was written - else the scene already running,
@@ -635,7 +635,7 @@ impl PlayWindowApp {
                     tick_open_subsession, tick_root_list,
                 };
                 use legaia_engine_menus::field_menu::FieldMenuOutcome;
-                // The menu session is hosted by the BootSession (so headless
+                // The menu session is hosted by the NativeSession (so headless
                 // drivers share it); if it vanished out from under the UI
                 // arm, drop back to the scene.
                 if self.session.field_menu.is_none() {

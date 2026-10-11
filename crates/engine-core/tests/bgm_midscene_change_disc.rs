@@ -193,7 +193,7 @@ fn midscene_bgm_change_starts_playback_without_a_scene_entry() {
 }
 
 /// A director with the pause latch real directors carry (the
-/// `AudioBgmDirector` / `WebBgmDirector` shape), for the sub-op `0xA` pair
+/// `AudioDirector` / `WebBgmDirector` shape), for the sub-op `0xA` pair
 /// below.
 #[derive(Default)]
 struct LatchDirector {

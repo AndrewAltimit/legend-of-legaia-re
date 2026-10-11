@@ -959,7 +959,7 @@ work**, in the form the waiver rules above require.
 `[[boot_install]]` rows in `ui-host-drift-waivers.toml`.
 
 The tier takes every `world.install_*` / `world.set_*` call in
-`crates/engine-session/src/boot.rs` and requires a shipped `crates/web-viewer`
+`crates/engine-session/src/session.rs` and requires a shipped `crates/web-viewer`
 source to call the same method, or a waiver.
 
 The case it exists for: the native boot installed six static-SCUS progression
@@ -1179,7 +1179,7 @@ decidable per instance, not from a source pattern.
 | Shape | Worked case | Where the fix lives |
 |---|---|---|
 | **Same layout, different letterforms.** A shared layout is not a shared draw. | Battle numerals: VRAM cells natively, dialog font on the page. | `render-kernels::battle_numerals` + the fifth tier-7 rule. |
-| **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioBgmDirector`. |
+| **Same override set, different bodies.** | Two `BgmDirector`s disagreed on the duplicate-start guard, master volume and the pause gate. | One body: `engine-session`'s `AudioDirector`. |
 | **A law written twice in two shading languages.** | See [shading](#the-two-hosts-do-not-share-a-shading-law). | Only a rendered frame from each host compares them. |
 | **A draw list that carries half a mesh.** | A surface running `tmd_to_vram_mesh` alone drops every untextured prim. | Assert the **untextured corner count**, never the total. |
 | **Length parity is not coverage.** | A white `a_flat_rgba` stream has the right length. | Assert content. |
@@ -1578,13 +1578,13 @@ Rot stamp and Curse plate (`BattleChromeRects::rot_stamp` / `curse_plate`,
 
 ### Audio
 
-Both play hosts run `engine-session`'s `AudioBgmDirector` over their own
+Both play hosts run `engine-session`'s `AudioDirector` over their own
 output, and lay SPU RAM out through `legaia_engine_audio::spu_layout`.
 
 | Decision | Kernel |
 |---|---|
-| field SFX ring | `AudioBgmDirector::route_world_sfx` replaying `SfxRingOp`s; `World::side_band_bank`, `runtime_sfx_descriptor_in` |
-| slot-2 / slot-6 region | `World::sync_sfx_residency`, `AudioBgmDirector::sync_shared_region`, `bgm::resolve_sfx_slot`, `World::release_field_audio` |
+| field SFX ring | `AudioDirector::route_world_sfx` replaying `SfxRingOp`s; `World::side_band_bank`, `runtime_sfx_descriptor_in` |
+| slot-2 / slot-6 region | `World::sync_sfx_residency`, `AudioDirector::sync_shared_region`, `bgm::resolve_sfx_slot`, `World::release_field_audio` |
 | SPU layout | `upload_owned_bank`, `upload_resident_sfx`, `upload_shared_region`; `SFX_BANK_SPU_BYTES`, `SPU_RESERVED_BYTES` |
 | BGM tail banks | `legaia_engine_audio::bgm_tail::BgmTail` ([`audio.md`](../subsystems/audio.md#the-banks-that-borrow-the-bgm-regions-tail)) |
 | scene-local BGM id | `SceneHost::route_bgm_events` -> `start_owned_vab` on `SCENE_LOCAL_BGM_FALLBACK_ID` |
@@ -1612,7 +1612,7 @@ Retail facts the audio rows rest on:
   ([`audio.md`](../subsystems/audio.md#a-scene-local-id-loads-a-fallback-track-not-a-scene-bank)).
 - **The credits bank** (`0x631B0` bytes of bodies) is laid across the SFX
   region, as retail opens VAB 10 at slot 0's base; while it is resident the
-  director keys no cue against it (`AudioBgmDirector::reclaim_sfx_region`)
+  director keys no cue against it (`AudioDirector::reclaim_sfx_region`)
   ([`audio.md`](../subsystems/audio.md#where-the-credits-bank-lands-in-spu-ram)).
 - **Op `0x35` timed release.** Its expiry arm is `FUN_800266E0`'s body on the
   field-BGM slot - sub-op `2`'s pause
@@ -1670,7 +1670,7 @@ head cue (`battle_cast_cue::module_head_cue`) and runs it through
 `AudioState::battle_xa_cues`. Staging is lazy, one channel span per cast:
 `read_span_sectors(dur)` = `(dur * 150 + 149) / 60` sectors, decoded by
 `XaClipBank::decode_channel_span` and kept under `LAZY_CLIP_CAP`. Native reads
-the disc (`AudioBgmDirector::set_xa_lazy_source`); the page lists what it wants
+the disc (`AudioDirector::set_xa_lazy_source`); the page lists what it wants
 (`play_xa_stage_requests_json`) and installs it (`play_xa_install_span`).
 
 The gates around it:

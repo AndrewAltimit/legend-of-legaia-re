@@ -293,7 +293,7 @@ fn arts_swing_ladder() {
     );
 
     // --- rung 2: the shout bank's channel pick (FUN_8004C140). -------------
-    let mut bank = legaia_engine_session::boot::read_arts_shout_bank(&disc)
+    let mut bank = legaia_engine_session::native::read_arts_shout_bank(&disc)
         .expect("arts-voice shout bank stages from the disc");
     let pool: Vec<u8> = bank
         .pool(swing.shouts[0].cslot, swing.shouts[0].action)

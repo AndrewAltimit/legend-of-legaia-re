@@ -18,7 +18,7 @@
 //! expected_save_sha256 = "deadbeef..."  # 64 hex chars
 //! ```
 //!
-//! Each scenario boots [`BootSession::open`] with the configured scene
+//! Each scenario boots [`NativeSession::open`] with the configured scene
 //! and audio off, ticks `frames` times, dumps the engine's SaveFile via
 //! `World::save_full().write()`, and asserts the SHA-256 of that byte
 //! stream matches `expected_save_sha256`. A `--bless` flow rewrites the
@@ -39,8 +39,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::BootSession;
-use legaia_engine_session::boot::BootConfig;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
 /// Top-level manifest. Maps to a `scripts/engine/scenarios.toml` file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,7 +67,7 @@ pub struct Scenario {
     pub name: String,
     /// CDNAME scene to boot.
     pub scene: String,
-    /// How many `BootSession::tick` calls to issue. Defaults to
+    /// How many `NativeSession::tick` calls to issue. Defaults to
     /// `defaults.frames` if absent (and finally to 5 if both are unset).
     #[serde(default)]
     pub frames: Option<u32>,
@@ -152,7 +152,7 @@ pub fn run_one(extracted_root: &Path, scene_name: &str, frames: u32) -> Result<S
         scene: scene_name.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(extracted_root, &cfg)
+    let mut session = NativeSession::open(extracted_root, &cfg)
         .with_context(|| format!("boot scene '{}'", scene_name))?;
     for _ in 0..frames {
         session

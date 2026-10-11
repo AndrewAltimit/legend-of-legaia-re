@@ -25,8 +25,8 @@ use std::path::PathBuf;
 
 use legaia_engine_battle_vm::battle_action::ActionState;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::PadButton;
 
 fn repo_root() -> PathBuf {
@@ -37,14 +37,14 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn open_session() -> Option<BootSession> {
+fn open_session() -> Option<NativeSession> {
     let disc = std::env::var_os("LEGAIA_DISC_BIN").map(PathBuf::from);
     let Some(disc) = disc.filter(|p| p.exists()) else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset or missing (disc-gated convention)");
         return None;
     };
     let cfg = BootConfig {
-        scene: legaia_engine_session::boot::DEFAULT_BOOT_SCENE.to_string(),
+        scene: legaia_engine_session::session::DEFAULT_BOOT_SCENE.to_string(),
         enable_audio: false,
     };
     let mut candidates = Vec::new();
@@ -54,14 +54,14 @@ fn open_session() -> Option<BootSession> {
     candidates.push(repo_root().join("extracted"));
     for d in candidates {
         if d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists() {
-            return Some(BootSession::open(&d, &cfg).expect("open BootSession (extracted)"));
+            return Some(NativeSession::open(&d, &cfg).expect("open NativeSession (extracted)"));
         }
     }
-    Some(BootSession::open_disc(&disc, &cfg).expect("open BootSession (disc)"))
+    Some(NativeSession::open_disc(&disc, &cfg).expect("open NativeSession (disc)"))
 }
 
 /// The presentation queues a play host drains after every tick.
-fn host_drains(session: &mut BootSession) {
+fn host_drains(session: &mut NativeSession) {
     let w = &mut session.host.world;
     let _ = w.drain_field_events();
     let _ = w.drain_battle_events();
@@ -78,7 +78,7 @@ fn host_drains(session: &mut BootSession) {
 
 /// The route ladder's fighter: Begin, Attack, Auto, confirm the target,
 /// confirm a message box, back out of a bag - every one a pad press.
-fn fight_pad(session: &BootSession) -> u16 {
+fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_menus::battle_input::CommandPhase;
     let w = &session.host.world;
     if !w.battle.tutorial_boxes.is_empty() {

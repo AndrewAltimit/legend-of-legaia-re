@@ -4,10 +4,10 @@
 //! Mirrors the shape of [`crate::vram_oracle`] but the diff axis is the
 //! engine's high-level dispatch state instead of VRAM bytes: per-frame
 //! `(game_mode, scene_mode, active_scene)`. The retail side reads a
-//! mednafen save state; the engine side ticks a [`BootSession`] and
+//! mednafen save state; the engine side ticks a [`NativeSession`] and
 //! samples each frame.
 //!
-//! **Both sides emit the mode word.** [`BootSession`] holds a
+//! **Both sides emit the mode word.** [`NativeSession`] holds a
 //! [`ModeSeat`](legaia_engine_mode::mode::ModeSeat) - the port's copy of
 //! `_DAT_8007B83C` - written where retail's code stores that word and
 //! reconciled with [`world.mode`](legaia_engine_mode::mode::SceneMode) once
@@ -37,11 +37,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::BootSession;
-use legaia_engine_session::boot::BootConfig;
 use legaia_engine_session::mode_trace::ModeTraceFrame;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
 
-/// Run a [`BootSession`] on `scene_name`, sampling `(scene_mode,
+/// Run a [`NativeSession`] on `scene_name`, sampling `(scene_mode,
 /// active_scene)` immediately after boot and again after every tick.
 /// Returns `frames + 1` records. No pad input is fed; the engine is
 /// effectively idle except for self-driving tick logic (e.g. field-VM
@@ -58,7 +58,7 @@ pub fn build_engine_mode_trace(
 }
 
 /// Variant of [`build_engine_mode_trace`] that drives the
-/// [`BootSession`] with a scripted pad timeline. `pad_stream[i]` is
+/// [`NativeSession`] with a scripted pad timeline. `pad_stream[i]` is
 /// installed onto `World.input` just before tick `i+1`; frame `0` is
 /// sampled pre-tick with an all-zeros pad. `frames + 1` records are
 /// returned, same shape as the no-input variant.
@@ -86,8 +86,8 @@ pub fn build_engine_mode_trace_with_inputs(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     let mut out = Vec::with_capacity((frames as usize).saturating_add(1));
     out.push(sample_engine_frame(&session));
@@ -102,7 +102,7 @@ pub fn build_engine_mode_trace_with_inputs(
 
 /// Variant of [`build_engine_mode_trace_with_inputs`] that drops the
 /// session into a *live field scene* before sampling - it calls
-/// [`BootSession::enter_field_live`] (run record 0, install the encounter
+/// [`NativeSession::enter_field_live`] (run record 0, install the encounter
 /// table, arm the live loop) so the engine reaches `SceneMode::Field` the way
 /// the windowed host does, instead of sitting in `Title` like the plain
 /// `load_scene` path.
@@ -124,12 +124,12 @@ pub fn build_engine_mode_trace_field_live(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     session.enter_field_live(
         scene_name,
-        &legaia_engine_session::boot::FieldLiveOpts {
+        &legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -156,15 +156,15 @@ pub fn build_engine_mode_trace_field_live(
 /// fixture, not just converge against the bracketing retail anchors. The
 /// sequence is:
 ///
-/// 1. [`BootSession::begin_new_game`] seeds the opening party (Vahn, the
+/// 1. [`NativeSession::begin_new_game`] seeds the opening party (Vahn, the
 ///    game's pre-Tetsu story state - there is no earlier save).
-/// 2. [`BootSession::enter_field_live`] drops into `scene_name` with the live
+/// 2. [`NativeSession::enter_field_live`] drops into `scene_name` with the live
 ///    loop armed; the cold boot auto-installs the town's sparring carrier.
 /// 3. A real interaction on the carrier's slot opens its dialogue; a
 ///    just-pressed confirm (Cross) advances/dismisses it, which engages the
 ///    scripted lone-Tetsu encounter and flips Field → Battle.
 ///
-/// Sampled through [`BootSession::tick`] (so the trace is the same shape the
+/// Sampled through [`NativeSession::tick`] (so the trace is the same shape the
 /// other builders emit). The Field → Battle transition is a scene-*mode* flip
 /// on the same loaded scene, not a scene change, so `active_scene` stays
 /// `scene_name` across the boundary. Returns `frames + 1` records; ticking
@@ -183,13 +183,13 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
         enable_audio: false,
     };
     let mut session = match disc {
-        Some(p) => BootSession::open_disc(p, &cfg)?,
-        None => BootSession::open(extracted_root, &cfg)?,
+        Some(p) => NativeSession::open_disc(p, &cfg)?,
+        None => NativeSession::open(extracted_root, &cfg)?,
     };
     session.begin_new_game();
     session.enter_field_live(
         scene_name,
-        &legaia_engine_session::boot::FieldLiveOpts {
+        &legaia_engine_session::session::FieldLiveOpts {
             live_loop: true,
             ..Default::default()
         },
@@ -236,9 +236,9 @@ pub fn build_engine_mode_trace_new_game_battle_leg(
     Ok(out)
 }
 
-fn sample_engine_frame(session: &BootSession) -> ModeTraceFrame {
+fn sample_engine_frame(session: &NativeSession) -> ModeTraceFrame {
     // The engine's mode word, read off the session's seat at the mode table
-    // ([`BootSession::mode_seat`]). Every frame carries one now: the seat is
+    // ([`NativeSession::mode_seat`]). Every frame carries one now: the seat is
     // written where retail's code stores `_DAT_8007B83C` (field entry through
     // `MAIN INIT`, the pause menu through `CARD INIT`) and reconciled with the
     // world's `SceneMode` once per tick, so the field is no longer `None`

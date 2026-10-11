@@ -5,7 +5,7 @@
 //!
 //! 1. **The chain's shape** is pure data (`mode::BOOT_MODE_CHAIN`), asserted
 //!    without a disc by `engine-core`'s own unit tests. What needs a disc is
-//!    that a *session* walks it: a `BootSession` opens at `READ INIT`, and
+//!    that a *session* walks it: a `NativeSession` opens at `READ INIT`, and
 //!    entering a real field scene leaves the word at `MAIN MODE` with the
 //!    per-scene INIT plan resolved on the way.
 //! 2. **The oracle emits the word.** Every `ModeTraceFrame` the engine
@@ -19,9 +19,9 @@
 //! and a CDNAME scene label.
 
 use legaia_engine_mode::mode::{BOOT_MODE_CHAIN, GameMode};
-use legaia_engine_session::boot::BootConfig;
-use legaia_engine_session::boot::FieldLiveOpts;
-use legaia_engine_shell::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::BootConfig;
+use legaia_engine_session::session::FieldLiveOpts;
 use legaia_parity::mode_trace_oracle::build_engine_mode_trace_field_live;
 
 /// The opening town - the scene the new-game template names.
@@ -45,7 +45,7 @@ fn a_session_walks_the_boot_chain_and_lands_on_main_mode() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = match BootSession::open_disc(&disc, &cfg) {
+    let mut session = match NativeSession::open_disc(&disc, &cfg) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[skip] open_disc failed: {e:#}");

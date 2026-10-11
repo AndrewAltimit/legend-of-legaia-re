@@ -34,7 +34,7 @@ pub(super) type ForkedHop = ((i32, i32), Vec<u8>, usize, Vec<u16>, Vec<u16>);
 /// rooms with kind-0 teleports (`rikuroa` P2[6..25]). A record that hops
 /// more than once, or tests where the player stands first, is left out: its
 /// landing is not one place.
-pub(super) fn ledge_hops(session: &BootSession) -> WarpMap {
+pub(super) fn ledge_hops(session: &NativeSession) -> WarpMap {
     use legaia_engine_field::man_field_scripts::{partition_record_span, partition2_record_gates};
     use legaia_scene_formats::field_disasm::{ActorCtrlKind, InsnInfo, LinearWalker, MenuCtrlKind};
     if session.host.world.mode != SceneMode::Field {
@@ -251,7 +251,7 @@ pub(super) fn flag_path_landing(
 /// House interiors and dungeon rooms are laid out in the same field map as
 /// the street outside, joined only by these, so a planner that does not
 /// model them sees each room as a separate walk component.
-pub(super) fn teleports(session: &BootSession) -> WarpMap {
+pub(super) fn teleports(session: &NativeSession) -> WarpMap {
     if session.host.world.mode != SceneMode::Field {
         return HashMap::new();
     }
@@ -302,7 +302,7 @@ pub(super) const ACTOR_PROBES: [[(i16, i16); 3]; 4] = [
 /// story flags as the contact dispatch resolves it, teleports the player
 /// (`WalkTouchEvent::PlayerMoveTo`) - contact centre and landing cell.
 /// Vahn's front door and every house door of a town are this class.
-pub(super) fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
+pub(super) fn object_doors(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
     use legaia_engine_field::man_field_scripts::{WalkTouchEvent, resolve_walk_touch_arm};
     let w = &session.host.world;
     if w.mode != SceneMode::Field {
@@ -343,7 +343,7 @@ pub(super) fn object_doors(session: &BootSession) -> Vec<((i16, i16), Cell)> {
 /// centre and the cell of the last leg's tile. `taiku` P0[6], the lift at
 /// (109, 78), walks the player aboard, rides and walks them off the far
 /// side, each touch the other way (`0x38B`).
-pub(super) fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
+pub(super) fn prop_rides(session: &NativeSession) -> Vec<((i16, i16), Cell)> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     if w.mode != SceneMode::Field {
@@ -435,7 +435,7 @@ pub(super) fn prop_rides(session: &BootSession) -> Vec<((i16, i16), Cell)> {
 /// on. The engine exempts that platform from the touch dispatch and the
 /// collision probe until the player is out of its reach, so the landing is
 /// a pocket the player walks off, not a cell pinned against the platform.
-pub(super) fn door_partners(session: &BootSession) -> HashMap<(i16, i16), Vec<(i16, i16)>> {
+pub(super) fn door_partners(session: &NativeSession) -> HashMap<(i16, i16), Vec<(i16, i16)>> {
     use legaia_engine_field::man_field_scripts::record_exempted_objects;
     let w = &session.host.world;
     let Some(man) = w.field_vm.channels_man.as_ref() else {
@@ -480,7 +480,7 @@ pub(super) fn in_reach(c: Cell, at: (i16, i16)) -> bool {
 /// `+0x10` is the collision / touch exemption (`FUN_801CF754` /
 /// `FUN_801CF9F4` skip `flags & 3`), so the leaf stops blocking once the
 /// player's press into it has posted the touch - the press is the opening.
-pub(super) fn self_opening_doors(session: &BootSession) -> HashSet<(u8, u8)> {
+pub(super) fn self_opening_doors(session: &NativeSession) -> HashSet<(u8, u8)> {
     door_openings(session)
         .into_iter()
         .filter(|(_, b)| b.is_none())
@@ -496,7 +496,7 @@ pub(super) fn self_opening_doors(session: &BootSession) -> HashSet<(u8, u8)> {
 pub(super) type TileBox = (u8, u8, u8, u8);
 pub(super) type BoxedDoor = (TileBox, Vec<(i16, i16)>);
 
-pub(super) fn boxed_doors(session: &BootSession) -> Vec<BoxedDoor> {
+pub(super) fn boxed_doors(session: &NativeSession) -> Vec<BoxedDoor> {
     let w = &session.host.world;
     door_openings(session)
         .into_iter()
@@ -523,7 +523,7 @@ pub(super) fn boxed_doors(session: &BootSession) -> Vec<BoxedDoor> {
 /// resume point): `None` when nothing can branch around the opening,
 /// `Some(box)` when only a player-channel box test (tiles `x_min, z_min,
 /// x_max, z_max`) stands before it.
-pub(super) fn door_openings(session: &BootSession) -> HashMap<(u8, u8), Option<TileBox>> {
+pub(super) fn door_openings(session: &NativeSession) -> HashMap<(u8, u8), Option<TileBox>> {
     use legaia_engine_field::man_field_scripts::partition_record_span;
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let w = &session.host.world;

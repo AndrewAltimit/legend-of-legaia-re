@@ -16,7 +16,7 @@
 
 use legaia_engine_audio::{SPU_INTERNAL_RATE, TestAudioSink};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::FieldLiveOpts;
+use legaia_engine_session::session::FieldLiveOpts;
 use legaia_engine_session::{BootConfig, BootSession};
 use legaia_engine_system::input::PadButton;
 

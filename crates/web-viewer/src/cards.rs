@@ -817,8 +817,8 @@ mod cross_host {
         }
     }
 
-    fn native_opts() -> legaia_engine_session::boot::FieldLiveOpts {
-        legaia_engine_session::boot::FieldLiveOpts {
+    fn native_opts() -> legaia_engine_session::session::FieldLiveOpts {
+        legaia_engine_session::session::FieldLiveOpts {
             live_loop: false,
             player_battle: true,
             battle_bgm: None,

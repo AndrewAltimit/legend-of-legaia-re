@@ -24,8 +24,8 @@ use std::path::PathBuf;
 
 use legaia_engine_menus::battle_input::{AttackMode, BattleCommand, CommandPhase, RoundChoice};
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_engine_system::input::{InputState, PadButton};
 
 const SCENE: &str = "town01";
@@ -44,7 +44,7 @@ fn extracted_dir() -> Option<PathBuf> {
         .find(|d| d.join("PROT.DAT").exists() && d.join("CDNAME.TXT").exists())
 }
 
-fn tap(session: &mut BootSession, button: PadButton) {
+fn tap(session: &mut NativeSession, button: PadButton) {
     session.host.world.set_pad(InputState::mask_of([button]));
     let _ = session.tick();
     session.host.world.set_pad(0);
@@ -63,7 +63,7 @@ struct Trace {
 }
 
 impl Trace {
-    fn record(&mut self, session: &mut BootSession) {
+    fn record(&mut self, session: &mut NativeSession) {
         let w = &mut session.host.world;
         let clip = w.actors[0].battle.current_anim;
         if clip != 0 && self.clips.last() != Some(&clip) {
@@ -81,7 +81,11 @@ impl Trace {
 
 /// Tick with a neutral pad (taking the commit confirm's `Begin`) until `f`
 /// holds, tracing every tick.
-fn settle(session: &mut BootSession, trace: &mut Trace, f: impl Fn(&BootSession) -> bool) -> bool {
+fn settle(
+    session: &mut NativeSession,
+    trace: &mut Trace,
+    f: impl Fn(&NativeSession) -> bool,
+) -> bool {
     for _ in 0..SETTLE_TICKS {
         if f(session) {
             return true;
@@ -101,7 +105,7 @@ fn settle(session: &mut BootSession, trace: &mut Trace, f: impl Fn(&BootSession)
     f(session)
 }
 
-fn command_open(s: &BootSession) -> bool {
+fn command_open(s: &NativeSession) -> bool {
     s.host
         .world
         .battle
@@ -110,7 +114,7 @@ fn command_open(s: &BootSession) -> bool {
         .is_some_and(|c| !matches!(c.phase, CommandPhase::CommitConfirm { .. }))
 }
 
-fn pick(session: &mut BootSession, want: BattleCommand) {
+fn pick(session: &mut NativeSession, want: BattleCommand) {
     for _ in 0..64 {
         let press = {
             let Some(cmd) = session.host.world.battle.command.as_ref() else {
@@ -151,7 +155,7 @@ fn pick(session: &mut BootSession, want: BattleCommand) {
     panic!("never reached {want:?}");
 }
 
-fn boot_into_battle() -> Option<BootSession> {
+fn boot_into_battle() -> Option<NativeSession> {
     if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return None;
@@ -164,7 +168,7 @@ fn boot_into_battle() -> Option<BootSession> {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,
@@ -215,7 +219,7 @@ fn boot_into_battle() -> Option<BootSession> {
 
 /// Use one Healing Leaf from the open command ring and trace the turn until
 /// the next command session opens.
-fn use_healing_leaf(session: &mut BootSession) -> Trace {
+fn use_healing_leaf(session: &mut NativeSession) -> Trace {
     let carried = session
         .host
         .world
@@ -250,7 +254,7 @@ fn use_healing_leaf(session: &mut BootSession) -> Trace {
     trace
 }
 
-fn spirit_turn(session: &mut BootSession) -> Trace {
+fn spirit_turn(session: &mut NativeSession) -> Trace {
     pick(session, BattleCommand::Spirit);
     let mut trace = Trace::default();
     assert!(settle(session, &mut trace, command_open));
@@ -316,13 +320,9 @@ fn an_item_turn_plays_the_item_clip_even_after_a_spirit_turn() {
         .iter()
         .find(|c| c.0 == VAHN_VOICE_SLOT)
         .expect("asserted above");
-    let (clip, _) = legaia_engine_session::audio_director::read_xa_channel_span(
-        &disc,
-        slot as u8,
-        channel as u8,
-        dur,
-    )
-    .expect("the item voice's channel decodes off the disc");
+    let (clip, _) =
+        legaia_engine_session::native::read_xa_channel_span(&disc, slot as u8, channel as u8, dur)
+            .expect("the item voice's channel decodes off the disc");
     let peak = clip.pcm.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
     eprintln!(
         "item voice: slot {slot:#x} ch {channel} span {dur} -> {} frames, peak {peak}",

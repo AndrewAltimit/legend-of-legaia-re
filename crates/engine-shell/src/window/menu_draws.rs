@@ -114,7 +114,7 @@ impl PlayWindowApp {
     /// Top-level pause menu: the command list, the money / play-time box and
     /// the party overview panel.
     ///
-    /// The menu session lives on the `BootSession` (the headless host of the
+    /// The menu session lives on the `NativeSession` (the headless host of the
     /// CARD/menu mode); the window only renders it.
     pub(super) fn field_menu_root_draws(&self, surface_w: u32, surface_h: u32) -> PauseMenuDraws {
         let Some(menu) = self.session.field_menu.as_ref() else {

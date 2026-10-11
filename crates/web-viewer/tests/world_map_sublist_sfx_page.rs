@@ -7,7 +7,7 @@
 //! sub-list confirm (`jal 0x80035BD0` at `0x801ED65C`, cue `0x20`), its text
 //! box, the tile-board bonk, the Baka hub's confirm stings, the Incense
 //! notice. It only queues an `SfxRingOp::ReplaceLast`; the ring itself lives
-//! in each host's SFX scheduler - the native `AudioBgmDirector`, which exists
+//! in each host's SFX scheduler - the native `AudioDirector`, which exists
 //! only with a live audio device, and the browser play page's `PlaySfx`,
 //! which exists on every build. So the play page is the one host a test can
 //! drive to the ring, and this is that drive: enter the overworld, open the

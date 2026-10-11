@@ -7,8 +7,8 @@
 //! battle's **one-shot clips** ([`XaClipBank`], keyed by the raw
 //! `(clip_slot, channel)` of the retail starter `FUN_8003D53C`). The native
 //! boot reads the files' raw sectors off the disc image
-//! ([`crate::boot::read_arts_shout_bank`] /
-//! [`crate::boot::read_battle_xa_clip_bank`]); the browser play page slices
+//! ([`crate::native::read_arts_shout_bank`] /
+//! [`crate::native::read_battle_xa_clip_bank`]); the browser play page slices
 //! the same sectors out of the disc bytes it holds. Where the sectors come
 //! from is the hosts' business. What a channel becomes - which channels a
 //! file stages, how a shout is trimmed, which cue pools it carries, how wide

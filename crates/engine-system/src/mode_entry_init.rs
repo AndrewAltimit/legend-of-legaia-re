@@ -168,7 +168,7 @@ fn tile_of(v: i32) -> i32 {
 ///
 /// WIRED, and the chain is: the `legaia-engine` binary
 /// (`commands/run.rs`, and the `play-window` redraw path) and
-/// `engine_shell::BootSession::…` (`boot.rs`) both call
+/// `engine_session::BootSession::…` (`session.rs`) both call
 /// `legaia_engine_core::scene_host::SceneHost::enter_field_scene`, which calls this to seat the
 /// player on a cold field entry. Every other kernel in this module is inert and
 /// says so individually - being in a live module is not itself evidence.

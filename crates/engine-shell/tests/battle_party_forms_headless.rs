@@ -4,7 +4,7 @@
 //! The party's forms - idle and action clips (the swings the hit events are
 //! paced by), art bank and art records (what the arts input tokenizes) - are
 //! the engine's battle-entry duty (`SceneHost::ensure_battle_party_forms`, run
-//! from `SceneHost::tick`), not a play host's. This drives `BootSession`
+//! from `SceneHost::tick`), not a play host's. This drives `NativeSession`
 //! alone into the Rim Elm training fight and asserts Vahn fights with real
 //! swing clips and real art records, and that a second fight re-installs.
 //!
@@ -13,8 +13,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
-use legaia_engine_shell::boot::BootSession;
+use legaia_engine_session::native::NativeSession;
+use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_scene_formats::encounter_record::RIM_ELM_TRAINING_FORMATION_ID;
 
 const SCENE: &str = "town01";
@@ -32,7 +32,7 @@ fn extracted_dir() -> Option<PathBuf> {
 }
 
 /// Install Tetsu's formation and tick until the world is in battle.
-fn enter_training_battle(session: &mut BootSession) {
+fn enter_training_battle(session: &mut NativeSession) {
     assert_eq!(
         session
             .host
@@ -51,7 +51,7 @@ fn enter_training_battle(session: &mut BootSession) {
 }
 
 /// Assert slot 0 (Vahn) carries the engine-installed form.
-fn assert_vahn_form_installed(session: &BootSession) {
+fn assert_vahn_form_installed(session: &NativeSession) {
     let world = &session.host.world;
     let forms = session
         .host
@@ -107,7 +107,7 @@ fn assert_vahn_form_installed(session: &BootSession) {
 /// `484..=486`. The PROT 1205 Baka Fighter atlases used to be uploaded at
 /// every battle entry, and atlas 7's rect is `(448, 256)` - slot 2's page -
 /// so the third enemy of any three-monster formation drew Baka Fighter art.
-fn assert_monster_slots_untouched(session: &BootSession) {
+fn assert_monster_slots_untouched(session: &NativeSession) {
     use legaia_actor_formats::monster_archive::{MONSTER_CLUT_ROW_BASE, monster_page_origin};
     let forms = session.host.battle_party_forms().expect("party forms");
     let mut vram = legaia_tim::Vram::new();
@@ -161,7 +161,7 @@ fn headless_battle_entry_installs_party_forms() {
         scene: SCENE.to_string(),
         enable_audio: false,
     };
-    let mut session = BootSession::open(&extracted, &cfg).expect("open boot session");
+    let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
     session
         .enter_field_live(
             SCENE,

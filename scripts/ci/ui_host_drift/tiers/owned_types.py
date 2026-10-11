@@ -6,7 +6,12 @@ Rows: `ui_host_drift.rows.owned_types`.
 import re
 
 from ui_host_drift.roots import HOSTS, REPO
-from ui_host_drift.rows.owned_types import OWNED_TYPES, SESSION_SRC, SESSION_TYPE
+from ui_host_drift.rows.owned_types import (
+    OWNED_TYPES,
+    SESSION_ALIAS_SRC,
+    SESSION_SRC,
+    SESSION_TYPE,
+)
 from ui_host_drift.rust_text import brace_block, is_test_source, strip_comments
 
 # Ownership evidence, in the host's own comment-stripped source: a field
@@ -54,11 +59,25 @@ def session_part_types() -> set[str]:
     return set(re.findall(r"\b([A-Z][A-Za-z0-9_]*)\b", " ".join(field_types)))
 
 
+def session_aliases() -> set[str]:
+    """The aliases of the session type the session crate itself declares
+    (`pub type NativeSession = BootSession<AudioOut>`)."""
+    if not SESSION_ALIAS_SRC.is_file():
+        return set()
+    src = strip_comments(SESSION_ALIAS_SRC.read_text(encoding="utf-8"))
+    return set(
+        re.findall(rf"\bpub type\s+(\w+)\s*=\s*[\w:]*\b{SESSION_TYPE}\b", src)
+    )
+
+
 def holds_session(text: str) -> bool:
-    """A field or construction of the session type, or a type alias of it
-    (the page's `PageSession`)."""
-    return owns_type(text, SESSION_TYPE) or bool(
-        re.search(rf"\btype\s+\w+\s*=\s*[\w:]*\b{SESSION_TYPE}\b", text)
+    """A field or construction of the session type or of an alias the session
+    crate declares (the native window's `NativeSession`), or a type alias of
+    it declared by the host (the page's `PageSession`)."""
+    return (
+        owns_type(text, SESSION_TYPE)
+        or any(owns_type(text, alias) for alias in session_aliases())
+        or bool(re.search(rf"\btype\s+\w+\s*=\s*[\w:]*\b{SESSION_TYPE}\b", text))
     )
 
 

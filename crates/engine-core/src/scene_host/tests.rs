@@ -207,7 +207,7 @@ fn route_bgm_handles_control_subops_without_scene() {
 }
 
 /// A director with the pause-latch contract real directors carry (the
-/// native `AudioBgmDirector` / browser `WebBgmDirector` shape): `pause`
+/// native `AudioDirector` / browser `WebBgmDirector` shape): `pause`
 /// closes a gate, `start` swaps the occupant and reopens it, and the
 /// sub-op `0xA` commit releases the occupant only while the gate is
 /// still closed - then reopens it unconditionally (retail arm

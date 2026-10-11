@@ -52,7 +52,7 @@ pub(super) enum Run {
 /// press-2-release-14 duty cycle (pages are edge-triggered), except on the
 /// naming prompt's Yes/No confirm, which opens on No - there the hand moves
 /// Up to Yes first, or the prompt drops back to editing forever.
-pub(super) fn script_pad(session: &BootSession, f: usize) -> u16 {
+pub(super) fn script_pad(session: &NativeSession, f: usize) -> u16 {
     use legaia_engine_menus::name_entry::NameEntryState;
     if let Some(pad) = held_pad_poll(session) {
         return pad;
@@ -89,7 +89,7 @@ pub(super) fn script_pad(session: &BootSession, f: usize) -> u16 {
 /// (`town01` P2[12..14], `town0e` P2[0..4]) re-run every tick the player
 /// stands on the tile (the `2E 13` re-poll bit) and take their action only
 /// while the direction is held.
-pub(super) fn held_pad_poll(session: &BootSession) -> Option<u16> {
+pub(super) fn held_pad_poll(session: &NativeSession) -> Option<u16> {
     let w = &session.host.world;
     let (bc, pc) = if let Some(tl) = w.cutscene.timeline.as_ref() {
         (&tl.bytecode, tl.pc)
@@ -121,7 +121,7 @@ pub(super) fn held_pad_poll(session: &BootSession) -> Option<u16> {
 /// The pads a script's leading held-pad poll chain passes, when the pad
 /// holder sits on one: consecutive op-`0x42` mode-1 tests (`42 01 <i> ..`),
 /// each against one compass point (`0x801F28D0`).
-pub(super) fn poll_chain_pads(session: &BootSession) -> Option<Vec<u16>> {
+pub(super) fn poll_chain_pads(session: &NativeSession) -> Option<Vec<u16>> {
     let w = &session.host.world;
     let (bc, mut pc) = if let Some(tl) = w.cutscene.timeline.as_ref() {
         (&tl.bytecode, tl.pc)
@@ -160,7 +160,7 @@ thread_local! {
 /// speech - so a hand that always confirms the default loops forever. The
 /// hand instead takes option `k` on the picker's `k`-th opening (0, then 1,
 /// ...), which walks a menu to its story branch or its exit.
-pub(super) fn picker_pad(session: &BootSession) -> Option<u16> {
+pub(super) fn picker_pad(session: &NativeSession) -> Option<u16> {
     let w = &session.host.world;
     let menu = |bytecode: &std::sync::Arc<Vec<u8>>,
                 panel: &legaia_engine_dialog::dialog::OwnedDialogPanel| {
@@ -251,7 +251,7 @@ thread_local! {
 /// family's challenge P2[21] only on "I'm ready", and the band is walked
 /// once per visit, so the rotation's first answer, "Now wait a second!",
 /// left the chain - and the party's way off the north half - unplayed.
-pub(super) fn beat_progress_option(session: &BootSession) -> Option<usize> {
+pub(super) fn beat_progress_option(session: &NativeSession) -> Option<usize> {
     let beat = PLAYING_BEAT.with(std::cell::Cell::get)?;
     if timeline_p2_record(session) != Some(beat) {
         return None;
@@ -281,7 +281,7 @@ pub(super) fn beat_progress_option(session: &BootSession) -> Option<usize> {
 
 /// The picker the modal timeline (or the first spawned record with a box)
 /// has open: option count, branch targets and the record's bytes.
-pub(super) fn open_picker(session: &BootSession) -> Option<(usize, [usize; 4], Vec<u8>)> {
+pub(super) fn open_picker(session: &NativeSession) -> Option<(usize, [usize; 4], Vec<u8>)> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     let tl = w
@@ -315,7 +315,7 @@ pub(super) fn open_picker(session: &BootSession) -> Option<(usize, [usize; 4], V
 /// P2[5] / P2[6]) ask "go back outside?" and their Yes spawns P2[28], which
 /// regroups the party and clears the members' progress flags; their No
 /// steps the walker back. `None` outside a split, or when no option stays.
-pub(super) fn split_stay_option(session: &BootSession) -> Option<usize> {
+pub(super) fn split_stay_option(session: &NativeSession) -> Option<usize> {
     use legaia_scene_formats::field_disasm::{InsnInfo, decode};
     let w = &session.host.world;
     w.dialog.three_actor_talk.as_ref()?;
@@ -376,7 +376,7 @@ thread_local! {
 /// the hand reads the record's branch table, finds the row whose branch
 /// names the hop's destination, moves the highlight there and confirms.
 /// `None` when no flag window is up (or no row leads to the destination).
-pub(super) fn flag_window_pad(session: &BootSession) -> Option<u16> {
+pub(super) fn flag_window_pad(session: &NativeSession) -> Option<u16> {
     use legaia_engine_core::field_submode_flag_window::{
         FLAG_WINDOW_SLOT, descriptor_from_operand,
     };
@@ -553,7 +553,7 @@ pub(super) fn flag_window_destinations(
 ///
 /// `stop_on_release` ends the run as soon as nothing holds the pad (after
 /// `EXIT_IDLE_TICKS` idle ticks); otherwise only a scene change ends it.
-pub(super) fn run(session: &mut BootSession, budget: usize, stop_on_release: bool) -> Run {
+pub(super) fn run(session: &mut NativeSession, budget: usize, stop_on_release: bool) -> Run {
     let mut idle = 0usize;
     for f in 0..budget {
         if let Err(e) = pad_budget(session) {
@@ -574,14 +574,14 @@ pub(super) fn run(session: &mut BootSession, budget: usize, stop_on_release: boo
             continue;
         }
         // A save point or a ready check presses the menu button itself
-        // (`World::scripted_menu_open_pending`), and `BootSession::tick` opens
+        // (`World::scripted_menu_open_pending`), and `NativeSession::tick` opens
         // the menu; answer it the way a player who is not saving does.
         let pad = match scripted_menu_pad(session, f) {
             Some(p) => p,
             None => script_pad(session, f),
         };
         // The naming prompt (the opening's op-0x49) takes this pad's edge
-        // inside `BootSession::tick`, as it does in both play hosts.
+        // inside `NativeSession::tick`, as it does in both play hosts.
         session.host.world.set_pad(pad);
         let before = player_xz(session);
         let site = std::env::var_os("LEGAIA_FGL_POS_TRACE").map(|_| park_site(session));
@@ -636,7 +636,7 @@ thread_local! {
 /// session sat idle, whether a scripted formation was armed, and the region
 /// step counter (`World::encounters.step_counter`, written only by the
 /// region arm of `World::on_field_step`).
-pub(super) fn encounter_roll_state(session: &BootSession) -> (bool, bool, i32) {
+pub(super) fn encounter_roll_state(session: &NativeSession) -> (bool, bool, i32) {
     use legaia_engine_battle::encounter::EncounterPhase;
     let e = &session.host.world.encounters;
     (
@@ -652,7 +652,10 @@ pub(super) fn encounter_roll_state(session: &BootSession) -> (bool, bool, i32) {
 /// transition through the region arm: no scripted formation was armed going
 /// in (the scripted arm fires first and returns), and the region arm moved
 /// the step counter.
-pub(super) fn note_random_roll(session: &BootSession, (idle, pending, counter): (bool, bool, i32)) {
+pub(super) fn note_random_roll(
+    session: &NativeSession,
+    (idle, pending, counter): (bool, bool, i32),
+) {
     let (idle_now, _, counter_now) = encounter_roll_state(session);
     if idle && !idle_now && !pending && counter_now != counter {
         RANDOM_ROLL.with(|r| r.set(true));
@@ -663,7 +666,7 @@ pub(super) fn note_random_roll(session: &BootSession, (idle, pending, counter): 
 /// screen, dismiss the notice panel, and answer the ready check Yes. Pressed
 /// on alternate frames, because the menu reads edges. `None` while no menu is
 /// up.
-pub(super) fn scripted_menu_pad(session: &BootSession, f: usize) -> Option<u16> {
+pub(super) fn scripted_menu_pad(session: &NativeSession, f: usize) -> Option<u16> {
     use legaia_engine_menus::field_menu::FieldMenuPhase;
     let menu = session.field_menu.as_ref()?;
     let button = if session.field_menu_sub.is_some() {
@@ -686,7 +689,7 @@ pub(super) fn scripted_menu_pad(session: &BootSession, f: usize) -> Option<u16> 
 /// Close a pause menu a script opened mid-walk (a save point the route
 /// brushed), answering it with [`scripted_menu_pad`]. Returns whether one was
 /// up.
-pub(super) fn close_scripted_menu(session: &mut BootSession) -> bool {
+pub(super) fn close_scripted_menu(session: &mut NativeSession) -> bool {
     if session.field_menu.is_none() {
         return false;
     }
@@ -706,7 +709,7 @@ pub(super) fn close_scripted_menu(session: &mut BootSession) -> bool {
 /// whenever the site changed across the last one, up to `ceiling` ticks in
 /// all. A long cutscene is not a stall; a script that sits on one
 /// instruction for a whole window is.
-pub(super) fn run_while_moving(session: &mut BootSession, ceiling: usize) -> Run {
+pub(super) fn run_while_moving(session: &mut NativeSession, ceiling: usize) -> Run {
     let mut spent = 0usize;
     loop {
         let before = park_site(session);
