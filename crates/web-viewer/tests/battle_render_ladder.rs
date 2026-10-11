@@ -29,10 +29,12 @@
 //! | 4 | target ring, pad-driven | a real forced encounter on the play page, walked into the target cursor with **D-pad Left** and cycled with Left/Right |
 //! | 5 | target ring, property | the ring builder + cursor step + the sweep-group aim, pinned against the disassembly's stated intent |
 //! | 6 | weapon trail, clip-seated | a second forced encounter on the play page, with Vahn's one trail clip (`+0x77 == 0x29`) committed through the page's staging probe and the page left to sweep, emit and compose |
+//! | 7 | Theeder beam, cast-seated | a third forced encounter, with a Theeder cast (spell `0x82`, PROT 0904) dispatched through the page's in-flight seam and the page left to tick the module and project its beam packets (`FUN_801F815C` / `FUN_801F83A4` / `FUN_801F8634` / `FUN_801F8B84`) |
 //!
 //! Rung 4 is the host rung: it is the browser play page, fed pad words, with
-//! every frame composed. Rung 6 is the page too, but **seated**: the clip is
-//! the driver's choice, everything downstream of it is the page's. Rungs 1-3
+//! every frame composed. Rungs 6 and 7 are the page too, but **seated**: the
+//! clip or the cast is the driver's choice, everything downstream of it is the
+//! page's. Rungs 1-3
 //! and 5 are *kernel* rungs - they call the
 //! same library objects the page calls, with the selector's own output
 //! substituted for the formation id the page happens to fight. That
@@ -707,6 +709,64 @@ fn rung6_weapon_trail_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
     Ok(())
 }
 
+/// Theeder, the Seru spell whose cast module (PROT 0904) draws its beam as
+/// screen packets rather than through the effect bank.
+const THEEDER_SPELL: u8 = 0x82;
+/// Retail's "enemy group" target code on the action record's `+0x1DD` byte.
+const TARGET_ENEMY_GROUP: u8 = 9;
+
+/// Rung 7 - the Theeder beam, seated. The cast is dispatched from the first
+/// command prompt through the page's in-flight seam (no spell is learned and
+/// no menu is walked, so this is a seated rung like the trail one), and from
+/// there the page runs it as it runs any cast: the module ticks, the world
+/// publishes one beam packet per tick, and the screen-FX pass projects it
+/// through `cast_theeder::theeder_prims` into the composed frame.
+fn rung7_theeder_beam_seated(rt: &mut LegaiaRuntime) -> Result<(), String> {
+    enter_forced_battle(rt)?;
+    let slots = rt.debug_battle_party_slots();
+    let Some(&lead) = slots.first() else {
+        return Err("the forced battle registered no party actor".into());
+    };
+    if rt.debug_battle_theeder_packet_live() {
+        return Err("a Theeder packet was live before any cast was seeded".into());
+    }
+    if !rt.debug_seed_inflight_cast(lead as u8, THEEDER_SPELL, TARGET_ENEMY_GROUP) {
+        return Err("the in-flight cast seam found no live world".into());
+    }
+    let (mut live, mut composed, mut idle_after) = (0u32, 0u32, 0u32);
+    for _ in 0..20_000 {
+        let _ = rt.tick_frame();
+        if rt.debug_battle_theeder_packet_live() {
+            live += 1;
+            idle_after = 0;
+            if rt.play_screen_prim_count() > 0 {
+                composed += 1;
+                let _ = rt.play_screen_prim_vertex_bytes();
+                let _ = rt.play_screen_prim_indices();
+                let _ = rt.play_screen_prim_runs();
+            }
+        } else if live > 0 {
+            idle_after += 1;
+            if idle_after > 120 {
+                break;
+            }
+        }
+        if !rt.play_battle_active() {
+            break;
+        }
+    }
+    if live == 0 {
+        return Err("the seeded Theeder cast never published a beam packet".into());
+    }
+    if composed == 0 {
+        return Err(format!(
+            "a beam packet was live on {live} ticks but the page composed no screen prims"
+        ));
+    }
+    eprintln!("[rung 7] beam packet live on {live} ticks, composed on {composed}");
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Rung 5 - the target kernels, property-shaped
 // ---------------------------------------------------------------------------
@@ -946,7 +1006,7 @@ fn battle_render_ladder() {
     let mut score = 0u32;
     let mut fail: Option<(u32, &str, String)> = None;
     type Rung = Box<dyn Fn(&mut LegaiaRuntime, &ProtIndex) -> Result<(), String>>;
-    let rungs: [(&str, Rung); 6] = [
+    let rungs: [(&str, Rung); 7] = [
         (
             "selector-census",
             Box::new(|_rt, _ix| rung1_selector_census()),
@@ -971,6 +1031,10 @@ fn battle_render_ladder() {
             "weapon-trail-seated",
             Box::new(|rt, _ix| rung6_weapon_trail_seated(rt)),
         ),
+        (
+            "theeder-beam-seated",
+            Box::new(|rt, _ix| rung7_theeder_beam_seated(rt)),
+        ),
     ];
     for (name, rung) in rungs {
         match rung(&mut rt, &index) {
@@ -984,7 +1048,7 @@ fn battle_render_ladder() {
             }
         }
     }
-    eprintln!("battle_render_ladder: score {score}/6");
+    eprintln!("battle_render_ladder: score {score}/7");
     if let Some((n, name, why)) = fail {
         panic!("rung {n} ({name}): {why}");
     }

@@ -309,8 +309,14 @@ impl World {
             t if t < MONSTER_SLOT_FIRST => (CursorRow::Ally, t),
             t => (CursorRow::Enemy, t - MONSTER_SLOT_FIRST),
         };
+        // The seed stands in for the pad, so every pad-owned surface closes:
+        // a submenu left up parks the action SM (`live_battle_tick` returns
+        // on each before it steps), and the cast would never start.
         self.battle.command = None;
         self.battle.spell_menu = None;
+        self.battle.item_menu = None;
+        self.battle.arts_menu = None;
+        self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.set_battle_flow(crate::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at

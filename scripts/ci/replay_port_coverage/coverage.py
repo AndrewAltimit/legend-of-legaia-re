@@ -61,6 +61,19 @@ class FileCoverage:
             return self.spans[idx][2]
         return None
 
+    def span_verdict(self, lo: int, hi: int) -> bool | None:
+        """Verdict for a known source span; `None` if no record overlaps it.
+
+        `None` is the case `verdict_at` cannot express: a generic function is
+        only emitted where it is instantiated, so a binary that never names it
+        carries no record for it at all, and "the next function after the tag"
+        is then a different routine whose coverage is not this one's.
+        """
+        hits = [ex for a, b, ex in self.spans if a <= hi and lo <= b]
+        if not hits:
+            return None
+        return any(hits)
+
     def executed_overlapping(self, lo: int, hi: int) -> bool:
         """Whether any executed span overlaps the line range `[lo, hi]`.
 
@@ -72,8 +85,39 @@ class FileCoverage:
         return any(ex for a, b, ex in self.spans if a <= hi and lo <= b)
 
 
+def _reduced_path(path: Path) -> Path:
+    return path.with_name(path.name + ".reduced")
+
+
+def _load_reduced(path: Path) -> dict[str, FileCoverage] | None:
+    """The finalized spans of an export, if a current reduction is on disk.
+
+    A raw export is tens of MB and the union is dozens of them, so a bare join
+    spent minutes re-parsing JSON it had already read. The reduction keeps
+    exactly what the join consumes - per file, the merged `(lo, hi, executed)`
+    spans - and is trusted only while it is newer than its export.
+    """
+    red = _reduced_path(path)
+    try:
+        if red.stat().st_mtime < path.stat().st_mtime:
+            return None
+        data = json.loads(red.read_text())
+    except (OSError, ValueError):
+        return None
+    files: dict[str, FileCoverage] = {}
+    for rel, spans in data.items():
+        fc = FileCoverage()
+        fc.spans = [(lo, hi, bool(ex)) for lo, hi, ex in spans]
+        fc._starts = [sp[0] for sp in fc.spans]
+        files[rel] = fc
+    return files
+
+
 def load_coverage(path: Path) -> dict[str, FileCoverage]:
     """Parse an `llvm-cov export` JSON into per-file function coverage."""
+    cached = _load_reduced(path)
+    if cached is not None:
+        return cached
     raw = json.loads(path.read_text())
     files: dict[str, FileCoverage] = defaultdict(FileCoverage)
     for block in raw.get("data", []):
@@ -103,6 +147,12 @@ def load_coverage(path: Path) -> dict[str, FileCoverage]:
                 files[rel].add_function(lo, hi, executed)
     for cov in files.values():
         cov.finalize()
+    try:
+        _reduced_path(path).write_text(
+            json.dumps({rel: fc.spans for rel, fc in files.items()})
+        )
+    except OSError:
+        pass
     return files
 
 
@@ -192,11 +242,41 @@ def join_anchor_coverage(
             if not f.is_test and f.impl_type:
                 methods_of[(p, f.impl_type)].append(f)
 
+    def anchored_fn(site: dict):
+        """The parsed `fn` a function anchor names: the next one of that name
+        below the tag, else the one of that name the tag sits inside."""
+        named = [f for f in srcs[site["path"]].fns if f.name == site["symbol"]]
+        below = [f for f in named if f.line >= site["line"]]
+        if below:
+            return min(below, key=lambda f: f.line)
+        above = [f for f in named if f.line < site["line"]]
+        return max(above, key=lambda f: f.line) if above else None
+
+    def facade_subtree(rel: str) -> str | None:
+        """`foo/` for a `foo.rs` whose module body lives in that directory."""
+        if not rel.endswith(".rs") or rel.endswith(("/mod.rs", "/lib.rs", "/main.rs")):
+            return None
+        return rel[: -len(".rs")] + "/"
+
     def ran_in(cov: dict[str, "FileCoverage"], site: dict) -> bool | None:
         """`None` when this source cannot observe the site at all."""
         fc = cov.get(site["file"])
         if fc is None:
-            return None
+            # A `//! PORT:` tag on a facade - a `foo.rs` that only declares the
+            # submodules under `foo/` - names a file with no function, so no
+            # binary ever carries a record for it and the address read "not
+            # observable" however often the module ran. A module tag already
+            # means "anything in this module ran"; for a facade the module is
+            # its subtree, so that is where the verdict is read.
+            if site["kind"] != "module":
+                return None
+            prefix = facade_subtree(site["file"])
+            if prefix is None:
+                return None
+            sub = [c for f, c in cov.items() if f.startswith(prefix)]
+            if not sub:
+                return None
+            return any(c.any_executed() for c in sub)
         if site["kind"] == "module":
             return fc.any_executed()
         if site["kind"] == "type":
@@ -212,6 +292,12 @@ def join_anchor_coverage(
             if site["type_name"] not in impl_types[site["path"]]:
                 return fc.any_executed()
             return False
+        f = anchored_fn(site) if site["kind"] == "fn" else None
+        if f is not None:
+            src = srcs[f.path]
+            return fc.span_verdict(
+                f.line, src.line_of(max(f.body_end - 1, f.body_start))
+            )
         return bool(fc.verdict_at(site["line"]))
 
     for addr, sites in sorted(anchors.items()):
@@ -291,6 +377,10 @@ def join_anchor_coverage(
                     return True
             elif s["file"] in all_files:
                 return True
+            elif s["kind"] == "module":
+                prefix = facade_subtree(s["file"])
+                if prefix and any(f.startswith(prefix) for f in all_files):
+                    return True
         return False
 
     not_live_observable = sum(1 for a in not_live if a in anchors and addr_observable(a))

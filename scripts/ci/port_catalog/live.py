@@ -2,6 +2,7 @@
 root, and what does its disclosure say?
 """
 
+import os
 from collections import defaultdict
 from pathlib import Path
 
@@ -37,22 +38,24 @@ def compute_live(
     # set reports the whole field VM inert, which is wrong. When the file
     # defines no non-test `fn`, widen the scope to its submodule subtree.
     def module_scope(reached: set[int]) -> dict[Path, bool]:
+        # One pass for "does this file hold a reached non-test fn", then the
+        # subtree test on plain string prefixes. Asking `Path.is_relative_to`
+        # of every (facade, file) pair was most of a catalog run's wall clock.
+        own_fns = {p: [f for f in s.fns if not f.is_test] for p, s in srcs.items()}
+        reached_files = [
+            str(p) for p, own in own_fns.items() if any(f.uid in reached for f in own)
+        ]
+        reached_set = set(reached_files)
         out: dict[Path, bool] = {}
-        for p, s in srcs.items():
-            own = [f for f in s.fns if not f.is_test]
+        for p, own in own_fns.items():
             if own:
-                out[p] = any(f.uid in reached for f in own)
+                out[p] = str(p) in reached_set
                 continue
             # `lib.rs` / `main.rs` / `mod.rs` own the directory they sit in;
             # `foo.rs` owns the sibling `foo/`.
             sub = p.parent if p.stem in ("lib", "main", "mod") else p.parent / p.stem
-            out[p] = any(
-                f.uid in reached
-                for q, s2 in srcs.items()
-                if q.is_relative_to(sub)
-                for f in s2.fns
-                if not f.is_test
-            )
+            prefix = str(sub) + os.sep
+            out[p] = any(q.startswith(prefix) for q in reached_files)
         return out
 
     def type_scope(reached: set[int]) -> dict[tuple[Path, str], bool]:

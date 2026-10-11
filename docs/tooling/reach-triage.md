@@ -26,9 +26,11 @@ Re-derive them with a bare run. A row leaves this page when a ladder enters it,
 when the wiring lands, when its static verdict stops being `live`, or when an
 oracle that already drives it is promoted into the union.
 
-The current worklist is short: `8004629c` is bucket (b) (its gate is one disc
-carrier, `urudre1` stager record 14, driven by `dream_yaw_part_page_ladder`),
-and `801d31b0`, `801d553c`, `801dd4c4`, `801f1a00` are bucket (d). `801f2134`,
+The current worklist is short. `801d31b0`, `801d553c`, `801dd4c4` and
+`801f1a00` are bucket (d). The four Theeder beam-packet builders in
+`render-kernels::cast_theeder` (`801f815c`, `801f83a4`, `801f8634`, `801f8b84`)
+are bucket (a): both drawing hosts call them, and the ladder that enters them is
+`battle_render_ladder`'s seated Theeder rung. `8004629c`, `801f2134`,
 `800485bc`, `801dba90` and the battle-tutorial countdown arm `801f7628` (see
 [`worklist-classification.md`](worklist-classification.md#an-images-inherited-tail-is-not-its-code))
 read entered.
@@ -37,13 +39,17 @@ read entered.
 
 ```bash
 python3 scripts/ci/replay-port-coverage.py --list-ladders   # <test> <package> per union member
+scripts/ci/export-replay-coverage.sh                        # one target/cov-<test>.json per ladder (hours)
+scripts/ci/export-replay-coverage.sh battle_render_ladder   # only the named ladders
 python3 scripts/ci/replay-port-coverage.py                  # join every target/cov-*.json
 python3 scripts/ci/port-catalog.py --live                   # writes target/port-catalog/catalog.csv
 python3 scripts/ci/replay-port-coverage.py --page-audit     # no export needed
 ```
 
-The export recipe is the script's module docstring: one
-`target/cov-<test>.json` per ladder. `--json PATH` (repeatable) names exports
+The export recipe is `export-replay-coverage.sh`, explained in the script's
+module docstring: one `target/cov-<test>.json` per ladder, the two disc-heavy
+ladders last. The join keeps a `.reduced` file beside each export holding only
+the spans it reads, and reuses it while it is newer than the export. `--json PATH` (repeatable) names exports
 instead of globbing; `--out` sets the report path (default
 `target/port-catalog/replay-port-entry.md`); `--fail-on-disclosed` exits
 non-zero when a `NOT WIRED` anchor ran; `--selftest` exercises the item-verdict
@@ -67,8 +73,9 @@ export: an export is a full instrumented build per ladder.
 | entered | Some run executed a region of the anchor's function. |
 | never entered, worklist | Live, unexecuted, and owed a verdict in one of the buckets below. |
 | <a id="a-live-row-its-own-tag-and-the-strict-graph-both-call-dead"></a>never entered, disclosed and receiver-gated dead | Every permissively-live anchor carries `NOT WIRED:` or `REPLACED-BY:` and the strict graph reaches none of them (`disclosed_dead_addresses`). Three instruments agree, so it is not reach work. If a ladder later enters one it surfaces as *disclosed executed*. The memory-card I/O machines (`card_bu_io.rs`, `card_flow.rs`), the in-field save actor `80024190`, the stream-file reader and `scene_name_sync.rs` have this shape. |
+| <a id="a-facade-tag-reads-its-subtree"></a>entered, through a facade | A `//! PORT:` tag on a `foo.rs` that only declares the submodules under `foo/` names a file with no function, so no binary carries a record for it. The module tag means "anything in this module ran", and for a facade the module is its subtree: the verdict is read off the files under `foo/`. |
 | not observable (const) | A tag above a `const` / `static` / `type` alias has no lines to execute. It resolves through executed references (`port-catalog.py: item_reference_patterns` / `item_reference_hit`) and otherwise files here - never "entered", never "never entered". Type anchors resolve through the executed methods of the type's own `impl` blocks. |
-| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. The measured cases are all in `engine-vm`: `actor_node_pool.rs`, `overlay_rng.rs`, `clut_fade_actor.rs`, `battle_stream_slot.rs`, `incense_window.rs`, `code_lock_actor.rs`. |
+| <a id="a-row-can-also-be-neither-entered-nor-never-entered"></a>not observable in any binary | No binary in the union carries a record for the anchor's file (link-time dead-code removal). The reach verdict is **unmeasured**; converting it means linking the crate from a ladder. A function anchor is also filed here when its file is present but no record overlaps the function's own span - a generic function is emitted only where it is instantiated, and reading the next function's record instead credits the wrong routine. The measured cases are all in `engine-vm`: `actor_node_pool.rs`, `overlay_rng.rs`, `clut_fade_actor.rs`, `battle_stream_slot.rs`, `incense_window.rs`, `code_lock_actor.rs`. |
 | defect lists | Disclosed `NOT WIRED` anchors that executed, and the item-verdict defects. Normally empty. |
 
 Worklist buckets:
@@ -925,7 +932,6 @@ blocks a (b) row, or the disclosure state of a (c) row.
 | `field_actor_timers.rs` | 1 | (d), no carrier | the three-axis tween `EasedMove::step`, whose only spawn is field-VM `0x43 09` (`tween_actor_position`, retail `FUN_801DE698`'s one caller). The [op census](#the-op-census-names-both-carriers) counts **zero** `43 09` occurrences disc-wide, clean or total, so no shipped script reaches it. Its sibling, the cinematic wipe `801dd784` (`0x43 0C`), has carriers and is entered | `801dd4c4` |
 | `field_subsystem_enter.rs` | 1 | (c) | disclosed | `801f1278` |
 | `field_passive_hud.rs` | 1 | (b), **converted** | `passive_badge_page` equips a badge-bit accessory through the Equip screen by pad and requires the badge against the same menu walk with nothing seeded. The gate it closes: a party member holding one of the six HUD-badge ability bits. `hud_anchor_offsets` is reached only through `World::passive_hud_points`, itself behind `World::passive_hud_active()`, and a cold-start party holds none of the six - so the badge column never anchors and the offsets never resolve. A card load now re-derives the mask from the loaded equipment (it used to stay empty until a battle entry), so a library save whose party wears one of the six converts the row; the played-through card the page ladders use wears none | `801d095c` |
-| `rgb_wash_scale.rs`, `nested_record_copy.rs` | 2 | (c) | disclosed | `80046978` `80055854` |
 | `actor_node_pool.rs` | 4 | (c) | disclosed. Read with the note below: whether these are measured at all moves with the ladder set, so the verdict rests on the caller scan | `800203ec` `80020424` `80020454` `800204a4` |
 | `clut_fade_actor.rs` | 1 | (c) | undisclosed, same trio - and the coverage side cannot corroborate it, because no binary in the union carries the file (the report's *not observable* set) | `801e4d8c` |
 
@@ -1028,7 +1034,7 @@ open, and the plain `world-map` rows behind the overworld render pass.
 
 Three rows were filed `(a)` behind one fixture - "a **drawing** host parked on
 the overworld" - and it was the wrong bucket for all three. `AtmosphericFogTick`
-(`801e3e00`), `ClutBlendFade` (`801e4d8c`) and `ParticleBurst` (`801e5338`) are
+(`801e3e00`), `ClutBlendFade` (`801e4d8c`) and `ParticleBurst` are
 each named, outside their own definition and `impl`, only by `#[cfg(test)]`
 bodies in their own file. Nothing on any of the three hosts constructs one, so
 no overworld frame enters them however it is composed, and a ladder written
@@ -1103,7 +1109,7 @@ concrete prerequisite - the round boundary adopting retail's cursor order for
 `801d32bc`, and a mutable screen-element placement array, in a crate a drawer
 can see, for the copy pair - and the fourth carries `REPLACED-BY:` because the
 port's battle UI rebuilds every widget from world state each frame, so no pool
-has a lifetime to end. `801d9ae8` is therefore out of the wiring denominator
+has a lifetime to end. That fourth is therefore out of the wiring denominator
 and leaves this page the way the [no-ladder
 rule](#a-row-can-leave-this-page-without-a-ladder-reaching-it) allows.
 
@@ -1695,10 +1701,7 @@ when someone guesses.
 |---|---|---|
 | *(none)* | | |
 
-The two the last refresh added have verdicts: `801cf5d0` was the anchor
-mechanism - a `//! PORT:` module line repeating the address whose function tag
-is `REPLACED-BY` (`EquipStatBlock::from_character_record`), so the module line
-alone kept it live; it is a `REF:` now. `801d3748`, the battle arts entry's
+`801d3748`, the battle arts entry's
 Triangle list pager, is `(a)` and **converted**: `arts_swing_ladder` seeds
 one learned art (not the swung one, so learn-on-use still fires) and presses
 Triangle twice before the combo, requiring page 0 to open and the second press
@@ -1724,7 +1727,6 @@ part worth keeping rather than the fact that it emptied:
 | `801d1288` `80065034` | (a) | [harness-blind](#no-ladder-harness-blind), as **one** gate - the producer and its consumer |
 | `800485bc` | (b), **converted** | the [`engine-ui` table](#engine-ui): the gate is a clip identity, not `801e1ab0`'s move-power byte, and a seated rung drives it |
 | `801d32bc` `801d57e8` `801d5778` | (c) | the [`engine-vm` table](#engine-vm), disclosed, with no caller of any kind |
-| `801d9ae8` | - | leaves the page: `REPLACED-BY`, no host owed |
 | `801dd4c4` `801dd784` | (a), then split | the [`engine-vm` table](#engine-vm), on the op that spawns each timer: the wipe `801dd784` is entered now, and the tween `801dd4c4` is (d) - its only spawn, `43 09`, has no carrier on the disc |
 | `8004fe5c` `801d5854` | measurement | neither is a gap - see below |
 

@@ -135,6 +135,7 @@ Usage:
     # `--profraw-only` between ladders keeps the per-ladder table honest: it
     # drops the profile data so each export is that ladder alone, while leaving
     # the build artifacts in place so this is not 26 rebuilds.
+    # `scripts/ci/export-replay-coverage.sh` is this loop as a file.
     scripts/ci/replay-port-coverage.py --list-ladders | while read -r t pkg; do
         cargo llvm-cov clean --profraw-only
         cargo llvm-cov -p "$pkg" --test integration --no-report -- "${t}::"
