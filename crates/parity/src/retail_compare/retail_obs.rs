@@ -337,7 +337,7 @@ pub(crate) fn hold_slot_table(session: &mut BootSession, retail: &RetailObs) {
 
 impl RetailObs {
     /// The save the seed lands: the lifted save with the gate record's own
-    /// run latches cleared ([`crate::retail_compare_script::run_latches`]).
+    /// run latches cleared ([`legaia_engine_capture::script_gate::run_latches`]).
     ///
     /// Retail's record set those flags after the scene entry ran, so the
     /// entry never saw them; a card load runs the entry over the whole save

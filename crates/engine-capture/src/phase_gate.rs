@@ -2,15 +2,15 @@
 //! as a predicate the engine replay can be stopped on, with its environment
 //! hand-off.
 
-use super::*;
+use legaia_engine_mode::mode::SceneMode;
 
 /// The caster's invoke clip through the summon band (`0x32` stages
 /// `actor[+0x1DA] = 9`).
-pub(super) const SUMMON_INVOKE_CLIP: u8 = 9;
+pub const SUMMON_INVOKE_CLIP: u8 = 9;
 /// PROT 0903 (Gimard) and its walk-in arm, the one module arm that hands
 /// the camera to case 6 (`FUN_801D5854(7, 6)`).
-pub(super) const GIMARD_MODULE: u32 = 903;
-pub(super) const GIMARD_WALK_ARM: u8 = 11;
+pub const GIMARD_MODULE: u32 = 903;
+pub const GIMARD_WALK_ARM: u8 = 11;
 
 /// Where in the summon band a capture sits, as an engine frame has to be
 /// gated to match it: the action-SM state, and - while a flash is up - the
@@ -39,7 +39,7 @@ pub struct PhaseGate {
     /// is how far into the walk the frame is.
     pub walk_yaw: Option<u16>,
     /// For a capture in the Done band's hold (`0x51` / `0x52`): retail's
-    /// countdown `ctx[+0x6D8]` ([`SpanGate::DoneHold`]). The band holds
+    /// countdown `ctx[+0x6D8]` ([`crate::battle_drive::SpanGate::DoneHold`]). The band holds
     /// `0x3C` frames, or `0x96` behind a magic level-up banner, so the state
     /// alone places the frame at the hold's first vsync -
     /// `shiny_refactor_gimard_levelup` was taken 46 vsyncs in.
@@ -57,7 +57,7 @@ pub struct PhaseGate {
 
 /// How far a walk-arm yaw base has swung from its seat (`0x200`), in
 /// 12-bit units.
-pub(super) fn walk_swing(yaw: i32) -> i32 {
+pub fn walk_swing(yaw: i32) -> i32 {
     (yaw - legaia_engine_battle_vm::cast_module_camera::GIMARD_WALK_YAW_BASE) & 0xFFF
 }
 
@@ -83,7 +83,7 @@ impl PhaseGate {
         s
     }
 
-    pub(super) fn env_state_and_fade(&self) -> String {
+    pub(crate) fn env_state_and_fade(&self) -> String {
         match self.fade {
             None => format!("{}", self.action_state),
             Some(f) => format!(
@@ -227,3 +227,19 @@ impl PhaseGate {
         })
     }
 }
+
+/// The summon band's live full-screen flash in a capture: which of the two
+/// templates it is and how many vsyncs it has run. Read off the SCUS fade
+/// actor's `+0x7C` block ([`legaia_engine_system::fade_ramp`]), whose
+/// countdowns give the age back exactly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetailFade {
+    /// `true` for the `0x33` flash-in (black to white), `false` for the
+    /// `0x34` flash-out.
+    pub to_white: bool,
+    /// Vsyncs since the spawn, the start delay included.
+    pub age: u16,
+}
+
+#[cfg(test)]
+mod tests;

@@ -30,8 +30,9 @@
 
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::{ReplayFile, ReplayMeta};
-use legaia_parity::mode_trace_oracle::{ModeTraceFrame, mode_trace_to_jsonl};
+use legaia_parity::mode_trace_oracle::mode_trace_to_jsonl;
 use sha2::{Digest, Sha256};
 
 /// Build a deterministic starting world: 8 actors, fixed RNG seed, three spawned party slots at non-zero HP.

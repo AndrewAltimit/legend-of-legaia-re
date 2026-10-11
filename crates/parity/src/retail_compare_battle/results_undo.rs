@@ -113,29 +113,3 @@ pub fn ungrant_magic_level_up(save: &mut legaia_save::SaveFile, battle: &RetailB
         rec.set_spell_list(list);
     }
 }
-
-/// Take spell `spell_id` back off a record's list - the inverse of the
-/// Done band's prepend (`legaia_engine_battle::magic_xp::learn_spell_prepend`):
-/// ids, levels and the parallel XP words above it shift down one. A list
-/// without the spell is left alone.
-pub(super) fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id: u8) {
-    const SPELL_XP_OFFSET: usize = 0x8;
-    let mut list = record.spell_list();
-    let count = usize::from(list.count).min(list.ids.len());
-    let Some(at) = list.ids[..count].iter().position(|&id| id == spell_id) else {
-        return;
-    };
-    for i in at..count - 1 {
-        list.ids[i] = list.ids[i + 1];
-        list.levels[i] = list.levels[i + 1];
-        let src = SPELL_XP_OFFSET + (i + 1) * 4;
-        let dst = SPELL_XP_OFFSET + i * 4;
-        record.raw.copy_within(src..src + 4, dst);
-    }
-    list.ids[count - 1] = 0;
-    list.levels[count - 1] = 0;
-    let last = SPELL_XP_OFFSET + (count - 1) * 4;
-    record.raw[last..last + 4].fill(0);
-    list.count -= 1;
-    record.set_spell_list(list);
-}

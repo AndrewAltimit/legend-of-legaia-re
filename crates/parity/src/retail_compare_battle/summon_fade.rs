@@ -3,19 +3,6 @@
 
 use super::*;
 
-/// The summon band's live full-screen flash in a capture: which of the two
-/// templates it is and how many vsyncs it has run. Read off the SCUS fade
-/// actor's `+0x7C` block ([`legaia_engine_system::fade_ramp`]), whose
-/// countdowns give the age back exactly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RetailFade {
-    /// `true` for the `0x33` flash-in (black to white), `false` for the
-    /// `0x34` flash-out.
-    pub to_white: bool,
-    /// Vsyncs since the spawn, the start delay included.
-    pub age: u16,
-}
-
 /// The SCUS fade actor's tick (`FUN_80025000`), stored at actor `+0x0C`.
 pub(super) const FADE_ACTOR_TICK: u32 = 0x8002_5000;
 /// The actor-list "done" bit (`actor[+0x10] |= 8`) a killed fade carries.

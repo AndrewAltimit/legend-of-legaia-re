@@ -1,7 +1,8 @@
-use super::*;
+use legaia_engine_core::battle_flow::BattleFlowState;
+use legaia_engine_mode::mode::SceneMode;
 
 /// Ticks the pad path may take to reach a menu capture's surface.
-pub(super) const MENU_DRIVE_TICKS: u32 = 600;
+pub(crate) const MENU_DRIVE_TICKS: u32 = 600;
 /// Ticks a menu capture's surface is held, with no input, before it is
 /// sampled. A retail menu capture is a surface the player was sitting on,
 /// so its camera has finished whatever transition opened it: the case-`0`
@@ -15,7 +16,7 @@ pub const MENU_HOLD_TICKS: u32 = 32;
 /// Ticks the pad path may take to reach an in-flight capture's action-SM
 /// state: long enough for several rounds, since the seat's turn comes up in
 /// initiative order.
-pub(super) const ACTION_DRIVE_TICKS: u32 = 4000;
+pub(crate) const ACTION_DRIVE_TICKS: u32 = 4000;
 /// The extra capture deadline a driven `play-window` child gets.
 pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 
@@ -28,7 +29,7 @@ pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 /// them onto the engine's seating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleDrive {
-    /// An opening capture ([`SeedPlan::Opening`]): nothing is pressed, and
+    /// An opening capture (`SeedPlan::Opening`): nothing is pressed, and
     /// the frame is the first one in battle mode whose entry sweep has run
     /// as far as retail's - the instant the headless seed samples. Retail's opening holds the fight on its intro (the
     /// tutorial's first speech, the formation reveal) while the engine's
@@ -60,13 +61,13 @@ pub enum BattleDrive {
     /// in two swings).
     ///
     /// `spare` is set on a killing-blow capture
-    /// ([`RetailBattle::action_victims`]): the victim is replayed at `1` HP,
+    /// (`RetailBattle::action_victims`): the victim is replayed at `1` HP,
     /// so any member's swing would kill it, and the members other than the
     /// capture's seat commit Spirit instead of Attack - the kill is then the
     /// seat's own, whatever order initiative put them in.
     ///
     /// `absorbed` is the Seru a capture on the Done band already staged
-    /// (`ctx[+0x269]`, [`RetailBattle::absorbed_seru`]). Retail's grant ran
+    /// (`ctx[+0x269]`, `RetailBattle::absorbed_seru`). Retail's grant ran
     /// before the capture, so the lifted save's spell list already holds
     /// spell `absorbed + 0x80` - and the replayed kill's absorb lookup would
     /// answer "known" and stage nothing. [`Self::prime`] takes it back off
@@ -77,7 +78,7 @@ pub enum BattleDrive {
     /// replay on another stream rolls its own, and the post-strike cases
     /// fork on it (pitch `0x80` / `TR.y 0x400` against level, a half-turn),
     /// so [`Self::steer`] sets the acting seat's style to retail's while it
-    /// holds the capture's state (outside the capture band, [`CAPTURE_BAND`])
+    /// holds the capture's state (outside the capture band, `CAPTURE_BAND`)
     /// - the camera twin of the orbit-yaw alignment.
     Action {
         seat: u8,
@@ -97,7 +98,7 @@ pub enum BattleDrive {
 ///
 /// `target` is the capture's target seat `actor[+0x1DD]`, set only on a
 /// killing-blow capture whose target is one of its victims
-/// ([`RetailBattle::action_victims`]). The phase is then reached only with
+/// (`RetailBattle::action_victims`). The phase is then reached only with
 /// the acting seat on that target: with the victim seeded at its read HP of
 /// `0` the auto-target picks the next standing monster, and a run that held
 /// the right state against the wrong body scored the camera of a different
@@ -123,11 +124,11 @@ pub enum BattleDrive {
 /// engine when it holds the capture's state.
 ///
 /// `arts` marks a party capture whose committed queue holds an art starter
-/// ([`RetailBattle::arts_queue`]): the player entered that turn through
+/// (`RetailBattle::arts_queue`): the player entered that turn through
 /// `Command`, so the drive opens the arts entry and confirms the string it
 /// preseeds from the record (`FUN_801DA34C`) instead of taking `Auto`, which
 /// builds a different queue under the same state byte. `gauge` is that
-/// seat's live gauge over its base ([`RetailBattle::acting_gauge`]), set when
+/// seat's live gauge over its base (`RetailBattle::acting_gauge`), set when
 /// a Spirit turn the replay does not play had extended it: the extension is
 /// what selects the saved string's band and pays for its arrows, so
 /// [`BattleDrive::prime`] restores it.
@@ -286,10 +287,10 @@ pub enum SpanGate {
     /// the frames since the actor's last clip commit. The drive takes the
     /// first tick in the state whose engine accumulator has run as far; a
     /// state the engine leaves sooner is re-run to its last tick
-    /// ([`EngineBattle::age_short`]).
+    /// (`EngineBattle::age_short`).
     Age { accum: u16 },
     /// A capture ahead of the seed pass ([`PRE_SEED_STATES`]) whose camera
-    /// has landed on its framing ([`camera_landed`]). `0x0A` waits on the CD
+    /// has landed on its framing (`camera_landed`). `0x0A` waits on the CD
     /// (`FUN_8003F2B8(1)` at `0x801E2B78`) for as long as the next actor's
     /// data takes, which the engine's always-ready poll does not; the
     /// `evil_medallion_rage_battle` capture sits there with the commit
@@ -302,7 +303,7 @@ pub enum SpanGate {
 /// (`sb v0,0xd(v1)` at `0x801E50CC`) without re-arming a framing, so a
 /// capture there reads `1` over a camera the rolled style placed; the style
 /// is not aligned in the band.
-pub(super) const CAPTURE_BAND: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
+pub(crate) const CAPTURE_BAND: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
 
 /// The capture band's states placed by its CD holds
 /// ([`SpanGate::CaptureFade`]).
@@ -311,7 +312,7 @@ pub const CAPTURE_FADE_STATES: [u8; 3] = [0x6E, 0x6F, 0x70];
 /// How far the engine's `0x6F` depth ramp still has to come down to reach
 /// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps),
 /// `0` once it is there.
-pub(super) fn capture_ramp_left(world: &legaia_engine_core::world::World, height: u16) -> u16 {
+pub(crate) fn capture_ramp_left(world: &legaia_engine_core::world::World, height: u16) -> u16 {
     ((world.battle.camera_frame_height as u16).wrapping_sub(height) as i16).max(0) as u16
 }
 
@@ -324,7 +325,7 @@ pub(super) fn capture_ramp_left(world: &legaia_engine_core::world::World, height
 /// whenever the engine plays retail's clip - the gates read it with `>=` -
 /// and it keeps placing a phase whose engine clip loops where retail's did
 /// not (a parked Gaza on idle against the engine's Gaza still walking).
-pub(super) fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
+pub fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
     world
         .battle
         .camera
@@ -336,7 +337,7 @@ pub(super) fn active_clip_age(world: &legaia_engine_core::world::World) -> u32 {
 /// as retail's `accum` (`ctx[+0x87C]`) says retail's did: the capture's
 /// value less what the `0x6F` frames still to come will add (half the depth
 /// ramp left, `8` against `16` per frame step).
-pub(super) fn capture_accum_done(
+pub(crate) fn capture_accum_done(
     world: &legaia_engine_core::world::World,
     height: u16,
     accum: u16,
@@ -360,7 +361,7 @@ const YAW_CLOCK_SLACK: i32 = 0x3F;
 /// less the `0x6F` frames still to come (the depth ramps `16` a display
 /// frame against the counter's one). `None` - the Far option - holds
 /// nothing.
-pub(super) fn capture_yaw_done(
+pub(crate) fn capture_yaw_done(
     world: &legaia_engine_core::world::World,
     height: u16,
     yaw: Option<u16>,
@@ -378,12 +379,12 @@ pub(super) fn capture_yaw_done(
 
 /// Whether the engine's `0x6F` pull-in has come down at least as far as
 /// retail's `height` (`ctx[+0x6D0]`, an unsigned halfword the ramp wraps).
-pub(super) fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
+pub(crate) fn capture_ramp_done(world: &legaia_engine_core::world::World, height: u16) -> bool {
     capture_ramp_left(world, height) == 0
 }
 
 impl SpanGate {
-    pub(super) fn to_env(self) -> (u8, u16) {
+    pub fn to_env(self) -> (u8, u16) {
         match self {
             Self::None => (0, 0),
             Self::Loading => (1, 0),
@@ -398,7 +399,7 @@ impl SpanGate {
 
     /// The env value field: one number, or `height/accum` for a capture
     /// hold.
-    pub(super) fn env_value(self) -> String {
+    pub(crate) fn env_value(self) -> String {
         match self {
             Self::CaptureFade {
                 height,
@@ -419,7 +420,7 @@ impl SpanGate {
         }
     }
 
-    pub(super) fn from_env(kind: &str, value: &str) -> Option<Self> {
+    pub fn from_env(kind: &str, value: &str) -> Option<Self> {
         if kind.trim() == "5" {
             let mut parts: Vec<&str> = value.trim().split('/').collect();
             let yaw = match parts.last() {
@@ -466,7 +467,7 @@ impl SpanGate {
     }
 
     /// Whether the engine's battle-end sequence holds this gate.
-    pub(super) fn met(self, world: &legaia_engine_core::world::World) -> bool {
+    pub fn met(self, world: &legaia_engine_core::world::World) -> bool {
         use legaia_engine_core::world::VictoryPhase;
         let Some(seq) = world.battle.victory else {
             return false;
@@ -679,7 +680,7 @@ impl BattleDrive {
     }
 
     /// An action drive's steering facts.
-    pub(super) fn steering(&self) -> Option<ActionSteer> {
+    pub fn steering(&self) -> Option<ActionSteer> {
         match *self {
             Self::Action { steer, .. } => Some(steer),
             _ => None,
@@ -898,7 +899,7 @@ impl BattleDrive {
 
     /// Whether the engine sits in an [`SpanGate::Age`] action phase's state
     /// at all, whatever its age.
-    pub(super) fn in_aged_state(&self, world: &legaia_engine_core::world::World) -> bool {
+    pub fn in_aged_state(&self, world: &legaia_engine_core::world::World) -> bool {
         let mut base = *self;
         match &mut base {
             Self::Action { end, .. } if matches!(end, SpanGate::Age { .. }) => {
@@ -1135,7 +1136,7 @@ impl BattleDrive {
 /// replay through `Command` rebuilds that queue, where `Auto` rebuilds the
 /// queue from the direction commands and learned arts and plays a different
 /// action under the same state byte.
-pub(super) fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> bool {
+pub(crate) fn saved_command_string(world: &legaia_engine_core::world::World, seat: u8) -> bool {
     use legaia_save::character::AutoCommandBand;
     let slot = world.party_roster_slot(usize::from(seat));
     world.party.roster.members.get(slot).is_some_and(|rec| {
@@ -1185,7 +1186,7 @@ pub fn entered_arrows(
 /// restore is the drive's, not the band's). A record that already holds the
 /// arrows in either band is left alone - the capture's own preseed then
 /// reads the string retail did - and otherwise both bands take them.
-pub(super) fn seed_entered_arrows(
+pub(crate) fn seed_entered_arrows(
     world: &mut legaia_engine_core::world::World,
     seat: u8,
     queue: &[u8; 16],
@@ -1214,3 +1215,87 @@ pub(super) fn seed_entered_arrows(
         rec.set_auto_command_string(band, arrows);
     }
 }
+
+/// Whether a menu surface belongs to one member (the ring, a submenu, the
+/// target cursor) rather than to the party (the round prompt, the commit
+/// confirm).
+pub fn menu_seat_matters(flow: BattleFlowState) -> bool {
+    !matches!(
+        flow,
+        BattleFlowState::TurnPrompt | BattleFlowState::CommitBegin
+    )
+}
+
+/// Whether monster row `row` stands in the engine's pool (party count +
+/// `row`), so the target cursor can land on it.
+pub(crate) fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bool {
+    let pc = usize::from(world.party.party_count.clamp(1, 3));
+    world
+        .actors
+        .get(pc + usize::from(row))
+        .is_some_and(|a| a.active && a.battle.hp > 0)
+}
+
+/// Whether the engine's battle-entry sweep
+/// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
+/// has run as far as retail's frame-driver counter `entry` reads: a counter
+/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
+/// one past it (`0xFF`) once the engine's sweep is over, and one below it
+/// (the fight still loading) at once.
+pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
+    if entry < 0x80 {
+        return true;
+    }
+    world.battle.camera.as_ref().is_some_and(|c| {
+        c.entry_sweep_counter()
+            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
+    })
+}
+
+/// The engine battle ordinal of retail pool slot `seat`: party slots are
+/// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
+/// party size while the engine seats them straight after the party.
+pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
+    if seat >= 3 {
+        party_count + (seat - 3)
+    } else {
+        seat
+    }
+}
+
+/// The action SM's states ahead of the seed pass `0x0C`: the round-begin
+/// `0x00`, the pre-action wait `0x0A` and the menu-queued hold `0x0B`. None of
+/// them has picked the next actor into `ctx[+0x13]` yet - the seed pass copies
+/// it there from `ctx[+0x274]` (`lbu v0,0x274(v1)` / `sb v0,0x2(s5)` at
+/// `0x801E2C50..0x801E2C5C`) - so a capture in one reads the **previous**
+/// actor (or the last ring member, at a round's start) in `ctx[+0x13]`.
+pub const PRE_SEED_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];
+
+/// Take spell `spell_id` back off a record's list - the inverse of the
+/// Done band's prepend (`legaia_engine_battle::magic_xp::learn_spell_prepend`):
+/// ids, levels and the parallel XP words above it shift down one. A list
+/// without the spell is left alone.
+pub(crate) fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id: u8) {
+    const SPELL_XP_OFFSET: usize = 0x8;
+    let mut list = record.spell_list();
+    let count = usize::from(list.count).min(list.ids.len());
+    let Some(at) = list.ids[..count].iter().position(|&id| id == spell_id) else {
+        return;
+    };
+    for i in at..count - 1 {
+        list.ids[i] = list.ids[i + 1];
+        list.levels[i] = list.levels[i + 1];
+        let src = SPELL_XP_OFFSET + (i + 1) * 4;
+        let dst = SPELL_XP_OFFSET + i * 4;
+        record.raw.copy_within(src..src + 4, dst);
+    }
+    list.ids[count - 1] = 0;
+    list.levels[count - 1] = 0;
+    let last = SPELL_XP_OFFSET + (count - 1) * 4;
+    record.raw[last..last + 4].fill(0);
+    list.count -= 1;
+    record.set_spell_list(list);
+}
+
+#[cfg(test)]
+mod tests;

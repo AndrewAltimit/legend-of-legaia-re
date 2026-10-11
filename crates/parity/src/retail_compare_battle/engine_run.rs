@@ -206,7 +206,7 @@ pub fn run_engine_battle(
     session.host.route_bgm_events(&mut director)?;
     // The fight is entered from a settled field, as retail's was: the
     // scene's entry scripts start its track and raise its entry state first.
-    for _ in 0..crate::retail_compare::SETTLE_TICKS {
+    for _ in 0..legaia_engine_capture::SETTLE_TICKS {
         // The settle is seeding, not elapsed game time: the script timers
         // hold the counts retail's field had when the fight began (the battle
         // does not run the field VM, so the capture's slot table is the
@@ -752,16 +752,5 @@ pub(super) fn combat_snapshot(
         },
         battle_bgm: world.audio.current_bgm,
         save: world.save_full(),
-    }
-}
-
-/// The engine battle ordinal of retail pool slot `seat`: party slots are
-/// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
-/// party size while the engine seats them straight after the party.
-pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
-    if seat >= 3 {
-        party_count + (seat - 3)
-    } else {
-        seat
     }
 }

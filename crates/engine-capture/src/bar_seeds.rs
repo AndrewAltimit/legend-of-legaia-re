@@ -3,7 +3,7 @@
 
 /// One combatant's mid-fight bars as the capture read them: engine actor
 /// slot, HP, MP - and, where the seed places it, the live ground pair
-/// `+0x34` / `+0x38` ([`RetailBattle::seeded_ground`]).
+/// `+0x34` / `+0x38` (`RetailBattle::seeded_ground`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BarSeed {
     pub slot: u8,
@@ -13,7 +13,7 @@ pub struct BarSeed {
     /// The heading `+0x46` that goes with [`Self::ground`].
     pub facing: Option<u16>,
     /// A body seeded inside (or past) its defeat fade: the colour lanes it
-    /// holds ([`RetailBattle::defeat_lanes`]).
+    /// holds (`RetailBattle::defeat_lanes`).
     pub defeat_lanes: Option<u32>,
     /// The ailments the capture's status word `+0x16E` carries
     /// ([`seedable_status_bits`]); `0` for none.
@@ -30,7 +30,7 @@ pub fn seedable_status_bits(word: u16) -> u16 {
 }
 
 /// Raise the ailments `word` carries on engine slot `slot`.
-pub(super) fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8, word: u16) {
+pub(crate) fn seed_status(world: &mut legaia_engine_core::world::World, slot: u8, word: u16) {
     use legaia_engine_battle_vm::status_effects::{StatusKind, display_flags as f};
     let tracker = &mut world.battle.status_effects;
     for (bit, kind) in [
@@ -150,3 +150,6 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests;

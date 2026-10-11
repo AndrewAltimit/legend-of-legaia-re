@@ -13,6 +13,7 @@
 pub mod audio_director;
 pub mod battle_fx;
 pub mod boot;
+pub mod mode_trace;
 pub mod xa_banks;
 
 pub use audio_director::AudioBgmDirector;

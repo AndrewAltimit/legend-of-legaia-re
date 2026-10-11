@@ -38,22 +38,6 @@ pub(super) const ENTRY_SWEEP_TICKS: u32 = 120;
 /// (`legaia_engine_core::world::intro_names::INTRO_HOLD_FRAMES` is `0x5A`).
 pub(super) const SPARRING_OPEN_TICKS: u32 = 160;
 
-/// Whether the engine's battle-entry sweep
-/// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::start_entry_sweep`])
-/// has run as far as retail's frame-driver counter `entry` reads: a counter
-/// inside the sweep (`0x80..=0xC0`) is met once the engine's has reached it,
-/// one past it (`0xFF`) once the engine's sweep is over, and one below it
-/// (the fight still loading) at once.
-pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) -> bool {
-    if entry < 0x80 {
-        return true;
-    }
-    world.battle.camera.as_ref().is_some_and(|c| {
-        c.entry_sweep_counter()
-            .is_none_or(|n| entry != 0xFF && n >= u32::from(entry))
-    })
-}
-
 /// `ctx[+0x06]` values below the round prompt: SCUS battle init's `0xFD`
 /// (`FUN_80055B6C`, `sb v0,0x6(v1)` at `0x80055FA8`), the overlay's init
 /// `0x00`, the intro timer `0x0A` / `0x0B`, the boss stage module's baton
@@ -199,11 +183,3 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
         _ => SpanGate::Loading,
     }
 }
-
-/// The action SM's states ahead of the seed pass `0x0C`: the round-begin
-/// `0x00`, the pre-action wait `0x0A` and the menu-queued hold `0x0B`. None of
-/// them has picked the next actor into `ctx[+0x13]` yet - the seed pass copies
-/// it there from `ctx[+0x274]` (`lbu v0,0x274(v1)` / `sb v0,0x2(s5)` at
-/// `0x801E2C50..0x801E2C5C`) - so a capture in one reads the **previous**
-/// actor (or the last ring member, at a round's start) in `ctx[+0x13]`.
-pub const PRE_SEED_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];

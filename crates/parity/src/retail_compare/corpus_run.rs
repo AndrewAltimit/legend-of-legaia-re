@@ -213,7 +213,7 @@ pub(super) fn run_one(
             // framed at that phase too: the child runs the same gate and
             // captures the frame it holds, with the deadline as its bound.
             let gate = engine.script.filter(|p| p.met_at.is_some()).and(
-                crate::retail_compare_script::ScriptGate::displayed_from_retail(&retail.scripts),
+                crate::retail_compare_script::displayed_script_gate_from_retail(&retail.scripts),
             );
             let frame = match gate {
                 Some(g) => {
@@ -235,7 +235,7 @@ pub(super) fn run_one(
                         Some((x, z)),
                         &[],
                         &env,
-                        crate::retail_compare_script::SCRIPT_GATE_DEADLINE,
+                        legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE,
                         opts.out_dir,
                         &entry.label,
                         crate::retail_compare_image::FrameEntry::Resume(save),

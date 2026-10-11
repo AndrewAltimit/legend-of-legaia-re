@@ -512,7 +512,7 @@ pub fn compare(
                     "retail parked at pc {} wait {}; engine did not reach it in {} ticks (sampled at the settle window)",
                     p.pc,
                     p.wait,
-                    crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+                    legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
                 ),
             },
         );

@@ -308,7 +308,7 @@ pub(super) fn apply_debug_seat_env(session: &mut BootSession) {
             // parameter block instead of a tile re-query.
             match std::env::var("LEGAIA_SEAT_CAMERA_BLOCK")
                 .ok()
-                .and_then(|b| legaia_parity::retail_compare::camera_block_from_env(&b))
+                .and_then(|b| legaia_engine_capture::field_seeds::camera_block_from_env(&b))
             {
                 Some(block) => session.camera.zone.arm_arrival_over(block),
                 None => session.camera.zone.arm_arrival(),
@@ -354,7 +354,7 @@ pub(super) fn apply_capture_palette_seeds(session: &mut BootSession) {
     // (`AmbientFxState::cell_fx_seed`).
     if let Ok(fx) = std::env::var("LEGAIA_SEAT_CLUT_FX") {
         session.host.world.ambient.cell_fx_seed =
-            legaia_parity::retail_compare::cell_fx_from_env(&fx);
+            legaia_engine_capture::field_seeds::cell_fx_from_env(&fx);
     }
 
     // `LEGAIA_SEAT_VRAM_RECTS=<file>` (the retail-compare image channel): a
@@ -365,7 +365,7 @@ pub(super) fn apply_capture_palette_seeds(session: &mut BootSession) {
         std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
     {
         session.host.world.ambient.vram_rect_seed =
-            legaia_parity::retail_compare::vram_rects_from_file(&bytes);
+            legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
     }
 }
 

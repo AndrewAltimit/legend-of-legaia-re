@@ -61,12 +61,12 @@ use std::path::PathBuf;
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
+use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::boot::BootSession;
 use legaia_engine_shell::replay::ReplayFile;
 use legaia_parity::mode_trace_oracle::{
-    ModeTraceFrame, build_engine_mode_trace_field_live,
-    build_engine_mode_trace_new_game_battle_leg, first_mode_trace_divergence,
-    load_runtime_mode_trace_from_save, save_ram_fingerprint,
+    build_engine_mode_trace_field_live, build_engine_mode_trace_new_game_battle_leg,
+    first_mode_trace_divergence, load_runtime_mode_trace_from_save, save_ram_fingerprint,
 };
 use legaia_ram_image::ScenarioManifest;
 use sha2::{Digest, Sha256};

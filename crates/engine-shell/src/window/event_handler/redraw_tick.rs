@@ -368,7 +368,7 @@ impl PlayWindowApp {
             // A script-gated capture resumes the retail record when the
             // entry did not start it, and pages its dialog boxes - the
             // same drive the headless seed runs.
-            if self.tick_no == legaia_parity::retail_compare_script::SCRIPT_RESUME_TICK
+            if self.tick_no == legaia_engine_capture::script_gate::SCRIPT_RESUME_TICK
                 && let Some(sc) = self.screenshot.as_ref()
                 && !sc
                     .script_gate
@@ -427,7 +427,7 @@ impl PlayWindowApp {
             && !sc.battle_bars.is_empty()
             && !sc.battle_bars_seeded.replace(true)
         {
-            legaia_parity::retail_compare_battle::apply_bar_seeds(
+            legaia_engine_capture::bar_seeds::apply_bar_seeds(
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
@@ -440,9 +440,9 @@ impl PlayWindowApp {
                 // the headless seed does.
                 let sweeping = !matches!(
                     drive,
-                    legaia_parity::retail_compare_battle::BattleDrive::Opening { .. }
+                    legaia_engine_capture::battle_drive::BattleDrive::Opening { .. }
                 ) && world.mode == SceneMode::Battle
-                    && !legaia_parity::retail_compare_battle::entry_sweep_reached(world, 0xFF);
+                    && !legaia_engine_capture::battle_drive::entry_sweep_reached(world, 0xFF);
                 if sweeping {
                     0
                 } else {

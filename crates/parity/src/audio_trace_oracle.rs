@@ -121,7 +121,7 @@ pub struct VoiceTraceFrame {
 
 /// One sample of the SPU's voice-activity state.
 ///
-/// Like [`crate::mode_trace_oracle::ModeTraceFrame`], fields the sampler
+/// Like [`legaia_engine_session::mode_trace::ModeTraceFrame`], fields the sampler
 /// can't fill are `None` rather than zeroed so downstream diff tools can
 /// distinguish "didn't observe" from "observed 0".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

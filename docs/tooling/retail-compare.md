@@ -617,7 +617,7 @@ on it (`ScriptGate::drive_resume`), before the next pass. The record's
 latches are then left to the replay rather than raised at the settle tick.
 
 Only an install park is taken early. A park inside the loop - one a later
-jump comes back to, `retail_compare_script::loops_back_to` - is a PC the
+jump comes back to, `legaia_engine_capture::script_gate::loops_back_to` - is a PC the
 engine first stands on the tick *before* its own first pass, and retail's
 body has run there: `rikuroa_post_caruban` and the `garmel` captures hold
 the selector bit that pass raises, and keep the settle-tick resume.

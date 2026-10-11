@@ -26,6 +26,7 @@ clap.workspace = true
 log.workspace = true
 env_logger.workspace = true
 legaia-art.workspace = true
+legaia-engine-capture.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true

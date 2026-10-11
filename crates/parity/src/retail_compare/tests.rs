@@ -10,46 +10,6 @@ fn ram_with_subscreen(sub: u8) -> Vec<u8> {
     ram
 }
 
-/// The walker seed survives its env form.
-#[test]
-fn walker_seeds_round_trip_through_their_env_form() {
-    let w = vec![
-        WalkerSeed {
-            flat: 41,
-            x: 3456,
-            z: -12,
-            heading: 0xC00,
-        },
-        WalkerSeed {
-            flat: 7,
-            x: 0,
-            z: 16320,
-            heading: 0,
-        },
-    ];
-    assert_eq!(walkers_from_env(&walkers_env(&w)), w);
-}
-
-/// The morph-envelope seed survives its env form.
-#[test]
-fn morph_seeds_round_trip_through_their_env_form() {
-    let m = vec![
-        MorphSeed {
-            flat: 7,
-            weights: vec![0x1000, 0x0C5A, 0],
-            done_mask: 0x8000_0003,
-            env: 0x5015,
-        },
-        MorphSeed {
-            flat: 0x45,
-            weights: vec![0x10],
-            done_mask: 0,
-            env: 0x1000,
-        },
-    ];
-    assert_eq!(morphs_from_env(&morphs_env(&m)), m);
-}
-
 /// The capture-alignment seeds survive their env forms.
 #[test]
 fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
@@ -76,60 +36,6 @@ fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
     let mut w = [0x0400u16, 0x0200];
     rewind_morph_weights(&mut w, &[10, 10], &[0, 0], 0, 0, 1, 2);
     assert_eq!(w, [0x0400 - 20, 0x0200]);
-}
-
-#[test]
-fn sprite_arm_seeds_round_trip_through_their_env_form() {
-    let s = vec![legaia_engine_core::world::ambient::SpriteArmSeed {
-        record_off: 0x728,
-        pos: [4224, -300, 9294],
-        rot: [0, 0x7C0, -3],
-        scale: 0x1000,
-        colour: 0xC900_0000,
-        level: 0x9B3,
-        pose: vec![
-            [1, 2, 3, 4, 5, 6, 7, 8],
-            [0xF0, 0, 0x1F, 0, 0, 0x80, 0x40, 0x80],
-        ],
-    }];
-    assert_eq!(sprite_arms_from_env(&sprite_arms_env(&s)), s);
-}
-
-#[test]
-fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
-    let fx = vec![legaia_engine_field::clut_cell_fx::ClutCellFx {
-        rect: (0, 502, 16, 1),
-        h_add: 2880,
-        s_add: 0,
-        v_add: -98,
-        mode: 1,
-        white: 256,
-    }];
-    assert_eq!(cell_fx_from_env(&cell_fx_env(&fx)), fx);
-    let fog = vec![legaia_engine_core::fog_particles::FogParticle {
-        age: 0x480,
-        rate: 12,
-        slot: 77,
-        alive: true,
-        vx: -3,
-        vz: 5,
-        x: -(40 << 11),
-        z: 90 << 11,
-        y: -0x60,
-        grey: 0x5A,
-    }];
-    assert_eq!(fog_from_env(&fog_env(&fog)), fog);
-    // Period 2 on a step-3 frame fires every tick; a countdown short of
-    // the period fired on an earlier tick.
-    assert_eq!(scroll_fires_within(2, 2, 3, 2), 2);
-    assert_eq!(scroll_fires_within(8, 4, 2, 2), 0);
-    assert_eq!(scroll_fires_within(8, 6, 2, 2), 1);
-    // Rotating right/down undoes the scroller's left/up rotation.
-    let t: Vec<u16> = (0..6).collect(); // 3 wide, 2 high
-    assert_eq!(unrotate_rect(&t, 3, 2, 1, 1), vec![5, 3, 4, 2, 0, 1]);
-    let rects = vec![((0x280, 0, 2, 2), vec![1, 2, 3, 0x8004])];
-    assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
-    assert!(fog_from_env("1,2,3").is_empty());
 }
 
 fn chans(kv: &[(&str, f64)]) -> BTreeMap<String, f64> {
@@ -229,28 +135,6 @@ fn the_view_window_comes_off_the_scratchpad_of_a_field_state() {
     assert_eq!(overworld.view_window, None);
 }
 
-#[test]
-fn object_clip_seeds_round_trip_the_env() {
-    let clips = vec![
-        ObjectClipSeed {
-            record: 0,
-            clip: 2,
-            cursor: 95,
-            flags: 0x0108,
-            rate: 8,
-        },
-        ObjectClipSeed {
-            record: 17,
-            clip: 1,
-            cursor: -3,
-            flags: 0x0015,
-            rate: 16,
-        },
-    ];
-    assert_eq!(object_clips_from_env(&object_clips_env(&clips)), clips);
-    assert_eq!(object_clips_from_env("1:2:3;junk;4:5:6:7:8").len(), 1);
-}
-
 /// The page mark's displayed frame: the RAM's frame taken back over the
 /// two-frame display lag, and none while no page waits or an automatic
 /// press counts down.
@@ -287,4 +171,41 @@ fn the_drive_walks_the_root_cursor_onto_the_row() {
             .windows(2)
             .all(|w| w[1].0 - w[0].0 == MENU_PRESS_GAP)
     );
+}
+
+#[test]
+fn cell_fx_and_fog_seeds_round_trip_through_their_env_forms() {
+    let fx = vec![legaia_engine_field::clut_cell_fx::ClutCellFx {
+        rect: (0, 502, 16, 1),
+        h_add: 2880,
+        s_add: 0,
+        v_add: -98,
+        mode: 1,
+        white: 256,
+    }];
+    assert_eq!(cell_fx_from_env(&cell_fx_env(&fx)), fx);
+    let fog = vec![legaia_engine_core::fog_particles::FogParticle {
+        age: 0x480,
+        rate: 12,
+        slot: 77,
+        alive: true,
+        vx: -3,
+        vz: 5,
+        x: -(40 << 11),
+        z: 90 << 11,
+        y: -0x60,
+        grey: 0x5A,
+    }];
+    assert_eq!(fog_from_env(&fog_env(&fog)), fog);
+    // Period 2 on a step-3 frame fires every tick; a countdown short of
+    // the period fired on an earlier tick.
+    assert_eq!(scroll_fires_within(2, 2, 3, 2), 2);
+    assert_eq!(scroll_fires_within(8, 4, 2, 2), 0);
+    assert_eq!(scroll_fires_within(8, 6, 2, 2), 1);
+    // Rotating right/down undoes the scroller's left/up rotation.
+    let t: Vec<u16> = (0..6).collect(); // 3 wide, 2 high
+    assert_eq!(unrotate_rect(&t, 3, 2, 1, 1), vec![5, 3, 4, 2, 0, 1]);
+    let rects = vec![((0x280, 0, 2, 2), vec![1, 2, 3, 0x8004])];
+    assert_eq!(vram_rects_from_file(&vram_rects_file(&rects)), rects);
+    assert!(fog_from_env("1,2,3").is_empty());
 }

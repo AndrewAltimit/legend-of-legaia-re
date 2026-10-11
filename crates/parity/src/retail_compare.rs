@@ -39,6 +39,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use legaia_engine_capture::SETTLE_TICKS;
+use legaia_engine_capture::field_seeds::*;
 use legaia_engine_core::scene_host::BgmDirector;
 use legaia_engine_core::world::SeededVramRect;
 use legaia_engine_mode::mode::SceneMode;
@@ -72,9 +74,6 @@ pub use engine_run::*;
 pub use pause_menu_drive::*;
 pub use retail_obs::*;
 pub use save_flags::*;
-
-/// Engine ticks run between seeding and sampling.
-pub const SETTLE_TICKS: u64 = 60;
 
 /// Start of the live game-state window a save block is composed from.
 const LIVE_STATE_VA: u32 = 0x8008_4140;

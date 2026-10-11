@@ -19,7 +19,7 @@
 //!   (`0x8007B790/92`, `0x800840B8..C0`) plus GTE `H`.
 //!
 //! Engine side: the scene is entered through the card-load path and the
-//! field settles [`crate::retail_compare::SETTLE_TICKS`] frames (the fight
+//! field settles [`legaia_engine_capture::SETTLE_TICKS`] frames (the fight
 //! is entered from a running field, as retail's was: the entry scripts start
 //! the scene's track first). The retail formation is matched against the
 //! scene's registered MAN rows (the id space a region roll or a scripted
@@ -38,6 +38,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use legaia_engine_capture::bar_seeds::*;
+use legaia_engine_capture::battle_drive::*;
+use legaia_engine_capture::hud_glide::*;
+use legaia_engine_capture::phase_gate::*;
 use legaia_engine_core::battle_flow::BattleFlowState;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_ram_image::game_anchors;
@@ -47,26 +51,22 @@ use crate::boot::BootSession;
 use crate::retail_compare::{CameraObs, RetailObs};
 use legaia_engine_session::boot::{BootConfig, FieldLiveOpts};
 
-mod bar_seeds;
 mod camera_align;
 mod capture_drive;
 mod engine_run;
 mod frame_step;
 mod hud_glide;
 mod inflight_seeds;
-mod phase_gate;
 mod ram_read;
 mod scoring;
 mod seed_plan;
 mod summon_fade;
 
-pub use bar_seeds::*;
-pub use camera_align::*;
+use camera_align::*;
 use capture_drive::*;
 pub use engine_run::*;
 pub use frame_step::*;
-pub use hud_glide::*;
-pub use phase_gate::*;
+use hud_glide::*;
 use ram_read::*;
 pub use scoring::*;
 pub use seed_plan::*;
@@ -391,9 +391,6 @@ pub struct RetailBattle {
     /// `0x5B`, which the steal / thief's-loot arm of `FUN_8004AD80` raises.
     pub spoils_caption: bool,
 }
-
-mod drive;
-pub use drive::*;
 
 mod results_undo;
 pub use results_undo::*;

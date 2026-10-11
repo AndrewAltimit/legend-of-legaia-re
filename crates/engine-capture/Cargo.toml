@@ -1,0 +1,23 @@
+[package]
+name = "legaia-engine-capture"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "legaia_engine_capture"
+path = "src/lib.rs"
+
+[dependencies]
+legaia-engine-battle-vm.workspace = true
+legaia-engine-core.workspace = true
+legaia-art.workspace = true
+legaia-engine-battle.workspace = true
+legaia-engine-dialog.workspace = true
+legaia-engine-effects.workspace = true
+legaia-engine-field.workspace = true
+legaia-engine-menus.workspace = true
+legaia-engine-mode.workspace = true
+legaia-engine-system.workspace = true
+legaia-save.workspace = true
+legaia-scene-formats.workspace = true

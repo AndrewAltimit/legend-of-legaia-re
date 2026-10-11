@@ -56,8 +56,9 @@ use legaia_engine_core::world::{Actor, World};
 use legaia_engine_field::field_events::FieldEvent;
 use legaia_engine_field::world_map_entity_config::WorldMapEntityConfig;
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_session::mode_trace::ModeTraceFrame;
 use legaia_engine_shell::replay::ReplayFile;
-use legaia_parity::mode_trace_oracle::{ModeTraceFrame, load_runtime_mode_trace_from_save};
+use legaia_parity::mode_trace_oracle::load_runtime_mode_trace_from_save;
 use legaia_ram_image::ScenarioManifest;
 
 // ---------------------------------------------------------------------

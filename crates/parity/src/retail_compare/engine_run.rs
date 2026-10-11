@@ -164,16 +164,16 @@ pub fn run_engine_with(
         }
     }
     // A capture inside a running script is compared at the script's phase,
-    // not after a fixed window ([`crate::retail_compare_script::ScriptGate`]):
+    // not after a fixed window ([`legaia_engine_capture::script_gate::ScriptGate`]):
     // the session runs until its own context for the record holds retail's
     // PC and wait, up to a deadline. The settle-window sample is kept as the
     // fallback for a gate the engine never meets.
     let gate = (retail.menu.is_none()
         && matches!(retail.class, StateClass::Field | StateClass::WorldMap))
-    .then(|| crate::retail_compare_script::ScriptGate::from_retail(&retail.scripts))
+    .then(|| crate::retail_compare_script::script_gate_from_retail(&retail.scripts))
     .flatten();
     let deadline = if gate.is_some() {
-        crate::retail_compare_script::SCRIPT_GATE_DEADLINE
+        legaia_engine_capture::script_gate::SCRIPT_GATE_DEADLINE
     } else {
         SETTLE_TICKS
     };
@@ -216,7 +216,8 @@ pub fn run_engine_with(
                 met_at = Some(t);
                 break;
             }
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK && !g.resumed_early.get() {
+            if t == legaia_engine_capture::script_gate::SCRIPT_RESUME_TICK && !g.resumed_early.get()
+            {
                 // The record's own latches, held back from the entry, are
                 // retail's state again once the entry has run - the
                 // settle-window sample included; a resume takes them back
@@ -233,7 +234,7 @@ pub fn run_engine_with(
             // its seat, and a wanderer's seat is `rand()` history
             // (`town01_npc16_dialogue_first_page`'s `P1[16]` wandered off
             // its `4C 51` tile before the press).
-            if t == crate::retail_compare_script::SCRIPT_RESUME_TICK {
+            if t == legaia_engine_capture::script_gate::SCRIPT_RESUME_TICK {
                 for w in &retail.walkers {
                     session
                         .host
@@ -275,7 +276,7 @@ pub struct ScriptPhase {
     pub wait: i16,
     pub met_at: Option<u64>,
     /// The record was not running in the engine and was started from its
-    /// first opcode ([`crate::retail_compare_script::resume_record`]).
+    /// first opcode ([`legaia_engine_capture::script_gate::resume_record`]).
     pub resumed: bool,
 }
 

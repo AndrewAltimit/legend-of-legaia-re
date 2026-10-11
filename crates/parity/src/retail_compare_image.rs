@@ -274,7 +274,7 @@ pub fn engine_frame(
         .chain(camera_block.map(|b| {
             (
                 "LEGAIA_SEAT_CAMERA_BLOCK",
-                crate::retail_compare::camera_block_env(b),
+                legaia_engine_capture::field_seeds::camera_block_env(b),
             )
         }))
         .chain(seat_focus.map(|[fx, fz]| ("LEGAIA_SEAT_FOCUS", format!("{fx},{fz}"))))

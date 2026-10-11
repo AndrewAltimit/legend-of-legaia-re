@@ -1490,6 +1490,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-engine-capture"
+version = "0.1.0"
+dependencies = [
+ "legaia-art",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-core",
+ "legaia-engine-dialog",
+ "legaia-engine-effects",
+ "legaia-engine-field",
+ "legaia-engine-menus",
+ "legaia-engine-mode",
+ "legaia-engine-system",
+ "legaia-save",
+ "legaia-scene-formats",
+]
+
+[[package]]
 name = "legaia-engine-core"
 version = "0.1.0"
 dependencies = [
@@ -1780,6 +1798,7 @@ dependencies = [
  "legaia-vab",
  "legaia-xa",
  "log",
+ "serde",
 ]
 
 [[package]]
@@ -1798,6 +1817,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-capture",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",
@@ -2072,6 +2092,7 @@ dependencies = [
  "legaia-engine-audio",
  "legaia-engine-battle",
  "legaia-engine-battle-vm",
+ "legaia-engine-capture",
  "legaia-engine-core",
  "legaia-engine-dialog",
  "legaia-engine-effects",

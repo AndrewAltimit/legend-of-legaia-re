@@ -3,16 +3,6 @@
 
 use super::*;
 
-/// Whether a menu surface belongs to one member (the ring, a submenu, the
-/// target cursor) rather than to the party (the round prompt, the commit
-/// confirm).
-pub(super) fn menu_seat_matters(flow: BattleFlowState) -> bool {
-    !matches!(
-        flow,
-        BattleFlowState::TurnPrompt | BattleFlowState::CommitBegin
-    )
-}
-
 impl RetailBattle {
     /// Monster indices that read `0` HP on a capture of a **party** action in
     /// flight: the swing's victims, which [`run_engine_battle`] can seed at
@@ -172,16 +162,6 @@ impl RetailBattle {
     }
 }
 
-/// Whether monster row `row` stands in the engine's pool (party count +
-/// `row`), so the target cursor can land on it.
-pub(super) fn aim_alive(world: &legaia_engine_core::world::World, row: u8) -> bool {
-    let pc = usize::from(world.party.party_count.clamp(1, 3));
-    world
-        .actors
-        .get(pc + usize::from(row))
-        .is_some_and(|a| a.active && a.battle.hp > 0)
-}
-
 /// Run `drive` from the round prompt through the pad path. The ticks it took,
 /// or `None` when the phase was never reached (or the fight ended first).
 pub(super) fn run_drive(
@@ -200,7 +180,7 @@ pub(super) fn run_drive(
         let world = &session.host.world;
         if reached.is_none() {
             if drive.in_aged_state(world) {
-                aged = Some(drive::active_clip_age(world));
+                aged = Some(active_clip_age(world));
             } else if let Some(a) = aged.take() {
                 // The state ended before it was as old as retail's: the
                 // re-run samples its last tick.
