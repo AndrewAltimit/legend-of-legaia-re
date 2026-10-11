@@ -23,6 +23,12 @@ contiguous_progresses = 35
 contiguous_pad = 35
 tier_sum = 140
 
+# Part C, the continuous run: milestones one New Game reaches in order on
+# pad input when it is never re-seeded from a retail save and reloads only
+# the engine's own saves. Asserted `>=` like the rest.
+[continuous]
+reached = 6
+
 [segments]
 rim_elm = 4
 tetsu_spar = 4

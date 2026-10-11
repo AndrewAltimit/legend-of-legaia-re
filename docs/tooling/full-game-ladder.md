@@ -26,6 +26,7 @@ flowchart LR
 - [How it relates to the other ladders](#how-it-relates-to-the-other-ladders)
 - [The spine](#the-spine)
 - [Segments and tiers](#segments-and-tiers)
+- [The continuous run](#the-continuous-run)
 - [How to run](#how-to-run)
 - [How to read a stall](#how-to-read-a-stall)
 - [Seeding](#seeding)
@@ -148,6 +149,36 @@ Tier 3 and tier 4 are two separate passes over the same route. The seated pass (
 The **headline** is how many milestones a cold New Game reaches contiguously
 at `progresses` and at `pad` - the count of leading segments that each cleared
 the tier - plus the tier sum over all segments.
+
+## The continuous run
+
+Every segment above starts from the retail save taken at its milestone, so
+it plays with the party, bag and gold a retail player had there. That scores
+each stretch's doors and scripts. It does not say whether the engine's own
+run *arrives* at a stretch able to clear it - with the levels it earned,
+what it bought, what it still holds.
+
+Part C (`part_c_continuous_run`,
+[`full_game_ladder/continuous.rs`](../../crates/engine-shell/tests/full_game_ladder/continuous.rs))
+asks that. It seeds one session with `start_new_game` and plays the pad
+pass toward each milestone in turn, never re-seeding:
+
+- The story state is the engine's from the first frame. The next anchor's
+  **flags** still steer the beats pass - they are route knowledge - but
+  nothing of an anchor's party or bag reaches the session.
+- At each milestone reached it takes the engine's own save
+  (`World::save_full`). After a party wipe it reloads that save, as a
+  player would, with the same guard retry and reload allowance the pad
+  tier has.
+- It stops at the first milestone it cannot reach and prints the stall.
+
+Its score is `[continuous] reached` in the baseline: the count of
+milestones reached in order. The distance between that and the segmented
+headline is the measurement - how much of each stretch's pass rests on
+arriving with a retail player's party.
+
+[`scripts/ci/play-depth.py`](../../scripts/ci/play-depth.py) prints this
+figure beside the retail-compare image floor, from the committed baselines.
 
 ## How to run
 

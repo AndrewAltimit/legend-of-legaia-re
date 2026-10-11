@@ -1,0 +1,177 @@
+//! Part C: one continuous run. A cold New Game played toward the credits
+//! on pad input, never re-seeded from a retail save.
+//!
+//! Part B starts every segment from the retail save taken at its milestone,
+//! so each segment plays with the party, bag and gold a retail player had
+//! there. That scores the doors and scripts of each stretch and says nothing
+//! about whether the engine's own run arrives at a stretch able to clear it:
+//! the levels it earned, what it bought, what it still holds. This pass
+//! keeps one story state from the first frame. The only saves it loads are
+//! ones the engine wrote itself, at each milestone it reached, and it loads
+//! one only after a party wipe - the player's reload.
+//!
+//! The score is the count of milestones reached in order. It is expected to
+//! sit well under part B's: the distance between the two is the measurement.
+
+use super::*;
+
+/// Reloads a continuous run gets at one milestone's stretch after a party
+/// wipe, the guard retry included - the pad pass's allowance.
+const CONTINUOUS_WIPE_ATTEMPTS: u32 = PAD_WIPE_ATTEMPTS;
+
+/// The engine's own save at the last milestone reached.
+struct Checkpoint {
+    save: legaia_save::SaveFile,
+    scene: String,
+}
+
+fn checkpoint(session: &mut NativeSession) -> Checkpoint {
+    Checkpoint {
+        save: session.host.world.save_full(),
+        scene: scene_name(session),
+    }
+}
+
+/// A fresh session resumed from `cp`, as a card load of that save.
+fn reload(inp: &Inputs, cp: &Checkpoint, opts: &FieldLiveOpts) -> Result<NativeSession, String> {
+    let mut session = open_session(&inp.extracted);
+    session.host.world.load_full(cp.save.clone());
+    let landing = session.resume_save(cp.save.clone(), &cp.scene, opts);
+    if !landing.entered_scene() {
+        return Err(format!("reload landed {landing:?}"));
+    }
+    Ok(session)
+}
+
+#[test]
+fn part_c_continuous_run() {
+    let Some(inp) = inputs() else { return };
+    let spine = load_spine();
+    let index = ProtIndex::open_extracted(&inp.extracted).expect("open ProtIndex");
+    let graph = DiscGraph::build(&index);
+    // The next anchor's flags tell the beats pass which story beats the
+    // retail run played before the milestone. They are route knowledge, not
+    // state: nothing of the anchor's party or bag reaches the session.
+    let anchor_flags: Vec<Option<BTreeSet<u16>>> = spine
+        .iter()
+        .map(|m| {
+            m.anchor
+                .as_ref()
+                .and_then(|r| load_anchor(&inp.library, r).ok())
+                .map(|a| a.flags)
+        })
+        .collect();
+
+    let opts = live_opts(true);
+    let mut session = open_session(&inp.extracted);
+    if let Err(e) = seed(&mut session, &spine[0], None, &opts) {
+        panic!("continuous run: New Game did not seed: {e}");
+    }
+    let mut cp = checkpoint(&mut session);
+
+    let mut reached_count = 0usize;
+    let mut reloads = 0u32;
+    let mut stall: Option<String> = None;
+    'spine: for i in 0..spine.len() - 1 {
+        let to = &spine[i + 1];
+        NEXT_ANCHOR_FLAGS.with(|a| *a.borrow_mut() = anchor_flags[i + 1].clone());
+        LEARNED_CADENCE.with(|l| l.set(None));
+        let mut prepare: Option<u8> = None;
+        let mut attempt = 0u32;
+        let t0 = std::time::Instant::now();
+        loop {
+            attempt += 1;
+            LOST_TO_ELEMENT.with(|l| l.set(None));
+            let played = catch_unwind(AssertUnwindSafe(|| {
+                PAD_DEADLINE.with(|d| d.set(session.frames + PAD_SEGMENT_FRAMES));
+                PAD_BATTLE_LEFT.with(|l| l.set(PAD_BATTLE_ALLOWANCE));
+                if let Some(element) = prepare {
+                    pad_equip_guard(&mut session, element);
+                }
+                let mut trail = vec![scene_name(&session)];
+                traverse(&mut session, &graph, to, true, &mut trail)
+                    .map_err(|e| format!("{e} [trail {}]", trail.join(">")))
+            }));
+            let err = match played {
+                Ok(Ok(())) => {
+                    reached_count = i + 1;
+                    cp = checkpoint(&mut session);
+                    eprintln!(
+                        "[run {i:2}] {:24} -> {:24} reached ({:.1}s, attempt {attempt})",
+                        spine[i].id,
+                        to.id,
+                        t0.elapsed().as_secs_f32()
+                    );
+                    continue 'spine;
+                }
+                Ok(Err(e)) => e,
+                Err(p) => {
+                    stall = Some(format!(
+                        "{} -> {}: PANIC: {}",
+                        spine[i].id,
+                        to.id,
+                        panic_text(&*p)
+                    ));
+                    break 'spine;
+                }
+            };
+            let wiped = err.contains("party wiped");
+            let guard = LOST_TO_ELEMENT.with(std::cell::Cell::get);
+            let again = match guard {
+                Some(el) if wiped && prepare.is_none() => {
+                    prepare = Some(el);
+                    true
+                }
+                _ => wiped && attempt < CONTINUOUS_WIPE_ATTEMPTS,
+            };
+            if !again {
+                stall = Some(format!(
+                    "{} -> {} (attempt {attempt}): {err}",
+                    spine[i].id, to.id
+                ));
+                break 'spine;
+            }
+            // The player's reload: the engine's own save at the last
+            // milestone, and another hand of the rand stream unless this is
+            // the guard retry (which measures the guard alone).
+            reloads += 1;
+            session = match reload(&inp, &cp, &opts) {
+                Ok(s) => s,
+                Err(e) => {
+                    stall = Some(format!("{} -> {}: {e}", spine[i].id, to.id));
+                    break 'spine;
+                }
+            };
+            if !(attempt == 1 && prepare.is_some()) {
+                let w = &mut session.host.world;
+                w.rng_state = w
+                    .rng_state
+                    .wrapping_add((attempt + 1).wrapping_mul(0x9E37_79B9));
+            }
+        }
+    }
+
+    let denom = spine.len() - 1;
+    eprintln!();
+    eprintln!(
+        "[headline] one continuous New Game reaches {reached_count}/{denom} milestones on pad input, {reloads} reload(s) of its own saves"
+    );
+    if let Some(s) = &stall {
+        eprintln!("[stall] {s}");
+    }
+    eprintln!();
+    eprintln!("# paste into scripts/replays/full_game_baseline.toml when the score rises:");
+    eprintln!("[continuous]");
+    eprintln!("reached = {reached_count}");
+
+    let want = read_baseline()
+        .continuous
+        .get("reached")
+        .copied()
+        .unwrap_or(0);
+    assert!(
+        reached_count >= want,
+        "continuous run reached {reached_count} milestone(s), baseline {want}: {}",
+        stall.as_deref().unwrap_or("no stall recorded")
+    );
+}

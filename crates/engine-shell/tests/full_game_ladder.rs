@@ -102,6 +102,7 @@ use serde::Deserialize;
 
 mod beat_records;
 mod beats;
+mod continuous;
 mod crossings;
 mod disc_graph;
 mod fight_choices;
@@ -159,6 +160,9 @@ struct Baseline {
     headline: BTreeMap<String, usize>,
     #[serde(default)]
     segments: BTreeMap<String, usize>,
+    /// Part C: milestones one continuous New Game reaches.
+    #[serde(default)]
+    continuous: BTreeMap<String, usize>,
 }
 
 fn read_baseline() -> Baseline {
