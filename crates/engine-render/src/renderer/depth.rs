@@ -1,6 +1,6 @@
-//! Small free helpers shared across the renderer submodules: the depth
-//! target format + view, light-vector normalize, and the letterbox
-//! aspect-fit scale. Split out of `renderer.rs`.
+//! The renderer's depth conventions: the depth target format + view, the
+//! reversed-Z projection fold and clear value, and the shadow-map
+//! resolution and compare bias. Split out of `renderer.rs`.
 
 use super::*;
 
@@ -17,10 +17,6 @@ pub(super) const SHADOW_COMPARE_BIAS: f32 = 0.0015;
 /// The reversed-Z clear value: depth 0.0 is the far plane under the
 /// `Greater` / `GreaterEqual` compares every 3D pipeline uses.
 pub(super) const DEPTH_CLEAR: f32 = 0.0;
-
-/// Byte stride of one glow-sprite vertex: position (3 x f32) + falloff uv
-/// (2 x f32) + additive colour / kind (4 x f32).
-pub(super) const GLOW_VERTEX_STRIDE: u64 = 36;
 
 /// Post-multiply a projection (or full MVP) into the **reversed-Z**
 /// convention: clip `z' = w - z`, so NDC depth runs 1.0 (near) -> 0.0 (far).
@@ -69,18 +65,6 @@ pub(super) fn create_depth_view(
         view_formats: &[],
     });
     tex.create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-pub(crate) fn letterbox_scale(win_w: u32, win_h: u32, tex_w: u32, tex_h: u32) -> (f32, f32) {
-    let win_aspect = win_w as f32 / win_h.max(1) as f32;
-    let tex_aspect = tex_w as f32 / tex_h.max(1) as f32;
-    if win_aspect > tex_aspect {
-        // Window wider than texture - pillarbox
-        (tex_aspect / win_aspect, 1.0)
-    } else {
-        // Window taller than texture - letterbox
-        (1.0, win_aspect / tex_aspect)
-    }
 }
 
 #[cfg(test)]

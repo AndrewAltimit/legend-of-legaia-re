@@ -1,6 +1,6 @@
 //! The [`Renderer`] struct field definitions plus its small state
 //! accessors (PSX-mode toggle, texture-window register, resize, surface
-//! size). Split out of `renderer/core.rs`.
+//! size). Split out of `renderer/construct.rs`.
 
 use super::*;
 

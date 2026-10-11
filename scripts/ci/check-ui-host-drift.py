@@ -513,8 +513,8 @@ CONSTANT_PAIRS: list[dict[str, object]] = [
         "web": ("site/js/webgl-tmd.js", name),
     }
     for path, name in (
-        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_MAP_DIM"),
-        ("crates/engine-render/src/renderer/helpers.rs", "SHADOW_COMPARE_BIAS"),
+        ("crates/engine-render/src/renderer/depth.rs", "SHADOW_MAP_DIM"),
+        ("crates/engine-render/src/renderer/depth.rs", "SHADOW_COMPARE_BIAS"),
         ("crates/engine-render/src/scene_lights.rs", "SHADOW_FOV"),
         ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_FRAC"),
         ("crates/engine-render/src/scene_lights.rs", "SHADOW_NEAR_MIN"),

@@ -2183,7 +2183,7 @@ The heightfield struct keeps its authored heights - the `.glb` exporter and
 the fishing shore-anchor height queries must not shift.
 
 **Depth precision.** The native renderer runs **reversed-Z**
-(`renderer/helpers.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
+(`renderer/depth.rs::reverse_z`: clip `z' = w - z`, depth cleared to 0,
 compares mirrored to Greater / GreaterEqual, applied at the two MVP upload
 sites so every camera inherits it). With the `Depth32Float` target, depth
 resolution stays proportional to view depth (about `z * 2^-23`), so the
