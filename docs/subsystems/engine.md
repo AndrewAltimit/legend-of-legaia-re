@@ -150,7 +150,7 @@ Internal dependencies as declared in each crate's `Cargo.toml`. "Format-family c
 | `patcher` | the eight above + format-family and parser crates | The `legaia-patcher` CLI. |
 | `engine-system` | `cheats`, `gamedata` | Input, fades, streaming, sound state. |
 | `engine-mode` | `engine-system`, `bytes` | The game-mode seat. |
-| `engine-dialog` | `font`, `mes` | Dialog pager, inline-dialogue and cutscene-timeline state. |
+| `engine-dialog` | `font`, `mes` | Dialog pager, dialog window, text balloon. |
 | `engine-battle-vm` | `engine-system`, `actor-formats`, `game-tables`, `overlay-images`, `scene-formats`, `art` | Battle action SM, formulas, battle camera, cast ticks. |
 | `engine-motion-vm` | `engine-system`, `scene-formats` | The two per-actor motion VMs. |
 | `engine-vm` | `scene-formats`, `minigame-formats`, `anm` | Field, move, effect and window-widget VMs; no GPU or audio deps. |
@@ -334,7 +334,7 @@ Retail does not have one exit to port. Each of the five minigames quits through 
 
 ## Runtime architecture
 
-Data and control flow at runtime. Edge labels on the `World` -> VM arrows name the Rust trait `World` implements to drive each VM.
+Data and control flow at runtime. Edge labels on the `World` -> VM arrows name the host trait `engine-core` implements over `World` to drive that VM.
 
 ```mermaid
 graph LR
@@ -346,20 +346,22 @@ graph LR
     end
 
     subgraph core ["engine-core"]
-        MD["ModeSeat (the mode word)"]
         SH["SceneHost"]
         W["World"]
-        SR["SceneResources"]
     end
 
+    MD["ModeSeat (the mode word)<br/>engine-mode"]
+    SR["SceneResources<br/>engine-scene"]
+
     subgraph vm ["engine-vm"]
-        AVM["Actor VM, 13 ops"]
+        AVM["Window-widget VM, 13 ops"]
         FVM["Field VM, 43 ops"]
         MVM["Move VM, 71+61 ops"]
-        MotVM["Motion VM"]
         EVM["Effect VM"]
-        BSM["Battle Action SM"]
     end
+
+    MotVM["Motion VMs<br/>engine-motion-vm"]
+    BSM["Battle action SM<br/>engine-battle-vm"]
 
     subgraph ren ["engine-render"]
         REN["Renderer (wgpu + PSX VRAM)"]
@@ -377,18 +379,18 @@ graph LR
     MD -->|"mode, sub-id to SceneMode"| W
     SH --> W
     SH --> SR
-    W -->|ActorVmHost| AVM
-    W -->|FieldVmHost| FVM
-    W -->|MoveVmHost| MVM
-    W -->|MotionVmHost| MotVM
-    W -->|EffectVmHost| EVM
+    W -->|Host| AVM
+    W -->|FieldHost| FVM
+    W -->|MoveHost| MVM
+    W --> MotVM
+    W -->|EffectHost| EVM
     W -->|BattleActionHost| BSM
     SR -->|"per-frame upload"| REN
     BGM -->|sequences| SEQ
     SEQ -->|samples| SPU
 ```
 
-`World` (`crates/engine-core/src/world.rs`) owns the actor table, battle context, effect pool, field-VM context + bytecode + PC, per-actor move-VM bytecode buffers and RNG state, and implements every per-VM `Host` trait by routing through itself. `World::tick` runs the effect pool, then per-actor move-VM ticks for active actors with bytecode loaded, then the mode-specific top-level VM: the battle-action state machine in `Battle`, a field-VM step in `Field` / `Cutscene`.
+`World` (`crates/engine-core/src/world.rs`) owns the actor table, battle context, effect pool, field-VM context + bytecode + PC, per-actor move-VM bytecode buffers and RNG state; `engine-core` implements each VM's host trait over it. The field VM's `FieldHost` declares no method of its own: it is the umbrella over fourteen supertraits, one per concern (`engine-vm/src/field/host/`). `World::tick` runs the effect pool, then per-actor move-VM ticks for active actors with bytecode loaded, then the mode-specific top-level VM: the battle-action state machine in `Battle`, a field-VM step in `Field` / `Cutscene`.
 
 `ModeSeat` is the port of retail's outermost dispatch level, the 28-entry mode table at `0x8007078C` indexed by `_DAT_8007B83C`. It is a seat rather than a mirror because the session writes it where retail's code stores that word - field entry through `MAIN INIT`, the pause menu through `CARD INIT` - and each entry returns the INIT column's staging plan before the seat performs the mode's own hand-off store. It also runs the transition edge, whose observable half is the pad-edge swallow. `SceneMode` stays the scene sessions' state and is reconciled with the word once per frame; the lossy direction (five minigames share `OTHER MODE`) is closed by staging the warp sub-id beside it. See [boot](boot.md#the-ports-seat-at-the-mode-table).
 
@@ -411,7 +413,7 @@ Retail's adaptive frame step (`DAT_1F800393`) is a different quantity: the numbe
 
 - **Deterministic gameplay.** RNG is seeded from a known value and the simulation ticks on a fixed timestep; the same input file produces bit-identical state traces.
 - **Fixed-timestep tick, display-rate render.** The window presents with `wgpu::PresentMode::AutoVsync`; `SimStepper` keeps game logic at 60 Hz whatever the display refresh.
-- **Mockable I/O.** The disc read path is abstracted behind `crates/iso::RawDisc`, so tests run without a disc.
+- **Mockable I/O.** The disc read path is abstracted behind `legaia_iso::raw::RawDisc`, so tests run without a disc.
 - **Quirks are preserved in the faithful mode, fixable outside it.** Quirky damage rounding and oddly-timed cutscenes are replicated where the oracles measure. Changing them lands as a toggle over the faithful path, never a silent edit to it.
 - **Behaviour is tested against runtime captures.** Inputs, RNG and frame outputs captured from the original replay through the engine and diff against it.
 
