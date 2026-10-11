@@ -20,7 +20,7 @@ All of it is documented in
 
 ## The split line
 
-The five modules name each other, the disc-parsed fishing tables in
+The modules here name each other, the disc-parsed fishing tables in
 `legaia-minigame-formats`, the field-region queries in `legaia-engine-field`, pad input
 and the BIOS `rand` in `legaia-engine-system`, the GTE divide in
 `legaia-render-kernels`, the vertex-morph stager in `legaia-scene-formats` and

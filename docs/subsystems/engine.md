@@ -392,6 +392,30 @@ graph LR
 
 `World` (`crates/engine-core/src/world.rs`) owns the actor table, battle context, effect pool, field-VM context + bytecode + PC, per-actor move-VM bytecode buffers and RNG state; `engine-core` implements each VM's host trait over it. The field VM's `FieldHost` declares no method of its own: it is the umbrella over fourteen supertraits, one per concern (`engine-vm/src/field/host/`). `World::tick` runs the effect pool, then per-actor move-VM ticks for active actors with bytecode loaded, then the mode-specific top-level VM: the battle-action state machine in `Battle`, a field-VM step in `Field` / `Cutscene`.
 
+Under `SceneMode::Menu` the effect pool and the move-VM pass are skipped as well: retail's CARD mode runs no master frame driver, so nothing on the actor lists advances while the pause menu owns the frame (`legaia_engine_mode::mode::runs_master_frame_driver`).
+
+### How `World` is laid out
+
+`World` keeps the VM contexts, the actor table and the scene-flow latches as direct fields. Everything else is one plain-data sub-struct per subsystem, reached as `world.<group>.<field>` (`world.party.money`, `world.battle.command`):
+
+| Group | Holds |
+|---|---|
+| `party` | Roster, active party and leader, money, the item bag (retail's 256-slot array and its active window), ability masks, tactical arts, level-up tracking, save extensions, name entry. |
+| `battle` | Per-seat stat arrays, command and submenu sessions, flow and round state, tutorial, intro transition, buffs, hit and effect queues, end-of-battle latches. |
+| `encounters`, `seru`, `casting` | Encounter session and scripted arms; capture log, registry and shiny rolls; the summon / cast-module / move-FX scene graph. |
+| `terrain`, `locomotion`, `props`, `npcs` | Walkability, zones and floor heights; player movement gates and deltas; prop colliders and walk-touch; NPC positions, routes, motions and dialog bindings. |
+| `field_vm`, `dialog`, `cutscene` | Per-record script channels and helper contexts; the dialog panel and inline runner; narration, timeline, caption overlays, the FMV hand-off. |
+| `world_map`, `carriers` | The overworld controller and entity state machines; field-scene carriers. |
+| `minigames`, `shops`, `menu`, `board` | Minigame sessions and wallet; shop and prize-exchange sessions; pause-menu tables and warp requests; the op-`0x49` tile board. |
+| `camera`, `presentation`, `ambient` | Camera snapshot, ease and register file; fades, tints and cinematic bars; CLUT cyclers, the VDF pulse, VRAM moves. |
+| `audio`, `move_vm`, `clock` | BGM and SFX cue slots and battle cue queues; move-VM pools and globals; the frame-step factor, vsync accumulators and tick counters. |
+| `tables`, `flags`, `toggles` | Disc-parsed static tables; story and system flag words; engine behaviour toggles. |
+| `script_actors`, `fog`, `fog_volume` | Scripted arcs, the NPC height channel and attached lights; the fog-particle pool; the volumetric-fog enhancement. |
+
+An engine that wants a different storage layout implements the per-VM host traits itself; `World` is the default implementation, not a requirement of the VMs.
+
+### The mode seat
+
 `ModeSeat` is the port of retail's outermost dispatch level, the 28-entry mode table at `0x8007078C` indexed by `_DAT_8007B83C`. It is a seat rather than a mirror because the session writes it where retail's code stores that word - field entry through `MAIN INIT`, the pause menu through `CARD INIT` - and each entry returns the INIT column's staging plan before the seat performs the mode's own hand-off store. It also runs the transition edge, whose observable half is the pad-edge swallow. `SceneMode` stays the scene sessions' state and is reconciled with the word once per frame; the lossy direction (five minigames share `OTHER MODE`) is closed by staging the warp sub-id beside it. See [boot](boot.md#the-ports-seat-at-the-mode-table).
 
 ### The frame model

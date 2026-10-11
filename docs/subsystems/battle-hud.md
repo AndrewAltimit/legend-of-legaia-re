@@ -1360,6 +1360,12 @@ MP has no ceiling on the battle actor: `World::tables.character_max_mp`, keyed
 by battle ordinal, is the only source, so monster rows carry `mp_max = 0` and
 the builder draws them no MP field.
 
+The model also carries one line retail does not have. Retail's field-to-battle
+edge draws no banner, so the port's "ENCOUNTER!" head line
+(`encounter_banner_label`) is off by default: `encounter_banner_enabled`
+answers through the same `LEGAIA_DIAG_HUD` switch as the diagnostic HUD rows,
+which keeps both hosts on one answer.
+
 ### The drawn surface
 
 `battle_hud_draws_for` returns two lists (`BattleHudDraws`): `text` samples the
